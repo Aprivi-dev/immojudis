@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale } from "lucide-react";
+import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2 } from "lucide-react";
 import { getSaleById } from "@/lib/queries";
 import type { AuctionSale } from "@/lib/types";
-import { formatPrice, formatDate, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import { formatPrice, formatDate, formatDateTime, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { FeatureBadges } from "@/components/FeatureBadges";
 import { DocumentsList } from "@/components/DocumentsList";
@@ -46,11 +46,16 @@ function SaleDetailPage() {
           <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{[sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ")}</span>
             {sale.tribunal && <span className="inline-flex items-center gap-1"><Scale className="h-3.5 w-3.5" />{sale.tribunal}</span>}
+            {sale.department && <span className="inline-flex items-center gap-1"><Building2 className="h-3.5 w-3.5" />Dépt. {sale.department}</span>}
+            {sale.status && (
+              <span className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-secondary-foreground">
+                {sale.status}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <ScoreBadge score={sale.investment_score} />
-          <FavoriteButton saleId={sale.id} />
         </div>
       </div>
 
@@ -92,6 +97,28 @@ function SaleDetailPage() {
               <DocumentsList documents={sale.documents} />
             </div>
           </section>
+
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h2 className="text-lg font-semibold">Informations techniques</h2>
+            <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <Meta label="Identifiant" value={<code className="break-all text-xs">{sale.id}</code>} />
+              <Meta label="Source" value={sale.source_name ?? "—"} />
+              <Meta label="Latitude" value={sale.latitude != null ? sale.latitude.toFixed(6) : "—"} />
+              <Meta label="Longitude" value={sale.longitude != null ? sale.longitude.toFixed(6) : "—"} />
+              <Meta label="Ajoutée le" value={formatDateTime(sale.created_at)} />
+              <Meta label="Mise à jour" value={formatDateTime(sale.updated_at)} />
+            </dl>
+            {sale.latitude != null && sale.longitude != null && (
+              <a
+                href={`https://www.google.com/maps?q=${sale.latitude},${sale.longitude}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+              >
+                <MapPin className="h-3.5 w-3.5" /> Voir sur Google Maps
+              </a>
+            )}
+          </section>
         </div>
 
         <aside className="space-y-4">
@@ -99,6 +126,20 @@ function SaleDetailPage() {
             <div className="text-xs uppercase tracking-wide text-muted-foreground">Mise à prix</div>
             <div className="mt-1 text-3xl font-bold tabular-nums text-foreground">{formatPrice(sale.starting_price_eur)}</div>
           </div>
+
+          <div className="rounded-lg border border-border bg-card p-5">
+            <div className="flex items-center gap-2">
+              <Heart className="h-4 w-4 text-red-500" />
+              <h2 className="text-sm font-semibold">Suivre cette annonce</h2>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Ajoutez ce bien à vos favoris pour le retrouver facilement.
+            </p>
+            <div className="mt-3">
+              <FavoriteButton saleId={sale.id} className="w-full justify-center" />
+            </div>
+          </div>
+
           {sale.source_url && (
             <a href={sale.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2.5 text-sm font-medium hover:bg-accent">
               Source {sale.source_name ? `(${sale.source_name})` : ""} <ExternalLink className="h-3.5 w-3.5" />
@@ -117,6 +158,15 @@ function Stat({ icon, label, value }: { icon?: React.ReactNode; label: string; v
         {icon}{label}
       </div>
       <div className="mt-0.5 text-sm font-medium text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function Meta({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 text-sm font-medium text-foreground">{value}</dd>
     </div>
   );
 }
