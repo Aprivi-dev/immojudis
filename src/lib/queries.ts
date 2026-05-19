@@ -1,10 +1,23 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { AuctionSale, SaleFilters, UserAlert } from "./types";
+import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
 
 const VIEW = "v_auction_sales_app";
 
-export async function getSales(filters: SaleFilters = {}, limit = 100): Promise<AuctionSale[]> {
-  let q = supabase.from(VIEW).select("*").order("sale_date", { ascending: true }).limit(limit);
+const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst?: boolean }> = {
+  date_asc: { column: "sale_date", ascending: true },
+  date_desc: { column: "sale_date", ascending: false },
+  price_asc: { column: "starting_price_eur", ascending: true },
+  price_desc: { column: "starting_price_eur", ascending: false },
+  score_desc: { column: "investment_score", ascending: false },
+};
+
+export async function getSales(
+  filters: SaleFilters = {},
+  limit = 100,
+  sort: SortKey = "date_asc",
+): Promise<AuctionSale[]> {
+  const s = SORT_MAP[sort];
+  let q = supabase.from(VIEW).select("*").order(s.column, { ascending: s.ascending, nullsFirst: false }).limit(limit);
 
   if (filters.department) q = q.eq("department", filters.department);
   if (filters.city) q = q.ilike("city", `%${filters.city}%`);
