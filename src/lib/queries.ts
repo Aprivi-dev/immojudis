@@ -1,7 +1,13 @@
-import { supabase } from "@/integrations/supabase/client";
+import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
 
 const VIEW = "v_auction_sales_app";
+const CONFIGURATION_ERROR =
+  "La connexion Lovable Cloud est absente. Rechargez la configuration Cloud pour afficher les données.";
+
+function assertCloudConfigured() {
+  if (!isSupabaseConfigured) throw new Error(CONFIGURATION_ERROR);
+}
 
 const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst?: boolean }> = {
   date_asc: { column: "sale_date", ascending: true },
@@ -16,6 +22,7 @@ export async function getSales(
   limit = 100,
   sort: SortKey = "date_asc",
 ): Promise<AuctionSale[]> {
+  assertCloudConfigured();
   const s = SORT_MAP[sort];
   let q = supabase.from(VIEW).select("*").order(s.column, { ascending: s.ascending, nullsFirst: false }).limit(limit);
 
@@ -33,12 +40,14 @@ export async function getSales(
 }
 
 export async function getSaleById(id: string): Promise<AuctionSale | null> {
+  assertCloudConfigured();
   const { data, error } = await supabase.from(VIEW).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   return data as AuctionSale | null;
 }
 
 export async function getSalesWithCoords(limit = 500): Promise<AuctionSale[]> {
+  assertCloudConfigured();
   const { data, error } = await supabase
     .from(VIEW)
     .select("*")
@@ -51,6 +60,7 @@ export async function getSalesWithCoords(limit = 500): Promise<AuctionSale[]> {
 }
 
 export async function getStats(): Promise<{ totalSales: number; departments: number; nextSale: string | null }> {
+  assertCloudConfigured();
   const { count } = await supabase.from(VIEW).select("*", { count: "exact", head: true });
   const { data: deps } = await supabase.from(VIEW).select("department");
   const uniqueDeps = new Set((deps ?? []).map((r: { department: string | null }) => r.department).filter(Boolean));
@@ -69,6 +79,7 @@ export async function getStats(): Promise<{ totalSales: number; departments: num
 
 // Favorites
 export async function getFavorites(userId: string): Promise<AuctionSale[]> {
+  assertCloudConfigured();
   const { data: favs, error } = await supabase
     .from("user_favorites")
     .select("sale_id")
@@ -82,6 +93,7 @@ export async function getFavorites(userId: string): Promise<AuctionSale[]> {
 }
 
 export async function getFavoriteIds(userId: string): Promise<Set<string>> {
+  assertCloudConfigured();
   const { data, error } = await supabase
     .from("user_favorites")
     .select("sale_id")
@@ -91,6 +103,7 @@ export async function getFavoriteIds(userId: string): Promise<Set<string>> {
 }
 
 export async function addFavorite(userId: string, saleId: string) {
+  assertCloudConfigured();
   const { error } = await supabase
     .from("user_favorites")
     .insert({ user_id: userId, sale_id: saleId });
@@ -98,6 +111,7 @@ export async function addFavorite(userId: string, saleId: string) {
 }
 
 export async function removeFavorite(userId: string, saleId: string) {
+  assertCloudConfigured();
   const { error } = await supabase
     .from("user_favorites")
     .delete()
@@ -108,6 +122,7 @@ export async function removeFavorite(userId: string, saleId: string) {
 
 // Alerts
 export async function getAlerts(userId: string): Promise<UserAlert[]> {
+  assertCloudConfigured();
   const { data, error } = await supabase
     .from("user_alerts")
     .select("*")
@@ -121,6 +136,7 @@ export async function createAlert(
   userId: string,
   payload: Omit<UserAlert, "id" | "user_id" | "created_at" | "updated_at" | "is_active"> & { is_active?: boolean },
 ) {
+  assertCloudConfigured();
   const { error } = await supabase.from("user_alerts").insert({
     user_id: userId,
     is_active: true,
@@ -130,6 +146,7 @@ export async function createAlert(
 }
 
 export async function updateAlert(userId: string, alertId: string, patch: Partial<UserAlert>) {
+  assertCloudConfigured();
   const { error } = await supabase
     .from("user_alerts")
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -139,6 +156,7 @@ export async function updateAlert(userId: string, alertId: string, patch: Partia
 }
 
 export async function deleteAlert(userId: string, alertId: string) {
+  assertCloudConfigured();
   const { error } = await supabase
     .from("user_alerts")
     .delete()
