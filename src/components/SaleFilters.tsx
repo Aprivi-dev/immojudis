@@ -153,6 +153,7 @@ export function SaleFilters() {
             <SelectItem value="price_asc">Prix croissant</SelectItem>
             <SelectItem value="price_desc">Prix décroissant</SelectItem>
             <SelectItem value="score_desc">Meilleur score</SelectItem>
+            <SelectItem value="surface_desc">Plus grande surface</SelectItem>
           </SelectContent>
         </Select>
       </div>

@@ -6,6 +6,9 @@ export type AuctionSale = {
   postal_code: string | null;
   address: string | null;
   tribunal: string | null;
+  tribunal_code: string | null;
+  tribunal_name: string | null;
+  tribunal_city: string | null;
   property_type: string | null;
   starting_price_eur: number | null;
   sale_date: string | null;
@@ -15,8 +18,16 @@ export type AuctionSale = {
   habitable_surface_m2: number | null;
   carrez_surface_m2: number | null;
   land_surface_m2: number | null;
+  app_surface_m2: number | null;
+  app_surface_kind: string | null;
+  surface_scope: string | null;
+  surface_source: string | null;
+  surface_confidence: number | null;
+  surface_evidence: string | null;
   rooms_count: number | null;
   bedrooms_count: number | null;
+  bathrooms_count: number | null;
+  parking_count: number | null;
   has_garden: boolean | null;
   has_terrace: boolean | null;
   has_garage: boolean | null;
@@ -25,10 +36,17 @@ export type AuctionSale = {
   has_double_glazing: boolean | null;
   investment_score: number | null;
   investment_summary: string | null;
+  score_version: string | null;
   risk_notes: string | null;
   source_name: string | null;
   source_url: string | null;
+  primary_source: string | null;
+  source_urls: unknown;
+  dedupe_confidence: string | null;
+  quality_flags: unknown;
   documents: unknown;
+  documents_rich: SaleDocumentRich[] | null;
+  risks: SaleRisk[] | null;
   status: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -42,9 +60,16 @@ export type SaleFilters = {
   min_surface?: number;
   occupancy_status?: string;
   min_score?: number;
+  tribunal_code?: string;
 };
 
-export type SortKey = "date_asc" | "date_desc" | "price_asc" | "price_desc" | "score_desc";
+export type SortKey =
+  | "date_asc"
+  | "date_desc"
+  | "price_asc"
+  | "price_desc"
+  | "score_desc"
+  | "surface_desc";
 
 export type UserAlert = {
   id: string;
@@ -66,4 +91,18 @@ export type SaleDocument = {
   url: string;
   name?: string;
   type?: string;
+};
+
+export type SaleDocumentRich = {
+  url: string;
+  label: string | null;
+  type: string | null;
+  extraction_status: string | null;
+};
+
+export type SaleRisk = {
+  risk_type: string;
+  risk_label: string;
+  severity: number | null;
+  evidence: string | null;
 };

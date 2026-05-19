@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2 } from "lucide-react";
+import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2, AlertTriangle, FileText } from "lucide-react";
 import { getSaleById } from "@/lib/queries";
 import { formatPrice, formatDate, formatDateTime, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { ScoreBadge } from "@/components/ScoreBadge";
@@ -8,6 +8,7 @@ import { FeatureBadges } from "@/components/FeatureBadges";
 import { DocumentsList } from "@/components/DocumentsList";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { SaleRisk, SaleDocumentRich } from "@/lib/types";
 
 export const Route = createFileRoute("/sales/$id")({
   component: SaleDetailPage,
@@ -59,36 +60,93 @@ function SaleDetailPage() {
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <Stat icon={<Calendar className="h-4 w-4" />} label="Date de vente" value={formatDate(sale.sale_date)} />
               <Stat icon={<Home className="h-4 w-4" />} label="Type" value={propertyTypeLabel(sale.property_type)} />
-              <Stat icon={<Ruler className="h-4 w-4" />} label="Surface habitable" value={formatSurface(sale.habitable_surface_m2)} />
+              <Stat
+                icon={<Ruler className="h-4 w-4" />}
+                label={`Surface${sale.app_surface_kind ? ` (${sale.app_surface_kind})` : ""}`}
+                value={formatSurface(sale.app_surface_m2 ?? sale.habitable_surface_m2)}
+              />
               <Stat label="Surface Carrez" value={formatSurface(sale.carrez_surface_m2)} />
               <Stat label="Terrain" value={formatSurface(sale.land_surface_m2)} />
               <Stat label="Pièces" value={sale.rooms_count != null ? String(sale.rooms_count) : "—"} />
               <Stat label="Chambres" value={sale.bedrooms_count != null ? String(sale.bedrooms_count) : "—"} />
+              <Stat label="Salles de bain" value={sale.bathrooms_count != null ? String(sale.bathrooms_count) : "—"} />
+              <Stat label="Parkings" value={sale.parking_count != null ? String(sale.parking_count) : "—"} />
               <Stat label="Occupation" value={occupancyLabel(sale.occupancy_status)} />
             </div>
+            {sale.surface_confidence != null && (
+              <div className="mt-3 text-xs text-muted-foreground">
+                Confiance surface : {Math.round(sale.surface_confidence * 100)}%
+                {sale.surface_source ? ` · source : ${sale.surface_source}` : ""}
+              </div>
+            )}
             <div className="mt-4">
               <FeatureBadges sale={sale} />
             </div>
           </section>
 
-          {(sale.investment_summary || sale.risk_notes) && (
+          {(sale.investment_summary || sale.risk_notes || (sale.risks && sale.risks.length > 0)) && (
             <section className="rounded-lg border border-border bg-card p-5">
               <h2 className="text-lg font-semibold">Analyse d'investissement</h2>
               {sale.investment_summary && (
                 <p className="mt-2 whitespace-pre-line text-sm text-foreground">{sale.investment_summary}</p>
               )}
-              {sale.risk_notes && (
+              {sale.risks && sale.risks.length > 0 ? (
+                <ul className="mt-4 space-y-2">
+                  {sale.risks.map((r: SaleRisk, i: number) => (
+                    <li
+                      key={i}
+                      className={`flex items-start gap-2 rounded-md border p-3 text-sm ${
+                        (r.severity ?? 1) >= 3
+                          ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200"
+                          : (r.severity ?? 1) === 2
+                            ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200"
+                            : "border-border bg-secondary text-secondary-foreground"
+                      }`}
+                    >
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="font-medium">{r.risk_label}</div>
+                        {r.evidence && <div className="mt-0.5 text-xs opacity-80">{r.evidence}</div>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : sale.risk_notes ? (
                 <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
                   <strong>Risques : </strong>{sale.risk_notes}
                 </div>
-              )}
+              ) : null}
             </section>
           )}
 
           <section className="rounded-lg border border-border bg-card p-5">
             <h2 className="text-lg font-semibold">Documents</h2>
             <div className="mt-3">
-              <DocumentsList documents={sale.documents} />
+              {sale.documents_rich && sale.documents_rich.length > 0 ? (
+                <ul className="space-y-2">
+                  {sale.documents_rich.map((d: SaleDocumentRich, i: number) => (
+                    <li key={i}>
+                      <a
+                        href={d.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm hover:bg-accent"
+                      >
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        <span className="flex-1 truncate">{d.label ?? d.url.split("/").pop() ?? `Document ${i + 1}`}</span>
+                        {d.type && (
+                          <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] uppercase text-secondary-foreground">
+                            {d.type}
+                          </span>
+                        )}
+                        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <DocumentsList documents={sale.documents} />
+              )}
             </div>
           </section>
 
@@ -97,6 +155,12 @@ function SaleDetailPage() {
             <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <Meta label="Identifiant" value={<code className="break-all text-xs">{sale.id}</code>} />
               <Meta label="Source" value={sale.source_name ?? "—"} />
+              {sale.tribunal_name && (
+                <Meta label="Tribunal" value={`${sale.tribunal_name}${sale.tribunal_city ? ` — ${sale.tribunal_city}` : ""}`} />
+              )}
+              {sale.primary_source && (
+                <Meta label="Source principale" value={sale.primary_source} />
+              )}
               <Meta label="Latitude" value={sale.latitude != null ? sale.latitude.toFixed(6) : "—"} />
               <Meta label="Longitude" value={sale.longitude != null ? sale.longitude.toFixed(6) : "—"} />
               <Meta label="Ajoutée le" value={formatDateTime(sale.created_at)} />

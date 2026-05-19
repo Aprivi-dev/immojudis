@@ -15,6 +15,7 @@ const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst
   price_asc: { column: "starting_price_eur", ascending: true },
   price_desc: { column: "starting_price_eur", ascending: false },
   score_desc: { column: "investment_score", ascending: false },
+  surface_desc: { column: "app_surface_m2", ascending: false },
 };
 
 export async function getSales(
@@ -30,9 +31,10 @@ export async function getSales(
   if (filters.city) q = q.ilike("city", `%${filters.city}%`);
   if (filters.property_type) q = q.eq("property_type", filters.property_type);
   if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
-  if (filters.min_surface != null) q = q.gte("habitable_surface_m2", filters.min_surface);
+  if (filters.min_surface != null) q = q.gte("app_surface_m2", filters.min_surface);
   if (filters.occupancy_status) q = q.eq("occupancy_status", filters.occupancy_status);
   if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
+  if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
 
   const { data, error } = await q;
   if (error) throw error;
