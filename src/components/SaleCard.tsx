@@ -6,7 +6,8 @@ import { ScoreBadge } from "./ScoreBadge";
 import { FeatureBadges } from "./FeatureBadges";
 
 export function SaleCard({ sale }: { sale: AuctionSale }) {
-  const surface = sale.habitable_surface_m2 ?? sale.carrez_surface_m2;
+  const surface = sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2;
+  const riskCount = sale.risks?.length ?? 0;
   return (
     <article className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 shadow-sm transition hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
@@ -46,6 +47,11 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
           {occupancyLabel(sale.occupancy_status)}
         </span>
         <FeatureBadges sale={sale} max={4} />
+        {riskCount > 0 && (
+          <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+            {riskCount} risque{riskCount > 1 ? "s" : ""}
+          </span>
+        )}
       </div>
 
       <Link
