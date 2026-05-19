@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Heart } from "lucide-react";
 import { addFavorite, removeFavorite } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
@@ -9,6 +10,7 @@ import { toast } from "sonner";
 export function FavoriteButton({ saleId, className = "" }: { saleId: string; className?: string }) {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [isFav, setIsFav] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -38,6 +40,7 @@ export function FavoriteButton({ saleId, className = "" }: { saleId: string; cla
         await addFavorite(user.id, saleId);
         setIsFav(true);
       }
+      qc.invalidateQueries({ queryKey: ["favorites", user.id] });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erreur");
     } finally {
