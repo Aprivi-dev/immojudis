@@ -16,7 +16,7 @@ type Search = {
   min_score?: number;
 };
 
-export const Route = createFileRoute("/sales")({
+export const Route = createFileRoute("/sales/")({
   validateSearch: (search: Record<string, unknown>): Search => ({
     department: search.department as string | undefined,
     city: search.city as string | undefined,
