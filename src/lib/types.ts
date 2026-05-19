@@ -12,7 +12,6 @@ export type AuctionSale = {
   latitude: number | null;
   longitude: number | null;
   occupancy_status: string | null;
-  occupancy_details: string | null;
   habitable_surface_m2: number | null;
   carrez_surface_m2: number | null;
   land_surface_m2: number | null;
