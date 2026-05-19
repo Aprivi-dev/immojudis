@@ -1,10 +1,30 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2, Bell, Power } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { getAlerts, createAlert, updateAlert, deleteAlert } from "@/lib/queries";
 import type { UserAlert } from "@/lib/types";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/alerts")({
   component: AlertsPage,
@@ -13,7 +33,8 @@ export const Route = createFileRoute("/alerts")({
 function AlertsPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [alerts, setAlerts] = useState<UserAlert[]>([]);
+  const qc = useQueryClient();
+  const [toDelete, setToDelete] = useState<UserAlert | null>(null);
   const [form, setForm] = useState({
     name: "",
     department: "",
@@ -24,16 +45,16 @@ function AlertsPage() {
   });
 
   useEffect(() => {
-    if (loading) return;
-    if (!user) { navigate({ to: "/login" }); return; }
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, loading]);
+    if (!loading && !user) navigate({ to: "/login" });
+  }, [user, loading, navigate]);
 
-  async function refresh() {
-    if (!user) return;
-    setAlerts(await getAlerts(user.id));
-  }
+  const { data: alerts = [] } = useQuery({
+    queryKey: ["alerts", user?.id],
+    queryFn: () => getAlerts(user!.id),
+    enabled: !!user,
+  });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["alerts", user?.id] });
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -52,7 +73,7 @@ function AlertsPage() {
       });
       toast.success("Alerte créée");
       setForm({ name: "", department: "", property_type: "", max_price_eur: "", min_investment_score: "", occupancy_status: "" });
-      refresh();
+      invalidate();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erreur");
     }
@@ -61,20 +82,18 @@ function AlertsPage() {
   async function toggle(a: UserAlert) {
     if (!user) return;
     await updateAlert(user.id, a.id, { is_active: !a.is_active });
-    refresh();
+    invalidate();
   }
 
-  async function remove(a: UserAlert) {
-    if (!user) return;
-    if (!confirm(`Supprimer l'alerte "${a.name}" ?`)) return;
-    await deleteAlert(user.id, a.id);
+  async function confirmDelete() {
+    if (!user || !toDelete) return;
+    await deleteAlert(user.id, toDelete.id);
     toast.success("Alerte supprimée");
-    refresh();
+    setToDelete(null);
+    invalidate();
   }
 
   if (loading || !user) return <main className="mx-auto max-w-5xl px-4 py-10 text-muted-foreground">Chargement…</main>;
-
-  const cls = "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
@@ -86,27 +105,33 @@ function AlertsPage() {
       <form onSubmit={submit} className="mt-6 rounded-lg border border-border bg-card p-5">
         <h2 className="text-base font-semibold">Nouvelle alerte</h2>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <input className={cls} placeholder="Nom de l'alerte *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <input className={cls} placeholder="Département (ex: 33)" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
-          <select className={cls} value={form.property_type} onChange={(e) => setForm({ ...form, property_type: e.target.value })}>
-            <option value="">Type de bien</option>
-            <option value="apartment">Appartement</option>
-            <option value="house">Maison</option>
-            <option value="land">Terrain</option>
-            <option value="commercial">Commercial</option>
-          </select>
-          <input className={cls} type="number" placeholder="Prix max (€)" value={form.max_price_eur} onChange={(e) => setForm({ ...form, max_price_eur: e.target.value })} />
-          <input className={cls} type="number" placeholder="Score min" value={form.min_investment_score} onChange={(e) => setForm({ ...form, min_investment_score: e.target.value })} />
-          <select className={cls} value={form.occupancy_status} onChange={(e) => setForm({ ...form, occupancy_status: e.target.value })}>
-            <option value="">Occupation</option>
-            <option value="free">Libre</option>
-            <option value="occupied">Occupé</option>
-            <option value="rented">Loué</option>
-          </select>
+          <Input placeholder="Nom de l'alerte *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Input placeholder="Département (ex: 33)" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+          <Select value={form.property_type || "all"} onValueChange={(v) => setForm({ ...form, property_type: v === "all" ? "" : v })}>
+            <SelectTrigger><SelectValue placeholder="Type de bien" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les types</SelectItem>
+              <SelectItem value="apartment">Appartement</SelectItem>
+              <SelectItem value="house">Maison</SelectItem>
+              <SelectItem value="land">Terrain</SelectItem>
+              <SelectItem value="commercial">Commercial</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input type="number" placeholder="Prix max (€)" value={form.max_price_eur} onChange={(e) => setForm({ ...form, max_price_eur: e.target.value })} />
+          <Input type="number" placeholder="Score min" value={form.min_investment_score} onChange={(e) => setForm({ ...form, min_investment_score: e.target.value })} />
+          <Select value={form.occupancy_status || "all"} onValueChange={(v) => setForm({ ...form, occupancy_status: v === "all" ? "" : v })}>
+            <SelectTrigger><SelectValue placeholder="Occupation" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes</SelectItem>
+              <SelectItem value="free">Libre</SelectItem>
+              <SelectItem value="occupied">Occupé</SelectItem>
+              <SelectItem value="rented">Loué</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <button type="submit" className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+        <Button type="submit" className="mt-4">
           <Bell className="h-4 w-4" /> Créer l'alerte
-        </button>
+        </Button>
       </form>
 
       <div className="mt-8">
@@ -134,13 +159,30 @@ function AlertsPage() {
               <button onClick={() => toggle(a)} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${a.is_active ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-muted text-muted-foreground"}`}>
                 <Power className="h-3 w-3" /> {a.is_active ? "Active" : "Inactive"}
               </button>
-              <button onClick={() => remove(a)} className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+              <button onClick={() => setToDelete(a)} className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Supprimer">
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
           ))}
         </div>
       </div>
+
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer cette alerte ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              L'alerte « {toDelete?.name} » sera définitivement supprimée. Cette action est irréversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }
