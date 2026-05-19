@@ -67,9 +67,6 @@ function SaleDetailPage() {
               <Stat label="Chambres" value={sale.bedrooms_count != null ? String(sale.bedrooms_count) : "—"} />
               <Stat label="Occupation" value={occupancyLabel(sale.occupancy_status)} />
             </div>
-            {sale.occupancy_details && (
-              <p className="mt-4 rounded-md bg-secondary/50 p-3 text-sm text-secondary-foreground">{sale.occupancy_details}</p>
-            )}
             <div className="mt-4">
               <FeatureBadges sale={sale} />
             </div>
