@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SalesRouteImport } from './routes/sales'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FavoritesRouteImport } from './routes/favorites'
@@ -17,6 +18,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SalesIndexRouteImport } from './routes/sales.index'
 import { Route as SalesIdRouteImport } from './routes/sales.$id'
 
+const SalesRoute = SalesRouteImport.update({
+  id: '/sales',
+  path: '/sales',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MapRoute = MapRouteImport.update({
   id: '/map',
   path: '/map',
@@ -43,14 +49,14 @@ const IndexRoute = IndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const SalesIndexRoute = SalesIndexRouteImport.update({
-  id: '/sales/',
-  path: '/sales/',
-  getParentRoute: () => rootRouteImport,
+  id: '/',
+  path: '/',
+  getParentRoute: () => SalesRoute,
 } as any)
 const SalesIdRoute = SalesIdRouteImport.update({
-  id: '/sales/$id',
-  path: '/sales/$id',
-  getParentRoute: () => rootRouteImport,
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => SalesRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/favorites': typeof FavoritesRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/sales': typeof SalesRouteWithChildren
   '/sales/$id': typeof SalesIdRoute
   '/sales/': typeof SalesIndexRoute
 }
@@ -78,6 +85,7 @@ export interface FileRoutesById {
   '/favorites': typeof FavoritesRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/sales': typeof SalesRouteWithChildren
   '/sales/$id': typeof SalesIdRoute
   '/sales/': typeof SalesIndexRoute
 }
@@ -89,6 +97,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/login'
     | '/map'
+    | '/sales'
     | '/sales/$id'
     | '/sales/'
   fileRoutesByTo: FileRoutesByTo
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/login'
     | '/map'
+    | '/sales'
     | '/sales/$id'
     | '/sales/'
   fileRoutesById: FileRoutesById
@@ -117,12 +127,18 @@ export interface RootRouteChildren {
   FavoritesRoute: typeof FavoritesRoute
   LoginRoute: typeof LoginRoute
   MapRoute: typeof MapRoute
-  SalesIdRoute: typeof SalesIdRoute
-  SalesIndexRoute: typeof SalesIndexRoute
+  SalesRoute: typeof SalesRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sales': {
+      id: '/sales'
+      path: '/sales'
+      fullPath: '/sales'
+      preLoaderRoute: typeof SalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/map': {
       id: '/map'
       path: '/map'
@@ -160,20 +176,32 @@ declare module '@tanstack/react-router' {
     }
     '/sales/': {
       id: '/sales/'
-      path: '/sales'
+      path: '/'
       fullPath: '/sales/'
       preLoaderRoute: typeof SalesIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SalesRoute
     }
     '/sales/$id': {
       id: '/sales/$id'
-      path: '/sales/$id'
+      path: '/$id'
       fullPath: '/sales/$id'
       preLoaderRoute: typeof SalesIdRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SalesRoute
     }
   }
 }
+
+interface SalesRouteChildren {
+  SalesIdRoute: typeof SalesIdRoute
+  SalesIndexRoute: typeof SalesIndexRoute
+}
+
+const SalesRouteChildren: SalesRouteChildren = {
+  SalesIdRoute: SalesIdRoute,
+  SalesIndexRoute: SalesIndexRoute,
+}
+
+const SalesRouteWithChildren = SalesRoute._addFileChildren(SalesRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -181,8 +209,7 @@ const rootRouteChildren: RootRouteChildren = {
   FavoritesRoute: FavoritesRoute,
   LoginRoute: LoginRoute,
   MapRoute: MapRoute,
-  SalesIdRoute: SalesIdRoute,
-  SalesIndexRoute: SalesIndexRoute,
+  SalesRoute: SalesRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
