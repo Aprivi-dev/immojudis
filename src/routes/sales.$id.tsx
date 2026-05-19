@@ -1,13 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2 } from "lucide-react";
 import { getSaleById } from "@/lib/queries";
-import type { AuctionSale } from "@/lib/types";
 import { formatPrice, formatDate, formatDateTime, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { FeatureBadges } from "@/components/FeatureBadges";
 import { DocumentsList } from "@/components/DocumentsList";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/sales/$id")({
   component: SaleDetailPage,
@@ -15,23 +15,17 @@ export const Route = createFileRoute("/sales/$id")({
 
 function SaleDetailPage() {
   const { id } = Route.useParams();
-  const [sale, setSale] = useState<AuctionSale | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: sale, isLoading, error } = useQuery({
+    queryKey: ["sale", id],
+    queryFn: () => getSaleById(id),
+    staleTime: 5 * 60_000,
+  });
 
-  useEffect(() => {
-    setLoading(true);
-    getSaleById(id)
-      .then(setSale)
-      .catch((e) => setError(e.message ?? "Erreur"))
-      .finally(() => setLoading(false));
-  }, [id]);
-
-  if (loading) return <main className="mx-auto max-w-5xl px-4 py-10 text-muted-foreground">Chargement…</main>;
+  if (isLoading) return <SaleDetailSkeleton />;
   if (error || !sale)
     return (
       <main className="mx-auto max-w-5xl px-4 py-10">
-        <p className="text-destructive">{error ?? "Annonce introuvable"}</p>
+        <p className="text-destructive">{error instanceof Error ? error.message : "Annonce introuvable"}</p>
         <Link to="/sales" className="mt-4 inline-block text-sm text-primary hover:underline">← Retour aux annonces</Link>
       </main>
     );
@@ -168,5 +162,26 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
       <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 text-sm font-medium text-foreground">{value}</dd>
     </div>
+  );
+}
+
+function SaleDetailSkeleton() {
+  return (
+    <main className="mx-auto max-w-5xl px-4 py-6">
+      <Skeleton className="h-4 w-20" />
+      <Skeleton className="mt-4 h-8 w-2/3" />
+      <Skeleton className="mt-2 h-4 w-1/2" />
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <Skeleton className="h-48 w-full rounded-lg" />
+          <Skeleton className="h-40 w-full rounded-lg" />
+          <Skeleton className="h-32 w-full rounded-lg" />
+        </div>
+        <aside className="space-y-4">
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-32 w-full rounded-lg" />
+        </aside>
+      </div>
+    </main>
   );
 }

@@ -1,71 +1,169 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useState, useEffect, type FormEvent } from "react";
-import type { SaleFilters as Filters } from "@/lib/types";
+import { useState, useEffect, useRef } from "react";
+import { Bell, RotateCcw, ArrowUpDown } from "lucide-react";
+import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAuth } from "@/hooks/use-auth";
+import { createAlert } from "@/lib/queries";
+
+type RawSearch = Record<string, string | number | undefined>;
 
 export function SaleFilters() {
   const navigate = useNavigate({ from: "/sales" });
-  const search = useSearch({ from: "/sales" }) as Record<string, string | number | undefined>;
-  const [local, setLocal] = useState<Filters>({});
+  const search = useSearch({ from: "/sales" }) as RawSearch;
+  const { user } = useAuth();
 
+  // Local state mirrors URL but is debounced before navigating
+  const [local, setLocal] = useState({
+    department: (search.department as string) ?? "",
+    city: (search.city as string) ?? "",
+    type: (search.type as string) ?? "",
+    max_price: search.max_price != null ? String(search.max_price) : "",
+    min_surface: search.min_surface != null ? String(search.min_surface) : "",
+    occupancy: (search.occupancy as string) ?? "",
+    min_score: search.min_score != null ? String(search.min_score) : "",
+    sort: (search.sort as string) ?? "date_asc",
+  });
+
+  // Sync down when URL changes externally (e.g. reset)
   useEffect(() => {
     setLocal({
-      department: (search.department as string) || "",
-      city: (search.city as string) || "",
-      property_type: (search.type as string) || "",
-      max_price: search.max_price ? Number(search.max_price) : undefined,
-      min_surface: search.min_surface ? Number(search.min_surface) : undefined,
-      occupancy_status: (search.occupancy as string) || "",
-      min_score: search.min_score ? Number(search.min_score) : undefined,
+      department: (search.department as string) ?? "",
+      city: (search.city as string) ?? "",
+      type: (search.type as string) ?? "",
+      max_price: search.max_price != null ? String(search.max_price) : "",
+      min_surface: search.min_surface != null ? String(search.min_surface) : "",
+      occupancy: (search.occupancy as string) ?? "",
+      min_score: search.min_score != null ? String(search.min_score) : "",
+      sort: (search.sort as string) ?? "date_asc",
     });
   }, [search]);
 
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    const next: Record<string, string | number> = {};
-    if (local.department) next.department = local.department;
-    if (local.city) next.city = local.city;
-    if (local.property_type) next.type = local.property_type;
-    if (local.max_price) next.max_price = local.max_price;
-    if (local.min_surface) next.min_surface = local.min_surface;
-    if (local.occupancy_status) next.occupancy = local.occupancy_status;
-    if (local.min_score) next.min_score = local.min_score;
-    navigate({ search: next });
-  }
+  // Debounced sync local -> URL
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    const t = setTimeout(() => {
+      const next: RawSearch = {};
+      if (local.department) next.department = local.department;
+      if (local.city) next.city = local.city;
+      if (local.type) next.type = local.type;
+      if (local.max_price) next.max_price = Number(local.max_price);
+      if (local.min_surface) next.min_surface = Number(local.min_surface);
+      if (local.occupancy) next.occupancy = local.occupancy;
+      if (local.min_score) next.min_score = Number(local.min_score);
+      if (local.sort && local.sort !== "date_asc") next.sort = local.sort;
+      navigate({ search: next, replace: true });
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [local]);
 
   function reset() {
-    setLocal({});
-    navigate({ search: {} });
+    setLocal({
+      department: "",
+      city: "",
+      type: "",
+      max_price: "",
+      min_surface: "",
+      occupancy: "",
+      min_score: "",
+      sort: "date_asc",
+    });
   }
 
-  const cls = "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
+  async function saveAsAlert() {
+    if (!user) {
+      toast.error("Connectez-vous pour créer une alerte");
+      return;
+    }
+    const hasFilter =
+      local.department || local.city || local.type || local.max_price ||
+      local.min_surface || local.occupancy || local.min_score;
+    if (!hasFilter) {
+      toast.error("Définissez au moins un filtre");
+      return;
+    }
+    const name = window.prompt("Nom de l'alerte ?", `Alerte ${local.department || local.city || local.type || ""}`.trim());
+    if (!name) return;
+    try {
+      await createAlert(user.id, {
+        name,
+        department: local.department || null,
+        city: local.city || null,
+        property_type: local.type || null,
+        max_price_eur: local.max_price ? Number(local.max_price) : null,
+        min_surface_m2: local.min_surface ? Number(local.min_surface) : null,
+        occupancy_status: local.occupancy || null,
+        min_investment_score: local.min_score ? Number(local.min_score) : null,
+      });
+      toast.success("Alerte créée");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    }
+  }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-border bg-card p-4">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
-        <input className={cls} placeholder="Département (ex: 33)" value={local.department ?? ""} onChange={(e) => setLocal({ ...local, department: e.target.value })} />
-        <input className={cls} placeholder="Ville" value={local.city ?? ""} onChange={(e) => setLocal({ ...local, city: e.target.value })} />
-        <select className={cls} value={local.property_type ?? ""} onChange={(e) => setLocal({ ...local, property_type: e.target.value })}>
-          <option value="">Tous les types</option>
-          <option value="apartment">Appartement</option>
-          <option value="house">Maison</option>
-          <option value="land">Terrain</option>
-          <option value="commercial">Commercial</option>
-          <option value="garage">Garage</option>
-        </select>
-        <input className={cls} type="number" placeholder="Prix max (€)" value={local.max_price ?? ""} onChange={(e) => setLocal({ ...local, max_price: e.target.value ? Number(e.target.value) : undefined })} />
-        <input className={cls} type="number" placeholder="Surface min (m²)" value={local.min_surface ?? ""} onChange={(e) => setLocal({ ...local, min_surface: e.target.value ? Number(e.target.value) : undefined })} />
-        <select className={cls} value={local.occupancy_status ?? ""} onChange={(e) => setLocal({ ...local, occupancy_status: e.target.value })}>
-          <option value="">Occupation</option>
-          <option value="free">Libre</option>
-          <option value="occupied">Occupé</option>
-          <option value="rented">Loué</option>
-        </select>
-        <input className={cls} type="number" placeholder="Score min" value={local.min_score ?? ""} onChange={(e) => setLocal({ ...local, min_score: e.target.value ? Number(e.target.value) : undefined })} />
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+        <Input placeholder="Département (ex: 33)" value={local.department} onChange={(e) => setLocal({ ...local, department: e.target.value })} />
+        <Input placeholder="Ville" value={local.city} onChange={(e) => setLocal({ ...local, city: e.target.value })} />
+        <Select value={local.type || "all"} onValueChange={(v) => setLocal({ ...local, type: v === "all" ? "" : v })}>
+          <SelectTrigger><SelectValue placeholder="Tous les types" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tous les types</SelectItem>
+            <SelectItem value="apartment">Appartement</SelectItem>
+            <SelectItem value="house">Maison</SelectItem>
+            <SelectItem value="land">Terrain</SelectItem>
+            <SelectItem value="commercial">Commercial</SelectItem>
+            <SelectItem value="garage">Garage</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={local.occupancy || "all"} onValueChange={(v) => setLocal({ ...local, occupancy: v === "all" ? "" : v })}>
+          <SelectTrigger><SelectValue placeholder="Occupation" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Occupation</SelectItem>
+            <SelectItem value="free">Libre</SelectItem>
+            <SelectItem value="occupied">Occupé</SelectItem>
+            <SelectItem value="rented">Loué</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input type="number" placeholder="Prix max (€)" value={local.max_price} onChange={(e) => setLocal({ ...local, max_price: e.target.value })} />
+        <Input type="number" placeholder="Surface min (m²)" value={local.min_surface} onChange={(e) => setLocal({ ...local, min_surface: e.target.value })} />
+        <Input type="number" placeholder="Score min" value={local.min_score} onChange={(e) => setLocal({ ...local, min_score: e.target.value })} />
+        <Select value={local.sort} onValueChange={(v) => setLocal({ ...local, sort: v })}>
+          <SelectTrigger>
+            <ArrowUpDown className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="date_asc">Date (plus proche)</SelectItem>
+            <SelectItem value="date_desc">Date (plus lointaine)</SelectItem>
+            <SelectItem value="price_asc">Prix croissant</SelectItem>
+            <SelectItem value="price_desc">Prix décroissant</SelectItem>
+            <SelectItem value="score_desc">Meilleur score</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-      <div className="mt-3 flex gap-2">
-        <button type="submit" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Filtrer</button>
-        <button type="button" onClick={reset} className="rounded-md border border-border bg-background px-4 py-2 text-sm hover:bg-accent">Réinitialiser</button>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={reset}>
+          <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser
+        </Button>
+        <Button variant="secondary" size="sm" onClick={saveAsAlert}>
+          <Bell className="h-3.5 w-3.5" /> Créer une alerte avec ces filtres
+        </Button>
       </div>
-    </form>
+    </div>
   );
 }

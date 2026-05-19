@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Search, Map as MapIcon, Bell, TrendingUp } from "lucide-react";
 import { getStats } from "@/lib/queries";
 import { formatDate } from "@/lib/format";
@@ -15,10 +15,11 @@ export const Route = createFileRoute("/")({
 });
 
 function HomePage() {
-  const [stats, setStats] = useState<{ totalSales: number; departments: number; nextSale: string | null } | null>(null);
-  useEffect(() => {
-    getStats().then(setStats).catch(() => setStats(null));
-  }, []);
+  const { data: stats } = useQuery({
+    queryKey: ["stats"],
+    queryFn: getStats,
+    staleTime: 5 * 60_000,
+  });
 
   return (
     <main>

@@ -44,6 +44,8 @@ export type SaleFilters = {
   min_score?: number;
 };
 
+export type SortKey = "date_asc" | "date_desc" | "price_asc" | "price_desc" | "score_desc";
+
 export type UserAlert = {
   id: string;
   user_id: string;
