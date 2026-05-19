@@ -1,9 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { getFavorites } from "@/lib/queries";
-import type { AuctionSale } from "@/lib/types";
 import { SaleCard } from "@/components/SaleCard";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/favorites")({
   component: FavoritesPage,
@@ -12,17 +13,17 @@ export const Route = createFileRoute("/favorites")({
 function FavoritesPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [sales, setSales] = useState<AuctionSale[]>([]);
-  const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
-    if (loading) return;
-    if (!user) {
-      navigate({ to: "/login" });
-      return;
-    }
-    getFavorites(user.id).then(setSales).finally(() => setFetching(false));
-  }, [user, loading, navigate]);
+    if (!loading && !user) navigate({ to: "/login" });
+  }, [loading, user, navigate]);
+
+  const { data: sales = [], isLoading: fetching } = useQuery({
+    queryKey: ["favorites", user?.id],
+    queryFn: () => getFavorites(user!.id),
+    enabled: !!user,
+    staleTime: 30_000,
+  });
 
   if (loading || !user) return <main className="mx-auto max-w-7xl px-4 py-10 text-muted-foreground">Chargement…</main>;
 
@@ -39,7 +40,11 @@ function FavoritesPage() {
         </div>
       )}
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {sales.map((s) => <SaleCard key={s.id} sale={s} />)}
+        {fetching
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-64 w-full rounded-lg" />
+            ))
+          : sales.map((s) => <SaleCard key={s.id} sale={s} />)}
       </div>
     </main>
   );
