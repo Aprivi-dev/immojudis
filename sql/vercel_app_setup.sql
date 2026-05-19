@@ -36,7 +36,6 @@ SELECT
     latitude,
     longitude,
     occupancy_status,
-    occupancy_details,
     habitable_surface_m2,
     carrez_surface_m2,
     land_surface_m2,
