@@ -9,6 +9,8 @@ import {
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { Navbar } from "@/components/Navbar";
+import { Toaster } from "sonner";
 
 function NotFoundComponent() {
   return (
@@ -113,7 +115,11 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <Outlet />
+        <Toaster position="top-right" richColors />
+      </div>
     </QueryClientProvider>
   );
 }
