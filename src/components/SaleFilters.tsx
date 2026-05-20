@@ -137,7 +137,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-border bg-card p-4" suppressHydrationWarning>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         <Input placeholder="Département (ex: 33)" value={local.department} onChange={(e) => setLocal({ ...local, department: e.target.value })} />
         <Input placeholder="Ville" value={local.city} onChange={(e) => setLocal({ ...local, city: e.target.value })} />
