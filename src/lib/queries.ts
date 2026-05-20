@@ -61,6 +61,37 @@ export async function getSalesWithCoords(limit = 500): Promise<AuctionSale[]> {
   return (data ?? []) as AuctionSale[];
 }
 
+/**
+ * Fetch sales within a bounding box around (lat,lng).
+ * radiusKm is the half-side of the bbox; the caller is expected to filter
+ * by exact haversine distance afterwards if needed.
+ */
+export async function getNearbySales(
+  lat: number,
+  lng: number,
+  radiusKm: number,
+  excludeId?: string,
+  limit = 50,
+): Promise<AuctionSale[]> {
+  assertCloudConfigured();
+  // 1° latitude ≈ 111 km. 1° longitude ≈ 111 km × cos(lat).
+  const dLat = radiusKm / 111;
+  const dLng = radiusKm / (111 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
+  let q = supabase
+    .from(VIEW)
+    .select("*")
+    .gte("latitude", lat - dLat)
+    .lte("latitude", lat + dLat)
+    .gte("longitude", lng - dLng)
+    .lte("longitude", lng + dLng)
+    .order("sale_date", { ascending: true })
+    .limit(limit);
+  if (excludeId) q = q.neq("id", excludeId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as AuctionSale[];
+}
+
 export async function getStats(): Promise<{ totalSales: number; departments: number; nextSale: string | null }> {
   assertCloudConfigured();
   const { count } = await supabase.from(VIEW).select("*", { count: "exact", head: true });
