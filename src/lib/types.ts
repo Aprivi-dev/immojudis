@@ -61,6 +61,12 @@ export type SaleFilters = {
   occupancy_status?: string;
   min_score?: number;
   tribunal_code?: string;
+  // Client-side advanced filters
+  max_price_per_m2?: number;
+  min_yield_pct?: number;
+  around_address?: string;
+  around_radius_km?: number;
+  only_new?: boolean;
 };
 
 export type SortKey =
