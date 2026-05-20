@@ -226,3 +226,47 @@ function SaleDetailSkeleton() {
     </main>
   );
 }
+
+function SaleNotFoundComponent() {
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-16 text-center">
+      <h1 className="text-2xl font-bold text-foreground">Annonce introuvable</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Cette vente n'existe plus ou a été retirée. Elle peut avoir été adjugée ou supprimée par la source.
+      </p>
+      <Link
+        to="/sales"
+        className="mt-6 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+      >
+        ← Retour aux annonces
+      </Link>
+    </main>
+  );
+}
+
+function SaleErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+  const router = useRouter();
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-16 text-center">
+      <h1 className="text-2xl font-bold text-foreground">Impossible d'afficher cette annonce</h1>
+      <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+      <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <button
+          onClick={() => {
+            router.invalidate();
+            reset();
+          }}
+          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          Réessayer
+        </button>
+        <Link
+          to="/sales"
+          className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          ← Retour aux annonces
+        </Link>
+      </div>
+    </main>
+  );
+}
