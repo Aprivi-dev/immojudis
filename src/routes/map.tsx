@@ -120,7 +120,21 @@ function MapPage() {
         <SaleFiltersForm from="/map" />
       </div>
 
-      <SaleMap sales={filtered} />
+      <SaleMap
+        sales={filtered}
+        fitToMarkers={Boolean(
+          search.department ||
+            search.city ||
+            search.type ||
+            search.max_price ||
+            search.min_surface ||
+            search.occupancy ||
+            search.min_score ||
+            search.max_price_per_m2 ||
+            search.min_yield ||
+            (center && search.around_radius != null),
+        )}
+      />
 
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><Dot color="#10b981" />Score ≥ 80</span>
