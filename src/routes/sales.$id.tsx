@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2, FileText } from "lucide-react";
 import { getSaleById } from "@/lib/queries";
@@ -16,6 +16,8 @@ import type { SaleDocumentRich } from "@/lib/types";
 
 export const Route = createFileRoute("/sales/$id")({
   component: SaleDetailPage,
+  errorComponent: SaleErrorComponent,
+  notFoundComponent: SaleNotFoundComponent,
 });
 
 function SaleDetailPage() {
@@ -27,13 +29,8 @@ function SaleDetailPage() {
   });
 
   if (isLoading) return <SaleDetailSkeleton />;
-  if (error || !sale)
-    return (
-      <main className="mx-auto max-w-5xl px-4 py-10">
-        <p className="text-destructive">{error instanceof Error ? error.message : "Annonce introuvable"}</p>
-        <Link to="/sales" className="mt-4 inline-block text-sm text-primary hover:underline">← Retour aux annonces</Link>
-      </main>
-    );
+  if (error) throw error;
+  if (!sale) return <SaleNotFoundComponent />;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
