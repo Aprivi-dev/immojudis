@@ -15,6 +15,7 @@ export function Navbar() {
         </Link>
         <nav className="flex items-center gap-1 text-sm">
           <NavLink to="/sales">Annonces</NavLink>
+          <NavLink to="/sales/new">Nouveautés</NavLink>
           <NavLink to="/map">Carte</NavLink>
           <NavLink to="/favorites">Favoris</NavLink>
           <NavLink to="/alerts">Alertes</NavLink>
