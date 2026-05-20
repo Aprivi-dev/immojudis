@@ -3,6 +3,7 @@ import { Locate } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
+import type * as L from "leaflet";
 import type { LatLngExpression, Map, Marker, Layer } from "leaflet";
 import type { AuctionSale } from "@/lib/types";
 import { formatPrice, formatDate, propertyTypeLabel } from "@/lib/format";
