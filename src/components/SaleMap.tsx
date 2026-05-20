@@ -57,7 +57,7 @@ function buildPopup(s: AuctionSale): string {
     </div>`;
 }
 
-export function SaleMap({ sales }: { sales: AuctionSale[] }) {
+export function SaleMap({ sales, fitToMarkers = false }: { sales: AuctionSale[]; fitToMarkers?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const clusterRef = useRef<FeatureGroup | null>(null);
@@ -67,7 +67,11 @@ export function SaleMap({ sales }: { sales: AuctionSale[] }) {
     if (!containerRef.current || mapRef.current) return;
     let cancelled = false;
 
-    Promise.all([import("leaflet"), import("leaflet.markercluster")]).then(([{ default: L }]) => {
+    (async () => {
+      const L = (await import("leaflet")).default;
+      // leaflet.markercluster est un plugin qui attend `L` en global
+      (window as unknown as { L: typeof L }).L = L;
+      await import("leaflet.markercluster");
       if (cancelled || !containerRef.current || mapRef.current) return;
 
       const map = L.map(containerRef.current, { preferCanvas: true }).setView([46.6, 2.4], 6);
@@ -94,7 +98,7 @@ export function SaleMap({ sales }: { sales: AuctionSale[] }) {
       map.addLayer(cluster);
       clusterRef.current = cluster;
       mapRef.current = map;
-    });
+    })();
 
     return () => {
       cancelled = true;
@@ -127,13 +131,11 @@ export function SaleMap({ sales }: { sales: AuctionSale[] }) {
         markers.push(m);
       }
       (clusterRef.current as unknown as { addLayers: (m: Marker[]) => void }).addLayers(markers);
-      if (points.length > 0) {
+      if (fitToMarkers && points.length > 0) {
         mapRef.current.fitBounds(L.latLngBounds(points).pad(0.15), { maxZoom: 13 });
-      } else {
-        mapRef.current.setView([46.6, 2.4], 6);
       }
     });
-  }, [sales]);
+  }, [sales, fitToMarkers]);
 
   const locateMe = () => {
     if (!mapRef.current || !navigator.geolocation) return;
