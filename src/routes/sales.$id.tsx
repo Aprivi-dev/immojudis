@@ -51,7 +51,7 @@ function SaleDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <ScoreBadge score={sale.investment_score} />
+          <ScoreBadge score={sale.investment_score} confidence={sale.surface_confidence} />
         </div>
       </div>
 
