@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { getSales } from "@/lib/queries";
 import type { SaleFilters, SortKey } from "@/lib/types";
 import { SaleCard } from "@/components/SaleCard";
 import { SaleFilters as SaleFiltersForm } from "@/components/SaleFilters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { estimateGrossYieldPct, geocodeAddress, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
 
 type Search = {
   department?: string;
@@ -15,6 +17,10 @@ type Search = {
   occupancy?: string;
   min_score?: number;
   sort?: string;
+  max_price_per_m2?: number;
+  min_yield?: number;
+  around_address?: string;
+  around_radius?: number;
 };
 
 export const Route = createFileRoute("/sales/")({
@@ -27,6 +33,10 @@ export const Route = createFileRoute("/sales/")({
     occupancy: search.occupancy as string | undefined,
     min_score: search.min_score ? Number(search.min_score) : undefined,
     sort: search.sort as string | undefined,
+    max_price_per_m2: search.max_price_per_m2 ? Number(search.max_price_per_m2) : undefined,
+    min_yield: search.min_yield ? Number(search.min_yield) : undefined,
+    around_address: search.around_address as string | undefined,
+    around_radius: search.around_radius ? Number(search.around_radius) : undefined,
   }),
   head: () => ({
     meta: [
@@ -55,12 +65,58 @@ function SalesPage() {
     staleTime: 60_000,
   });
 
+  // Geocode "around address" when provided
+  const [center, setCenter] = useState<GeoPoint | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
+  useEffect(() => {
+    if (!search.around_address) {
+      setCenter(null);
+      return;
+    }
+    let cancelled = false;
+    setGeocoding(true);
+    geocodeAddress(search.around_address).then((p) => {
+      if (cancelled) return;
+      setCenter(p);
+      setGeocoding(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [search.around_address]);
+
+  const filtered = useMemo(() => {
+    return sales.filter((s) => {
+      const surface = s.app_surface_m2 ?? s.habitable_surface_m2 ?? s.carrez_surface_m2;
+      if (search.max_price_per_m2 != null) {
+        const ppm = pricePerM2(s.starting_price_eur, surface);
+        if (ppm == null || ppm > search.max_price_per_m2) return false;
+      }
+      if (search.min_yield != null) {
+        const y = estimateGrossYieldPct(s.starting_price_eur, surface, s.department);
+        if (y == null || y < search.min_yield) return false;
+      }
+      if (center && search.around_radius != null) {
+        if (s.latitude == null || s.longitude == null) return false;
+        const d = haversineKm(center, { lat: s.latitude, lng: s.longitude });
+        if (d > search.around_radius) return false;
+      }
+      return true;
+    });
+  }, [sales, search.max_price_per_m2, search.min_yield, search.around_radius, center]);
+
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-foreground">Annonces</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {isLoading ? "Chargement…" : `${sales.length} résultat${sales.length > 1 ? "s" : ""}`}
+          {isLoading
+            ? "Chargement…"
+            : `${filtered.length} résultat${filtered.length > 1 ? "s" : ""}${filtered.length !== sales.length ? ` (sur ${sales.length})` : ""}`}
+          {geocoding && " · géocodage…"}
+          {center && search.around_radius != null && (
+            <> · autour de <span className="font-medium text-foreground">{center.label}</span> ({search.around_radius} km)</>
+          )}
         </p>
       </div>
 
@@ -74,7 +130,7 @@ function SalesPage() {
         </div>
       )}
 
-      {!isLoading && sales.length === 0 && !error && (
+      {!isLoading && filtered.length === 0 && !error && (
         <div className="rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground">
           Aucune annonce ne correspond à vos critères.
         </div>
@@ -83,7 +139,7 @@ function SalesPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {isLoading
           ? Array.from({ length: 8 }).map((_, i) => <SaleCardSkeleton key={i} />)
-          : sales.map((s) => <SaleCard key={s.id} sale={s} />)}
+          : filtered.map((s) => <SaleCard key={s.id} sale={s} />)}
       </div>
     </main>
   );

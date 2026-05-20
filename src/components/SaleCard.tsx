@@ -4,14 +4,24 @@ import type { AuctionSale } from "@/lib/types";
 import { formatPrice, formatDate, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { ScoreBadge } from "./ScoreBadge";
 import { FeatureBadges } from "./FeatureBadges";
+import { SaleCountdown, isNew } from "./SaleCountdown";
 
 export function SaleCard({ sale }: { sale: AuctionSale }) {
   const surface = sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2;
   const riskCount = sale.risks?.length ?? 0;
+  const fresh = isNew(sale.created_at);
   return (
     <article className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 shadow-sm transition hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+            {fresh && (
+              <span className="inline-flex items-center rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+                Nouveau
+              </span>
+            )}
+            <SaleCountdown date={sale.sale_date} />
+          </div>
           <h3 className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
             {sale.title ?? propertyTypeLabel(sale.property_type)}
           </h3>
