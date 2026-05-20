@@ -16,9 +16,9 @@ import { createAlert } from "@/lib/queries";
 
 type RawSearch = Record<string, string | number | undefined>;
 
-export function SaleFilters() {
-  const navigate = useNavigate({ from: "/sales" });
-  const search = useSearch({ from: "/sales" }) as RawSearch;
+export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = {}) {
+  const navigate = useNavigate({ from });
+  const search = useSearch({ strict: false }) as RawSearch;
   const { user } = useAuth();
 
   // Local state mirrors URL but is debounced before navigating
