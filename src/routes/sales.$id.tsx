@@ -8,6 +8,7 @@ import { FeatureBadges } from "@/components/FeatureBadges";
 import { DocumentsList } from "@/components/DocumentsList";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { InvestmentAnalysis } from "@/components/InvestmentAnalysis";
+import { ProfitabilityCalculator } from "@/components/ProfitabilityCalculator";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SaleDocumentRich } from "@/lib/types";
@@ -87,6 +88,8 @@ function SaleDetailPage() {
           </section>
 
           <InvestmentAnalysis sale={sale} />
+
+          <ProfitabilityCalculator sale={sale} />
 
           <section className="rounded-lg border border-border bg-card p-5">
             <h2 className="text-lg font-semibold">Documents</h2>
