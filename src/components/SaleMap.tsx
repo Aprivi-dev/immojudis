@@ -62,6 +62,7 @@ export function SaleMap({ sales, fitToMarkers = false }: { sales: AuctionSale[];
   const mapRef = useRef<Map | null>(null);
   const clusterRef = useRef<FeatureGroup | null>(null);
   const userMarkerRef = useRef<Layer | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -98,6 +99,7 @@ export function SaleMap({ sales, fitToMarkers = false }: { sales: AuctionSale[];
       map.addLayer(cluster);
       clusterRef.current = cluster;
       mapRef.current = map;
+      setReady(true);
     })();
 
     return () => {
@@ -135,7 +137,7 @@ export function SaleMap({ sales, fitToMarkers = false }: { sales: AuctionSale[];
         mapRef.current.fitBounds(L.latLngBounds(points).pad(0.15), { maxZoom: 13 });
       }
     });
-  }, [sales, fitToMarkers]);
+  }, [sales, fitToMarkers, ready]);
 
   const locateMe = () => {
     if (!mapRef.current || !navigator.geolocation) return;
