@@ -1,3 +1,5 @@
+const MAP_LIMIT = 300;
+
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -61,8 +63,8 @@ function MapPage() {
 
   const { data: sales = [], isLoading } = useQuery({
     queryKey: ["sales-map", filters, sort],
-    // On charge plus de résultats pour la carte (vue d'ensemble)
-    queryFn: () => getSales(filters, 500, sort),
+    // On plafonne pour ne pas saturer le client mobile ; un message le signale.
+    queryFn: () => getSales(filters, MAP_LIMIT, sort),
     staleTime: 60_000,
   });
 
@@ -112,6 +114,9 @@ function MapPage() {
             : `${filtered.length} annonce${filtered.length > 1 ? "s" : ""} géolocalisée${filtered.length > 1 ? "s" : ""}`}
           {center && search.around_radius != null && (
             <> · autour de <span className="font-medium text-foreground">{center.label}</span> ({search.around_radius} km)</>
+          )}
+          {sales.length >= MAP_LIMIT && (
+            <> · <span className="text-amber-600 dark:text-amber-400">affichage limité aux {MAP_LIMIT} premiers résultats, affinez les filtres</span></>
           )}
         </p>
       </div>

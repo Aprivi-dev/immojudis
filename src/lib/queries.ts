@@ -22,10 +22,15 @@ export async function getSales(
   filters: SaleFilters = {},
   limit = 100,
   sort: SortKey = "date_asc",
+  offset = 0,
 ): Promise<AuctionSale[]> {
   assertCloudConfigured();
   const s = SORT_MAP[sort];
-  let q = supabase.from(VIEW).select("*").order(s.column, { ascending: s.ascending, nullsFirst: false }).limit(limit);
+  let q = supabase
+    .from(VIEW)
+    .select("*")
+    .order(s.column, { ascending: s.ascending, nullsFirst: false })
+    .range(offset, offset + limit - 1);
 
   if (filters.department) q = q.eq("department", filters.department);
   if (filters.city) q = q.ilike("city", `%${filters.city}%`);

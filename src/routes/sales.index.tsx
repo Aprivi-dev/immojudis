@@ -1,12 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { getSales } from "@/lib/queries";
 import type { SaleFilters, SortKey } from "@/lib/types";
 import { SaleCard } from "@/components/SaleCard";
 import { SaleFilters as SaleFiltersForm } from "@/components/SaleFilters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { estimateGrossYieldPct, geocodeAddress, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
+
+const PAGE_SIZE = 50;
 
 type Search = {
   department?: string;
@@ -59,11 +62,22 @@ function SalesPage() {
     min_score: search.min_score,
   };
   const sort = (search.sort as SortKey) || "date_asc";
-  const { data: sales = [], isLoading, error } = useQuery({
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    error,
+  } = useInfiniteQuery({
     queryKey: ["sales", filters, sort],
-    queryFn: () => getSales(filters, 100, sort),
+    queryFn: ({ pageParam = 0 }) => getSales(filters, PAGE_SIZE, sort, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
     staleTime: 60_000,
   });
+  const sales = useMemo(() => data?.pages.flat() ?? [], [data]);
 
   // Geocode "around address" when provided
   const [center, setCenter] = useState<GeoPoint | null>(null);
@@ -141,6 +155,18 @@ function SalesPage() {
           ? Array.from({ length: 8 }).map((_, i) => <SaleCardSkeleton key={i} />)
           : filtered.map((s) => <SaleCard key={s.id} sale={s} />)}
       </div>
+
+      {!isLoading && hasNextPage && (
+        <div className="mt-6 flex justify-center">
+          <Button
+            variant="outline"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+          >
+            {isFetchingNextPage ? "Chargement…" : "Charger plus d'annonces"}
+          </Button>
+        </div>
+      )}
     </main>
   );
 }

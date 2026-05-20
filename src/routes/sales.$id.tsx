@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2, FileText } from "lucide-react";
 import { getSaleById } from "@/lib/queries";
@@ -16,6 +16,8 @@ import type { SaleDocumentRich } from "@/lib/types";
 
 export const Route = createFileRoute("/sales/$id")({
   component: SaleDetailPage,
+  errorComponent: SaleErrorComponent,
+  notFoundComponent: SaleNotFoundComponent,
 });
 
 function SaleDetailPage() {
@@ -27,13 +29,8 @@ function SaleDetailPage() {
   });
 
   if (isLoading) return <SaleDetailSkeleton />;
-  if (error || !sale)
-    return (
-      <main className="mx-auto max-w-5xl px-4 py-10">
-        <p className="text-destructive">{error instanceof Error ? error.message : "Annonce introuvable"}</p>
-        <Link to="/sales" className="mt-4 inline-block text-sm text-primary hover:underline">← Retour aux annonces</Link>
-      </main>
-    );
+  if (error) throw error;
+  if (!sale) return <SaleNotFoundComponent />;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
@@ -54,7 +51,7 @@ function SaleDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <ScoreBadge score={sale.investment_score} />
+          <ScoreBadge score={sale.investment_score} confidence={sale.surface_confidence} />
         </div>
       </div>
 
@@ -225,6 +222,50 @@ function SaleDetailSkeleton() {
           <Skeleton className="h-24 w-full rounded-lg" />
           <Skeleton className="h-32 w-full rounded-lg" />
         </aside>
+      </div>
+    </main>
+  );
+}
+
+function SaleNotFoundComponent() {
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-16 text-center">
+      <h1 className="text-2xl font-bold text-foreground">Annonce introuvable</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Cette vente n'existe plus ou a été retirée. Elle peut avoir été adjugée ou supprimée par la source.
+      </p>
+      <Link
+        to="/sales"
+        className="mt-6 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+      >
+        ← Retour aux annonces
+      </Link>
+    </main>
+  );
+}
+
+function SaleErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+  const router = useRouter();
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-16 text-center">
+      <h1 className="text-2xl font-bold text-foreground">Impossible d'afficher cette annonce</h1>
+      <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+      <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <button
+          onClick={() => {
+            router.invalidate();
+            reset();
+          }}
+          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          Réessayer
+        </button>
+        <Link
+          to="/sales"
+          className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          ← Retour aux annonces
+        </Link>
       </div>
     </main>
   );

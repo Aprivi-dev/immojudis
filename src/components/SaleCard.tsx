@@ -33,7 +33,7 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
             </span>
           </div>
         </div>
-        <ScoreBadge score={sale.investment_score} />
+        <ScoreBadge score={sale.investment_score} confidence={sale.surface_confidence} />
       </div>
 
       <div className="flex items-end justify-between">
