@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import { Bell, RotateCcw, ArrowUpDown } from "lucide-react";
+import { Bell, RotateCcw, ArrowUpDown, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,10 @@ export function SaleFilters() {
     occupancy: (search.occupancy as string) ?? "",
     min_score: search.min_score != null ? String(search.min_score) : "",
     sort: (search.sort as string) ?? "date_asc",
+    max_price_per_m2: search.max_price_per_m2 != null ? String(search.max_price_per_m2) : "",
+    min_yield: search.min_yield != null ? String(search.min_yield) : "",
+    around_address: (search.around_address as string) ?? "",
+    around_radius: search.around_radius != null ? String(search.around_radius) : "",
   });
 
   // Sync down when URL changes externally (e.g. reset)
@@ -44,8 +48,18 @@ export function SaleFilters() {
       occupancy: (search.occupancy as string) ?? "",
       min_score: search.min_score != null ? String(search.min_score) : "",
       sort: (search.sort as string) ?? "date_asc",
+      max_price_per_m2: search.max_price_per_m2 != null ? String(search.max_price_per_m2) : "",
+      min_yield: search.min_yield != null ? String(search.min_yield) : "",
+      around_address: (search.around_address as string) ?? "",
+      around_radius: search.around_radius != null ? String(search.around_radius) : "",
     });
   }, [search]);
+
+  const [advancedOpen, setAdvancedOpen] = useState(
+    Boolean(
+      search.max_price_per_m2 || search.min_yield || search.around_address || search.around_radius,
+    ),
+  );
 
   // Debounced sync local -> URL
   const firstRun = useRef(true);
@@ -64,6 +78,10 @@ export function SaleFilters() {
       if (local.occupancy) next.occupancy = local.occupancy;
       if (local.min_score) next.min_score = Number(local.min_score);
       if (local.sort && local.sort !== "date_asc") next.sort = local.sort;
+      if (local.max_price_per_m2) next.max_price_per_m2 = Number(local.max_price_per_m2);
+      if (local.min_yield) next.min_yield = Number(local.min_yield);
+      if (local.around_address) next.around_address = local.around_address;
+      if (local.around_radius) next.around_radius = Number(local.around_radius);
       navigate({ search: next, replace: true });
     }, 350);
     return () => clearTimeout(t);
@@ -80,6 +98,10 @@ export function SaleFilters() {
       occupancy: "",
       min_score: "",
       sort: "date_asc",
+      max_price_per_m2: "",
+      min_yield: "",
+      around_address: "",
+      around_radius: "",
     });
   }
 
@@ -164,7 +186,41 @@ export function SaleFilters() {
         <Button variant="secondary" size="sm" onClick={saveAsAlert}>
           <Bell className="h-3.5 w-3.5" /> Créer une alerte avec ces filtres
         </Button>
+        <Button variant="ghost" size="sm" onClick={() => setAdvancedOpen((v) => !v)}>
+          <SlidersHorizontal className="h-3.5 w-3.5" /> Filtres avancés {advancedOpen ? "▴" : "▾"}
+        </Button>
       </div>
+
+      {advancedOpen && (
+        <div className="mt-3 grid grid-cols-1 gap-3 rounded-md border border-dashed border-border bg-muted/30 p-3 md:grid-cols-2 lg:grid-cols-4">
+          <Input
+            type="number"
+            placeholder="Prix max €/m²"
+            value={local.max_price_per_m2}
+            onChange={(e) => setLocal({ ...local, max_price_per_m2: e.target.value })}
+          />
+          <Input
+            type="number"
+            placeholder="Rendement min %"
+            value={local.min_yield}
+            onChange={(e) => setLocal({ ...local, min_yield: e.target.value })}
+          />
+          <Input
+            placeholder="Autour de l'adresse"
+            value={local.around_address}
+            onChange={(e) => setLocal({ ...local, around_address: e.target.value })}
+          />
+          <Input
+            type="number"
+            placeholder="Rayon (km)"
+            value={local.around_radius}
+            onChange={(e) => setLocal({ ...local, around_radius: e.target.value })}
+          />
+          <p className="col-span-full text-[11px] text-muted-foreground">
+            Rendement = estimation brute selon loyer médian du département (frais d'enchère 10 % inclus). Distance via api-adresse.data.gouv.fr.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
