@@ -126,7 +126,7 @@ export function SaleMap({ sales }: { sales: AuctionSale[] }) {
         const m = L.marker([s.latitude, s.longitude], { icon }).bindPopup(buildPopup(s), { maxWidth: 260 });
         markers.push(m);
       }
-      clusterRef.current.addLayers(markers);
+      (clusterRef.current as unknown as { addLayers: (m: Marker[]) => void }).addLayers(markers);
       if (points.length > 0) {
         mapRef.current.fitBounds(L.latLngBounds(points).pad(0.15), { maxZoom: 13 });
       } else {
