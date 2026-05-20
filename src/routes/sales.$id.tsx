@@ -8,6 +8,7 @@ import { FeatureBadges } from "@/components/FeatureBadges";
 import { DocumentsList } from "@/components/DocumentsList";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { InvestmentAnalysis } from "@/components/InvestmentAnalysis";
+import { SaleCountdown } from "@/components/SaleCountdown";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SaleDocumentRich } from "@/lib/types";
 
@@ -151,6 +152,11 @@ function SaleDetailPage() {
           <div className="rounded-lg border border-border bg-card p-5">
             <div className="text-xs uppercase tracking-wide text-muted-foreground">Mise à prix</div>
             <div className="mt-1 text-3xl font-bold tabular-nums text-foreground">{formatPrice(sale.starting_price_eur)}</div>
+            <div className="mt-3 text-xs uppercase tracking-wide text-muted-foreground">Date de vente</div>
+            <div className="mt-1 text-sm font-medium text-foreground">{formatDate(sale.sale_date)}</div>
+            <div className="mt-3">
+              <SaleCountdown date={sale.sale_date} variant="block" />
+            </div>
           </div>
 
           <div className="rounded-lg border border-border bg-card p-5">
