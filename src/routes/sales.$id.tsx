@@ -1,14 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2, AlertTriangle, FileText } from "lucide-react";
+import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2, FileText } from "lucide-react";
 import { getSaleById } from "@/lib/queries";
 import { formatPrice, formatDate, formatDateTime, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { FeatureBadges } from "@/components/FeatureBadges";
 import { DocumentsList } from "@/components/DocumentsList";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { InvestmentAnalysis } from "@/components/InvestmentAnalysis";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { SaleRisk, SaleDocumentRich } from "@/lib/types";
+import type { SaleDocumentRich } from "@/lib/types";
 
 export const Route = createFileRoute("/sales/$id")({
   component: SaleDetailPage,
@@ -84,40 +85,7 @@ function SaleDetailPage() {
             </div>
           </section>
 
-          {(sale.investment_summary || sale.risk_notes || (sale.risks && sale.risks.length > 0)) && (
-            <section className="rounded-lg border border-border bg-card p-5">
-              <h2 className="text-lg font-semibold">Analyse d'investissement</h2>
-              {sale.investment_summary && (
-                <p className="mt-2 whitespace-pre-line text-sm text-foreground">{sale.investment_summary}</p>
-              )}
-              {sale.risks && sale.risks.length > 0 ? (
-                <ul className="mt-4 space-y-2">
-                  {sale.risks.map((r: SaleRisk, i: number) => (
-                    <li
-                      key={i}
-                      className={`flex items-start gap-2 rounded-md border p-3 text-sm ${
-                        (r.severity ?? 1) >= 3
-                          ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200"
-                          : (r.severity ?? 1) === 2
-                            ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200"
-                            : "border-border bg-secondary text-secondary-foreground"
-                      }`}
-                    >
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                      <div className="min-w-0">
-                        <div className="font-medium">{r.risk_label}</div>
-                        {r.evidence && <div className="mt-0.5 text-xs opacity-80">{r.evidence}</div>}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : sale.risk_notes ? (
-                <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
-                  <strong>Risques : </strong>{sale.risk_notes}
-                </div>
-              ) : null}
-            </section>
-          )}
+          <InvestmentAnalysis sale={sale} />
 
           <section className="rounded-lg border border-border bg-card p-5">
             <h2 className="text-lg font-semibold">Documents</h2>
