@@ -3,6 +3,7 @@ import { Calculator, ChevronDown, ChevronUp, Info, RotateCcw } from "lucide-reac
 import { computeProfitability, DEFAULTS, yieldVerdict } from "@/lib/profitability";
 import { defaultRentPerM2 } from "@/lib/geo";
 import { formatPrice } from "@/lib/format";
+import { MarketEstimate } from "@/components/MarketEstimate";
 import type { AuctionSale } from "@/lib/types";
 
 type StoredState = {
@@ -155,6 +156,11 @@ export function ProfitabilityCalculator({ sale }: { sale: AuctionSale }) {
           onChange={(v) => setState((s) => ({ ...s, works: v }))}
           hint="Estimation des rénovations"
         />
+      </div>
+
+      {/* Contexte marché DVF */}
+      <div className="mt-4">
+        <MarketEstimate sale={sale} currentPrice={state.price} surface={surface} />
       </div>
 
       {/* Verdict */}
