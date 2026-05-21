@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2, FileText } from "lucide-react";
 import { getSaleById } from "@/lib/queries";
 import { formatPrice, formatDate, formatDateTime, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
@@ -11,6 +12,8 @@ import { InvestmentAnalysis } from "@/components/InvestmentAnalysis";
 import { ProfitabilityCalculator } from "@/components/ProfitabilityCalculator";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleContextMap } from "@/components/SaleContextMap";
+import { MapThumbnail } from "@/components/MapThumbnail";
+import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SaleDocumentRich } from "@/lib/types";
 
@@ -27,6 +30,10 @@ function SaleDetailPage() {
     queryFn: () => getSaleById(id),
     staleTime: 5 * 60_000,
   });
+
+  useEffect(() => {
+    if (sale?.id) markSaleViewed(sale.id);
+  }, [sale?.id]);
 
   if (isLoading) return <SaleDetailSkeleton />;
   if (error) throw error;
@@ -57,6 +64,18 @@ function SaleDetailPage() {
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          {(sale.latitude != null && sale.longitude != null) && (
+            <section className="overflow-hidden rounded-lg border border-border bg-card">
+              <MapThumbnail
+                lat={sale.latitude}
+                lng={sale.longitude}
+                zoom={16}
+                className="h-48 w-full sm:h-64"
+                alt={`Localisation ${sale.city ?? ""}`}
+              />
+            </section>
+          )}
+
           <section className="rounded-lg border border-border bg-card p-5">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <Stat icon={<Calendar className="h-4 w-4" />} label="Date de vente" value={formatDate(sale.sale_date)} />
