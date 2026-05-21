@@ -13,6 +13,7 @@ import { ProfitabilityCalculator } from "@/components/ProfitabilityCalculator";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleContextMap } from "@/components/SaleContextMap";
 import { MapThumbnail } from "@/components/MapThumbnail";
+import { SourceImage } from "@/components/SourceImage";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SaleDocumentRich } from "@/lib/types";
@@ -64,15 +65,28 @@ function SaleDetailPage() {
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          {(sale.latitude != null && sale.longitude != null) && (
-            <section className="overflow-hidden rounded-lg border border-border bg-card">
-              <MapThumbnail
-                lat={sale.latitude}
-                lng={sale.longitude}
-                zoom={16}
-                className="h-48 w-full sm:h-64"
-                alt={`Localisation ${sale.city ?? ""}`}
-              />
+          {(sale.source_url || (sale.latitude != null && sale.longitude != null)) && (
+            <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {sale.source_url && (
+                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                  <SourceImage
+                    sourceUrl={sale.source_url}
+                    alt={sale.title ?? `Photo ${sale.city ?? ""}`}
+                    className="h-48 w-full sm:h-64"
+                  />
+                </div>
+              )}
+              {sale.latitude != null && sale.longitude != null && (
+                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                  <MapThumbnail
+                    lat={sale.latitude}
+                    lng={sale.longitude}
+                    zoom={16}
+                    className="h-48 w-full sm:h-64"
+                    alt={`Localisation ${sale.city ?? ""}`}
+                  />
+                </div>
+              )}
             </section>
           )}
 
