@@ -6,7 +6,12 @@ const CONFIGURATION_ERROR =
   "La connexion Lovable Cloud est absente. Rechargez la configuration Cloud pour afficher les données.";
 
 function assertCloudConfigured() {
-  if (!isSupabaseConfigured) throw new Error(CONFIGURATION_ERROR);
+  if (isSupabaseConfigured) return true;
+  // On the SSR worker the env may not be hydrated yet — return false so
+  // callers can short-circuit with empty results and let the browser
+  // refetch once the user session and env are available.
+  if (typeof window === "undefined") return false;
+  throw new Error(CONFIGURATION_ERROR);
 }
 
 const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst?: boolean }> = {
@@ -24,7 +29,7 @@ export async function getSales(
   sort: SortKey = "date_asc",
   offset = 0,
 ): Promise<AuctionSale[]> {
-  assertCloudConfigured();
+  if (!assertCloudConfigured()) return [];
   const s = SORT_MAP[sort];
   let q = supabase
     .from(VIEW)
@@ -47,14 +52,14 @@ export async function getSales(
 }
 
 export async function getSaleById(id: string): Promise<AuctionSale | null> {
-  assertCloudConfigured();
+  if (!assertCloudConfigured()) return null;
   const { data, error } = await supabase.from(VIEW).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   return data as AuctionSale | null;
 }
 
 export async function getSalesWithCoords(limit = 500): Promise<AuctionSale[]> {
-  assertCloudConfigured();
+  if (!assertCloudConfigured()) return [];
   const { data, error } = await supabase
     .from(VIEW)
     .select("*")
@@ -78,7 +83,7 @@ export async function getNearbySales(
   excludeId?: string,
   limit = 50,
 ): Promise<AuctionSale[]> {
-  assertCloudConfigured();
+  if (!assertCloudConfigured()) return [];
   // 1° latitude ≈ 111 km. 1° longitude ≈ 111 km × cos(lat).
   const dLat = radiusKm / 111;
   const dLng = radiusKm / (111 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
@@ -98,7 +103,7 @@ export async function getNearbySales(
 }
 
 export async function getStats(): Promise<{ totalSales: number; departments: number; nextSale: string | null }> {
-  assertCloudConfigured();
+  if (!assertCloudConfigured()) return { totalSales: 0, departments: 0, nextSale: null };
   const { count } = await supabase.from(VIEW).select("*", { count: "exact", head: true });
   const { data: deps } = await supabase.from(VIEW).select("department");
   const uniqueDeps = new Set((deps ?? []).map((r: { department: string | null }) => r.department).filter(Boolean));
@@ -117,7 +122,7 @@ export async function getStats(): Promise<{ totalSales: number; departments: num
 
 // Favorites
 export async function getFavorites(userId: string): Promise<AuctionSale[]> {
-  assertCloudConfigured();
+  if (!assertCloudConfigured()) return [];
   const { data: favs, error } = await supabase
     .from("user_favorites")
     .select("sale_id")
@@ -131,7 +136,7 @@ export async function getFavorites(userId: string): Promise<AuctionSale[]> {
 }
 
 export async function getFavoriteIds(userId: string): Promise<Set<string>> {
-  assertCloudConfigured();
+  if (!assertCloudConfigured()) return new Set();
   const { data, error } = await supabase
     .from("user_favorites")
     .select("sale_id")
@@ -160,7 +165,7 @@ export async function removeFavorite(userId: string, saleId: string) {
 
 // Alerts
 export async function getAlerts(userId: string): Promise<UserAlert[]> {
-  assertCloudConfigured();
+  if (!assertCloudConfigured()) return [];
   const { data, error } = await supabase
     .from("user_alerts")
     .select("*")
