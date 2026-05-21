@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2, FileText } from "lucide-react";
+import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2, FileText, ArrowLeft, ChevronRight } from "lucide-react";
 import { getSaleById } from "@/lib/queries";
 import { formatPrice, formatDate, formatDateTime, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { ScoreBadge } from "@/components/ScoreBadge";
@@ -40,62 +40,114 @@ function SaleDetailPage() {
   if (error) throw error;
   if (!sale) return <SaleNotFoundComponent />;
 
-  return (
-    <main className="mx-auto max-w-5xl px-4 py-6">
-      <Link to="/sales" className="text-sm text-muted-foreground hover:text-foreground">← Retour</Link>
+  const location = [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
+  const referenceLabel = sale.title ?? propertyTypeLabel(sale.property_type);
 
-      <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">{sale.title ?? propertyTypeLabel(sale.property_type)}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{[sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ")}</span>
-            {sale.tribunal && <span className="inline-flex items-center gap-1"><Scale className="h-3.5 w-3.5" />{sale.tribunal}</span>}
-            {sale.department && <span className="inline-flex items-center gap-1"><Building2 className="h-3.5 w-3.5" />Dépt. {sale.department}</span>}
+  return (
+    <main className="bg-background pb-24">
+      {/* ───────── Hero éditorial plein écran ───────── */}
+      <section className="relative isolate overflow-hidden border-b border-border">
+        {sale.source_url ? (
+          <div className="absolute inset-0 -z-10">
+            <SourceImage
+              sourceUrl={sale.source_url}
+              alt={referenceLabel}
+              className="h-full w-full"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/85 to-background/40" />
+            <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/40 to-transparent" />
+          </div>
+        ) : (
+          <div className="absolute inset-0 -z-10 bg-gradient-to-br from-surface via-background to-background" />
+        )}
+
+        <div className="mx-auto max-w-6xl px-6 pt-10 pb-16 sm:pt-14 sm:pb-24">
+          {/* Fil d'Ariane */}
+          <nav className="flex items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
+            <Link to="/sales" className="inline-flex items-center gap-1.5 transition-colors hover:text-gold-soft">
+              <ArrowLeft className="h-3 w-3" /> Annonces
+            </Link>
+            <ChevronRight className="h-3 w-3 opacity-40" />
+            <span className="text-foreground/80">{sale.city ?? sale.department ?? "Détail"}</span>
+          </nav>
+
+          {/* Eyebrow */}
+          <div className="mt-10 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-[0.3em] text-gold-soft">
+            <span className="inline-flex h-px w-8 bg-gold" />
+            <span>{propertyTypeLabel(sale.property_type)}</span>
+            {sale.department && <span className="text-muted-foreground">· Département {sale.department}</span>}
             {sale.status && (
-              <span className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-secondary-foreground">
+              <span className="rounded-none border border-gold/40 px-2 py-0.5 text-[10px] tracking-[0.2em] text-gold-soft">
                 {sale.status}
               </span>
             )}
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <ScoreBadge score={sale.investment_score} confidence={sale.surface_confidence} />
-        </div>
-      </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          {(sale.source_url || (sale.latitude != null && sale.longitude != null)) && (
-            <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {/* Titre éditorial */}
+          <h1 className="mt-5 max-w-3xl font-display text-4xl leading-[1.1] text-foreground sm:text-5xl md:text-6xl">
+            {referenceLabel}
+          </h1>
+
+          {location && (
+            <p className="mt-5 inline-flex max-w-2xl items-center gap-2 text-base text-muted-foreground">
+              <MapPin className="h-4 w-4 text-gold" />
+              {location}
+            </p>
+          )}
+
+          {/* Rangée méta + score */}
+          <div className="mt-10 flex flex-wrap items-end justify-between gap-6 border-t border-border/60 pt-6">
+            <dl className="flex flex-wrap gap-x-10 gap-y-4">
+              <HeroMeta label="Mise à prix" value={formatPrice(sale.starting_price_eur)} accent />
+              <HeroMeta label="Date de vente" value={formatDate(sale.sale_date)} />
+              <HeroMeta
+                label="Surface"
+                value={formatSurface(sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2)}
+              />
+              {sale.tribunal && <HeroMeta label="Tribunal" value={sale.tribunal} />}
+            </dl>
+            <ScoreBadge score={sale.investment_score} confidence={sale.surface_confidence} />
+          </div>
+        </div>
+      </section>
+
+      {/* ───────── Corps : éditorial + colonne offre ───────── */}
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-x-12 gap-y-10 px-6 pt-14 lg:grid-cols-[1fr_360px]">
+        {/* Colonne principale */}
+        <div className="space-y-14">
+          {/* Vignettes : carte + image secondaire */}
+          {(sale.latitude != null && sale.longitude != null) || sale.source_url ? (
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {sale.source_url && (
-                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                <Frame>
                   <SourceImage
                     sourceUrl={sale.source_url}
-                    alt={sale.title ?? `Photo ${sale.city ?? ""}`}
-                    className="h-48 w-full sm:h-64"
+                    alt={referenceLabel}
+                    className="h-56 w-full sm:h-64"
                   />
-                </div>
+                </Frame>
               )}
               {sale.latitude != null && sale.longitude != null && (
-                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                <Frame>
                   <MapThumbnail
                     lat={sale.latitude}
                     lng={sale.longitude}
                     zoom={16}
-                    className="h-48 w-full sm:h-64"
+                    className="h-56 w-full sm:h-64"
                     alt={`Localisation ${sale.city ?? ""}`}
                   />
-                </div>
+                </Frame>
               )}
             </section>
-          )}
+          ) : null}
 
-          <section className="rounded-lg border border-border bg-card p-5">
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <Stat icon={<Calendar className="h-4 w-4" />} label="Date de vente" value={formatDate(sale.sale_date)} />
-              <Stat icon={<Home className="h-4 w-4" />} label="Type" value={propertyTypeLabel(sale.property_type)} />
+          {/* Caractéristiques */}
+          <Section eyebrow="Le bien" title="Caractéristiques">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-6 border-t border-border/60 pt-8 sm:grid-cols-3">
+              <Stat icon={<Calendar className="h-3.5 w-3.5" />} label="Date de vente" value={formatDate(sale.sale_date)} />
+              <Stat icon={<Home className="h-3.5 w-3.5" />} label="Type" value={propertyTypeLabel(sale.property_type)} />
               <Stat
-                icon={<Ruler className="h-4 w-4" />}
+                icon={<Ruler className="h-3.5 w-3.5" />}
                 label={`Surface${sale.app_surface_kind ? ` (${sale.app_surface_kind})` : ""}`}
                 value={formatSurface(sale.app_surface_m2 ?? sale.habitable_surface_m2)}
               />
@@ -108,64 +160,64 @@ function SaleDetailPage() {
               <Stat label="Occupation" value={occupancyLabel(sale.occupancy_status)} />
             </div>
             {sale.surface_confidence != null && (
-              <div className="mt-3 text-xs text-muted-foreground">
-                Confiance surface : {Math.round(sale.surface_confidence * 100)}%
-                {sale.surface_source ? ` · source : ${sale.surface_source}` : ""}
+              <div className="mt-6 text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                Confiance surface · {Math.round(sale.surface_confidence * 100)}%
+                {sale.surface_source ? ` · source ${sale.surface_source}` : ""}
               </div>
             )}
-            <div className="mt-4">
+            <div className="mt-6">
               <FeatureBadges sale={sale} />
             </div>
-          </section>
+          </Section>
 
-          <InvestmentAnalysis sale={sale} />
+          <Section eyebrow="Analyse" title="Lecture d'investissement">
+            <InvestmentAnalysis sale={sale} />
+          </Section>
 
-          <ProfitabilityCalculator sale={sale} />
+          <Section eyebrow="Simulation" title="Rentabilité">
+            <ProfitabilityCalculator sale={sale} />
+          </Section>
 
-          <SaleContextMap sale={sale} />
+          <Section eyebrow="Territoire" title="Contexte géographique">
+            <SaleContextMap sale={sale} />
+          </Section>
 
-          <section className="rounded-lg border border-border bg-card p-5">
-            <h2 className="text-lg font-semibold">Documents</h2>
-            <div className="mt-3">
-              {sale.documents_rich && sale.documents_rich.length > 0 ? (
-                <ul className="space-y-2">
-                  {sale.documents_rich.map((d: SaleDocumentRich, i: number) => (
-                    <li key={i}>
-                      <a
-                        href={d.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm hover:bg-accent"
-                      >
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        <span className="flex-1 truncate">{d.label ?? d.url.split("/").pop() ?? `Document ${i + 1}`}</span>
-                        {d.type && (
-                          <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] uppercase text-secondary-foreground">
-                            {d.type}
-                          </span>
-                        )}
-                        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <DocumentsList documents={sale.documents} />
-              )}
-            </div>
-          </section>
+          <Section eyebrow="Dossier" title="Documents officiels">
+            {sale.documents_rich && sale.documents_rich.length > 0 ? (
+              <ul className="divide-y divide-border/60 border-y border-border/60">
+                {sale.documents_rich.map((d: SaleDocumentRich, i: number) => (
+                  <li key={i}>
+                    <a
+                      href={d.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group flex items-center gap-4 py-4 transition-colors hover:bg-surface/40"
+                    >
+                      <FileText className="h-4 w-4 text-gold" />
+                      <span className="flex-1 truncate text-sm">{d.label ?? d.url.split("/").pop() ?? `Document ${i + 1}`}</span>
+                      {d.type && (
+                        <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                          {d.type}
+                        </span>
+                      )}
+                      <ExternalLink className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-gold-soft" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <DocumentsList documents={sale.documents} />
+            )}
+          </Section>
 
-          <section className="rounded-lg border border-border bg-card p-5">
-            <h2 className="text-lg font-semibold">Informations techniques</h2>
-            <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-              <Meta label="Identifiant" value={<code className="break-all text-xs">{sale.id}</code>} />
+          <Section eyebrow="Référence" title="Informations techniques">
+            <dl className="grid grid-cols-1 gap-x-8 gap-y-5 border-t border-border/60 pt-8 text-sm sm:grid-cols-2">
+              <Meta label="Identifiant" value={<code className="break-all text-xs text-muted-foreground">{sale.id}</code>} />
               <Meta label="Source" value={sale.source_name ?? "—"} />
               {sale.tribunal_name && (
                 <Meta label="Tribunal" value={`${sale.tribunal_name}${sale.tribunal_city ? ` — ${sale.tribunal_city}` : ""}`} />
               )}
-              {sale.primary_source && (
-                <Meta label="Source principale" value={sale.primary_source} />
-              )}
+              {sale.primary_source && <Meta label="Source principale" value={sale.primary_source} />}
               <Meta label="Latitude" value={sale.latitude != null ? sale.latitude.toFixed(6) : "—"} />
               <Meta label="Longitude" value={sale.longitude != null ? sale.longitude.toFixed(6) : "—"} />
               <Meta label="Ajoutée le" value={formatDateTime(sale.created_at)} />
@@ -176,56 +228,122 @@ function SaleDetailPage() {
                 href={`https://www.google.com/maps?q=${sale.latitude},${sale.longitude}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-3 inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                className="mt-6 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-gold-soft hover:text-gold"
               >
-                <MapPin className="h-3.5 w-3.5" /> Voir sur Google Maps
+                <MapPin className="h-3.5 w-3.5" /> Ouvrir sur Google Maps
               </a>
             )}
-          </section>
+          </Section>
         </div>
 
-        <aside className="space-y-4">
-          <div className="rounded-lg border border-border bg-card p-5">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">Mise à prix</div>
-            <div className="mt-1 text-3xl font-bold tabular-nums text-foreground">{formatPrice(sale.starting_price_eur)}</div>
-            <div className="mt-3 text-xs uppercase tracking-wide text-muted-foreground">Date de vente</div>
-            <div className="mt-1 text-sm font-medium text-foreground">{formatDate(sale.sale_date)}</div>
-            <div className="mt-3">
-              <SaleCountdown date={sale.sale_date} variant="block" />
+        {/* Sidebar : carte offre */}
+        <aside className="lg:sticky lg:top-24 lg:self-start">
+          <div className="space-y-6">
+            <div className="relative border border-gold/30 bg-surface/60 p-7 backdrop-blur">
+              <span className="absolute -top-px left-7 h-px w-12 bg-gold" />
+              <div className="text-[10px] uppercase tracking-[0.3em] text-gold-soft">Mise à prix</div>
+              <div className="mt-3 font-display text-4xl leading-none tabular-nums text-foreground">
+                {formatPrice(sale.starting_price_eur)}
+              </div>
+              <div className="mt-8 grid grid-cols-2 gap-4 border-t border-border/60 pt-5">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">Vente</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">{formatDate(sale.sale_date)}</div>
+                </div>
+                {sale.department && (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">Département</div>
+                    <div className="mt-1 text-sm font-medium text-foreground">{sale.department}</div>
+                  </div>
+                )}
+              </div>
+              <div className="mt-5">
+                <SaleCountdown date={sale.sale_date} variant="block" />
+              </div>
             </div>
-          </div>
 
-          <div className="rounded-lg border border-border bg-card p-5">
-            <div className="flex items-center gap-2">
-              <Heart className="h-4 w-4 text-red-500" />
-              <h2 className="text-sm font-semibold">Suivre cette annonce</h2>
+            <div className="border border-border bg-surface/40 p-6">
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                <Heart className="h-3.5 w-3.5 text-gold" />
+                Suivre l'annonce
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                Conservez ce bien dans vos favoris pour le retrouver instantanément.
+              </p>
+              <div className="mt-4">
+                <FavoriteButton saleId={sale.id} className="w-full justify-center" />
+              </div>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Ajoutez ce bien à vos favoris pour le retrouver facilement.
-            </p>
-            <div className="mt-3">
-              <FavoriteButton saleId={sale.id} className="w-full justify-center" />
-            </div>
-          </div>
 
-          {sale.source_url && (
-            <a href={sale.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2.5 text-sm font-medium hover:bg-accent">
-              Source {sale.source_name ? `(${sale.source_name})` : ""} <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          )}
+            {sale.source_url && (
+              <a
+                href={sale.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex w-full items-center justify-between border border-gold bg-gold px-5 py-3 text-[11px] font-medium uppercase tracking-[0.25em] text-background transition-colors hover:bg-gold-soft hover:border-gold-soft"
+              >
+                <span>Voir la source{sale.source_name ? ` · ${sale.source_name}` : ""}</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            )}
+          </div>
         </aside>
       </div>
     </main>
   );
 }
 
+function HeroMeta({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{label}</dt>
+      <dd
+        className={
+          accent
+            ? "mt-2 font-display text-2xl tabular-nums text-gold-soft"
+            : "mt-2 text-base font-medium tabular-nums text-foreground"
+        }
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function Section({
+  eyebrow,
+  title,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <header className="mb-6 flex items-baseline gap-4">
+        <span className="text-[10px] uppercase tracking-[0.35em] text-gold">{eyebrow}</span>
+        <span className="h-px flex-1 bg-border/60" />
+      </header>
+      <h2 className="font-display text-2xl text-foreground sm:text-3xl">{title}</h2>
+      <div className="mt-6">{children}</div>
+    </section>
+  );
+}
+
+function Frame({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden border border-border bg-surface/40">{children}</div>
+  );
+}
+
 function Stat({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
         {icon}{label}
       </div>
-      <div className="mt-0.5 text-sm font-medium text-foreground">{value}</div>
+      <div className="mt-2 text-base font-medium tabular-nums text-foreground">{value}</div>
     </div>
   );
 }
@@ -233,8 +351,8 @@ function Stat({ icon, label, value }: { icon?: React.ReactNode; label: string; v
 function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-sm font-medium text-foreground">{value}</dd>
+      <dt className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">{label}</dt>
+      <dd className="mt-1.5 text-sm font-medium text-foreground">{value}</dd>
     </div>
   );
 }
