@@ -14,10 +14,382 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      auction_documents: {
+        Row: {
+          created_at: string
+          document_type: string | null
+          document_url: string
+          extraction_status: string | null
+          id: string
+          label: string | null
+          source_url: string
+        }
+        Insert: {
+          created_at?: string
+          document_type?: string | null
+          document_url: string
+          extraction_status?: string | null
+          id?: string
+          label?: string | null
+          source_url: string
+        }
+        Update: {
+          created_at?: string
+          document_type?: string | null
+          document_url?: string
+          extraction_status?: string | null
+          id?: string
+          label?: string | null
+          source_url?: string
+        }
+        Relationships: []
+      }
+      auction_risks: {
+        Row: {
+          created_at: string
+          evidence: string | null
+          id: string
+          risk_label: string | null
+          risk_type: string | null
+          severity: number | null
+          source_url: string
+        }
+        Insert: {
+          created_at?: string
+          evidence?: string | null
+          id?: string
+          risk_label?: string | null
+          risk_type?: string | null
+          severity?: number | null
+          source_url: string
+        }
+        Update: {
+          created_at?: string
+          evidence?: string | null
+          id?: string
+          risk_label?: string | null
+          risk_type?: string | null
+          severity?: number | null
+          source_url?: string
+        }
+        Relationships: []
+      }
+      auction_sales: {
+        Row: {
+          address: string | null
+          app_surface_kind: string | null
+          app_surface_m2: number | null
+          bathrooms_count: number | null
+          bedrooms_count: number | null
+          carrez_surface_m2: number | null
+          city: string | null
+          created_at: string
+          dedupe_confidence: string | null
+          department: string | null
+          documents: Json | null
+          habitable_surface_m2: number | null
+          has_air_conditioning: boolean | null
+          has_double_glazing: boolean | null
+          has_garage: boolean | null
+          has_garden: boolean | null
+          has_pool: boolean | null
+          has_terrace: boolean | null
+          id: string
+          investment_score: number | null
+          investment_summary: string | null
+          land_surface_m2: number | null
+          latitude: number | null
+          longitude: number | null
+          occupancy_status: string | null
+          parking_count: number | null
+          postal_code: string | null
+          primary_source: string | null
+          property_type: string | null
+          quality_flags: Json | null
+          risk_notes: string | null
+          rooms_count: number | null
+          sale_date: string | null
+          score_version: string | null
+          source_name: string | null
+          source_url: string | null
+          source_urls: Json | null
+          starting_price_eur: number | null
+          status: string | null
+          surface_confidence: number | null
+          surface_evidence: string | null
+          surface_scope: string | null
+          surface_source: string | null
+          title: string | null
+          tribunal: string | null
+          tribunal_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          app_surface_kind?: string | null
+          app_surface_m2?: number | null
+          bathrooms_count?: number | null
+          bedrooms_count?: number | null
+          carrez_surface_m2?: number | null
+          city?: string | null
+          created_at?: string
+          dedupe_confidence?: string | null
+          department?: string | null
+          documents?: Json | null
+          habitable_surface_m2?: number | null
+          has_air_conditioning?: boolean | null
+          has_double_glazing?: boolean | null
+          has_garage?: boolean | null
+          has_garden?: boolean | null
+          has_pool?: boolean | null
+          has_terrace?: boolean | null
+          id?: string
+          investment_score?: number | null
+          investment_summary?: string | null
+          land_surface_m2?: number | null
+          latitude?: number | null
+          longitude?: number | null
+          occupancy_status?: string | null
+          parking_count?: number | null
+          postal_code?: string | null
+          primary_source?: string | null
+          property_type?: string | null
+          quality_flags?: Json | null
+          risk_notes?: string | null
+          rooms_count?: number | null
+          sale_date?: string | null
+          score_version?: string | null
+          source_name?: string | null
+          source_url?: string | null
+          source_urls?: Json | null
+          starting_price_eur?: number | null
+          status?: string | null
+          surface_confidence?: number | null
+          surface_evidence?: string | null
+          surface_scope?: string | null
+          surface_source?: string | null
+          title?: string | null
+          tribunal?: string | null
+          tribunal_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          app_surface_kind?: string | null
+          app_surface_m2?: number | null
+          bathrooms_count?: number | null
+          bedrooms_count?: number | null
+          carrez_surface_m2?: number | null
+          city?: string | null
+          created_at?: string
+          dedupe_confidence?: string | null
+          department?: string | null
+          documents?: Json | null
+          habitable_surface_m2?: number | null
+          has_air_conditioning?: boolean | null
+          has_double_glazing?: boolean | null
+          has_garage?: boolean | null
+          has_garden?: boolean | null
+          has_pool?: boolean | null
+          has_terrace?: boolean | null
+          id?: string
+          investment_score?: number | null
+          investment_summary?: string | null
+          land_surface_m2?: number | null
+          latitude?: number | null
+          longitude?: number | null
+          occupancy_status?: string | null
+          parking_count?: number | null
+          postal_code?: string | null
+          primary_source?: string | null
+          property_type?: string | null
+          quality_flags?: Json | null
+          risk_notes?: string | null
+          rooms_count?: number | null
+          sale_date?: string | null
+          score_version?: string | null
+          source_name?: string | null
+          source_url?: string | null
+          source_urls?: Json | null
+          starting_price_eur?: number | null
+          status?: string | null
+          surface_confidence?: number | null
+          surface_evidence?: string | null
+          surface_scope?: string | null
+          surface_source?: string | null
+          title?: string | null
+          tribunal?: string | null
+          tribunal_code?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tribunals: {
+        Row: {
+          canonical_name: string | null
+          city: string | null
+          code: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          canonical_name?: string | null
+          city?: string | null
+          code: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          canonical_name?: string | null
+          city?: string | null
+          code?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_alerts: {
+        Row: {
+          city: string | null
+          created_at: string
+          department: string | null
+          id: string
+          is_active: boolean
+          max_price_eur: number | null
+          min_investment_score: number | null
+          min_surface_m2: number | null
+          name: string
+          occupancy_status: string | null
+          property_type: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          city?: string | null
+          created_at?: string
+          department?: string | null
+          id?: string
+          is_active?: boolean
+          max_price_eur?: number | null
+          min_investment_score?: number | null
+          min_surface_m2?: number | null
+          name: string
+          occupancy_status?: string | null
+          property_type?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          city?: string | null
+          created_at?: string
+          department?: string | null
+          id?: string
+          is_active?: boolean
+          max_price_eur?: number | null
+          min_investment_score?: number | null
+          min_surface_m2?: number | null
+          name?: string
+          occupancy_status?: string | null
+          property_type?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_favorites: {
+        Row: {
+          created_at: string
+          id: string
+          sale_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          sale_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          sale_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_favorites_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "auction_sales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_favorites_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "v_auction_sales_app"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
-      [_ in never]: never
+      v_auction_sales_app: {
+        Row: {
+          address: string | null
+          app_surface_kind: string | null
+          app_surface_m2: number | null
+          bathrooms_count: number | null
+          bedrooms_count: number | null
+          carrez_surface_m2: number | null
+          city: string | null
+          created_at: string | null
+          dedupe_confidence: string | null
+          department: string | null
+          documents: Json | null
+          documents_rich: Json | null
+          habitable_surface_m2: number | null
+          has_air_conditioning: boolean | null
+          has_double_glazing: boolean | null
+          has_garage: boolean | null
+          has_garden: boolean | null
+          has_pool: boolean | null
+          has_terrace: boolean | null
+          id: string | null
+          investment_score: number | null
+          investment_summary: string | null
+          land_surface_m2: number | null
+          latitude: number | null
+          longitude: number | null
+          occupancy_status: string | null
+          parking_count: number | null
+          postal_code: string | null
+          primary_source: string | null
+          property_type: string | null
+          quality_flags: Json | null
+          risk_notes: string | null
+          risks: Json | null
+          rooms_count: number | null
+          sale_date: string | null
+          score_version: string | null
+          source_name: string | null
+          source_url: string | null
+          source_urls: Json | null
+          starting_price_eur: number | null
+          status: string | null
+          surface_confidence: number | null
+          surface_evidence: string | null
+          surface_scope: string | null
+          surface_source: string | null
+          title: string | null
+          tribunal: string | null
+          tribunal_city: string | null
+          tribunal_code: string | null
+          tribunal_name: string | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never
