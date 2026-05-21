@@ -150,22 +150,32 @@ function emptyResult(radiusM: number, error: string | null): NeighborhoodAnalysi
 }
 
 async function fetchOverpass(query: string): Promise<OsmElement[]> {
+  let lastStatus = "";
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          // Overpass requires an identifying User-Agent; without it
+          // requests are silently dropped or 429'd.
+          "User-Agent": "lovable-auction-app/1.0 (neighborhood-insights)",
+          Accept: "application/json",
+        },
         body: `data=${encodeURIComponent(query)}`,
-        signal: AbortSignal.timeout(12_000),
+        signal: AbortSignal.timeout(25_000),
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        lastStatus = `${endpoint} → HTTP ${res.status}`;
+        continue;
+      }
       const json = (await res.json()) as { elements?: OsmElement[] };
       return json.elements ?? [];
-    } catch {
-      // try next endpoint
+    } catch (err) {
+      lastStatus = `${endpoint} → ${(err as Error).message}`;
     }
   }
-  throw new Error("Overpass indisponible");
+  throw new Error(`Overpass indisponible (${lastStatus || "no endpoint reachable"})`);
 }
 
 const inputSchema = z.object({
