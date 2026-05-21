@@ -14,6 +14,7 @@ import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleContextMap } from "@/components/SaleContextMap";
 import { MapThumbnail } from "@/components/MapThumbnail";
 import { SourceImage } from "@/components/SourceImage";
+import { NeighborhoodInsights } from "@/components/NeighborhoodInsights";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SaleDocumentRich } from "@/lib/types";
@@ -180,6 +181,11 @@ function SaleDetailPage() {
 
           <Section eyebrow="Territoire" title="Contexte géographique">
             <SaleContextMap sale={sale} />
+            {sale.latitude != null && sale.longitude != null && (
+              <div className="mt-10">
+                <NeighborhoodInsights lat={sale.latitude} lng={sale.longitude} />
+              </div>
+            )}
           </Section>
 
           <Section eyebrow="Dossier" title="Documents officiels">
