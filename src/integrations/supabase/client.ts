@@ -1,26 +1,16 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Vite inlines VITE_* in the client bundle. On the SSR worker those values
-// are not always present — fall back to process.env so a single shared
-// module works in both runtimes without "placeholder" requests on first paint.
+// Connexion forcée vers la base Supabase du projet "encheres-immo"
+// (et non vers la base Lovable Cloud auto-générée). Les valeurs ci-dessous
+// sont publiques (URL + clé anon publishable) — safe à committer.
+const FORCED_URL = "https://sgpakxtyvenlpeihuucm.supabase.co";
+const FORCED_ANON =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNncGFreHR5dmVubHBlaWh1dWNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMDg0MTYsImV4cCI6MjA5NDU4NDQxNn0.J4dPaNzDSKTEfZXAZIpNz6-77w2wevBxm-YmnS7OTKE";
+
 const isBrowser = typeof window !== "undefined";
 
-function readEnv(): { url: string; anon: string } {
-  const viteUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? "";
-  const viteKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) ?? "";
-  if (viteUrl && viteKey) return { url: viteUrl, anon: viteKey };
-  if (!isBrowser) {
-    const procUrl = (process.env.SUPABASE_URL as string | undefined) ?? "";
-    const procKey =
-      (process.env.SUPABASE_PUBLISHABLE_KEY as string | undefined) ??
-      (process.env.SUPABASE_ANON_KEY as string | undefined) ??
-      "";
-    return { url: viteUrl || procUrl, anon: viteKey || procKey };
-  }
-  return { url: viteUrl, anon: viteKey };
-}
-
-const { url, anon } = readEnv();
+const url = FORCED_URL;
+const anon = FORCED_ANON;
 
 export const isSupabaseConfigured = Boolean(url && anon);
 
