@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { ExternalLink, MapPin, Calendar, Home, Ruler, Scale, Heart, Building2, FileText, ArrowLeft, ChevronRight } from "lucide-react";
+import { ExternalLink, MapPin, Calendar, Home, Ruler, Heart, FileText, ArrowLeft, ChevronRight } from "lucide-react";
 import { getSaleById } from "@/lib/queries";
 import { formatPrice, formatDate, formatDateTime, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { ScoreBadge } from "@/components/ScoreBadge";
