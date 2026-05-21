@@ -1,17 +1,43 @@
 import { Link } from "@tanstack/react-router";
-import { MapPin, Calendar } from "lucide-react";
+import { MapPin, Calendar, Eye } from "lucide-react";
 import type { AuctionSale } from "@/lib/types";
 import { formatPrice, formatDate, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import { pricePerM2 } from "@/lib/geo";
 import { ScoreBadge } from "./ScoreBadge";
 import { FeatureBadges } from "./FeatureBadges";
 import { SaleCountdown, isNew } from "./SaleCountdown";
+import { MapThumbnail } from "./MapThumbnail";
+import { useViewedSales } from "@/hooks/use-viewed-sales";
 
 export function SaleCard({ sale }: { sale: AuctionSale }) {
   const surface = sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2;
   const riskCount = sale.risks?.length ?? 0;
   const fresh = isNew(sale.created_at);
+  const ppm = pricePerM2(sale.starting_price_eur, surface);
+  const { isViewed } = useViewedSales();
+  const viewed = isViewed(sale.id);
+  const occLabel = occupancyLabel(sale.occupancy_status);
+  const occTone =
+    occLabel === "Libre"
+      ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
+      : occLabel === "Occupé" || occLabel === "Loué"
+      ? "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200"
+      : "bg-secondary text-secondary-foreground";
   return (
-    <article className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 shadow-sm transition hover:shadow-md">
+    <article
+      className={`flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition hover:shadow-md ${
+        viewed ? "opacity-70" : ""
+      }`}
+    >
+      <div className="relative h-32 w-full bg-muted">
+        <MapThumbnail lat={sale.latitude} lng={sale.longitude} className="h-full w-full" />
+        {viewed && (
+          <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
+            <Eye className="h-3 w-3" /> Vu
+          </span>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-3 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex flex-wrap items-center gap-1.5">
@@ -41,6 +67,11 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
           <div className="text-2xl font-bold tabular-nums text-foreground">
             {formatPrice(sale.starting_price_eur)}
           </div>
+          {ppm != null && (
+            <div className="mt-0.5 text-xs font-medium tabular-nums text-muted-foreground">
+              {Math.round(ppm).toLocaleString("fr-FR")} €/m²
+            </div>
+          )}
           <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             <Calendar className="h-3 w-3" />
             <span>{formatDate(sale.sale_date)}</span>
@@ -53,8 +84,8 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
-          {occupancyLabel(sale.occupancy_status)}
+        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium ${occTone}`}>
+          {occLabel}
         </span>
         <FeatureBadges sale={sale} max={4} />
         {riskCount > 0 && (
@@ -71,6 +102,7 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
       >
         Voir le détail
       </Link>
+      </div>
     </article>
   );
 }
