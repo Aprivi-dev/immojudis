@@ -61,7 +61,7 @@ function SalesPage() {
     occupancy_status: search.occupancy,
     min_score: search.min_score,
   };
-  const sort = (search.sort as SortKey) || "date_asc";
+  const sort = (search.sort as SortKey) || "score_desc";
   const {
     data,
     isLoading,

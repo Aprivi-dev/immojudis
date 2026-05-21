@@ -30,7 +30,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
     min_surface: search.min_surface != null ? String(search.min_surface) : "",
     occupancy: (search.occupancy as string) ?? "",
     min_score: search.min_score != null ? String(search.min_score) : "",
-    sort: (search.sort as string) ?? "date_asc",
+    sort: (search.sort as string) ?? "score_desc",
     max_price_per_m2: search.max_price_per_m2 != null ? String(search.max_price_per_m2) : "",
     min_yield: search.min_yield != null ? String(search.min_yield) : "",
     around_address: (search.around_address as string) ?? "",
@@ -47,7 +47,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
       min_surface: search.min_surface != null ? String(search.min_surface) : "",
       occupancy: (search.occupancy as string) ?? "",
       min_score: search.min_score != null ? String(search.min_score) : "",
-      sort: (search.sort as string) ?? "date_asc",
+      sort: (search.sort as string) ?? "score_desc",
       max_price_per_m2: search.max_price_per_m2 != null ? String(search.max_price_per_m2) : "",
       min_yield: search.min_yield != null ? String(search.min_yield) : "",
       around_address: (search.around_address as string) ?? "",
@@ -56,9 +56,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
   }, [search]);
 
   const [advancedOpen, setAdvancedOpen] = useState(
-    Boolean(
-      search.max_price_per_m2 || search.min_yield || search.around_address || search.around_radius,
-    ),
+    Boolean(search.around_address || search.around_radius),
   );
 
   // Debounced sync local -> URL
@@ -77,7 +75,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
       if (local.min_surface) next.min_surface = Number(local.min_surface);
       if (local.occupancy) next.occupancy = local.occupancy;
       if (local.min_score) next.min_score = Number(local.min_score);
-      if (local.sort && local.sort !== "date_asc") next.sort = local.sort;
+      if (local.sort && local.sort !== "score_desc") next.sort = local.sort;
       if (local.max_price_per_m2) next.max_price_per_m2 = Number(local.max_price_per_m2);
       if (local.min_yield) next.min_yield = Number(local.min_yield);
       if (local.around_address) next.around_address = local.around_address;
@@ -97,7 +95,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
       min_surface: "",
       occupancy: "",
       min_score: "",
-      sort: "date_asc",
+      sort: "score_desc",
       max_price_per_m2: "",
       min_yield: "",
       around_address: "",
@@ -163,6 +161,8 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
         </Select>
         <Input type="number" placeholder="Prix max (€)" value={local.max_price} onChange={(e) => setLocal({ ...local, max_price: e.target.value })} />
         <Input type="number" placeholder="Surface min (m²)" value={local.min_surface} onChange={(e) => setLocal({ ...local, min_surface: e.target.value })} />
+        <Input type="number" placeholder="€/m² max" value={local.max_price_per_m2} onChange={(e) => setLocal({ ...local, max_price_per_m2: e.target.value })} />
+        <Input type="number" placeholder="Rendement min %" value={local.min_yield} onChange={(e) => setLocal({ ...local, min_yield: e.target.value })} />
         <Input type="number" placeholder="Score min" value={local.min_score} onChange={(e) => setLocal({ ...local, min_score: e.target.value })} />
         <Select value={local.sort} onValueChange={(v) => setLocal({ ...local, sort: v })}>
           <SelectTrigger>
@@ -170,11 +170,11 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="score_desc">Meilleur score</SelectItem>
             <SelectItem value="date_asc">Date (plus proche)</SelectItem>
             <SelectItem value="date_desc">Date (plus lointaine)</SelectItem>
             <SelectItem value="price_asc">Prix croissant</SelectItem>
             <SelectItem value="price_desc">Prix décroissant</SelectItem>
-            <SelectItem value="score_desc">Meilleur score</SelectItem>
             <SelectItem value="surface_desc">Plus grande surface</SelectItem>
           </SelectContent>
         </Select>
@@ -192,19 +192,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
       </div>
 
       {advancedOpen && (
-        <div className="mt-3 grid grid-cols-1 gap-3 rounded-md border border-dashed border-border bg-muted/30 p-3 md:grid-cols-2 lg:grid-cols-4">
-          <Input
-            type="number"
-            placeholder="Prix max €/m²"
-            value={local.max_price_per_m2}
-            onChange={(e) => setLocal({ ...local, max_price_per_m2: e.target.value })}
-          />
-          <Input
-            type="number"
-            placeholder="Rendement min %"
-            value={local.min_yield}
-            onChange={(e) => setLocal({ ...local, min_yield: e.target.value })}
-          />
+        <div className="mt-3 grid grid-cols-1 gap-3 rounded-md border border-dashed border-border bg-muted/30 p-3 md:grid-cols-2">
           <Input
             placeholder="Autour de l'adresse"
             value={local.around_address}
@@ -217,7 +205,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
             onChange={(e) => setLocal({ ...local, around_radius: e.target.value })}
           />
           <p className="col-span-full text-[11px] text-muted-foreground">
-            Rendement = estimation brute selon loyer médian du département (frais d'enchère 10 % inclus). Distance via api-adresse.data.gouv.fr.
+            Recherche autour d'une adresse via api-adresse.data.gouv.fr.
           </p>
         </div>
       )}
