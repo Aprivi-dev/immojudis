@@ -1,1 +1,0 @@
-alter view public.v_auction_sales_app set (security_invoker = true);

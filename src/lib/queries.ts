@@ -1,10 +1,17 @@
-import { supabase } from "@/integrations/supabase/client";
+import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
 
 const VIEW = "v_auction_sales_app";
+const CONFIGURATION_ERROR =
+  "La connexion Lovable Cloud est absente. Rechargez la configuration Cloud pour afficher les données.";
 
 function assertCloudConfigured() {
-  return true;
+  if (isSupabaseConfigured) return true;
+  // On the SSR worker the env may not be hydrated yet — return false so
+  // callers can short-circuit with empty results and let the browser
+  // refetch once the user session and env are available.
+  if (typeof window === "undefined") return false;
+  throw new Error(CONFIGURATION_ERROR);
 }
 
 const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst?: boolean }> = {
