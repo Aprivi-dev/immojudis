@@ -11,7 +11,6 @@ import {
 import appCss from "../styles.css?url";
 import { Navbar } from "@/components/Navbar";
 import { Toaster } from "sonner";
-import { AuthGate } from "@/components/AuthGate";
 
 function NotFoundComponent() {
   return (
@@ -75,14 +74,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "ImmoJudis" },
+      { name: "description", content: "Auction Scout is a web application for browsing and analyzing French judicial real estate auctions." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "ImmoJudis" },
+      { property: "og:description", content: "Auction Scout is a web application for browsing and analyzing French judicial real estate auctions." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "ImmoJudis" },
+      { name: "twitter:description", content: "Auction Scout is a web application for browsing and analyzing French judicial real estate auctions." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/2e0602bc-22da-449a-9215-ea7f5689cc96/id-preview-0fb613a7--23299568-9bef-4135-b70b-c57f96f52930.lovable.app-1779378754143.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/2e0602bc-22da-449a-9215-ea7f5689cc96/id-preview-0fb613a7--23299568-9bef-4135-b70b-c57f96f52930.lovable.app-1779378754143.png" },
     ],
     links: [
       {
@@ -124,9 +127,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <div className="min-h-screen bg-background">
         <Navbar />
-        <AuthGate>
-          <Outlet />
-        </AuthGate>
+        <Outlet />
         <Toaster position="top-right" richColors />
       </div>
     </QueryClientProvider>
