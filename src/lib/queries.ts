@@ -1,5 +1,5 @@
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
-import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
+import type { AuctionContact, AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
 
 const VIEW = "v_auction_sales_app";
 const CONFIGURATION_ERROR =
@@ -56,6 +56,18 @@ export async function getSaleById(id: string): Promise<AuctionSale | null> {
   const { data, error } = await supabase.from(VIEW).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   return data as AuctionSale | null;
+}
+
+export async function getSaleContacts(saleId: string): Promise<AuctionContact[]> {
+  if (!assertCloudConfigured()) return [];
+  const { data, error } = await supabase
+    .from("auction_contacts")
+    .select("id, sale_id, role, name, organization, email, phone, is_primary, notes")
+    .eq("sale_id", saleId)
+    .order("is_primary", { ascending: false })
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as AuctionContact[];
 }
 
 export async function getSalesWithCoords(limit = 500): Promise<AuctionSale[]> {
