@@ -15,6 +15,7 @@ import { SaleContextMap } from "@/components/SaleContextMap";
 import { MapThumbnail } from "@/components/MapThumbnail";
 import { SourceImage } from "@/components/SourceImage";
 import { NeighborhoodInsights } from "@/components/NeighborhoodInsights";
+import { ContactNotaryDialog } from "@/components/ContactNotaryDialog";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SaleDocumentRich } from "@/lib/types";
