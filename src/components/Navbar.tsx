@@ -2,9 +2,19 @@ import { Link } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { Gavel, LogOut } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { amIAdmin } from "@/lib/profile.functions";
 
 export function Navbar() {
   const { user, loading } = useAuth();
+  const checkAdmin = useServerFn(amIAdmin);
+  const adminQ = useQuery({
+    queryKey: ["am-i-admin"],
+    queryFn: () => checkAdmin(),
+    enabled: !!user,
+  });
+  const isAdmin = adminQ.data?.isAdmin === true;
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-background/85 backdrop-blur">
@@ -24,6 +34,7 @@ export function Navbar() {
           <NavLink to="/map">Carte</NavLink>
           <NavLink to="/favorites">Favoris</NavLink>
           <NavLink to="/alerts">Alertes</NavLink>
+          {isAdmin && <NavLink to="/admin">Admin</NavLink>}
         </nav>
 
         <div className="flex items-center gap-2">
