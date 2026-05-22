@@ -224,6 +224,39 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          approved_at: string | null
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          is_approved: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          is_approved?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          is_approved?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       tribunals: {
         Row: {
           canonical_name: string | null
@@ -392,7 +425,7 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      is_user_approved: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
