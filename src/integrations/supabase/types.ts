@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      auction_contacts: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: string
+          is_primary: boolean
+          name: string | null
+          notes: string | null
+          organization: string | null
+          phone: string | null
+          role: string | null
+          sale_id: string
+          source_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_primary?: boolean
+          name?: string | null
+          notes?: string | null
+          organization?: string | null
+          phone?: string | null
+          role?: string | null
+          sale_id: string
+          source_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_primary?: boolean
+          name?: string | null
+          notes?: string | null
+          organization?: string | null
+          phone?: string | null
+          role?: string | null
+          sale_id?: string
+          source_url?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       auction_documents: {
         Row: {
           created_at: string

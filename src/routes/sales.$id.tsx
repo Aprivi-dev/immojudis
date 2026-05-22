@@ -2,7 +2,7 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { ExternalLink, MapPin, Calendar, Home, Ruler, Heart, FileText, ArrowLeft, ChevronRight } from "lucide-react";
-import { getSaleById } from "@/lib/queries";
+import { getSaleById, getSaleContacts } from "@/lib/queries";
 import { formatPrice, formatDate, formatDateTime, formatSurface, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { FeatureBadges } from "@/components/FeatureBadges";
@@ -31,6 +31,11 @@ function SaleDetailPage() {
   const { data: sale, isLoading, error } = useQuery({
     queryKey: ["sale", id],
     queryFn: () => getSaleById(id),
+    staleTime: 5 * 60_000,
+  });
+  const { data: contacts } = useQuery({
+    queryKey: ["sale-contacts", id],
+    queryFn: () => getSaleContacts(id),
     staleTime: 5 * 60_000,
   });
 
@@ -282,7 +287,7 @@ function SaleDetailPage() {
               </div>
             </div>
 
-            <ContactNotaryDialog sale={sale} />
+            <ContactNotaryDialog sale={sale} contacts={contacts ?? []} variant="feature" />
 
             {sale.source_url && (
               <a
