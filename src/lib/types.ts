@@ -112,3 +112,15 @@ export type SaleRisk = {
   severity: number | null;
   evidence: string | null;
 };
+
+export type AuctionContact = {
+  id: string;
+  sale_id: string;
+  role: string | null;
+  name: string | null;
+  organization: string | null;
+  email: string | null;
+  phone: string | null;
+  is_primary: boolean;
+  notes: string | null;
+};
