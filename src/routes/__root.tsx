@@ -11,6 +11,7 @@ import {
 import appCss from "../styles.css?url";
 import { Navbar } from "@/components/Navbar";
 import { Toaster } from "sonner";
+import { AuthGate } from "@/components/AuthGate";
 
 function NotFoundComponent() {
   return (
@@ -123,7 +124,9 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <div className="min-h-screen bg-background">
         <Navbar />
-        <Outlet />
+        <AuthGate>
+          <Outlet />
+        </AuthGate>
         <Toaster position="top-right" richColors />
       </div>
     </QueryClientProvider>

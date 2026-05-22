@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SalesRouteImport } from './routes/sales'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FavoritesRouteImport } from './routes/favorites'
@@ -22,6 +23,11 @@ import { Route as SalesIdRouteImport } from './routes/sales.$id'
 const SalesRoute = SalesRouteImport.update({
   id: '/sales',
   path: '/sales',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MapRoute = MapRouteImport.update({
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/favorites': typeof FavoritesRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sales': typeof SalesRouteWithChildren
   '/sales/$id': typeof SalesIdRoute
   '/sales/new': typeof SalesNewRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   '/favorites': typeof FavoritesRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sales/$id': typeof SalesIdRoute
   '/sales/new': typeof SalesNewRoute
   '/sales': typeof SalesIndexRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/favorites': typeof FavoritesRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sales': typeof SalesRouteWithChildren
   '/sales/$id': typeof SalesIdRoute
   '/sales/new': typeof SalesNewRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/login'
     | '/map'
+    | '/reset-password'
     | '/sales'
     | '/sales/$id'
     | '/sales/new'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/login'
     | '/map'
+    | '/reset-password'
     | '/sales/$id'
     | '/sales/new'
     | '/sales'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/login'
     | '/map'
+    | '/reset-password'
     | '/sales'
     | '/sales/$id'
     | '/sales/new'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   FavoritesRoute: typeof FavoritesRoute
   LoginRoute: typeof LoginRoute
   MapRoute: typeof MapRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SalesRoute: typeof SalesRouteWithChildren
 }
 
@@ -149,6 +162,13 @@ declare module '@tanstack/react-router' {
       path: '/sales'
       fullPath: '/sales'
       preLoaderRoute: typeof SalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/map': {
@@ -230,8 +250,19 @@ const rootRouteChildren: RootRouteChildren = {
   FavoritesRoute: FavoritesRoute,
   LoginRoute: LoginRoute,
   MapRoute: MapRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SalesRoute: SalesRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
