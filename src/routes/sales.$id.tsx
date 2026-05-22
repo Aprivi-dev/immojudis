@@ -282,6 +282,8 @@ function SaleDetailPage() {
               </div>
             </div>
 
+            <ContactNotaryDialog sale={sale} />
+
             {sale.source_url && (
               <a
                 href={sale.source_url}
