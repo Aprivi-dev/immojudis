@@ -54,8 +54,8 @@ function LoginPage() {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {mode === "login"
-            ? "Accédez à vos favoris et alertes."
-            : "Inscription par email + mot de passe."}
+            ? "Connectez-vous pour accéder aux annonces, cartes, favoris et alertes."
+            : "Créez un compte pour consulter les annonces et suivre vos opportunités."}
         </p>
         <form onSubmit={submit} className="mt-5 space-y-3">
           <input
@@ -91,8 +91,8 @@ function LoginPage() {
           {mode === "login" ? "Pas encore de compte ? S'inscrire" : "Déjà inscrit ? Se connecter"}
         </button>
         <div className="mt-6 border-t border-border pt-4 text-center text-xs text-muted-foreground">
-          <Link to="/sales" className="hover:text-foreground">
-            ← Continuer sans compte
+          <Link to="/" className="hover:text-foreground">
+            ← Retour à la présentation
           </Link>
         </div>
       </div>

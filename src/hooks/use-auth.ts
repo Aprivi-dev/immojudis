@@ -8,16 +8,34 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-    });
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
+    let active = true;
+
+    async function verifySession(nextSession: Session | null) {
+      setSession(nextSession);
+      if (!nextSession) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase.auth.getUser();
+      if (!active) return;
+      setUser(error ? null : data.user);
       setLoading(false);
+    }
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      void verifySession(s);
     });
-    return () => sub.subscription.unsubscribe();
+
+    supabase.auth.getSession().then(({ data }) => {
+      void verifySession(data.session);
+    });
+
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   return { session, user, loading };
