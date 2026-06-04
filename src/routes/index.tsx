@@ -218,10 +218,10 @@ function HomePage() {
             </p>
           </div>
           <Link
-            to="/login"
+            to="/publish"
             className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-gold hover:text-gold-soft"
           >
-            Créer un compte <ArrowUpRight className="h-4 w-4" />
+            Préparer une annonce <ArrowUpRight className="h-4 w-4" />
           </Link>
         </div>
 

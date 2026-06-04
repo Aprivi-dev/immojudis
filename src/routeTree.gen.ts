@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SalesRouteImport } from './routes/sales'
+import { Route as PublishRouteImport } from './routes/publish'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as LoginRouteImport } from './routes/login'
@@ -26,6 +27,11 @@ import { Route as AdminQualityRouteImport } from './routes/admin.quality'
 const SalesRoute = SalesRouteImport.update({
   id: '/sales',
   path: '/sales',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PublishRoute = PublishRouteImport.update({
+  id: '/publish',
+  path: '/publish',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
   '/privacy': typeof PrivacyRoute
+  '/publish': typeof PublishRoute
   '/sales': typeof SalesRouteWithChildren
   '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
   '/privacy': typeof PrivacyRoute
+  '/publish': typeof PublishRoute
   '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
   '/sales/new': typeof SalesNewRoute
@@ -128,6 +136,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
   '/privacy': typeof PrivacyRoute
+  '/publish': typeof PublishRoute
   '/sales': typeof SalesRouteWithChildren
   '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/map'
     | '/privacy'
+    | '/publish'
     | '/sales'
     | '/admin/quality'
     | '/sales/$id'
@@ -160,6 +170,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/map'
     | '/privacy'
+    | '/publish'
     | '/admin/quality'
     | '/sales/$id'
     | '/sales/new'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/map'
     | '/privacy'
+    | '/publish'
     | '/sales'
     | '/admin/quality'
     | '/sales/$id'
@@ -190,6 +202,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   MapRoute: typeof MapRoute
   PrivacyRoute: typeof PrivacyRoute
+  PublishRoute: typeof PublishRoute
   SalesRoute: typeof SalesRouteWithChildren
   AdminQualityRoute: typeof AdminQualityRoute
 }
@@ -201,6 +214,13 @@ declare module '@tanstack/react-router' {
       path: '/sales'
       fullPath: '/sales'
       preLoaderRoute: typeof SalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/publish': {
+      id: '/publish'
+      path: '/publish'
+      fullPath: '/publish'
+      preLoaderRoute: typeof PublishRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -313,6 +333,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MapRoute: MapRoute,
   PrivacyRoute: PrivacyRoute,
+  PublishRoute: PublishRoute,
   SalesRoute: SalesRouteWithChildren,
   AdminQualityRoute: AdminQualityRoute,
 }
