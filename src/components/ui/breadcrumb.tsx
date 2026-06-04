@@ -1,6 +1,6 @@
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
+import MoreHorizontal from "lucide-react/dist/esm/icons/more-horizontal.js";
 import * as React from "react";
-import { Slot } from "@radix-ui/react-slot";
-import { ChevronRight, MoreHorizontal } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 

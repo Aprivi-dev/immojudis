@@ -25,7 +25,8 @@ function FavoritesPage() {
     staleTime: 30_000,
   });
 
-  if (loading || !user) return <main className="mx-auto max-w-7xl px-4 py-10 text-muted-foreground">Chargement…</main>;
+  if (loading || !user)
+    return <main className="mx-auto max-w-7xl px-4 py-10 text-muted-foreground">Chargement…</main>;
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
@@ -36,7 +37,9 @@ function FavoritesPage() {
       {!fetching && sales.length === 0 && (
         <div className="mt-6 rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground">
           Aucun favori pour le moment.{" "}
-          <Link to="/sales" className="text-primary hover:underline">Parcourir les annonces</Link>
+          <Link to="/sales" className="text-primary hover:underline">
+            Parcourir les annonces
+          </Link>
         </div>
       )}
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

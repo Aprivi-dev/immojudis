@@ -44,11 +44,39 @@ type Mutation = {
   libtypbien: string;
 };
 
+type DvfComparable = {
+  date: string;
+  pricePerM2: number;
+  surface: number;
+  totalPrice: number;
+  type: string;
+  distanceM: number | null;
+};
+
+type DvfFeature = {
+  properties: Mutation;
+  geometry?: { coordinates?: unknown } | null;
+};
+
+type CandidateSelection = ReturnType<typeof selectComparables> & {
+  enriched: DvfComparable[];
+  radiusM: number;
+  yearsBack: number;
+};
+
 export type MarketEstimate = {
   source: "DVF Cerema";
   radiusM: number;
   yearsBack: number;
   sampleSize: number;
+  totalNearbySampleSize: number;
+  outliersRemoved: number;
+  qualityScore: number;
+  qualityLabel: "forte" | "correcte" | "fragile";
+  qualityWarnings: string[];
+  comparableMode: "surface_matched" | "nearby_type_only";
+  surfaceMinM2: number | null;
+  surfaceMaxM2: number | null;
   medianPricePerM2: number | null;
   p25PricePerM2: number | null;
   p75PricePerM2: number | null;
@@ -60,6 +88,7 @@ export type MarketEstimate = {
     surface: number;
     totalPrice: number;
     type: string;
+    distanceM: number | null;
   }>;
 };
 
@@ -76,6 +105,7 @@ const inputSchema = z.object({
   yearsBack: z.number().min(1).max(5).default(2),
   propertyType: z.string().nullable().optional(),
   pricePerM2Ref: z.number().nullable().optional(), // pour calculer la déviation
+  surfaceM2: z.number().positive().nullable().optional(),
 });
 
 function percentile(sorted: number[], p: number): number {
@@ -87,83 +117,360 @@ function percentile(sorted: number[], p: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
 }
 
+async function fetchDvfComparables(
+  lat: number,
+  lng: number,
+  radiusM: number,
+  years: number[],
+  codes: string[],
+): Promise<DvfComparable[]> {
+  const bbox = bboxAround(lat, lng, radiusM);
+  const requests: Array<Promise<DvfFeature[]>> = [];
+  for (const year of years) {
+    for (const code of codes) {
+      const url =
+        `${CEREMA_BASE}?in_bbox=${bbox.xmin},${bbox.ymin},${bbox.xmax},${bbox.ymax}` +
+        `&anneemut=${year}&codtypbien=${code}&page_size=500`;
+      requests.push(fetchDvfPage(url));
+    }
+  }
+
+  const batches = await Promise.all(requests);
+  const all = batches.flat();
+  return all
+    .map((feature) => {
+      const mutation = feature.properties;
+      const price = parseFloat(mutation.valeurfonc);
+      const surface = parseFloat(mutation.sbati);
+      if (!Number.isFinite(price) || !Number.isFinite(surface)) return null;
+      if (surface < 10 || price < 10_000) return null;
+      const pricePerM2 = price / surface;
+      if (pricePerM2 < 500 || pricePerM2 > 25_000) return null;
+      const distanceM = distanceFromFeature(lat, lng, feature.geometry?.coordinates);
+      if (distanceM != null && distanceM > radiusM) return null;
+      return {
+        date: mutation.datemut,
+        pricePerM2,
+        surface,
+        totalPrice: price,
+        type: mutation.libtypbien,
+        distanceM,
+      };
+    })
+    .filter((item): item is DvfComparable => item !== null);
+}
+
+async function fetchDvfPage(url: string): Promise<DvfFeature[]> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) continue;
+      const json = (await response.json()) as { features?: DvfFeature[] };
+      return Array.isArray(json.features) ? json.features : [];
+    } catch {
+      if (attempt === 1) return [];
+    }
+  }
+  return [];
+}
+
+function selectComparables(enriched: DvfComparable[], surfaceM2: number | null | undefined) {
+  const subjectSurface =
+    surfaceM2 != null && Number.isFinite(surfaceM2) && surfaceM2 >= 10 ? surfaceM2 : null;
+  const surfaceMinM2 = subjectSurface == null ? null : Math.max(10, subjectSurface * 0.55);
+  const surfaceMaxM2 = subjectSurface == null ? null : subjectSurface * 1.8;
+  const surfaceMatched =
+    surfaceMinM2 == null || surfaceMaxM2 == null
+      ? []
+      : enriched.filter((item) => item.surface >= surfaceMinM2 && item.surface <= surfaceMaxM2);
+  const comparableMode = surfaceMatched.length >= 3 ? "surface_matched" : "nearby_type_only";
+  return {
+    comparables: comparableMode === "surface_matched" ? surfaceMatched : enriched,
+    comparableMode,
+    surfaceMinM2,
+    surfaceMaxM2,
+  };
+}
+
+function distanceFromFeature(lat: number, lng: number, coordinates: unknown): number | null {
+  const pair = firstCoordinatePair(coordinates);
+  if (!pair) return null;
+  const [featureLng, featureLat] = pair;
+  return Math.round(haversineMeters(lat, lng, featureLat, featureLng));
+}
+
+function firstCoordinatePair(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const [first, second] = value;
+  if (typeof first === "number" && typeof second === "number") {
+    if (!Number.isFinite(first) || !Number.isFinite(second)) return null;
+    return [first, second];
+  }
+  for (const item of value) {
+    const pair = firstCoordinatePair(item);
+    if (pair) return pair;
+  }
+  return null;
+}
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const radius = 6_371_000;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * radius * Math.asin(Math.sqrt(a));
+}
+
+function removeOutliers(comparables: DvfComparable[]): {
+  comparables: DvfComparable[];
+  outliersRemoved: number;
+} {
+  if (comparables.length < 7) return { comparables, outliersRemoved: 0 };
+  const sorted = comparables.map((item) => item.pricePerM2).sort((a, b) => a - b);
+  const p25 = percentile(sorted, 0.25);
+  const p75 = percentile(sorted, 0.75);
+  const iqr = p75 - p25;
+  if (iqr <= 0) return { comparables, outliersRemoved: 0 };
+  const lower = Math.max(500, p25 - 1.5 * iqr);
+  const upper = Math.min(25_000, p75 + 1.5 * iqr);
+  const filtered = comparables.filter(
+    (item) => item.pricePerM2 >= lower && item.pricePerM2 <= upper,
+  );
+  return {
+    comparables: filtered.length >= 3 ? filtered : comparables,
+    outliersRemoved: filtered.length >= 3 ? comparables.length - filtered.length : 0,
+  };
+}
+
+async function findBestComparables({
+  lat,
+  lng,
+  initialRadiusM,
+  yearsBack,
+  propertyType,
+  surfaceM2,
+}: {
+  lat: number;
+  lng: number;
+  initialRadiusM: number;
+  yearsBack: number;
+  propertyType: string | null | undefined;
+  surfaceM2: number | null | undefined;
+}): Promise<CandidateSelection> {
+  const codes = codtypbienFor(propertyType);
+  const currentYear = new Date().getFullYear();
+  const radii = [...new Set([initialRadiusM, 750, 1_000, 1_500, 2_000])].filter(
+    (radius) => radius >= initialRadiusM && radius <= 2_000,
+  );
+  const yearsBackOptions = [...new Set([yearsBack, 3, 5])].filter((value) => value >= yearsBack);
+  let best: CandidateSelection | null = null;
+
+  for (const optionYearsBack of yearsBackOptions) {
+    const years: number[] = [];
+    for (let year = currentYear - optionYearsBack; year <= currentYear; year += 1) {
+      years.push(year);
+    }
+
+    for (const radiusM of radii) {
+      const enriched = await fetchDvfComparables(lat, lng, radiusM, years, codes);
+      const selected = selectComparables(enriched, surfaceM2);
+      const candidate: CandidateSelection = {
+        ...selected,
+        enriched,
+        radiusM,
+        yearsBack: optionYearsBack,
+      };
+
+      if (!best || candidateRank(candidate) > candidateRank(best)) {
+        best = candidate;
+      }
+
+      if (selected.comparableMode === "surface_matched" && selected.comparables.length >= 3) {
+        return candidate;
+      }
+
+      if (
+        selected.comparableMode === "nearby_type_only" &&
+        selected.comparables.length >= 6 &&
+        radiusM <= 1_500
+      ) {
+        return candidate;
+      }
+    }
+  }
+
+  return (
+    best ?? {
+      comparables: [],
+      comparableMode: "nearby_type_only",
+      surfaceMinM2: null,
+      surfaceMaxM2: null,
+      enriched: [],
+      radiusM: initialRadiusM,
+      yearsBack,
+    }
+  );
+}
+
+function candidateRank(candidate: CandidateSelection): number {
+  const comparableBonus = Math.min(candidate.comparables.length, 20) * 10;
+  const surfaceBonus = candidate.comparableMode === "surface_matched" ? 120 : 0;
+  const nearbyBonus = Math.min(candidate.enriched.length, 30);
+  const radiusPenalty = candidate.radiusM / 100;
+  const yearsPenalty = Math.max(0, candidate.yearsBack - 2) * 4;
+  return surfaceBonus + comparableBonus + nearbyBonus - radiusPenalty - yearsPenalty;
+}
+
+function marketQuality({
+  sampleSize,
+  radiusM,
+  comparableMode,
+  medianPricePerM2,
+  p25PricePerM2,
+  p75PricePerM2,
+  outliersRemoved,
+}: {
+  sampleSize: number;
+  radiusM: number;
+  comparableMode: MarketEstimate["comparableMode"];
+  medianPricePerM2: number | null;
+  p25PricePerM2: number | null;
+  p75PricePerM2: number | null;
+  outliersRemoved: number;
+}): Pick<MarketEstimate, "qualityScore" | "qualityLabel" | "qualityWarnings"> {
+  const warnings: string[] = [];
+  let score = 100;
+
+  if (sampleSize < 3) {
+    score -= 55;
+    warnings.push("moins de 3 ventes comparables");
+  } else if (sampleSize < 6) {
+    score -= 22;
+    warnings.push("échantillon court");
+  } else if (sampleSize < 10) {
+    score -= 10;
+  }
+
+  if (radiusM > 500) {
+    score -= radiusM >= 1500 ? 18 : 10;
+    warnings.push(`rayon élargi à ${radiusM} m`);
+  }
+
+  if (comparableMode !== "surface_matched") {
+    score -= 14;
+    warnings.push("surface non comparable");
+  }
+
+  if (medianPricePerM2 && p25PricePerM2 && p75PricePerM2) {
+    const dispersion = (p75PricePerM2 - p25PricePerM2) / medianPricePerM2;
+    if (dispersion > 0.55) {
+      score -= 16;
+      warnings.push("prix locaux très dispersés");
+    } else if (dispersion > 0.35) {
+      score -= 8;
+      warnings.push("prix locaux dispersés");
+    }
+  }
+
+  if (outliersRemoved > 0) {
+    score -= Math.min(8, outliersRemoved * 2);
+    warnings.push(
+      `${outliersRemoved} valeur${outliersRemoved > 1 ? "s" : ""} aberrante${outliersRemoved > 1 ? "s" : ""} ignorée${outliersRemoved > 1 ? "s" : ""}`,
+    );
+  }
+
+  const qualityScore = Math.max(0, Math.min(100, Math.round(score)));
+  return {
+    qualityScore,
+    qualityLabel: qualityScore >= 78 ? "forte" : qualityScore >= 58 ? "correcte" : "fragile",
+    qualityWarnings: warnings,
+  };
+}
+
+function withSearchWarnings(
+  quality: Pick<MarketEstimate, "qualityScore" | "qualityLabel" | "qualityWarnings">,
+  requestedYearsBack: number,
+  effectiveYearsBack: number,
+): Pick<MarketEstimate, "qualityScore" | "qualityLabel" | "qualityWarnings"> {
+  if (effectiveYearsBack <= requestedYearsBack) return quality;
+  return {
+    ...quality,
+    qualityWarnings: [...quality.qualityWarnings, `période élargie à ${effectiveYearsBack} ans`],
+  };
+}
+
 export const getMarketEstimate = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => inputSchema.parse(input))
   .handler(async ({ data }): Promise<MarketContext> => {
     // Cache CDN 24h (les données DVF changent au mieux trimestriellement)
     setResponseHeaders(new Headers({ "cache-control": "public, max-age=86400" }));
 
-    const bbox = bboxAround(data.lat, data.lng, data.radiusM);
-    const codes = codtypbienFor(data.propertyType);
-    const currentYear = new Date().getFullYear();
-    const minYear = currentYear - data.yearsBack;
-
     try {
-      // Récupérer en parallèle les années couvertes et les types de bien
-      const years: number[] = [];
-      for (let y = minYear; y <= currentYear; y++) years.push(y);
+      const selected = await findBestComparables({
+        lat: data.lat,
+        lng: data.lng,
+        initialRadiusM: data.radiusM,
+        yearsBack: data.yearsBack,
+        propertyType: data.propertyType,
+        surfaceM2: data.surfaceM2,
+      });
 
-      const requests: Array<Promise<Mutation[]>> = [];
-      for (const year of years) {
-        for (const code of codes) {
-          const url =
-            `${CEREMA_BASE}?in_bbox=${bbox.xmin},${bbox.ymin},${bbox.xmax},${bbox.ymax}` +
-            `&anneemut=${year}&codtypbien=${code}&page_size=500`;
-          requests.push(
-            fetch(url, { signal: AbortSignal.timeout(8_000) })
-              .then((r) => (r.ok ? r.json() : { features: [] }))
-              .then((j: { features?: Array<{ properties: Mutation }> }) =>
-                (j.features ?? []).map((f) => f.properties),
-              )
-              .catch(() => [] as Mutation[]),
-          );
-        }
-      }
+      const { comparableMode, surfaceMinM2, surfaceMaxM2, radiusM, yearsBack, enriched } = selected;
+      const outlierFiltered = removeOutliers(selected.comparables);
+      const comparables = outlierFiltered.comparables;
 
-      const batches = await Promise.all(requests);
-      const all = batches.flat();
-
-      // Calcul du €/m² par transaction avec filtrage des outliers
-      const enriched = all
-        .map((m) => {
-          const price = parseFloat(m.valeurfonc);
-          const surf = parseFloat(m.sbati);
-          if (!Number.isFinite(price) || !Number.isFinite(surf)) return null;
-          if (surf < 10 || price < 10_000) return null;
-          const ppm2 = price / surf;
-          if (ppm2 < 500 || ppm2 > 25_000) return null; // outliers
-          return {
-            date: m.datemut,
-            pricePerM2: ppm2,
-            surface: surf,
-            totalPrice: price,
-            type: m.libtypbien,
-          };
-        })
-        .filter((x): x is NonNullable<typeof x> => x !== null);
-
-      if (enriched.length < 3) {
+      if (comparables.length < 2) {
+        const quality = marketQuality({
+          sampleSize: comparables.length,
+          radiusM,
+          comparableMode,
+          medianPricePerM2: null,
+          p25PricePerM2: null,
+          p75PricePerM2: null,
+          outliersRemoved: outlierFiltered.outliersRemoved,
+        });
         return {
           ok: true,
           error: null,
           estimate: {
             source: "DVF Cerema",
-            radiusM: data.radiusM,
-            yearsBack: data.yearsBack,
-            sampleSize: enriched.length,
+            radiusM,
+            yearsBack,
+            sampleSize: comparables.length,
+            totalNearbySampleSize: enriched.length,
+            outliersRemoved: outlierFiltered.outliersRemoved,
+            ...withSearchWarnings(quality, data.yearsBack, yearsBack),
+            comparableMode,
+            surfaceMinM2: surfaceMinM2 == null ? null : Math.round(surfaceMinM2),
+            surfaceMaxM2: surfaceMaxM2 == null ? null : Math.round(surfaceMaxM2),
             medianPricePerM2: null,
             p25PricePerM2: null,
             p75PricePerM2: null,
             deviationPct: null,
-            recentTransactions: enriched.slice(0, 5),
+            recentTransactions: comparables.slice(0, 5),
           },
         };
       }
 
-      const sortedPpm2 = enriched.map((e) => e.pricePerM2).sort((a, b) => a - b);
+      const sortedPpm2 = comparables.map((e) => e.pricePerM2).sort((a, b) => a - b);
       const med = median(sortedPpm2);
       const p25 = percentile(sortedPpm2, 0.25);
       const p75 = percentile(sortedPpm2, 0.75);
+      const roundedMedian = Math.round(med);
+      const roundedP25 = Math.round(p25);
+      const roundedP75 = Math.round(p75);
+      const quality = marketQuality({
+        sampleSize: comparables.length,
+        radiusM,
+        comparableMode,
+        medianPricePerM2: roundedMedian,
+        p25PricePerM2: roundedP25,
+        p75PricePerM2: roundedP75,
+        outliersRemoved: outlierFiltered.outliersRemoved,
+      });
 
       const deviationPct =
         data.pricePerM2Ref != null && data.pricePerM2Ref > 0
@@ -171,21 +478,25 @@ export const getMarketEstimate = createServerFn({ method: "GET" })
           : null;
 
       // 5 transactions les plus récentes pour transparence
-      const recent = [...enriched]
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 5);
+      const recent = [...comparables].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
 
       return {
         ok: true,
         error: null,
         estimate: {
           source: "DVF Cerema",
-          radiusM: data.radiusM,
-          yearsBack: data.yearsBack,
-          sampleSize: enriched.length,
-          medianPricePerM2: Math.round(med),
-          p25PricePerM2: Math.round(p25),
-          p75PricePerM2: Math.round(p75),
+          radiusM,
+          yearsBack,
+          sampleSize: comparables.length,
+          totalNearbySampleSize: enriched.length,
+          outliersRemoved: outlierFiltered.outliersRemoved,
+          ...withSearchWarnings(quality, data.yearsBack, yearsBack),
+          comparableMode,
+          surfaceMinM2: surfaceMinM2 == null ? null : Math.round(surfaceMinM2),
+          surfaceMaxM2: surfaceMaxM2 == null ? null : Math.round(surfaceMaxM2),
+          medianPricePerM2: roundedMedian,
+          p25PricePerM2: roundedP25,
+          p75PricePerM2: roundedP75,
           deviationPct,
           recentTransactions: recent,
         },

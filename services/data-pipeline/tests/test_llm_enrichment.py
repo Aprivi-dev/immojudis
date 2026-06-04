@@ -1,0 +1,427 @@
+import json
+from decimal import Decimal
+
+from src.enrichment.extract_structured import (
+    LLMExtraction,
+    build_reduced_pdf_context,
+    enrich_sale_with_llm,
+    load_llm_context_for_sale,
+)
+from src.enrichment.llm_client import ReplicateClient, _retry_sleep_seconds, _stringify_output, parse_json_response
+from src.normalize import normalize_sale
+from src.pdf_enrichment import sale_storage_id
+
+
+class FakeReplicateClient:
+    calls = 0
+
+    def is_available(self) -> bool:
+        return True
+
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        self.calls += 1
+        return {
+            "property_type": "house",
+            "surface_m2": 91.4,
+            "rooms_count": 4,
+            "bedrooms_count": 3,
+            "occupancy_status": "rented",
+            "occupancy_details": "Bail mentionné dans le cahier.",
+            "legal_risks": ["servitude de passage"],
+            "physical_risks": ["amiante"],
+            "copropriete": False,
+            "servitudes": ["passage"],
+            "works_needed": "Rafraîchissement à prévoir",
+            "summary": "Maison avec occupation locative et diagnostics mentionnant de l'amiante.",
+            "investor_notes": "Vérifier le bail.",
+            "confidence": {
+                "property_type": 0.8,
+                "surface_m2": 0.9,
+                "rooms_count": 0.85,
+                "bedrooms_count": 0.85,
+                "occupancy_status": 0.8,
+                "legal_risks": 0.7,
+                "physical_risks": 0.7,
+                "summary": 0.7,
+            },
+        }
+
+
+class LowConfidenceClient(FakeReplicateClient):
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        payload = super().generate_json(system_prompt, user_prompt)
+        payload["confidence"] = {
+            "property_type": 0.69,
+            "surface_m2": 0.69,
+            "rooms_count": 0.69,
+            "bedrooms_count": 0.69,
+            "occupancy_status": 0.69,
+        }
+        return payload
+
+
+class InconsistentBedroomsClient(FakeReplicateClient):
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        payload = super().generate_json(system_prompt, user_prompt)
+        payload["rooms_count"] = 2
+        payload["bedrooms_count"] = 4
+        payload["confidence"]["rooms_count"] = 0.9
+        payload["confidence"]["bedrooms_count"] = 0.9
+        return payload
+
+
+class CorroboratedLowConfidenceCountsClient(FakeReplicateClient):
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        payload = super().generate_json(system_prompt, user_prompt)
+        payload["rooms_count"] = 4
+        payload["bedrooms_count"] = 2
+        payload["confidence"]["rooms_count"] = 0.62
+        payload["confidence"]["bedrooms_count"] = 0.62
+        return payload
+
+
+def test_parse_json_response_handles_markdown_fence() -> None:
+    parsed = parse_json_response('```json\n{"surface_m2": 80}\n```')
+    assert parsed == {"surface_m2": 80}
+
+
+def test_replicate_client_formats_output_list_and_payload() -> None:
+    client = ReplicateClient(
+        api_token="r8_test",
+        model="moonshotai/kimi-k2.5",
+        max_tokens=123,
+        temperature=0.6,
+    )
+
+    payload = client._input_payload("system\n\nuser")
+
+    assert "system_prompt" not in payload
+    assert payload["prompt"] == "system\n\nuser"
+    assert payload["max_tokens"] == 123
+    assert payload["temperature"] == 0.6
+    assert payload["top_p"] == 1
+    assert payload["presence_penalty"] == 0
+    assert payload["frequency_penalty"] == 0
+    assert parse_json_response(''.join(['{"surface_m2":', "80}"])) == {"surface_m2": 80}
+    assert _stringify_output(["", "", "{", '"surface_m2"', ":80}"]) == '{"surface_m2":80}'
+
+
+def test_replicate_client_formats_gemini_payload() -> None:
+    client = ReplicateClient(
+        api_token="r8_test",
+        model="google/gemini-2.5-flash",
+        max_tokens=8192,
+        temperature=0,
+        thinking_budget=0,
+        dynamic_thinking=False,
+    )
+
+    payload = client._input_payload("user prompt", system_prompt="system prompt")
+
+    assert payload["prompt"] == "user prompt"
+    assert payload["system_instruction"] == "system prompt"
+    assert payload["max_output_tokens"] == 8192
+    assert payload["temperature"] == 0
+    assert payload["thinking_budget"] == 0
+    assert payload["dynamic_thinking"] is False
+    assert "max_tokens" not in payload
+    assert "presence_penalty" not in payload
+
+
+def test_replicate_retry_sleep_uses_retry_after_header() -> None:
+    class Response:
+        status_code = 503
+        headers = {"Retry-After": "7"}
+
+    assert _retry_sleep_seconds(3, Response(), backoff_seconds=20, max_sleep_seconds=180) == 7
+
+
+def test_replicate_retry_sleep_keeps_429_backoff_conservative() -> None:
+    class Response:
+        status_code = 429
+        headers = {"Retry-After": "1"}
+
+    assert _retry_sleep_seconds(1, Response(), backoff_seconds=20, max_sleep_seconds=180) == 20
+
+
+def test_replicate_retry_sleep_uses_capped_exponential_backoff() -> None:
+    assert _retry_sleep_seconds(1, None, backoff_seconds=20, max_sleep_seconds=50) == 20
+    assert _retry_sleep_seconds(3, None, backoff_seconds=20, max_sleep_seconds=50) == 50
+
+
+def test_llm_extraction_validates_values_and_confidence() -> None:
+    extraction = LLMExtraction.model_validate(
+        {
+            "property_type": "house",
+            "rooms_count": "T3",
+            "bedrooms_count": "2 chambres",
+            "occupancy_status": "free",
+            "legal_risks": [{"description": "Procédure en cours"}],
+            "physical_risks": None,
+            "servitudes": [{"description": "Passage commun"}],
+            "works_needed": ["Radiateurs vétustes", "Rafraîchissement"],
+            "copropriete": {"shares": "moitié indivise"},
+            "confidence": {"surface_m2": 2},
+        }
+    )
+
+    assert extraction.legal_risks == ["description: Procédure en cours"]
+    assert extraction.servitudes == ["description: Passage commun"]
+    assert extraction.works_needed == "Radiateurs vétustes; Rafraîchissement"
+    assert extraction.occupancy_status == "vacant"
+    assert extraction.copropriete is None
+    assert extraction.rooms_count == 3
+    assert extraction.bedrooms_count == 2
+    assert extraction.confidence["surface_m2"] == 1.0
+
+
+def test_enrich_sale_with_llm_uses_cached_pdf_text_and_preserves_reliable_fields(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm",
+            "property_type": "Appartement",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    out_dir = tmp_path / "llm_extractions"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("LLM_PDF_MAX_CHARS", "5000")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV", "text": "Surface 91,4 m2. Bien loué. Amiante."}]),
+        encoding="utf-8",
+    )
+
+    stats = enrich_sale_with_llm(sale, client=FakeReplicateClient(), output_dir=out_dir)
+
+    assert stats.analyzed == 1
+    assert stats.valid_json == 1
+    assert sale.surface_m2 == Decimal("91.4")
+    assert sale.rooms_count == 4
+    assert sale.bedrooms_count == 3
+    assert sale.occupancy_status == "rented"
+    assert sale.property_type == "apartment"
+    assert "llm_extraction" in sale.raw_payload
+    assert (out_dir / f"{sale_storage_id(sale)}.json").exists()
+
+    second_stats = enrich_sale_with_llm(sale, client=(stats_client := FakeReplicateClient()), output_dir=out_dir)
+    assert second_stats.valid_json == 1
+    assert stats_client.calls == 0
+
+
+def test_enrich_sale_with_llm_can_replace_unreliable_other_property_type(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm-other",
+            "property_type": "Autre",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV", "text": "Une maison avec surface."}]),
+        encoding="utf-8",
+    )
+
+    enrich_sale_with_llm(sale, client=FakeReplicateClient(), output_dir=tmp_path / "out")
+
+    assert sale.property_type == "house"
+
+
+def test_enrich_sale_with_llm_rejects_low_confidence_structured_values(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm-low-confidence",
+            "property_type": "Autre",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV", "text": "Texte ambigu avec surface et occupation."}]),
+        encoding="utf-8",
+    )
+
+    enrich_sale_with_llm(sale, client=LowConfidenceClient(), output_dir=tmp_path / "out")
+
+    assert sale.surface_m2 is None
+    assert sale.rooms_count is None
+    assert sale.bedrooms_count is None
+    assert sale.occupancy_status is None
+    assert sale.property_type == "other"
+
+
+def test_enrich_sale_with_llm_accepts_low_confidence_counts_when_text_corroborates(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm-corroborated-counts",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV", "text": "Désignation : appartement de type 4 comprenant séjour et deux chambres."}]),
+        encoding="utf-8",
+    )
+
+    stats = enrich_sale_with_llm(sale, client=CorroboratedLowConfidenceCountsClient(), output_dir=tmp_path / "out")
+
+    assert stats.rooms_extracted == 1
+    assert stats.bedrooms_extracted == 1
+    assert sale.rooms_count == 4
+    assert sale.bedrooms_count == 2
+
+
+def test_enrich_sale_with_llm_rejects_bedrooms_greater_than_rooms(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm-inconsistent-counts",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV", "text": "Maison T2 avec quatre chambres selon sortie incohérente."}]),
+        encoding="utf-8",
+    )
+
+    enrich_sale_with_llm(sale, client=InconsistentBedroomsClient(), output_dir=tmp_path / "out")
+
+    assert sale.rooms_count == 2
+    assert sale.bedrooms_count is None
+
+
+def test_build_reduced_pdf_context_keeps_priority_headers_and_keyword_windows() -> None:
+    long_noise = "Texte sans intérêt. " * 300
+    payload = [
+        {
+            "label": "Cahier des conditions de vente.pdf",
+            "document_type": "cahier_conditions",
+            "text": "PREMIERE PAGE CAHIER. " + long_noise,
+        },
+        {
+            "label": "Diagnostics.pdf",
+            "document_type": "diagnostics",
+            "text": long_noise + " Le diagnostic mentionne amiante, plomb et DPE. " + long_noise,
+        },
+    ]
+
+    context = build_reduced_pdf_context(payload, max_chars=4000, first_page_chars=500, window_chars=600)
+
+    assert context is not None
+    assert len(context) <= 4000
+    assert "PREMIERE PAGE CAHIER" in context
+    assert "amiante" in context
+    assert "plomb" in context
+    assert "DPE" in context
+
+
+def test_build_reduced_pdf_context_keeps_composition_windows() -> None:
+    long_noise = "Texte sans intérêt. " * 300
+    payload = [
+        {
+            "label": "PV descriptif.pdf",
+            "document_type": "pv_descriptif",
+            "text": long_noise + " Composition : appartement type trois comprenant séjour, cuisine et deux chambres. " + long_noise,
+        }
+    ]
+
+    context = build_reduced_pdf_context(payload, max_chars=2500, first_page_chars=200, window_chars=700)
+
+    assert context is not None
+    assert "Composition" in context
+    assert "type trois" in context
+    assert "deux chambres" in context
+
+
+def test_load_llm_context_falls_back_to_raw_text_when_pdf_cache_missing(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/no-pdf-cache",
+            "raw_text": "Annonce avec mise à prix et occupation mentionnée.",
+        }
+    )
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", tmp_path)
+
+    context = load_llm_context_for_sale(sale, max_chars=200)
+
+    assert context is not None
+    assert context.startswith("[ANNONCE SOURCE]")
+    assert "occupation" in context
+
+
+def test_load_llm_context_keeps_source_page_when_pdf_cache_exists(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/example.html",
+            "title": "Maison à Bordeaux",
+            "raw_text": "Annonce source : maison libre avec jardin.",
+            "source_blocks": {
+                "description": "Description page source : maison de 120 m² libre de toute occupation.",
+                "page_text": "Texte complet page source avec visite le mardi.",
+            },
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV descriptif", "document_type": "pv_descriptif", "text": "PV : toiture à réviser."}]),
+        encoding="utf-8",
+    )
+
+    context = load_llm_context_for_sale(sale, max_chars=3000)
+
+    assert context is not None
+    assert "[ANNONCE SOURCE]" in context
+    assert "Description page source" in context
+    assert "Texte complet page source" in context
+    assert "PV : toiture à réviser" in context
+
+
+def test_load_llm_context_includes_merged_source_pages(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/main",
+            "raw_text": "Annonce Avoventes : appartement T3.",
+        }
+    )
+    sale.raw_payload["merged_sources"] = [
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-1.html",
+            "raw_payload": {
+                "source_name": "vench",
+                "source_url": "https://www.vench.fr/vente-1.html",
+                "source_blocks": {
+                    "titre": "Annonce Vench",
+                    "page_text": "Texte Vench : garage et prochaine visite.",
+                },
+            },
+        }
+    ]
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", tmp_path)
+
+    context = load_llm_context_for_sale(sale, max_chars=2500)
+
+    assert context is not None
+    assert "Annonce Avoventes" in context
+    assert "Annonce Vench" in context
+    assert "Texte Vench" in context

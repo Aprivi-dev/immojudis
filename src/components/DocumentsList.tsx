@@ -1,4 +1,5 @@
-import { FileText, ExternalLink } from "lucide-react";
+import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
+import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import type { SaleDocument } from "@/lib/types";
 
 function parseDocs(raw: unknown): SaleDocument[] {
@@ -7,7 +8,12 @@ function parseDocs(raw: unknown): SaleDocument[] {
     return raw
       .map((d): SaleDocument | null => {
         if (typeof d === "string") return { url: d };
-        if (d && typeof d === "object" && "url" in d && typeof (d as { url: unknown }).url === "string") {
+        if (
+          d &&
+          typeof d === "object" &&
+          "url" in d &&
+          typeof (d as { url: unknown }).url === "string"
+        ) {
           return d as SaleDocument;
         }
         return null;
@@ -38,7 +44,9 @@ export function DocumentsList({ documents }: { documents: unknown }) {
             className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm hover:bg-accent"
           >
             <FileText className="h-4 w-4 text-muted-foreground" />
-            <span className="flex-1 truncate">{d.name ?? d.url.split("/").pop() ?? `Document ${i + 1}`}</span>
+            <span className="flex-1 truncate">
+              {d.name ?? d.url.split("/").pop() ?? `Document ${i + 1}`}
+            </span>
             <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
           </a>
         </li>

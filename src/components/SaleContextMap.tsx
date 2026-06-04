@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Maximize2 } from "lucide-react";
+import Maximize2 from "lucide-react/dist/esm/icons/maximize-2.js";
 import "leaflet/dist/leaflet.css";
 import type { Map as LMap, Layer } from "leaflet";
 import type { AuctionSale } from "@/lib/types";
 import { getNearbySales } from "@/lib/queries";
 import { haversineKm } from "@/lib/geo";
 import { formatPrice, formatDate, propertyTypeLabel } from "@/lib/format";
+import { OSM_TILE_LAYER_URL, OSM_TILE_OPTIONS } from "@/lib/tiles";
 
 const DVF_RADIUS_M = 500; // cohérent avec le calculateur de rentabilité
 const NEARBY_RADIUS_KM = 0.2; // phase 1 : 200 m
@@ -21,7 +22,11 @@ function scoreColor(score: number | null | undefined): string {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function nearbyPopup(s: AuctionSale): string {
@@ -45,10 +50,15 @@ export function SaleContextMap({ sale }: { sale: AuctionSale }) {
   const mapRef = useRef<LMap | null>(null);
   const layersRef = useRef<Layer[]>([]);
   const [ready, setReady] = useState(false);
+  const [tileError, setTileError] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   const { data: nearby = [] } = useQuery({
     queryKey: ["nearby-sales", sale.id, lat, lng],
-    queryFn: () => (lat != null && lng != null ? getNearbySales(lat, lng, NEARBY_RADIUS_KM, sale.id, 30) : Promise.resolve([])),
+    queryFn: () =>
+      lat != null && lng != null
+        ? getNearbySales(lat, lng, NEARBY_RADIUS_KM, sale.id, 30)
+        : Promise.resolve([]),
     enabled: lat != null && lng != null,
     staleTime: 5 * 60_000,
   });
@@ -64,41 +74,55 @@ export function SaleContextMap({ sale }: { sale: AuctionSale }) {
     let cancelled = false;
 
     (async () => {
-      const L = (await import("leaflet")).default;
-      (window as unknown as { L: typeof L }).L = L;
-      if (cancelled || !containerRef.current || mapRef.current) return;
+      try {
+        setMapError(null);
+        setTileError(false);
+        const L = (await import("leaflet")).default;
+        (window as unknown as { L: typeof L }).L = L;
+        if (cancelled || !containerRef.current || mapRef.current) return;
 
-      const map = L.map(containerRef.current, { preferCanvas: true, scrollWheelZoom: false }).setView(
-        [lat, lng],
-        15,
-      );
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "&copy; OpenStreetMap",
-        maxZoom: 19,
-      }).addTo(map);
+        const map = L.map(containerRef.current, {
+          preferCanvas: true,
+          scrollWheelZoom: false,
+        }).setView([lat, lng], 15);
+        const tiles = L.tileLayer(OSM_TILE_LAYER_URL, OSM_TILE_OPTIONS)
+          .on("tileerror", () => {
+            if (!cancelled) setTileError(true);
+          })
+          .on("tileload", () => {
+            if (!cancelled) setTileError(false);
+          });
+        tiles.addTo(map);
 
-      // Cercle DVF 500 m
-      L.circle([lat, lng], {
-        radius: DVF_RADIUS_M,
-        color: "#3b82f6",
-        weight: 1.5,
-        fillColor: "#3b82f6",
-        fillOpacity: 0.08,
-      })
-        .addTo(map)
-        .bindTooltip("Rayon DVF 500 m", { permanent: false, direction: "top" });
+        // Cercle DVF 500 m
+        L.circle([lat, lng], {
+          radius: DVF_RADIUS_M,
+          color: "#3b82f6",
+          weight: 1.5,
+          fillColor: "#3b82f6",
+          fillOpacity: 0.08,
+        })
+          .addTo(map)
+          .bindTooltip("Rayon DVF 500 m", { permanent: false, direction: "top" });
 
-      // Pin principal (bien)
-      const mainIcon = L.divIcon({
-        html: `<div style="background:${scoreColor(sale.investment_score)};color:#fff;width:34px;height:34px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"><span style="transform:rotate(45deg);font-size:12px;font-weight:700">${sale.investment_score != null ? Math.round(sale.investment_score) : "?"}</span></div>`,
-        className: "auction-pin-main",
-        iconSize: [34, 34],
-        iconAnchor: [17, 34],
-      });
-      L.marker([lat, lng], { icon: mainIcon, zIndexOffset: 1000 }).addTo(map);
+        // Pin principal (bien)
+        const mainIcon = L.divIcon({
+          html: `<div style="background:${scoreColor(sale.investment_score)};color:#fff;width:34px;height:34px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"><span style="transform:rotate(45deg);font-size:12px;font-weight:700">${sale.investment_score != null ? Math.round(sale.investment_score) : "?"}</span></div>`,
+          className: "auction-pin-main",
+          iconSize: [34, 34],
+          iconAnchor: [17, 34],
+        });
+        L.marker([lat, lng], { icon: mainIcon, zIndexOffset: 1000 }).addTo(map);
 
-      mapRef.current = map;
-      setReady(true);
+        mapRef.current = map;
+        setReady(true);
+      } catch (error) {
+        if (!cancelled) {
+          setMapError(
+            error instanceof Error ? error.message : "La carte n'a pas pu être initialisée.",
+          );
+        }
+      }
     })();
 
     return () => {
@@ -124,7 +148,9 @@ export function SaleContextMap({ sale }: { sale: AuctionSale }) {
           iconSize: [22, 22],
           iconAnchor: [11, 11],
         });
-        const m = L.marker([s.latitude, s.longitude], { icon }).bindPopup(nearbyPopup(s), { maxWidth: 240 });
+        const m = L.marker([s.latitude, s.longitude], { icon }).bindPopup(nearbyPopup(s), {
+          maxWidth: 240,
+        });
         m.addTo(mapRef.current!);
         layersRef.current.push(m);
       }
@@ -133,26 +159,49 @@ export function SaleContextMap({ sale }: { sale: AuctionSale }) {
 
   if (lat == null || lng == null) {
     return (
-      <section className="rounded-lg border border-border bg-card p-5">
+      <section className="liquid-panel rounded-lg p-5">
         <h2 className="text-lg font-semibold">Localisation</h2>
-        <p className="mt-2 text-sm text-muted-foreground">Coordonnées GPS indisponibles pour ce bien.</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Coordonnées GPS indisponibles pour ce bien.
+        </p>
       </section>
     );
   }
 
   return (
-    <section className="rounded-lg border border-border bg-card p-5">
+    <section className="liquid-panel rounded-lg p-5">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">Localisation & voisinage</h2>
         <Link
           to="/map"
-          search={{ around_address: [sale.address, sale.postal_code, sale.city].filter(Boolean).join(" "), around_radius: 5 }}
+          search={{
+            around_address: [sale.address, sale.postal_code, sale.city].filter(Boolean).join(" "),
+            around_radius: 5,
+          }}
           className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
         >
           <Maximize2 className="h-3 w-3" /> Ouvrir la carte complète
         </Link>
       </div>
-      <div ref={containerRef} className="h-72 w-full overflow-hidden rounded-md border border-border" />
+      <div className="relative overflow-hidden rounded-lg">
+        <div ref={containerRef} className="liquid-media h-72 w-full" />
+        {mapError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/85 px-6 text-center backdrop-blur-sm">
+            <div>
+              <div className="text-sm font-semibold text-foreground">Carte indisponible</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                La localisation reste enregistrée, mais le fond OpenStreetMap n'a pas pu être
+                chargé.
+              </p>
+            </div>
+          </div>
+        )}
+        {!mapError && tileError && (
+          <div className="absolute left-3 top-3 z-[500] rounded-md border border-amber-300/30 bg-background/90 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur">
+            Fond de carte temporairement indisponible.
+          </div>
+        )}
+      </div>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#3b82f6" }} />

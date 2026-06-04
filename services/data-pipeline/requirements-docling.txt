@@ -1,0 +1,7 @@
+# Optional but recommended PDF extractor.
+#
+# Docling currently requires httpx>=0.28, while supabase-py 2.9.x pins httpx<0.28.
+# Install this file after requirements.txt when you want the Docling-first PDF pipeline.
+# The project upsert path uses Supabase REST directly with the service-role key, so this
+# conflict does not block normal pipeline runs.
+docling==2.94.0

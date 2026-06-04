@@ -32,14 +32,8 @@ function absolutize(src: string, base: string): string | null {
 function extractMeta(html: string, property: string): string | null {
   // og:image, twitter:image — property OR name attribute
   const patterns = [
-    new RegExp(
-      `<meta[^>]+(?:property|name)=["']${property}["'][^>]*content=["']([^"']+)["']`,
-      "i",
-    ),
-    new RegExp(
-      `<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']${property}["']`,
-      "i",
-    ),
+    new RegExp(`<meta[^>]+(?:property|name)=["']${property}["'][^>]*content=["']([^"']+)["']`, "i"),
+    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']${property}["']`, "i"),
   ];
   for (const re of patterns) {
     const m = html.match(re);
@@ -68,16 +62,13 @@ export const getSourceImage = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => inputSchema.parse(input))
   .handler(async ({ data }): Promise<SourceImageResult> => {
     // Cache 7 days — source pages rarely change their hero image
-    setResponseHeaders(
-      new Headers({ "cache-control": "public, max-age=604800" }),
-    );
+    setResponseHeaders(new Headers({ "cache-control": "public, max-age=604800" }));
 
     try {
       const res = await fetch(data.url, {
         signal: AbortSignal.timeout(8_000),
         headers: {
-          "user-agent":
-            "Mozilla/5.0 (compatible; EncheresImmoBot/1.0; +https://encheres-immo.app)",
+          "user-agent": "Mozilla/5.0 (compatible; EncheresImmoBot/1.0; +https://encheres-immo.app)",
           accept: "text/html,application/xhtml+xml",
         },
         redirect: "follow",

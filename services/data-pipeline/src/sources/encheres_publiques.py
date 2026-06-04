@@ -1,0 +1,619 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import json
+import logging
+import re
+from typing import Any
+from urllib.parse import urljoin
+from zoneinfo import ZoneInfo
+
+from bs4 import BeautifulSoup
+
+from src.config import AQUITAINE_DEPARTMENTS, load_settings
+from src.normalize import clean_text
+from src.sources.common import PoliteHttpClient, unique_dicts
+
+
+BASE_URL = "https://www.encheres-publiques.com"
+DEFAULT_PLACES = (
+    "bordeaux-33",
+    "libourne-33",
+    "bayonne-64",
+    "pau-64",
+    "dax-40",
+    "mont-de-marsan-40",
+    "perigueux-24",
+    "bergerac-24",
+    "agen-47",
+    "marmande-47",
+)
+LOGGER = logging.getLogger(__name__)
+SCRAPE_ERRORS: list[str] = []
+PARIS_TZ = ZoneInfo("Europe/Paris")
+DETAIL_OVERRIDE_FIELDS = {
+    "description",
+    "address",
+    "postal_code",
+    "surface_m2",
+    "habitable_surface_m2",
+    "carrez_surface_m2",
+    "land_surface_m2",
+    "rooms_count",
+    "bedrooms_count",
+    "bathrooms_count",
+    "parking_count",
+    "has_garden",
+    "has_terrace",
+    "has_garage",
+    "has_pool",
+    "starting_price_eur",
+    "adjudication_price_eur",
+    "sale_date",
+    "visit_dates",
+    "lawyer_name",
+    "lawyer_contact",
+    "tribunal",
+    "latitude",
+    "longitude",
+    "occupancy_status",
+    "status",
+}
+
+
+def scrape_encheres_publiques_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
+    """Collect Encheres-Publiques.com public listing data for Aquitaine places.
+
+    The site exposes structured Next/Apollo state on SEO pages. We consume only
+    allowed public pages and avoid disallowed query, backend service and document
+    URLs from robots.txt.
+    """
+    SCRAPE_ERRORS.clear()
+    settings = load_settings()
+    client = PoliteHttpClient(
+        base_url=BASE_URL,
+        user_agent=str(settings["user_agent"]),
+        delay_seconds=float(settings["request_delay_seconds"]),
+        timeout_seconds=float(settings["request_timeout_seconds"]),
+    )
+    places = _configured_places(str(settings.get("encheres_publiques_places") or ""))
+    max_pages = max_pages or int(settings["encheres_publiques_max_pages"])
+
+    raw_sales: list[dict[str, Any]] = []
+    for place in places[:max_pages]:
+        page_url = f"{BASE_URL}/ventes/immobilier/v/{place}"
+        try:
+            html = client.get(page_url)
+        except Exception as exc:
+            LOGGER.error("Encheres-Publiques list fetch failed for %s: %s", page_url, exc)
+            SCRAPE_ERRORS.append(f"{page_url}: {exc}")
+            continue
+        for sale in parse_encheres_publiques_html(html, page_url):
+            _enrich_sale_from_detail(client, sale)
+            raw_sales.append(sale)
+    return unique_dicts(raw_sales, "source_url")
+
+
+def get_encheres_publiques_errors() -> list[str]:
+    return list(SCRAPE_ERRORS)
+
+
+def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, Any]]:
+    soup = BeautifulSoup(html, "html.parser")
+    state = _extract_apollo_state(soup)
+    if not state:
+        return []
+    links_by_lot_id = _extract_lot_links(soup, page_url)
+    sales: list[dict[str, Any]] = []
+    for key, lot in state.items():
+        if not key.startswith("Lot:") or not isinstance(lot, dict):
+            continue
+        if lot.get("categorie") != "immobilier" or not lot.get("nom"):
+            continue
+        if lot.get("termine") is True:
+            continue
+        address = _resolve_ref(state, lot.get("adresse_defaut"))
+        city_slug = str(address.get("ville_slug") or "")
+        department = _department_from_slug(city_slug)
+        if department not in AQUITAINE_DEPARTMENTS:
+            continue
+        organizer = _resolve_ref(state, lot.get("organisateur"))
+        event = _resolve_ref(state, lot.get("evenement"))
+        lot_id = str(lot.get("id") or key.split(":", 1)[1])
+        source_url = links_by_lot_id.get(lot_id) or f"{page_url}#lot-{lot_id}"
+        raw_text = _build_raw_text(lot, address, organizer, event)
+        sales.append(
+            {
+                "source_name": "encheres_publiques",
+                "source_url": source_url,
+                "external_id": lot_id,
+                "department": department,
+                "city": clean_text(address.get("ville")) or _city_from_slug(city_slug),
+                "property_type": lot.get("sous_categorie") or lot.get("nom"),
+                "title": lot.get("nom"),
+                "description": lot.get("criteres_resume") or event.get("titre"),
+                "surface_m2": _extract_surface(lot.get("criteres_resume"), lot.get("nom")),
+                "starting_price_eur": lot.get("mise_a_prix"),
+                "adjudication_price_eur": lot.get("prix_adjuge"),
+                "sale_date": _timestamp_to_iso(lot.get("ouverture_date") or event.get("ouverture_date")),
+                "lawyer_name": _lawyer_name(organizer),
+                "tribunal": _tribunal_name(organizer, event),
+                "status": "past" if lot.get("termine") else "upcoming",
+                "documents": [],
+                "raw_text": raw_text,
+            }
+        )
+    return sales
+
+
+def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str, Any]:
+    soup = BeautifulSoup(html, "html.parser")
+    state = _extract_apollo_state(soup)
+    if not state:
+        return {}
+
+    lot_id = _lot_id_from_url(source_url)
+    lot = state.get(f"Lot:{lot_id}") if lot_id else None
+    if not isinstance(lot, dict):
+        lot = _first_relevant_lot(state)
+    if not lot:
+        return {}
+
+    address = _resolve_address(state, lot)
+    event = _resolve_ref(state, lot.get("evenement"))
+    organizer = _resolve_profile(state, lot)
+    city_slug = str(address.get("ville_slug") or "")
+    department = _department_from_slug(city_slug) or _department_from_address(address)
+    description = _plain_text(lot.get("description")) or _plain_text(lot.get("criteres_resume"))
+    address_text = _address_text(address)
+    postal_code = _postal_code(address_text)
+    latitude, longitude = _coordinates(address)
+    visit_dates = _extract_visit_dates(state, lot)
+    source_blocks = _extract_source_blocks(lot)
+    raw_text = _build_detail_raw_text(lot, address, organizer, event, visit_dates, source_blocks)
+    surface = lot.get("critere_surface_habitable") or _extract_surface(lot.get("criteres_resume"), lot.get("nom"))
+    title = _plain_text(lot.get("nom"))
+
+    return {
+        "source_name": "encheres_publiques",
+        "source_url": source_url,
+        "external_id": str(lot.get("id") or lot_id or ""),
+        "department": department,
+        "city": _plain_text(address.get("ville")) or _city_from_slug(city_slug),
+        "address": address_text,
+        "postal_code": postal_code,
+        "property_type": lot.get("sous_categorie") or title,
+        "title": title,
+        "description": description,
+        "surface_m2": surface,
+        "habitable_surface_m2": lot.get("critere_surface_habitable") or surface,
+        "carrez_surface_m2": surface if _mentions_carrez(title, description) else None,
+        "land_surface_m2": lot.get("critere_surface_terrain"),
+        "rooms_count": lot.get("critere_nombre_de_pieces"),
+        "bedrooms_count": lot.get("critere_nombre_de_chambres"),
+        "bathrooms_count": lot.get("critere_nombre_de_salles_de_bain"),
+        "parking_count": _parking_count(lot, description),
+        "has_garden": _mentions_feature("jardin", title, description),
+        "has_terrace": _mentions_feature("terrasse", title, description),
+        "has_garage": _mentions_feature("garage", title, description),
+        "has_pool": _mentions_feature("piscine", title, description),
+        "starting_price_eur": lot.get("mise_a_prix") or lot.get("prix_plancher"),
+        "adjudication_price_eur": lot.get("prix_adjuge"),
+        "sale_date": _timestamp_to_iso(lot.get("ouverture_date") or lot.get("fermeture_date") or event.get("ouverture_date")),
+        "visit_dates": visit_dates,
+        "lawyer_name": _lawyer_name(organizer),
+        "lawyer_contact": _plain_text(organizer.get("telephone") or organizer.get("phone")),
+        "tribunal": _tribunal_name(organizer, event),
+        "status": "past" if lot.get("termine") else "upcoming",
+        "latitude": latitude,
+        "longitude": longitude,
+        "occupancy_status": _normalize_occupancy_status(lot.get("critere_occupation_du_bien")),
+        "documents": [],
+        "raw_text": raw_text,
+        "source_blocks": source_blocks,
+        "source_images": _extract_source_images(state, lot),
+    }
+
+
+def _extract_apollo_state(soup: BeautifulSoup) -> dict[str, Any]:
+    script = soup.select_one("script#__NEXT_DATA__")
+    if script is None or not script.string:
+        return {}
+    try:
+        data = json.loads(script.string)
+    except json.JSONDecodeError:
+        return {}
+    page_props = data.get("props", {}).get("pageProps", {})
+    raw_state = page_props.get("apolloState") or page_props.get("__APOLLO_STATE__") or {}
+    state = raw_state.get("data", raw_state) if isinstance(raw_state, dict) else {}
+    return state if isinstance(state, dict) else {}
+
+
+def _extract_lot_links(soup: BeautifulSoup, page_url: str) -> dict[str, str]:
+    links: dict[str, str] = {}
+    for link in soup.find_all("a", href=True):
+        href = str(link.get("href") or "")
+        match = re.search(r"_(\d+)(?:$|[/?#])", href)
+        if not match:
+            continue
+        links[match.group(1)] = urljoin(page_url, href)
+    return links
+
+
+def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any]) -> None:
+    source_url = str(sale.get("source_url") or "")
+    if not source_url.startswith(BASE_URL) or "#lot-" in source_url:
+        return
+    try:
+        html = client.get(source_url)
+    except Exception as exc:
+        LOGGER.warning("Encheres-Publiques detail fetch failed for %s: %s", source_url, exc)
+        SCRAPE_ERRORS.append(f"detail {source_url}: {exc}")
+        return
+
+    details = parse_encheres_publiques_detail_html(html, source_url)
+    for key, value in details.items():
+        if value in (None, "", []):
+            continue
+        if key == "raw_text" and sale.get("raw_text"):
+            sale[key] = _join_unique_lines(str(sale["raw_text"]), str(value))
+        elif key == "visit_dates" and isinstance(value, list):
+            sale[key] = _unique_strings([*(sale.get(key) or []), *value])
+        elif key == "documents":
+            sale[key] = []
+        elif key in DETAIL_OVERRIDE_FIELDS or not sale.get(key):
+            sale[key] = value
+
+
+def _resolve_ref(state: dict[str, Any], value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    ref = value.get("__ref")
+    resolved = state.get(ref) if isinstance(ref, str) else None
+    return resolved if isinstance(resolved, dict) else {}
+
+
+def _first_relevant_lot(state: dict[str, Any]) -> dict[str, Any]:
+    for key, lot in state.items():
+        if key.startswith("Lot:") and isinstance(lot, dict) and lot.get("categorie") == "immobilier":
+            return lot
+    return {}
+
+
+def _lot_id_from_url(source_url: str) -> str | None:
+    match = re.search(r"_(\d+)(?:$|[/?#])", source_url)
+    return match.group(1) if match else None
+
+
+def _resolve_address(state: dict[str, Any], lot: dict[str, Any]) -> dict[str, Any]:
+    for key in ("adresse_physique", "adresse_defaut", "adresse"):
+        address = _resolve_ref(state, lot.get(key))
+        if address:
+            return address
+    return {}
+
+
+def _resolve_profile(state: dict[str, Any], lot: dict[str, Any]) -> dict[str, Any]:
+    organizer = _resolve_ref(state, lot.get("organisateur"))
+    if organizer:
+        return organizer
+    for item in lot.get("all_contacts") or lot.get("contacts") or []:
+        contact = _resolve_ref(state, item)
+        profile = _resolve_ref(state, contact.get("profil")) or _resolve_ref(state, contact.get("profile"))
+        if profile:
+            return profile
+    return {}
+
+
+def _configured_places(value: str) -> tuple[str, ...]:
+    places = tuple(clean_text(part) or "" for part in value.split(",") if clean_text(part))
+    return places or DEFAULT_PLACES
+
+
+def _department_from_slug(slug: str) -> str | None:
+    match = re.search(r"-(\d{2,3})$", slug)
+    return match.group(1) if match else None
+
+
+def _city_from_slug(slug: str) -> str | None:
+    department = _department_from_slug(slug)
+    if not department:
+        return None
+    return slug[: -(len(department) + 1)].replace("-", " ").title()
+
+
+def _department_from_address(address: dict[str, Any]) -> str | None:
+    postal_code = _postal_code(_address_text(address))
+    return postal_code[:2] if postal_code else None
+
+
+def _address_text(address: dict[str, Any]) -> str | None:
+    for key in ("text", "adresse", "address", "formatted_address"):
+        value = _plain_text(address.get(key))
+        if value:
+            return value
+    parts = [
+        _plain_text(address.get("rue") or address.get("street")),
+        _plain_text(address.get("code_postal") or address.get("postal_code")),
+        _plain_text(address.get("ville")),
+        _plain_text(address.get("pays") or address.get("country")),
+    ]
+    return clean_text(" ".join(part for part in parts if part))
+
+
+def _postal_code(value: object) -> str | None:
+    text = _plain_text(value)
+    if not text:
+        return None
+    match = re.search(r"\b(\d{5})\b", text)
+    return match.group(1) if match else None
+
+
+def _coordinates(address: dict[str, Any]) -> tuple[str | None, str | None]:
+    coords = address.get("coords") or address.get("coordinates")
+    if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+        longitude, latitude = coords[:2]
+        return str(latitude), str(longitude)
+    latitude = address.get("latitude") or address.get("lat")
+    longitude = address.get("longitude") or address.get("lon") or address.get("lng")
+    return (str(latitude) if latitude is not None else None, str(longitude) if longitude is not None else None)
+
+
+def _timestamp_to_iso(value: object) -> str | None:
+    try:
+        timestamp = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+
+
+def _timestamp_to_display(value: object) -> str | None:
+    try:
+        timestamp = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return datetime.fromtimestamp(timestamp, PARIS_TZ).strftime("%d/%m/%Y %H:%M")
+
+
+def _extract_surface(*values: object) -> str | None:
+    text = " ".join(str(value) for value in values if value)
+    match = re.search(r"([0-9]+(?:[,.][0-9]+)?)\s*m²", text, re.I)
+    return match.group(1).replace(",", ".") if match else None
+
+
+def _extract_visit_dates(state: dict[str, Any], lot: dict[str, Any]) -> list[str]:
+    visits: list[str] = []
+    for item in lot.get("visites") or []:
+        visit = _resolve_ref(state, item)
+        start = _timestamp_to_display(
+            visit.get("ouverture_date") or visit.get("debut") or visit.get("date_debut") or visit.get("start")
+        )
+        end = _timestamp_to_display(
+            visit.get("fermeture_date") or visit.get("fin") or visit.get("date_fin") or visit.get("end")
+        )
+        location = _plain_text(visit.get("lieu") or visit.get("adresse") or visit.get("observations"))
+        if start and end and start[:10] == end[:10]:
+            visits.append(clean_text(f"{start} - {end[-5:]} {location or ''}") or start)
+        elif start and end:
+            visits.append(clean_text(f"{start} - {end} {location or ''}") or start)
+        elif start:
+            visits.append(clean_text(f"{start} {location or ''}") or start)
+    observations = _plain_text(lot.get("observations_visites"))
+    if observations and not visits:
+        visits.append(observations)
+    return _unique_strings(visits)
+
+
+def _extract_source_blocks(lot: dict[str, Any]) -> dict[str, str]:
+    mapping = {
+        "resume": lot.get("criteres_resume"),
+        "description": lot.get("description"),
+        "visites": lot.get("observations_visites"),
+        "conditions_de_vente": lot.get("infos_conditions_de_vente"),
+        "frais_de_vente": lot.get("infos_frais_de_vente"),
+        "modalite_de_paiement": lot.get("infos_modalite_de_paiement"),
+        "mentions_legales": lot.get("infos_mentions_legales"),
+        "renseignements_de_vente": lot.get("infos_renseignements_de_vente"),
+        "diagnostic_date": lot.get("critere_diagnostic_date"),
+        "dpe": lot.get("critere_consommation_energetique"),
+        "ges": lot.get("critere_emissions_de_gaz"),
+        "occupation": lot.get("critere_occupation_du_bien"),
+    }
+    return {key: value for key, raw in mapping.items() if (value := _plain_text(raw))}
+
+
+def _extract_source_images(state: dict[str, Any], lot: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
+    for item in lot.get("photos") or lot.get("images") or []:
+        photo = _resolve_ref(state, item) if isinstance(item, dict) else {}
+        if not photo and isinstance(item, dict):
+            photo = item
+        for key in ("url", "src", "path", "photo", "thumb"):
+            value = _plain_text(photo.get(key))
+            if not value:
+                continue
+            urls.append(_absolute_url(value))
+            break
+    return _unique_strings(urls)
+
+
+def _absolute_url(value: str) -> str:
+    if value.startswith("//"):
+        return f"https:{value}"
+    return urljoin(BASE_URL, value)
+
+
+def _mentions_feature(feature: str, *values: object) -> bool | None:
+    text = " ".join(_plain_text(value) or "" for value in values)
+    if not text:
+        return None
+    return bool(re.search(rf"\b{re.escape(feature)}s?\b", text, re.I))
+
+
+def _mentions_carrez(*values: object) -> bool:
+    text = " ".join(_plain_text(value) or "" for value in values)
+    return bool(re.search(r"\bcarrez\b", text, re.I))
+
+
+def _parking_count(lot: dict[str, Any], description: object) -> int | None:
+    value = lot.get("critere_nombre_de_parkings") or lot.get("nombre_de_parkings")
+    try:
+        count = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        count = 0
+    if count > 0:
+        return count
+    parking_kind = _plain_text(lot.get("critere_type_de_parking"))
+    text = " ".join(part for part in (parking_kind, _plain_text(description)) if part)
+    if re.search(r"\b(?:parking|stationnement|garage|place de parking)\b", text, re.I):
+        return 1
+    return None
+
+
+def _normalize_occupancy_status(value: object | None) -> str | None:
+    text = _plain_text(value)
+    if not text:
+        return None
+    lowered = text.lower()
+    if re.search(r"sans\s+droit\s+ni\s+titre|squat", lowered):
+        return "squatted"
+    if re.search(r"propri[ée]taire\s+occupant|occup[ée]\s+par\s+le\s+propri[ée]taire", lowered):
+        return "owner_occupied"
+    if re.search(r"libre\s+de\s+toute\s+occupation|bien\s+libre|inoccup[ée]|vacant", lowered):
+        return "vacant"
+    if re.search(r"bail|locataire|lou[ée]|loyer", lowered):
+        return "rented"
+    if re.search(r"occup[ée]", lowered):
+        return "occupied"
+    if re.search(r"inconnu|non\s+renseign[ée]", lowered):
+        return "unknown"
+    return None
+
+
+def _plain_text(value: object | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    if "<" in text and ">" in text:
+        text = BeautifulSoup(text, "html.parser").get_text(" ", strip=True)
+    return clean_text(text)
+
+
+def _build_detail_raw_text(
+    lot: dict[str, Any],
+    address: dict[str, Any],
+    organizer: dict[str, Any],
+    event: dict[str, Any],
+    visit_dates: list[str],
+    source_blocks: dict[str, str],
+) -> str:
+    diagnostic_parts = [
+        f"DPE {source_blocks['dpe']}" if source_blocks.get("dpe") else None,
+        f"GES {source_blocks['ges']}" if source_blocks.get("ges") else None,
+        f"diagnostic du {source_blocks['diagnostic_date']}" if source_blocks.get("diagnostic_date") else None,
+    ]
+    parts = [
+        _plain_text(lot.get("nom")),
+        f"Adresse: {_address_text(address)}" if _address_text(address) else None,
+        _plain_text(lot.get("criteres_resume")),
+        _sale_type_text(lot),
+        f"Mise a prix: {_price_for_text(lot.get('mise_a_prix') or lot.get('prix_plancher'))}"
+        if lot.get("mise_a_prix") is not None or lot.get("prix_plancher") is not None
+        else None,
+        f"Prix adjuge: {_price_for_text(lot.get('prix_adjuge'))}" if lot.get("prix_adjuge") is not None else None,
+        source_blocks.get("description"),
+        f"Diagnostic: {', '.join(part for part in diagnostic_parts if part)}" if any(diagnostic_parts) else None,
+        f"Occupation: {source_blocks['occupation']}" if source_blocks.get("occupation") else None,
+        f"Visites: {' | '.join(visit_dates)}" if visit_dates else source_blocks.get("visites"),
+        f"Conditions de vente: {source_blocks['conditions_de_vente']}" if source_blocks.get("conditions_de_vente") else None,
+        f"Frais de vente: {source_blocks['frais_de_vente']}" if source_blocks.get("frais_de_vente") else None,
+        f"Paiement: {source_blocks['modalite_de_paiement']}" if source_blocks.get("modalite_de_paiement") else None,
+        _plain_text(event.get("titre")),
+        _plain_text(organizer.get("nom")),
+        f"Contact: {_plain_text(organizer.get('telephone') or organizer.get('phone'))}"
+        if _plain_text(organizer.get("telephone") or organizer.get("phone"))
+        else None,
+    ]
+    # Keep broad platform/legal explanations in raw_payload only; they can mention
+    # generic risks that do not necessarily concern the property itself.
+    return "\n".join(part for part in parts if part)
+
+
+def _sale_type_text(lot: dict[str, Any]) -> str | None:
+    sale_type = _plain_text(lot.get("type"))
+    sale_subtype = _plain_text(lot.get("type_de_vente"))
+    if sale_type and sale_subtype:
+        return f"Type de vente: {sale_type} - {sale_subtype}"
+    if sale_type:
+        return f"Type de vente: {sale_type}"
+    return f"Type de vente: {sale_subtype}" if sale_subtype else None
+
+
+def _join_unique_lines(*blocks: str) -> str:
+    lines: list[str] = []
+    seen: set[str] = set()
+    for block in blocks:
+        for raw_line in block.splitlines():
+            line = clean_text(raw_line)
+            if not line or line in seen:
+                continue
+            seen.add(line)
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = clean_text(value)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        unique.append(text)
+    return unique
+
+
+def _lawyer_name(organizer: dict[str, Any]) -> str | None:
+    category = str(organizer.get("categorie") or "").lower()
+    name = clean_text(organizer.get("nom"))
+    if not name or category == "tribunal":
+        return None
+    return name
+
+
+def _tribunal_name(organizer: dict[str, Any], event: dict[str, Any]) -> str | None:
+    name = clean_text(organizer.get("nom"))
+    if name and "tribunal judiciaire" in name.lower():
+        return name
+    title = clean_text(event.get("titre"))
+    match = re.search(r"Tribunal judiciaire de\s+(.+?)(?:\s+le\b|$)", title or "", re.I)
+    if match:
+        return f"Tribunal Judiciaire de {clean_text(match.group(1))}"
+    return None
+
+
+def _build_raw_text(
+    lot: dict[str, Any],
+    address: dict[str, Any],
+    organizer: dict[str, Any],
+    event: dict[str, Any],
+) -> str:
+    parts = [
+        clean_text(lot.get("nom")),
+        clean_text(lot.get("criteres_resume")),
+        f"Mise a prix: {_price_for_text(lot.get('mise_a_prix'))}" if lot.get("mise_a_prix") is not None else None,
+        f"Prix adjuge: {_price_for_text(lot.get('prix_adjuge'))}" if lot.get("prix_adjuge") is not None else None,
+        f"Ville: {clean_text(address.get('ville'))}" if address else None,
+        clean_text(event.get("titre")),
+        clean_text(organizer.get("nom")),
+    ]
+    return "\n".join(part for part in parts if part)
+
+
+def _price_for_text(value: object) -> str:
+    try:
+        amount = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return str(value)
+    return f"{amount:,}".replace(",", " ")

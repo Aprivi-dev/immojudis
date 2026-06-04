@@ -1,0 +1,183 @@
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import logging
+from typing import Any
+
+from dotenv import load_dotenv
+import httpx
+
+from src.asset_normalization import normalize_asset_features
+from src.config import ROOT_DIR, load_settings
+from src.normalize import normalize_sale
+from src.storage.supabase_client import upsert_sales_to_supabase
+from src.tribunal import fill_tribunal
+
+
+LOGGER = logging.getLogger(__name__)
+PAGE_SIZE = 200
+
+
+def recompute_scoring(
+    *,
+    source: str | None = None,
+    limit: int | None = None,
+    batch_size: int = 20,
+    dry_run: bool = False,
+) -> int:
+    _load_env_fallbacks()
+    rows = _fetch_sales(source=source, limit=limit)
+    sales = []
+    for row in rows:
+        try:
+            sale = _sale_from_storage_row(row)
+            fill_tribunal(sale)
+            normalize_asset_features(sale)
+            sales.append(sale)
+        except Exception as exc:
+            LOGGER.exception("Scoring recompute failed for %s: %s", row.get("source_url"), exc)
+
+    if dry_run:
+        _print_summary(sales, dry_run=True)
+        return 0
+
+    upserted = 0
+    for batch in _chunks(sales, max(1, batch_size)):
+        upserted += upsert_sales_to_supabase(batch)
+    _print_summary(sales, dry_run=False, upserted=upserted)
+    return 0
+
+
+def _load_env_fallbacks() -> None:
+    load_dotenv(ROOT_DIR / ".env")
+    load_dotenv(ROOT_DIR.parents[1] / "apps" / "scout" / ".env.local")
+
+
+def _fetch_sales(*, source: str | None, limit: int | None) -> list[dict[str, Any]]:
+    settings = load_settings()
+    supabase_url = str(settings["supabase_url"] or "").rstrip("/")
+    api_key = str(settings["supabase_service_role_key"] or "")
+    if not supabase_url or not api_key:
+        raise RuntimeError("Supabase URL/service role key are missing")
+
+    endpoint = f"{supabase_url}/rest/v1/auction_sales"
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    headers = {
+        "apikey": api_key,
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+    }
+    while True:
+        remaining = None if limit is None else max(0, limit - len(rows))
+        if remaining == 0:
+            break
+        page_size = PAGE_SIZE if remaining is None else min(PAGE_SIZE, remaining)
+        params = {
+            "select": "*",
+            "order": "updated_at.desc.nullslast",
+            "limit": str(page_size),
+            "offset": str(offset),
+        }
+        if source:
+            params["source_name"] = f"eq.{source}"
+        response = httpx.get(endpoint, params=params, headers=headers, timeout=120)
+        if response.is_error:
+            raise httpx.HTTPStatusError(
+                f"{response.status_code} response from Supabase auction_sales: {response.text}",
+                request=response.request,
+                response=response,
+            )
+        page = response.json()
+        if not isinstance(page, list) or not page:
+            break
+        rows.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+    return rows
+
+
+def _sale_from_storage_row(row: dict[str, Any]):
+    original_payload = dict(row.get("raw_payload")) if isinstance(row.get("raw_payload"), dict) else {}
+    original_payload.pop("raw_payload", None)
+    row_payload = {key: value for key, value in row.items() if key != "raw_payload"}
+    raw_sale = {**original_payload, **row_payload}
+    sale = normalize_sale(raw_sale)
+    sale.id = str(row.get("id")) if row.get("id") else None
+    sale.primary_source = row.get("primary_source") or sale.primary_source
+    if isinstance(row.get("source_urls"), list):
+        sale.source_urls = [str(item) for item in row["source_urls"] if item]
+    sale.content_hash = row.get("content_hash")
+    sale.first_seen_at = _parse_datetime(row.get("first_seen_at"))
+    sale.last_seen_at = _parse_datetime(row.get("last_seen_at"))
+    sale.created_at = _parse_datetime(row.get("created_at"))
+    sale.updated_at = _parse_datetime(row.get("updated_at"))
+    sale.quality_flags = []
+    sale.raw_payload = raw_sale
+    return sale
+
+
+def _parse_datetime(value: object | None):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _chunks(items: list[Any], size: int):
+    for index in range(0, len(items), size):
+        yield items[index : index + size]
+
+
+def _print_summary(sales: list[Any], *, dry_run: bool, upserted: int = 0) -> None:
+    by_source: dict[str, int] = {}
+    pretri = 0
+    works = 0
+    non_judicial = 0
+    for sale in sales:
+        by_source[sale.source_name] = by_source.get(sale.source_name, 0) + 1
+        analysis = sale.raw_payload.get("investment_analysis") if isinstance(sale.raw_payload, dict) else {}
+        gates = analysis.get("confidence_gates") if isinstance(analysis, dict) else {}
+        if isinstance(gates, dict) and gates.get("readiness") == "pré-tri uniquement":
+            pretri += 1
+        if any(str(risk.get("risk_label")) == "travaux" for risk in sale.raw_payload.get("asset_normalization", {}).get("risks", [])):
+            works += 1
+        if "non_judicial_sale_context" in sale.quality_flags:
+            non_judicial += 1
+    print("Scoring recompute summary")
+    print(f"- mode: {'dry-run' if dry_run else 'upsert'}")
+    print(f"- sales: {len(sales)}")
+    print(f"- upserted: {upserted}")
+    print(f"- by_source: {by_source}")
+    print(f"- pretri_only: {pretri}")
+    print(f"- works_to_quantify: {works}")
+    print(f"- non_judicial_context: {non_judicial}")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Recalcule le scoring métier des annonces déjà stockées.")
+    parser.add_argument("--source", default=None, help="Filtre optionnel sur source_name.")
+    parser.add_argument("--limit", type=int, default=None, help="Nombre maximum d'annonces à recalculer.")
+    parser.add_argument("--batch-size", type=int, default=20, help="Taille des lots d'upsert Supabase.")
+    parser.add_argument("--dry-run", action="store_true", help="Recalcule sans écrire dans Supabase.")
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
+    args = parse_args()
+    raise SystemExit(
+        recompute_scoring(
+            source=args.source,
+            limit=args.limit,
+            batch_size=args.batch_size,
+            dry_run=args.dry_run,
+        )
+    )

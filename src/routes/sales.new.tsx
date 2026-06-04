@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Sparkles } from "lucide-react";
+import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import { getSales } from "@/lib/queries";
 import { SaleCard } from "@/components/SaleCard";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,10 +8,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 export const Route = createFileRoute("/sales/new")({
   head: () => ({
     meta: [
-      { title: "Nouveautés — Enchères Immo" },
-      { name: "description", content: "Les ventes aux enchères immobilières ajoutées les 7 derniers jours." },
-      { property: "og:title", content: "Nouveautés — Enchères Immo" },
-      { property: "og:description", content: "Les ventes aux enchères immobilières ajoutées les 7 derniers jours." },
+      { title: "Nouveautés — Immojudis" },
+      {
+        name: "description",
+        content: "Les ventes aux enchères immobilières ajoutées les 7 derniers jours.",
+      },
+      { property: "og:title", content: "Nouveautés — Immojudis" },
+      {
+        property: "og:description",
+        content: "Les ventes aux enchères immobilières ajoutées les 7 derniers jours.",
+      },
     ],
     links: [{ rel: "canonical", href: "/sales/new" }],
   }),
@@ -19,20 +25,21 @@ export const Route = createFileRoute("/sales/new")({
 });
 
 function NewSalesPage() {
-  const { data: sales = [], isLoading, error } = useQuery({
+  const {
+    data: sales = [],
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ["sales-new"],
-    queryFn: () => getSales({}, 200, "date_asc"),
+    queryFn: () => getSales({ only_new: true }, 100, "date_asc"),
     staleTime: 60_000,
   });
 
-  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const fresh = sales
-    .filter((s) => s.created_at && new Date(s.created_at).getTime() >= sevenDaysAgo)
-    .sort((a, b) => {
-      const da = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const db = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return db - da;
-    });
+  const fresh = sales.sort((a, b) => {
+    const da = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const db = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return db - da;
+  });
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
@@ -59,7 +66,9 @@ function NewSalesPage() {
         <div className="rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground">
           Aucune nouvelle annonce sur les 7 derniers jours.
           <div className="mt-3">
-            <Link to="/sales" className="text-primary underline">Voir toutes les annonces</Link>
+            <Link to="/sales" className="text-primary underline">
+              Voir toutes les annonces
+            </Link>
           </div>
         </div>
       )}
@@ -67,7 +76,10 @@ function NewSalesPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {isLoading
           ? Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+              <div
+                key={i}
+                className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
+              >
                 <Skeleton className="h-5 w-3/4" />
                 <Skeleton className="h-3 w-1/2" />
                 <Skeleton className="h-8 w-1/3" />

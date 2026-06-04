@@ -1,5 +1,5 @@
 -- =====================================================================
--- Enchères Immo — Setup SQL pour l'app web
+-- Immojudis — Setup SQL pour l'app web
 -- À exécuter dans le SQL editor du projet Supabase.
 -- Suppose que la table public.auction_sales existe déjà (pipeline scraping).
 -- =====================================================================

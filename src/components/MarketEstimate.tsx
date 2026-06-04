@@ -1,12 +1,19 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { TrendingDown, TrendingUp, Minus, MapPin, Info } from "lucide-react";
+import Info from "lucide-react/dist/esm/icons/info.js";
+import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
+import Minus from "lucide-react/dist/esm/icons/minus.js";
+import TrendingDown from "lucide-react/dist/esm/icons/trending-down.js";
+import TrendingUp from "lucide-react/dist/esm/icons/trending-up.js";
 import { getMarketEstimate } from "@/lib/market.functions";
-import { formatPrice, formatDate } from "@/lib/format";
+import { formatPrice, formatPricePerM2, formatDate } from "@/lib/format";
 import type { AuctionSale } from "@/lib/types";
 
-function verdictTone(deviation: number | null): { label: string; tone: "good" | "ok" | "warn" | "bad" } {
+function verdictTone(deviation: number | null): {
+  label: string;
+  tone: "good" | "ok" | "warn" | "bad";
+} {
   if (deviation == null) return { label: "—", tone: "ok" };
   if (deviation <= -20) return { label: "Très inférieur au marché", tone: "good" };
   if (deviation <= -5) return { label: "Inférieur au marché", tone: "good" };
@@ -16,11 +23,17 @@ function verdictTone(deviation: number | null): { label: string; tone: "good" | 
 }
 
 const TONE_CLASSES: Record<"good" | "ok" | "warn" | "bad", string> = {
-  good: "bg-emerald-50 text-emerald-900 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-900/40",
-  ok: "bg-blue-50 text-blue-900 border-blue-200 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-900/40",
-  warn: "bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-900/40",
-  bad: "bg-red-50 text-red-900 border-red-200 dark:bg-red-900/20 dark:text-red-200 dark:border-red-900/40",
+  good: "bg-emerald-400/10 text-emerald-100 border-emerald-300/20",
+  ok: "bg-sky-400/10 text-sky-100 border-sky-300/20",
+  warn: "bg-amber-400/10 text-amber-100 border-amber-300/20",
+  bad: "bg-red-500/10 text-red-100 border-red-300/20",
 };
+
+const QUALITY_CLASSES = {
+  forte: "border-emerald-300/20 bg-emerald-400/10 text-emerald-100",
+  correcte: "border-sky-300/20 bg-sky-400/10 text-sky-100",
+  fragile: "border-amber-300/20 bg-amber-400/10 text-amber-100",
+} as const;
 
 type Props = {
   sale: AuctionSale;
@@ -40,7 +53,14 @@ export function MarketEstimate({ sale, currentPrice, surface }: Props) {
   const fetchEstimate = useServerFn(getMarketEstimate);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["market-estimate", sale.id, lat, lng, sale.property_type],
+    queryKey: [
+      "market-estimate",
+      sale.id,
+      lat,
+      lng,
+      sale.property_type,
+      Math.round(refSurface ?? 0),
+    ],
     queryFn: () =>
       fetchEstimate({
         data: {
@@ -49,6 +69,7 @@ export function MarketEstimate({ sale, currentPrice, surface }: Props) {
           radiusM: 500,
           yearsBack: 2,
           propertyType: sale.property_type,
+          surfaceM2: refSurface,
         },
       }),
     enabled: lat != null && lng != null,
@@ -57,13 +78,14 @@ export function MarketEstimate({ sale, currentPrice, surface }: Props) {
 
   const verdict = useMemo(() => {
     if (!data?.estimate?.medianPricePerM2 || pricePerM2Ref == null) return null;
-    const dev = ((pricePerM2Ref - data.estimate.medianPricePerM2) / data.estimate.medianPricePerM2) * 100;
+    const dev =
+      ((pricePerM2Ref - data.estimate.medianPricePerM2) / data.estimate.medianPricePerM2) * 100;
     return { ...verdictTone(dev), deviation: dev };
   }, [data, pricePerM2Ref]);
 
   if (lat == null || lng == null) {
     return (
-      <div className="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
+      <div className="liquid-panel-soft rounded-lg p-3 text-sm text-muted-foreground">
         Estimation marché indisponible : coordonnées GPS manquantes.
       </div>
     );
@@ -71,7 +93,7 @@ export function MarketEstimate({ sale, currentPrice, surface }: Props) {
 
   if (isLoading) {
     return (
-      <div className="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
+      <div className="liquid-panel-soft rounded-lg p-3 text-sm text-muted-foreground">
         Chargement des transactions DVF du quartier…
       </div>
     );
@@ -79,7 +101,7 @@ export function MarketEstimate({ sale, currentPrice, surface }: Props) {
 
   if (error || !data?.ok) {
     return (
-      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+      <div className="rounded-lg border border-amber-300/20 bg-amber-400/10 p-3 text-sm text-amber-100">
         {data?.error ?? "Impossible de charger l'estimation de marché."}
       </div>
     );
@@ -88,32 +110,59 @@ export function MarketEstimate({ sale, currentPrice, surface }: Props) {
   const est = data.estimate;
   if (!est) return null;
 
-  if (est.sampleSize < 3 || est.medianPricePerM2 == null) {
+  if (est.medianPricePerM2 == null) {
     return (
-      <div className="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
-        Pas assez de transactions DVF comparables dans un rayon de 500&nbsp;m ({est.sampleSize} trouvée{est.sampleSize > 1 ? "s" : ""}).
+      <div className="liquid-panel-soft rounded-lg p-3 text-sm text-muted-foreground">
+        Pas assez de transactions DVF comparables dans un rayon de {est.radiusM}&nbsp;m (
+        {est.sampleSize} trouvée{est.sampleSize > 1 ? "s" : ""}).
       </div>
     );
   }
 
-  const Icon = verdict == null ? Minus : verdict.deviation < 0 ? TrendingDown : verdict.deviation > 0 ? TrendingUp : Minus;
+  const Icon =
+    verdict == null
+      ? Minus
+      : verdict.deviation < 0
+        ? TrendingDown
+        : verdict.deviation > 0
+          ? TrendingUp
+          : Minus;
 
   return (
-    <div className={`rounded-md border p-4 ${verdict ? TONE_CLASSES[verdict.tone] : "border-border bg-background"}`}>
+    <div
+      className={`rounded-lg border p-4 ${verdict ? TONE_CLASSES[verdict.tone] : "liquid-panel-soft"}`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide opacity-80">
             <MapPin className="h-3.5 w-3.5" /> Prix de marché (DVF)
           </div>
           <div className="mt-1 text-2xl font-bold tabular-nums">
-            {formatPrice(est.medianPricePerM2!)} <span className="text-sm font-normal opacity-80">/m²</span>
+            {formatPricePerM2(est.medianPricePerM2!)}
           </div>
           <div className="mt-0.5 text-xs opacity-80">
             Médiane sur {est.sampleSize} ventes · rayon {est.radiusM} m · {est.yearsBack} ans
           </div>
+          <div
+            className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${QUALITY_CLASSES[est.qualityLabel]}`}
+          >
+            Fiabilité {est.qualityLabel} · {est.qualityScore}/100
+          </div>
+          <div className="mt-1 text-xs opacity-75">
+            {est.radiusM > 500 ? "Rayon élargi faute de comparables suffisants. " : ""}
+            {est.comparableMode === "surface_matched" && est.surfaceMinM2 && est.surfaceMaxM2
+              ? `Comparables filtrés par surface : ${est.surfaceMinM2} à ${est.surfaceMaxM2} m²`
+              : `Comparables par type et secteur (${est.totalNearbySampleSize} ventes proches analysées)`}
+          </div>
+          {est.qualityWarnings.length > 0 && (
+            <div className="mt-1 text-xs opacity-70">
+              À lire avec prudence : {est.qualityWarnings.join(", ")}.
+            </div>
+          )}
           {est.p25PricePerM2 != null && est.p75PricePerM2 != null && (
             <div className="mt-1 text-xs opacity-70">
-              Fourchette {formatPrice(est.p25PricePerM2)} – {formatPrice(est.p75PricePerM2)} €/m²
+              Fourchette {formatPricePerM2(est.p25PricePerM2)} –{" "}
+              {formatPricePerM2(est.p75PricePerM2)}
             </div>
           )}
         </div>
@@ -127,7 +176,7 @@ export function MarketEstimate({ sale, currentPrice, surface }: Props) {
             <div className="mt-0.5 text-xs">{verdict.label}</div>
             {pricePerM2Ref != null && (
               <div className="mt-1 text-xs opacity-80">
-                Bien : {formatPrice(Math.round(pricePerM2Ref))} €/m²
+                Bien : {formatPricePerM2(Math.round(pricePerM2Ref))}
               </div>
             )}
           </div>
@@ -145,8 +194,11 @@ export function MarketEstimate({ sale, currentPrice, surface }: Props) {
                 <span className="opacity-80">{formatDate(t.date)}</span>
                 <span className="opacity-70">{t.surface.toFixed(0)} m²</span>
                 <span className="font-medium tabular-nums">{formatPrice(t.totalPrice)}</span>
+                {t.distanceM != null && (
+                  <span className="opacity-65">{Math.round(t.distanceM)} m</span>
+                )}
                 <span className="font-semibold tabular-nums">
-                  {formatPrice(Math.round(t.pricePerM2))} €/m²
+                  {formatPricePerM2(Math.round(t.pricePerM2))}
                 </span>
               </li>
             ))}
@@ -156,7 +208,8 @@ export function MarketEstimate({ sale, currentPrice, surface }: Props) {
 
       <p className="mt-3 flex items-start gap-1.5 text-[11px] opacity-70">
         <Info className="mt-0.5 h-3 w-3 shrink-0" />
-        Source : Demandes de Valeurs Foncières (DGFiP) via Cerema. Ventes réelles enregistrées, hors VEFA et donations.
+        Source : Demandes de Valeurs Foncières (DGFiP) via Cerema. Ventes réelles enregistrées, hors
+        VEFA et donations.
       </p>
     </div>
   );

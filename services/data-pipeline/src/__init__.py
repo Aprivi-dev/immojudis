@@ -1,0 +1,1 @@
+"""Auction data collection package."""

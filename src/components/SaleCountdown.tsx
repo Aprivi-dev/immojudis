@@ -1,4 +1,4 @@
-import { Clock } from "lucide-react";
+import Clock from "lucide-react/dist/esm/icons/clock.js";
 import { useEffect, useState } from "react";
 
 function diffParts(target: Date) {
@@ -17,9 +17,23 @@ function tone(days: number | null): {
   ring: string;
 } {
   if (days == null) return { bg: "bg-muted", text: "text-muted-foreground", ring: "ring-border" };
-  if (days < 7) return { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-900 dark:text-red-200", ring: "ring-red-300/50" };
-  if (days < 30) return { bg: "bg-amber-100 dark:bg-amber-900/30", text: "text-amber-900 dark:text-amber-200", ring: "ring-amber-300/50" };
-  return { bg: "bg-emerald-100 dark:bg-emerald-900/30", text: "text-emerald-900 dark:text-emerald-200", ring: "ring-emerald-300/50" };
+  if (days < 7)
+    return {
+      bg: "bg-red-100 dark:bg-red-900/30",
+      text: "text-red-900 dark:text-red-200",
+      ring: "ring-red-300/50",
+    };
+  if (days < 30)
+    return {
+      bg: "bg-amber-100 dark:bg-amber-900/30",
+      text: "text-amber-900 dark:text-amber-200",
+      ring: "ring-amber-300/50",
+    };
+  return {
+    bg: "bg-emerald-100 dark:bg-emerald-900/30",
+    text: "text-emerald-900 dark:text-emerald-200",
+    ring: "ring-emerald-300/50",
+  };
 }
 
 export function SaleCountdown({
@@ -71,10 +85,12 @@ export function SaleCountdown({
       parts.days > 0
         ? `J-${parts.days}`
         : parts.hours > 0
-        ? `${parts.hours}h ${parts.minutes}m`
-        : `${parts.minutes} min`;
+          ? `${parts.hours}h ${parts.minutes}m`
+          : `${parts.minutes} min`;
     return (
-      <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ring-1 ${t.bg} ${t.text} ${t.ring}`}>
+      <span
+        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ring-1 ${t.bg} ${t.text} ${t.ring}`}
+      >
         <Clock className="h-3 w-3" /> {compact}
       </span>
     );

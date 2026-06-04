@@ -16,7 +16,10 @@ export function FeatureBadges({ sale, max }: { sale: AuctionSale; max?: number }
   return (
     <div className="flex flex-wrap gap-1">
       {shown.map((l) => (
-        <span key={l} className="inline-flex items-center rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+        <span
+          key={l}
+          className="inline-flex items-center rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+        >
           {l}
         </span>
       ))}

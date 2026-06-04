@@ -1,0 +1,30 @@
+[
+  {
+    "name": "travaux_confirmes_pv",
+    "document_type": "pv_huissier",
+    "text": "Le procès-verbal descriptif constate des infiltrations d'eau et des dégradations importantes dans le logement. Des travaux de remise en état sont à prévoir.",
+    "expected_risks": ["travaux"],
+    "unexpected_risks": ["plomb", "servitude"]
+  },
+  {
+    "name": "diagnostic_plomb_negatif",
+    "document_type": "diagnostics_techniques",
+    "text": "Constat de risque d'exposition au plomb. Le diagnostic ne constate pas de revêtements dégradés contenant du plomb et la quantité relevée ne dépasse pas le seuil réglementaire.",
+    "expected_risks": [],
+    "unexpected_risks": ["plomb"]
+  },
+  {
+    "name": "servitude_clause_generique",
+    "document_type": "cahier_conditions_vente",
+    "text": "Dans le cas où l'immeuble vendu serait grevé de servitudes, l'adjudicataire devra en faire son affaire personnelle sans recours contre le poursuivant.",
+    "expected_risks": [],
+    "unexpected_risks": ["servitude"]
+  },
+  {
+    "name": "occupation_bail",
+    "document_type": "pv_huissier",
+    "text": "Le bien est actuellement occupé par un locataire suivant bail d'habitation en cours. Le loyer mensuel est indiqué dans le dossier.",
+    "expected_risks": ["occupation"],
+    "unexpected_risks": []
+  }
+]
