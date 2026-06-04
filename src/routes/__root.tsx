@@ -95,9 +95,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", type: "image/png", href: "/brand/falcon-mark-192.png" },
-      { rel: "apple-touch-icon", href: "/brand/falcon-mark-512.png" },
-      { rel: "preload", as: "image", href: "/brand/falcon-mark.png" },
+      { rel: "icon", type: "image/png", href: "/brand/owl-mark-192.png" },
+      { rel: "apple-touch-icon", href: "/brand/owl-mark-512.png" },
+      { rel: "preload", as: "image", href: "/brand/owl-mark.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
