@@ -11,10 +11,10 @@
 ## 1. Installation locale
 
 ```bash
-bun install        # ou npm install
+npm install
 cp .env.example .env
 # Renseigner VITE_SUPABASE_URL et VITE_SUPABASE_PUBLISHABLE_KEY
-bun run dev        # http://localhost:3000
+npm run dev        # http://localhost:3000
 ```
 
 ## 2. Variables d'environnement
@@ -57,27 +57,24 @@ peut être désactivée dans Auth → Providers → Email pour accélérer les t
 ## 4. Build
 
 ```bash
-bun run build      # build production
-bun run preview    # smoke test du build
+npm run build      # build production
+npm run preview    # smoke test du build
 ```
 
 ## 5. Déploiement Vercel
 
-Le scaffold cible Cloudflare par défaut (voir `vite.config.ts`), mais le
-build Vite est portable. Pour Vercel :
+Le projet cible Vercel. Pour déployer :
 
 1. Importer le repo dans Vercel.
 2. Framework preset : **Vite**.
-3. Build command : `bun run build` (ou `npm run build`).
-4. Output directory : `dist/` (laisser auto).
+3. Build command : `npm run build`.
+4. Output directory : laisser la valeur auto générée par TanStack Start/Vite.
 5. Renseigner les env vars `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` dans Project Settings → Environment Variables.
 6. Deploy.
 
-> Note V1 : Le rendu SSR n'est pas requis pour cette app (toutes les requêtes
-> Supabase sont côté client). Si Vercel n'arrive pas à servir le bundle SSR
-> TanStack Start sur edge, basculer en SPA en supprimant le plugin Cloudflare
-> de `vite.config.ts` et en ajoutant un rewrite `vercel.json` pour catch-all
-> vers `index.html`.
+> Note : le projet est configuré avec TanStack Start et Nitro pour générer le
+> serveur Vercel. Les variables Supabase publiques restent injectées via
+> `VITE_*`.
 
 ## 6. Tests d'acceptation
 

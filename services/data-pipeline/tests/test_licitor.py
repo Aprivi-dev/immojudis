@@ -14,7 +14,7 @@ def test_robots_rules_allows_public_licitor_pages_and_blocks_disallowed_document
         User-agent: ClaudeBot
         Disallow: /
         """,
-        "auction-data/0.1 (+contact@example.com)",
+        "immojudis-data-pipeline/1.0 (+contact@example.com)",
     )
 
     assert rules.can_fetch("https://www.licitor.com/ventes-aux-encheres-immobilieres/aquitaine.html")

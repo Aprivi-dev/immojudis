@@ -190,7 +190,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             errors.setdefault("supabase", []).append(str(exc))
             finish_run_in_supabase(run_id, "failed", summary, errors)
 
-    print("Auction data pipeline summary")
+    print("Immojudis data pipeline summary")
     print(f"- collected: {len(raw_sales)}")
     print(f"- collected_by_source: {raw_by_source}")
     print(f"- normalized: {len(normalized_observations)}")

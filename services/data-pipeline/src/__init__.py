@@ -1,1 +1,1 @@
-"""Auction data collection package."""
+"""Immojudis data collection package."""

@@ -17,14 +17,6 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-anon-key
 ```
 
-## Firebase Studio
-
-Le projet contient une configuration `.idx/dev.nix` pour Firebase Studio.
-
-Guide de migration :
-
-- [docs/firebase_studio.md](docs/firebase_studio.md)
-
 ## Scripts
 
 ```bash
