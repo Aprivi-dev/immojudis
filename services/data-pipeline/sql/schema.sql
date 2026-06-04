@@ -531,6 +531,31 @@ create index if not exists idx_auction_sales_app_read_quality_gin
 create index if not exists idx_auction_sales_app_read_risks_gin
   on auction_sales_app_read using gin(risks);
 
+create or replace view v_auction_map_pins
+with (security_invoker = true)
+as
+select
+  id,
+  title,
+  city,
+  department,
+  property_type,
+  starting_price_eur,
+  sale_date,
+  latitude,
+  longitude,
+  occupancy_status,
+  app_surface_m2,
+  investment_score,
+  score_confidence,
+  status,
+  created_at
+from auction_sales_app_read
+where id is not null
+  and latitude is not null
+  and longitude is not null
+  and coalesce(status, 'unknown') in ('upcoming', 'unknown');
+
 alter table auction_sales enable row level security;
 alter table tribunals enable row level security;
 alter table auction_observations enable row level security;
@@ -593,6 +618,7 @@ revoke all on table auction_sales_investment_candidates from anon, authenticated
 revoke all on table auction_source_coverage from anon, authenticated;
 revoke all on table v_auction_sales_app from anon, authenticated;
 revoke all on table auction_sales_app_read from anon, authenticated;
+revoke all on table v_auction_map_pins from anon, authenticated;
 do $$
 begin
   if to_regclass('public.spatial_ref_sys') is not null then
@@ -633,6 +659,7 @@ grant select (
   deal_memo, quality_summary, risks, score_factors, documents_rich,
   created_at, updated_at
 ) on auction_sales_app_read to anon, authenticated;
+grant select on v_auction_map_pins to anon, authenticated;
 
 drop policy if exists auction_sales_public_read on auction_sales;
 create policy auction_sales_public_read on auction_sales for select to anon, authenticated using (true);

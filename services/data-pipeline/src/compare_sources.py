@@ -5,8 +5,8 @@ import sys
 
 from src.comparison import compare_source_sales, export_comparison
 from src.normalize import normalize_sale
-from src.sources.avoventes import get_avoventes_errors, scrape_avoventes_aquitaine
-from src.sources.licitor import get_licitor_errors, scrape_licitor_aquitaine
+from src.sources.avoventes import scrape_avoventes_aquitaine_result
+from src.sources.licitor import scrape_licitor_aquitaine_result
 
 
 logging.basicConfig(
@@ -18,11 +18,13 @@ LOGGER = logging.getLogger(__name__)
 
 def run_comparison() -> int:
     errors: dict[str, list[str]] = {"avoventes": [], "licitor": []}
-    raw_avoventes = scrape_avoventes_aquitaine()
-    errors["avoventes"].extend(get_avoventes_errors())
+    avoventes_result = scrape_avoventes_aquitaine_result()
+    raw_avoventes = avoventes_result.sales
+    errors["avoventes"].extend(avoventes_result.errors)
 
-    raw_licitor = scrape_licitor_aquitaine()
-    errors["licitor"].extend(get_licitor_errors())
+    licitor_result = scrape_licitor_aquitaine_result()
+    raw_licitor = licitor_result.sales
+    errors["licitor"].extend(licitor_result.errors)
 
     avoventes_sales = _normalize_source(raw_avoventes, "avoventes", errors)
     licitor_sales = _normalize_source(raw_licitor, "licitor", errors)

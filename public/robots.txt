@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /alerts
+Disallow: /favorites
+Disallow: /login

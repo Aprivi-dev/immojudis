@@ -4,8 +4,14 @@ import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import type { LatLngExpression, Map, Marker, Layer, FeatureGroup } from "leaflet";
-import type { AuctionSale } from "@/lib/types";
-import { formatPrice, formatPricePerM2, formatDate, propertyTypeLabel } from "@/lib/format";
+import type { AuctionMapPin } from "@/lib/types";
+import {
+  formatPrice,
+  formatPricePerM2,
+  formatDate,
+  occupancyLabel,
+  propertyTypeLabel,
+} from "@/lib/format";
 import { OSM_TILE_LAYER_URL, OSM_TILE_OPTIONS } from "@/lib/tiles";
 
 // Couleurs cohérentes avec ScoreBadge / InvestmentAnalysis
@@ -32,11 +38,12 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function buildPopup(s: AuctionSale): string {
-  const surface = s.app_surface_m2 ?? s.habitable_surface_m2 ?? s.carrez_surface_m2;
+function buildPopup(s: AuctionMapPin): string {
+  const surface = s.app_surface_m2;
   const ppm2 = surface && s.starting_price_eur ? Math.round(s.starting_price_eur / surface) : null;
   const d = daysUntil(s.sale_date);
   const countdown = d == null ? "" : d < 0 ? "Passée" : d === 0 ? "Aujourd'hui" : `J−${d}`;
+  const occupancy = occupancyLabel(s.occupancy_status);
   const countdownColor =
     d == null || d < 0 ? "#6b7280" : d < 7 ? "#dc2626" : d < 30 ? "#d97706" : "#059669";
 
@@ -53,6 +60,7 @@ function buildPopup(s: AuctionSale): string {
         ${s.sale_date ? `<span>${formatDate(s.sale_date)}</span>` : ""}
         ${countdown ? `<span style="color:${countdownColor};font-weight:600">${countdown}</span>` : ""}
       </div>
+      <div style="font-size:11px;color:#4b5563;margin-bottom:6px">Occupation : <strong>${escapeHtml(occupancy)}</strong></div>
       ${s.investment_score != null ? `<div style="font-size:11px;color:#4b5563;margin-bottom:6px">Score : <strong>${Math.round(s.investment_score)}/100</strong></div>` : ""}
       <a href="/sales/${s.id}" style="display:inline-block;background:#0f172a;color:#fff;padding:4px 10px;border-radius:4px;font-size:11px;text-decoration:none;font-weight:500">Voir le détail →</a>
     </div>`;
@@ -62,7 +70,7 @@ export function SaleMap({
   sales,
   fitToMarkers = false,
 }: {
-  sales: AuctionSale[];
+  sales: AuctionMapPin[];
   fitToMarkers?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -142,6 +150,7 @@ export function SaleMap({
       const points: LatLngExpression[] = [];
       const markers: Marker[] = [];
       for (const s of sales) {
+        if (!s.id) continue;
         if (s.latitude == null || s.longitude == null) continue;
         points.push([s.latitude, s.longitude]);
         const c = scoreColor(s.investment_score);

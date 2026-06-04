@@ -12,7 +12,8 @@ from bs4 import BeautifulSoup
 
 from src.config import AQUITAINE_DEPARTMENTS, load_settings
 from src.normalize import clean_text
-from src.sources.common import PoliteHttpClient, unique_dicts
+from src.raw_models import validate_raw_sales
+from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
 
 
 BASE_URL = "https://www.encheres-publiques.com"
@@ -29,7 +30,6 @@ DEFAULT_PLACES = (
     "marmande-47",
 )
 LOGGER = logging.getLogger(__name__)
-SCRAPE_ERRORS: list[str] = []
 PARIS_TZ = ZoneInfo("Europe/Paris")
 DETAIL_OVERRIDE_FIELDS = {
     "description",
@@ -62,13 +62,16 @@ DETAIL_OVERRIDE_FIELDS = {
 
 
 def scrape_encheres_publiques_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
+    return scrape_encheres_publiques_aquitaine_result(max_pages=max_pages).sales
+
+
+def scrape_encheres_publiques_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
     """Collect Encheres-Publiques.com public listing data for Aquitaine places.
 
     The site exposes structured Next/Apollo state on SEO pages. We consume only
     allowed public pages and avoid disallowed query, backend service and document
     URLs from robots.txt.
     """
-    SCRAPE_ERRORS.clear()
     settings = load_settings()
     client = PoliteHttpClient(
         base_url=BASE_URL,
@@ -79,6 +82,7 @@ def scrape_encheres_publiques_aquitaine(max_pages: int | None = None) -> list[di
     places = _configured_places(str(settings.get("encheres_publiques_places") or ""))
     max_pages = max_pages or int(settings["encheres_publiques_max_pages"])
 
+    errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
     for place in places[:max_pages]:
         page_url = f"{BASE_URL}/ventes/immobilier/v/{place}"
@@ -86,16 +90,15 @@ def scrape_encheres_publiques_aquitaine(max_pages: int | None = None) -> list[di
             html = client.get(page_url)
         except Exception as exc:
             LOGGER.error("Encheres-Publiques list fetch failed for %s: %s", page_url, exc)
-            SCRAPE_ERRORS.append(f"{page_url}: {exc}")
+            errors.append(f"{page_url}: {exc}")
             continue
         for sale in parse_encheres_publiques_html(html, page_url):
-            _enrich_sale_from_detail(client, sale)
+            _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
-    return unique_dicts(raw_sales, "source_url")
-
-
-def get_encheres_publiques_errors() -> list[str]:
-    return list(SCRAPE_ERRORS)
+    return ScrapeResult(
+        validate_raw_sales("encheres_publiques", unique_dicts(raw_sales, "source_url"), errors),
+        errors,
+    )
 
 
 def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, Any]]:
@@ -240,7 +243,7 @@ def _extract_lot_links(soup: BeautifulSoup, page_url: str) -> dict[str, str]:
     return links
 
 
-def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any]) -> None:
+def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> None:
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL) or "#lot-" in source_url:
         return
@@ -248,7 +251,7 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any]) -> 
         html = client.get(source_url)
     except Exception as exc:
         LOGGER.warning("Encheres-Publiques detail fetch failed for %s: %s", source_url, exc)
-        SCRAPE_ERRORS.append(f"detail {source_url}: {exc}")
+        errors.append(f"detail {source_url}: {exc}")
         return
 
     details = parse_encheres_publiques_detail_html(html, source_url)

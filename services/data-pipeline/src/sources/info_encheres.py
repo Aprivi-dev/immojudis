@@ -9,13 +9,13 @@ from bs4 import BeautifulSoup
 
 from src.config import AQUITAINE_DEPARTMENTS, load_settings
 from src.normalize import clean_text
-from src.sources.common import PoliteHttpClient, unique_dicts
+from src.raw_models import validate_raw_sales
+from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
 
 
 BASE_URL = "https://www.info-encheres.com"
 LIST_URL = f"{BASE_URL}/vente-encheres-immobilieres-annonces.html"
 LOGGER = logging.getLogger(__name__)
-SCRAPE_ERRORS: list[str] = []
 DETAIL_OVERRIDE_FIELDS = {
     "title",
     "description",
@@ -36,8 +36,11 @@ DETAIL_OVERRIDE_FIELDS = {
 
 
 def scrape_info_encheres_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
+    return scrape_info_encheres_aquitaine_result(max_pages=max_pages).sales
+
+
+def scrape_info_encheres_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
     """Collect Info Encheres judicial real-estate listings for the target departments."""
-    SCRAPE_ERRORS.clear()
     settings = load_settings()
     client = PoliteHttpClient(
         base_url=BASE_URL,
@@ -47,24 +50,24 @@ def scrape_info_encheres_aquitaine(max_pages: int | None = None) -> list[dict[st
     )
     max_pages = max_pages or int(settings["info_encheres_max_pages"])
 
+    errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
     for page_url in _list_urls(max_pages):
         try:
             html = client.get(page_url)
         except Exception as exc:
             LOGGER.error("Info Encheres list fetch failed for %s: %s", page_url, exc)
-            SCRAPE_ERRORS.append(f"{page_url}: {exc}")
+            errors.append(f"{page_url}: {exc}")
             continue
         for sale in parse_info_encheres_list_html(html, page_url=page_url):
             if sale.get("department") not in AQUITAINE_DEPARTMENTS:
                 continue
-            _enrich_sale_from_detail(client, sale)
+            _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
-    return unique_dicts(raw_sales, "source_url")
-
-
-def get_info_encheres_errors() -> list[str]:
-    return list(SCRAPE_ERRORS)
+    return ScrapeResult(
+        validate_raw_sales("info_encheres", unique_dicts(raw_sales, "source_url"), errors),
+        errors,
+    )
 
 
 def parse_info_encheres_list_html(html: str, page_url: str = LIST_URL) -> list[dict[str, Any]]:
@@ -171,7 +174,7 @@ def _list_urls(max_pages: int) -> list[str]:
     return urls
 
 
-def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any]) -> None:
+def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> None:
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
@@ -179,7 +182,7 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any]) -> 
         html = client.get(source_url)
     except Exception as exc:
         LOGGER.warning("Info Encheres detail fetch failed for %s: %s", source_url, exc)
-        SCRAPE_ERRORS.append(f"detail {source_url}: {exc}")
+        errors.append(f"detail {source_url}: {exc}")
         return
     details = parse_info_encheres_detail_html(html, source_url)
     for key, value in details.items():

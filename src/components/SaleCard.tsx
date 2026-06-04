@@ -95,7 +95,7 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
           <span
             className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium ${occTone}`}
           >
-            {occLabel}
+            Occupation : {occLabel}
           </span>
           <FeatureBadges sale={sale} max={4} />
           {riskCount > 0 && (

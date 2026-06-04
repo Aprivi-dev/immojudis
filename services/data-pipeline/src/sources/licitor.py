@@ -12,12 +12,13 @@ import httpx
 
 from src.config import AQUITAINE_DEPARTMENTS, load_settings
 from src.normalize import clean_text
+from src.raw_models import validate_raw_sales
+from src.sources.common import ScrapeResult
 
 
 BASE_URL = "https://www.licitor.com"
 AQUITAINE_URL = f"{BASE_URL}/ventes-aux-encheres-immobilieres/sud-ouest-pyrenees/prochaines-ventes.html?area%5B0%5D=AQ"
 LOGGER = logging.getLogger(__name__)
-SCRAPE_ERRORS: list[str] = []
 
 
 @dataclass
@@ -109,8 +110,11 @@ class RobotsRules:
 
 
 def scrape_licitor_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
+    return scrape_licitor_aquitaine_result(max_pages=max_pages).sales
+
+
+def scrape_licitor_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
     """Collect Licitor Aquitaine listings as an optional benchmark source."""
-    SCRAPE_ERRORS.clear()
     settings = load_settings()
     client = LicitorClient(
         user_agent=str(settings["user_agent"]),
@@ -119,7 +123,8 @@ def scrape_licitor_aquitaine(max_pages: int | None = None) -> list[dict[str, Any
     )
     max_pages = max_pages or int(settings["licitor_max_pages"])
 
-    detail_urls = _collect_detail_urls(client, max_pages=max_pages)
+    errors: list[str] = []
+    detail_urls = _collect_detail_urls(client, max_pages=max_pages, errors=errors)
     raw_sales: list[dict[str, Any]] = []
     seen: set[str] = set()
     for detail_url in detail_urls:
@@ -130,7 +135,7 @@ def scrape_licitor_aquitaine(max_pages: int | None = None) -> list[dict[str, Any
             detail_html = client.get(detail_url)
         except Exception as exc:
             LOGGER.error("Licitor detail fetch failed for %s: %s", detail_url, exc)
-            SCRAPE_ERRORS.append(f"{detail_url}: {exc}")
+            errors.append(f"{detail_url}: {exc}")
             continue
         sale = parse_licitor_detail_html(detail_html, detail_url)
         postal_code = sale.get("postal_code")
@@ -138,11 +143,7 @@ def scrape_licitor_aquitaine(max_pages: int | None = None) -> list[dict[str, Any
         if department and department not in AQUITAINE_DEPARTMENTS:
             continue
         raw_sales.append(sale)
-    return raw_sales
-
-
-def get_licitor_errors() -> list[str]:
-    return list(SCRAPE_ERRORS)
+    return ScrapeResult(validate_raw_sales("licitor", raw_sales, errors), errors)
 
 
 def parse_licitor_list_html(html: str, page_url: str = AQUITAINE_URL) -> tuple[list[str], list[str]]:
@@ -199,7 +200,7 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     }
 
 
-def _collect_detail_urls(client: LicitorClient, max_pages: int) -> list[str]:
+def _collect_detail_urls(client: LicitorClient, max_pages: int, errors: list[str]) -> list[str]:
     pending = [AQUITAINE_URL]
     visited: set[str] = set()
     detail_urls: list[str] = []
@@ -213,7 +214,7 @@ def _collect_detail_urls(client: LicitorClient, max_pages: int) -> list[str]:
             html = client.get(page_url)
         except Exception as exc:
             LOGGER.error("Licitor list fetch failed for %s: %s", page_url, exc)
-            SCRAPE_ERRORS.append(f"{page_url}: {exc}")
+            errors.append(f"{page_url}: {exc}")
             continue
         page_detail_urls, next_urls = parse_licitor_list_html(html, page_url)
         detail_urls.extend(page_detail_urls)

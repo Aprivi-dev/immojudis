@@ -54,6 +54,25 @@ export type AuctionSale = {
   updated_at: string | null;
 };
 
+export type AuctionMapPin = Pick<
+  AuctionSale,
+  | "id"
+  | "title"
+  | "city"
+  | "department"
+  | "property_type"
+  | "starting_price_eur"
+  | "sale_date"
+  | "latitude"
+  | "longitude"
+  | "occupancy_status"
+  | "app_surface_m2"
+  | "investment_score"
+  | "score_confidence"
+  | "status"
+  | "created_at"
+>;
+
 export type SaleFilters = {
   department?: string;
   city?: string;
