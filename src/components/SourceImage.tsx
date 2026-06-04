@@ -36,7 +36,7 @@ export function SourceImage({
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(212,160,23,0.18),transparent_34%),linear-gradient(135deg,rgba(13,27,42,0.95),rgba(7,14,22,0.98))]" />
         <img
-          src="/brand/falcon-mark.png"
+          src="/brand/owl-mark.png"
           alt=""
           aria-hidden="true"
           className="absolute right-4 top-4 h-20 w-20 opacity-20"

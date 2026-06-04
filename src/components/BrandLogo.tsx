@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-const FALCON_MARK = "/brand/falcon-mark.png";
+const BRAND_MARK = "/brand/owl-mark.png";
 
 type BrandLogoProps = {
   className?: string;
@@ -18,7 +18,7 @@ export function BrandLogo({
   return (
     <span className={cn("inline-flex items-center gap-3", className)}>
       <img
-        src={FALCON_MARK}
+        src={BRAND_MARK}
         alt=""
         className={cn("h-10 w-10 shrink-0 object-contain", markClassName)}
       />
