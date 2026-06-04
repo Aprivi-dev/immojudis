@@ -1,4 +1,4 @@
-# Enchères Immo — Déploiement
+# Immojudis — Déploiement
 
 ## Stack
 
@@ -19,11 +19,11 @@ bun run dev        # http://localhost:3000
 
 ## 2. Variables d'environnement
 
-| Variable | Requis | Description |
-|---|---|---|
-| `VITE_SUPABASE_URL` | ✅ | URL du projet Supabase (`https://xxx.supabase.co`) |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅ | Clé `anon` / `publishable` (publique, safe côté client) |
-| `VITE_MAPBOX_TOKEN` | ❌ | Optionnel. Non utilisé en V1 (Leaflet + OSM par défaut). |
+| Variable                        | Requis | Description                                              |
+| ------------------------------- | ------ | -------------------------------------------------------- |
+| `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)       |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)  |
+| `VITE_MAPBOX_TOKEN`             | ❌     | Optionnel. Non utilisé en V1 (Leaflet + OSM par défaut). |
 
 ⚠️ **Ne JAMAIS** ajouter `SUPABASE_SERVICE_ROLE_KEY` au front. Elle bypass RLS.
 
@@ -36,6 +36,7 @@ sql/vercel_app_setup.sql
 ```
 
 Ce script :
+
 - crée la vue `public.v_auction_sales_app` (filtrée sur status upcoming/unknown + lat/lng) ;
 - crée les tables `public.user_favorites` et `public.user_alerts` ;
 - active RLS + policies (chaque user ne voit que ses favoris/alertes) ;

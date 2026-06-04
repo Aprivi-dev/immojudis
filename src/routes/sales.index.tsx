@@ -7,7 +7,13 @@ import { SaleCard } from "@/components/SaleCard";
 import { SaleFilters as SaleFiltersForm } from "@/components/SaleFilters";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { estimateGrossYieldPct, geocodeAddress, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
+import {
+  estimateGrossYieldPct,
+  geocodeAddress,
+  haversineKm,
+  pricePerM2,
+  type GeoPoint,
+} from "@/lib/geo";
 
 const PAGE_SIZE = 50;
 
@@ -43,8 +49,11 @@ export const Route = createFileRoute("/sales/")({
   }),
   head: () => ({
     meta: [
-      { title: "Annonces — Enchères Immo" },
-      { name: "description", content: "Consultez toutes les ventes aux enchères immobilières disponibles." },
+      { title: "Annonces — Immojudis" },
+      {
+        name: "description",
+        content: "Consultez toutes les ventes aux enchères immobilières disponibles.",
+      },
     ],
   }),
   component: SalesPage,
@@ -62,21 +71,15 @@ function SalesPage() {
     min_score: search.min_score,
   };
   const sort = (search.sort as SortKey) || "score_desc";
-  const {
-    data,
-    isLoading,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-    error,
-  } = useInfiniteQuery({
-    queryKey: ["sales", filters, sort],
-    queryFn: ({ pageParam = 0 }) => getSales(filters, PAGE_SIZE, sort, pageParam),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.length < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
-    staleTime: 60_000,
-  });
+  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, error } =
+    useInfiniteQuery({
+      queryKey: ["sales", filters, sort],
+      queryFn: ({ pageParam = 0 }) => getSales(filters, PAGE_SIZE, sort, pageParam),
+      initialPageParam: 0,
+      getNextPageParam: (lastPage, allPages) =>
+        lastPage.length < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
+      staleTime: 60_000,
+    });
   const sales = useMemo(() => data?.pages.flat() ?? [], [data]);
 
   // Geocode "around address" when provided
@@ -129,7 +132,11 @@ function SalesPage() {
             : `${filtered.length} résultat${filtered.length > 1 ? "s" : ""}${filtered.length !== sales.length ? ` (sur ${sales.length})` : ""}`}
           {geocoding && " · géocodage…"}
           {center && search.around_radius != null && (
-            <> · autour de <span className="font-medium text-foreground">{center.label}</span> ({search.around_radius} km)</>
+            <>
+              {" "}
+              · autour de <span className="font-medium text-foreground">{center.label}</span> (
+              {search.around_radius} km)
+            </>
           )}
         </p>
       </div>
@@ -158,11 +165,7 @@ function SalesPage() {
 
       {!isLoading && hasNextPage && (
         <div className="mt-6 flex justify-center">
-          <Button
-            variant="outline"
-            onClick={() => fetchNextPage()}
-            disabled={isFetchingNextPage}
-          >
+          <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
             {isFetchingNextPage ? "Chargement…" : "Charger plus d'annonces"}
           </Button>
         </div>

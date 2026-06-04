@@ -1,4 +1,5 @@
-import { GripVertical } from "lucide-react";
+import type * as React from "react";
+import GripVertical from "lucide-react/dist/esm/icons/grip-vertical.js";
 import { Group, Panel, Separator } from "react-resizable-panels";
 
 import { cn } from "@/lib/utils";

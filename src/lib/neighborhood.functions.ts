@@ -105,26 +105,62 @@ function labelFor(tags: OsmTags): string {
 function categoryFor(tags: OsmTags): keyof NeighborhoodAnalysis["categories"] | null {
   const t = tags;
   if (
-    t.railway === "station" || t.railway === "halt" || t.railway === "tram_stop" ||
-    t.railway === "subway_entrance" || t.station === "subway" ||
-    t.highway === "bus_stop" || t.public_transport === "station" || t.amenity === "bus_station"
-  ) return "transport";
-  if (t.amenity === "school" || t.amenity === "kindergarten" || t.amenity === "college" || t.amenity === "university")
+    t.railway === "station" ||
+    t.railway === "halt" ||
+    t.railway === "tram_stop" ||
+    t.railway === "subway_entrance" ||
+    t.station === "subway" ||
+    t.highway === "bus_stop" ||
+    t.public_transport === "station" ||
+    t.amenity === "bus_station"
+  )
+    return "transport";
+  if (
+    t.amenity === "school" ||
+    t.amenity === "kindergarten" ||
+    t.amenity === "college" ||
+    t.amenity === "university"
+  )
     return "education";
-  if (t.amenity === "pharmacy" || t.amenity === "hospital" || t.amenity === "clinic" || t.amenity === "doctors" || t.amenity === "dentist")
+  if (
+    t.amenity === "pharmacy" ||
+    t.amenity === "hospital" ||
+    t.amenity === "clinic" ||
+    t.amenity === "doctors" ||
+    t.amenity === "dentist"
+  )
     return "health";
-  if (t.shop === "supermarket" || t.shop === "bakery" || t.shop === "convenience" || t.shop === "butcher" || t.shop === "greengrocer" || t.amenity === "marketplace")
+  if (
+    t.shop === "supermarket" ||
+    t.shop === "bakery" ||
+    t.shop === "convenience" ||
+    t.shop === "butcher" ||
+    t.shop === "greengrocer" ||
+    t.amenity === "marketplace"
+  )
     return "food";
   if (
-    t.leisure === "park" || t.leisure === "garden" || t.leisure === "playground" ||
-    t.leisure === "sports_centre" || t.leisure === "fitness_centre" || t.leisure === "swimming_pool" ||
-    t.tourism === "museum" || t.amenity === "theatre" || t.amenity === "cinema" || t.amenity === "library"
-  ) return "leisure";
+    t.leisure === "park" ||
+    t.leisure === "garden" ||
+    t.leisure === "playground" ||
+    t.leisure === "sports_centre" ||
+    t.leisure === "fitness_centre" ||
+    t.leisure === "swimming_pool" ||
+    t.tourism === "museum" ||
+    t.amenity === "theatre" ||
+    t.amenity === "cinema" ||
+    t.amenity === "library"
+  )
+    return "leisure";
   if (
-    t.amenity === "restaurant" || t.amenity === "cafe" || t.amenity === "bar" ||
-    t.amenity === "bank" || t.amenity === "post_office" ||
+    t.amenity === "restaurant" ||
+    t.amenity === "cafe" ||
+    t.amenity === "bar" ||
+    t.amenity === "bank" ||
+    t.amenity === "post_office" ||
     (t.shop && t.shop !== "supermarket")
-  ) return "daily";
+  )
+    return "daily";
   return null;
 }
 
@@ -245,7 +281,9 @@ export const getNeighborhoodAnalysis = createServerFn({ method: "GET" })
       stats.samples.push(poi);
     }
 
-    for (const key of Object.keys(result.categories) as Array<keyof NeighborhoodAnalysis["categories"]>) {
+    for (const key of Object.keys(result.categories) as Array<
+      keyof NeighborhoodAnalysis["categories"]
+    >) {
       result.categories[key].samples.sort((a, b) => a.distanceM - b.distanceM);
       result.categories[key].samples = result.categories[key].samples.slice(0, 3);
     }

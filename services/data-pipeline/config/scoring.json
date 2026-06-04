@@ -1,0 +1,13 @@
+{
+  "version": "v3_contextual_evidence",
+  "base_score": 50,
+  "occupation": 1,
+  "état": 1,
+  "type": 1,
+  "localisation": 1,
+  "surface": 1,
+  "prix_m2": 1,
+  "atouts": 1,
+  "risques": 1,
+  "qualité": 1
+}

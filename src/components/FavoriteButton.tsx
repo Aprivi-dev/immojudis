@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Heart } from "lucide-react";
+import Heart from "lucide-react/dist/esm/icons/heart.js";
 import { addFavorite, removeFavorite } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";

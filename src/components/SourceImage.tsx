@@ -1,7 +1,7 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
-import { ImageOff } from "lucide-react";
+import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import { getSourceImage } from "@/lib/source-image.functions";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -32,11 +32,18 @@ export function SourceImage({
   if (!data?.imageUrl || errored) {
     return (
       <div
-        className={`flex items-center justify-center bg-muted text-muted-foreground ${className ?? "h-64 w-full"}`}
+        className={`relative flex items-center justify-center overflow-hidden bg-[var(--surface)] text-muted-foreground ${className ?? "h-64 w-full"}`}
       >
-        <div className="flex flex-col items-center gap-1 text-xs">
-          <ImageOff className="h-5 w-5" />
-          <span>Pas d'illustration disponible</span>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(212,160,23,0.18),transparent_34%),linear-gradient(135deg,rgba(13,27,42,0.95),rgba(7,14,22,0.98))]" />
+        <img
+          src="/brand/falcon-mark.png"
+          alt=""
+          aria-hidden="true"
+          className="absolute right-4 top-4 h-20 w-20 opacity-20"
+        />
+        <div className="relative flex flex-col items-center gap-2 px-6 text-center text-xs">
+          <FileText className="h-5 w-5 text-[var(--gold)]" />
+          <span>Document source sans visuel</span>
         </div>
       </div>
     );

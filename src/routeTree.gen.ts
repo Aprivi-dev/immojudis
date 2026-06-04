@@ -10,25 +10,27 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SalesRouteImport } from './routes/sales'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as LegalRouteImport } from './routes/legal'
 import { Route as FavoritesRouteImport } from './routes/favorites'
+import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AlertsRouteImport } from './routes/alerts'
-import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SalesIndexRouteImport } from './routes/sales.index'
 import { Route as SalesNewRouteImport } from './routes/sales.new'
 import { Route as SalesIdRouteImport } from './routes/sales.$id'
+import { Route as AdminQualityRouteImport } from './routes/admin.quality'
 
 const SalesRoute = SalesRouteImport.update({
   id: '/sales',
   path: '/sales',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MapRoute = MapRouteImport.update({
@@ -41,19 +43,24 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LegalRoute = LegalRouteImport.update({
+  id: '/legal',
+  path: '/legal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FavoritesRoute = FavoritesRouteImport.update({
   id: '/favorites',
   path: '/favorites',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ContactRoute = ContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AlertsRoute = AlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -76,28 +83,37 @@ const SalesIdRoute = SalesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => SalesRoute,
 } as any)
+const AdminQualityRoute = AdminQualityRouteImport.update({
+  id: '/admin/quality',
+  path: '/admin/quality',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
   '/alerts': typeof AlertsRoute
+  '/contact': typeof ContactRoute
   '/favorites': typeof FavoritesRoute
+  '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
-  '/reset-password': typeof ResetPasswordRoute
+  '/privacy': typeof PrivacyRoute
   '/sales': typeof SalesRouteWithChildren
+  '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
   '/sales/new': typeof SalesNewRoute
   '/sales/': typeof SalesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
   '/alerts': typeof AlertsRoute
+  '/contact': typeof ContactRoute
   '/favorites': typeof FavoritesRoute
+  '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
-  '/reset-password': typeof ResetPasswordRoute
+  '/privacy': typeof PrivacyRoute
+  '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
   '/sales/new': typeof SalesNewRoute
   '/sales': typeof SalesIndexRoute
@@ -105,13 +121,15 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
   '/alerts': typeof AlertsRoute
+  '/contact': typeof ContactRoute
   '/favorites': typeof FavoritesRoute
+  '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
-  '/reset-password': typeof ResetPasswordRoute
+  '/privacy': typeof PrivacyRoute
   '/sales': typeof SalesRouteWithChildren
+  '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
   '/sales/new': typeof SalesNewRoute
   '/sales/': typeof SalesIndexRoute
@@ -120,38 +138,44 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/admin'
     | '/alerts'
+    | '/contact'
     | '/favorites'
+    | '/legal'
     | '/login'
     | '/map'
-    | '/reset-password'
+    | '/privacy'
     | '/sales'
+    | '/admin/quality'
     | '/sales/$id'
     | '/sales/new'
     | '/sales/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/admin'
     | '/alerts'
+    | '/contact'
     | '/favorites'
+    | '/legal'
     | '/login'
     | '/map'
-    | '/reset-password'
+    | '/privacy'
+    | '/admin/quality'
     | '/sales/$id'
     | '/sales/new'
     | '/sales'
   id:
     | '__root__'
     | '/'
-    | '/admin'
     | '/alerts'
+    | '/contact'
     | '/favorites'
+    | '/legal'
     | '/login'
     | '/map'
-    | '/reset-password'
+    | '/privacy'
     | '/sales'
+    | '/admin/quality'
     | '/sales/$id'
     | '/sales/new'
     | '/sales/'
@@ -159,13 +183,15 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AdminRoute: typeof AdminRoute
   AlertsRoute: typeof AlertsRoute
+  ContactRoute: typeof ContactRoute
   FavoritesRoute: typeof FavoritesRoute
+  LegalRoute: typeof LegalRoute
   LoginRoute: typeof LoginRoute
   MapRoute: typeof MapRoute
-  ResetPasswordRoute: typeof ResetPasswordRoute
+  PrivacyRoute: typeof PrivacyRoute
   SalesRoute: typeof SalesRouteWithChildren
+  AdminQualityRoute: typeof AdminQualityRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -177,11 +203,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/map': {
@@ -198,6 +224,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/legal': {
+      id: '/legal'
+      path: '/legal'
+      fullPath: '/legal'
+      preLoaderRoute: typeof LegalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/favorites': {
       id: '/favorites'
       path: '/favorites'
@@ -205,18 +238,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FavoritesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/contact': {
+      id: '/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof ContactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/alerts': {
       id: '/alerts'
       path: '/alerts'
       fullPath: '/alerts'
       preLoaderRoute: typeof AlertsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -247,6 +280,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalesIdRouteImport
       parentRoute: typeof SalesRoute
     }
+    '/admin/quality': {
+      id: '/admin/quality'
+      path: '/admin/quality'
+      fullPath: '/admin/quality'
+      preLoaderRoute: typeof AdminQualityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -266,14 +306,26 @@ const SalesRouteWithChildren = SalesRoute._addFileChildren(SalesRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AdminRoute: AdminRoute,
   AlertsRoute: AlertsRoute,
+  ContactRoute: ContactRoute,
   FavoritesRoute: FavoritesRoute,
+  LegalRoute: LegalRoute,
   LoginRoute: LoginRoute,
   MapRoute: MapRoute,
-  ResetPasswordRoute: ResetPasswordRoute,
+  PrivacyRoute: PrivacyRoute,
   SalesRoute: SalesRouteWithChildren,
+  AdminQualityRoute: AdminQualityRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

@@ -1,9 +1,42 @@
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
-import type { AuctionContact, AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
+import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
 
 const VIEW = "v_auction_sales_app";
 const CONFIGURATION_ERROR =
-  "La connexion Lovable Cloud est absente. Rechargez la configuration Cloud pour afficher les données.";
+  "La configuration Supabase est absente. Ajoutez les variables d'environnement Supabase pour afficher les données.";
+
+const SALE_LIST_COLUMNS = [
+  "id",
+  "title",
+  "city",
+  "department",
+  "postal_code",
+  "property_type",
+  "starting_price_eur",
+  "sale_date",
+  "latitude",
+  "longitude",
+  "occupancy_status",
+  "habitable_surface_m2",
+  "carrez_surface_m2",
+  "app_surface_m2",
+  "rooms_count",
+  "bedrooms_count",
+  "has_garden",
+  "has_terrace",
+  "has_garage",
+  "has_pool",
+  "has_air_conditioning",
+  "has_double_glazing",
+  "investment_score",
+  "score_confidence",
+  "surface_confidence",
+  "risks",
+  "documents",
+  "source_url",
+  "status",
+  "created_at",
+].join(",");
 
 function assertCloudConfigured() {
   if (isSupabaseConfigured) return true;
@@ -33,7 +66,7 @@ export async function getSales(
   const s = SORT_MAP[sort];
   let q = supabase
     .from(VIEW)
-    .select("*")
+    .select(SALE_LIST_COLUMNS)
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
@@ -45,10 +78,13 @@ export async function getSales(
   if (filters.occupancy_status) q = q.eq("occupancy_status", filters.occupancy_status);
   if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
   if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
+  if (filters.only_new) {
+    q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  }
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as AuctionSale[];
+  return (data ?? []) as unknown as AuctionSale[];
 }
 
 export async function getSaleById(id: string): Promise<AuctionSale | null> {
@@ -58,29 +94,17 @@ export async function getSaleById(id: string): Promise<AuctionSale | null> {
   return data as AuctionSale | null;
 }
 
-export async function getSaleContacts(saleId: string): Promise<AuctionContact[]> {
-  if (!assertCloudConfigured()) return [];
-  const { data, error } = await supabase
-    .from("auction_contacts")
-    .select("id, sale_id, role, name, organization, email, phone, is_primary, notes")
-    .eq("sale_id", saleId)
-    .order("is_primary", { ascending: false })
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as AuctionContact[];
-}
-
 export async function getSalesWithCoords(limit = 500): Promise<AuctionSale[]> {
   if (!assertCloudConfigured()) return [];
   const { data, error } = await supabase
     .from(VIEW)
-    .select("*")
+    .select(SALE_LIST_COLUMNS)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
     .order("sale_date", { ascending: true })
     .limit(limit);
   if (error) throw error;
-  return (data ?? []) as AuctionSale[];
+  return (data ?? []) as unknown as AuctionSale[];
 }
 
 /**
@@ -101,7 +125,7 @@ export async function getNearbySales(
   const dLng = radiusKm / (111 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
   let q = supabase
     .from(VIEW)
-    .select("*")
+    .select(SALE_LIST_COLUMNS)
     .gte("latitude", lat - dLat)
     .lte("latitude", lat + dLat)
     .gte("longitude", lng - dLng)
@@ -111,14 +135,24 @@ export async function getNearbySales(
   if (excludeId) q = q.neq("id", excludeId);
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as AuctionSale[];
+  return (data ?? []) as unknown as AuctionSale[];
 }
 
-export async function getStats(): Promise<{ totalSales: number; departments: number; nextSale: string | null }> {
+export async function getStats(): Promise<{
+  totalSales: number;
+  departments: number;
+  nextSale: string | null;
+}> {
   if (!assertCloudConfigured()) return { totalSales: 0, departments: 0, nextSale: null };
   const { count } = await supabase.from(VIEW).select("*", { count: "exact", head: true });
-  const { data: deps } = await supabase.from(VIEW).select("department");
-  const uniqueDeps = new Set((deps ?? []).map((r: { department: string | null }) => r.department).filter(Boolean));
+  const { data: deps } = await supabase
+    .from(VIEW)
+    .select("department")
+    .not("department", "is", null)
+    .limit(1000);
+  const uniqueDeps = new Set(
+    (deps ?? []).map((r: { department: string | null }) => r.department).filter(Boolean),
+  );
   const { data: next } = await supabase
     .from(VIEW)
     .select("sale_date")
@@ -142,9 +176,9 @@ export async function getFavorites(userId: string): Promise<AuctionSale[]> {
   if (error) throw error;
   const ids = (favs ?? []).map((f: { sale_id: string }) => f.sale_id);
   if (ids.length === 0) return [];
-  const { data, error: e2 } = await supabase.from(VIEW).select("*").in("id", ids);
+  const { data, error: e2 } = await supabase.from(VIEW).select(SALE_LIST_COLUMNS).in("id", ids);
   if (e2) throw e2;
-  return (data ?? []) as AuctionSale[];
+  return (data ?? []) as unknown as AuctionSale[];
 }
 
 export async function getFavoriteIds(userId: string): Promise<Set<string>> {
@@ -189,7 +223,9 @@ export async function getAlerts(userId: string): Promise<UserAlert[]> {
 
 export async function createAlert(
   userId: string,
-  payload: Omit<UserAlert, "id" | "user_id" | "created_at" | "updated_at" | "is_active"> & { is_active?: boolean },
+  payload: Omit<UserAlert, "id" | "user_id" | "created_at" | "updated_at" | "is_active"> & {
+    is_active?: boolean;
+  },
 ) {
   assertCloudConfigured();
   const { error } = await supabase.from("user_alerts").insert({
