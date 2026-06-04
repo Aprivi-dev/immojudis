@@ -195,7 +195,7 @@ async function fetchOverpass(query: string): Promise<OsmElement[]> {
           "Content-Type": "application/x-www-form-urlencoded",
           // Overpass requires an identifying User-Agent; without it
           // requests are silently dropped or 429'd.
-          "User-Agent": "lovable-auction-app/1.0 (neighborhood-insights)",
+          "User-Agent": "immojudis/1.0 (neighborhood-insights)",
           Accept: "application/json",
         },
         body: `data=${encodeURIComponent(query)}`,

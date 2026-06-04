@@ -37,7 +37,7 @@ def load_settings() -> dict[str, str | float | None]:
         "supabase_url": os.getenv("SUPABASE_URL"),
         "supabase_service_role_key": os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
         "supabase_db_url": os.getenv("SUPABASE_DB_URL"),
-        "user_agent": os.getenv("AUCTION_USER_AGENT", "auction-data/0.1 (+https://example.com/contact)"),
+        "user_agent": os.getenv("AUCTION_USER_AGENT", "immojudis-data-pipeline/1.0 (+https://example.com/contact)"),
         "request_delay_seconds": float(os.getenv("REQUEST_DELAY_SECONDS", "1.5")),
         "request_timeout_seconds": float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
         "geocode_enabled": os.getenv("GEOCODE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},

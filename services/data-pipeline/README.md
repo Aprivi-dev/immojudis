@@ -1,4 +1,4 @@
-# Auction Data
+# Immojudis Data Pipeline
 
 Socle technique minimal pour collecter, normaliser, dédupliquer, exporter et insérer dans Supabase des annonces de ventes aux enchères immobilières judiciaires en ancienne Aquitaine.
 
@@ -19,7 +19,7 @@ La source prioritaire est Avoventes. Licitor est disponible comme source optionn
 ## Installation
 
 ```bash
-cd auction-data
+cd services/data-pipeline
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -33,45 +33,29 @@ pip install -r requirements-docling.txt
 
 Le pipeline est configure en mode Docling-first par defaut (`PDF_EXTRACTOR=docling`). Si Docling n'est pas installe ou echoue sur un fichier, l'extraction retombe sur PyMuPDF/Tesseract pour ne pas bloquer une collecte.
 
-## Firebase Studio
-
-Le projet est prêt pour un import dans Firebase Studio via la configuration `.idx/dev.nix`.
+## Hygiène de dépôt
 
 Avant de pousser le repo :
 
 - ne jamais committer `.env` ;
 - ne pas committer les caches et exports dans `data/` ;
 - garder seulement les fichiers `.gitkeep` des dossiers de données ;
-- configurer les secrets directement dans l'environnement Firebase Studio.
+- configurer les secrets directement dans l'environnement local ou CI.
 
-Flux recommandé :
-
-```bash
-git add auction-data
-git commit -m "Prepare auction data for Firebase Studio"
-git remote add origin <url-du-repo-github>
-git push -u origin main
-```
-
-Puis dans Firebase Studio :
-
-1. Importer le repo GitHub.
-2. Attendre l'exécution de `.idx/dev.nix`.
-3. Créer un fichier `.env` depuis `.env.example` avec les secrets Supabase et Replicate.
-4. Vérifier l'installation :
+Vérifier l'installation :
 
 ```bash
 source .venv/bin/activate
 pytest
 ```
 
-5. Lancer un run :
+Lancer un run :
 
 ```bash
 python -m src.main
 ```
 
-Docling reste optionnel dans Firebase Studio. Pour l'activer explicitement :
+Docling reste optionnel. Pour l'activer explicitement :
 
 ```bash
 source .venv/bin/activate
@@ -331,7 +315,7 @@ Le scraper :
 Variables optionnelles :
 
 ```bash
-AUCTION_USER_AGENT=auction-data/0.1 (+contact@example.com)
+AUCTION_USER_AGENT=immojudis-data-pipeline/1.0 (+contact@example.com)
 REQUEST_DELAY_SECONDS=1.5
 REQUEST_TIMEOUT_SECONDS=20
 GEOCODE_ENABLED=true
