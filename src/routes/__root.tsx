@@ -10,6 +10,7 @@ import {
 
 import appCss from "../styles.css?url";
 import { Navbar } from "@/components/Navbar";
+import { AuthGate } from "@/components/AuthGate";
 import { Toaster } from "sonner";
 
 function NotFoundComponent() {
@@ -133,7 +134,9 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <div className="min-h-screen bg-background">
         <Navbar />
-        <Outlet />
+        <AuthGate>
+          <Outlet />
+        </AuthGate>
         <Toaster position="top-right" richColors />
       </div>
     </QueryClientProvider>

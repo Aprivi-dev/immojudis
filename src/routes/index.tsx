@@ -8,17 +8,8 @@ import Map from "lucide-react/dist/esm/icons/map.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import TrendingUp from "lucide-react/dist/esm/icons/trending-up.js";
-import { getSales, getStats } from "@/lib/queries";
-import {
-  formatDate,
-  formatPrice,
-  formatSurface,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
-import type { AuctionSale } from "@/lib/types";
-import { SourceImage } from "@/components/SourceImage";
-import { ScoreBadge } from "@/components/ScoreBadge";
+import { getStats } from "@/lib/queries";
+import { formatDate } from "@/lib/format";
 
 const QUICK_LINKS = [
   {
@@ -65,6 +56,29 @@ const METHOD_STEPS = [
   },
 ] as const;
 
+const SERVICE_FEATURES = [
+  {
+    icon: FileSearch,
+    title: "Publication premium",
+    desc: "Créer une annonce de vente aux enchères avec description détaillée, photos et pièces de vente.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Documents protégés",
+    desc: "Ajouter cahier des conditions, PV, diagnostics et documents annexes avec anonymisation des données sensibles.",
+  },
+  {
+    icon: Gavel,
+    title: "Gestion d'annonce",
+    desc: "Préparer la modification, le renouvellement, la mise en avant ou la suppression d'une annonce.",
+  },
+  {
+    icon: TrendingUp,
+    title: "Promotion ciblée",
+    desc: "Optimiser la visibilité avec mise en avant sur Immojudis et préparation de diffusions partenaires.",
+  },
+] as const;
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
@@ -85,14 +99,6 @@ function HomePage() {
     queryFn: getStats,
     staleTime: 5 * 60_000,
   });
-
-  const { data: featured } = useQuery({
-    queryKey: ["sales", "featured-home"],
-    queryFn: () => getSales({}, 3, "score_desc"),
-    staleTime: 5 * 60_000,
-  });
-
-  const leadSale = featured?.[0] ?? null;
 
   return (
     <main className="liquid-page min-h-screen text-foreground">
@@ -141,7 +147,7 @@ function HomePage() {
             </div>
           </div>
 
-          <LeadOpportunity sale={leadSale} />
+          <MascotHero />
         </div>
       </section>
 
@@ -201,22 +207,36 @@ function HomePage() {
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
-              Opportunités
+              Nouvelles fonctionnalités
             </div>
-            <h2 className="mt-3 font-display text-3xl text-foreground">À regarder en priorité</h2>
+            <h2 className="mt-3 font-display text-3xl text-foreground">
+              Publier et promouvoir une vente
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              Immojudis se prépare aussi à accompagner les professionnels qui veulent publier une
+              annonce complète, protéger les documents et augmenter sa visibilité.
+            </p>
           </div>
           <Link
-            to="/sales"
+            to="/login"
             className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-gold hover:text-gold-soft"
           >
-            Toutes les annonces <ArrowUpRight className="h-4 w-4" />
+            Créer un compte <ArrowUpRight className="h-4 w-4" />
           </Link>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          {featured && featured.length > 0
-            ? featured.map((sale) => <FeaturedCard key={sale.id} sale={sale} />)
-            : Array.from({ length: 3 }).map((_, i) => <FeaturedSkeleton key={i} />)}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {SERVICE_FEATURES.map(({ icon: Icon, title, desc }) => (
+            <div key={title} className="liquid-panel-soft rounded-lg p-5">
+              <span className="flex h-10 w-10 items-center justify-center rounded-md border border-gold/20 bg-gold/10 text-gold">
+                <Icon className="h-5 w-5" />
+              </span>
+              <h3 className="mt-5 text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
+                {title}
+              </h3>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{desc}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -274,117 +294,46 @@ function LiveStat({ value, label }: { value: string; label: string }) {
   );
 }
 
-function LeadOpportunity({ sale }: { sale: AuctionSale | null }) {
-  if (!sale) {
-    return (
-      <div className="liquid-panel rounded-lg p-5">
-        <div className="h-64 animate-pulse rounded-md bg-white/10" />
-        <div className="mt-5 h-4 w-2/3 animate-pulse rounded bg-white/10" />
-        <div className="mt-3 h-3 w-1/2 animate-pulse rounded bg-white/10" />
-      </div>
-    );
-  }
-
+function MascotHero() {
   return (
-    <Link to="/sales/$id" params={{ id: sale.id }} className="liquid-panel group rounded-lg p-4">
-      <div className="relative h-64 overflow-hidden rounded-md border border-white/10 bg-surface">
-        {sale.source_url ? (
-          <SourceImage
-            sourceUrl={sale.source_url}
-            alt={sale.title ?? "Annonce sélectionnée"}
-            className="h-full w-full opacity-90 transition-transform duration-700 group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center bg-white/[0.04]">
-            <Gavel className="h-10 w-10 text-gold" />
+    <aside className="liquid-panel relative flex min-h-[34rem] overflow-hidden rounded-lg p-5 sm:p-6">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_58%_32%,rgba(212,160,23,0.20),transparent_28%),radial-gradient(circle_at_35%_72%,rgba(242,233,216,0.10),transparent_34%)]" />
+      <div className="relative z-10 flex min-h-full w-full flex-col">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-soft">
+            Assistant Immojudis
           </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-background/25 to-transparent" />
-        <div className="absolute left-4 top-4">
-          <ScoreBadge score={sale.investment_score} confidence={sale.score_confidence} />
-        </div>
-        <div className="absolute bottom-4 left-4 right-4">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gold-soft">
-            Sélection du moment
-          </div>
-          <h2 className="mt-2 line-clamp-2 text-xl font-semibold leading-tight text-foreground">
-            {sale.title ?? propertyTypeLabel(sale.property_type)}
+          <h2 className="mt-5 max-w-[18rem] font-display text-3xl leading-tight text-foreground">
+            Clair. Sourcé. Rationnel.
           </h2>
+          <p className="mt-4 max-w-[19rem] text-sm leading-relaxed text-muted-foreground">
+            Notre promesse : relire les pièces, expliquer les risques et fixer une limite avant
+            d'enchérir.
+          </p>
         </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3 pt-4 text-sm">
-        <MiniMeta label="Mise à prix" value={formatPrice(sale.starting_price_eur)} />
-        <MiniMeta label="Vente" value={formatDate(sale.sale_date)} />
-      </div>
-    </Link>
-  );
-}
 
-function FeaturedCard({ sale }: { sale: AuctionSale }) {
-  const location =
-    [sale.postal_code, sale.city].filter(Boolean).join(" ") || sale.department || "France";
-  const surface = sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2;
-
-  return (
-    <Link
-      to="/sales/$id"
-      params={{ id: sale.id }}
-      className="liquid-panel-soft group rounded-lg p-3"
-    >
-      <div className="relative h-44 overflow-hidden rounded-md border border-white/10 bg-surface">
-        {sale.source_url ? (
-          <SourceImage
-            sourceUrl={sale.source_url}
-            alt={sale.title ?? "Illustration de l'annonce"}
-            className="h-full w-full opacity-85 transition-transform duration-700 group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center bg-white/[0.04]">
-            <Gavel className="h-8 w-8 text-gold" />
+        <div className="mt-5 grid max-w-[15rem] gap-2 text-xs text-muted-foreground">
+          <div className="liquid-panel-soft rounded-md px-3 py-2">
+            <span className="font-semibold text-foreground">Preuves</span> contextualisées
           </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background/85 via-background/20 to-transparent" />
-        <div className="absolute left-3 top-3">
-          <ScoreBadge score={sale.investment_score} confidence={sale.score_confidence} />
-        </div>
-        <div className="absolute bottom-3 left-3 right-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
-          {location}
-        </div>
-      </div>
-      <div className="p-2 pt-4">
-        <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug text-foreground">
-          {sale.title || propertyTypeLabel(sale.property_type)}
-        </h3>
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <MiniMeta label="Prix" value={formatPrice(sale.starting_price_eur)} />
-          <MiniMeta label="Surface" value={formatSurface(surface)} />
-          <MiniMeta label="Date" value={formatDate(sale.sale_date)} />
-          <MiniMeta label="Statut" value={occupancyLabel(sale.occupancy_status)} />
+          <div className="liquid-panel-soft rounded-md px-3 py-2">
+            <span className="font-semibold text-foreground">Risques</span> expliqués simplement
+          </div>
+          <div className="liquid-panel-soft rounded-md px-3 py-2">
+            <span className="font-semibold text-foreground">Prix plafond</span> avant audience
+          </div>
         </div>
       </div>
-    </Link>
-  );
-}
 
-function MiniMeta({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        {label}
+      <div className="pointer-events-none absolute bottom-[-1.8rem] right-[-1.7rem] w-[18rem] max-w-[70%] sm:w-[21rem] lg:w-[24rem]">
+        <div className="absolute inset-x-10 bottom-3 h-10 rounded-full bg-black/35 blur-2xl" />
+        <img
+          src="/brand/owl-mascot.png"
+          alt="Mascotte Immojudis"
+          loading="eager"
+          className="relative h-auto w-full drop-shadow-[0_24px_46px_rgba(0,0,0,0.42)]"
+        />
       </div>
-      <div className="mt-1 truncate text-sm font-medium text-foreground">{value}</div>
-    </div>
-  );
-}
-
-function FeaturedSkeleton() {
-  return (
-    <div className="liquid-panel-soft rounded-lg p-3">
-      <div className="h-44 animate-pulse rounded-md bg-white/10" />
-      <div className="space-y-3 p-2 pt-4">
-        <div className="h-4 w-3/4 animate-pulse rounded bg-white/10" />
-        <div className="h-3 w-1/2 animate-pulse rounded bg-white/10" />
-      </div>
-    </div>
+    </aside>
   );
 }
