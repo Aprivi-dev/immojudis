@@ -1,7 +1,8 @@
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
-import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
+import type { AuctionMapPin, AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
 
 const VIEW = "v_auction_sales_app";
+const MAP_PINS_VIEW = "v_auction_map_pins";
 const CONFIGURATION_ERROR =
   "La configuration Supabase est absente. Ajoutez les variables d'environnement Supabase pour afficher les données.";
 
@@ -34,6 +35,24 @@ const SALE_LIST_COLUMNS = [
   "risks",
   "documents",
   "source_url",
+  "status",
+  "created_at",
+].join(",");
+
+const MAP_PIN_COLUMNS = [
+  "id",
+  "title",
+  "city",
+  "department",
+  "property_type",
+  "starting_price_eur",
+  "sale_date",
+  "latitude",
+  "longitude",
+  "occupancy_status",
+  "app_surface_m2",
+  "investment_score",
+  "score_confidence",
   "status",
   "created_at",
 ].join(",");
@@ -85,6 +104,78 @@ export async function getSales(
   const { data, error } = await q;
   if (error) throw error;
   return (data ?? []) as unknown as AuctionSale[];
+}
+
+export async function getMapPins(
+  filters: SaleFilters = {},
+  limit = 300,
+  sort: SortKey = "date_asc",
+): Promise<AuctionMapPin[]> {
+  if (!assertCloudConfigured()) return [];
+  const s = SORT_MAP[sort];
+  let q = supabase
+    .from(MAP_PINS_VIEW)
+    .select(MAP_PIN_COLUMNS)
+    .order(s.column, { ascending: s.ascending, nullsFirst: false })
+    .limit(limit);
+
+  if (filters.department) q = q.eq("department", filters.department);
+  if (filters.city) q = q.ilike("city", `%${filters.city}%`);
+  if (filters.property_type) q = q.eq("property_type", filters.property_type);
+  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
+  if (filters.min_surface != null) q = q.gte("app_surface_m2", filters.min_surface);
+  if (filters.occupancy_status) q = q.eq("occupancy_status", filters.occupancy_status);
+  if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
+  if (filters.only_new) {
+    q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  }
+
+  const { data, error } = await q;
+  if (error) {
+    if (isMissingMapPinsView(error)) return getMapPinsFromSalesView(filters, limit, sort);
+    throw error;
+  }
+  return (data ?? []) as unknown as AuctionMapPin[];
+}
+
+async function getMapPinsFromSalesView(
+  filters: SaleFilters,
+  limit: number,
+  sort: SortKey,
+): Promise<AuctionMapPin[]> {
+  const s = SORT_MAP[sort];
+  let q = supabase
+    .from(VIEW)
+    .select(MAP_PIN_COLUMNS)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .order(s.column, { ascending: s.ascending, nullsFirst: false })
+    .limit(limit);
+
+  if (filters.department) q = q.eq("department", filters.department);
+  if (filters.city) q = q.ilike("city", `%${filters.city}%`);
+  if (filters.property_type) q = q.eq("property_type", filters.property_type);
+  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
+  if (filters.min_surface != null) q = q.gte("app_surface_m2", filters.min_surface);
+  if (filters.occupancy_status) q = q.eq("occupancy_status", filters.occupancy_status);
+  if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
+  if (filters.only_new) {
+    q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  }
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as unknown as AuctionMapPin[];
+}
+
+function isMissingMapPinsView(error: { code?: string; message?: string }): boolean {
+  const message = error.message ?? "";
+  return (
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    message.includes(MAP_PINS_VIEW) ||
+    message.toLowerCase().includes("could not find the table")
+  );
 }
 
 export async function getSaleById(id: string): Promise<AuctionSale | null> {

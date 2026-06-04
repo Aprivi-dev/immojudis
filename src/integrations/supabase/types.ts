@@ -386,6 +386,26 @@ export type Database = {
         };
         Relationships: [];
       };
+      v_auction_map_pins: {
+        Row: {
+          app_surface_m2: number | null;
+          city: string | null;
+          created_at: string | null;
+          department: string | null;
+          id: string | null;
+          investment_score: number | null;
+          latitude: number | null;
+          longitude: number | null;
+          occupancy_status: string | null;
+          property_type: string | null;
+          sale_date: string | null;
+          score_confidence: number | null;
+          starting_price_eur: number | null;
+          status: string | null;
+          title: string | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       [_ in never]: never;

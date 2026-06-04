@@ -7,6 +7,9 @@ import { z } from "zod";
 // https://apidf-preprod.cerema.fr/
 
 const CEREMA_BASE = "https://apidf-preprod.cerema.fr/dvf_opendata/geomutations/";
+const DVF_USER_AGENT = "immojudis/1.0 (+https://immojudis-dezt.vercel.app/contact)";
+const DVF_PAGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const dvfPageCache = new Map<string, { expiresAt: number; features: DvfFeature[] }>();
 
 // Mapping property_type → codtypbien Cerema
 function codtypbienFor(propertyType: string | null | undefined): string[] {
@@ -135,8 +138,8 @@ async function fetchDvfComparables(
     }
   }
 
-  const batches = await Promise.all(requests);
-  const all = batches.flat();
+  const batches = await Promise.allSettled(requests);
+  const all = batches.flatMap((batch) => (batch.status === "fulfilled" ? batch.value : []));
   return all
     .map((feature) => {
       const mutation = feature.properties;
@@ -161,17 +164,41 @@ async function fetchDvfComparables(
 }
 
 async function fetchDvfPage(url: string): Promise<DvfFeature[]> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const cached = dvfPageCache.get(url);
+  if (cached && cached.expiresAt > Date.now()) return cached.features;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-      if (!response.ok) continue;
+      const response = await fetch(url, {
+        cache: "force-cache",
+        headers: {
+          Accept: "application/json",
+          "User-Agent": DVF_USER_AGENT,
+        },
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (response.status === 429 || response.status >= 500) {
+        await sleep(350 * (attempt + 1));
+        continue;
+      }
+      if (!response.ok) return [];
       const json = (await response.json()) as { features?: DvfFeature[] };
-      return Array.isArray(json.features) ? json.features : [];
+      const features = Array.isArray(json.features) ? json.features : [];
+      dvfPageCache.set(url, {
+        expiresAt: Date.now() + DVF_PAGE_CACHE_TTL_MS,
+        features,
+      });
+      return features;
     } catch {
-      if (attempt === 1) return [];
+      if (attempt === 2) return [];
+      await sleep(350 * (attempt + 1));
     }
   }
   return [];
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function selectComparables(enriched: DvfComparable[], surfaceM2: number | null | undefined) {
@@ -406,7 +433,9 @@ export const getMarketEstimate = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => inputSchema.parse(input))
   .handler(async ({ data }): Promise<MarketContext> => {
     // Cache CDN 24h (les données DVF changent au mieux trimestriellement)
-    setResponseHeaders(new Headers({ "cache-control": "public, max-age=86400" }));
+    setResponseHeaders(
+      new Headers({ "cache-control": "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800" }),
+    );
 
     try {
       const selected = await findBestComparables({

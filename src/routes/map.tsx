@@ -3,7 +3,7 @@ const MAP_LIMIT = 300;
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { getSales } from "@/lib/queries";
+import { getMapPins } from "@/lib/queries";
 import type { SaleFilters, SortKey } from "@/lib/types";
 import { SaleMap } from "@/components/SaleMap";
 import { SaleFilters as SaleFiltersForm } from "@/components/SaleFilters";
@@ -74,7 +74,7 @@ function MapPage() {
   const { data: sales = [], isLoading } = useQuery({
     queryKey: ["sales-map", filters, sort],
     // On plafonne pour ne pas saturer le client mobile ; un message le signale.
-    queryFn: () => getSales(filters, MAP_LIMIT, sort),
+    queryFn: () => getMapPins(filters, MAP_LIMIT, sort),
     staleTime: 60_000,
   });
 

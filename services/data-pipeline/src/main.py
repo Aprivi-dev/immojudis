@@ -17,11 +17,11 @@ from src.normalize import normalize_sale
 from src.pdf_enrichment import PdfEnrichmentStats, enrich_sale_from_pdfs
 from src.config import load_settings
 from src.quality import build_quality_report, format_quality_report
-from src.sources.encheres_publiques import get_encheres_publiques_errors, scrape_encheres_publiques_aquitaine
-from src.sources.avoventes import get_avoventes_errors, scrape_avoventes_aquitaine
-from src.sources.info_encheres import get_info_encheres_errors, scrape_info_encheres_aquitaine
-from src.sources.licitor import get_licitor_errors, scrape_licitor_aquitaine
-from src.sources.vench import get_vench_errors, scrape_vench_aquitaine
+from src.sources.encheres_publiques import scrape_encheres_publiques_aquitaine_result
+from src.sources.avoventes import scrape_avoventes_aquitaine_result
+from src.sources.info_encheres import scrape_info_encheres_aquitaine_result
+from src.sources.licitor import scrape_licitor_aquitaine_result
+from src.sources.vench import scrape_vench_aquitaine_result
 from src.storage.supabase_client import upsert_sales_to_supabase
 from src.storage.supabase_client import upsert_observations_to_supabase
 from src.storage.supabase_client import mark_past_sales_in_supabase
@@ -56,25 +56,28 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
     if options.source in {"all", "avoventes"}:
         started = time.perf_counter()
-        avoventes_sales = scrape_avoventes_aquitaine()
+        avoventes_result = scrape_avoventes_aquitaine_result()
         timings["scrape_avoventes_seconds"] = round(time.perf_counter() - started, 2)
-        errors["avoventes"].extend(get_avoventes_errors())
+        avoventes_sales = avoventes_result.sales
+        errors["avoventes"].extend(avoventes_result.errors)
         raw_by_source["avoventes"] = len(avoventes_sales)
         raw_sales.extend(avoventes_sales)
 
     if options.source == "licitor" or (options.source == "all" and settings["enable_licitor_benchmark"]):
         started = time.perf_counter()
-        licitor_sales = scrape_licitor_aquitaine(max_pages=int(settings["licitor_max_pages"]))
+        licitor_result = scrape_licitor_aquitaine_result(max_pages=int(settings["licitor_max_pages"]))
         timings["scrape_licitor_seconds"] = round(time.perf_counter() - started, 2)
-        errors["licitor"].extend(get_licitor_errors())
+        licitor_sales = licitor_result.sales
+        errors["licitor"].extend(licitor_result.errors)
         raw_by_source["licitor"] = len(licitor_sales)
         raw_sales.extend(licitor_sales)
 
     if options.source == "vench" or (options.source == "all" and settings["enable_vench_benchmark"]):
         started = time.perf_counter()
-        vench_sales = scrape_vench_aquitaine(max_pages=int(settings["vench_max_pages"]))
+        vench_result = scrape_vench_aquitaine_result(max_pages=int(settings["vench_max_pages"]))
         timings["scrape_vench_seconds"] = round(time.perf_counter() - started, 2)
-        errors["vench"].extend(get_vench_errors())
+        vench_sales = vench_result.sales
+        errors["vench"].extend(vench_result.errors)
         raw_by_source["vench"] = len(vench_sales)
         raw_sales.extend(vench_sales)
 
@@ -82,9 +85,12 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         options.source == "all" and settings["enable_info_encheres_benchmark"]
     ):
         started = time.perf_counter()
-        info_encheres_sales = scrape_info_encheres_aquitaine(max_pages=int(settings["info_encheres_max_pages"]))
+        info_encheres_result = scrape_info_encheres_aquitaine_result(
+            max_pages=int(settings["info_encheres_max_pages"])
+        )
         timings["scrape_info_encheres_seconds"] = round(time.perf_counter() - started, 2)
-        errors["info_encheres"].extend(get_info_encheres_errors())
+        info_encheres_sales = info_encheres_result.sales
+        errors["info_encheres"].extend(info_encheres_result.errors)
         raw_by_source["info_encheres"] = len(info_encheres_sales)
         raw_sales.extend(info_encheres_sales)
 
@@ -92,11 +98,12 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         options.source == "all" and settings["enable_encheres_publiques_benchmark"]
     ):
         started = time.perf_counter()
-        encheres_publiques_sales = scrape_encheres_publiques_aquitaine(
+        encheres_publiques_result = scrape_encheres_publiques_aquitaine_result(
             max_pages=int(settings["encheres_publiques_max_pages"])
         )
         timings["scrape_encheres_publiques_seconds"] = round(time.perf_counter() - started, 2)
-        errors["encheres_publiques"].extend(get_encheres_publiques_errors())
+        encheres_publiques_sales = encheres_publiques_result.sales
+        errors["encheres_publiques"].extend(encheres_publiques_result.errors)
         raw_by_source["encheres_publiques"] = len(encheres_publiques_sales)
         raw_sales.extend(encheres_publiques_sales)
 

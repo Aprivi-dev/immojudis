@@ -14,6 +14,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
+class ScrapeResult:
+    sales: list[dict[str, Any]]
+    errors: list[str]
+
+
+@dataclass
 class RobotsRules:
     rules: tuple[tuple[str, str], ...] = ()
 

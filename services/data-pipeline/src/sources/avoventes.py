@@ -13,12 +13,13 @@ import httpx
 
 from src.config import AQUITAINE_DEPARTMENTS, load_settings
 from src.normalize import clean_text
+from src.raw_models import validate_raw_sales
+from src.sources.common import ScrapeResult
 
 
 BASE_URL = "https://avoventes.fr"
 SEARCH_URL = f"{BASE_URL}/recherche"
 LOGGER = logging.getLogger(__name__)
-SCRAPE_ERRORS: list[str] = []
 
 
 @dataclass
@@ -59,7 +60,10 @@ class AvoventesClient:
 
 
 def scrape_avoventes_aquitaine() -> list[dict[str, Any]]:
-    SCRAPE_ERRORS.clear()
+    return scrape_avoventes_aquitaine_result().sales
+
+
+def scrape_avoventes_aquitaine_result() -> ScrapeResult:
     settings = load_settings()
     client = AvoventesClient(
         user_agent=str(settings["user_agent"]),
@@ -67,6 +71,7 @@ def scrape_avoventes_aquitaine() -> list[dict[str, Any]]:
         timeout_seconds=float(settings["request_timeout_seconds"]),
     )
 
+    errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
     for department in AQUITAINE_DEPARTMENTS:
@@ -75,7 +80,7 @@ def scrape_avoventes_aquitaine() -> list[dict[str, Any]]:
             html = client.get(url)
         except Exception as exc:
             LOGGER.error("Avoventes fetch failed for department %s: %s", department, exc)
-            SCRAPE_ERRORS.append(f"department {department}: {exc}")
+            errors.append(f"department {department}: {exc}")
             continue
         for sale in parse_avoventes_html(html, page_url=url, fallback_department=department):
             postal_code = sale.get("postal_code")
@@ -85,13 +90,9 @@ def scrape_avoventes_aquitaine() -> list[dict[str, Any]]:
             if sale["source_url"] in seen_urls:
                 continue
             seen_urls.add(sale["source_url"])
-            _enrich_sale_from_detail(client, sale)
+            _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
-    return raw_sales
-
-
-def get_avoventes_errors() -> list[str]:
-    return list(SCRAPE_ERRORS)
+    return ScrapeResult(validate_raw_sales("avoventes", raw_sales, errors), errors)
 
 
 def parse_avoventes_html(html: str, page_url: str = SEARCH_URL, fallback_department: str | None = None) -> list[dict[str, Any]]:
@@ -195,7 +196,7 @@ def _extract_documents(links: list[Tag], page_url: str) -> list[dict[str, str]]:
     return documents
 
 
-def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any]) -> None:
+def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], errors: list[str]) -> None:
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
@@ -203,7 +204,7 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any]) -> N
         html = client.get(source_url)
     except Exception as exc:
         LOGGER.warning("Avoventes detail fetch failed for %s: %s", source_url, exc)
-        SCRAPE_ERRORS.append(f"detail {source_url}: {exc}")
+        errors.append(f"detail {source_url}: {exc}")
         return
 
     details = parse_avoventes_detail_html(html, source_url)

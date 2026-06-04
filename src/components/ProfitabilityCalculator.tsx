@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
@@ -37,8 +38,19 @@ type StoredState = {
   marketEdited: boolean;
 };
 
+const MARKET_ESTIMATE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+type CachedMarketEstimatePayload = {
+  savedAt: number;
+  estimate: DvfMarketEstimate;
+};
+
 function storageKey(saleId: string) {
   return `market-ceiling:${saleId}`;
+}
+
+function marketEstimateCacheKey(saleId: string) {
+  return `market-estimate:${saleId}`;
 }
 
 function loadState(saleId: string): Partial<StoredState> | null {
@@ -49,6 +61,30 @@ function loadState(saleId: string): Partial<StoredState> | null {
     return JSON.parse(raw) as Partial<StoredState>;
   } catch {
     return null;
+  }
+}
+
+function loadCachedMarketEstimate(saleId: string): DvfMarketEstimate | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(marketEstimateCacheKey(saleId));
+    if (!raw) return null;
+    const payload = JSON.parse(raw) as Partial<CachedMarketEstimatePayload>;
+    if (!payload.savedAt || !payload.estimate) return null;
+    if (Date.now() - payload.savedAt > MARKET_ESTIMATE_CACHE_TTL_MS) return null;
+    return payload.estimate;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedMarketEstimate(saleId: string, estimate: DvfMarketEstimate) {
+  if (typeof window === "undefined") return;
+  try {
+    const payload: CachedMarketEstimatePayload = { savedAt: Date.now(), estimate };
+    window.localStorage.setItem(marketEstimateCacheKey(saleId), JSON.stringify(payload));
+  } catch {
+    /* ignore quota errors */
   }
 }
 
@@ -81,6 +117,9 @@ export function ProfitabilityCalculator({ sale }: { sale: AuctionSale }) {
   const fetchEstimate = useServerFn(getMarketEstimate);
 
   const [expert, setExpert] = useState(false);
+  const [cachedEstimate, setCachedEstimate] = useState<DvfMarketEstimate | null>(() =>
+    loadCachedMarketEstimate(sale.id),
+  );
   const [state, setState] = useState<StoredState>(() => ({
     price: startingPrice,
     works: 0,
@@ -94,6 +133,7 @@ export function ProfitabilityCalculator({ sale }: { sale: AuctionSale }) {
   useEffect(() => {
     const stored = loadState(sale.id);
     if (stored) setState((current) => ({ ...current, ...stored }));
+    setCachedEstimate(loadCachedMarketEstimate(sale.id));
   }, [sale.id]);
 
   useEffect(() => {
@@ -123,7 +163,16 @@ export function ProfitabilityCalculator({ sale }: { sale: AuctionSale }) {
   });
 
   const estimate = data?.estimate ?? null;
-  const useManualMarket = state.marketEdited || !estimate?.medianPricePerM2;
+  useEffect(() => {
+    if (!estimate) return;
+    saveCachedMarketEstimate(sale.id, estimate);
+    setCachedEstimate(estimate);
+  }, [sale.id, estimate]);
+
+  const effectiveEstimate = estimate ?? cachedEstimate;
+  const usingCachedEstimate = !estimate && Boolean(cachedEstimate);
+  const hasDvfError = Boolean(error || data?.ok === false);
+  const useManualMarket = state.marketEdited || !effectiveEstimate?.medianPricePerM2;
   const result = useMemo(
     () =>
       computeMarketCeiling({
@@ -134,11 +183,11 @@ export function ProfitabilityCalculator({ sale }: { sale: AuctionSale }) {
         scenario: state.scenario,
         customSafetyDiscountPct: state.customSafetyDiscountPct,
         manualMarketPricePerM2: useManualMarket ? state.manualMarketPricePerM2 : null,
-        medianPricePerM2: estimate?.medianPricePerM2,
-        p25PricePerM2: estimate?.p25PricePerM2,
-        p75PricePerM2: estimate?.p75PricePerM2,
+        medianPricePerM2: effectiveEstimate?.medianPricePerM2,
+        p25PricePerM2: effectiveEstimate?.p25PricePerM2,
+        p75PricePerM2: effectiveEstimate?.p75PricePerM2,
       }),
-    [estimate, state, surface, useManualMarket],
+    [effectiveEstimate, state, surface, useManualMarket],
   );
 
   const verdict = marketCeilingVerdict(result);
@@ -179,9 +228,10 @@ export function ProfitabilityCalculator({ sale }: { sale: AuctionSale }) {
 
       <MarketCeilingPanel
         result={result}
-        estimate={estimate}
-        isLoading={isLoading}
-        hasError={Boolean(error || !data?.ok)}
+        estimate={effectiveEstimate}
+        isLoading={isLoading && !effectiveEstimate}
+        hasError={hasDvfError && !effectiveEstimate}
+        usingCachedEstimate={usingCachedEstimate}
         scenario={state.scenario}
         customSafetyDiscountPct={state.customSafetyDiscountPct}
         manualMarketPricePerM2={state.manualMarketPricePerM2}
@@ -265,6 +315,20 @@ export function ProfitabilityCalculator({ sale }: { sale: AuctionSale }) {
         />
       </dl>
 
+      <div className="mt-4 rounded-lg border border-white/10 bg-background/25 p-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Coût complet retenu
+        </div>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+          Pour une enchère simulée à <strong className="text-foreground">{fmt(state.price)}</strong>,
+          Immojudis ajoute <strong className="text-foreground">{fmt(result.simulated.acquisitionFeesTotal)}</strong>{" "}
+          de frais d'adjudication estimés et{" "}
+          <strong className="text-foreground">{fmt(state.works)}</strong> de travaux. Le coût
+          comparé au marché local est donc{" "}
+          <strong className="text-foreground">{fmt(result.simulated.totalCost)}</strong>.
+        </p>
+      </div>
+
       <button
         type="button"
         onClick={() => setExpert((current) => !current)}
@@ -306,7 +370,7 @@ export function ProfitabilityCalculator({ sale }: { sale: AuctionSale }) {
             </dl>
           </div>
 
-          <ComparableTransactions estimate={estimate} />
+          <ComparableTransactions estimate={effectiveEstimate} />
         </div>
       )}
 
@@ -325,6 +389,7 @@ function MarketCeilingPanel({
   estimate,
   isLoading,
   hasError,
+  usingCachedEstimate,
   scenario,
   customSafetyDiscountPct,
   manualMarketPricePerM2,
@@ -337,6 +402,7 @@ function MarketCeilingPanel({
   estimate: DvfMarketEstimate | null;
   isLoading: boolean;
   hasError: boolean;
+  usingCachedEstimate: boolean;
   scenario: MarketCeilingScenarioKey | "custom";
   customSafetyDiscountPct: number;
   manualMarketPricePerM2: number;
@@ -382,6 +448,7 @@ function MarketCeilingPanel({
           estimate={estimate}
           value={manualMarketPricePerM2}
           marketEdited={marketEdited}
+          usingCachedEstimate={usingCachedEstimate}
           hasError={hasError}
           isLoading={isLoading}
           onChange={onManualMarketChange}
@@ -440,6 +507,7 @@ function MarketCeilingPanel({
           estimate={estimate}
           isLoading={isLoading}
           hasError={hasError}
+          usingCachedEstimate={usingCachedEstimate}
         />
 
         <div className="mt-3 grid gap-2 md:grid-cols-4">
@@ -521,6 +589,7 @@ function ManualMarketInput({
   estimate,
   value,
   marketEdited,
+  usingCachedEstimate,
   isLoading,
   hasError,
   onChange,
@@ -528,6 +597,7 @@ function ManualMarketInput({
   estimate: DvfMarketEstimate | null;
   value: number;
   marketEdited: boolean;
+  usingCachedEstimate: boolean;
   isLoading: boolean;
   hasError: boolean;
   onChange: (value: number) => void;
@@ -538,7 +608,9 @@ function ManualMarketInput({
     ? "Impossible de calculer un plafond fiable automatiquement : il manque assez de ventes comparables autour du bien. Saisis un prix de marché au m² pour obtenir un seuil provisoire."
     : marketEdited
       ? `Prix saisi utilisé à la place de la médiane DVF (${formatPricePerM2(automaticPrice)}). Efface le champ pour revenir au calcul automatique.`
-      : `Calcul automatique actif : médiane DVF ${formatPricePerM2(automaticPrice)}. Tu peux saisir un autre prix si tu connais mieux le quartier.`;
+      : usingCachedEstimate
+        ? `Dernière estimation DVF conservée : médiane ${formatPricePerM2(automaticPrice)}. Le recalcul automatique sera repris dès que la donnée externe répond correctement.`
+        : `Calcul automatique actif : médiane DVF ${formatPricePerM2(automaticPrice)}. Tu peux saisir un autre prix si tu connais mieux le quartier.`;
 
   return (
     <div
@@ -581,11 +653,13 @@ function MarketProof({
   estimate,
   isLoading,
   hasError,
+  usingCachedEstimate,
 }: {
   result: MarketCeilingResult;
   estimate: DvfMarketEstimate | null;
   isLoading: boolean;
   hasError: boolean;
+  usingCachedEstimate: boolean;
 }) {
   if (isLoading) {
     return (
@@ -642,6 +716,12 @@ function MarketProof({
       {estimate.qualityWarnings.length > 0 && (
         <p className="md:col-span-3 rounded-md border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
           Prudence sur le marché local : {estimate.qualityWarnings.join(", ")}.
+        </p>
+      )}
+      {usingCachedEstimate && (
+        <p className="md:col-span-3 rounded-md border border-sky-300/20 bg-sky-400/10 px-3 py-2 text-xs leading-relaxed text-sky-100">
+          Estimation DVF conservée depuis le dernier chargement réussi. Elle évite de perdre le
+          calcul lorsque l'API externe répond de façon intermittente.
         </p>
       )}
     </div>
