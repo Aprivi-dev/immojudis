@@ -173,12 +173,14 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
     return len(payload)
 
 
-def create_run_in_supabase(source: str, use_llm: bool) -> str | None:
+def create_run_in_supabase(source: str, use_llm: bool, run_id: str | None = None) -> str | None:
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
     if not url or not key:
         return None
+    if run_id:
+        return start_existing_run_in_supabase(run_id, source, use_llm)
     payload = {
         "status": "running",
         "source": source,
@@ -196,6 +198,59 @@ def create_run_in_supabase(source: str, use_llm: bool) -> str | None:
         return None
     rows = response.json()
     return rows[0]["id"] if rows else None
+
+
+def start_existing_run_in_supabase(run_id: str, source: str, use_llm: bool) -> str | None:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return run_id
+    payload = {
+        "status": "running",
+        "source": source,
+        "use_llm": use_llm,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": None,
+    }
+    response = httpx.patch(
+        f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        params={"id": f"eq.{run_id}"},
+        headers=_rest_headers(str(key), prefer="return=minimal"),
+        json=payload,
+        timeout=30,
+    )
+    if response.is_error:
+        LOGGER.warning("Supabase run start failed: %s", response.text)
+        return None
+    return run_id
+
+
+def fetch_next_queued_run_from_supabase() -> dict[str, Any] | None:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        LOGGER.info("Supabase variables are missing; no queued run can be fetched")
+        return None
+    response = httpx.get(
+        f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        params={
+            "select": "id,status,source,use_llm,started_at,created_at,summary,errors",
+            "status": "eq.queued",
+            "order": "created_at.asc",
+            "limit": "1",
+        },
+        headers=_rest_headers(str(key), prefer="return=representation"),
+        timeout=30,
+    )
+    if response.is_error:
+        LOGGER.warning("Supabase queued run fetch failed: %s", response.text)
+        return None
+    rows = response.json()
+    if not rows:
+        return None
+    return rows[0]
 
 
 def finish_run_in_supabase(

@@ -24,6 +24,8 @@ import {
   type StartScrollResult,
 } from "@/lib/admin.functions";
 
+type RunnerMode = AdminDashboardData["runner"]["mode"];
+
 const SOURCE_OPTIONS: Array<{ value: AdminScrollSource; label: string }> = [
   { value: "all", label: "Toutes les sources" },
   { value: "avoventes", label: "Avoventes" },
@@ -150,7 +152,7 @@ function AdminDashboardPage() {
                 </div>
                 <h2 className="mt-3 font-display text-2xl">Lancer une collecte</h2>
               </div>
-              <RunnerStatus configured={Boolean(data?.runner.webhookConfigured)} />
+              <RunnerStatus mode={data?.runner.mode ?? "queue_worker"} />
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -205,8 +207,8 @@ function AdminDashboardPage() {
             </button>
 
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-              Sans webhook configuré côté Vercel, le bouton enregistre la demande dans Supabase
-              avec le statut `queued`. Un runner externe pourra ensuite la traiter.
+              Le bouton crée une demande dans Supabase. Si le déclenchement immédiat n'est pas
+              configuré, le worker GitHub Actions planifié récupère automatiquement la file.
             </p>
           </div>
 
@@ -307,7 +309,14 @@ function DashboardMetric({
   );
 }
 
-function RunnerStatus({ configured }: { configured: boolean }) {
+function RunnerStatus({ mode }: { mode: RunnerMode }) {
+  const configured = mode !== "queue_worker";
+  const label =
+    mode === "github_actions"
+      ? "GitHub Actions"
+      : mode === "webhook"
+        ? "Webhook actif"
+        : "Worker planifié";
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
@@ -317,7 +326,7 @@ function RunnerStatus({ configured }: { configured: boolean }) {
       }`}
     >
       <Bot className="h-3.5 w-3.5" />
-      {configured ? "Webhook actif" : "Queue seule"}
+      {label}
     </span>
   );
 }

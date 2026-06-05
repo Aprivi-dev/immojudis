@@ -20,6 +20,7 @@ const startScrollSchema = z.object({
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
+type RunnerMode = "github_actions" | "webhook" | "queue_worker";
 
 export type AdminScrollSource = (typeof SCROLL_SOURCES)[number];
 
@@ -40,8 +41,8 @@ export type AdminDashboardData = {
   checkedAt: string;
   adminEmail: string;
   runner: {
-    webhookConfigured: boolean;
-    mode: "webhook" | "queue_only";
+    instantDispatchConfigured: boolean;
+    mode: RunnerMode;
   };
   stats: {
     sales: number;
@@ -60,7 +61,8 @@ export type AdminDashboardData = {
 export type StartScrollResult = {
   ok: boolean;
   message: string;
-  webhookDispatched: boolean;
+  dispatched: boolean;
+  dispatchMode: RunnerMode;
   run: AuctionRun;
 };
 
@@ -213,10 +215,69 @@ function scrollWebhookSecret(): string | null {
   return process.env.SCROLL_WEBHOOK_SECRET ?? process.env.IMMOJUDIS_SCROLL_WEBHOOK_SECRET ?? null;
 }
 
+function githubActionsToken(): string | null {
+  return (
+    process.env.GITHUB_SCROLL_TOKEN ??
+    process.env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN ??
+    process.env.GITHUB_ACTIONS_DISPATCH_TOKEN ??
+    null
+  );
+}
+
+function githubActionsRepository(): string {
+  return process.env.GITHUB_SCROLL_REPOSITORY ?? "Aprivi-dev/immojudis";
+}
+
+function githubActionsWorkflow(): string {
+  return process.env.GITHUB_SCROLL_WORKFLOW ?? "data-pipeline.yml";
+}
+
+function githubActionsRef(): string {
+  return process.env.GITHUB_SCROLL_REF ?? "main";
+}
+
+function runnerMode(): RunnerMode {
+  if (githubActionsToken()) return "github_actions";
+  if (scrollWebhookUrl()) return "webhook";
+  return "queue_worker";
+}
+
 async function updateRunSummary(runId: string, summary: JsonObject, errors: JsonObject) {
   const admin = getAdminClient();
   const { error } = await admin.from<AuctionRunRow>("auction_runs").update({ summary, errors }).eq("id", runId);
   if (error) throw new Error(error.message ?? "Impossible de mettre à jour le run.");
+}
+
+async function dispatchGitHubActionsRun(
+  run: AuctionRun,
+  source: AdminScrollSource,
+  useLlm: boolean,
+): Promise<Response> {
+  const token = githubActionsToken();
+  if (!token) throw new Error("GitHub Actions token missing.");
+
+  const repository = githubActionsRepository();
+  const workflow = githubActionsWorkflow();
+  const url = `https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`;
+
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    body: JSON.stringify({
+      ref: githubActionsRef(),
+      inputs: {
+        run_id: run.id,
+        source,
+        use_llm: String(useLlm),
+      },
+    }),
+    signal: AbortSignal.timeout(12_000),
+  });
 }
 
 export const getAdminDashboard = createServerFn({ method: "GET" })
@@ -259,8 +320,8 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
       checkedAt: new Date().toISOString(),
       adminEmail: adminUser.email,
       runner: {
-        webhookConfigured: Boolean(scrollWebhookUrl()),
-        mode: scrollWebhookUrl() ? "webhook" : "queue_only",
+        instantDispatchConfigured: runnerMode() !== "queue_worker",
+        mode: runnerMode(),
       },
       stats: {
         sales,
@@ -284,12 +345,13 @@ export const startAdminScroll = createServerFn({ method: "POST" })
     const adminUser = await assertAdminContext(context as AdminContext);
     const admin = getAdminClient();
     const requestedAt = new Date().toISOString();
+    const mode = runnerMode();
     const webhookUrl = scrollWebhookUrl();
     const initialSummary = {
       requested_by: adminUser.email,
       requested_at: requestedAt,
       trigger: "admin_dashboard",
-      runner_mode: webhookUrl ? "webhook" : "queue_only",
+      runner_mode: mode,
     };
 
     const inserted = await admin
@@ -312,13 +374,69 @@ export const startAdminScroll = createServerFn({ method: "POST" })
     const run = normalizeRun((inserted.data ?? [])[0] ?? {});
     if (!run.id) throw new Error("Demande créée sans identifiant de run.");
 
+    if (mode === "github_actions") {
+      try {
+        const response = await dispatchGitHubActionsRun(run, data.source, data.useLlm);
+        const githubSummary = {
+          ...run.summary,
+          github_actions: {
+            dispatched_at: new Date().toISOString(),
+            repository: githubActionsRepository(),
+            workflow: githubActionsWorkflow(),
+            ref: githubActionsRef(),
+            status: response.status,
+            ok: response.ok,
+          },
+        };
+        const githubErrors = response.ok
+          ? run.errors
+          : {
+              ...run.errors,
+              github_actions: `HTTP ${response.status}`,
+            };
+        await updateRunSummary(run.id, githubSummary, githubErrors);
+
+        return {
+          ok: true,
+          dispatched: response.ok,
+          dispatchMode: "github_actions",
+          run: {
+            ...run,
+            summary: githubSummary,
+            errors: githubErrors,
+          },
+          message: response.ok
+            ? "Demande envoyée au worker GitHub Actions."
+            : `Demande enregistrée, mais GitHub Actions a répondu HTTP ${response.status}. Le worker planifié prendra le relais.`,
+        };
+      } catch (error) {
+        const githubErrors = {
+          ...run.errors,
+          github_actions: error instanceof Error ? error.message : "GitHub Actions indisponible",
+        };
+        await updateRunSummary(run.id, run.summary, githubErrors);
+
+        return {
+          ok: true,
+          dispatched: false,
+          dispatchMode: "github_actions",
+          run: {
+            ...run,
+            errors: githubErrors,
+          },
+          message: "Demande enregistrée, mais GitHub Actions n'a pas répondu. Le worker planifié prendra le relais.",
+        };
+      }
+    }
+
     if (!webhookUrl) {
       return {
         ok: true,
-        webhookDispatched: false,
+        dispatched: false,
+        dispatchMode: "queue_worker",
         run,
         message:
-          "Demande enregistrée. Configure SCROLL_WEBHOOK_URL pour déclencher automatiquement le runner de scroll.",
+          "Demande enregistrée. Le worker GitHub Actions planifié la prendra automatiquement dans la file.",
       };
     }
 
@@ -360,7 +478,8 @@ export const startAdminScroll = createServerFn({ method: "POST" })
 
       return {
         ok: true,
-        webhookDispatched: response.ok,
+        dispatched: response.ok,
+        dispatchMode: "webhook",
         run: {
           ...run,
           summary: webhookSummary,
@@ -379,7 +498,8 @@ export const startAdminScroll = createServerFn({ method: "POST" })
 
       return {
         ok: true,
-        webhookDispatched: false,
+        dispatched: false,
+        dispatchMode: "webhook",
         run: {
           ...run,
           errors: webhookErrors,
