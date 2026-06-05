@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import Calendar from "lucide-react/dist/esm/icons/calendar.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
@@ -27,52 +28,58 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
   const occLabel = occupancyLabel(sale.occupancy_status);
   const occTone =
     occLabel === "Libre"
-      ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
+      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
       : occLabel === "Occupé" || occLabel === "Loué"
-        ? "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200"
-        : "bg-secondary text-secondary-foreground";
+        ? "border-gold/35 bg-gold/10 text-gold-soft"
+        : "border-white/10 bg-white/5 text-muted-foreground";
   return (
     <article
-      className={`flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition hover:shadow-md ${
-        viewed ? "opacity-70" : ""
+      className={`liquid-panel group flex min-h-[26rem] flex-col overflow-hidden rounded-lg transition duration-200 hover:-translate-y-0.5 hover:border-gold/35 ${
+        viewed ? "opacity-75" : ""
       }`}
     >
-      <div className="relative h-32 w-full bg-muted">
+      <div className="relative h-40 w-full overflow-hidden bg-[var(--surface)]">
         <MapThumbnail lat={sale.latitude} lng={sale.longitude} className="h-full w-full" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background/88 via-background/12 to-transparent" />
+        <div className="absolute left-3 top-3 flex flex-wrap gap-2">
+          {fresh && (
+            <span className="inline-flex items-center rounded-full border border-gold/35 bg-gold/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft backdrop-blur">
+              Nouveau
+            </span>
+          )}
+          <SaleCountdown date={sale.sale_date} />
+        </div>
+        <div className="absolute bottom-3 right-3">
+          <ScoreBadge score={sale.investment_score} confidence={sale.score_confidence} />
+        </div>
         {viewed && (
-          <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
+          <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-white/10 bg-background/80 px-2.5 py-1 text-[10px] font-medium text-muted-foreground backdrop-blur">
             <Eye className="h-3 w-3" /> Vu
           </span>
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="mb-1 flex flex-wrap items-center gap-1.5">
-              {fresh && (
-                <span className="inline-flex items-center rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
-                  Nouveau
-                </span>
-              )}
-              <SaleCountdown date={sale.sale_date} />
-            </div>
-            <h3 className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
-              {sale.title ?? propertyTypeLabel(sale.property_type)}
-            </h3>
-            <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-              <MapPin className="h-3 w-3" />
-              <span className="truncate">
-                {sale.city ?? "—"}
-                {sale.department ? ` (${sale.department})` : ""}
-              </span>
-            </div>
+
+      <div className="flex flex-1 flex-col gap-4 p-4">
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold">
+            <span className="h-px w-5 bg-gold" />
+            {propertyTypeLabel(sale.property_type)}
           </div>
-          <ScoreBadge score={sale.investment_score} confidence={sale.score_confidence} />
+          <h3 className="line-clamp-2 min-h-[2.75rem] text-base font-semibold leading-snug text-foreground">
+            {sale.title ?? propertyTypeLabel(sale.property_type)}
+          </h3>
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 text-gold" />
+            <span className="truncate">
+              {sale.city ?? "—"}
+              {sale.department ? ` (${sale.department})` : ""}
+            </span>
+          </div>
         </div>
 
-        <div className="flex items-end justify-between">
+        <div className="flex items-end justify-between gap-4 border-t border-white/10 pt-4">
           <div>
-            <div className="text-2xl font-bold tabular-nums text-foreground">
+            <div className="font-display text-3xl tabular-nums text-foreground">
               {formatPrice(sale.starting_price_eur)}
             </div>
             {ppm != null && (
@@ -85,34 +92,45 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
               <span>{formatDate(sale.sale_date)}</span>
             </div>
           </div>
-          <div className="text-right text-xs text-muted-foreground">
-            <div>{propertyTypeLabel(sale.property_type)}</div>
-            {surface && <div className="font-medium text-foreground">{formatSurface(surface)}</div>}
+          <div className="grid min-w-24 gap-2 text-right text-xs text-muted-foreground">
+            <CardMetric label="Surface" value={surface ? formatSurface(surface) : "—"} />
+            <CardMetric label="Risques" value={riskCount > 0 ? String(riskCount) : "0"} />
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <span
-            className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium ${occTone}`}
+            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-medium ${occTone}`}
           >
-            Occupation : {occLabel}
+            {occLabel}
           </span>
-          <FeatureBadges sale={sale} max={4} />
-          {riskCount > 0 && (
-            <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+          <FeatureBadges sale={sale} max={3} />
+          {riskCount > 0 ? (
+            <span className="inline-flex items-center rounded-full border border-gold/30 bg-gold/10 px-2.5 py-1 text-[10px] font-medium text-gold-soft">
               {riskCount} risque{riskCount > 1 ? "s" : ""}
             </span>
-          )}
+          ) : null}
         </div>
 
         <Link
           to="/sales/$id"
           params={{ id: sale.id }}
-          className="mt-auto inline-flex items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
+          className="liquid-button mt-auto inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-background transition hover:brightness-105"
         >
-          Voir le détail
+          Voir le détail <ArrowUpRight className="h-3.5 w-3.5" />
         </Link>
       </div>
     </article>
+  );
+}
+
+function CardMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-0.5 font-medium tabular-nums text-foreground">{value}</div>
+    </div>
   );
 }

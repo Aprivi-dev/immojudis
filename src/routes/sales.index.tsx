@@ -1,6 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import type * as React from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
+import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
+import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
+import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
 import { getSales } from "@/lib/queries";
 import type { SaleFilters, SortKey } from "@/lib/types";
 import { SaleCard } from "@/components/SaleCard";
@@ -15,7 +20,7 @@ import {
   type GeoPoint,
 } from "@/lib/geo";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 16;
 
 type Search = {
   department?: string;
@@ -71,6 +76,7 @@ function SalesPage() {
     min_score: search.min_score,
   };
   const sort = (search.sort as SortKey) || "score_desc";
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, error } =
     useInfiniteQuery({
       queryKey: ["sales", filters, sort],
@@ -122,73 +128,184 @@ function SalesPage() {
     });
   }, [sales, search.max_price_per_m2, search.min_yield, search.around_radius, center]);
 
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !hasNextPage || isLoading || isFetchingNextPage) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          void fetchNextPage();
+        }
+      },
+      { rootMargin: "720px 0px" },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, filtered.length]);
+
+  const loadedCount = sales.length;
+  const filteredCount = filtered.length;
+  const hasLocalFilters = Boolean(search.max_price_per_m2 || search.min_yield || center);
+
   return (
-    <main className="mx-auto max-w-7xl px-4 py-6">
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold text-foreground">Annonces</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+    <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-10">
+      <div className="mx-auto max-w-7xl">
+        <header className="liquid-hero mb-6 rounded-lg p-6 sm:p-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+                <FileSearch className="h-4 w-4" />
+                Dossiers analysés
+              </div>
+              <h1 className="mt-4 font-display text-4xl leading-tight text-foreground sm:text-5xl">
+                Annonces
+              </h1>
+              <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+                Parcourez les ventes judiciaires avec les critères utiles avant décision : score,
+                prix, surface, occupation, risques et localisation.
+              </p>
+            </div>
+
+            <div className="grid min-w-[min(100%,28rem)] gap-3 sm:grid-cols-3">
+              <HeroMetric
+                label="Résultats affichés"
+                value={isLoading ? "—" : filteredCount.toLocaleString("fr-FR")}
+              />
+              <HeroMetric
+                label="Dossiers chargés"
+                value={isLoading ? "—" : loadedCount.toLocaleString("fr-FR")}
+              />
+              <HeroMetric
+                label="Chargement"
+                value={hasNextPage ? "Scroll" : isLoading ? "..." : "Complet"}
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            {geocoding ? (
+              <StatusPill icon={LoaderCircle} label="Géocodage en cours" spinning />
+            ) : null}
+            {center && search.around_radius != null ? (
+              <StatusPill
+                icon={MapPin}
+                label={`${center.label} · rayon ${search.around_radius} km`}
+              />
+            ) : null}
+            {hasLocalFilters ? (
+              <StatusPill icon={SlidersHorizontal} label="Filtres locaux appliqués" />
+            ) : null}
+          </div>
+        </header>
+
+        <section className="mb-6">
+          <SaleFiltersForm />
+        </section>
+
+        {error && (
+          <div className="liquid-panel-soft mb-4 rounded-lg border-destructive/25 p-4 text-sm text-destructive">
+            {error instanceof Error ? error.message : "Erreur de chargement"}
+          </div>
+        )}
+
+        {!isLoading && filtered.length === 0 && !error && (
+          <div className="liquid-panel rounded-lg p-12 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/25 bg-gold/10 text-gold">
+              <FileSearch className="h-5 w-5" />
+            </div>
+            <h2 className="mt-5 font-display text-2xl text-foreground">Aucun dossier trouvé</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Élargissez les critères ou retirez un filtre local pour relancer la lecture.
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {isLoading
-            ? "Chargement…"
-            : `${filtered.length} résultat${filtered.length > 1 ? "s" : ""}${filtered.length !== sales.length ? ` (sur ${sales.length})` : ""}`}
-          {geocoding && " · géocodage…"}
-          {center && search.around_radius != null && (
-            <>
-              {" "}
-              · autour de <span className="font-medium text-foreground">{center.label}</span> (
-              {search.around_radius} km)
-            </>
-          )}
-        </p>
-      </div>
-
-      <div className="mb-6">
-        <SaleFiltersForm />
-      </div>
-
-      {error && (
-        <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-          {error instanceof Error ? error.message : "Erreur de chargement"}
+            ? Array.from({ length: 8 }).map((_, i) => <SaleCardSkeleton key={i} />)
+            : filtered.map((s) => <SaleCard key={s.id} sale={s} />)}
         </div>
-      )}
 
-      {!isLoading && filtered.length === 0 && !error && (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground">
-          Aucune annonce ne correspond à vos critères.
-        </div>
-      )}
+        <div ref={loadMoreRef} className="h-1" aria-hidden />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {isLoading
-          ? Array.from({ length: 8 }).map((_, i) => <SaleCardSkeleton key={i} />)
-          : filtered.map((s) => <SaleCard key={s.id} sale={s} />)}
+        {!isLoading && (hasNextPage || isFetchingNextPage) && (
+          <div className="mt-8 flex flex-col items-center gap-3">
+            {isFetchingNextPage ? (
+              <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                <LoaderCircle className="h-4 w-4 animate-spin text-gold" />
+                Chargement des dossiers suivants
+              </div>
+            ) : null}
+            <Button
+              variant="outline"
+              onClick={() => fetchNextPage()}
+              disabled={isFetchingNextPage}
+              className="liquid-panel-soft border-white/10 text-gold hover:border-gold hover:text-gold-soft"
+            >
+              {isFetchingNextPage ? "Chargement..." : "Charger plus d'annonces"}
+            </Button>
+          </div>
+        )}
+
+        {!isLoading && !hasNextPage && filtered.length > 0 && (
+          <div className="mt-8 text-center text-xs uppercase tracking-[0.18em] text-muted-foreground">
+            Tous les dossiers chargés
+          </div>
+        )}
       </div>
-
-      {!isLoading && hasNextPage && (
-        <div className="mt-6 flex justify-center">
-          <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
-            {isFetchingNextPage ? "Chargement…" : "Charger plus d'annonces"}
-          </Button>
-        </div>
-      )}
     </main>
+  );
+}
+
+function HeroMetric({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="liquid-panel-soft rounded-lg p-4">
+      <div className="font-display text-2xl tabular-nums text-gold-soft">{value}</div>
+      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({
+  icon: Icon,
+  label,
+  spinning = false,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  spinning?: boolean;
+}) {
+  return (
+    <span className="liquid-panel-soft inline-flex items-center gap-2 rounded-full px-3 py-1.5">
+      <Icon className={`h-3.5 w-3.5 text-gold ${spinning ? "animate-spin" : ""}`} />
+      {label}
+    </span>
   );
 }
 
 function SaleCardSkeleton() {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <Skeleton className="h-5 w-3/4" />
-        <Skeleton className="h-6 w-10 rounded-full" />
+    <div className="liquid-panel flex min-h-[26rem] flex-col overflow-hidden rounded-lg">
+      <Skeleton className="h-40 w-full rounded-none bg-white/10" />
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="grid flex-1 gap-2">
+            <Skeleton className="h-5 w-3/4 bg-white/10" />
+            <Skeleton className="h-3 w-1/2 bg-white/10" />
+          </div>
+          <Skeleton className="h-7 w-16 rounded-full bg-white/10" />
+        </div>
+        <Skeleton className="h-8 w-1/2 bg-white/10" />
+        <div className="grid grid-cols-2 gap-2">
+          <Skeleton className="h-16 rounded-md bg-white/10" />
+          <Skeleton className="h-16 rounded-md bg-white/10" />
+        </div>
+        <Skeleton className="mt-auto h-10 w-full rounded-md bg-white/10" />
       </div>
-      <Skeleton className="h-3 w-1/2" />
-      <Skeleton className="h-8 w-1/3" />
-      <Skeleton className="h-3 w-2/3" />
-      <div className="flex gap-2">
-        <Skeleton className="h-5 w-14 rounded-md" />
-        <Skeleton className="h-5 w-14 rounded-md" />
-      </div>
-      <Skeleton className="mt-auto h-9 w-full rounded-md" />
     </div>
   );
 }

@@ -177,7 +177,23 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4" suppressHydrationWarning>
+    <div className="liquid-panel rounded-lg p-4 sm:p-5" suppressHydrationWarning>
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-gold">
+            <SlidersHorizontal className="h-4 w-4" />
+            Filtres
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Affinez la liste sans recharger la page.
+          </p>
+        </div>
+        {hasMainFilter || hasAdvancedFilter ? (
+          <span className="liquid-panel-soft inline-flex w-fit rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
+            Filtres actifs
+          </span>
+        ) : null}
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <FilterField label="Département">
           <Input
@@ -185,6 +201,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
             placeholder="Ex: 33"
             value={local.department}
             onChange={(e) => setLocal({ ...local, department: e.target.value })}
+            className="bg-background/35"
           />
         </FilterField>
         <FilterField label="Ville">
@@ -193,6 +210,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
             placeholder="Bordeaux"
             value={local.city}
             onChange={(e) => setLocal({ ...local, city: e.target.value })}
+            className="bg-background/35"
           />
         </FilterField>
         <FilterField label="Type">
@@ -236,6 +254,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
             placeholder="250000"
             value={local.max_price}
             onChange={(e) => setLocal({ ...local, max_price: e.target.value })}
+            className="bg-background/35"
           />
         </FilterField>
         <FilterField label="Surface min">
@@ -245,6 +264,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
             placeholder="60"
             value={local.min_surface}
             onChange={(e) => setLocal({ ...local, min_surface: e.target.value })}
+            className="bg-background/35"
           />
         </FilterField>
         <FilterField label="Score min">
@@ -254,6 +274,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
             placeholder="70"
             value={local.min_score}
             onChange={(e) => setLocal({ ...local, min_score: e.target.value })}
+            className="bg-background/35"
           />
         </FilterField>
         <FilterField label="Tri">
@@ -278,7 +299,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
           variant="outline"
           size="sm"
           onClick={reset}
-          className="justify-start sm:justify-center"
+          className="liquid-panel-soft justify-start border-white/10 sm:justify-center"
         >
           <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser
         </Button>
@@ -286,7 +307,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
           variant="secondary"
           size="sm"
           onClick={openAlertDialog}
-          className="justify-start sm:justify-center"
+          className="justify-start bg-gold/15 text-gold-soft hover:bg-gold/20 sm:justify-center"
         >
           <Bell className="h-3.5 w-3.5" /> Créer une alerte avec ces filtres
         </Button>
@@ -295,14 +316,14 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
           size="sm"
           aria-expanded={advancedOpen}
           onClick={() => setAdvancedOpen((v) => !v)}
-          className="justify-start sm:justify-center"
+          className="justify-start text-muted-foreground hover:text-gold sm:justify-center"
         >
           <SlidersHorizontal className="h-3.5 w-3.5" /> Filtres avancés {advancedOpen ? "▴" : "▾"}
         </Button>
       </div>
 
       {advancedOpen && (
-        <div className="mt-3 grid grid-cols-1 gap-3 rounded-md border border-dashed border-border bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="liquid-panel-soft mt-3 grid grid-cols-1 gap-3 rounded-lg p-3 sm:grid-cols-2 lg:grid-cols-4">
           <FilterField label="Prix au m² max">
             <Input
               aria-label="Prix au mètre carré maximum"
@@ -310,6 +331,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
               placeholder="3500"
               value={local.max_price_per_m2}
               onChange={(e) => setLocal({ ...local, max_price_per_m2: e.target.value })}
+              className="bg-background/35"
             />
           </FilterField>
           <FilterField label="Rendement min">
@@ -319,6 +341,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
               placeholder="5"
               value={local.min_yield}
               onChange={(e) => setLocal({ ...local, min_yield: e.target.value })}
+              className="bg-background/35"
             />
           </FilterField>
           <FilterField label="Autour de">
@@ -327,6 +350,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
               placeholder="Adresse, ville"
               value={local.around_address}
               onChange={(e) => setLocal({ ...local, around_address: e.target.value })}
+              className="bg-background/35"
             />
           </FilterField>
           <FilterField label="Rayon">
@@ -336,6 +360,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
               placeholder="10"
               value={local.around_radius}
               onChange={(e) => setLocal({ ...local, around_radius: e.target.value })}
+              className="bg-background/35"
             />
           </FilterField>
           <p className="col-span-full text-[11px] text-muted-foreground">
