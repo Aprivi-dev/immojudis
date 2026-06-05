@@ -20,7 +20,6 @@ import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SalesIndexRouteImport } from './routes/sales.index'
-import { Route as SalesNewRouteImport } from './routes/sales.new'
 import { Route as SalesIdRouteImport } from './routes/sales.$id'
 import { Route as AdminQualityRouteImport } from './routes/admin.quality'
 
@@ -79,11 +78,6 @@ const SalesIndexRoute = SalesIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SalesRoute,
 } as any)
-const SalesNewRoute = SalesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => SalesRoute,
-} as any)
 const SalesIdRoute = SalesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -108,7 +102,6 @@ export interface FileRoutesByFullPath {
   '/sales': typeof SalesRouteWithChildren
   '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
-  '/sales/new': typeof SalesNewRoute
   '/sales/': typeof SalesIndexRoute
 }
 export interface FileRoutesByTo {
@@ -123,7 +116,6 @@ export interface FileRoutesByTo {
   '/publish': typeof PublishRoute
   '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
-  '/sales/new': typeof SalesNewRoute
   '/sales': typeof SalesIndexRoute
 }
 export interface FileRoutesById {
@@ -140,7 +132,6 @@ export interface FileRoutesById {
   '/sales': typeof SalesRouteWithChildren
   '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
-  '/sales/new': typeof SalesNewRoute
   '/sales/': typeof SalesIndexRoute
 }
 export interface FileRouteTypes {
@@ -158,7 +149,6 @@ export interface FileRouteTypes {
     | '/sales'
     | '/admin/quality'
     | '/sales/$id'
-    | '/sales/new'
     | '/sales/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -173,7 +163,6 @@ export interface FileRouteTypes {
     | '/publish'
     | '/admin/quality'
     | '/sales/$id'
-    | '/sales/new'
     | '/sales'
   id:
     | '__root__'
@@ -189,7 +178,6 @@ export interface FileRouteTypes {
     | '/sales'
     | '/admin/quality'
     | '/sales/$id'
-    | '/sales/new'
     | '/sales/'
   fileRoutesById: FileRoutesById
 }
@@ -286,13 +274,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalesIndexRouteImport
       parentRoute: typeof SalesRoute
     }
-    '/sales/new': {
-      id: '/sales/new'
-      path: '/new'
-      fullPath: '/sales/new'
-      preLoaderRoute: typeof SalesNewRouteImport
-      parentRoute: typeof SalesRoute
-    }
     '/sales/$id': {
       id: '/sales/$id'
       path: '/$id'
@@ -312,13 +293,11 @@ declare module '@tanstack/react-router' {
 
 interface SalesRouteChildren {
   SalesIdRoute: typeof SalesIdRoute
-  SalesNewRoute: typeof SalesNewRoute
   SalesIndexRoute: typeof SalesIndexRoute
 }
 
 const SalesRouteChildren: SalesRouteChildren = {
   SalesIdRoute: SalesIdRoute,
-  SalesNewRoute: SalesNewRoute,
   SalesIndexRoute: SalesIndexRoute,
 }
 
