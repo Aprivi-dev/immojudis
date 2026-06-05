@@ -7,7 +7,7 @@ import X from "lucide-react/dist/esm/icons/x.js";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { BrandLogo } from "@/components/BrandLogo";
-import { isProfessionalAccount } from "@/lib/account";
+import { isAdminAccount, isProfessionalAccount } from "@/lib/account";
 
 const NAV_ITEMS = [
   { to: "/sales", label: "Annonces" },
@@ -17,11 +17,17 @@ const NAV_ITEMS = [
 ] as const;
 
 const PRO_NAV_ITEM = { to: "/publish", label: "Publier" } as const;
+const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin" } as const;
 
 export function Navbar() {
   const { user, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const navItems = isProfessionalAccount(user) ? [...NAV_ITEMS, PRO_NAV_ITEM] : NAV_ITEMS;
+  const admin = isAdminAccount(user);
+  const navItems = [
+    ...NAV_ITEMS,
+    ...(isProfessionalAccount(user) ? [PRO_NAV_ITEM] : []),
+    ...(admin ? [ADMIN_NAV_ITEM] : []),
+  ];
 
   useEffect(() => {
     if (!mobileOpen) return;

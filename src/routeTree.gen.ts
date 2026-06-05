@@ -18,6 +18,7 @@ import { Route as LegalRouteImport } from './routes/legal'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AlertsRouteImport } from './routes/alerts'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SalesIndexRouteImport } from './routes/sales.index'
 import { Route as SalesIdRouteImport } from './routes/sales.$id'
@@ -68,6 +69,11 @@ const AlertsRoute = AlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -84,13 +90,14 @@ const SalesIdRoute = SalesIdRouteImport.update({
   getParentRoute: () => SalesRoute,
 } as any)
 const AdminQualityRoute = AdminQualityRouteImport.update({
-  id: '/admin/quality',
-  path: '/admin/quality',
-  getParentRoute: () => rootRouteImport,
+  id: '/quality',
+  path: '/quality',
+  getParentRoute: () => AdminRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
   '/contact': typeof ContactRoute
   '/favorites': typeof FavoritesRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
   '/contact': typeof ContactRoute
   '/favorites': typeof FavoritesRoute
@@ -121,6 +129,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
   '/contact': typeof ContactRoute
   '/favorites': typeof FavoritesRoute
@@ -138,6 +147,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/alerts'
     | '/contact'
     | '/favorites'
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/alerts'
     | '/contact'
     | '/favorites'
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/alerts'
     | '/contact'
     | '/favorites'
@@ -183,6 +195,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRouteWithChildren
   AlertsRoute: typeof AlertsRoute
   ContactRoute: typeof ContactRoute
   FavoritesRoute: typeof FavoritesRoute
@@ -192,7 +205,6 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   PublishRoute: typeof PublishRoute
   SalesRoute: typeof SalesRouteWithChildren
-  AdminQualityRoute: typeof AdminQualityRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -260,6 +272,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -283,13 +302,23 @@ declare module '@tanstack/react-router' {
     }
     '/admin/quality': {
       id: '/admin/quality'
-      path: '/admin/quality'
+      path: '/quality'
       fullPath: '/admin/quality'
       preLoaderRoute: typeof AdminQualityRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AdminRoute
     }
   }
 }
+
+interface AdminRouteChildren {
+  AdminQualityRoute: typeof AdminQualityRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminQualityRoute: AdminQualityRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface SalesRouteChildren {
   SalesIdRoute: typeof SalesIdRoute
@@ -305,6 +334,7 @@ const SalesRouteWithChildren = SalesRoute._addFileChildren(SalesRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRouteWithChildren,
   AlertsRoute: AlertsRoute,
   ContactRoute: ContactRoute,
   FavoritesRoute: FavoritesRoute,
@@ -314,7 +344,6 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   PublishRoute: PublishRoute,
   SalesRoute: SalesRouteWithChildren,
-  AdminQualityRoute: AdminQualityRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
