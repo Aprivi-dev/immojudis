@@ -7,19 +7,21 @@ import X from "lucide-react/dist/esm/icons/x.js";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { BrandLogo } from "@/components/BrandLogo";
+import { isProfessionalAccount } from "@/lib/account";
 
 const NAV_ITEMS = [
   { to: "/sales", label: "Annonces" },
-  { to: "/sales/new", label: "Nouveautés" },
   { to: "/map", label: "Carte" },
-  { to: "/publish", label: "Publier" },
   { to: "/favorites", label: "Favoris" },
   { to: "/alerts", label: "Alertes" },
 ] as const;
 
+const PRO_NAV_ITEM = { to: "/publish", label: "Publier" } as const;
+
 export function Navbar() {
   const { user, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const navItems = isProfessionalAccount(user) ? [...NAV_ITEMS, PRO_NAV_ITEM] : NAV_ITEMS;
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -42,7 +44,7 @@ export function Navbar() {
         </Link>
 
         <nav className="hidden items-center gap-7 text-xs font-medium uppercase text-muted-foreground md:flex">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <NavLink key={item.to} to={item.to}>
               {item.label}
             </NavLink>
@@ -106,7 +108,7 @@ export function Navbar() {
 
             <div className="flex min-h-0 flex-1 flex-col p-6">
               <nav className="grid gap-2 text-sm font-medium uppercase text-muted-foreground">
-                {NAV_ITEMS.map((item) => (
+                {navItems.map((item) => (
                   <MobileNavLink key={item.to} to={item.to} onClick={closeMobileMenu}>
                     {item.label}
                   </MobileNavLink>

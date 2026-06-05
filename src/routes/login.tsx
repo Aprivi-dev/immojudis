@@ -3,6 +3,12 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  ACCOUNT_TYPE_OPTIONS,
+  PROFESSIONAL_ROLE_OPTIONS,
+  type AccountType,
+  type ProfessionalRole,
+} from "@/lib/account";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -14,6 +20,8 @@ function LoginPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [accountType, setAccountType] = useState<AccountType>("b2c");
+  const [professionalRole, setProfessionalRole] = useState<ProfessionalRole>("lawyer");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -34,10 +42,19 @@ function LoginPage() {
           password,
           options: {
             emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+            data: {
+              account_type: accountType,
+              professional_role: accountType === "b2b" ? professionalRole : null,
+              onboarding_version: "2026-06-b2c-b2b",
+            },
           },
         });
         if (error) throw error;
-        toast.success("Compte créé. Vérifiez votre email si la confirmation est activée.");
+        toast.success(
+          accountType === "b2b"
+            ? "Compte professionnel créé. Vérifiez votre email si la confirmation est activée."
+            : "Compte investisseur créé. Vérifiez votre email si la confirmation est activée.",
+        );
       }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Erreur");
@@ -55,9 +72,61 @@ function LoginPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           {mode === "login"
             ? "Connectez-vous pour accéder aux annonces, cartes, favoris et alertes."
-            : "Créez un compte pour consulter les annonces et suivre vos opportunités."}
+            : "Choisissez le bon profil pour accéder aux fonctionnalités adaptées."}
         </p>
         <form onSubmit={submit} className="mt-5 space-y-3">
+          {mode === "signup" ? (
+            <div className="grid gap-3">
+              <div className="grid gap-2">
+                {ACCOUNT_TYPE_OPTIONS.map((option) => (
+                  <label key={option.value} className="choice-card items-start">
+                    <input
+                      type="radio"
+                      name="accountType"
+                      value={option.value}
+                      checked={accountType === option.value}
+                      onChange={() => setAccountType(option.value)}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-foreground">
+                        {option.label}
+                      </span>
+                      <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                        {option.description}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              {accountType === "b2b" ? (
+                <label className="grid gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Profession
+                  </span>
+                  <select
+                    value={professionalRole}
+                    onChange={(event) =>
+                      setProfessionalRole(event.target.value as ProfessionalRole)
+                    }
+                    className="form-input"
+                  >
+                    {PROFESSIONAL_ROLE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-xs leading-relaxed text-muted-foreground">
+                    La publication est réservée aux professionnels. Une vérification pourra être
+                    demandée avant mise en ligne ou référencement payant.
+                  </span>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
+
           <input
             type="email"
             required

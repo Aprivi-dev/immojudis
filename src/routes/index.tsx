@@ -6,10 +6,11 @@ import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import Gavel from "lucide-react/dist/esm/icons/gavel.js";
 import Map from "lucide-react/dist/esm/icons/map.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import TrendingUp from "lucide-react/dist/esm/icons/trending-up.js";
 import { getStats } from "@/lib/queries";
 import { formatDate } from "@/lib/format";
+import { useAuth } from "@/hooks/use-auth";
+import { isProfessionalAccount } from "@/lib/account";
 
 const QUICK_LINKS = [
   {
@@ -25,10 +26,10 @@ const QUICK_LINKS = [
     desc: "Repérer les opportunités par zone.",
   },
   {
-    to: "/sales/new",
-    icon: Sparkles,
-    label: "Voir les nouveautés",
-    desc: "Derniers dossiers ajoutés au flux.",
+    to: "/favorites",
+    icon: ShieldCheck,
+    label: "Suivre les favoris",
+    desc: "Conserver les dossiers à relire avant audience.",
   },
   {
     to: "/alerts",
@@ -94,11 +95,18 @@ export const Route = createFileRoute("/")({
 });
 
 function HomePage() {
+  const { user } = useAuth();
   const { data: stats } = useQuery({
     queryKey: ["stats"],
     queryFn: getStats,
     staleTime: 5 * 60_000,
   });
+  const isB2B = isProfessionalAccount(user);
+  const professionalCta = isB2B
+    ? { to: "/publish", label: "Préparer une annonce" }
+    : user
+      ? { to: "/contact", label: "Demander un accès pro" }
+      : { to: "/login", label: "Créer un compte pro" };
 
   return (
     <main className="liquid-page min-h-screen text-foreground">
@@ -207,7 +215,7 @@ function HomePage() {
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
-              Nouvelles fonctionnalités
+              Espace professionnels
             </div>
             <h2 className="mt-3 font-display text-3xl text-foreground">
               Publier et promouvoir une vente
@@ -218,10 +226,10 @@ function HomePage() {
             </p>
           </div>
           <Link
-            to="/publish"
+            to={professionalCta.to}
             className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-gold hover:text-gold-soft"
           >
-            Préparer une annonce <ArrowUpRight className="h-4 w-4" />
+            {professionalCta.label} <ArrowUpRight className="h-4 w-4" />
           </Link>
         </div>
 
