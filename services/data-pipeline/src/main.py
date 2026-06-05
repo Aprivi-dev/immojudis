@@ -43,12 +43,13 @@ class PipelineOptions:
     use_llm: bool = True
     upsert: bool = True
     limit: int | None = None
+    run_id: str | None = None
 
 
 def run_pipeline(options: PipelineOptions | None = None) -> int:
     options = options or PipelineOptions()
     settings = load_settings()
-    run_id = create_run_in_supabase(options.source, options.use_llm) if options.upsert else None
+    run_id = create_run_in_supabase(options.source, options.use_llm, run_id=options.run_id) if options.upsert else None
     errors: dict[str, list[str]] = {source: [] for source in SOURCE_NAMES}
     raw_sales: list[dict[str, object]] = []
     raw_by_source = {source: 0 for source in SOURCE_NAMES}
@@ -238,8 +239,19 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
     parser.add_argument("--no-llm", action="store_true", help="Désactive les appels LLM Replicate pour ce run.")
     parser.add_argument("--no-upsert", action="store_true", help="N'écrit pas dans Supabase.")
     parser.add_argument("--limit", type=int, default=None, help="Limite le nombre d'annonces brutes traitées.")
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Reprend une ligne auction_runs existante, par exemple une demande créée depuis l'admin.",
+    )
     args = parser.parse_args(argv)
-    return PipelineOptions(source=args.source, use_llm=not args.no_llm, upsert=not args.no_upsert, limit=args.limit)
+    return PipelineOptions(
+        source=args.source,
+        use_llm=not args.no_llm,
+        upsert=not args.no_upsert,
+        limit=args.limit,
+        run_id=args.run_id,
+    )
 
 
 if __name__ == "__main__":

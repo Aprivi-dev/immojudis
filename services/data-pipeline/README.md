@@ -139,7 +139,17 @@ python -m src.main --source vench --no-upsert
 python -m src.main --source encheres_publiques --no-upsert
 python -m src.main --no-llm
 python -m src.main --limit 5
+python -m src.main --run-id <auction_runs_id>
+python -m src.queued_runner
 ```
+
+`--run-id` permet de reprendre une demande créée depuis le dashboard admin
+(`auction_runs.status = queued`) et de la passer en `running`, puis `succeeded`
+ou `failed`.
+
+`python -m src.queued_runner` récupère le plus ancien run `queued` dans
+Supabase et lance le pipeline avec ses paramètres. C'est la commande utilisée
+par le workflow GitHub Actions planifié.
 
 Le pipeline :
 

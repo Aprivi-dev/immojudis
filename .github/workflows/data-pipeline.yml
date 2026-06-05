@@ -1,0 +1,101 @@
+name: Immojudis Data Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "auction_runs id to execute. Leave empty to process the oldest queued run."
+        required: false
+        type: string
+      source:
+        description: "Source to collect"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - avoventes
+          - licitor
+          - vench
+          - info_encheres
+          - encheres_publiques
+      use_llm:
+        description: "Enable LLM enrichment"
+        required: false
+        default: true
+        type: boolean
+      limit:
+        description: "Optional raw listing limit"
+        required: false
+        type: string
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-data-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Run data pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      LLM_ENABLED: true
+      LLM_PROVIDER: replicate
+      PDF_EXTRACTOR: auto
+      PDF_DOCLING_ENABLED: true
+      PDF_OCR_ENABLED: true
+      ENABLE_LICITOR_BENCHMARK: true
+      ENABLE_VENCH_BENCHMARK: true
+      ENABLE_INFO_ENCHERES_BENCHMARK: true
+      ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.txt
+
+      - name: Install OCR system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run requested or queued pipeline
+        env:
+          REQUESTED_RUN_ID: ${{ github.event.inputs.run_id }}
+          REQUESTED_SOURCE: ${{ github.event.inputs.source }}
+          REQUESTED_USE_LLM: ${{ github.event.inputs.use_llm }}
+          REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$REQUESTED_RUN_ID" ]; then
+            args=(--run-id "$REQUESTED_RUN_ID" --source "${REQUESTED_SOURCE:-all}")
+            if [ "${REQUESTED_USE_LLM:-true}" != "true" ]; then
+              args+=(--no-llm)
+            fi
+            if [ -n "$REQUESTED_LIMIT" ]; then
+              args+=(--limit "$REQUESTED_LIMIT")
+            fi
+            python -m src.main "${args[@]}"
+          else
+            python -m src.queued_runner
+          fi
