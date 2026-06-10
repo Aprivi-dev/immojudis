@@ -210,7 +210,8 @@ function selectComparables(enriched: DvfComparable[], surfaceM2: number | null |
     surfaceMinM2 == null || surfaceMaxM2 == null
       ? []
       : enriched.filter((item) => item.surface >= surfaceMinM2 && item.surface <= surfaceMaxM2);
-  const comparableMode = surfaceMatched.length >= 3 ? "surface_matched" : "nearby_type_only";
+  const comparableMode: MarketEstimate["comparableMode"] =
+    surfaceMatched.length >= 3 ? "surface_matched" : "nearby_type_only";
   return {
     comparables: comparableMode === "surface_matched" ? surfaceMatched : enriched,
     comparableMode,
@@ -434,7 +435,9 @@ export const getMarketEstimate = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<MarketContext> => {
     // Cache CDN 24h (les données DVF changent au mieux trimestriellement)
     setResponseHeaders(
-      new Headers({ "cache-control": "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800" }),
+      new Headers({
+        "cache-control": "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800",
+      }),
     );
 
     try {
