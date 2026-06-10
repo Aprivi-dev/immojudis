@@ -26,12 +26,12 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
   const { isViewed } = useViewedSales();
   const viewed = isViewed(sale.id);
   const occLabel = occupancyLabel(sale.occupancy_status);
-  const occTone =
+  const occChip =
     occLabel === "Libre"
-      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+      ? "chip-opportunity"
       : occLabel === "Occupé" || occLabel === "Loué"
-        ? "border-gold/35 bg-gold/10 text-gold-soft"
-        : "border-white/10 bg-white/5 text-muted-foreground";
+        ? "chip-watch"
+        : "chip-neutral";
   return (
     <article
       className={`liquid-panel group flex min-h-[26rem] flex-col overflow-hidden rounded-lg transition duration-200 hover:-translate-y-0.5 hover:border-gold/35 ${
@@ -94,22 +94,30 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
           </div>
           <div className="grid min-w-24 gap-2 text-right text-xs text-muted-foreground">
             <CardMetric label="Surface" value={surface ? formatSurface(surface) : "—"} />
-            <CardMetric label="Risques" value={riskCount > 0 ? String(riskCount) : "0"} />
+            <CardMetric
+              label="Pièces"
+              value={sale.rooms_count != null ? String(sale.rooms_count) : "—"}
+            />
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-medium ${occTone}`}
-          >
+          <span className={`chip ${occChip}`}>
+            <span aria-hidden className="chip-dot" />
             {occLabel}
           </span>
-          <FeatureBadges sale={sale} max={3} />
           {riskCount > 0 ? (
-            <span className="inline-flex items-center rounded-full border border-gold/30 bg-gold/10 px-2.5 py-1 text-[10px] font-medium text-gold-soft">
-              {riskCount} risque{riskCount > 1 ? "s" : ""}
+            <span className={`chip ${riskCount >= 3 ? "chip-risk" : "chip-watch"}`}>
+              <span aria-hidden className="chip-dot" />
+              {riskCount} risque{riskCount > 1 ? "s" : ""} à vérifier
             </span>
-          ) : null}
+          ) : (
+            <span className="chip chip-verified">
+              <span aria-hidden className="chip-dot" />
+              Aucun risque détecté
+            </span>
+          )}
+          <FeatureBadges sale={sale} max={2} />
         </div>
 
         <Link

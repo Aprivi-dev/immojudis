@@ -155,7 +155,12 @@ function SaleDetailPage() {
                 />
                 {sale.tribunal && <HeroMeta label="Tribunal" value={sale.tribunal} />}
               </dl>
-              <ScoreBadge score={sale.investment_score} confidence={sale.score_confidence} />
+              <ScoreBadge
+                score={sale.investment_score}
+                confidence={sale.score_confidence}
+                size="md"
+                showLabel
+              />
             </div>
           </div>
         </div>
