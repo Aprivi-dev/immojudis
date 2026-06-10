@@ -136,3 +136,42 @@ def test_normalize_sale_ignores_dvf_comparable_rooms_count() -> None:
     )
 
     assert sale.rooms_count is None
+
+
+def test_normalize_sale_maps_french_occupancy_to_enum() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_publiques",
+            "source_url": "https://www.encheres-publiques.com/enchere/maison-kleber",
+            "occupancy_status": "Libre de toute occupation",
+        }
+    )
+
+    assert sale.occupancy_status == "vacant"
+
+
+def test_normalize_sale_drops_unrecognised_occupancy() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/occ-unknown",
+            "occupancy_status": "amiante, plomb, termites",
+        }
+    )
+
+    assert sale.occupancy_status is None
+
+
+def test_normalize_sale_keeps_rooms_at_least_bedrooms() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/rooms-lt-bedrooms",
+            "rooms_count": 2,
+            "bedrooms_count": 3,
+        }
+    )
+
+    assert sale.rooms_count is not None
+    assert sale.bedrooms_count is not None
+    assert sale.rooms_count >= sale.bedrooms_count
