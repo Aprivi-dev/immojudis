@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { useEffect } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import Calendar from "lucide-react/dist/esm/icons/calendar.js";
@@ -98,7 +98,7 @@ function SaleDetailPage() {
         )}
 
         <div className="mx-auto max-w-6xl px-4 pt-6 pb-8 sm:px-6 sm:pt-8 sm:pb-12">
-          <div className="liquid-hero rounded-lg px-5 py-5 sm:px-7 sm:py-6">
+          <div className="glass-shell rounded-lg px-5 py-5 sm:px-7 sm:py-6">
             {/* Fil d'Ariane */}
             <nav className="flex items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
               <Link
@@ -540,20 +540,22 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
 
 function SaleDetailSkeleton() {
   return (
-    <main className="mx-auto max-w-5xl px-4 py-6">
-      <Skeleton className="h-4 w-20" />
-      <Skeleton className="mt-4 h-8 w-2/3" />
-      <Skeleton className="mt-2 h-4 w-1/2" />
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <Skeleton className="h-48 w-full rounded-lg" />
-          <Skeleton className="h-40 w-full rounded-lg" />
-          <Skeleton className="h-32 w-full rounded-lg" />
+    <main className="liquid-page min-h-screen px-4 py-8 sm:px-6">
+      <div className="mx-auto max-w-5xl">
+        <Skeleton className="h-4 w-20 bg-white/10" />
+        <Skeleton className="mt-4 h-8 w-2/3 bg-white/10" />
+        <Skeleton className="mt-2 h-4 w-1/2 bg-white/10" />
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="space-y-6 lg:col-span-2">
+            <Skeleton className="h-48 w-full rounded-lg bg-white/10" />
+            <Skeleton className="h-40 w-full rounded-lg bg-white/10" />
+            <Skeleton className="h-32 w-full rounded-lg bg-white/10" />
+          </div>
+          <aside className="space-y-4">
+            <Skeleton className="h-24 w-full rounded-lg bg-white/10" />
+            <Skeleton className="h-32 w-full rounded-lg bg-white/10" />
+          </aside>
         </div>
-        <aside className="space-y-4">
-          <Skeleton className="h-24 w-full rounded-lg" />
-          <Skeleton className="h-32 w-full rounded-lg" />
-        </aside>
       </div>
     </main>
   );
@@ -561,18 +563,25 @@ function SaleDetailSkeleton() {
 
 function SaleNotFoundComponent() {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-16 text-center">
-      <h1 className="text-2xl font-bold text-foreground">Annonce introuvable</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Cette vente n'existe plus ou a été retirée. Elle peut avoir été adjugée ou supprimée par la
-        source.
-      </p>
-      <Link
-        to="/sales"
-        className="mt-6 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-      >
-        ← Retour aux annonces
-      </Link>
+    <main className="liquid-page flex min-h-screen items-center justify-center px-4 py-16 text-center">
+      <div className="glass-shell max-w-2xl rounded-lg p-8">
+        <img
+          src="/brand/immojudis-sentinel-mark-v2.png"
+          alt=""
+          className="mx-auto h-14 w-14 object-contain"
+        />
+        <h1 className="mt-5 font-display text-2xl text-foreground">Annonce introuvable</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Cette vente n'existe plus ou a été retirée. Elle peut avoir été adjugée ou supprimée par
+          la source.
+        </p>
+        <Link
+          to="/sales"
+          className="liquid-button mt-6 inline-flex items-center rounded-md px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-105"
+        >
+          ← Retour aux annonces
+        </Link>
+      </div>
     </main>
   );
 }
@@ -580,25 +589,29 @@ function SaleNotFoundComponent() {
 function SaleErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
   return (
-    <main className="mx-auto max-w-2xl px-4 py-16 text-center">
-      <h1 className="text-2xl font-bold text-foreground">Impossible d'afficher cette annonce</h1>
-      <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
-      <div className="mt-6 flex flex-wrap justify-center gap-2">
-        <button
-          onClick={() => {
-            router.invalidate();
-            reset();
-          }}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          Réessayer
-        </button>
-        <Link
-          to="/sales"
-          className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-        >
-          ← Retour aux annonces
-        </Link>
+    <main className="liquid-page flex min-h-screen items-center justify-center px-4 py-16 text-center">
+      <div className="glass-shell max-w-2xl rounded-lg p-8">
+        <h1 className="font-display text-2xl text-foreground">
+          Impossible d'afficher cette annonce
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
+          <button
+            onClick={() => {
+              router.invalidate();
+              reset();
+            }}
+            className="liquid-button rounded-md px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-105"
+          >
+            Réessayer
+          </button>
+          <Link
+            to="/sales"
+            className="liquid-panel-soft rounded-md px-4 py-2 text-sm font-medium hover:border-gold"
+          >
+            ← Retour aux annonces
+          </Link>
+        </div>
       </div>
     </main>
   );

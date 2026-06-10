@@ -54,7 +54,7 @@ export function FavoriteButton({ saleId, className = "" }: { saleId: string; cla
       onClick={toggle}
       disabled={busy}
       aria-pressed={isFav}
-      className={`inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent disabled:opacity-50 ${className}`}
+      className={`liquid-panel-soft inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground transition hover:border-gold hover:text-gold-soft disabled:opacity-50 ${className}`}
     >
       <Heart className={`h-3.5 w-3.5 ${isFav ? "fill-red-500 text-red-500" : ""}`} />
       {isFav ? "Retiré" : "Favori"}

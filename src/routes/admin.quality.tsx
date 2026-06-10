@@ -5,6 +5,7 @@ import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import Database from "lucide-react/dist/esm/icons/database.js";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import type { ReactElement } from "react";
 import { getSales } from "@/lib/queries";
 import type { AuctionSale } from "@/lib/types";
 
@@ -43,13 +44,15 @@ function AdminQualityPage() {
   return (
     <main className="liquid-page min-h-screen bg-background px-4 py-8">
       <div className="mx-auto max-w-6xl">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        <header className="glass-shell flex flex-wrap items-end justify-between gap-4 rounded-lg p-6 sm:p-8">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.3em] text-gold">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
               Admin qualité
             </div>
-            <h1 className="mt-2 font-display text-4xl text-foreground">Pilotage data & scoring</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            <h1 className="mt-4 font-display text-4xl leading-tight text-foreground sm:text-5xl">
+              Pilotage data & scoring
+            </h1>
+            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
               Vue interne pour repérer rapidement les ventes qui fragilisent la confiance produit.
             </p>
           </div>
@@ -59,7 +62,7 @@ function AdminQualityPage() {
           >
             Retour annonces
           </Link>
-        </div>
+        </header>
 
         {error && (
           <div className="mt-6 rounded-lg border border-red-300/20 bg-red-500/10 p-4 text-sm text-red-100">

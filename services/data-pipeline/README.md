@@ -166,8 +166,10 @@ Le pipeline :
 11. normalise les actifs immobiliers en surfaces, équipements, risques et score investisseur ;
 12. marque automatiquement `past` les ventes dont `sale_date` est dépassée, sans écraser les ventes `adjudicated` ;
 13. exporte :
-   - `data/processed/auction_sales.json`
-   - `data/processed/auction_sales.csv`
+
+- `data/processed/auction_sales.json`
+- `data/processed/auction_sales.csv`
+
 14. insère ou met à jour Supabase si `.env` est configuré, avec une table canonique et les observations source ;
 15. nettoie aussi Supabase en marquant `past` les lignes déjà stockées dont la date est dépassée ;
 16. affiche un rapport qualité.

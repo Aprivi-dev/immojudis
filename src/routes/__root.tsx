@@ -15,17 +15,22 @@ import { Toaster } from "sonner";
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page introuvable</h2>
+    <div className="liquid-page flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="glass-shell max-w-xl overflow-hidden rounded-lg p-6 text-center sm:p-8">
+        <img
+          src="/brand/immojudis-sentinel-mark-v2.png"
+          alt=""
+          className="mx-auto h-16 w-16 object-contain drop-shadow-[0_18px_34px_rgba(0,0,0,0.35)]"
+        />
+        <h1 className="mt-5 font-display text-6xl leading-none text-gold-soft">404</h1>
+        <h2 className="mt-4 font-display text-2xl text-foreground">Page introuvable</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           La page demandée n'existe pas ou a été déplacée.
         </p>
         <div className="mt-6">
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background transition hover:brightness-105"
           >
             Retour à l'accueil
           </Link>
@@ -40,10 +45,15 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
+    <div className="liquid-page flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="glass-shell max-w-xl rounded-lg p-6 text-center sm:p-8">
+        <img
+          src="/brand/immojudis-sentinel-mark-v2.png"
+          alt=""
+          className="mx-auto h-14 w-14 object-contain"
+        />
+        <h1 className="mt-5 font-display text-2xl tracking-tight text-foreground">
+          Cette page n'a pas chargé
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Une erreur est survenue. Vous pouvez réessayer ou revenir à l'accueil.
@@ -54,13 +64,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
               router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-background transition hover:brightness-105"
           >
             Réessayer
           </button>
           <a
             href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            className="liquid-panel-soft inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-gold transition hover:border-gold"
           >
             Retour à l'accueil
           </a>
@@ -96,9 +106,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", type: "image/png", href: "/brand/owl-mark-192.png" },
-      { rel: "apple-touch-icon", href: "/brand/owl-mark-512.png" },
-      { rel: "preload", as: "image", href: "/brand/owl-mark.png" },
+      { rel: "icon", type: "image/png", href: "/brand/immojudis-sentinel-mark-v2.png" },
+      { rel: "apple-touch-icon", href: "/brand/immojudis-sentinel-mark-v2.png" },
+      { rel: "preload", as: "image", href: "/brand/immojudis-sentinel-mark-v2.png" },
+      { rel: "preload", as: "image", href: "/brand/immojudis-sentinel-v2.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {

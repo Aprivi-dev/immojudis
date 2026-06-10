@@ -36,7 +36,7 @@ export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
       <div
         className={`relative flex items-center justify-center overflow-hidden bg-[var(--surface)] ${className ?? ""}`}
       >
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(13,27,42,0.96),rgba(7,14,22,0.98)),radial-gradient(circle_at_35%_30%,rgba(212,160,23,0.2),transparent_34%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(21,19,17,0.96),rgba(8,8,10,0.98)),radial-gradient(circle_at_35%_30%,rgba(242,196,135,0.2),transparent_34%)]" />
         <div
           aria-hidden
           className="absolute inset-0 opacity-20"

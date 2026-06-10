@@ -34,9 +34,9 @@ export function SourceImage({
       <div
         className={`relative flex items-center justify-center overflow-hidden bg-[var(--surface)] text-muted-foreground ${className ?? "h-64 w-full"}`}
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(212,160,23,0.18),transparent_34%),linear-gradient(135deg,rgba(13,27,42,0.95),rgba(7,14,22,0.98))]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(242,196,135,0.18),transparent_34%),linear-gradient(135deg,rgba(21,19,17,0.95),rgba(8,8,10,0.98))]" />
         <img
-          src="/brand/owl-mark.png"
+          src="/brand/immojudis-sentinel-mark-v2.png"
           alt=""
           aria-hidden="true"
           className="absolute right-4 top-4 h-20 w-20 opacity-20"

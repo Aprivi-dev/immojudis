@@ -77,7 +77,10 @@ type QueryResult<T> = {
 };
 
 type QueryBuilder<T> = PromiseLike<QueryResult<T>> & {
-  order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => QueryBuilder<T>;
+  order: (
+    column: string,
+    options?: { ascending?: boolean; nullsFirst?: boolean },
+  ) => QueryBuilder<T>;
   limit: (count: number) => QueryBuilder<T>;
   eq: (column: string, value: unknown) => QueryBuilder<T>;
 };
@@ -133,20 +136,14 @@ function toJsonValue(value: unknown): JsonValue {
   if (value === undefined || value === null) {
     return null;
   }
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return value;
   }
   if (Array.isArray(value)) {
     return value.map(toJsonValue);
   }
   if (typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, toJsonValue(item)]),
-    );
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, toJsonValue(item)]));
   }
   return String(value);
 }
@@ -244,7 +241,10 @@ function runnerMode(): RunnerMode {
 
 async function updateRunSummary(runId: string, summary: JsonObject, errors: JsonObject) {
   const admin = getAdminClient();
-  const { error } = await admin.from<AuctionRunRow>("auction_runs").update({ summary, errors }).eq("id", runId);
+  const { error } = await admin
+    .from<AuctionRunRow>("auction_runs")
+    .update({ summary, errors })
+    .eq("id", runId);
   if (error) throw new Error(error.message ?? "Impossible de mettre à jour le run.");
 }
 
@@ -292,23 +292,16 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
       .order("started_at", { ascending: false, nullsFirst: false })
       .limit(25);
 
-    const [
-      runsResult,
-      sales,
-      documents,
-      extractions,
-      riskOccurrences,
-      scoreFactors,
-      runsCount,
-    ] = await Promise.all([
-      runsQuery,
-      countRows("auction_sales"),
-      countRows("auction_documents"),
-      countRows("auction_extractions"),
-      countRows("auction_risk_occurrences"),
-      countRows("auction_score_factors"),
-      countRows("auction_runs"),
-    ]);
+    const [runsResult, sales, documents, extractions, riskOccurrences, scoreFactors, runsCount] =
+      await Promise.all([
+        runsQuery,
+        countRows("auction_sales"),
+        countRows("auction_documents"),
+        countRows("auction_extractions"),
+        countRows("auction_risk_occurrences"),
+        countRows("auction_score_factors"),
+        countRows("auction_runs"),
+      ]);
 
     if (runsResult.error) {
       throw new Error(runsResult.error.message ?? "Impossible de lire les runs.");
@@ -424,7 +417,8 @@ export const startAdminScroll = createServerFn({ method: "POST" })
             ...run,
             errors: githubErrors,
           },
-          message: "Demande enregistrée, mais GitHub Actions n'a pas répondu. Le worker planifié prendra le relais.",
+          message:
+            "Demande enregistrée, mais GitHub Actions n'a pas répondu. Le worker planifié prendra le relais.",
         };
       }
     }

@@ -79,7 +79,7 @@ function AdminDashboardPage() {
   return (
     <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-10">
       <div className="mx-auto max-w-7xl">
-        <header className="liquid-hero rounded-lg p-6 sm:p-8">
+        <header className="glass-shell rounded-lg p-6 sm:p-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
