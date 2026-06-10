@@ -41,9 +41,9 @@ export function DocumentsList({ documents }: { documents: unknown }) {
             href={d.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm hover:bg-accent"
+            className="liquid-panel-soft inline-flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition hover:border-gold hover:text-gold-soft"
           >
-            <FileText className="h-4 w-4 text-muted-foreground" />
+            <FileText className="h-4 w-4 text-gold" />
             <span className="flex-1 truncate">
               {d.name ?? d.url.split("/").pop() ?? `Document ${i + 1}`}
             </span>

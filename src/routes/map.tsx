@@ -3,6 +3,8 @@ const MAP_LIMIT = 300;
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import MapIcon from "lucide-react/dist/esm/icons/map.js";
+import Radar from "lucide-react/dist/esm/icons/radar.js";
 import { getMapPins } from "@/lib/queries";
 import type { SaleFilters, SortKey } from "@/lib/types";
 import { SaleMap } from "@/components/SaleMap";
@@ -97,7 +99,7 @@ function MapPage() {
   const filtered = useMemo(() => {
     return sales.filter((s) => {
       if (s.latitude == null || s.longitude == null) return false;
-      const surface = s.app_surface_m2 ?? s.habitable_surface_m2 ?? s.carrez_surface_m2;
+      const surface = s.app_surface_m2;
       if (search.max_price_per_m2 != null) {
         const ppm = pricePerM2(s.starting_price_eur, surface);
         if (ppm == null || ppm > search.max_price_per_m2) return false;
@@ -114,79 +116,107 @@ function MapPage() {
     });
   }, [sales, search.max_price_per_m2, search.min_yield, search.around_radius, center]);
 
+  const fitToMarkers = Boolean(
+    search.department ||
+    search.city ||
+    search.type ||
+    search.max_price ||
+    search.min_surface ||
+    search.occupancy ||
+    search.min_score ||
+    search.max_price_per_m2 ||
+    search.min_yield ||
+    (center && search.around_radius != null),
+  );
+
   return (
-    <main className="mx-auto max-w-7xl px-4 py-6">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold text-foreground">Carte des ventes</h1>
-        <p className="text-sm text-muted-foreground">
-          {isLoading
-            ? "Chargement…"
-            : `${filtered.length} annonce${filtered.length > 1 ? "s" : ""} géolocalisée${filtered.length > 1 ? "s" : ""}`}
-          {center && search.around_radius != null && (
-            <>
-              {" "}
-              · autour de <span className="font-medium text-foreground">{center.label}</span> (
-              {search.around_radius} km)
-            </>
-          )}
-          {sales.length >= MAP_LIMIT && (
-            <>
-              {" "}
-              ·{" "}
-              <span className="text-amber-600 dark:text-amber-400">
-                affichage limité aux {MAP_LIMIT} premiers résultats, affinez les filtres
-              </span>
-            </>
-          )}
-        </p>
-      </div>
+    <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-10">
+      <div className="mx-auto max-w-7xl">
+        <header className="glass-shell mb-6 rounded-lg p-6 sm:p-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+                <MapIcon className="h-4 w-4" />
+                Vue territoire
+              </div>
+              <h1 className="mt-4 font-display text-4xl leading-tight text-foreground sm:text-5xl">
+                Carte des ventes
+              </h1>
+              <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+                Repérez les opportunités par zone, croisez le score avec l'adresse et gardez une
+                lecture claire du marché local.
+              </p>
+            </div>
+            <div className="grid min-w-[min(100%,26rem)] gap-3 sm:grid-cols-2">
+              <MapMetric
+                label="Géolocalisées"
+                value={
+                  isLoading ? "..." : `${filtered.length} annonce${filtered.length > 1 ? "s" : ""}`
+                }
+              />
+              <MapMetric
+                label="Lecture"
+                value={
+                  center && search.around_radius != null
+                    ? `${search.around_radius} km`
+                    : "France SO"
+                }
+              />
+            </div>
+          </div>
+          {center && search.around_radius != null ? (
+            <div className="signal-chip mt-5 inline-flex rounded-full px-3 py-1.5 text-xs text-gold-soft">
+              Autour de {center.label}
+            </div>
+          ) : null}
+          {sales.length >= MAP_LIMIT ? (
+            <div className="mt-3 text-xs leading-relaxed text-amber-100">
+              Affichage limité aux {MAP_LIMIT} premiers résultats : affinez les filtres pour une
+              zone plus précise.
+            </div>
+          ) : null}
+        </header>
 
-      <div className="mb-4">
-        <SaleFiltersForm from="/map" />
-      </div>
+        <section className="mb-5">
+          <SaleFiltersForm from="/map" />
+        </section>
 
-      <SaleMap
-        sales={filtered}
-        fitToMarkers={Boolean(
-          search.department ||
-          search.city ||
-          search.type ||
-          search.max_price ||
-          search.min_surface ||
-          search.occupancy ||
-          search.min_score ||
-          search.max_price_per_m2 ||
-          search.min_yield ||
-          (center && search.around_radius != null),
-        )}
-      />
+        <section className="glass-shell overflow-hidden rounded-lg p-3">
+          <SaleMap sales={filtered} fitToMarkers={fitToMarkers} />
+        </section>
 
-      <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <Dot color="#10b981" />
-          Score ≥ 80
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <Dot color="#3b82f6" />
-          60–79
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <Dot color="#f59e0b" />
-          40–59
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <Dot color="#ef4444" />
-          &lt; 40
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <Dot color="#9ca3af" />
-          Non noté
-        </span>
+        <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
+          <LegendItem color="#10b981" label="Score ≥ 80" />
+          <LegendItem color="#3b82f6" label="60–79" />
+          <LegendItem color="#f59e0b" label="40–59" />
+          <LegendItem color="#ef4444" label="< 40" />
+          <LegendItem color="#9ca3af" label="Non noté" />
+          <span className="ml-auto inline-flex items-center gap-1.5 text-gold-soft">
+            <Radar className="h-3.5 w-3.5" />
+            Lecture géographique
+          </span>
+        </div>
       </div>
     </main>
   );
 }
 
-function Dot({ color }: { color: string }) {
-  return <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />;
+function MapMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="liquid-panel-soft rounded-lg p-4">
+      <div className="font-display text-2xl tabular-nums text-gold-soft">{value}</div>
+      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function LegendItem({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="liquid-panel-soft inline-flex items-center gap-1.5 rounded-full px-3 py-1.5">
+      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
+  );
 }

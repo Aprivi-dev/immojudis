@@ -5,9 +5,20 @@ import { nitro } from "nitro/vite";
 
 // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
 export default defineConfig({
+  plugins: [
+    nitro({
+      preset: "vercel",
+      vercel: {
+        functions: {
+          runtime: "nodejs22.x",
+        },
+      },
+    }),
+  ],
   // Keep the optional Cloudflare integration disabled: Vercel is the deployment target.
   cloudflare: false,
   vite: {
+    envPrefix: ["VITE_", "NEXT_PUBLIC_"],
     build: {
       rollupOptions: {
         output: {
@@ -22,7 +33,6 @@ export default defineConfig({
       },
     },
   },
-  plugins: [nitro()],
   tanstackStart: {
     server: { entry: "server" },
   },

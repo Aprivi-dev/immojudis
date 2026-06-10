@@ -32,13 +32,30 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <main className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4">
-        <div className="liquid-panel max-w-sm rounded-lg p-6 text-center">
-          <div className="mx-auto h-10 w-10 animate-pulse rounded-full border border-gold/35 bg-gold/10" />
-          <p className="mt-4 text-sm font-medium text-foreground">Vérification de l'accès</p>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            Les annonces Immojudis sont réservées aux comptes connectés.
-          </p>
+      <main className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10">
+        <div className="glass-shell grid w-full max-w-3xl overflow-hidden rounded-lg sm:grid-cols-[1fr_15rem]">
+          <div className="p-6 sm:p-8">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold">
+              Accès protégé
+            </div>
+            <h1 className="mt-4 font-display text-3xl leading-tight text-foreground">
+              Vérification de l'accès
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              Les annonces, cartes et analyses Immojudis sont réservées aux comptes connectés.
+            </p>
+            <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-gold" />
+            </div>
+          </div>
+          <div className="relative hidden min-h-[13rem] overflow-hidden sm:block">
+            <div className="cinematic-grid absolute inset-0 opacity-40" />
+            <img
+              src="/brand/immojudis-sentinel-v2.png"
+              alt="Chouette Immojudis"
+              className="absolute bottom-3 right-3 w-48 drop-shadow-[0_26px_52px_rgba(0,0,0,0.48)]"
+            />
+          </div>
         </div>
       </main>
     );
@@ -81,8 +98,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
             Espace réservé aux professionnels
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            La publication d'annonces est destinée aux comptes B2B : avocats, notaires,
-            huissiers ou commissaires de justice. Votre compte actuel reste orienté investisseur.
+            La publication d'annonces est destinée aux comptes B2B : avocats, notaires, huissiers ou
+            commissaires de justice. Votre compte actuel reste orienté investisseur.
           </p>
           <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
             <a

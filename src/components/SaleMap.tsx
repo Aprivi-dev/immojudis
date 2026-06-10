@@ -62,7 +62,7 @@ function buildPopup(s: AuctionMapPin): string {
       </div>
       <div style="font-size:11px;color:#4b5563;margin-bottom:6px">Occupation : <strong>${escapeHtml(occupancy)}</strong></div>
       ${s.investment_score != null ? `<div style="font-size:11px;color:#4b5563;margin-bottom:6px">Score : <strong>${Math.round(s.investment_score)}/100</strong></div>` : ""}
-      <a href="/sales/${s.id}" style="display:inline-block;background:#0f172a;color:#fff;padding:4px 10px;border-radius:4px;font-size:11px;text-decoration:none;font-weight:500">Voir le détail →</a>
+      <a href="/sales/${s.id}" style="display:inline-block;background:#f2c487;color:#09090b;padding:4px 10px;border-radius:6px;font-size:11px;text-decoration:none;font-weight:700">Voir le détail →</a>
     </div>`;
 }
 
@@ -114,7 +114,7 @@ export function SaleMap({
             const n = c.getChildCount();
             const size = n < 10 ? 32 : n < 50 ? 38 : 46;
             return L.divIcon({
-              html: `<div style="background:rgba(15,23,42,0.85);color:#fff;width:${size}px;height:${size}px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;border:3px solid rgba(255,255,255,0.95);box-shadow:0 2px 6px rgba(0,0,0,0.25)">${n}</div>`,
+              html: `<div style="background:rgba(9,9,11,0.9);color:#f8e5c9;width:${size}px;height:${size}px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:3px solid rgba(242,196,135,0.88);box-shadow:0 2px 10px rgba(0,0,0,0.35)">${n}</div>`,
               className: "auction-cluster",
               iconSize: [size, size],
             });
@@ -202,10 +202,10 @@ export function SaleMap({
     <div className="relative">
       <div
         ref={containerRef}
-        className="h-[calc(100vh-16rem)] min-h-[400px] w-full rounded-lg border border-border"
+        className="liquid-media h-[calc(100vh-16rem)] min-h-[400px] w-full rounded-lg"
       />
       {mapError && (
-        <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border bg-background/90 px-6 text-center backdrop-blur-sm">
+        <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-gold/15 bg-background/90 px-6 text-center backdrop-blur-sm">
           <div>
             <div className="text-sm font-semibold text-foreground">Carte indisponible</div>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -216,7 +216,7 @@ export function SaleMap({
         </div>
       )}
       {!mapError && tileError && (
-        <div className="absolute left-3 top-3 z-[1000] rounded-md border border-amber-300/30 bg-card/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur">
+        <div className="liquid-panel-soft absolute left-3 top-3 z-[1000] rounded-md px-3 py-2 text-xs text-muted-foreground shadow-lg">
           Fond de carte temporairement indisponible.
         </div>
       )}
@@ -224,7 +224,7 @@ export function SaleMap({
         type="button"
         onClick={locateMe}
         title="Centrer sur ma position"
-        className="absolute right-3 top-3 z-[1000] inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium shadow-md hover:bg-accent"
+        className="liquid-panel-soft absolute right-3 top-3 z-[1000] inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-gold-soft shadow-md hover:border-gold"
       >
         <Locate className="h-3.5 w-3.5" /> Ma position
       </button>

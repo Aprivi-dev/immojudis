@@ -30,8 +30,8 @@ export function DealMemo({ sale }: { sale: AuctionSale }) {
           </div>
           <h3 className="mt-2 text-lg font-semibold text-foreground">{memo.headline}</h3>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Une lecture simple : pourquoi regarder, ce qui peut bloquer et quoi faire avant de
-            fixer ton plafond.
+            Une lecture simple : pourquoi regarder, ce qui peut bloquer et quoi faire avant de fixer
+            ton plafond.
           </p>
         </div>
 

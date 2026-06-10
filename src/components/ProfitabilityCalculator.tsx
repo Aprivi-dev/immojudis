@@ -320,8 +320,9 @@ export function ProfitabilityCalculator({ sale }: { sale: AuctionSale }) {
           Coût complet retenu
         </div>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-          Pour une enchère simulée à <strong className="text-foreground">{fmt(state.price)}</strong>,
-          Immojudis ajoute <strong className="text-foreground">{fmt(result.simulated.acquisitionFeesTotal)}</strong>{" "}
+          Pour une enchère simulée à <strong className="text-foreground">{fmt(state.price)}</strong>
+          , Immojudis ajoute{" "}
+          <strong className="text-foreground">{fmt(result.simulated.acquisitionFeesTotal)}</strong>{" "}
           de frais d'adjudication estimés et{" "}
           <strong className="text-foreground">{fmt(state.works)}</strong> de travaux. Le coût
           comparé au marché local est donc{" "}

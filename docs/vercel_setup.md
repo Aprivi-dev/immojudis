@@ -19,15 +19,15 @@ npm run dev        # http://localhost:3000
 
 ## 2. Variables d'environnement
 
-| Variable                        | Requis | Description                                              |
-| ------------------------------- | ------ | -------------------------------------------------------- |
-| `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)       |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)  |
-| `VITE_MAPBOX_TOKEN`             | ❌     | Optionnel. Non utilisé en V1 (Leaflet + OSM par défaut). |
+| Variable                        | Requis | Description                                                                                      |
+| ------------------------------- | ------ | ------------------------------------------------------------------------------------------------ |
+| `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)                                               |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)                                          |
+| `VITE_MAPBOX_TOKEN`             | ❌     | Optionnel. Non utilisé en V1 (Leaflet + OSM par défaut).                                         |
 | `GITHUB_SCROLL_TOKEN`           | ❌     | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`. |
-| `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`. |
-| `GITHUB_SCROLL_WORKFLOW`        | ❌     | Workflow cible. Défaut : `data-pipeline.yml`. |
-| `GITHUB_SCROLL_REF`             | ❌     | Branche cible. Défaut : `main`. |
+| `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                         |
+| `GITHUB_SCROLL_WORKFLOW`        | ❌     | Workflow cible. Défaut : `data-pipeline.yml`.                                                    |
+| `GITHUB_SCROLL_REF`             | ❌     | Branche cible. Défaut : `main`.                                                                  |
 
 ⚠️ **Ne JAMAIS** ajouter `SUPABASE_SERVICE_ROLE_KEY` au front. Elle bypass RLS.
 
@@ -42,11 +42,11 @@ Deux mécanismes peuvent ensuite lancer le vrai pipeline :
 
 Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans Supabase :
 
-| Secret GitHub Actions           | Requis | Description |
-| ------------------------------- | ------ | ----------- |
-| `SUPABASE_URL`                  | ✅     | URL Supabase projet `immojudis`. |
-| `SUPABASE_SERVICE_ROLE_KEY`     | ✅     | Clé serveur Supabase utilisée uniquement par le worker CI. |
-| `REPLICATE_API_TOKEN`           | ❌     | Token LLM pour l'enrichissement premium, si disponible. |
+| Secret GitHub Actions       | Requis | Description                                                |
+| --------------------------- | ------ | ---------------------------------------------------------- |
+| `SUPABASE_URL`              | ✅     | URL Supabase projet `immojudis`.                           |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅     | Clé serveur Supabase utilisée uniquement par le worker CI. |
+| `REPLICATE_API_TOKEN`       | ❌     | Token LLM pour l'enrichissement premium, si disponible.    |
 
 Le token `GITHUB_SCROLL_TOKEN` côté Vercel doit être un fine-grained PAT GitHub limité au repo `Aprivi-dev/immojudis` avec accès Actions en écriture.
 

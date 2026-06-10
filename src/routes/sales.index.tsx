@@ -152,19 +152,20 @@ function SalesPage() {
   return (
     <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-10">
       <div className="mx-auto max-w-7xl">
-        <header className="liquid-hero mb-6 rounded-lg p-6 sm:p-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <header className="glass-shell glass-sheen mb-6 overflow-hidden rounded-lg p-6 sm:p-8">
+          <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
                 <FileSearch className="h-4 w-4" />
                 Dossiers analysés
               </div>
               <h1 className="mt-4 font-display text-4xl leading-tight text-foreground sm:text-5xl">
-                Annonces
+                Annonces sous surveillance
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
                 Parcourez les ventes judiciaires avec les critères utiles avant décision : score,
-                prix, surface, occupation, risques et localisation.
+                prix, surface, occupation, risques et localisation. Les résultats continuent de se
+                charger au scroll.
               </p>
             </div>
 

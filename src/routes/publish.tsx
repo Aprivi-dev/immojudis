@@ -134,7 +134,7 @@ function PublishPage() {
   return (
     <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
       <div className="mx-auto max-w-7xl">
-        <header className="mb-8 grid gap-6 lg:grid-cols-[1fr_24rem] lg:items-end">
+        <header className="glass-shell mb-8 grid gap-6 rounded-lg p-6 sm:p-8 lg:grid-cols-[1fr_24rem] lg:items-end">
           <div>
             <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
               <Megaphone className="h-4 w-4" />
@@ -167,7 +167,8 @@ function PublishPage() {
               />
             </div>
             <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-              Le brouillon reste local tant que le workflow de validation Supabase n'est pas branché.
+              Le brouillon reste local tant que le workflow de validation Supabase n'est pas
+              branché.
             </p>
           </div>
         </header>
@@ -348,7 +349,9 @@ function PublishPage() {
                 <UploadCloud className="h-4 w-4" />
                 Prochaine étape
               </div>
-              <h2 className="mt-4 font-display text-2xl text-foreground">Revue avant mise en ligne</h2>
+              <h2 className="mt-4 font-display text-2xl text-foreground">
+                Revue avant mise en ligne
+              </h2>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                 Une annonce publiée doit être vérifiée : cohérence juridique, preuves disponibles,
                 anonymisation et qualité de présentation.

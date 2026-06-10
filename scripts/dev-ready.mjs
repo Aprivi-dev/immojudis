@@ -28,26 +28,18 @@ const port = Number(args.get("port") ?? process.env.PORT ?? 5173);
 const timeoutMs = Number(args.get("timeout") ?? 120_000);
 const requestTimeoutMs = Number(args.get("request-timeout") ?? 8_000);
 const baseUrl = `http://${host}:${port}`;
-const probes = [
-  "/@vite/client",
-  "/",
-  ...normalizeWarmPaths(repeatedArgs.get("warm-path") ?? []),
-];
+const probes = ["/@vite/client", "/", ...normalizeWarmPaths(repeatedArgs.get("warm-path") ?? [])];
 
 if (!existsSync(viteBin)) {
   console.error("[dev-ready] node_modules is missing. Install dependencies before starting Vite.");
   process.exit(1);
 }
 
-const child = spawn(
-  viteBin,
-  ["--host", host, "--port", String(port), "--strictPort"],
-  {
-    cwd: root,
-    env: process.env,
-    stdio: ["inherit", "pipe", "pipe"],
-  },
-);
+const child = spawn(viteBin, ["--host", host, "--port", String(port), "--strictPort"], {
+  cwd: root,
+  env: process.env,
+  stdio: ["inherit", "pipe", "pipe"],
+});
 
 child.stdout.on("data", (chunk) => process.stdout.write(chunk));
 child.stderr.on("data", (chunk) => process.stderr.write(chunk));
@@ -112,7 +104,9 @@ async function waitForServer() {
   }
 
   child.kill("SIGTERM");
-  throw new Error(`[dev-ready] Timed out after ${timeoutMs}ms waiting for ${baseUrl}: ${lastError}`);
+  throw new Error(
+    `[dev-ready] Timed out after ${timeoutMs}ms waiting for ${baseUrl}: ${lastError}`,
+  );
 }
 
 async function probe(path) {
