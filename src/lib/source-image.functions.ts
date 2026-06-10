@@ -2,8 +2,33 @@ import { createServerFn } from "@tanstack/react-start";
 import { setResponseHeaders } from "@tanstack/react-start/server";
 import { z } from "zod";
 
+// Registrable domains of the auction sources we scrape. getSourceImage performs
+// a server-side fetch of the given URL, so it must never be allowed to hit
+// arbitrary hosts (SSRF). Only pages from these known sources are fetched.
+const ALLOWED_SOURCE_DOMAINS = [
+  "vench.fr",
+  "avoventes.fr",
+  "encheres-publiques.com",
+  "licitor.com",
+  "info-encheres.com",
+] as const;
+
+function isAllowedSourceUrl(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+  const host = parsed.hostname.toLowerCase();
+  return ALLOWED_SOURCE_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+}
+
 const inputSchema = z.object({
-  url: z.string().url(),
+  url: z.string().url().refine(isAllowedSourceUrl, {
+    message: "URL hors des domaines sources autorisés.",
+  }),
 });
 
 export type SourceImageResult = {

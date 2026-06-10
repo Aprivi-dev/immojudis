@@ -2,6 +2,8 @@
 
 import Search from "lucide-react/dist/esm/icons/search.js";
 import * as React from "react";
+import { Command as CommandPrimitive } from "cmdk";
+import type { DialogProps } from "@radix-ui/react-dialog";
 
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
