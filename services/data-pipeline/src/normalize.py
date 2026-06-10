@@ -189,6 +189,32 @@ def normalize_property_type(value: object | None) -> str:
     return "other"
 
 
+def normalize_occupancy_status(value: object | None) -> str | None:
+    """Map free-text occupancy (FR/EN) to the auction_sales enum.
+
+    The DB CHECK constraint only accepts vacant/occupied/rented/owner_occupied/
+    squatted/unknown (or NULL). Unrecognised values return None (NULL) rather
+    than letting raw text reach the insert and fail the constraint.
+    """
+    text = strip_accents(clean_text(value) or "").lower()
+    if not text:
+        return None
+    # Order matters: check the most specific labels before the generic "occup".
+    if "squat" in text:
+        return "squatted"
+    if any(token in text for token in ("loue", "louee", "locataire", "bail", "rented", "leased", "tenant")):
+        return "rented"
+    if "proprietaire" in text or "owner" in text:
+        return "owner_occupied"
+    if any(token in text for token in ("libre", "vacant", "inoccup", "free", "vide", "disponible")):
+        return "vacant"
+    if "occup" in text:
+        return "occupied"
+    if "unknown" in text or "inconnu" in text:
+        return "unknown"
+    return None
+
+
 def normalize_status(value: object | None, sale_date: datetime | None = None) -> str:
     text = strip_accents(clean_text(value) or "").lower()
     if "adjuge" in text or "adjudication" in text:
@@ -360,6 +386,11 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         raw_sale.get("description"),
         raw_sale.get("raw_text"),
     )
+    # DB CHECK requires rooms_count >= bedrooms_count. When extraction yields an
+    # inconsistent pair (e.g. T2 but 3 bedrooms detected), the room count is the
+    # unreliable one — bump it up so the row inserts instead of being rejected.
+    if rooms_count is not None and bedrooms_count is not None and rooms_count < bedrooms_count:
+        rooms_count = bedrooms_count
 
     return AuctionSale(
         source_name=clean_text(raw_sale.get("source_name")) or "avoventes",
@@ -407,7 +438,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         documents=raw_sale.get("documents") if isinstance(raw_sale.get("documents"), list) else [],
         latitude=parse_decimal(raw_sale.get("latitude")),
         longitude=parse_decimal(raw_sale.get("longitude")),
-        occupancy_status=clean_text(raw_sale.get("occupancy_status")),
+        occupancy_status=normalize_occupancy_status(raw_sale.get("occupancy_status")),
         risk_notes=clean_text(raw_sale.get("risk_notes")),
         investment_score=parse_price(raw_sale.get("investment_score")),
         investment_summary=clean_text(raw_sale.get("investment_summary")),
