@@ -160,18 +160,3 @@ def test_normalize_sale_drops_unrecognised_occupancy() -> None:
     )
 
     assert sale.occupancy_status is None
-
-
-def test_normalize_sale_keeps_rooms_at_least_bedrooms() -> None:
-    sale = normalize_sale(
-        {
-            "source_name": "avoventes",
-            "source_url": "https://avoventes.fr/enchere/rooms-lt-bedrooms",
-            "rooms_count": 2,
-            "bedrooms_count": 3,
-        }
-    )
-
-    assert sale.rooms_count is not None
-    assert sale.bedrooms_count is not None
-    assert sale.rooms_count >= sale.bedrooms_count

@@ -386,11 +386,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         raw_sale.get("description"),
         raw_sale.get("raw_text"),
     )
-    # DB CHECK requires rooms_count >= bedrooms_count. When extraction yields an
-    # inconsistent pair (e.g. T2 but 3 bedrooms detected), the room count is the
-    # unreliable one — bump it up so the row inserts instead of being rejected.
-    if rooms_count is not None and bedrooms_count is not None and rooms_count < bedrooms_count:
-        rooms_count = bedrooms_count
+    # Note: an impossible rooms < bedrooms pair is resolved downstream by
+    # normalize_asset_features() (clears rooms_count to NULL and flags a
+    # room_count_conflict), so we deliberately do not coerce it here.
 
     return AuctionSale(
         source_name=clean_text(raw_sale.get("source_name")) or "avoventes",
