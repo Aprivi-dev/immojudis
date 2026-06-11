@@ -22,6 +22,7 @@ import {
   saleStatusLabel,
   surfaceSourceLabel,
 } from "@/lib/format";
+import { scoreBand, scoreRecommendation } from "@/lib/score";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { FeatureBadges } from "@/components/FeatureBadges";
 import { DocumentsList } from "@/components/DocumentsList";
@@ -37,7 +38,7 @@ import { DealMemo } from "@/components/DealMemo";
 import { EvidenceTrail } from "@/components/EvidenceTrail";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { SaleDocumentRich } from "@/lib/types";
+import type { AuctionSale, SaleDocumentRich } from "@/lib/types";
 
 export const Route = createFileRoute("/sales/$id")({
   component: SaleDetailPage,
@@ -65,6 +66,27 @@ function SaleDetailPage() {
   if (error) throw error;
   if (!sale) return <SaleNotFoundComponent />;
 
+  return <SaleDetailView sale={sale} />;
+}
+
+// Anchors follow the decision reading order: summary → price ceiling → analysis
+// → evidence/risks → the asset → territory/market → documents.
+const SECTION_NAV = [
+  { id: "synthese", label: "Synthèse" },
+  { id: "prix-plafond", label: "Prix plafond" },
+  { id: "analyse", label: "Analyse" },
+  { id: "preuves", label: "Preuves & risques" },
+  { id: "bien", label: "Le bien" },
+  { id: "territoire", label: "Territoire" },
+  { id: "documents", label: "Documents" },
+] as const;
+
+/**
+ * Presentational detail view. Split out from the route so it can be rendered
+ * with any AuctionSale (route data, previews, tests). Organised so the bid/no-bid
+ * decision is readable top-to-bottom, with a sticky decision rail on desktop.
+ */
+export function SaleDetailView({ sale }: { sale: AuctionSale }) {
   const location = saleLocation(sale.address, sale.postal_code, sale.city);
   const referenceLabel = sale.title ?? propertyTypeLabel(sale.property_type);
   const statusLabel = saleStatusLabel(sale.status);
@@ -97,7 +119,7 @@ function SaleDetailPage() {
           <div className="absolute inset-0 -z-10 bg-gradient-to-br from-surface via-background to-background" />
         )}
 
-        <div className="mx-auto max-w-6xl px-4 pt-6 pb-8 sm:px-6 sm:pt-8 sm:pb-12">
+        <div className="mx-auto max-w-6xl px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-8">
           <div className="glass-shell rounded-lg px-5 py-5 sm:px-7 sm:py-6">
             {/* Fil d'Ariane */}
             <nav className="flex items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
@@ -163,12 +185,28 @@ function SaleDetailPage() {
               />
             </div>
           </div>
+
+          {/* Navigation par ancres (ordre de lecture de la décision) */}
+          <nav
+            aria-label="Sections du dossier"
+            className="mt-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {SECTION_NAV.map((s) => (
+              <a
+                key={s.id}
+                href={`#${s.id}`}
+                className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-gold/40 hover:text-gold-soft"
+              >
+                {s.label}
+              </a>
+            ))}
+          </nav>
         </div>
       </section>
 
-      {/* ───────── Corps : éditorial + colonne offre ───────── */}
+      {/* ───────── Corps : éditorial + rail de décision ───────── */}
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-x-12 gap-y-10 px-4 pt-12 sm:px-6 lg:grid-cols-[1fr_360px]">
-        {/* Colonne principale */}
+        {/* Colonne principale — décision d'abord */}
         <div className="space-y-14">
           {/* Vignettes : carte + image secondaire */}
           {(sale.latitude != null && sale.longitude != null) || sale.source_url ? (
@@ -196,8 +234,38 @@ function SaleDetailPage() {
             </section>
           ) : null}
 
-          {/* Caractéristiques */}
-          <Section eyebrow="Le bien" title="Caractéristiques">
+          {/* 1. Synthèse + recommandation + points à vérifier */}
+          <Section id="synthese" eyebrow="Décision" title="En clair avant enchère">
+            <DealMemo sale={sale} />
+          </Section>
+
+          {/* 2. Prix plafond */}
+          <Section id="prix-plafond" eyebrow="Prix plafond" title="Seuil d'enchère">
+            <ProfitabilityCalculator sale={sale} />
+          </Section>
+
+          {/* 3. Analyse du score */}
+          <FoldableSection
+            id="analyse"
+            eyebrow="Analyse"
+            title="Pourquoi le score arrive à cette lecture"
+            summary="Voir la lecture détaillée du score, des axes et des risques"
+          >
+            <InvestmentAnalysis sale={sale} />
+          </FoldableSection>
+
+          {/* 4. Preuves & risques */}
+          <FoldableSection
+            id="preuves"
+            eyebrow="Preuves"
+            title="Extraits et sources retenus"
+            summary="Voir les preuves qui expliquent les alertes"
+          >
+            <EvidenceTrail sale={sale} />
+          </FoldableSection>
+
+          {/* 5. Le bien */}
+          <Section id="bien" eyebrow="Le bien" title="Caractéristiques">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <Stat
                 icon={<Calendar className="h-3.5 w-3.5" />}
@@ -247,31 +315,8 @@ function SaleDetailPage() {
             </div>
           </Section>
 
-          <Section eyebrow="Décision" title="En clair avant enchère">
-            <DealMemo sale={sale} />
-          </Section>
-
-          <Section eyebrow="Prix plafond" title="Seuil d'enchère">
-            <ProfitabilityCalculator sale={sale} />
-          </Section>
-
-          <FoldableSection
-            eyebrow="Analyse"
-            title="Pourquoi le score arrive à cette lecture"
-            summary="Voir la lecture détaillée du score, des axes et des risques"
-          >
-            <InvestmentAnalysis sale={sale} />
-          </FoldableSection>
-
-          <FoldableSection
-            eyebrow="Preuves"
-            title="Extraits et sources retenus"
-            summary="Voir les preuves qui expliquent les alertes"
-          >
-            <EvidenceTrail sale={sale} />
-          </FoldableSection>
-
-          <Section eyebrow="Territoire" title="Contexte géographique">
+          {/* 6. Territoire & marché */}
+          <Section id="territoire" eyebrow="Territoire" title="Contexte géographique">
             <SaleContextMap sale={sale} />
             {sale.latitude != null && sale.longitude != null && (
               <div className="mt-10">
@@ -280,7 +325,8 @@ function SaleDetailPage() {
             )}
           </Section>
 
-          <Section eyebrow="Dossier" title="Documents officiels">
+          {/* 7. Documents */}
+          <Section id="documents" eyebrow="Dossier" title="Documents officiels">
             {sale.documents_rich && sale.documents_rich.length > 0 ? (
               <ul className="divide-y divide-border/60 border-y border-border/60">
                 {sale.documents_rich.map((d: SaleDocumentRich, i: number) => (
@@ -350,60 +396,99 @@ function SaleDetailPage() {
           </Section>
         </div>
 
-        {/* Sidebar : carte offre */}
+        {/* Rail de décision sticky */}
         <aside className="lg:sticky lg:top-24 lg:self-start">
-          <div className="space-y-6">
-            <div className="liquid-panel relative rounded-lg p-7">
-              <span className="absolute -top-px left-7 h-px w-12 bg-gold" />
-              <div className="text-[10px] uppercase tracking-[0.3em] text-gold-soft">
-                Mise à prix
-              </div>
-              <div className="mt-3 font-display text-4xl leading-none tabular-nums text-foreground">
-                {formatPrice(sale.starting_price_eur)}
-              </div>
-              <div className="mt-8 grid grid-cols-2 gap-4 border-t border-white/10 pt-5">
-                <div>
-                  <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-                    Vente
-                  </div>
-                  <div className="mt-1 text-sm font-medium text-foreground">
-                    {formatDate(sale.sale_date)}
-                  </div>
-                </div>
-                {sale.department && (
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-                      Département
-                    </div>
-                    <div className="mt-1 text-sm font-medium text-foreground">
-                      {sale.department}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="mt-5">
-                <SaleCountdown date={sale.sale_date} variant="block" />
-              </div>
-
-              <div className="mt-5 grid gap-3 border-t border-white/10 pt-5">
-                <FavoriteButton saleId={sale.id} className="w-full justify-center" />
-                {sale.source_url && (
-                  <a
-                    href={sale.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="liquid-button group flex w-full items-center justify-between rounded-lg px-4 py-3 text-[11px] font-medium uppercase tracking-[0.22em] text-background transition-colors hover:brightness-105"
-                  >
-                    <span>Source{sale.source_name ? ` · ${sale.source_name}` : ""}</span>
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                )}
-              </div>
-            </div>
-          </div>
+          <DecisionRail sale={sale} />
         </aside>
       </div>
     </main>
+  );
+}
+
+/**
+ * Sticky decision rail — keeps the essentials of the bid/no-bid decision in view
+ * while scrolling: Immojudis Score, recommendation, mise à prix, timing, actions.
+ */
+function DecisionRail({ sale }: { sale: AuctionSale }) {
+  const score = sale.investment_score;
+  const band = score != null ? scoreBand(score) : null;
+
+  return (
+    <div className="space-y-6">
+      <div className="liquid-panel relative rounded-lg p-7">
+        <span className="absolute -top-px left-7 h-px w-12 bg-gold" />
+
+        {/* Score + recommandation */}
+        <div className="text-[10px] uppercase tracking-[0.3em] text-gold-soft">Score Immojudis</div>
+        <div className="mt-4 flex items-center gap-4">
+          <ScoreBadge score={score} confidence={sale.score_confidence} size="lg" />
+          {band && (
+            <div className="min-w-0">
+              <div
+                className="text-sm font-semibold uppercase tracking-[0.14em]"
+                style={{ color: band.colorVar }}
+              >
+                {band.label}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {score != null ? scoreRecommendation(score) : null}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Mise à prix */}
+        <div className="mt-7 border-t border-white/10 pt-5">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-gold-soft">Mise à prix</div>
+          <div className="mt-2 font-display text-4xl leading-none tabular-nums text-foreground">
+            {formatPrice(sale.starting_price_eur)}
+          </div>
+          <a
+            href="#prix-plafond"
+            className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.18em] text-gold-soft transition-colors hover:text-gold"
+          >
+            Voir le prix plafond <ChevronRight className="h-3 w-3" />
+          </a>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-4 border-t border-white/10 pt-5">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+              Vente
+            </div>
+            <div className="mt-1 text-sm font-medium text-foreground">
+              {formatDate(sale.sale_date)}
+            </div>
+          </div>
+          {sale.department && (
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+                Département
+              </div>
+              <div className="mt-1 text-sm font-medium text-foreground">{sale.department}</div>
+            </div>
+          )}
+        </div>
+        <div className="mt-5">
+          <SaleCountdown date={sale.sale_date} variant="block" />
+        </div>
+
+        <div className="mt-5 grid gap-3 border-t border-white/10 pt-5">
+          <FavoriteButton saleId={sale.id} className="w-full justify-center" />
+          {sale.source_url && (
+            <a
+              href={sale.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="liquid-button group flex w-full items-center justify-between rounded-lg px-4 py-3 text-[11px] font-medium uppercase tracking-[0.22em] text-background transition-colors hover:brightness-105"
+            >
+              <span>Source{sale.source_name ? ` · ${sale.source_name}` : ""}</span>
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -468,16 +553,18 @@ function HeroMeta({ label, value, accent }: { label: string; value: string; acce
 }
 
 function Section({
+  id,
   eyebrow,
   title,
   children,
 }: {
+  id?: string;
   eyebrow: string;
   title: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="scroll-mt-24">
+    <section id={id} className="scroll-mt-24">
       <header className="mb-5 flex items-baseline gap-4">
         <span className="text-[10px] uppercase tracking-[0.35em] text-gold">{eyebrow}</span>
         <span className="liquid-hairline h-px flex-1" />
@@ -489,18 +576,20 @@ function Section({
 }
 
 function FoldableSection({
+  id,
   eyebrow,
   title,
   summary,
   children,
 }: {
+  id?: string;
   eyebrow: string;
   title: string;
   summary: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="scroll-mt-24">
+    <section id={id} className="scroll-mt-24">
       <details className="group liquid-panel rounded-lg p-5">
         <summary className="flex cursor-pointer list-none items-start justify-between gap-4">
           <div>
