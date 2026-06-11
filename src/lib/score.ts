@@ -19,6 +19,15 @@ export function scoreBand(score: number): ScoreBand {
   return { key: "weak", label: "Risqué", colorVar: "var(--signal-risk)" };
 }
 
+/** One-line, decision-oriented recommendation derived from the score band. */
+export function scoreRecommendation(score: number): string {
+  const band = scoreBand(score).key;
+  if (band === "strong") return "Dossier à fort potentiel — à instruire en priorité.";
+  if (band === "good") return "Dossier intéressant — à étudier de près.";
+  if (band === "fair") return "À surveiller — plusieurs points à lever avant d'enchérir.";
+  return "Risque élevé — n'enchérir qu'après vérifications approfondies.";
+}
+
 export type ConfidenceLevel = "high" | "medium" | "low";
 
 export function confidenceLevel(confidence: number | null | undefined): ConfidenceLevel | null {
