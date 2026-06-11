@@ -608,7 +608,41 @@
 /* ── Hero ──────────────────────────────────────────────────────────────── */
 
 .hx-hero {
+  position: relative;
+  overflow: hidden;
   border-bottom: 1px solid rgb(255 255 255 / 7%);
+}
+
+/* Ambient background video: heavily dimmed/desaturated, fades in once playable,
+   and always sits under a veil so the copy keeps AA contrast. */
+.hx-hero-video {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  filter: saturate(0.55) brightness(0.5) contrast(1.05);
+  transition: opacity 1200ms var(--ease-out-soft);
+}
+
+.hx-hero-video.hx-video-ready {
+  opacity: 0.34;
+}
+
+.hx-hero-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    radial-gradient(ellipse at 24% 30%, rgb(9 9 11 / 78%), transparent 64%),
+    linear-gradient(180deg, rgb(9 9 11 / 66%) 0%, rgb(9 9 11 / 34%) 45%, #0a0a0c 100%);
+}
+
+.hx-hero > div:last-child {
+  position: relative;
+  z-index: 2;
 }
 
 .hx-eyebrow {
@@ -1246,6 +1280,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .hx-hero-video {
+    display: none;
+  }
+
   .hx-word,
   .hx-lead,
   .hx-actions,
