@@ -84,6 +84,9 @@ export const MARKET_CEILING_SCENARIOS = [
     basis: "p25",
     basisLabel: "bas de marché",
     safetyDiscountPct: 10,
+    // With a manual market price there is no p25: keep Prudent the most
+    // conservative scenario by deepening its discount on the shared reference.
+    manualSafetyDiscountPct: 16,
     description: "On part du quart bas des ventes et on garde une marge forte.",
   },
   {
@@ -176,7 +179,9 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
   const safetyDiscountPct =
     inputs.scenario === "custom"
       ? clamp(inputs.customSafetyDiscountPct ?? DEFAULTS.safetyDiscountPct, 0, 40)
-      : scenarioConfig.safetyDiscountPct;
+      : basis === "manual" && "manualSafetyDiscountPct" in scenarioConfig
+        ? scenarioConfig.manualSafetyDiscountPct
+        : scenarioConfig.safetyDiscountPct;
   const maxAllInPricePerM2 = marketReference * (1 - safetyDiscountPct / 100);
   const targetTotalCost = Math.max(0, maxAllInPricePerM2 * surface);
   const maxBid = solveMaxBid(targetTotalCost, inputs.works ?? 0, inputs.fpt ?? DEFAULTS.fpt);

@@ -114,14 +114,6 @@ function signedMoney(value: number): string {
   return `${rounded > 0 ? "+" : "-"}${fmt(Math.abs(rounded))}`;
 }
 
-function scenarioTone(key: MarketCeilingScenarioKey, active: boolean): string {
-  if (active)
-    return "border-gold/60 bg-gold text-background shadow-[0_18px_50px_rgba(214,160,23,0.22)]";
-  if (key === "prudent") return "border-emerald-300/20 bg-emerald-400/10 text-emerald-50";
-  if (key === "offensif") return "border-sky-300/20 bg-sky-400/10 text-sky-50";
-  return "border-white/10 bg-white/[0.045] text-foreground";
-}
-
 export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
   const surface =
     sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2 ?? null;
@@ -248,6 +240,9 @@ export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
     });
   };
 
+  const verdictAvailable = selected.result.available;
+  const nextAction = buildNextAction(sale, verdictAvailable);
+
   if (!surface || surface <= 0) {
     return (
       <section className="liquid-panel rounded-lg p-5">
@@ -265,114 +260,111 @@ export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
       <div className="p-5 sm:p-6">
         <AssistantHeader onReset={reset} />
 
-        <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_260px]">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-gold">
-              <Target className="h-4 w-4" />
-              Mise plafond
-            </div>
-            <h3 className="mt-3 font-display text-2xl leading-tight text-foreground sm:text-3xl">
-              Jusqu'où enchérir en restant sous le marché local ?
-            </h3>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              Immojudis part du prix au m² observé autour du bien, applique une marge de sécurité,
-              puis retire les frais et les travaux. Le résultat est la limite à ne pas dépasser.
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-gold/30 bg-gold/10 p-4 text-right">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gold-soft">
-              Fourchette utile
-            </div>
-            <div className="mt-2 text-3xl font-semibold tabular-nums text-foreground">
-              {rangeLabel}
-            </div>
-            <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Prudent à offensif, frais et travaux inclus dans le raisonnement.
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 lg:grid-cols-3">
-          {scenarioResults.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setState((current) => ({ ...current, scenario: item.key }))}
-              className={`rounded-lg border p-4 text-left transition ${scenarioTone(
-                item.key,
-                item.key === state.scenario,
-              )}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] opacity-75">
-                    Scénario
-                  </div>
-                  <div className="mt-1 text-lg font-semibold">{item.label}</div>
-                </div>
-                <span className="rounded-full border border-current/20 px-2 py-1 text-[11px] font-medium">
-                  -{item.result.safetyDiscountPct}%
-                </span>
+        {/* ── 1. Le verdict, immédiatement ─────────────────────────────── */}
+        <div className="mt-6 rounded-lg border border-gold/30 bg-gold/[0.07] p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-gold">
+                <Target className="h-4 w-4" />
+                Votre mise plafond
               </div>
-              <div className="mt-4 text-2xl font-semibold tabular-nums">
-                {item.result.available ? fmt(item.result.maxBid) : "À compléter"}
+              <div className="mt-3 font-display text-4xl leading-none tabular-nums text-foreground sm:text-5xl">
+                {verdictAvailable ? fmt(selected.result.maxBid) : "À compléter"}
               </div>
-              <p className="mt-2 text-xs leading-relaxed opacity-80">
-                {scenarioCopy(item.key, item.result)}
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                {verdictAvailable ? (
+                  <>
+                    Au-delà, le coût complet (enchère + frais + travaux) dépasse{" "}
+                    <strong className="text-foreground">
+                      {selected.result.safetyDiscountPct}% sous le marché local
+                    </strong>{" "}
+                    ({selected.result.basisLabel} :{" "}
+                    {ppm2(selected.result.marketReferencePricePerM2)}) : le dossier perd son
+                    intérêt.
+                  </>
+                ) : (
+                  "Renseignez un prix de marché local juste en dessous pour obtenir votre plafond."
+                )}
               </p>
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-5 grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
-          <MarketInput
-            estimate={effectiveEstimate}
-            value={state.manualMarketPricePerM2}
-            marketEdited={state.marketEdited}
-            usingCachedEstimate={usingCachedEstimate}
-            isLoading={isLoading && !effectiveEstimate}
-            hasError={hasDvfError && !effectiveEstimate}
-            onChange={(manualMarketPricePerM2) =>
-              setState((current) => ({
-                ...current,
-                manualMarketPricePerM2,
-                marketEdited: manualMarketPricePerM2 > 0,
-              }))
-            }
-          />
-
-          <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-              Lecture simple
             </div>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              En mode <strong className="text-foreground">{selected.label.toLowerCase()}</strong>,
-              le plafond ressort à{" "}
-              <strong className="text-foreground">
-                {selected.result.available ? fmt(selected.result.maxBid) : "compléter"}
-              </strong>
-              . Au-dessus, le coût complet se rapproche trop du marché local pour garder une marge
-              rationnelle.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium uppercase tracking-[0.12em]">
-              <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-muted-foreground">
-                Surface {formatSurface(surface)}
-              </span>
-              <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-muted-foreground">
-                Fiabilité {reliability}
+
+            <div className="flex flex-col items-end gap-2">
+              {/* Sélecteur de profil */}
+              <div
+                className="inline-flex rounded-full border border-white/12 bg-black/20 p-1"
+                role="radiogroup"
+                aria-label="Profil d'enchère"
+              >
+                {scenarioResults.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    role="radio"
+                    aria-checked={item.key === state.scenario}
+                    onClick={() => setState((current) => ({ ...current, scenario: item.key }))}
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                      item.key === state.scenario
+                        ? "bg-gold text-background"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                Fiabilité {reliability} · Surface {formatSurface(surface)}
               </span>
             </div>
           </div>
+
+          {/* Barre de fourchette : prudent ↔ offensif + position de la mise à prix */}
+          {verdictAvailable && minBid != null && maxBid != null && (
+            <RangeBar
+              minBid={minBid}
+              maxBid={maxBid}
+              selectedBid={selected.result.maxBid}
+              startingPrice={startingPrice}
+              rangeLabel={rangeLabel}
+            />
+          )}
+
+          {/* Marché manquant : la saisie arrive ici, pas cachée plus bas */}
+          {!verdictAvailable && (
+            <div className="mt-5">
+              <MarketInput
+                estimate={effectiveEstimate}
+                value={state.manualMarketPricePerM2}
+                marketEdited={state.marketEdited}
+                usingCachedEstimate={usingCachedEstimate}
+                isLoading={isLoading && !effectiveEstimate}
+                hasError={hasDvfError && !effectiveEstimate}
+                onChange={(manualMarketPricePerM2) =>
+                  setState((current) => ({
+                    ...current,
+                    manualMarketPricePerM2,
+                    marketEdited: manualMarketPricePerM2 > 0,
+                  }))
+                }
+              />
+            </div>
+          )}
+
+          {/* Prochaine action */}
+          <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4 text-sm">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-soft">
+              Prochaine action
+            </span>
+            <span className="text-muted-foreground">{nextAction}</span>
+          </div>
         </div>
 
-        <HypothesisEditor state={state} startingPrice={startingPrice} onChange={setState} />
-
-        <div className="mt-5 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
-          <SimulationCard result={selected.result} selectedMargin={selectedMargin} />
+        {/* ── 2. Pourquoi ce chiffre ───────────────────────────────────── */}
+        <div className="mt-5">
           <MethodCard result={balanced.result} estimate={effectiveEstimate} />
         </div>
 
+        {/* ── 3. Conditions pour rester gagnant ────────────────────────── */}
         <SuccessConditions
           sale={sale}
           result={selected.result}
@@ -380,18 +372,43 @@ export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
           useManualMarket={useManualMarket}
         />
 
+        {/* ── 4. Ajuster mes hypothèses (replié par défaut) ────────────── */}
         <button
           type="button"
+          aria-expanded={detailsOpen}
           onClick={() => setDetailsOpen((current) => !current)}
           className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-gold-soft transition-colors hover:text-gold"
         >
           <FileSearch className="h-4 w-4" />
-          {detailsOpen ? "Masquer le détail" : "Voir le détail des frais et des comparables"}
+          {detailsOpen
+            ? "Masquer les réglages et le détail"
+            : "Ajuster mes hypothèses (travaux, frais, marché) et voir le détail"}
         </button>
 
         {detailsOpen && (
-          <div className="mt-4 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-            <FeesBreakdown result={selected.result} fpt={state.fpt} onChange={setState} />
+          <div className="mt-4 space-y-4">
+            {verdictAvailable && (
+              <MarketInput
+                estimate={effectiveEstimate}
+                value={state.manualMarketPricePerM2}
+                marketEdited={state.marketEdited}
+                usingCachedEstimate={usingCachedEstimate}
+                isLoading={isLoading && !effectiveEstimate}
+                hasError={hasDvfError && !effectiveEstimate}
+                onChange={(manualMarketPricePerM2) =>
+                  setState((current) => ({
+                    ...current,
+                    manualMarketPricePerM2,
+                    marketEdited: manualMarketPricePerM2 > 0,
+                  }))
+                }
+              />
+            )}
+            <HypothesisEditor state={state} startingPrice={startingPrice} onChange={setState} />
+            <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+              <SimulationCard result={selected.result} selectedMargin={selectedMargin} />
+              <FeesBreakdown result={selected.result} fpt={state.fpt} onChange={setState} />
+            </div>
             <ComparableTransactions estimate={effectiveEstimate} />
           </div>
         )}
@@ -405,6 +422,100 @@ export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
       </div>
     </section>
   );
+}
+
+/**
+ * Visual range bar: where the prudent→offensif ceilings sit, where the selected
+ * profile lands, and where the mise à prix stands relative to the range.
+ */
+function RangeBar({
+  minBid,
+  maxBid,
+  selectedBid,
+  startingPrice,
+  rangeLabel,
+}: {
+  minBid: number;
+  maxBid: number;
+  selectedBid: number;
+  startingPrice: number;
+  rangeLabel: string;
+}) {
+  // Scale with 12% padding on both sides so markers near the edges stay visible.
+  const span = Math.max(1, maxBid - minBid);
+  const lo = minBid - span * 0.12;
+  const hi = maxBid + span * 0.12;
+  const pos = (value: number) => `${Math.min(100, Math.max(0, ((value - lo) / (hi - lo)) * 100))}%`;
+  const startBelowRange = startingPrice > 0 && startingPrice < minBid;
+
+  return (
+    <div className="mt-6">
+      <div className="flex items-baseline justify-between text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+        <span>Fourchette selon votre profil</span>
+        <span className="tabular-nums">{rangeLabel}</span>
+      </div>
+      <div className="relative mt-6 h-2 rounded-full bg-white/8">
+        <div
+          className="absolute inset-y-0 rounded-full bg-gradient-to-r from-[var(--signal-opportunity)] via-gold to-[var(--signal-watch)]"
+          style={{ left: pos(minBid), right: `calc(100% - ${pos(maxBid)})` }}
+          aria-hidden
+        />
+        {/* Repère du profil sélectionné */}
+        <span
+          className="absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-gold shadow-[0_0_0_3px_rgb(242_196_135/30%)]"
+          style={{ left: pos(selectedBid) }}
+          title={`Votre plafond : ${fmt(selectedBid)}`}
+          aria-hidden
+        />
+        {/* Repère mise à prix */}
+        {startingPrice > 0 && (
+          <span
+            className="absolute -top-5 -translate-x-1/2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"
+            style={{ left: pos(startingPrice) }}
+            aria-hidden
+          >
+            ▾ mise à prix
+          </span>
+        )}
+      </div>
+      <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
+        <span>
+          Prudent <strong className="tabular-nums text-foreground">{fmt(minBid)}</strong>
+        </span>
+        <span>
+          Offensif <strong className="tabular-nums text-foreground">{fmt(maxBid)}</strong>
+        </span>
+      </div>
+      {startBelowRange && (
+        <p className="mt-3 text-xs leading-relaxed text-[var(--signal-opportunity)]">
+          La mise à prix démarre sous votre fourchette : le dossier offre une vraie marge de
+          manœuvre en salle.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Single concrete next step before the hearing, derived from the dossier. */
+function buildNextAction(sale: AuctionSale, verdictAvailable: boolean): string {
+  if (!verdictAvailable) {
+    return "Renseignez le prix de marché local pour obtenir votre plafond.";
+  }
+  const occupancy = (sale.occupancy_status ?? "").toLowerCase();
+  if (!sale.occupancy_status || occupancy === "unknown") {
+    return "Confirmez l'occupation du bien (PV descriptif) avant de figer votre plafond.";
+  }
+  const risks = sale.risks ?? [];
+  const worksRisk = risks.find((risk) =>
+    `${risk.risk_label ?? ""} ${risk.risk_type ?? ""}`.toLowerCase().match(/travaux|renov/),
+  );
+  if (worksRisk) {
+    return "Chiffrez les travaux et reportez-les dans les hypothèses pour affiner le plafond.";
+  }
+  if ((sale.documents_rich?.length ?? 0) > 0) {
+    return "Relisez le cahier des conditions de vente avec ce plafond en tête.";
+  }
+  return "Visitez le bien si possible, puis validez votre plafond avant l'audience.";
 }
 
 function AssistantHeader({ onReset }: { onReset: () => void }) {
@@ -824,17 +935,6 @@ function Row({
       )}
     </div>
   );
-}
-
-function scenarioCopy(key: MarketCeilingScenarioKey, result: MarketCeilingResult): string {
-  if (!result.available) return "À utiliser dès que le prix local est renseigné.";
-  if (key === "prudent") {
-    return `Position confortable : coût tout compris cible ${ppm2(result.maxAllInPricePerM2)}.`;
-  }
-  if (key === "offensif") {
-    return `Pour un dossier très lisible : coût cible ${ppm2(result.maxAllInPricePerM2)}.`;
-  }
-  return `Seuil recommandé : coût tout compris cible ${ppm2(result.maxAllInPricePerM2)}.`;
 }
 
 function reliabilityLabel(

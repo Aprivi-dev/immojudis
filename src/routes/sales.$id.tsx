@@ -153,11 +153,6 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
               </p>
             )}
 
-            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              Immojudis lit le dossier, extrait les informations utiles et calcule une mise plafond
-              pour acheter sous le marché local.
-            </p>
-
             {/* Rangée méta */}
             <div className="mt-6 flex flex-wrap items-end justify-between gap-5 border-t border-white/10 pt-5">
               <dl className="flex flex-wrap gap-x-10 gap-y-4">
@@ -171,12 +166,6 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
                 />
                 {sale.tribunal && <HeroMeta label="Tribunal" value={sale.tribunal} />}
               </dl>
-              <a
-                href="#assistant"
-                className="liquid-button inline-flex shrink-0 items-center gap-2 rounded-md px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em] text-background transition-colors hover:brightness-105"
-              >
-                Calculer le plafond <ChevronRight className="h-3.5 w-3.5" />
-              </a>
             </div>
           </div>
 
@@ -202,6 +191,11 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-x-12 gap-y-10 px-4 pt-12 sm:px-6 lg:grid-cols-[1fr_360px]">
         {/* Colonne principale — mise plafond d'abord */}
         <div className="space-y-14">
+          {/* 1. Assistant de mise plafond */}
+          <Section id="assistant" eyebrow="Mise plafond" title="À combien enchérir au maximum ?">
+            <BidCeilingAssistant sale={sale} />
+          </Section>
+
           {/* Vignettes : carte + image secondaire */}
           {(sale.latitude != null && sale.longitude != null) || sale.source_url ? (
             <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -227,11 +221,6 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
               )}
             </section>
           ) : null}
-
-          {/* 1. Assistant de mise plafond */}
-          <Section id="assistant" eyebrow="Mise plafond" title="À combien enchérir au maximum ?">
-            <BidCeilingAssistant sale={sale} />
-          </Section>
 
           {/* 2. Preuves & conditions */}
           <FoldableSection

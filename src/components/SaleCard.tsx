@@ -12,7 +12,6 @@ import {
   propertyTypeLabel,
 } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
-import { ScoreBadge } from "./ScoreBadge";
 import { FeatureBadges } from "./FeatureBadges";
 import { SaleCountdown, isNew } from "./SaleCountdown";
 import { MapThumbnail } from "./MapThumbnail";
@@ -48,9 +47,6 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
             </span>
           )}
           <SaleCountdown date={sale.sale_date} />
-        </div>
-        <div className="absolute bottom-3 right-3">
-          <ScoreBadge score={sale.investment_score} confidence={sale.score_confidence} />
         </div>
         {viewed && (
           <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-white/10 bg-background/80 px-2.5 py-1 text-[10px] font-medium text-muted-foreground backdrop-blur">

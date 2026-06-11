@@ -194,12 +194,6 @@ function AlertsPage() {
               value={form.min_surface_m2}
               onChange={(e) => setForm({ ...form, min_surface_m2: e.target.value })}
             />
-            <Input
-              type="number"
-              placeholder="Score min"
-              value={form.min_investment_score}
-              onChange={(e) => setForm({ ...form, min_investment_score: e.target.value })}
-            />
             <Select
               value={form.occupancy_status || "all"}
               onValueChange={(v) => setForm({ ...form, occupancy_status: v === "all" ? "" : v })}

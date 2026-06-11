@@ -267,16 +267,6 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
             className="bg-background/35"
           />
         </FilterField>
-        <FilterField label="Score min">
-          <Input
-            aria-label="Score minimum"
-            type="number"
-            placeholder="70"
-            value={local.min_score}
-            onChange={(e) => setLocal({ ...local, min_score: e.target.value })}
-            className="bg-background/35"
-          />
-        </FilterField>
         <FilterField label="Tri">
           <Select value={local.sort} onValueChange={(v) => setLocal({ ...local, sort: v })}>
             <SelectTrigger aria-label="Tri des annonces">
@@ -284,7 +274,7 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="score_desc">Meilleur score</SelectItem>
+              <SelectItem value="score_desc">Pertinence</SelectItem>
               <SelectItem value="date_asc">Date (plus proche)</SelectItem>
               <SelectItem value="date_desc">Date (plus lointaine)</SelectItem>
               <SelectItem value="price_asc">Prix croissant</SelectItem>
@@ -394,7 +384,6 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
                   `Prix max : ${Number(local.max_price).toLocaleString("fr-FR")} €`,
                 local.min_surface && `Surface min : ${local.min_surface} m²`,
                 local.occupancy && `Occupation : ${local.occupancy}`,
-                local.min_score && `Score min : ${local.min_score}`,
               ]
                 .filter(Boolean)
                 .join(" · ")}

@@ -8,7 +8,6 @@ import { getStats } from "@/lib/queries";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/hooks/use-auth";
 import { isProfessionalAccount } from "@/lib/account";
-import { ScoreBadge } from "@/components/ScoreBadge";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -231,19 +230,25 @@ function AnalysisTerminal() {
             <span>Occupation : bail en cours, à vérifier</span>
           </div>
         </li>
-        <li className="hx-row hx-row-score" style={{ ["--d" as string]: "1850ms" }}>
-          <ScoreBadge score={82} confidence={0.8} size="md" showLabel />
+        <li className="hx-row" style={{ ["--d" as string]: "1850ms" }}>
+          <span className="hx-check" aria-hidden>
+            <Check className="h-3 w-3" />
+          </span>
+          <div>
+            <strong>Marché local mesuré</strong>
+            <span>ventes comparables · marge de sécurité appliquée</span>
+          </div>
         </li>
-        <li className="hx-row" style={{ ["--d" as string]: "2300ms" }}>
+        <li className="hx-row hx-row-score" style={{ ["--d" as string]: "2300ms" }}>
           <div className="w-full">
             <div className="hx-ceiling-label">
-              <strong>Prix plafond</strong>
+              <strong>Mise plafond</strong>
               <span className="hx-ceiling-value">129 400 €</span>
             </div>
             <div className="hx-ceiling-track" aria-hidden>
               <span className="hx-ceiling-bar" style={{ ["--d" as string]: "2500ms" }} />
             </div>
-            <span className="hx-ceiling-note">frais, travaux et marge de sécurité inclus</span>
+            <span className="hx-ceiling-note">enchère + frais + travaux, sous le marché local</span>
           </div>
         </li>
       </ol>
@@ -251,7 +256,7 @@ function AnalysisTerminal() {
       <footer className="hx-stamp" style={{ ["--d" as string]: "3100ms" }}>
         <Gavel aria-hidden className="h-4 w-4" />
         <span>
-          Décision — <strong>enchérir jusqu'au plafond</strong>
+          La limite à ne pas dépasser — <strong>pour rester gagnant</strong>
         </span>
       </footer>
     </aside>

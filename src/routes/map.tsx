@@ -143,7 +143,7 @@ function MapPage() {
                 Carte des ventes
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-                Repérez les opportunités par zone, croisez le score avec l'adresse et gardez une
+                Repérez les opportunités par zone, anticipez les dates d'audience et gardez une
                 lecture claire du marché local.
               </p>
             </div>
@@ -186,11 +186,11 @@ function MapPage() {
         </section>
 
         <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
-          <LegendItem color="#10b981" label="Score ≥ 80" />
-          <LegendItem color="#3b82f6" label="60–79" />
-          <LegendItem color="#f59e0b" label="40–59" />
-          <LegendItem color="#ef4444" label="< 40" />
-          <LegendItem color="#9ca3af" label="Non noté" />
+          <LegendItem color="#0f9d6e" label="Vente dans 30 j ou plus" />
+          <LegendItem color="#d97706" label="Moins de 30 j" />
+          <LegendItem color="#dc2626" label="Moins de 7 j" />
+          <LegendItem color="#6b7280" label="Vente passée" />
+          <LegendItem color="#9ca3af" label="Date inconnue" />
           <span className="ml-auto inline-flex items-center gap-1.5 text-gold-soft">
             <Radar className="h-3.5 w-3.5" />
             Lecture géographique
