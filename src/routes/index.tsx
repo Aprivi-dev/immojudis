@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
@@ -57,6 +57,49 @@ function useScrollReveal() {
   }, []);
 }
 
+/**
+ * Ambient hero video. Mounted client-side only, and only when the user allows
+ * motion — reduced-motion users never download the file. Heavily filtered and
+ * sitting under the hero gradients so copy stays fully readable.
+ */
+function HeroVideo() {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const saveData =
+      (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData ===
+      true;
+    if (!reducedMotion && !saveData) {
+      setEnabled(true);
+    }
+  }, []);
+
+  if (!enabled) return null;
+
+  return (
+    <video
+      className="hx-hero-video"
+      src="/media/hero-ambient.mp4"
+      autoPlay
+      muted
+      loop
+      playsInline
+      preload="auto"
+      disablePictureInPicture
+      tabIndex={-1}
+      aria-hidden
+      onCanPlay={(event) => {
+        const video = event.currentTarget;
+        video.classList.add("hx-video-ready");
+        // Some browsers drop the autoplay attribute after hydration — retry
+        // explicitly; if the platform still refuses, the veil keeps the hero clean.
+        void video.play().catch(() => {});
+      }}
+    />
+  );
+}
+
 function HomePage() {
   const { user } = useAuth();
   const { data: stats } = useQuery({
@@ -74,6 +117,8 @@ function HomePage() {
     <main className="hx-page min-h-screen text-foreground">
       {/* ─────────── Hero : promesse + dossier vivant ─────────── */}
       <section className="hx-hero px-4 sm:px-6">
+        <HeroVideo />
+        <div aria-hidden className="hx-hero-veil" />
         <div className="mx-auto grid max-w-7xl items-center gap-12 py-14 lg:min-h-[calc(100svh-4rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:gap-16 lg:py-10">
           <div>
             <p className="hx-eyebrow">
