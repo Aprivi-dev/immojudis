@@ -22,19 +22,16 @@ import {
   saleStatusLabel,
   surfaceSourceLabel,
 } from "@/lib/format";
-import { scoreBand, scoreRecommendation } from "@/lib/score";
-import { ScoreBadge } from "@/components/ScoreBadge";
 import { FeatureBadges } from "@/components/FeatureBadges";
 import { DocumentsList } from "@/components/DocumentsList";
 import { FavoriteButton } from "@/components/FavoriteButton";
-import { InvestmentAnalysis } from "@/components/InvestmentAnalysis";
-import { ProfitabilityCalculator } from "@/components/ProfitabilityCalculator";
+import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleContextMap } from "@/components/SaleContextMap";
 import { MapThumbnail } from "@/components/MapThumbnail";
 import { SourceImage } from "@/components/SourceImage";
+import { BrandMark } from "@/components/BrandLogo";
 import { NeighborhoodInsights } from "@/components/NeighborhoodInsights";
-import { DealMemo } from "@/components/DealMemo";
 import { EvidenceTrail } from "@/components/EvidenceTrail";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -69,22 +66,19 @@ function SaleDetailPage() {
   return <SaleDetailView sale={sale} />;
 }
 
-// Anchors follow the decision reading order: summary → price ceiling → analysis
-// → evidence/risks → the asset → territory/market → documents.
+// Anchors follow the decision reading order: bid ceiling → evidence → asset → market → documents.
 const SECTION_NAV = [
-  { id: "synthese", label: "Synthèse" },
-  { id: "prix-plafond", label: "Prix plafond" },
-  { id: "analyse", label: "Analyse" },
-  { id: "preuves", label: "Preuves & risques" },
+  { id: "assistant", label: "Mise plafond" },
+  { id: "preuves", label: "Conditions" },
   { id: "bien", label: "Le bien" },
-  { id: "territoire", label: "Territoire" },
+  { id: "territoire", label: "Marché local" },
   { id: "documents", label: "Documents" },
 ] as const;
 
 /**
  * Presentational detail view. Split out from the route so it can be rendered
- * with any AuctionSale (route data, previews, tests). Organised so the bid/no-bid
- * decision is readable top-to-bottom, with a sticky decision rail on desktop.
+ * with any AuctionSale (route data, previews, tests). Organised around the maximum
+ * bid the investor should not exceed, with sources and context below the decision.
  */
 export function SaleDetailView({ sale }: { sale: AuctionSale }) {
   const location = saleLocation(sale.address, sale.postal_code, sale.city);
@@ -160,11 +154,11 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
             )}
 
             <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              Immojudis résume le dossier, signale les preuves à relire et aide à fixer un prix
-              maximum avant enchère.
+              Immojudis lit le dossier, extrait les informations utiles et calcule une mise plafond
+              pour acheter sous le marché local.
             </p>
 
-            {/* Rangée méta + score */}
+            {/* Rangée méta */}
             <div className="mt-6 flex flex-wrap items-end justify-between gap-5 border-t border-white/10 pt-5">
               <dl className="flex flex-wrap gap-x-10 gap-y-4">
                 <HeroMeta label="Mise à prix" value={formatPrice(sale.starting_price_eur)} accent />
@@ -177,12 +171,12 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
                 />
                 {sale.tribunal && <HeroMeta label="Tribunal" value={sale.tribunal} />}
               </dl>
-              <ScoreBadge
-                score={sale.investment_score}
-                confidence={sale.score_confidence}
-                size="md"
-                showLabel
-              />
+              <a
+                href="#assistant"
+                className="liquid-button inline-flex shrink-0 items-center gap-2 rounded-md px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em] text-background transition-colors hover:brightness-105"
+              >
+                Calculer le plafond <ChevronRight className="h-3.5 w-3.5" />
+              </a>
             </div>
           </div>
 
@@ -206,7 +200,7 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
 
       {/* ───────── Corps : éditorial + rail de décision ───────── */}
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-x-12 gap-y-10 px-4 pt-12 sm:px-6 lg:grid-cols-[1fr_360px]">
-        {/* Colonne principale — décision d'abord */}
+        {/* Colonne principale — mise plafond d'abord */}
         <div className="space-y-14">
           {/* Vignettes : carte + image secondaire */}
           {(sale.latitude != null && sale.longitude != null) || sale.source_url ? (
@@ -234,37 +228,22 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
             </section>
           ) : null}
 
-          {/* 1. Synthèse + recommandation + points à vérifier */}
-          <Section id="synthese" eyebrow="Décision" title="En clair avant enchère">
-            <DealMemo sale={sale} />
+          {/* 1. Assistant de mise plafond */}
+          <Section id="assistant" eyebrow="Mise plafond" title="À combien enchérir au maximum ?">
+            <BidCeilingAssistant sale={sale} />
           </Section>
 
-          {/* 2. Prix plafond */}
-          <Section id="prix-plafond" eyebrow="Prix plafond" title="Seuil d'enchère">
-            <ProfitabilityCalculator sale={sale} />
-          </Section>
-
-          {/* 3. Analyse du score */}
-          <FoldableSection
-            id="analyse"
-            eyebrow="Analyse"
-            title="Pourquoi le score arrive à cette lecture"
-            summary="Voir la lecture détaillée du score, des axes et des risques"
-          >
-            <InvestmentAnalysis sale={sale} />
-          </FoldableSection>
-
-          {/* 4. Preuves & risques */}
+          {/* 2. Preuves & conditions */}
           <FoldableSection
             id="preuves"
-            eyebrow="Preuves"
-            title="Extraits et sources retenus"
-            summary="Voir les preuves qui expliquent les alertes"
+            eyebrow="Sources"
+            title="Ce que le dossier dit vraiment"
+            summary="Voir les extraits utiles et les points à intégrer au prix plafond"
           >
             <EvidenceTrail sale={sale} />
           </FoldableSection>
 
-          {/* 5. Le bien */}
+          {/* 3. Le bien */}
           <Section id="bien" eyebrow="Le bien" title="Caractéristiques">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <Stat
@@ -315,8 +294,8 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
             </div>
           </Section>
 
-          {/* 6. Territoire & marché */}
-          <Section id="territoire" eyebrow="Territoire" title="Contexte géographique">
+          {/* 4. Territoire & marché */}
+          <Section id="territoire" eyebrow="Marché local" title="Contexte géographique">
             <SaleContextMap sale={sale} />
             {sale.latitude != null && sale.longitude != null && (
               <div className="mt-10">
@@ -325,7 +304,7 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
             )}
           </Section>
 
-          {/* 7. Documents */}
+          {/* 5. Documents */}
           <Section id="documents" eyebrow="Dossier" title="Documents officiels">
             {sale.documents_rich && sale.documents_rich.length > 0 ? (
               <ul className="divide-y divide-border/60 border-y border-border/60">
@@ -406,35 +385,32 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
 }
 
 /**
- * Sticky decision rail — keeps the essentials of the bid/no-bid decision in view
- * while scrolling: Immojudis Score, recommendation, mise à prix, timing, actions.
+ * Sticky decision rail — keeps the essentials in view while scrolling: starting
+ * price, timing, source and a quick path back to the bid ceiling assistant.
  */
 function DecisionRail({ sale }: { sale: AuctionSale }) {
-  const score = sale.investment_score;
-  const band = score != null ? scoreBand(score) : null;
-
   return (
     <div className="space-y-6">
       <div className="liquid-panel relative rounded-lg p-7">
         <span className="absolute -top-px left-7 h-px w-12 bg-gold" />
 
-        {/* Score + recommandation */}
-        <div className="text-[10px] uppercase tracking-[0.3em] text-gold-soft">Score Immojudis</div>
-        <div className="mt-4 flex items-center gap-4">
-          <ScoreBadge score={score} confidence={sale.score_confidence} size="lg" />
-          {band && (
-            <div className="min-w-0">
-              <div
-                className="text-sm font-semibold uppercase tracking-[0.14em]"
-                style={{ color: band.colorVar }}
-              >
-                {band.label}
-              </div>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                {score != null ? scoreRecommendation(score) : null}
-              </p>
-            </div>
-          )}
+        <div className="text-[10px] uppercase tracking-[0.3em] text-gold-soft">
+          Assistant de mise
+        </div>
+        <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.04] p-4">
+          <div className="text-sm font-semibold text-foreground">
+            Objectif : rester sous le marché local.
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            La limite d'enchère se calcule avec le marché DVF, les frais, les travaux et une marge
+            de sécurité.
+          </p>
+          <a
+            href="#assistant"
+            className="mt-3 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.18em] text-gold-soft transition-colors hover:text-gold"
+          >
+            Voir la mise plafond <ChevronRight className="h-3 w-3" />
+          </a>
         </div>
 
         {/* Mise à prix */}
@@ -444,10 +420,10 @@ function DecisionRail({ sale }: { sale: AuctionSale }) {
             {formatPrice(sale.starting_price_eur)}
           </div>
           <a
-            href="#prix-plafond"
+            href="#assistant"
             className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.18em] text-gold-soft transition-colors hover:text-gold"
           >
-            Voir le prix plafond <ChevronRight className="h-3 w-3" />
+            Calculer le plafond <ChevronRight className="h-3 w-3" />
           </a>
         </div>
 
@@ -659,11 +635,7 @@ function SaleNotFoundComponent() {
   return (
     <main className="liquid-page flex min-h-screen items-center justify-center px-4 py-16 text-center">
       <div className="glass-shell max-w-2xl rounded-lg p-8">
-        <img
-          src="/brand/immojudis-sentinel-mark-v2.png"
-          alt=""
-          className="mx-auto h-14 w-14 object-contain"
-        />
+        <BrandMark className="mx-auto h-14 w-14" />
         <h1 className="mt-5 font-display text-2xl text-foreground">Annonce introuvable</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Cette vente n'existe plus ou a été retirée. Elle peut avoir été adjugée ou supprimée par

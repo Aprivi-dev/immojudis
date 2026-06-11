@@ -2,15 +2,8 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
-import Bell from "lucide-react/dist/esm/icons/bell.js";
-import Calculator from "lucide-react/dist/esm/icons/calculator.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
-import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import Gavel from "lucide-react/dist/esm/icons/gavel.js";
-import Heart from "lucide-react/dist/esm/icons/heart.js";
-import MapIcon from "lucide-react/dist/esm/icons/map.js";
-import ScanSearch from "lucide-react/dist/esm/icons/scan-search.js";
-import ShieldAlert from "lucide-react/dist/esm/icons/shield-alert.js";
 import { getStats } from "@/lib/queries";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/hooks/use-auth";
@@ -180,116 +173,6 @@ function HomePage() {
         </div>
       </section>
 
-      {/* ─────────── Méthode : 3 temps reliés ─────────── */}
-      <section className="px-4 py-20 sm:px-6 lg:py-28" aria-labelledby="methode-title">
-        <div className="mx-auto max-w-7xl">
-          <header className="hx-section-head" data-reveal>
-            <span>La méthode</span>
-            <h2 id="methode-title">Trois temps, une décision</h2>
-          </header>
-
-          <ol className="hx-method" data-reveal>
-            <li className="hx-method-step" style={{ ["--d" as string]: "0ms" }}>
-              <span className="hx-method-index">01</span>
-              <FileSearch aria-hidden className="h-5 w-5" />
-              <h3>Analyser</h3>
-              <p>
-                Annonces, cahiers des conditions de vente, PV descriptifs et diagnostics sont
-                collectés puis lus page par page. Chaque fait retenu garde sa source.
-              </p>
-            </li>
-            <li className="hx-method-step" style={{ ["--d" as string]: "140ms" }}>
-              <span className="hx-method-index">02</span>
-              <ScanSearch aria-hidden className="h-5 w-5" />
-              <h3>Décider</h3>
-              <p>
-                Le Score Immojudis croise risques, occupation, état et marché local. Le prix plafond
-                fixe la limite rationnelle au-delà de laquelle on passe.
-              </p>
-            </li>
-            <li className="hx-method-step" style={{ ["--d" as string]: "280ms" }}>
-              <span className="hx-method-index">03</span>
-              <Gavel aria-hidden className="h-5 w-5" />
-              <h3>Enchérir</h3>
-              <p>
-                Vous entrez en salle avec une position tenue : les points à vérifier sont levés, le
-                plafond est connu, la décision est déjà prise.
-              </p>
-            </li>
-          </ol>
-        </div>
-      </section>
-
-      {/* ─────────── Capacités ─────────── */}
-      <section className="px-4 pb-20 sm:px-6 lg:pb-28" aria-labelledby="capacites-title">
-        <div className="mx-auto max-w-7xl">
-          <header className="hx-section-head" data-reveal>
-            <span>Le poste d'analyse</span>
-            <h2 id="capacites-title">Tout le dossier, au même endroit</h2>
-          </header>
-
-          <div className="hx-caps" data-reveal>
-            <Capability
-              to="/sales"
-              icon={FileSearch}
-              title="Annonces scorées"
-              desc="Chaque vente arrive lue, scorée et datée — comparables entre elles."
-              delay={0}
-            />
-            <Capability
-              to="/map"
-              icon={MapIcon}
-              title="Carte du territoire"
-              desc="Score, prix et occupation projetés sur la zone que vous prospectez."
-              delay={70}
-            />
-            <Capability
-              to="/sales"
-              icon={ShieldAlert}
-              title="Risques sourcés"
-              desc="Occupation, servitudes, travaux : chaque alerte renvoie à l'extrait exact."
-              delay={140}
-            />
-            <Capability
-              to="/sales"
-              icon={Calculator}
-              title="Prix plafond"
-              desc="Frais, travaux et marge de sécurité intégrés à votre limite d'enchère."
-              delay={210}
-            />
-            <Capability
-              to="/favorites"
-              icon={Heart}
-              title="Favoris"
-              desc="Votre liste courte, prête pour la relecture de veille d'audience."
-              delay={280}
-            />
-            <Capability
-              to="/alerts"
-              icon={Bell}
-              title="Alertes"
-              desc="Vos critères surveillent les nouvelles ventes à votre place."
-              delay={350}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ─────────── CTA final ─────────── */}
-      <section className="px-4 pb-24 sm:px-6">
-        <div className="hx-cta mx-auto max-w-7xl" data-reveal>
-          <div>
-            <h2>Entrez dans le poste d'analyse</h2>
-            <p>Un compte investisseur donne accès aux annonces, scores, carte et alertes.</p>
-          </div>
-          <div className="hx-actions !mt-0">
-            <Link to={user ? "/sales" : "/login"} className="hx-btn-primary">
-              {user ? "Voir les annonces" : "Créer un accès"} <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </div>
-      </section>
-
       <footer className="border-t border-white/8 px-4 py-8 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 text-xs uppercase tracking-[0.18em] text-muted-foreground sm:flex-row">
           <span>© {new Date().getFullYear()} Immojudis</span>
@@ -372,30 +255,5 @@ function AnalysisTerminal() {
         </span>
       </footer>
     </aside>
-  );
-}
-
-function Capability({
-  to,
-  icon: Icon,
-  title,
-  desc,
-  delay,
-}: {
-  to: string;
-  icon: typeof FileSearch;
-  title: string;
-  desc: string;
-  delay: number;
-}) {
-  return (
-    <Link to={to} className="hx-cap" style={{ ["--d" as string]: `${delay}ms` }}>
-      <Icon aria-hidden className="h-5 w-5" />
-      <h3>{title}</h3>
-      <p>{desc}</p>
-      <span className="hx-cap-go" aria-hidden>
-        <ArrowUpRight className="h-3.5 w-3.5" />
-      </span>
-    </Link>
   );
 }

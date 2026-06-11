@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import { BrandMark } from "@/components/BrandLogo";
 
 export const Route = createFileRoute("/contact")({
   head: () => ({
@@ -73,17 +74,13 @@ function ContactPage() {
           <div className="cinematic-grid absolute inset-0 opacity-35" />
           <div className="relative z-10">
             <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold">
-              Chouette vigie
+              Signal Immojudis
             </div>
             <p className="mt-4 max-w-xs font-display text-2xl leading-tight text-foreground">
               Un bon support commence par une preuve claire.
             </p>
           </div>
-          <img
-            src="/brand/immojudis-sentinel-v2.png"
-            alt="Chouette Immojudis"
-            className="absolute bottom-4 right-3 w-[17rem] max-w-[76%] drop-shadow-[0_30px_62px_rgba(0,0,0,0.5)]"
-          />
+          <BrandMark className="absolute bottom-8 right-8 h-40 w-40 max-w-[58%] opacity-85 drop-shadow-[0_30px_62px_rgba(0,0,0,0.5)]" />
         </aside>
       </div>
     </main>

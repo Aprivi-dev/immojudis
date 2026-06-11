@@ -11,17 +11,14 @@ import {
 import appCss from "../styles.css?url";
 import { Navbar } from "@/components/Navbar";
 import { AuthGate } from "@/components/AuthGate";
+import { BrandMark } from "@/components/BrandLogo";
 import { Toaster } from "sonner";
 
 function NotFoundComponent() {
   return (
     <div className="liquid-page flex min-h-screen items-center justify-center px-4 py-10">
       <div className="glass-shell max-w-xl overflow-hidden rounded-lg p-6 text-center sm:p-8">
-        <img
-          src="/brand/immojudis-sentinel-mark-v2.png"
-          alt=""
-          className="mx-auto h-16 w-16 object-contain drop-shadow-[0_18px_34px_rgba(0,0,0,0.35)]"
-        />
+        <BrandMark className="mx-auto h-16 w-16 drop-shadow-[0_18px_34px_rgba(0,0,0,0.35)]" />
         <h1 className="mt-5 font-display text-6xl leading-none text-gold-soft">404</h1>
         <h2 className="mt-4 font-display text-2xl text-foreground">Page introuvable</h2>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -47,11 +44,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   return (
     <div className="liquid-page flex min-h-screen items-center justify-center px-4 py-10">
       <div className="glass-shell max-w-xl rounded-lg p-6 text-center sm:p-8">
-        <img
-          src="/brand/immojudis-sentinel-mark-v2.png"
-          alt=""
-          className="mx-auto h-14 w-14 object-contain"
-        />
+        <BrandMark className="mx-auto h-14 w-14" />
         <h1 className="mt-5 font-display text-2xl tracking-tight text-foreground">
           Cette page n'a pas chargé
         </h1>
@@ -106,15 +99,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", type: "image/png", href: "/brand/immojudis-sentinel-mark-v2.png" },
-      { rel: "apple-touch-icon", href: "/brand/immojudis-sentinel-mark-v2.png" },
-      { rel: "preload", as: "image", href: "/brand/immojudis-sentinel-mark-v2.png" },
-      { rel: "preload", as: "image", href: "/brand/immojudis-sentinel-v2.png" },
+      { rel: "icon", type: "image/svg+xml", href: "/brand/immojudis-mark.svg" },
+      { rel: "apple-touch-icon", href: "/brand/immojudis-mark.svg" },
+      { rel: "preload", as: "image", href: "/brand/immojudis-mark.svg" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Sora:wght@600;700;800&display=swap",
       },
     ],
   }),

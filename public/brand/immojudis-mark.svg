@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect x="7" y="7" width="50" height="50" rx="16" fill="url(#ijMarkBg)" stroke="#F2C487" stroke-opacity="0.42"/>
+  <path d="M19 44V20" stroke="#F2C487" stroke-width="5" stroke-linecap="round"/>
+  <path d="M31 20h13v16c0 6.1-4.3 10-10.2 10-3.4 0-6.6-1.4-8.8-4" stroke="#F2C487" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M49 15l-4.2 4.2M53 26h-6M49 49l-4.2-4.2" stroke="#F8E5C9" stroke-width="2" stroke-linecap="round" opacity="0.76"/>
+  <circle cx="19" cy="14" r="2.2" fill="#F8E5C9" opacity="0.9"/>
+  <defs>
+    <linearGradient id="ijMarkBg" x1="10" y1="9" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1B1712"/>
+      <stop offset="0.48" stop-color="#09090B"/>
+      <stop offset="1" stop-color="#241A0D"/>
+    </linearGradient>
+  </defs>
+</svg>

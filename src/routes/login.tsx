@@ -5,6 +5,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { toast } from "sonner";
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { BrandMark } from "@/components/BrandLogo";
 import {
   ACCOUNT_TYPE_OPTIONS,
   PROFESSIONAL_ROLE_OPTIONS,
@@ -89,11 +90,7 @@ function LoginPage() {
               Les comptes professionnels débloquent la publication.
             </p>
           </div>
-          <img
-            src="/brand/immojudis-sentinel-v2.png"
-            alt="Chouette Immojudis"
-            className="absolute bottom-4 right-2 z-20 w-[20rem] max-w-[82%] drop-shadow-[0_34px_70px_rgba(0,0,0,0.55)]"
-          />
+          <BrandMark className="absolute bottom-10 right-10 z-20 h-44 w-44 max-w-[58%] opacity-90 drop-shadow-[0_34px_70px_rgba(0,0,0,0.55)]" />
         </section>
 
         <section className="glass-shell rounded-lg p-6 sm:p-8">
