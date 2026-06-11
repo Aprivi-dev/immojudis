@@ -14,13 +14,19 @@ import {
 } from "@/lib/format";
 import { OSM_TILE_LAYER_URL, OSM_TILE_OPTIONS } from "@/lib/tiles";
 
-// Couleurs cohérentes avec ScoreBadge / InvestmentAnalysis
-function scoreColor(score: number | null | undefined): { bg: string; ring: string; label: string } {
-  if (score == null) return { bg: "#9ca3af", ring: "#6b7280", label: "?" };
-  if (score >= 80) return { bg: "#10b981", ring: "#047857", label: String(Math.round(score)) };
-  if (score >= 60) return { bg: "#3b82f6", ring: "#1d4ed8", label: String(Math.round(score)) };
-  if (score >= 40) return { bg: "#f59e0b", ring: "#b45309", label: String(Math.round(score)) };
-  return { bg: "#ef4444", ring: "#b91c1c", label: String(Math.round(score)) };
+// Pins colorés par proximité de la vente (info neutre, utile en prospection).
+function urgencyColor(date: string | null | undefined): {
+  bg: string;
+  ring: string;
+  label: string;
+} {
+  const d = daysUntil(date);
+  if (d == null) return { bg: "#9ca3af", ring: "#6b7280", label: "?" };
+  if (d < 0) return { bg: "#6b7280", ring: "#4b5563", label: "—" };
+  const label = d > 99 ? "99+" : String(d);
+  if (d < 7) return { bg: "#dc2626", ring: "#991b1b", label };
+  if (d < 30) return { bg: "#d97706", ring: "#92400e", label };
+  return { bg: "#0f9d6e", ring: "#047857", label };
 }
 
 function daysUntil(date: string | null | undefined): number | null {
@@ -61,7 +67,6 @@ function buildPopup(s: AuctionMapPin): string {
         ${countdown ? `<span style="color:${countdownColor};font-weight:600">${countdown}</span>` : ""}
       </div>
       <div style="font-size:11px;color:#4b5563;margin-bottom:6px">Occupation : <strong>${escapeHtml(occupancy)}</strong></div>
-      ${s.investment_score != null ? `<div style="font-size:11px;color:#4b5563;margin-bottom:6px">Score : <strong>${Math.round(s.investment_score)}/100</strong></div>` : ""}
       <a href="/sales/${s.id}" style="display:inline-block;background:#f2c487;color:#09090b;padding:4px 10px;border-radius:6px;font-size:11px;text-decoration:none;font-weight:700">Voir le détail →</a>
     </div>`;
 }
@@ -153,7 +158,7 @@ export function SaleMap({
         if (!s.id) continue;
         if (s.latitude == null || s.longitude == null) continue;
         points.push([s.latitude, s.longitude]);
-        const c = scoreColor(s.investment_score);
+        const c = urgencyColor(s.sale_date);
         const icon = L.divIcon({
           html: `<div style="background:${c.bg};color:#fff;width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;border:2px solid ${c.ring};box-shadow:0 2px 4px rgba(0,0,0,0.3)"><span style="transform:rotate(45deg);font-size:11px;font-weight:700">${c.label}</span></div>`,
           className: "auction-pin",
