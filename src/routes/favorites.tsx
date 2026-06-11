@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { getFavorites } from "@/lib/queries";
 import { SaleCard } from "@/components/SaleCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BrandMark } from "@/components/BrandLogo";
 
 export const Route = createFileRoute("/favorites")({
   component: FavoritesPage,
@@ -64,13 +65,9 @@ function FavoritesPage() {
 
         {!fetching && sales.length === 0 && (
           <div className="glass-shell rounded-lg p-10 text-center">
-            <img
-              src="/brand/immojudis-sentinel-mark-v2.png"
-              alt=""
-              className="mx-auto h-16 w-16 object-contain"
-            />
+            <BrandMark className="mx-auto h-16 w-16" />
             <h2 className="mt-5 font-display text-2xl text-foreground">
-              Aucun dossier gardé sous l'aile.
+              Aucun dossier en shortlist.
             </h2>
             <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
               Ajoutez des annonces en favoris pour construire votre shortlist avant enchère.
