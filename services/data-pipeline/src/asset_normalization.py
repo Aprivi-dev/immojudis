@@ -132,11 +132,49 @@ RISK_DEFINITIONS = tuple(
 )
 
 
+_PROPERTY_TYPE_LABELS = {
+    "apartment": "Appartement",
+    "house": "Maison",
+    "building": "Immeuble",
+    "land": "Terrain",
+    "commercial": "Local commercial",
+    "parking": "Parking",
+    "mixed": "Bien mixte",
+}
+
+
+def _format_surface_m2(value: Decimal | float | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        rounded = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    if rounded <= 0:
+        return None
+    return f"{rounded:,}".replace(",", " ") + " m²"
+
+
+def build_display_title(sale: AuctionSale) -> str:
+    """Generic, consistent title built from the extracted data: property type +
+    surface (when available). Replaces heterogeneous scraped titles. The original
+    title stays available in raw_payload/raw_text for context and the LLM."""
+    label = _PROPERTY_TYPE_LABELS.get(sale.property_type or "", "Bien immobilier")
+    if sale.property_type == "land":
+        surface = _format_surface_m2(sale.land_surface_m2)
+    else:
+        surface = _format_surface_m2(
+            sale.app_surface_m2 or sale.habitable_surface_m2 or sale.carrez_surface_m2
+        )
+    return f"{label} {surface}" if surface else label
+
+
 def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
     text = _sale_text(sale)
     if not text:
         _fill_quality_flags(sale)
         _score_sale(sale, [])
+        sale.title = build_display_title(sale)
         return sale
 
     _apply_document_consistency_corrections(sale, text)
@@ -147,6 +185,7 @@ def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
     _fill_quality_flags(sale)
     _score_sale(sale, risks)
     _write_asset_payload(sale, risks)
+    sale.title = build_display_title(sale)
     return sale
 
 
