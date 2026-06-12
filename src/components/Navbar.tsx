@@ -20,12 +20,12 @@ const PRO_NAV_ITEM = { to: "/publish", label: "Publier" } as const;
 const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin" } as const;
 
 export function Navbar() {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const admin = isAdminAccount(user);
   const navItems = [
     ...NAV_ITEMS,
-    ...(isProfessionalAccount(user) ? [PRO_NAV_ITEM] : []),
+    ...(isProfessionalAccount(user, profile) ? [PRO_NAV_ITEM] : []),
     ...(admin ? [ADMIN_NAV_ITEM] : []),
   ];
 

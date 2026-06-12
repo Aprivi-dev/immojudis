@@ -93,7 +93,7 @@ function HeroVideo() {
 }
 
 function HomePage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { data: stats } = useQuery({
     queryKey: ["stats"],
     queryFn: getStats,
@@ -101,7 +101,7 @@ function HomePage() {
   });
   useScrollReveal();
 
-  const professionalCta = isProfessionalAccount(user)
+  const professionalCta = isProfessionalAccount(user, profile)
     ? { to: "/publish", label: "Publier une vente" }
     : { to: user ? "/contact" : "/login", label: "Accès pro" };
 

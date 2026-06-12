@@ -326,6 +326,42 @@ export type Database = {
           },
         ];
       };
+      user_profiles: {
+        Row: {
+          account_type: "b2c" | "b2b";
+          created_at: string;
+          email: string | null;
+          full_name: string | null;
+          organization_name: string | null;
+          professional_role: "lawyer" | "notary" | "bailiff" | "court" | "other" | null;
+          professional_status: "not_applicable" | "pending" | "approved" | "rejected";
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          account_type?: "b2c" | "b2b";
+          created_at?: string;
+          email?: string | null;
+          full_name?: string | null;
+          organization_name?: string | null;
+          professional_role?: "lawyer" | "notary" | "bailiff" | "court" | "other" | null;
+          professional_status?: "not_applicable" | "pending" | "approved" | "rejected";
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          account_type?: "b2c" | "b2b";
+          created_at?: string;
+          email?: string | null;
+          full_name?: string | null;
+          organization_name?: string | null;
+          professional_role?: "lawyer" | "notary" | "bailiff" | "court" | "other" | null;
+          professional_status?: "not_applicable" | "pending" | "approved" | "rejected";
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       v_auction_sales_app: {
