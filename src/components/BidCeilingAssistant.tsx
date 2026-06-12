@@ -162,8 +162,7 @@ export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
         data: {
           lat: sale.latitude!,
           lng: sale.longitude!,
-          radiusM: 500,
-          yearsBack: 2,
+          // Rayon auto-déduit côté serveur : 100 m en ville, 300 m en campagne.
           propertyType: sale.property_type,
           surfaceM2: surface,
         },
@@ -363,6 +362,13 @@ export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
         <div className="mt-5">
           <MethodCard result={balanced.result} estimate={effectiveEstimate} />
         </div>
+
+        {/* ── 2b. Marché local (DVF parcellaire + historique adresse) ──── */}
+        <MarketLocalCard
+          estimate={effectiveEstimate}
+          usingCachedEstimate={usingCachedEstimate}
+          isLoading={isLoading && !effectiveEstimate}
+        />
 
         {/* ── 3. Conditions pour rester gagnant ────────────────────────── */}
         <SuccessConditions
@@ -607,6 +613,145 @@ function MarketInput({
           </div>
         </label>
       </div>
+    </div>
+  );
+}
+
+function MarketLocalCard({
+  estimate,
+  usingCachedEstimate,
+  isLoading,
+}: {
+  estimate: DvfMarketEstimate | null;
+  usingCachedEstimate: boolean;
+  isLoading: boolean;
+}) {
+  const areaLabel = estimate?.areaKind === "urban" ? "ville" : "campagne";
+  const hasRange = Boolean(estimate?.medianPricePerM2);
+
+  return (
+    <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <MapPin className="h-4 w-4" />
+          Marché local
+        </div>
+        {estimate && (
+          <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+            {estimate.commune ? `${estimate.commune} · ` : ""}rayon {estimate.radiusM} m (
+            {areaLabel})
+          </span>
+        )}
+      </div>
+
+      {isLoading && !estimate ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Lecture des ventes DVF par parcelle autour de l'adresse...
+        </p>
+      ) : !hasRange ? (
+        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+          Pas assez de ventes exploitables autour de l'adresse pour établir une fourchette fiable.
+          Saisis un prix de marché au m² dans les réglages pour obtenir un plafond provisoire.
+        </p>
+      ) : (
+        <>
+          <PriceRange estimate={estimate!} />
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            Fourchette établie sur{" "}
+            <strong className="text-foreground">{estimate!.sampleSize}</strong> parcelle
+            {estimate!.sampleSize > 1 ? "s" : ""} bâtie{estimate!.sampleSize > 1 ? "s" : ""} (une
+            vente par parcelle), sur {estimate!.totalNearbySampleSize} ventes recensées dans le
+            rayon.
+            {usingCachedEstimate ? " Estimation conservée en cache." : ""}
+          </p>
+          {estimate!.qualityWarnings.length > 0 && (
+            <p className="mt-2 rounded-md border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+              {estimate!.qualityWarnings.join(" · ")}.
+            </p>
+          )}
+        </>
+      )}
+
+      <AddressHistory estimate={estimate} />
+    </div>
+  );
+}
+
+function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
+  const min = estimate.minPricePerM2 ?? estimate.p25PricePerM2 ?? 0;
+  const max = estimate.maxPricePerM2 ?? estimate.p75PricePerM2 ?? 0;
+  const p25 = estimate.p25PricePerM2 ?? min;
+  const p75 = estimate.p75PricePerM2 ?? max;
+  const median = estimate.medianPricePerM2 ?? Math.round((p25 + p75) / 2);
+  const span = Math.max(1, max - min);
+  const pos = (v: number) => `${Math.min(100, Math.max(0, ((v - min) / span) * 100))}%`;
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-baseline justify-between text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+        <span>Prix au m² observé</span>
+        <span className="tabular-nums">
+          médiane <strong className="text-foreground">{ppm2(median)}</strong>
+        </span>
+      </div>
+      <div className="relative mt-5 h-2 rounded-full bg-white/8">
+        {/* Zone interquartile p25–p75 */}
+        <div
+          className="absolute inset-y-0 rounded-full bg-gradient-to-r from-[var(--signal-opportunity)] to-[var(--signal-watch)]"
+          style={{ left: pos(p25), right: `calc(100% - ${pos(p75)})` }}
+          aria-hidden
+        />
+        {/* Médiane */}
+        <span
+          className="absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
+          style={{ left: pos(median) }}
+          title={`Médiane ${ppm2(median)}`}
+          aria-hidden
+        />
+      </div>
+      <div className="mt-2 flex justify-between text-[11px] tabular-nums text-muted-foreground">
+        <span>min {ppm2(min)}</span>
+        <span>
+          p25 {ppm2(p25)} · p75 {ppm2(p75)}
+        </span>
+        <span>max {ppm2(max)}</span>
+      </div>
+    </div>
+  );
+}
+
+function AddressHistory({ estimate }: { estimate: DvfMarketEstimate | null }) {
+  const history = estimate?.addressHistory ?? [];
+  return (
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+        Historique de l'adresse
+      </div>
+      {history.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Aucune vente connue à cette adresse dans les données DVF récentes.
+        </p>
+      ) : (
+        <ul className="mt-2 divide-y divide-white/10 text-sm">
+          {history.map((sale, index) => (
+            <li
+              key={`${sale.date}-${sale.totalPrice}-${index}`}
+              className="grid grid-cols-[auto_1fr_auto] items-baseline gap-3 py-2"
+            >
+              <span className="tabular-nums text-muted-foreground">{formatDate(sale.date)}</span>
+              <span className="tabular-nums text-foreground">
+                {fmt(sale.totalPrice)}
+                {sale.surface ? (
+                  <span className="text-muted-foreground"> · {formatSurface(sale.surface)}</span>
+                ) : null}
+              </span>
+              <span className="tabular-nums text-muted-foreground">
+                {sale.pricePerM2 ? ppm2(sale.pricePerM2) : "—"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
