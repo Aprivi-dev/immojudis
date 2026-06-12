@@ -55,7 +55,15 @@ def load_settings() -> dict[str, str | float | None]:
         "replicate_max_retries": int(os.getenv("REPLICATE_MAX_RETRIES", "5")),
         "replicate_retry_backoff_seconds": float(os.getenv("REPLICATE_RETRY_BACKOFF_SECONDS", "20")),
         "replicate_retry_max_sleep_seconds": float(os.getenv("REPLICATE_RETRY_MAX_SLEEP_SECONDS", "180")),
-        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "10")),
+        # 0 par défaut : l'enrichissement est désormais parallélisé (voir
+        # pipeline_enrich_workers) et la limite de débit Replicate est gérée par
+        # le retry sur 429. Une valeur > 0 sérialiserait les appels.
+        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "0")),
+        # Appels LLM en parallèle (réseau, donc concurrence élevée sûre).
+        "pipeline_enrich_workers": max(1, int(os.getenv("PIPELINE_ENRICH_WORKERS", "6"))),
+        # Extractions PDF/OCR en parallèle (CPU + RAM : on reste prudent pour ne
+        # pas saturer la mémoire du runner avec plusieurs Docling/OCR simultanés).
+        "pipeline_pdf_workers": max(1, int(os.getenv("PIPELINE_PDF_WORKERS", "2"))),
         "replicate_thinking_budget": int(os.getenv("REPLICATE_THINKING_BUDGET", "0")),
         "replicate_dynamic_thinking": os.getenv("REPLICATE_DYNAMIC_THINKING", "false").lower()
         in {"1", "true", "yes", "on"},

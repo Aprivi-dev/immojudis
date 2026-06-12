@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import logging
 import sys
@@ -26,6 +27,11 @@ from src.storage.supabase_client import upsert_sales_to_supabase
 from src.storage.supabase_client import upsert_observations_to_supabase
 from src.storage.supabase_client import mark_past_sales_in_supabase
 from src.storage.supabase_client import create_run_in_supabase, finish_run_in_supabase
+from src.storage.supabase_client import (
+    fetch_enriched_content_hashes,
+    touch_last_seen_for_content_hashes,
+)
+from src.models import AuctionSale
 from src.tribunal import fill_tribunal
 
 
@@ -124,7 +130,30 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     timings["normalize_seconds"] = round(time.perf_counter() - started, 2)
 
     canonical_sales = merge_duplicate_sales(normalized_observations)
-    enriched = []
+
+    # ── Incrémental : sauter les annonces déjà enrichies et inchangées ────────
+    # content_hash = adresse|ville|date|prix : il change quand l'annonce change.
+    # Une annonce déjà scorée avec le même hash n'a pas besoin d'être
+    # re-téléchargée / ré-OCR / renvoyée au LLM.
+    skipped_unchanged = 0
+    to_enrich = canonical_sales
+    if settings["incremental_enrichment"] and options.upsert:
+        existing_hashes = fetch_enriched_content_hashes(
+            [sale.content_hash for sale in canonical_sales if sale.content_hash]
+        )
+        if existing_hashes:
+            to_enrich = [sale for sale in canonical_sales if sale.content_hash not in existing_hashes]
+            skipped = [sale for sale in canonical_sales if sale.content_hash in existing_hashes]
+            skipped_unchanged = len(skipped)
+            touched = touch_last_seen_for_content_hashes([sale.content_hash for sale in skipped])
+            LOGGER.info(
+                "Incrémental : %s annonces déjà enrichies sautées (last_seen rafraîchi: %s), %s à enrichir",
+                skipped_unchanged,
+                touched,
+                len(to_enrich),
+            )
+
+    enriched: list[AuctionSale] = []
     pdf_stats = PdfEnrichmentStats()
     llm_stats = LLMEnrichmentStats()
     llm_client = None
@@ -134,36 +163,70 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         except LLMClientUnavailable as exc:
             LOGGER.warning("LLM client unavailable: %s", exc)
             llm_stats.unavailable = True
-    for sale in canonical_sales:
-        try:
-            sale.last_run_id = run_id
-            started = time.perf_counter()
-            sale_pdf_stats = enrich_sale_from_pdfs(sale)
-            timings["pdf_seconds"] = round(timings.get("pdf_seconds", 0.0) + time.perf_counter() - started, 2)
-            pdf_stats.downloaded += sale_pdf_stats.downloaded
-            pdf_stats.errors += sale_pdf_stats.errors
-            pdf_stats.raw_text_enriched += sale_pdf_stats.raw_text_enriched
-            pdf_stats.document_cache_hits += sale_pdf_stats.document_cache_hits
-            pdf_stats.document_cache_misses += sale_pdf_stats.document_cache_misses
-            pdf_stats.documents_processed += sale_pdf_stats.documents_processed
-            if options.use_llm and llm_client is not None:
-                started = time.perf_counter()
-                sale_llm_stats = enrich_sale_with_llm(sale, client=llm_client)
-                timings["llm_seconds"] = round(timings.get("llm_seconds", 0.0) + time.perf_counter() - started, 2)
+
+    pdf_workers = max(1, int(settings["pipeline_pdf_workers"]))
+    llm_workers = max(1, int(settings["pipeline_enrich_workers"]))
+    enrich_started = time.perf_counter()
+    failed_urls: set[str] = set()
+
+    for sale in to_enrich:
+        sale.last_run_id = run_id
+
+    # ── Phase 1 : PDF / Docling / OCR (CPU+RAM) — concurrence modérée ─────────
+    started = time.perf_counter()
+    if to_enrich:
+        with ThreadPoolExecutor(max_workers=pdf_workers) as executor:
+            futures = {executor.submit(enrich_sale_from_pdfs, sale): sale for sale in to_enrich}
+            for future in as_completed(futures):
+                sale = futures[future]
+                try:
+                    _merge_pdf_stats(pdf_stats, future.result())
+                except Exception as exc:
+                    LOGGER.exception("PDF enrichment failed for %s: %s", sale.source_url, exc)
+                    errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
+                    failed_urls.add(sale.source_url)
+    timings["pdf_seconds"] = round(time.perf_counter() - started, 2)
+
+    # ── Phase 2 : LLM Replicate (réseau) — forte concurrence ─────────────────
+    started = time.perf_counter()
+    llm_targets = [sale for sale in to_enrich if sale.source_url not in failed_urls]
+    if options.use_llm and llm_client is not None and llm_targets:
+        with ThreadPoolExecutor(max_workers=llm_workers) as executor:
+            futures = {
+                executor.submit(enrich_sale_with_llm, sale, client=llm_client): sale
+                for sale in llm_targets
+            }
+            for future in as_completed(futures):
+                sale = futures[future]
+                try:
+                    sale_llm_stats = future.result()
+                except Exception as exc:
+                    LOGGER.exception("LLM enrichment failed for %s: %s", sale.source_url, exc)
+                    errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
+                    continue
                 _add_llm_stats(llm_stats, sale_llm_stats)
                 if sale_llm_stats.error_messages:
                     source_name = str(sale.source_name or sale.primary_source or "unknown")
                     errors.setdefault(source_name, []).extend(sale_llm_stats.error_messages)
-            started = time.perf_counter()
+    timings["llm_seconds"] = round(time.perf_counter() - started, 2)
+
+    # ── Phase 3 : finition (géocode réseau léger, tribunal, scoring) ─────────
+    started = time.perf_counter()
+    for sale in to_enrich:
+        if sale.source_url in failed_urls:
+            continue
+        try:
             geocode_sale(sale)
-            timings["geocode_seconds"] = round(timings.get("geocode_seconds", 0.0) + time.perf_counter() - started, 2)
             fill_tribunal(sale)
             normalize_asset_features(sale)
             enriched.append(sale)
         except Exception as exc:
-            LOGGER.exception("Enrichment failed for %s: %s", sale.source_url, exc)
-            source_name = str(sale.source_name or "unknown")
-            errors.setdefault(source_name, []).append(str(exc))
+            LOGGER.exception("Finalisation failed for %s: %s", sale.source_url, exc)
+            errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
+    timings["geocode_seconds"] = round(time.perf_counter() - started, 2)
+    timings["enrich_wall_seconds"] = round(time.perf_counter() - enrich_started, 2)
+    timings["enrich_pdf_workers"] = pdf_workers
+    timings["enrich_llm_workers"] = llm_workers
 
     lifecycle_stats = mark_past_sales(enriched)
     quality_report = build_quality_report(enriched, pdf_stats=pdf_stats, llm_stats=llm_stats)
@@ -176,7 +239,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         "collected": len(raw_sales),
         "collected_by_source": raw_by_source,
         "normalized": len(normalized_observations),
-        "deduplicated": len(enriched),
+        "deduplicated": len(canonical_sales),
+        "skipped_unchanged": skipped_unchanged,
+        "enriched": len(enriched),
         "quality_report": quality_report,
         "timings": timings,
     }
@@ -205,7 +270,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print(f"- collected: {len(raw_sales)}")
     print(f"- collected_by_source: {raw_by_source}")
     print(f"- normalized: {len(normalized_observations)}")
-    print(f"- deduplicated: {len(enriched)}")
+    print(f"- deduplicated: {len(canonical_sales)}")
+    print(f"- skipped_unchanged: {skipped_unchanged}")
+    print(f"- enriched: {len(enriched)}")
     print(f"- upserted: {upserted}")
     print(f"- observations_upserted: {observations_upserted}")
     print(f"- marked_past_in_run: {lifecycle_stats.marked_past}")
@@ -218,6 +285,15 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
     return 0
+
+
+def _merge_pdf_stats(total: PdfEnrichmentStats, item: PdfEnrichmentStats) -> None:
+    total.downloaded += item.downloaded
+    total.errors += item.errors
+    total.raw_text_enriched += item.raw_text_enriched
+    total.document_cache_hits += item.document_cache_hits
+    total.document_cache_misses += item.document_cache_misses
+    total.documents_processed += item.documents_processed
 
 
 def _add_llm_stats(total: LLMEnrichmentStats, item: LLMEnrichmentStats) -> None:

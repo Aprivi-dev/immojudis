@@ -358,6 +358,80 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
     return len(payload)
 
 
+def fetch_enriched_content_hashes(content_hashes: list[str]) -> set[str]:
+    """Return the subset of content_hashes already present and enriched in DB.
+
+    Used for incremental runs: an unchanged listing (same content_hash) that was
+    already scored does not need to be re-downloaded / re-OCR'd / re-sent to the
+    LLM. We require score_version IS NOT NULL so partially-failed rows are
+    re-processed.
+    """
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    unique = [h for h in {h for h in content_hashes if h}]
+    if not url or not key or not unique:
+        return set()
+
+    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
+    found: set[str] = set()
+    for index in range(0, len(unique), 150):
+        batch = unique[index : index + 150]
+        try:
+            response = httpx.get(
+                endpoint,
+                params={
+                    "select": "content_hash",
+                    "content_hash": _postgrest_in_filter(batch),
+                    "score_version": "not.is.null",
+                },
+                headers=_rest_headers(str(key), prefer="count=none"),
+                timeout=30,
+            )
+            if response.is_error:
+                LOGGER.warning(
+                    "Could not fetch enriched hashes (%s): %s", response.status_code, response.text[:200]
+                )
+                continue
+            for row in response.json():
+                value = row.get("content_hash")
+                if value:
+                    found.add(str(value))
+        except httpx.HTTPError as exc:
+            LOGGER.warning("Enriched-hash lookup failed: %s", exc)
+    return found
+
+
+def touch_last_seen_for_content_hashes(content_hashes: list[str]) -> int:
+    """Refresh last_seen_at for listings skipped by the incremental run, so they
+    are not considered stale even though they were not re-upserted. Best effort."""
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    unique = [h for h in {h for h in content_hashes if h}]
+    if not url or not key or not unique:
+        return 0
+
+    now = datetime.now(timezone.utc).isoformat()
+    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
+    touched = 0
+    for index in range(0, len(unique), 150):
+        batch = unique[index : index + 150]
+        try:
+            response = httpx.patch(
+                endpoint,
+                params={"content_hash": _postgrest_in_filter(batch)},
+                headers=_rest_headers(str(key), prefer="return=minimal"),
+                json={"last_seen_at": now},
+                timeout=30,
+            )
+            if not response.is_error:
+                touched += len(batch)
+        except httpx.HTTPError as exc:
+            LOGGER.warning("last_seen touch failed: %s", exc)
+    return touched
+
+
 def mark_past_sales_in_supabase() -> int:
     settings = load_settings()
     url = settings["supabase_url"]
