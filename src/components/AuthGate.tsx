@@ -15,7 +15,7 @@ function normalizePath(pathname: string) {
 }
 
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const pathname = normalizePath(location.pathname);
@@ -84,7 +84,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (requiresProfessionalAccount && !isProfessionalAccount(user)) {
+  if (requiresProfessionalAccount && !isProfessionalAccount(user, profile)) {
     return (
       <main className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10">
         <div className="liquid-panel max-w-lg rounded-lg p-6 text-center">
