@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
@@ -404,17 +404,17 @@ def fetch_enriched_content_hashes(content_hashes: list[str]) -> set[str]:
 
 
 def fetch_known_sale_signatures() -> dict[str, str]:
-    """Map source_url → change-signature for already-enriched, still-active
-    listings. Lets the scrapers skip the detail page of listings already seen
-    whose price/date are unchanged. Bounded to upcoming auctions to stay small
-    at national scale."""
+    """Map source_url → change-signature for every already-enriched listing. Lets
+    the scrapers skip the detail page of listings already seen whose price/date
+    are unchanged. Past listings are kept too: skipping their detail is harmless
+    (the lifecycle step marks them past), and it avoids re-fetching them while
+    they linger on a source site. Paginated to stay safe at national scale."""
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
     if not url or not key:
         return {}
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
     signatures: dict[str, str] = {}
     offset = 0
@@ -425,7 +425,6 @@ def fetch_known_sale_signatures() -> dict[str, str]:
                 params={
                     "select": "source_url,sale_date,starting_price_eur",
                     "score_version": "not.is.null",
-                    "sale_date": f"gte.{cutoff}",
                     "limit": "1000",
                     "offset": str(offset),
                 },
