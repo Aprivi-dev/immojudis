@@ -74,15 +74,18 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
-    for department in AQUITAINE_DEPARTMENTS:
-        url = f"{SEARCH_URL}?departement={department}&display=liste&order=asc&sort=date"
-        try:
-            html = client.get(url)
-        except Exception as exc:
-            LOGGER.error("Avoventes fetch failed for department %s: %s", department, exc)
-            errors.append(f"department {department}: {exc}")
-            continue
-        for sale in parse_avoventes_html(html, page_url=url, fallback_department=department):
+    # Avoventes ignore le paramètre ?departement= et sert la liste nationale
+    # complète sur une seule page : on la récupère une fois et on filtre les
+    # départements en local (au lieu de re-télécharger la même page par dépt).
+    url = f"{SEARCH_URL}?display=liste&order=asc&sort=date"
+    try:
+        html = client.get(url)
+    except Exception as exc:
+        LOGGER.error("Avoventes list fetch failed: %s", exc)
+        errors.append(f"list: {exc}")
+        html = None
+    if html:
+        for sale in parse_avoventes_html(html, page_url=url, fallback_department=None):
             postal_code = sale.get("postal_code")
             if not postal_code or str(postal_code)[:2] not in AQUITAINE_DEPARTMENTS:
                 continue
