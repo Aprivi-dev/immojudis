@@ -70,6 +70,18 @@ jobs:
           cache: pip
           cache-dependency-path: services/data-pipeline/requirements.txt
 
+      - name: Restore pipeline extraction cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            services/data-pipeline/data/documents
+            services/data-pipeline/data/raw/pdf_texts
+            services/data-pipeline/data/raw/docling_texts
+            services/data-pipeline/data/processed/llm_extractions
+          key: immojudis-data-pipeline-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            immojudis-data-pipeline-${{ runner.os }}-
+
       - name: Install OCR system packages
         run: |
           sudo apt-get update

@@ -151,6 +151,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                 sale_llm_stats = enrich_sale_with_llm(sale, client=llm_client)
                 timings["llm_seconds"] = round(timings.get("llm_seconds", 0.0) + time.perf_counter() - started, 2)
                 _add_llm_stats(llm_stats, sale_llm_stats)
+                if sale_llm_stats.error_messages:
+                    source_name = str(sale.source_name or sale.primary_source or "unknown")
+                    errors.setdefault(source_name, []).extend(sale_llm_stats.error_messages)
             started = time.perf_counter()
             geocode_sale(sale)
             timings["geocode_seconds"] = round(timings.get("geocode_seconds", 0.0) + time.perf_counter() - started, 2)
@@ -230,6 +233,7 @@ def _add_llm_stats(total: LLMEnrichmentStats, item: LLMEnrichmentStats) -> None:
     total.occupancy_extracted += item.occupancy_extracted
     total.occupancy_detected += item.occupancy_detected
     total.risks_detected += item.risks_detected
+    total.error_messages.extend(item.error_messages)
     total.unavailable = total.unavailable or item.unavailable
 
 
