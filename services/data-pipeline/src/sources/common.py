@@ -128,6 +128,36 @@ class PoliteHttpClient:
         return response
 
 
+def listing_signature(sale: dict[str, Any]) -> str | None:
+    """Change-signature of a scraped list item (date + price), or None when the
+    list page does not yet expose both (then we must fetch the detail page)."""
+    from src.normalize import extract_starting_price, make_sale_signature, parse_french_datetime
+
+    sale_date = parse_french_datetime(sale.get("sale_date"))
+    price = extract_starting_price(sale)
+    if sale_date is None and price is None:
+        return None
+    date_part = sale_date.date().isoformat() if sale_date else None
+    return make_sale_signature(date_part, price)
+
+
+def should_fetch_detail(sale: dict[str, Any], known: dict[str, str] | None) -> bool:
+    """Incremental scraping: skip the detail page of a listing already enriched
+    in DB whose list-page price/date are unchanged. Marks the sale so the
+    pipeline can drop it before normalization/enrichment. Sources that only
+    expose price/date on the detail page (no list signature) always fetch."""
+    if not known:
+        return True
+    source_url = str(sale.get("source_url") or "")
+    if not source_url or source_url not in known:
+        return True
+    signature = listing_signature(sale)
+    if signature is not None and signature == known[source_url]:
+        sale["_known_unchanged"] = True
+        return False
+    return True
+
+
 def unique_dicts(items: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     seen: set[str] = set()
     unique: list[dict[str, Any]] = []

@@ -31,7 +31,9 @@ from src.storage.supabase_client import mark_past_sales_in_supabase
 from src.storage.supabase_client import create_run_in_supabase, finish_run_in_supabase
 from src.storage.supabase_client import (
     fetch_enriched_content_hashes,
+    fetch_known_sale_signatures,
     touch_last_seen_for_content_hashes,
+    touch_last_seen_for_source_urls,
 )
 from src.models import AuctionSale
 from src.tribunal import fill_tribunal
@@ -63,11 +65,17 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     raw_by_source = {source: 0 for source in SOURCE_NAMES}
     timings: dict[str, float] = {}
 
+    # Signatures des annonces déjà enrichies (source_url → date|prix) : permet
+    # aux scrapers de sauter la page détail des annonces déjà vues et inchangées.
+    known_signatures: dict[str, str] = (
+        fetch_known_sale_signatures() if (settings["incremental_enrichment"] and options.upsert) else {}
+    )
+
     # ── Scraping des sources en parallèle ────────────────────────────────────
     # Chaque source est indépendante (domaine + client HTTP + délai propres), donc
     # on les lance en threads : le temps total ≈ la source la plus lente au lieu
     # de la somme. Indispensable avant de passer à toute la France.
-    scrapers = _enabled_scrapers(options.source, settings)
+    scrapers = _enabled_scrapers(options.source, settings, known_signatures)
     scrape_overall_started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, len(scrapers))) as executor:
         futures = {executor.submit(_timed_scrape, name, fn): name for name, fn in scrapers.items()}
@@ -84,6 +92,18 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             raw_by_source[name] = len(result.sales)
             raw_sales.extend(result.sales)
     timings["scrape_total_seconds"] = round(time.perf_counter() - scrape_overall_started, 2)
+
+    # Annonces dont la page détail a été sautée (connues et inchangées) : on ne
+    # les normalise/enrichit pas, on rafraîchit juste leur last_seen_at.
+    skipped_detail_urls = [
+        str(s.get("source_url"))
+        for s in raw_sales
+        if s.get("_known_unchanged") and s.get("source_url")
+    ]
+    skipped_detail = len(skipped_detail_urls)
+    if skipped_detail_urls:
+        touch_last_seen_for_source_urls(skipped_detail_urls)
+    raw_sales = [s for s in raw_sales if not s.get("_known_unchanged")]
 
     if options.limit is not None:
         raw_sales = raw_sales[: options.limit]
@@ -211,6 +231,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         "collected_by_source": raw_by_source,
         "normalized": len(normalized_observations),
         "deduplicated": len(canonical_sales),
+        "skipped_detail": skipped_detail,
         "skipped_unchanged": skipped_unchanged,
         "enriched": len(enriched),
         "quality_report": quality_report,
@@ -242,6 +263,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print(f"- collected_by_source: {raw_by_source}")
     print(f"- normalized: {len(normalized_observations)}")
     print(f"- deduplicated: {len(canonical_sales)}")
+    print(f"- skipped_detail: {skipped_detail}")
     print(f"- skipped_unchanged: {skipped_unchanged}")
     print(f"- enriched: {len(enriched)}")
     print(f"- upserted: {upserted}")
@@ -258,11 +280,16 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     return 0
 
 
-def _enabled_scrapers(source: str, settings: dict[str, object]) -> dict[str, "Callable[[], ScrapeResult]"]:
+def _enabled_scrapers(
+    source: str, settings: dict[str, object], known: dict[str, str]
+) -> dict[str, "Callable[[], ScrapeResult]"]:
     """Map of enabled source name → zero-arg scraper callable, honouring the
-    requested source and the per-source benchmark toggles."""
+    requested source and the per-source benchmark toggles. `known` (source_url →
+    change-signature) lets list-based scrapers skip detail pages of unchanged
+    listings; licitor exposes price/date only on detail pages, so it always
+    fetches."""
     candidates: list[tuple[str, bool, "Callable[[], ScrapeResult]"]] = [
-        ("avoventes", True, lambda: scrape_avoventes_aquitaine_result()),
+        ("avoventes", True, lambda: scrape_avoventes_aquitaine_result(known=known)),
         (
             "licitor",
             bool(settings["enable_licitor_benchmark"]),
@@ -271,20 +298,22 @@ def _enabled_scrapers(source: str, settings: dict[str, object]) -> dict[str, "Ca
         (
             "vench",
             bool(settings["enable_vench_benchmark"]),
-            lambda: scrape_vench_aquitaine_result(max_pages=int(settings["vench_max_pages"])),
+            lambda: scrape_vench_aquitaine_result(
+                max_pages=int(settings["vench_max_pages"]), known=known
+            ),
         ),
         (
             "info_encheres",
             bool(settings["enable_info_encheres_benchmark"]),
             lambda: scrape_info_encheres_aquitaine_result(
-                max_pages=int(settings["info_encheres_max_pages"])
+                max_pages=int(settings["info_encheres_max_pages"]), known=known
             ),
         ),
         (
             "encheres_publiques",
             bool(settings["enable_encheres_publiques_benchmark"]),
             lambda: scrape_encheres_publiques_aquitaine_result(
-                max_pages=int(settings["encheres_publiques_max_pages"])
+                max_pages=int(settings["encheres_publiques_max_pages"]), known=known
             ),
         ),
     ]

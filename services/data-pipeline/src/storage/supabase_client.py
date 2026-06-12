@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 from pathlib import Path
@@ -20,6 +20,7 @@ from src.asset_normalization import (
 )
 from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
 from src.models import AuctionSale
+from src.normalize import make_sale_signature
 from src.pdf_enrichment import classify_document_type, sale_storage_id
 
 
@@ -400,6 +401,83 @@ def fetch_enriched_content_hashes(content_hashes: list[str]) -> set[str]:
         except httpx.HTTPError as exc:
             LOGGER.warning("Enriched-hash lookup failed: %s", exc)
     return found
+
+
+def fetch_known_sale_signatures() -> dict[str, str]:
+    """Map source_url → change-signature for already-enriched, still-active
+    listings. Lets the scrapers skip the detail page of listings already seen
+    whose price/date are unchanged. Bounded to upcoming auctions to stay small
+    at national scale."""
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return {}
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
+    signatures: dict[str, str] = {}
+    offset = 0
+    while True:
+        try:
+            response = httpx.get(
+                endpoint,
+                params={
+                    "select": "source_url,sale_date,starting_price_eur",
+                    "score_version": "not.is.null",
+                    "sale_date": f"gte.{cutoff}",
+                    "limit": "1000",
+                    "offset": str(offset),
+                },
+                headers=_rest_headers(str(key), prefer="count=none"),
+                timeout=30,
+            )
+            if response.is_error:
+                LOGGER.warning("Could not fetch known signatures: %s", response.text[:200])
+                break
+            rows = response.json()
+        except httpx.HTTPError as exc:
+            LOGGER.warning("Known-signature lookup failed: %s", exc)
+            break
+        for row in rows:
+            source_url = row.get("source_url")
+            if source_url:
+                signatures[str(source_url)] = make_sale_signature(
+                    row.get("sale_date"), row.get("starting_price_eur")
+                )
+        if len(rows) < 1000:
+            break
+        offset += 1000
+    return signatures
+
+
+def touch_last_seen_for_source_urls(source_urls: list[str]) -> int:
+    """Refresh last_seen_at for listings whose detail fetch was skipped. Best effort."""
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    unique = [u for u in {u for u in source_urls if u}]
+    if not url or not key or not unique:
+        return 0
+
+    now = datetime.now(timezone.utc).isoformat()
+    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
+    touched = 0
+    for index in range(0, len(unique), 150):
+        batch = unique[index : index + 150]
+        try:
+            response = httpx.patch(
+                endpoint,
+                params={"source_url": _postgrest_in_filter(batch)},
+                headers=_rest_headers(str(key), prefer="return=minimal"),
+                json={"last_seen_at": now},
+                timeout=30,
+            )
+            if not response.is_error:
+                touched += len(batch)
+        except httpx.HTTPError as exc:
+            LOGGER.warning("last_seen touch (source_url) failed: %s", exc)
+    return touched
 
 
 def touch_last_seen_for_content_hashes(content_hashes: list[str]) -> int:

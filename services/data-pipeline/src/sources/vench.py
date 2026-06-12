@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup, Tag
 from src.config import AQUITAINE_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
-from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
 
 BASE_URL = "https://www.vench.fr"
@@ -35,7 +35,9 @@ def scrape_vench_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]
     return scrape_vench_aquitaine_result(max_pages=max_pages).sales
 
 
-def scrape_vench_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
+def scrape_vench_aquitaine_result(
+    max_pages: int | None = None, known: dict[str, str] | None = None
+) -> ScrapeResult:
     """Collect Vench listings for the target departments.
 
     Vench exposes the core listing data publicly, while some descriptions and
@@ -68,7 +70,8 @@ def scrape_vench_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
             errors.append(f"department {department}: {exc}")
             continue
         for sale in parse_vench_list_html(html, page_url=LIST_URL, fallback_department=department):
-            _enrich_sale_from_detail(client, sale, errors)
+            if should_fetch_detail(sale, known):
+                _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
 
     return ScrapeResult(validate_raw_sales("vench", unique_dicts(raw_sales, "source_url"), errors), errors)
