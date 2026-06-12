@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from src.config import AQUITAINE_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
-from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
 
 BASE_URL = "https://www.encheres-publiques.com"
@@ -65,7 +65,9 @@ def scrape_encheres_publiques_aquitaine(max_pages: int | None = None) -> list[di
     return scrape_encheres_publiques_aquitaine_result(max_pages=max_pages).sales
 
 
-def scrape_encheres_publiques_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
+def scrape_encheres_publiques_aquitaine_result(
+    max_pages: int | None = None, known: dict[str, str] | None = None
+) -> ScrapeResult:
     """Collect Encheres-Publiques.com public listing data for Aquitaine places.
 
     The site exposes structured Next/Apollo state on SEO pages. We consume only
@@ -93,7 +95,8 @@ def scrape_encheres_publiques_aquitaine_result(max_pages: int | None = None) -> 
             errors.append(f"{page_url}: {exc}")
             continue
         for sale in parse_encheres_publiques_html(html, page_url):
-            _enrich_sale_from_detail(client, sale, errors)
+            if should_fetch_detail(sale, known):
+                _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
     return ScrapeResult(
         validate_raw_sales("encheres_publiques", unique_dicts(raw_sales, "source_url"), errors),

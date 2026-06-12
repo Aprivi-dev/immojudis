@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from src.config import AQUITAINE_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
-from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
 
 BASE_URL = "https://www.info-encheres.com"
@@ -39,7 +39,9 @@ def scrape_info_encheres_aquitaine(max_pages: int | None = None) -> list[dict[st
     return scrape_info_encheres_aquitaine_result(max_pages=max_pages).sales
 
 
-def scrape_info_encheres_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
+def scrape_info_encheres_aquitaine_result(
+    max_pages: int | None = None, known: dict[str, str] | None = None
+) -> ScrapeResult:
     """Collect Info Encheres judicial real-estate listings for the target departments."""
     settings = load_settings()
     client = PoliteHttpClient(
@@ -62,7 +64,8 @@ def scrape_info_encheres_aquitaine_result(max_pages: int | None = None) -> Scrap
         for sale in parse_info_encheres_list_html(html, page_url=page_url):
             if sale.get("department") not in AQUITAINE_DEPARTMENTS:
                 continue
-            _enrich_sale_from_detail(client, sale, errors)
+            if should_fetch_detail(sale, known):
+                _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
     return ScrapeResult(
         validate_raw_sales("info_encheres", unique_dicts(raw_sales, "source_url"), errors),

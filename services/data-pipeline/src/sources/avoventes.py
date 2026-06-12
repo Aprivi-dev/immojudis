@@ -14,7 +14,7 @@ import httpx
 from src.config import AQUITAINE_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
-from src.sources.common import ScrapeResult
+from src.sources.common import ScrapeResult, should_fetch_detail
 
 
 BASE_URL = "https://avoventes.fr"
@@ -63,7 +63,7 @@ def scrape_avoventes_aquitaine() -> list[dict[str, Any]]:
     return scrape_avoventes_aquitaine_result().sales
 
 
-def scrape_avoventes_aquitaine_result() -> ScrapeResult:
+def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> ScrapeResult:
     settings = load_settings()
     client = AvoventesClient(
         user_agent=str(settings["user_agent"]),
@@ -90,7 +90,8 @@ def scrape_avoventes_aquitaine_result() -> ScrapeResult:
             if sale["source_url"] in seen_urls:
                 continue
             seen_urls.add(sale["source_url"])
-            _enrich_sale_from_detail(client, sale, errors)
+            if should_fetch_detail(sale, known):
+                _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
     return ScrapeResult(validate_raw_sales("avoventes", raw_sales, errors), errors)
 

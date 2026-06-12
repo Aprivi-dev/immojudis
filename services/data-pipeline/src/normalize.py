@@ -62,6 +62,18 @@ PROPERTY_TYPE_MAP = {
 VALID_STATUSES = {"upcoming", "past", "adjudicated", "unknown"}
 
 
+def make_sale_signature(sale_date: object, price: object) -> str:
+    """Stable change-signature for a listing: date (YYYY-MM-DD) + rounded price.
+    Used identically on the DB side and the scrape side to decide whether a
+    known listing is unchanged (so its detail page can be skipped)."""
+    date_part = str(sale_date)[:10] if sale_date else ""
+    try:
+        price_part = str(int(round(float(price)))) if price not in (None, "") else ""
+    except (TypeError, ValueError):
+        price_part = ""
+    return f"{date_part}|{price_part}"
+
+
 def strip_accents(value: str) -> str:
     return "".join(
         char for char in unicodedata.normalize("NFKD", value) if not unicodedata.combining(char)
