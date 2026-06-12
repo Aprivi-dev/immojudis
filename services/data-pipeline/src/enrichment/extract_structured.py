@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -252,6 +252,7 @@ class LLMEnrichmentStats:
     occupancy_detected: int = 0
     risks_detected: int = 0
     unavailable: bool = False
+    error_messages: list[str] = field(default_factory=list)
 
 
 def enrich_sale_with_llm(
@@ -294,6 +295,7 @@ def enrich_sale_with_llm(
     except Exception as exc:
         LOGGER.warning("LLM extraction failed for %s: %s", sale.source_url, exc)
         stats.errors += 1
+        stats.error_messages.append(_llm_error_message(sale, exc))
         return stats
 
     stats.valid_json += 1
@@ -535,6 +537,13 @@ def _llm_cache_key(context: str, model: str, prompt_version: str = "auction_llm_
     digest.update(b"\0")
     digest.update(context.encode("utf-8"))
     return digest.hexdigest()
+
+
+def _llm_error_message(sale: AuctionSale, exc: Exception) -> str:
+    source = sale.source_name or sale.primary_source or "unknown"
+    title = clean_text(sale.title) or "annonce sans titre"
+    detail = clean_text(str(exc)) or exc.__class__.__name__
+    return f"LLM extraction failed [{source}] {sale.source_url} — {title}: {detail[:500]}"
 
 
 def _legacy_llm_cache_key(context: str, model: str) -> str:

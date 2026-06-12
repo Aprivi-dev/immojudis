@@ -80,6 +80,11 @@ class CorroboratedLowConfidenceCountsClient(FakeReplicateClient):
         return payload
 
 
+class FailingReplicateClient(FakeReplicateClient):
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        raise ValueError("Replicate returned invalid JSON after retry")
+
+
 def test_parse_json_response_handles_markdown_fence() -> None:
     parsed = parse_json_response('```json\n{"surface_m2": 80}\n```')
     assert parsed == {"surface_m2": 80}
@@ -303,6 +308,31 @@ def test_enrich_sale_with_llm_rejects_bedrooms_greater_than_rooms(tmp_path, monk
 
     assert sale.rooms_count == 2
     assert sale.bedrooms_count is None
+
+
+def test_enrich_sale_with_llm_records_failure_context(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm-failure",
+            "title": "Maison avec documents",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV", "text": "Texte suffisant pour déclencher le LLM."}]),
+        encoding="utf-8",
+    )
+
+    stats = enrich_sale_with_llm(sale, client=FailingReplicateClient(), output_dir=tmp_path / "out")
+
+    assert stats.errors == 1
+    assert stats.error_messages
+    assert "https://avoventes.fr/enchere/llm-failure" in stats.error_messages[0]
+    assert "invalid JSON" in stats.error_messages[0]
 
 
 def test_build_reduced_pdf_context_keeps_priority_headers_and_keyword_windows() -> None:
