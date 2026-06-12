@@ -3,13 +3,10 @@ import { useEffect } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
-import Calendar from "lucide-react/dist/esm/icons/calendar.js";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
-import Home from "lucide-react/dist/esm/icons/home.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import Ruler from "lucide-react/dist/esm/icons/ruler.js";
 import { getSaleById } from "@/lib/queries";
 import {
   formatPrice,
@@ -17,15 +14,13 @@ import {
   formatDateTime,
   formatSurface,
   documentTypeLabel,
-  occupancyLabel,
   propertyTypeLabel,
   saleStatusLabel,
-  surfaceSourceLabel,
 } from "@/lib/format";
-import { FeatureBadges } from "@/components/FeatureBadges";
 import { DocumentsList } from "@/components/DocumentsList";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
+import { PropertyOverview } from "@/components/PropertyOverview";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleContextMap } from "@/components/SaleContextMap";
 import { MapThumbnail } from "@/components/MapThumbnail";
@@ -66,12 +61,13 @@ function SaleDetailPage() {
   return <SaleDetailView sale={sale} />;
 }
 
-// Anchors follow the decision reading order: bid ceiling → evidence → asset → market → documents.
+// Anchors follow the reading order: what we know → bid ceiling → conditions →
+// territory → documents.
 const SECTION_NAV = [
+  { id: "bien", label: "Le bien" },
   { id: "assistant", label: "Mise plafond" },
   { id: "preuves", label: "Conditions" },
-  { id: "bien", label: "Le bien" },
-  { id: "territoire", label: "Marché local" },
+  { id: "territoire", label: "Territoire" },
   { id: "documents", label: "Documents" },
 ] as const;
 
@@ -84,16 +80,6 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
   const location = saleLocation(sale.address, sale.postal_code, sale.city);
   const referenceLabel = sale.title ?? propertyTypeLabel(sale.property_type);
   const statusLabel = saleStatusLabel(sale.status);
-  const surfaceSource = surfaceSourceLabel(sale.surface_source);
-  const propertyType = sale.property_type?.toLowerCase() ?? "";
-  const showLandSurface =
-    sale.land_surface_m2 != null &&
-    (propertyType.includes("land") ||
-      propertyType.includes("terrain") ||
-      propertyType.includes("house") ||
-      propertyType.includes("maison") ||
-      propertyType.includes("building") ||
-      propertyType.includes("immeuble"));
 
   return (
     <main className="liquid-page bg-background pb-24">
@@ -191,38 +177,41 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-x-12 gap-y-10 px-4 pt-12 sm:px-6 lg:grid-cols-[1fr_360px]">
         {/* Colonne principale — mise plafond d'abord */}
         <div className="space-y-14">
-          {/* 1. Assistant de mise plafond */}
+          {/* 1. Le bien — tout ce que nous savons */}
+          <Section id="bien" eyebrow="Le dossier" title="Ce que nous savons du bien">
+            {(sale.latitude != null && sale.longitude != null) || sale.source_url ? (
+              <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {sale.source_url && (
+                  <Frame>
+                    <SourceImage
+                      sourceUrl={sale.source_url}
+                      alt={referenceLabel}
+                      className="h-56 w-full sm:h-64"
+                    />
+                  </Frame>
+                )}
+                {sale.latitude != null && sale.longitude != null && (
+                  <Frame>
+                    <MapThumbnail
+                      lat={sale.latitude}
+                      lng={sale.longitude}
+                      zoom={16}
+                      className="h-56 w-full sm:h-64"
+                      alt={`Localisation ${sale.city ?? ""}`}
+                    />
+                  </Frame>
+                )}
+              </div>
+            ) : null}
+            <PropertyOverview sale={sale} />
+          </Section>
+
+          {/* 2. Assistant de mise plafond */}
           <Section id="assistant" eyebrow="Mise plafond" title="À combien enchérir au maximum ?">
             <BidCeilingAssistant sale={sale} />
           </Section>
 
-          {/* Vignettes : carte + image secondaire */}
-          {(sale.latitude != null && sale.longitude != null) || sale.source_url ? (
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {sale.source_url && (
-                <Frame>
-                  <SourceImage
-                    sourceUrl={sale.source_url}
-                    alt={referenceLabel}
-                    className="h-56 w-full sm:h-64"
-                  />
-                </Frame>
-              )}
-              {sale.latitude != null && sale.longitude != null && (
-                <Frame>
-                  <MapThumbnail
-                    lat={sale.latitude}
-                    lng={sale.longitude}
-                    zoom={16}
-                    className="h-56 w-full sm:h-64"
-                    alt={`Localisation ${sale.city ?? ""}`}
-                  />
-                </Frame>
-              )}
-            </section>
-          ) : null}
-
-          {/* 2. Preuves & conditions */}
+          {/* 3. Preuves & conditions */}
           <FoldableSection
             id="preuves"
             eyebrow="Sources"
@@ -231,57 +220,6 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
           >
             <EvidenceTrail sale={sale} />
           </FoldableSection>
-
-          {/* 3. Le bien */}
-          <Section id="bien" eyebrow="Le bien" title="Caractéristiques">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <Stat
-                icon={<Calendar className="h-3.5 w-3.5" />}
-                label="Date de vente"
-                value={formatDate(sale.sale_date)}
-              />
-              <Stat
-                icon={<Home className="h-3.5 w-3.5" />}
-                label="Type"
-                value={propertyTypeLabel(sale.property_type)}
-              />
-              <Stat
-                icon={<Ruler className="h-3.5 w-3.5" />}
-                label={`Surface${sale.app_surface_kind ? ` (${sale.app_surface_kind})` : ""}`}
-                value={formatSurface(sale.app_surface_m2 ?? sale.habitable_surface_m2)}
-              />
-              <Stat label="Surface Carrez" value={formatSurface(sale.carrez_surface_m2)} />
-              {showLandSurface && (
-                <Stat label="Terrain" value={formatSurface(sale.land_surface_m2)} />
-              )}
-              <Stat
-                label="Pièces"
-                value={sale.rooms_count != null ? String(sale.rooms_count) : "—"}
-              />
-              <Stat
-                label="Chambres"
-                value={sale.bedrooms_count != null ? String(sale.bedrooms_count) : "—"}
-              />
-              <Stat
-                label="Salles de bain"
-                value={sale.bathrooms_count != null ? String(sale.bathrooms_count) : "—"}
-              />
-              <Stat
-                label="Parkings"
-                value={sale.parking_count != null ? String(sale.parking_count) : "—"}
-              />
-              <Stat label="Occupation" value={occupancyLabel(sale.occupancy_status)} />
-            </div>
-            {sale.surface_confidence != null && (
-              <div className="mt-6 text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                Confiance surface · {Math.round(sale.surface_confidence * 100)}%
-                {surfaceSource ? ` · ${surfaceSource}` : ""}
-              </div>
-            )}
-            <div className="mt-6">
-              <FeatureBadges sale={sale} />
-            </div>
-          </Section>
 
           {/* 4. Territoire & marché */}
           <Section id="territoire" eyebrow="Marché local" title="Contexte géographique">
@@ -574,18 +512,6 @@ function FoldableSection({
 
 function Frame({ children }: { children: React.ReactNode }) {
   return <div className="liquid-media overflow-hidden rounded-lg">{children}</div>;
-}
-
-function Stat({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="liquid-panel-soft rounded-lg p-4">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-2 text-base font-medium tabular-nums text-foreground">{value}</div>
-    </div>
-  );
 }
 
 function Meta({ label, value }: { label: string; value: React.ReactNode }) {
