@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import logging
@@ -18,6 +19,7 @@ from src.normalize import normalize_sale
 from src.pdf_enrichment import PdfEnrichmentStats, enrich_sale_from_pdfs
 from src.config import load_settings
 from src.quality import build_quality_report, format_quality_report
+from src.sources.common import ScrapeResult
 from src.sources.encheres_publiques import scrape_encheres_publiques_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.info_encheres import scrape_info_encheres_aquitaine_result
@@ -61,58 +63,27 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     raw_by_source = {source: 0 for source in SOURCE_NAMES}
     timings: dict[str, float] = {}
 
-    if options.source in {"all", "avoventes"}:
-        started = time.perf_counter()
-        avoventes_result = scrape_avoventes_aquitaine_result()
-        timings["scrape_avoventes_seconds"] = round(time.perf_counter() - started, 2)
-        avoventes_sales = avoventes_result.sales
-        errors["avoventes"].extend(avoventes_result.errors)
-        raw_by_source["avoventes"] = len(avoventes_sales)
-        raw_sales.extend(avoventes_sales)
-
-    if options.source == "licitor" or (options.source == "all" and settings["enable_licitor_benchmark"]):
-        started = time.perf_counter()
-        licitor_result = scrape_licitor_aquitaine_result(max_pages=int(settings["licitor_max_pages"]))
-        timings["scrape_licitor_seconds"] = round(time.perf_counter() - started, 2)
-        licitor_sales = licitor_result.sales
-        errors["licitor"].extend(licitor_result.errors)
-        raw_by_source["licitor"] = len(licitor_sales)
-        raw_sales.extend(licitor_sales)
-
-    if options.source == "vench" or (options.source == "all" and settings["enable_vench_benchmark"]):
-        started = time.perf_counter()
-        vench_result = scrape_vench_aquitaine_result(max_pages=int(settings["vench_max_pages"]))
-        timings["scrape_vench_seconds"] = round(time.perf_counter() - started, 2)
-        vench_sales = vench_result.sales
-        errors["vench"].extend(vench_result.errors)
-        raw_by_source["vench"] = len(vench_sales)
-        raw_sales.extend(vench_sales)
-
-    if options.source == "info_encheres" or (
-        options.source == "all" and settings["enable_info_encheres_benchmark"]
-    ):
-        started = time.perf_counter()
-        info_encheres_result = scrape_info_encheres_aquitaine_result(
-            max_pages=int(settings["info_encheres_max_pages"])
-        )
-        timings["scrape_info_encheres_seconds"] = round(time.perf_counter() - started, 2)
-        info_encheres_sales = info_encheres_result.sales
-        errors["info_encheres"].extend(info_encheres_result.errors)
-        raw_by_source["info_encheres"] = len(info_encheres_sales)
-        raw_sales.extend(info_encheres_sales)
-
-    if options.source == "encheres_publiques" or (
-        options.source == "all" and settings["enable_encheres_publiques_benchmark"]
-    ):
-        started = time.perf_counter()
-        encheres_publiques_result = scrape_encheres_publiques_aquitaine_result(
-            max_pages=int(settings["encheres_publiques_max_pages"])
-        )
-        timings["scrape_encheres_publiques_seconds"] = round(time.perf_counter() - started, 2)
-        encheres_publiques_sales = encheres_publiques_result.sales
-        errors["encheres_publiques"].extend(encheres_publiques_result.errors)
-        raw_by_source["encheres_publiques"] = len(encheres_publiques_sales)
-        raw_sales.extend(encheres_publiques_sales)
+    # ── Scraping des sources en parallèle ────────────────────────────────────
+    # Chaque source est indépendante (domaine + client HTTP + délai propres), donc
+    # on les lance en threads : le temps total ≈ la source la plus lente au lieu
+    # de la somme. Indispensable avant de passer à toute la France.
+    scrapers = _enabled_scrapers(options.source, settings)
+    scrape_overall_started = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=max(1, len(scrapers))) as executor:
+        futures = {executor.submit(_timed_scrape, name, fn): name for name, fn in scrapers.items()}
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                result, seconds = future.result()
+            except Exception as exc:
+                LOGGER.exception("Scraper %s failed: %s", name, exc)
+                errors.setdefault(name, []).append(str(exc))
+                continue
+            timings[f"scrape_{name}_seconds"] = seconds
+            errors.setdefault(name, []).extend(result.errors)
+            raw_by_source[name] = len(result.sales)
+            raw_sales.extend(result.sales)
+    timings["scrape_total_seconds"] = round(time.perf_counter() - scrape_overall_started, 2)
 
     if options.limit is not None:
         raw_sales = raw_sales[: options.limit]
@@ -285,6 +256,49 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
     return 0
+
+
+def _enabled_scrapers(source: str, settings: dict[str, object]) -> dict[str, "Callable[[], ScrapeResult]"]:
+    """Map of enabled source name → zero-arg scraper callable, honouring the
+    requested source and the per-source benchmark toggles."""
+    candidates: list[tuple[str, bool, "Callable[[], ScrapeResult]"]] = [
+        ("avoventes", True, lambda: scrape_avoventes_aquitaine_result()),
+        (
+            "licitor",
+            bool(settings["enable_licitor_benchmark"]),
+            lambda: scrape_licitor_aquitaine_result(max_pages=int(settings["licitor_max_pages"])),
+        ),
+        (
+            "vench",
+            bool(settings["enable_vench_benchmark"]),
+            lambda: scrape_vench_aquitaine_result(max_pages=int(settings["vench_max_pages"])),
+        ),
+        (
+            "info_encheres",
+            bool(settings["enable_info_encheres_benchmark"]),
+            lambda: scrape_info_encheres_aquitaine_result(
+                max_pages=int(settings["info_encheres_max_pages"])
+            ),
+        ),
+        (
+            "encheres_publiques",
+            bool(settings["enable_encheres_publiques_benchmark"]),
+            lambda: scrape_encheres_publiques_aquitaine_result(
+                max_pages=int(settings["encheres_publiques_max_pages"])
+            ),
+        ),
+    ]
+    enabled: dict[str, "Callable[[], ScrapeResult]"] = {}
+    for name, benchmark_on, fn in candidates:
+        if source == name or (source == "all" and benchmark_on):
+            enabled[name] = fn
+    return enabled
+
+
+def _timed_scrape(name: str, fn: "Callable[[], ScrapeResult]") -> tuple[ScrapeResult, float]:
+    started = time.perf_counter()
+    result = fn()
+    return result, round(time.perf_counter() - started, 2)
 
 
 def _merge_pdf_stats(total: PdfEnrichmentStats, item: PdfEnrichmentStats) -> None:
