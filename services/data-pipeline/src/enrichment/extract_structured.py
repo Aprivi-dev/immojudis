@@ -720,18 +720,35 @@ def _document_page_sections(item: dict[str, Any], *, first_page_chars: int, prio
 
 def _keyword_windows(text: str, window_chars: int) -> list[str]:
     lowered = text.lower()
-    windows: list[str] = []
+    half = window_chars // 2
+
+    # Collect a [left, right] span around each keyword hit.
+    spans: list[tuple[int, int]] = []
     for keyword in LLM_CONTEXT_KEYWORDS:
         start = 0
         while True:
             index = lowered.find(keyword, start)
             if index == -1:
                 break
-            left = max(0, index - window_chars // 2)
-            right = min(len(text), index + window_chars // 2)
-            windows.append(text[left:right].strip())
+            spans.append((max(0, index - half), min(len(text), index + half)))
             start = index + len(keyword)
-    return windows
+
+    if not spans:
+        return []
+
+    # Merge overlapping/adjacent spans so the same characters are not emitted
+    # several times (dense legal PDFs produce heavily overlapping windows). This
+    # keeps exactly the union of the previous windows — no information dropped,
+    # only duplicated overlap removed.
+    spans.sort()
+    merged: list[list[int]] = [list(spans[0])]
+    for left, right in spans[1:]:
+        if left <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], right)
+        else:
+            merged.append([left, right])
+
+    return [text[left:right].strip() for left, right in merged]
 
 
 def _join_unique_sections(sections: list[str], max_chars: int) -> str | None:
