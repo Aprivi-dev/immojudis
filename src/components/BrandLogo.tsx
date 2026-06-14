@@ -1,4 +1,3 @@
-import { useId } from "react";
 import { cn } from "@/lib/utils";
 
 type BrandLogoProps = {
@@ -37,56 +36,57 @@ export function BrandLogo({
 }
 
 export function BrandMark({ className }: { className?: string }) {
-  const gradientId = `ijMarkBg-${useId().replaceAll(":", "")}`;
-
   return (
     <svg
       viewBox="0 0 64 64"
       role="img"
       aria-label="Immojudis"
-      className={cn("text-gold", className)}
+      className={cn("text-foreground", className)}
       fill="none"
+      xmlns="http://www.w3.org/2000/svg"
     >
-      <rect
-        x="7"
-        y="7"
-        width="50"
-        height="50"
-        rx="16"
-        fill={`url(#${gradientId})`}
-        stroke="currentColor"
-        strokeOpacity="0.42"
-      />
-      <path d="M19 44V20" stroke="currentColor" strokeWidth="5" strokeLinecap="round" />
-      <path
-        d="M31 20h13v16c0 6.1-4.3 10-10.2 10-3.4 0-6.6-1.4-8.8-4"
-        stroke="currentColor"
-        strokeWidth="5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M49 15l-4.2 4.2M53 26h-6M49 49l-4.2-4.2"
-        stroke="#F8E5C9"
-        strokeWidth="2"
-        strokeLinecap="round"
-        opacity="0.76"
-      />
-      <circle cx="19" cy="14" r="2.2" fill="#F8E5C9" opacity="0.9" />
-      <defs>
-        <linearGradient
-          id={gradientId}
-          x1="10"
-          y1="9"
-          x2="56"
-          y2="58"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor="#1B1712" />
-          <stop offset="0.48" stopColor="#09090B" />
-          <stop offset="1" stopColor="#241A0D" />
-        </linearGradient>
-      </defs>
+      {/* Maison + bouclier : contour adaptatif (currentColor) lisible sur tout fond. */}
+      <g stroke="currentColor" strokeWidth={4.2} strokeLinecap="round" strokeLinejoin="round">
+        {/* Toit */}
+        <path d="M11.5 26.5 L32 10.5 L52.5 26.5" />
+        {/* Cheminée */}
+        <path d="M46 21.4 L46 13.5" />
+        {/* Flanc gauche du bouclier */}
+        <path d="M16 30 V40 C16 49 22 54.2 32 56" />
+        {/* Flanc droit du bouclier */}
+        <path d="M48 30 V40 C48 49 42 54.2 32 56" />
+      </g>
+
+      {/* Marteau de justice : accent doré, point focal de la marque.
+          Légèrement réduit pour respirer dans la maison. */}
+      <g transform="translate(33 28) scale(0.93) translate(-33 -28)">
+        {/* Manche ↙ (part vers le bas-gauche) — dessiné en premier, sous la tête. */}
+        <g transform="rotate(34 33 27)">
+          <rect x="30.5" y="27" width="5" height="23" rx="2.5" fill="var(--gold)" />
+        </g>
+        {/* Tête ↗ (haut-droite) + anneaux */}
+        <g transform="rotate(-34 33 27)">
+          <rect x="21.5" y="21.5" width="23" height="11" rx="5.5" fill="var(--gold)" />
+          <line
+            x1="26"
+            y1="20.5"
+            x2="26"
+            y2="33.5"
+            stroke="var(--background)"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+          <line
+            x1="40"
+            y1="20.5"
+            x2="40"
+            y2="33.5"
+            stroke="var(--background)"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </g>
+      </g>
     </svg>
   );
 }
