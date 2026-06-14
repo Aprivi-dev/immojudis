@@ -35,3 +35,6 @@ dist-ssr
 !.env.example
 .vercel
 .env*
+
+# Claude Code local config (agents, preview launch config, settings)
+.claude/
