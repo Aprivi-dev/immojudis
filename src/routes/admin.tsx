@@ -12,9 +12,13 @@ import Play from "lucide-react/dist/esm/icons/play.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import ScrollText from "lucide-react/dist/esm/icons/scroll-text.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import type * as React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
+import { supabase } from "@/integrations/supabase/client";
+import type { Json, Tables } from "@/integrations/supabase/types";
 import {
   getAdminDashboard,
   startAdminScroll,
@@ -25,6 +29,19 @@ import {
 } from "@/lib/admin.functions";
 
 type RunnerMode = AdminDashboardData["runner"]["mode"];
+type PublicationRequest = Tables<"listing_publication_requests">;
+type PublicationRequestStatus = PublicationRequest["status"];
+
+type UploadedPublicationDocument = {
+  bucket?: string;
+  path?: string;
+  name?: string;
+  size?: number;
+  mime_type?: string;
+  uploaded_at?: string;
+};
+
+const PUBLICATION_DOCUMENT_BUCKET = "listing-request-documents";
 
 const SOURCE_OPTIONS: Array<{ value: AdminScrollSource; label: string }> = [
   { value: "all", label: "Toutes les sources" },
@@ -49,6 +66,7 @@ export const Route = createFileRoute("/admin")({
 });
 
 function AdminDashboardPage() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const fetchDashboard = useServerFn(getAdminDashboard) as () => Promise<AdminDashboardData>;
   const requestScroll = useServerFn(startAdminScroll) as (args: {
@@ -63,6 +81,25 @@ function AdminDashboardPage() {
     staleTime: 30_000,
   });
 
+  const {
+    data: publicationRequests = [],
+    isLoading: publicationRequestsLoading,
+    error: publicationRequestsError,
+  } = useQuery({
+    queryKey: ["admin-publication-requests"],
+    queryFn: async () => {
+      const { data: requests, error: requestsError } = await supabase
+        .from("listing_publication_requests")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(30);
+
+      if (requestsError) throw requestsError;
+      return (requests ?? []) as PublicationRequest[];
+    },
+    staleTime: 30_000,
+  });
+
   const startMutation = useMutation({
     mutationFn: () => requestScroll({ data: { source, useLlm } }),
     onSuccess: async (result) => {
@@ -71,6 +108,34 @@ function AdminDashboardPage() {
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : "Impossible de lancer le scroll");
+    },
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: async ({
+      id,
+      status,
+    }: {
+      id: string;
+      status: Extract<PublicationRequestStatus, "approved" | "rejected">;
+    }) => {
+      const { error: reviewError } = await supabase
+        .from("listing_publication_requests")
+        .update({
+          status,
+          reviewed_at: new Date().toISOString(),
+          reviewed_by: user?.id ?? null,
+        })
+        .eq("id", id);
+
+      if (reviewError) throw reviewError;
+    },
+    onSuccess: async (_, variables) => {
+      toast.success(variables.status === "approved" ? "Demande validée." : "Demande refusée.");
+      await queryClient.invalidateQueries({ queryKey: ["admin-publication-requests"] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Impossible de mettre à jour la demande");
     },
   });
 
@@ -201,15 +266,24 @@ function AdminDashboardPage() {
               ) : (
                 <>
                   <Play className="h-4 w-4" />
-                  Start scroll
+                  Lancer la collecte
                 </>
               )}
             </button>
 
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-              Le bouton crée une demande dans Supabase. Si le déclenchement immédiat n'est pas
-              configuré, le worker GitHub Actions planifié récupère automatiquement la file.
+              {data?.runner.mode === "github_actions"
+                ? "Le bouton crée le run dans Supabase puis déclenche immédiatement GitHub Actions."
+                : data?.runner.mode === "webhook"
+                  ? "Le bouton crée le run dans Supabase puis appelle le webhook de collecte."
+                  : "Le bouton crée le run dans Supabase. Sans token GitHub côté Vercel, la collecte démarre au prochain passage du worker planifié."}
             </p>
+            {data?.runner.mode === "queue_worker" ? (
+              <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-400/10 p-3 text-xs leading-relaxed text-amber-100">
+                Pour un lancement instantané, ajoute `GITHUB_SCROLL_TOKEN` dans les variables
+                Vercel production. Le cron GitHub Actions reste actif en secours.
+              </div>
+            ) : null}
           </div>
 
           <div className="liquid-panel rounded-lg p-5">
@@ -218,6 +292,51 @@ function AdminDashboardPage() {
               Dernier run
             </div>
             {latestRun ? <LatestRun run={latestRun} /> : <EmptyState label="Aucun run trouvé" />}
+          </div>
+        </section>
+
+        <section className="liquid-panel mt-6 rounded-lg p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+                <FileSearch className="h-4 w-4" />
+                Demandes de publication
+              </div>
+              <h2 className="mt-3 font-display text-2xl">File de validation pro</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                Les comptes professionnels peuvent transmettre une annonce et ses pièces. Rien ne
+                part en ligne tant qu'une demande n'est pas validée ici.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-muted-foreground">
+              {publicationRequests.filter((request) => request.status === "pending").length} en
+              attente
+            </span>
+          </div>
+
+          {publicationRequestsError ? (
+            <div className="mt-4 rounded-lg border border-red-300/20 bg-red-500/10 p-3 text-sm text-red-100">
+              {publicationRequestsError instanceof Error
+                ? publicationRequestsError.message
+                : "Erreur de chargement des demandes"}
+            </div>
+          ) : null}
+
+          <div className="mt-5 grid gap-3">
+            {publicationRequestsLoading ? (
+              <EmptyState label="Chargement des demandes de publication" />
+            ) : publicationRequests.length ? (
+              publicationRequests.map((request) => (
+                <PublicationRequestCard
+                  key={request.id}
+                  request={request}
+                  disabled={reviewMutation.isPending}
+                  onReview={(status) => reviewMutation.mutate({ id: request.id, status })}
+                />
+              ))
+            ) : (
+              <EmptyState label="Aucune demande de publication transmise pour le moment" />
+            )}
           </div>
         </section>
 
@@ -286,6 +405,114 @@ function AdminDashboardPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function PublicationRequestCard({
+  request,
+  disabled,
+  onReview,
+}: {
+  request: PublicationRequest;
+  disabled: boolean;
+  onReview: (status: Extract<PublicationRequestStatus, "approved" | "rejected">) => void;
+}) {
+  const documents = asUploadedDocuments(request.submitted_documents);
+
+  return (
+    <article className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+      <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <PublicationStatusPill status={request.status} />
+            <span className="text-xs text-muted-foreground">
+              {formatDateTime(request.created_at)}
+            </span>
+          </div>
+          <h3 className="mt-3 text-lg font-semibold text-foreground">{request.title}</h3>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <span>{request.location ?? "Localisation à préciser"}</span>
+            <span>{request.court ?? "Tribunal à préciser"}</span>
+            <span>{formatPrice(request.starting_price_eur)}</span>
+          </div>
+          <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+            {request.description ?? "Description non renseignée."}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {request.document_types.length ? (
+              request.document_types.slice(0, 4).map((type) => (
+                <span
+                  key={type}
+                  className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-muted-foreground"
+                >
+                  {type}
+                </span>
+              ))
+            ) : (
+              <span className="rounded-full border border-amber-300/20 bg-amber-400/10 px-2.5 py-1 text-xs text-amber-100">
+                Types de pièces à vérifier
+              </span>
+            )}
+          </div>
+          <div className="mt-3 text-xs text-muted-foreground">
+            Demandeur : {request.requester_email ?? "email inconnu"} · {documents.length} fichier
+            {documents.length > 1 ? "s" : ""} privé{documents.length > 1 ? "s" : ""}
+          </div>
+          {documents.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {documents.slice(0, 4).map((document) => (
+                <button
+                  key={document.path ?? document.name}
+                  type="button"
+                  onClick={() => void openPublicationDocument(document)}
+                  className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-gold transition hover:border-gold"
+                >
+                  {document.name ?? "Ouvrir la pièce"}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap gap-2 lg:justify-end">
+          <button
+            type="button"
+            disabled={disabled || request.status === "approved"}
+            onClick={() => onReview("approved")}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-200 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <CheckCircle className="h-3.5 w-3.5" />
+            Valider
+          </button>
+          <button
+            type="button"
+            disabled={disabled || request.status === "rejected"}
+            onClick={() => onReview("rejected")}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-100 transition hover:border-red-200 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            Refuser
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function PublicationStatusPill({ status }: { status: PublicationRequestStatus }) {
+  const label =
+    status === "approved" ? "Validée" : status === "rejected" ? "Refusée" : "En attente";
+  const tone =
+    status === "approved"
+      ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+      : status === "rejected"
+        ? "border-red-300/20 bg-red-500/10 text-red-100"
+        : "border-amber-300/20 bg-amber-400/10 text-amber-100";
+
+  return (
+    <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs ${tone}`}>
+      {label}
+    </span>
   );
 }
 
@@ -486,4 +713,39 @@ function errorCount(errors: Record<string, unknown>): number {
     }
   }
   return total;
+}
+
+async function openPublicationDocument(document: UploadedPublicationDocument) {
+  if (!document.path) {
+    toast.error("Chemin du document introuvable.");
+    return;
+  }
+
+  const { data, error } = await supabase.storage
+    .from(document.bucket ?? PUBLICATION_DOCUMENT_BUCKET)
+    .createSignedUrl(document.path, 60 * 5);
+
+  if (error || !data?.signedUrl) {
+    toast.error(error?.message ?? "Impossible d'ouvrir cette pièce.");
+    return;
+  }
+
+  window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+}
+
+function asUploadedDocuments(value: Json | null): UploadedPublicationDocument[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is UploadedPublicationDocument =>
+      item !== null && typeof item === "object" && !Array.isArray(item) && "path" in item,
+  );
+}
+
+function formatPrice(value: number | null): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "Mise à prix à préciser";
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(value);
 }

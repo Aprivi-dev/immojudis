@@ -362,6 +362,78 @@ export type Database = {
         };
         Relationships: [];
       };
+      listing_publication_requests: {
+        Row: {
+          admin_notes: string | null;
+          anonymize_documents: boolean;
+          cautions: string | null;
+          court: string | null;
+          created_at: string;
+          description: string | null;
+          document_types: string[];
+          hearing_date: string | null;
+          id: string;
+          location: string | null;
+          promotion_options: string[];
+          requester_email: string | null;
+          requester_id: string;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          starting_price_eur: number | null;
+          status: "pending" | "approved" | "rejected";
+          strengths: string | null;
+          submitted_documents: Json;
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          admin_notes?: string | null;
+          anonymize_documents?: boolean;
+          cautions?: string | null;
+          court?: string | null;
+          created_at?: string;
+          description?: string | null;
+          document_types?: string[];
+          hearing_date?: string | null;
+          id?: string;
+          location?: string | null;
+          promotion_options?: string[];
+          requester_email?: string | null;
+          requester_id: string;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          starting_price_eur?: number | null;
+          status?: "pending" | "approved" | "rejected";
+          strengths?: string | null;
+          submitted_documents?: Json;
+          title: string;
+          updated_at?: string;
+        };
+        Update: {
+          admin_notes?: string | null;
+          anonymize_documents?: boolean;
+          cautions?: string | null;
+          court?: string | null;
+          created_at?: string;
+          description?: string | null;
+          document_types?: string[];
+          hearing_date?: string | null;
+          id?: string;
+          location?: string | null;
+          promotion_options?: string[];
+          requester_email?: string | null;
+          requester_id?: string;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          starting_price_eur?: number | null;
+          status?: "pending" | "approved" | "rejected";
+          strengths?: string | null;
+          submitted_documents?: Json;
+          title?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       v_auction_sales_app: {

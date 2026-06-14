@@ -289,7 +289,7 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
     const runsQuery = admin
       .from<AuctionRunRow>("auction_runs")
       .select(RUN_COLUMNS)
-      .order("started_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false, nullsFirst: false })
       .limit(25);
 
     const [runsResult, sales, documents, extractions, riskOccurrences, scoreFactors, runsCount] =
@@ -345,6 +345,12 @@ export const startAdminScroll = createServerFn({ method: "POST" })
       requested_at: requestedAt,
       trigger: "admin_dashboard",
       runner_mode: mode,
+      runner_expectation:
+        mode === "github_actions"
+          ? "dispatch_immediate"
+          : mode === "webhook"
+            ? "webhook_immediate"
+            : "scheduled_github_actions_queue",
     };
 
     const inserted = await admin
@@ -353,7 +359,6 @@ export const startAdminScroll = createServerFn({ method: "POST" })
         status: "queued",
         source: data.source,
         use_llm: data.useLlm,
-        started_at: requestedAt,
         summary: initialSummary,
         errors: {},
       })
