@@ -170,7 +170,6 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
             client.table("auction_score_factors").insert(score_factors).execute()
         upsert_documents_to_supabase(sales)
         upsert_extractions_to_supabase(sales)
-        _try_upsert_app_read_model(str(url), str(key), sales, now)
     return len(payload)
 
 
@@ -596,81 +595,6 @@ def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[
         _postgrest_insert(supabase_url, api_key, "auction_score_factors", score_factors)
     upsert_documents_to_supabase(sales)
     upsert_extractions_to_supabase(sales)
-    _try_upsert_app_read_model(supabase_url, api_key, sales, now)
-
-
-def _try_upsert_app_read_model(
-    supabase_url: str,
-    api_key: str,
-    sales: list[AuctionSale],
-    now: str,
-) -> None:
-    rows = [_read_model_row_for_sale(sale, now) for sale in sales]
-    if not rows:
-        return
-    try:
-        _postgrest_upsert(
-            supabase_url,
-            api_key,
-            "auction_sales_app_read",
-            rows,
-            on_conflict="source_url",
-        )
-    except httpx.HTTPStatusError as exc:
-        LOGGER.warning("Read model upsert skipped or failed: %s", exc)
-
-
-def _read_model_row_for_sale(sale: AuctionSale, now: str) -> dict[str, object]:
-    analysis = sale.raw_payload.get("investment_analysis") if isinstance(sale.raw_payload, dict) else {}
-    asset_payload = sale.raw_payload.get("asset_normalization") if isinstance(sale.raw_payload, dict) else {}
-    risks = asset_payload.get("risks") if isinstance(asset_payload, dict) else []
-    raw_score_factors = sale.raw_payload.get("score_factors") if isinstance(sale.raw_payload, dict) else []
-    score_factors = sale.score_factors or raw_score_factors or []
-    documents_rich = [
-        {
-            "url": document.get("url"),
-            "label": document.get("label"),
-            "document_type": classify_document_type(str(document.get("label") or ""), str(document.get("url") or "")),
-        }
-        for document in sale.documents
-        if isinstance(document, dict) and document.get("url")
-    ]
-    quality_summary = {
-        "score_confidence": _decimal_float(sale.score_confidence),
-        "quality_flags": sale.quality_flags,
-        "documents_count": len(sale.documents or []),
-        "has_surface": sale.app_surface_m2 is not None,
-        "has_occupation": bool(sale.occupancy_status and sale.occupancy_status != "unknown"),
-        "readiness": (
-            analysis.get("confidence_gates", {}).get("readiness")
-            if isinstance(analysis, dict) and isinstance(analysis.get("confidence_gates"), dict)
-            else None
-        ),
-    }
-    return {
-        "id": sale.id,
-        "source_url": sale.source_url,
-        "title": sale.title,
-        "city": sale.city,
-        "department": sale.department,
-        "postal_code": sale.postal_code,
-        "property_type": sale.property_type,
-        "starting_price_eur": _decimal_float(sale.starting_price_eur),
-        "sale_date": sale.sale_date.isoformat() if hasattr(sale.sale_date, "isoformat") else sale.sale_date,
-        "latitude": _decimal_float(sale.latitude),
-        "longitude": _decimal_float(sale.longitude),
-        "occupancy_status": sale.occupancy_status,
-        "app_surface_m2": _decimal_float(sale.app_surface_m2),
-        "investment_score": _decimal_float(sale.investment_score),
-        "score_confidence": _decimal_float(sale.score_confidence),
-        "score_version": sale.score_version,
-        "deal_memo": analysis.get("deal_memo") if isinstance(analysis, dict) else {},
-        "quality_summary": quality_summary,
-        "risks": risks if isinstance(risks, list) else [],
-        "score_factors": score_factors if isinstance(score_factors, list) else [],
-        "documents_rich": documents_rich,
-        "updated_at": now,
-    }
 
 
 def _postgrest_upsert(
@@ -803,15 +727,6 @@ def _sanitize_postgrest_payload(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _sanitize_postgrest_payload(item) for key, item in value.items()}
     return value
-
-
-def _decimal_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _risk_occurrence_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
