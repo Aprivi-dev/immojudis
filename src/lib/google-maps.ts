@@ -66,3 +66,34 @@ export function googleMapsUrl(lat: number, lng: number, query?: string | null) {
   const encodedQuery = encodeURIComponent(query?.trim() || `${lat},${lng}`);
   return `https://www.google.com/maps/search/?api=1&query=${encodedQuery}`;
 }
+
+export function googleStaticMapUrl({
+  lat,
+  lng,
+  zoom = 16,
+  width = 640,
+  height = 360,
+  maptype = "hybrid",
+}: {
+  lat: number;
+  lng: number;
+  zoom?: number;
+  width?: number;
+  height?: number;
+  maptype?: "roadmap" | "satellite" | "terrain" | "hybrid";
+}) {
+  const apiKey = getGoogleMapsApiKey();
+  if (!apiKey) return "";
+
+  const params = new URLSearchParams({
+    center: `${lat},${lng}`,
+    key: apiKey,
+    maptype,
+    scale: "2",
+    size: `${Math.round(width)}x${Math.round(height)}`,
+    zoom: String(zoom),
+  });
+
+  params.append("markers", `color:0xf2c487|${lat},${lng}`);
+  return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+}

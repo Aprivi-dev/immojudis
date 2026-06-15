@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import { osmTileUrl, osmTileMarkerPct } from "@/lib/tiles";
+import { googleStaticMapUrl } from "@/lib/google-maps";
 
 type Props = {
   lat: number | null | undefined;
@@ -10,16 +11,18 @@ type Props = {
   alt?: string;
 };
 
-/**
- * Lightweight OSM single-tile thumbnail with an overlay pin.
- * No JS map, no API key — just an <img> + an absolutely positioned marker.
- */
 export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
-  const [errored, setErrored] = useState(false);
+  const googleUrl =
+    lat != null && lng != null
+      ? googleStaticMapUrl({ lat, lng, zoom, width: 640, height: 420, maptype: "hybrid" })
+      : "";
+  const [provider, setProvider] = useState<"google" | "osm" | "fallback">(
+    googleUrl ? "google" : "osm",
+  );
 
   useEffect(() => {
-    setErrored(false);
-  }, [lat, lng, zoom]);
+    setProvider(googleUrl ? "google" : "osm");
+  }, [googleUrl, lat, lng, zoom]);
 
   if (lat == null || lng == null) {
     return (
@@ -31,7 +34,7 @@ export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
     );
   }
 
-  if (errored) {
+  if (provider === "fallback") {
     return (
       <div
         className={`relative flex items-center justify-center overflow-hidden bg-[var(--surface)] ${className ?? ""}`}
@@ -61,7 +64,7 @@ export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
     );
   }
 
-  const url = osmTileUrl(lat, lng, zoom);
+  const url = provider === "google" ? googleUrl : osmTileUrl(lat, lng, zoom);
   const pos = osmTileMarkerPct(lat, lng, zoom);
   return (
     <div className={`relative overflow-hidden bg-muted ${className ?? ""}`}>
@@ -71,14 +74,16 @@ export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
         loading="lazy"
         decoding="async"
         referrerPolicy="strict-origin-when-cross-origin"
-        onError={() => setErrored(true)}
+        onError={() => setProvider(provider === "google" ? "osm" : "fallback")}
         className="h-full w-full object-cover"
       />
-      <span
-        aria-hidden
-        className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-red-500 shadow-md"
-        style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
-      />
+      {provider === "osm" && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-red-500 shadow-md"
+          style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
+        />
+      )}
     </div>
   );
 }

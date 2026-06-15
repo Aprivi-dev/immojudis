@@ -32,6 +32,7 @@ import {
   formatSurface,
   occupancyLabel,
 } from "@/lib/format";
+import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 
 type AssistantState = {
@@ -115,8 +116,8 @@ function signedMoney(value: number): string {
 }
 
 export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
-  const surface =
-    sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2 ?? null;
+  const surfaceInfo = getSaleSurface(sale);
+  const surface = surfaceInfo.value;
   const startingPrice = sale.starting_price_eur ?? 0;
   const fetchEstimate = useServerFn(getMarketEstimate);
 
@@ -312,10 +313,17 @@ export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
                 ))}
               </div>
               <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-                Fiabilité {reliability} · Surface {formatSurface(surface)}
+                Fiabilité {reliability} · Surface{" "}
+                {surfaceInfo.estimated ? surfaceInfo.label : formatSurface(surface)}
               </span>
             </div>
           </div>
+
+          {surfaceInfo.estimated && (
+            <p className="mt-4 rounded-lg border border-gold/20 bg-gold/[0.06] px-3 py-2 text-xs leading-relaxed text-gold-soft">
+              {surfaceInfo.helperText}
+            </p>
+          )}
 
           {/* Barre de fourchette : prudent ↔ offensif + position de la mise à prix */}
           {verdictAvailable && minBid != null && maxBid != null && (

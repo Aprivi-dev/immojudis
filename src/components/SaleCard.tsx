@@ -12,13 +12,15 @@ import {
   propertyTypeLabel,
 } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
+import { getSaleSurface } from "@/lib/surface";
 import { FeatureBadges } from "./FeatureBadges";
 import { SaleCountdown, isNew } from "./SaleCountdown";
 import { MapThumbnail } from "./MapThumbnail";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 
 export function SaleCard({ sale }: { sale: AuctionSale }) {
-  const surface = sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2;
+  const surfaceInfo = getSaleSurface(sale);
+  const surface = surfaceInfo.value;
   const riskCount = sale.risks?.length ?? 0;
   const fresh = isNew(sale.created_at);
   const ppm = pricePerM2(sale.starting_price_eur, surface);
@@ -89,7 +91,12 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
             </div>
           </div>
           <div className="grid min-w-24 gap-2 text-right text-xs text-muted-foreground">
-            <CardMetric label="Surface" value={surface ? formatSurface(surface) : "—"} />
+            <CardMetric
+              label={surfaceInfo.estimated ? "Surface estimée" : "Surface"}
+              value={
+                surfaceInfo.estimated ? surfaceInfo.label : surface ? formatSurface(surface) : "—"
+              }
+            />
             <CardMetric
               label="Pièces"
               value={sale.rooms_count != null ? String(sale.rooms_count) : "—"}

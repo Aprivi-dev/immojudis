@@ -58,6 +58,7 @@ declare global {
 
       class Map {
         constructor(mapDiv: HTMLElement, opts?: MapOptions);
+        fitBounds(bounds: LatLngBounds): void;
         getHeading(): number | undefined;
         setCenter(latLng: LatLngLiteral): void;
         setHeading(heading: number): void;
@@ -91,7 +92,29 @@ declare global {
 
       class Marker {
         constructor(opts?: MarkerOptions);
+        addListener(eventName: string, handler: () => void): MapsEventListener;
         setMap(map: Map | null): void;
+      }
+
+      class MapsEventListener {
+        remove(): void;
+      }
+
+      class LatLngBounds {
+        constructor();
+        extend(point: LatLngLiteral): LatLngBounds;
+      }
+
+      interface InfoWindowOptions {
+        content?: string | Node;
+        maxWidth?: number;
+      }
+
+      class InfoWindow {
+        constructor(opts?: InfoWindowOptions);
+        close(): void;
+        open(opts?: { anchor?: Marker; map?: Map | null; shouldFocus?: boolean }): void;
+        setContent(content: string | Node): void;
       }
 
       interface CircleOptions {
@@ -231,6 +254,7 @@ declare global {
 
         interface Map3DElementOptions {
           center?: LatLngAltitudeLiteral;
+          defaultUIHidden?: boolean;
           heading?: number;
           mode?: MapMode;
           range?: number;
@@ -248,6 +272,7 @@ declare global {
         class Map3DElement extends HTMLElement {
           constructor(options?: Map3DElementOptions);
           center: LatLngAltitudeLiteral | null;
+          defaultUIHidden: boolean | null;
           heading: number | null;
           mode: MapMode | null;
           range: number | null;

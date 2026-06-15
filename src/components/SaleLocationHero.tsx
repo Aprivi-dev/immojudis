@@ -102,11 +102,14 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
 
         const map3d = new Map3DElement({
           center: { lat, lng, altitude },
+          defaultUIHidden: true,
           range: AERIAL_RANGE_M,
           tilt: AERIAL_TILT_DEG,
           heading: 0,
           mode: MapMode.HYBRID,
         });
+        map3d.defaultUIHidden = true;
+        map3d.setAttribute("default-ui-hidden", "true");
         map3d.style.width = "100%";
         map3d.style.height = "100%";
         container.appendChild(map3d);
@@ -135,14 +138,14 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
             center,
             clickableIcons: false,
             disableDefaultUI: true,
-            fullscreenControl: true,
+            fullscreenControl: false,
             gestureHandling: "greedy",
             heading: 34,
             keyboardShortcuts: false,
             mapTypeId: "satellite",
             tilt: 45,
             zoom: 18,
-            zoomControl: true,
+            zoomControl: false,
           });
           markerRef.current = new g.maps.Marker({
             map: mapObjRef.current,
@@ -281,8 +284,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
         <MapPin className="h-6 w-6 text-gold" />
         <p className="mt-3 text-sm font-medium text-foreground">Localisation non cartographiée</p>
         <p className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
-          {address || "Adresse non communiquée"} — la vue aérienne et Street View ne sont pas
-          disponibles pour ce bien.
+          La vue aérienne et Street View ne sont pas disponibles pour ce bien.
         </p>
       </div>
     );
@@ -305,12 +307,6 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
           >
             {isRotating ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </button>
-        )}
-        {address && !mapError && (
-          <div className="absolute inset-x-3 bottom-3 z-0 flex max-w-[calc(100%-4rem)] items-center gap-2 rounded-lg border border-white/10 bg-background/70 px-3 py-2 text-xs text-foreground backdrop-blur">
-            <MapPin className="h-3.5 w-3.5 shrink-0 text-gold" />
-            <span className="truncate">{address}</span>
-          </div>
         )}
         {mapError && (
           <FallbackOverlay text="La vue aérienne n'a pas pu être chargée." link={mapsLink} />

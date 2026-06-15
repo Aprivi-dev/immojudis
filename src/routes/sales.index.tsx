@@ -19,6 +19,7 @@ import {
   pricePerM2,
   type GeoPoint,
 } from "@/lib/geo";
+import { getSaleSurface } from "@/lib/surface";
 
 const PAGE_SIZE = 16;
 
@@ -110,7 +111,7 @@ function SalesPage() {
 
   const filtered = useMemo(() => {
     return sales.filter((s) => {
-      const surface = s.app_surface_m2 ?? s.habitable_surface_m2 ?? s.carrez_surface_m2;
+      const surface = getSaleSurface(s).value;
       if (search.max_price_per_m2 != null) {
         const ppm = pricePerM2(s.starting_price_eur, surface);
         if (ppm == null || ppm > search.max_price_per_m2) return false;
