@@ -20,6 +20,12 @@ declare global {
         lng(): number;
       }
 
+      interface LatLngAltitudeLiteral {
+        lat: number;
+        lng: number;
+        altitude?: number;
+      }
+
       interface MapOptions {
         backgroundColor?: string;
         center?: LatLngLiteral;
@@ -182,6 +188,50 @@ declare global {
       namespace geometry {
         namespace spherical {
           function computeHeading(from: LatLngLike, to: LatLngLike): number;
+        }
+      }
+
+      function importLibrary(libraryName: "maps3d"): Promise<typeof maps3d>;
+
+      namespace maps3d {
+        enum MapMode {
+          HYBRID = "HYBRID",
+          SATELLITE = "SATELLITE",
+        }
+
+        interface Camera {
+          center?: LatLngAltitudeLiteral;
+          heading?: number;
+          range?: number;
+          roll?: number;
+          tilt?: number;
+        }
+
+        interface Map3DElementOptions {
+          center?: LatLngAltitudeLiteral;
+          heading?: number;
+          mode?: MapMode;
+          range?: number;
+          roll?: number;
+          tilt?: number;
+        }
+
+        interface FlyAroundAnimationOptions {
+          camera: Camera;
+          durationMillis?: number;
+          repeatCount?: number;
+          rounds?: number;
+        }
+
+        class Map3DElement extends HTMLElement {
+          constructor(options?: Map3DElementOptions);
+          center: LatLngAltitudeLiteral | null;
+          heading: number | null;
+          mode: MapMode | null;
+          range: number | null;
+          tilt: number | null;
+          flyCameraAround(options: FlyAroundAnimationOptions): void;
+          stopCameraAnimation(): void;
         }
       }
     }

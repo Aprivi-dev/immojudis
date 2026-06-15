@@ -10,6 +10,9 @@ import { propertyTypeLabel } from "@/lib/format";
 
 const STREET_VIEW_RADIUS_M = 90;
 const ORBIT_DEG_PER_S = 4.5;
+const AERIAL_RANGE_M = 380;
+const AERIAL_TILT_DEG = 67;
+const ORBIT_DURATION_MS = 60000;
 
 type StreetState = "idle" | "loading" | "ready" | "missing" | "error";
 
@@ -52,10 +55,12 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
   const [streetState, setStreetState] = useState<StreetState>("idle");
   const [isRotating, setIsRotating] = useState(!reducedMotion);
   const [isVisible, setIsVisible] = useState(true);
+  const [mode3d, setMode3d] = useState(false);
 
   const aerialRef = useRef<HTMLDivElement>(null);
   const streetRef = useRef<HTMLDivElement>(null);
   const mapObjRef = useRef<google.maps.Map | null>(null);
+  const map3dRef = useRef<google.maps.maps3d.Map3DElement | null>(null);
   const markerRef = useRef<google.maps.Marker | null>(null);
   const panoRef = useRef<google.maps.StreetViewPanorama | null>(null);
 
@@ -63,17 +68,41 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
     if (reducedMotion) setIsRotating(false);
   }, [reducedMotion]);
 
-  // Vue aérienne : satellite incliné + marqueur de l'adresse.
+  // Vue aérienne : Photorealistic 3D (Map3DElement) si disponible, sinon repli
+  // sur le satellite incliné. Aucune dépendance aux photos source.
   useEffect(() => {
     if (!hasMaps || lat == null || lng == null || !aerialRef.current) return;
     let cancelled = false;
+    const container = aerialRef.current;
 
-    loadGoogleMaps(apiKey)
-      .then((g) => {
-        if (cancelled || !aerialRef.current) return;
-        const center = { lat, lng };
-        if (!mapObjRef.current) {
-          mapObjRef.current = new g.maps.Map(aerialRef.current, {
+    void (async () => {
+      try {
+        const g = await loadGoogleMaps(apiKey);
+        if (cancelled || !container) return;
+        const { Map3DElement, MapMode } = await g.maps.importLibrary("maps3d");
+        if (cancelled || !container || map3dRef.current || mapObjRef.current) return;
+
+        const map3d = new Map3DElement({
+          center: { lat, lng, altitude: 0 },
+          range: AERIAL_RANGE_M,
+          tilt: AERIAL_TILT_DEG,
+          heading: 0,
+          mode: MapMode.HYBRID,
+        });
+        map3d.style.width = "100%";
+        map3d.style.height = "100%";
+        container.appendChild(map3d);
+        map3dRef.current = map3d;
+        setMode3d(true);
+        setMapReady(true);
+        setMapError(false);
+      } catch {
+        // Map Tiles API non activée / 3D indisponible → repli satellite incliné.
+        try {
+          const g = await loadGoogleMaps(apiKey);
+          if (cancelled || !container || mapObjRef.current) return;
+          const center = { lat, lng };
+          mapObjRef.current = new g.maps.Map(container, {
             backgroundColor: "#09090b",
             center,
             clickableIcons: false,
@@ -92,22 +121,55 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
             position: center,
             title,
           });
+          setMode3d(false);
+          setMapReady(true);
+          setMapError(false);
+        } catch {
+          if (!cancelled) setMapError(true);
         }
-        setMapReady(true);
-        setMapError(false);
-      })
-      .catch(() => {
-        if (!cancelled) setMapError(true);
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
+      map3dRef.current?.stopCameraAnimation();
+      map3dRef.current?.remove();
+      map3dRef.current = null;
+      mapObjRef.current = null;
     };
   }, [apiKey, hasMaps, lat, lng, title]);
 
-  // Orbite douce — en pause si reduced-motion, mis en pause ou hors écran.
+  // Orbite 3D (flyCameraAround) : boucle douce autour de l'adresse.
   useEffect(() => {
-    if (!mapReady || !mapObjRef.current || !isRotating || reducedMotion || !isVisible) return;
+    const map3d = map3dRef.current;
+    if (!mode3d || !map3d || lat == null || lng == null) return;
+    if (!isRotating || reducedMotion || !isVisible) {
+      map3d.stopCameraAnimation();
+      return;
+    }
+    const orbit = () =>
+      map3d.flyCameraAround({
+        camera: {
+          center: { lat, lng, altitude: 0 },
+          tilt: AERIAL_TILT_DEG,
+          range: AERIAL_RANGE_M,
+          heading: 0,
+        },
+        durationMillis: ORBIT_DURATION_MS,
+        repeatCount: 1,
+      });
+    orbit();
+    map3d.addEventListener("gmp-animationend", orbit);
+    return () => {
+      map3d.removeEventListener("gmp-animationend", orbit);
+      map3d.stopCameraAnimation();
+    };
+  }, [isRotating, isVisible, lat, lng, mode3d, reducedMotion]);
+
+  // Orbite de repli (satellite incliné) : rotation du heading via rAF.
+  useEffect(() => {
+    if (mode3d || !mapReady || !mapObjRef.current || !isRotating || reducedMotion || !isVisible)
+      return;
     let frame = 0;
     let previous = performance.now();
     const animate = (now: number) => {
@@ -119,7 +181,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
     };
     frame = window.requestAnimationFrame(animate);
     return () => window.cancelAnimationFrame(frame);
-  }, [isRotating, isVisible, mapReady, reducedMotion]);
+  }, [isRotating, isVisible, mapReady, mode3d, reducedMotion]);
 
   // Pause de l'orbite quand le hero sort du viewport (coût API + perf).
   useEffect(() => {
