@@ -6,14 +6,14 @@
 - TypeScript strict
 - Tailwind CSS v4 + shadcn/ui
 - Supabase JS (auth, queries, RLS)
-- Leaflet + OpenStreetMap (Mapbox compatible si token fourni)
+- Google Maps sur les pages détail (vue aérienne + Street View), Leaflet + OpenStreetMap en fallback
 
 ## 1. Installation locale
 
 ```bash
 npm install
 cp .env.example .env
-# Renseigner VITE_SUPABASE_URL et VITE_SUPABASE_PUBLISHABLE_KEY
+# Renseigner VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY et VITE_GOOGLE_MAPS_API_KEY si besoin
 npm run dev        # http://localhost:3000
 ```
 
@@ -23,6 +23,7 @@ npm run dev        # http://localhost:3000
 | ------------------------------- | ------ | ------------------------------------------------------------------------------------------------ |
 | `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)                                               |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)                                          |
+| `VITE_GOOGLE_MAPS_API_KEY`      | ❌     | Clé Google Maps restreinte par domaine. Active la vue aérienne/Street View sur les pages détail. |
 | `VITE_MAPBOX_TOKEN`             | ❌     | Optionnel. Non utilisé en V1 (Leaflet + OSM par défaut).                                         |
 | `GITHUB_SCROLL_TOKEN`           | ❌     | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`. |
 | `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                         |

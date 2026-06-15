@@ -1,0 +1,189 @@
+export {};
+
+declare global {
+  interface Window {
+    google?: typeof google;
+    __immojudisGoogleMapsInit?: () => void;
+  }
+
+  namespace google {
+    namespace maps {
+      type LatLngLike = LatLng | LatLngLiteral;
+
+      interface LatLngLiteral {
+        lat: number;
+        lng: number;
+      }
+
+      class LatLng {
+        lat(): number;
+        lng(): number;
+      }
+
+      interface MapOptions {
+        backgroundColor?: string;
+        center?: LatLngLiteral;
+        clickableIcons?: boolean;
+        disableDefaultUI?: boolean;
+        fullscreenControl?: boolean;
+        gestureHandling?: string;
+        heading?: number;
+        keyboardShortcuts?: boolean;
+        mapTypeControl?: boolean;
+        mapTypeId?: string;
+        minZoom?: number;
+        restriction?: {
+          latLngBounds: {
+            north: number;
+            south: number;
+            east: number;
+            west: number;
+          };
+          strictBounds?: boolean;
+        };
+        rotateControl?: boolean;
+        scaleControl?: boolean;
+        streetViewControl?: boolean;
+        styles?: Array<Record<string, unknown>>;
+        tilt?: number;
+        zoom?: number;
+        zoomControl?: boolean;
+      }
+
+      class Map {
+        constructor(mapDiv: HTMLElement, opts?: MapOptions);
+        getHeading(): number | undefined;
+        setCenter(latLng: LatLngLiteral): void;
+        setHeading(heading: number): void;
+        setTilt(tilt: number): void;
+        setZoom(zoom: number): void;
+      }
+
+      interface Icon {
+        anchor?: Point;
+        labelOrigin?: Point;
+        scaledSize?: Size;
+        url: string;
+      }
+
+      interface MarkerLabel {
+        color?: string;
+        fontSize?: string;
+        fontWeight?: string;
+        text: string;
+      }
+
+      interface MarkerOptions {
+        icon?: Icon | string;
+        label?: MarkerLabel | string;
+        map?: Map | null;
+        optimized?: boolean;
+        position?: LatLngLiteral;
+        title?: string;
+        zIndex?: number;
+      }
+
+      class Marker {
+        constructor(opts?: MarkerOptions);
+        setMap(map: Map | null): void;
+      }
+
+      interface CircleOptions {
+        center?: LatLngLiteral;
+        clickable?: boolean;
+        fillColor?: string;
+        fillOpacity?: number;
+        map?: Map | null;
+        radius?: number;
+        strokeColor?: string;
+        strokeOpacity?: number;
+        strokeWeight?: number;
+      }
+
+      class Circle {
+        constructor(opts?: CircleOptions);
+        setMap(map: Map | null): void;
+      }
+
+      class Point {
+        constructor(x: number, y: number);
+      }
+
+      class Size {
+        constructor(width: number, height: number);
+      }
+
+      interface StreetViewLocationRequest {
+        location: LatLngLiteral;
+        preference?: StreetViewPreference;
+        radius?: number;
+        source?: StreetViewSource;
+      }
+
+      interface StreetViewPanoramaData {
+        location?: {
+          description?: string;
+          latLng?: LatLng;
+        };
+      }
+
+      interface StreetViewPov {
+        heading: number;
+        pitch: number;
+      }
+
+      interface StreetViewPanoramaOptions {
+        addressControl?: boolean;
+        clickToGo?: boolean;
+        disableDefaultUI?: boolean;
+        fullscreenControl?: boolean;
+        imageDateControl?: boolean;
+        linksControl?: boolean;
+        motionTracking?: boolean;
+        motionTrackingControl?: boolean;
+        panControl?: boolean;
+        position?: LatLngLike;
+        pov?: StreetViewPov;
+        scrollwheel?: boolean;
+        showRoadLabels?: boolean;
+        visible?: boolean;
+        zoomControl?: boolean;
+      }
+
+      class StreetViewPanorama {
+        constructor(container: HTMLElement, opts?: StreetViewPanoramaOptions);
+        setPov(pov: StreetViewPov): void;
+        setVisible(visible: boolean): void;
+      }
+
+      class StreetViewService {
+        getPanorama(
+          request: StreetViewLocationRequest,
+          callback: (data: StreetViewPanoramaData | null, status: StreetViewStatus) => void,
+        ): void;
+      }
+
+      enum StreetViewPreference {
+        BEST = "best",
+        NEAREST = "nearest",
+      }
+
+      enum StreetViewSource {
+        DEFAULT = "default",
+        OUTDOOR = "outdoor",
+      }
+
+      enum StreetViewStatus {
+        OK = "OK",
+        UNKNOWN_ERROR = "UNKNOWN_ERROR",
+        ZERO_RESULTS = "ZERO_RESULTS",
+      }
+
+      namespace geometry {
+        namespace spherical {
+          function computeHeading(from: LatLngLike, to: LatLngLike): number;
+        }
+      }
+    }
+  }
+}
