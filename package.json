@@ -1,9 +1,13 @@
 {
   "name": "immojudis",
+  "description": "Plateforme d'exploration des ventes immobilières aux enchères judiciaires (Nouvelle-Aquitaine) : assistant de mise plafond, cartographie Google Maps / OpenStreetMap et pipeline de données.",
   "private": true,
   "sideEffects": false,
   "type": "module",
   "packageManager": "npm@10.1.0",
+  "engines": {
+    "node": ">=20.19"
+  },
   "scripts": {
     "dev": "vite dev",
     "dev:ready": "node scripts/dev-ready.mjs",
@@ -62,7 +66,6 @@
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.0",
     "react-hook-form": "^7.71.2",
-    "react-leaflet": "^5.0.0",
     "react-resizable-panels": "^4.6.5",
     "recharts": "^2.15.4",
     "sonner": "^2.0.7",
