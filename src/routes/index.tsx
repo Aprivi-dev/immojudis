@@ -117,7 +117,7 @@ function HomePage() {
       <section className="hx-hero px-4 sm:px-6">
         <HeroVideo />
         <div aria-hidden className="hx-hero-veil" />
-        <div className="mx-auto grid max-w-7xl items-center gap-10 py-12 lg:min-h-[calc(100svh-4rem)] lg:grid-cols-[minmax(0,0.92fr)_minmax(30rem,1fr)] lg:gap-12 lg:py-10">
+        <div className="mx-auto grid max-w-7xl items-center gap-10 py-12 lg:min-h-[calc(100svh-4rem)] lg:grid-cols-[minmax(0,0.95fr)_minmax(27rem,0.78fr)] lg:gap-16 lg:py-10 xl:gap-20">
           <div className="hx-hero-copy">
             <p className="hx-eyebrow">
               <span aria-hidden className="hx-eyebrow-dot" />

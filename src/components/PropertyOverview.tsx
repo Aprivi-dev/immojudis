@@ -20,6 +20,7 @@ import {
   propertyTypeLabel,
   surfaceSourceLabel,
 } from "@/lib/format";
+import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
 const EQUIPMENTS: Array<[keyof AuctionSale, string]> = [
@@ -37,7 +38,7 @@ const EQUIPMENTS: Array<[keyof AuctionSale, string]> = [
  * vente, fiabilité des données et points à vérifier).
  */
 export function PropertyOverview({ sale }: { sale: AuctionSale }) {
-  const primarySurface = sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2;
+  const primarySurface = getSaleSurface(sale);
   const surfaceKind = sale.app_surface_kind ? ` (${sale.app_surface_kind})` : "";
   const propertyType = (sale.property_type ?? "").toLowerCase();
   const showLand =
@@ -63,7 +64,7 @@ export function PropertyOverview({ sale }: { sale: AuctionSale }) {
           {propertyTypeLabel(sale.property_type)}
         </Fact>
         <Fact icon={<Ruler className="h-4 w-4" />} label={`Surface${surfaceKind}`}>
-          {primarySurface ? formatSurface(primarySurface) : "Non précisée"}
+          {primarySurface.value ? primarySurface.label : "Non précisée"}
         </Fact>
         <Fact icon={<LayoutGrid className="h-4 w-4" />} label="Pièces">
           {sale.rooms_count != null ? String(sale.rooms_count) : "Non précisé"}
@@ -155,6 +156,12 @@ export function PropertyOverview({ sale }: { sale: AuctionSale }) {
 
       {/* ── Fiabilité & sources ──────────────────────────────────────────── */}
       <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/10 pt-4 text-xs text-muted-foreground">
+        {primarySurface.estimated && (
+          <span>
+            Surface studio : <strong className="text-foreground">20 m² estimés</strong> · à
+            confirmer
+          </span>
+        )}
         {surfaceConfidence != null && (
           <span>
             Surface : fiabilité <strong className="text-foreground">{surfaceConfidence}%</strong>

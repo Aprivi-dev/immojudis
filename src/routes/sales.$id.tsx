@@ -12,11 +12,11 @@ import {
   formatPrice,
   formatDate,
   formatDateTime,
-  formatSurface,
   documentTypeLabel,
   propertyTypeLabel,
   saleStatusLabel,
 } from "@/lib/format";
+import { getSaleSurface } from "@/lib/surface";
 import { DocumentsList } from "@/components/DocumentsList";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
@@ -76,6 +76,7 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
   const location = saleLocation(sale.address, sale.postal_code, sale.city);
   const referenceLabel = sale.title ?? propertyTypeLabel(sale.property_type);
   const statusLabel = saleStatusLabel(sale.status);
+  const surfaceInfo = getSaleSurface(sale);
 
   return (
     <main className="liquid-page bg-background pb-24">
@@ -129,10 +130,8 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
                 <HeroMeta label="Mise à prix" value={formatPrice(sale.starting_price_eur)} accent />
                 <HeroMeta label="Date de vente" value={formatDate(sale.sale_date)} />
                 <HeroMeta
-                  label="Surface"
-                  value={formatSurface(
-                    sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2,
-                  )}
+                  label={surfaceInfo.estimated ? "Surface estimée" : "Surface"}
+                  value={surfaceInfo.value ? surfaceInfo.label : "—"}
                 />
                 {sale.tribunal && <HeroMeta label="Tribunal" value={sale.tribunal} />}
               </dl>

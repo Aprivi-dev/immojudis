@@ -5,6 +5,7 @@ import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import type { LatLngExpression, Map, Marker, Layer, FeatureGroup } from "leaflet";
 import type { AuctionMapPin } from "@/lib/types";
+import { getGoogleMapsApiKey, loadGoogleMaps } from "@/lib/google-maps";
 import {
   formatPrice,
   formatPricePerM2,
@@ -12,6 +13,7 @@ import {
   occupancyLabel,
   propertyTypeLabel,
 } from "@/lib/format";
+import { getSaleSurface } from "@/lib/surface";
 import { OSM_TILE_LAYER_URL, OSM_TILE_OPTIONS } from "@/lib/tiles";
 
 // Pins colorés par proximité de la vente (info neutre, utile en prospection).
@@ -45,7 +47,8 @@ function escapeHtml(s: string): string {
 }
 
 function buildPopup(s: AuctionMapPin): string {
-  const surface = s.app_surface_m2;
+  const surfaceInfo = getSaleSurface(s);
+  const surface = surfaceInfo.value;
   const ppm2 = surface && s.starting_price_eur ? Math.round(s.starting_price_eur / surface) : null;
   const d = daysUntil(s.sale_date);
   const countdown = d == null ? "" : d < 0 ? "Passée" : d === 0 ? "Aujourd'hui" : `J−${d}`;
@@ -62,7 +65,7 @@ function buildPopup(s: AuctionMapPin): string {
         ${ppm2 ? `<span style="color:#6b7280;font-size:11px">${formatPricePerM2(ppm2)}</span>` : ""}
       </div>
       <div style="display:flex;gap:8px;font-size:11px;color:#4b5563;margin-bottom:6px">
-        ${surface ? `<span>${Math.round(surface)} m²</span>` : ""}
+        ${surface ? `<span>${escapeHtml(surfaceInfo.label)}</span>` : ""}
         ${s.sale_date ? `<span>${formatDate(s.sale_date)}</span>` : ""}
         ${countdown ? `<span style="color:${countdownColor};font-weight:600">${countdown}</span>` : ""}
       </div>
@@ -71,7 +74,216 @@ function buildPopup(s: AuctionMapPin): string {
     </div>`;
 }
 
+function googleMarkerIcon(
+  googleApi: typeof google,
+  color: { bg: string; ring: string; label: string },
+): google.maps.Icon {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
+      <defs>
+        <filter id="shadow" x="-40%" y="-30%" width="180%" height="180%">
+          <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity=".36"/>
+        </filter>
+      </defs>
+      <path filter="url(#shadow)" d="M22 3.5c-7.46 0-13.5 5.86-13.5 13.08C8.5 26.4 22 39.5 22 39.5s13.5-13.1 13.5-22.92C35.5 9.36 29.46 3.5 22 3.5Z" fill="${color.bg}" stroke="${color.ring}" stroke-width="2.5"/>
+      <text x="22" y="20.5" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-family="Inter,Arial,sans-serif" font-size="10.5" font-weight="800">${escapeHtml(color.label)}</text>
+    </svg>`;
+
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new googleApi.maps.Size(44, 44),
+    anchor: new googleApi.maps.Point(22, 40),
+  };
+}
+
 export function SaleMap({
+  sales,
+  fitToMarkers = false,
+}: {
+  sales: AuctionMapPin[];
+  fitToMarkers?: boolean;
+}) {
+  const googleMapsApiKey = getGoogleMapsApiKey();
+
+  if (googleMapsApiKey) {
+    return <GoogleSaleMap sales={sales} fitToMarkers={fitToMarkers} apiKey={googleMapsApiKey} />;
+  }
+
+  return <LeafletSaleMap sales={sales} fitToMarkers={fitToMarkers} />;
+}
+
+function GoogleSaleMap({
+  sales,
+  fitToMarkers,
+  apiKey,
+}: {
+  sales: AuctionMapPin[];
+  fitToMarkers: boolean;
+  apiKey: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const markersRef = useRef<google.maps.Marker[]>([]);
+  const markerListenersRef = useRef<google.maps.MapsEventListener[]>([]);
+  const userMarkerRef = useRef<google.maps.Marker | null>(null);
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const [ready, setReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+    let cancelled = false;
+
+    loadGoogleMaps(apiKey)
+      .then((googleApi) => {
+        if (cancelled || !containerRef.current || mapRef.current) return;
+        mapRef.current = new googleApi.maps.Map(containerRef.current, {
+          backgroundColor: "#09090b",
+          center: { lat: 46.6, lng: 2.4 },
+          clickableIcons: false,
+          fullscreenControl: true,
+          gestureHandling: "greedy",
+          keyboardShortcuts: true,
+          mapTypeControl: false,
+          mapTypeId: "roadmap",
+          rotateControl: false,
+          scaleControl: true,
+          streetViewControl: false,
+          zoom: 6,
+          zoomControl: true,
+        });
+        infoWindowRef.current = new googleApi.maps.InfoWindow({ maxWidth: 280 });
+        setMapError(null);
+        setReady(true);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setMapError(
+            error instanceof Error ? error.message : "La carte Google n'a pas pu être initialisée.",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      markerListenersRef.current.forEach((listener) => listener.remove());
+      markerListenersRef.current = [];
+      markersRef.current.forEach((marker) => marker.setMap(null));
+      markersRef.current = [];
+      userMarkerRef.current?.setMap(null);
+      userMarkerRef.current = null;
+      mapRef.current = null;
+      infoWindowRef.current = null;
+    };
+  }, [apiKey]);
+
+  useEffect(() => {
+    if (!mapRef.current || !ready) return;
+    let cancelled = false;
+
+    loadGoogleMaps(apiKey).then((googleApi) => {
+      if (cancelled || !mapRef.current) return;
+      markerListenersRef.current.forEach((listener) => listener.remove());
+      markerListenersRef.current = [];
+      markersRef.current.forEach((marker) => marker.setMap(null));
+      markersRef.current = [];
+
+      const bounds = new googleApi.maps.LatLngBounds();
+      let markerCount = 0;
+
+      for (const sale of sales) {
+        if (!sale.id || sale.latitude == null || sale.longitude == null) continue;
+        const position = { lat: sale.latitude, lng: sale.longitude };
+        const marker = new googleApi.maps.Marker({
+          icon: googleMarkerIcon(googleApi, urgencyColor(sale.sale_date)),
+          map: mapRef.current,
+          optimized: true,
+          position,
+          title: sale.title ?? propertyTypeLabel(sale.property_type),
+          zIndex: 50,
+        });
+        const listener = marker.addListener("click", () => {
+          infoWindowRef.current?.setContent(buildPopup(sale));
+          infoWindowRef.current?.open({
+            anchor: marker,
+            map: mapRef.current,
+            shouldFocus: false,
+          });
+        });
+        markersRef.current.push(marker);
+        markerListenersRef.current.push(listener);
+        bounds.extend(position);
+        markerCount += 1;
+      }
+
+      if (fitToMarkers && markerCount > 1) {
+        mapRef.current.fitBounds(bounds);
+      } else if (fitToMarkers && markerCount === 1) {
+        const sale = sales.find((s) => s.latitude != null && s.longitude != null);
+        if (sale?.latitude != null && sale.longitude != null) {
+          mapRef.current.setCenter({ lat: sale.latitude, lng: sale.longitude });
+          mapRef.current.setZoom(13);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiKey, fitToMarkers, ready, sales]);
+
+  const locateMe = () => {
+    if (!mapRef.current || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!mapRef.current) return;
+        const googleApi = window.google;
+        if (!googleApi?.maps?.Marker) return;
+        const position = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        mapRef.current.setCenter(position);
+        mapRef.current.setZoom(12);
+        userMarkerRef.current?.setMap(null);
+        userMarkerRef.current = new googleApi.maps.Marker({
+          map: mapRef.current,
+          position,
+          title: "Votre position",
+        });
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 8000 },
+    );
+  };
+
+  return (
+    <div className="relative">
+      <div
+        ref={containerRef}
+        className="liquid-media h-[calc(100vh-16rem)] min-h-[400px] w-full rounded-lg"
+      />
+      {mapError && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-gold/15 bg-background/90 px-6 text-center backdrop-blur-sm">
+          <div>
+            <div className="text-sm font-semibold text-foreground">Carte Google indisponible</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Les annonces restent consultables en liste. Vérifie que Maps JavaScript API est bien
+              activée sur la clé Google Maps.
+            </p>
+          </div>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={locateMe}
+        title="Centrer sur ma position"
+        className="liquid-panel-soft absolute right-3 top-3 z-[1000] inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-gold-soft shadow-md hover:border-gold"
+      >
+        <Locate className="h-3.5 w-3.5" /> Ma position
+      </button>
+    </div>
+  );
+}
+
+function LeafletSaleMap({
   sales,
   fitToMarkers = false,
 }: {
