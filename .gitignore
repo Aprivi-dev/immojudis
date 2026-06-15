@@ -7,20 +7,25 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+
+# Build output
 dist
 dist-ssr
 .output
 .vinxi
-.tanstack/**
+.tanstack
 .nitro
 *.local
 
-# Wrangler / Cloudflare
-.wrangler/
-.dev.vars
+# Environment
+.env
+.env.*
+!.env.example
+.vercel
 
-# Editor directories and files
+# Editor / OS
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -30,11 +35,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-.env
-.env.*
-!.env.example
-.vercel
-.env*
 
 # Claude Code local config (agents, preview launch config, settings)
 .claude/
