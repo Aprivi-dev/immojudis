@@ -158,8 +158,8 @@ export function PropertyOverview({ sale }: { sale: AuctionSale }) {
       <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/10 pt-4 text-xs text-muted-foreground">
         {primarySurface.estimated && (
           <span>
-            Surface studio : <strong className="text-foreground">20 m² estimés</strong> · à
-            confirmer
+            Surface estimée : <strong className="text-foreground">{primarySurface.label}</strong> ·
+            à confirmer
           </span>
         )}
         {surfaceConfidence != null && (
