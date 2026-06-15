@@ -185,6 +185,24 @@ declare global {
         ZERO_RESULTS = "ZERO_RESULTS",
       }
 
+      interface LocationElevationRequest {
+        locations: LatLngLiteral[];
+      }
+
+      interface ElevationResult {
+        elevation: number;
+      }
+
+      interface LocationElevationResponse {
+        results: ElevationResult[];
+      }
+
+      class ElevationService {
+        getElevationForLocations(
+          request: LocationElevationRequest,
+        ): Promise<LocationElevationResponse>;
+      }
+
       namespace geometry {
         namespace spherical {
           function computeHeading(from: LatLngLike, to: LatLngLike): number;
@@ -192,6 +210,9 @@ declare global {
       }
 
       function importLibrary(libraryName: "maps3d"): Promise<typeof maps3d>;
+      function importLibrary(
+        libraryName: "elevation",
+      ): Promise<{ ElevationService: typeof ElevationService }>;
 
       namespace maps3d {
         enum MapMode {

@@ -10,8 +10,8 @@ import { propertyTypeLabel } from "@/lib/format";
 
 const STREET_VIEW_RADIUS_M = 90;
 const ORBIT_DEG_PER_S = 4.5;
-const AERIAL_RANGE_M = 380;
-const AERIAL_TILT_DEG = 67;
+const AERIAL_RANGE_M = 350;
+const AERIAL_TILT_DEG = 60;
 const ORBIT_DURATION_MS = 60000;
 
 type StreetState = "idle" | "loading" | "ready" | "missing" | "error";
@@ -63,6 +63,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
   const map3dRef = useRef<google.maps.maps3d.Map3DElement | null>(null);
   const markerRef = useRef<google.maps.Marker | null>(null);
   const panoRef = useRef<google.maps.StreetViewPanorama | null>(null);
+  const altitudeRef = useRef(0);
 
   useEffect(() => {
     if (reducedMotion) setIsRotating(false);
@@ -82,8 +83,23 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
         const { Map3DElement, MapMode } = await g.maps.importLibrary("maps3d");
         if (cancelled || !container || map3dRef.current || mapObjRef.current) return;
 
+        // L'altitude du centre doit suivre le terrain : avec altitude 0 (niveau de
+        // la mer) la caméra vise un point sous le sol et ne montre que le ciel.
+        let altitude = 0;
+        try {
+          const { ElevationService } = await g.maps.importLibrary("elevation");
+          const { results } = await new ElevationService().getElevationForLocations({
+            locations: [{ lat, lng }],
+          });
+          if (results?.[0]) altitude = results[0].elevation;
+        } catch {
+          // élévation indisponible → 0
+        }
+        if (cancelled || !container || map3dRef.current || mapObjRef.current) return;
+        altitudeRef.current = altitude;
+
         const map3d = new Map3DElement({
-          center: { lat, lng, altitude: 0 },
+          center: { lat, lng, altitude },
           range: AERIAL_RANGE_M,
           tilt: AERIAL_TILT_DEG,
           heading: 0,
@@ -150,7 +166,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
     const orbit = () =>
       map3d.flyCameraAround({
         camera: {
-          center: { lat, lng, altitude: 0 },
+          center: { lat, lng, altitude: altitudeRef.current },
           tilt: AERIAL_TILT_DEG,
           range: AERIAL_RANGE_M,
           heading: 0,
