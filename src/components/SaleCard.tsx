@@ -105,12 +105,12 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
           {riskCount > 0 ? (
             <span className={`chip ${riskCount >= 3 ? "chip-risk" : "chip-watch"}`}>
               <span aria-hidden className="chip-dot" />
-              {riskCount} risque{riskCount > 1 ? "s" : ""} à vérifier
+              {riskCount} point{riskCount > 1 ? "s" : ""} à vérifier
             </span>
           ) : (
             <span className="chip chip-verified">
               <span aria-hidden className="chip-dot" />
-              Aucun risque détecté
+              Aucun point bloquant détecté
             </span>
           )}
           <FeatureBadges sale={sale} max={2} />

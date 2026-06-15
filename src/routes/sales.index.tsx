@@ -160,12 +160,12 @@ function SalesPage() {
                 Dossiers analysés
               </div>
               <h1 className="mt-4 font-display text-4xl leading-tight text-foreground sm:text-5xl">
-                Annonces sous surveillance
+                Annonces analysées
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-                Parcourez les ventes judiciaires avec les critères utiles avant décision : score,
-                prix, surface, occupation, risques et localisation. Les résultats continuent de se
-                charger au scroll.
+                Parcourez les ventes judiciaires avec les critères qui aident à fixer une mise
+                plafond : prix, surface, occupation, localisation et points à vérifier. Les
+                résultats continuent de se charger au scroll.
               </p>
             </div>
 

@@ -225,7 +225,7 @@ function AlertsPage() {
             {alerts.length === 0 && (
               <div className="liquid-panel-soft rounded-lg p-8 text-center">
                 <p className="text-sm text-muted-foreground">
-                  Aucune alerte créée. Commencez par un département, un budget ou un score minimal.
+                  Aucune alerte créée. Commencez par un département, un budget ou une surface cible.
                 </p>
               </div>
             )}
@@ -243,7 +243,7 @@ function AlertsPage() {
                       a.property_type,
                       a.max_price_eur != null && `≤ ${a.max_price_eur.toLocaleString("fr-FR")} €`,
                       a.min_surface_m2 != null && `Surface ≥ ${a.min_surface_m2} m²`,
-                      a.min_investment_score != null && `Score ≥ ${a.min_investment_score}`,
+                      a.min_investment_score != null && `Pertinence ≥ ${a.min_investment_score}`,
                       a.occupancy_status,
                     ]
                       .filter(Boolean)

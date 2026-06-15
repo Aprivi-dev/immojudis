@@ -10,7 +10,6 @@ import Mail from "lucide-react/dist/esm/icons/mail.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UserRound from "lucide-react/dist/esm/icons/user-round.js";
 import { toast } from "sonner";
-import { BrandMark } from "@/components/BrandLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import {
@@ -166,7 +165,6 @@ function LoginPage() {
               />
             </div>
           </div>
-          <BrandMark className="absolute bottom-8 right-8 h-32 w-32 opacity-85 drop-shadow-[0_30px_62px_rgba(0,0,0,0.5)]" />
         </section>
 
         <section className="glass-shell rounded-lg p-6 sm:p-8">

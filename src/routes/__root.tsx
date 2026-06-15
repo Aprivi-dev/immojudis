@@ -82,14 +82,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Explorez les ventes aux enchères immobilières judiciaires avec carte, filtres, scoring et alertes personnalisées.",
+          "Explorez les ventes aux enchères immobilières judiciaires avec annonces analysées, carte, alertes et mise plafond.",
       },
       { name: "author", content: "Immojudis" },
       { property: "og:title", content: "Immojudis — Ventes immobilières judiciaires" },
       {
         property: "og:description",
         content:
-          "Carte, annonces, scoring et suivi d'opportunités pour les enchères immobilières judiciaires.",
+          "Carte, annonces analysées, alertes et mise plafond pour les enchères immobilières judiciaires.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -99,9 +99,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", type: "image/svg+xml", href: "/brand/immojudis-mark.svg" },
-      { rel: "apple-touch-icon", href: "/brand/immojudis-mark.svg" },
-      { rel: "preload", as: "image", href: "/brand/immojudis-mark.svg" },
+      { rel: "icon", type: "image/png", href: "/brand/immojudis-mark-transparent.png" },
+      { rel: "apple-touch-icon", href: "/brand/immojudis-mark-transparent.png" },
+      { rel: "preload", as: "image", href: "/brand/immojudis-mark-transparent.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {

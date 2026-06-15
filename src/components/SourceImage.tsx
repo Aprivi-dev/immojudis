@@ -36,7 +36,7 @@ export function SourceImage({
         className={`relative flex items-center justify-center overflow-hidden bg-[var(--surface)] text-muted-foreground ${className ?? "h-64 w-full"}`}
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(242,196,135,0.18),transparent_34%),linear-gradient(135deg,rgba(21,19,17,0.95),rgba(8,8,10,0.98))]" />
-        <BrandMark className="absolute right-4 top-4 h-20 w-20 opacity-20" />
+        <BrandMark variant="transparent" className="absolute right-4 top-4 h-20 w-20 opacity-20" />
         <div className="relative flex flex-col items-center gap-2 px-6 text-center text-xs">
           <FileText className="h-5 w-5 text-[var(--gold)]" />
           <span>Document source sans visuel</span>
