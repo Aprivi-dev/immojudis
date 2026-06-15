@@ -280,8 +280,8 @@ function AdminDashboardPage() {
             </p>
             {data?.runner.mode === "queue_worker" ? (
               <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-400/10 p-3 text-xs leading-relaxed text-amber-100">
-                Pour un lancement instantané, ajoute `GITHUB_SCROLL_TOKEN` dans les variables
-                Vercel production. Le cron GitHub Actions reste actif en secours.
+                Pour un lancement instantané, ajoute `GITHUB_SCROLL_TOKEN` dans les variables Vercel
+                production. Le cron GitHub Actions reste actif en secours.
               </div>
             ) : null}
           </div>
