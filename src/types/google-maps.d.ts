@@ -221,6 +221,7 @@ declare global {
         }
 
         interface Camera {
+          altitudeMode?: AltitudeMode;
           center?: LatLngAltitudeLiteral;
           heading?: number;
           range?: number;

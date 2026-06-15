@@ -64,7 +64,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
   const map3dRef = useRef<google.maps.maps3d.Map3DElement | null>(null);
   const markerRef = useRef<google.maps.Marker | null>(null);
   const panoRef = useRef<google.maps.StreetViewPanorama | null>(null);
-  const altitudeRef = useRef(0);
+  const altitudeModeRef = useRef<typeof google.maps.maps3d.AltitudeMode | null>(null);
 
   useEffect(() => {
     if (reducedMotion) setIsRotating(false);
@@ -98,7 +98,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
           // élévation indisponible → 0
         }
         if (cancelled || !container || map3dRef.current || mapObjRef.current) return;
-        altitudeRef.current = altitude;
+        altitudeModeRef.current = AltitudeMode;
 
         const map3d = new Map3DElement({
           center: { lat, lng, altitude },
@@ -178,7 +178,8 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
     const orbit = () =>
       map3d.flyCameraAround({
         camera: {
-          center: { lat, lng, altitude: altitudeRef.current },
+          center: { lat, lng, altitude: 0 },
+          altitudeMode: altitudeModeRef.current?.RELATIVE_TO_GROUND,
           tilt: AERIAL_TILT_DEG,
           range: AERIAL_RANGE_M,
           heading: 0,
