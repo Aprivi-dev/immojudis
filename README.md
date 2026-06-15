@@ -15,6 +15,7 @@ Variables minimales :
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-anon-key
+VITE_GOOGLE_MAPS_API_KEY=your-restricted-google-maps-browser-key
 ```
 
 ## Scripts

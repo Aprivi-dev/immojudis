@@ -9,6 +9,8 @@ import { getNearbySales } from "@/lib/queries";
 import { haversineKm } from "@/lib/geo";
 import { formatPrice, formatDate, propertyTypeLabel } from "@/lib/format";
 import { OSM_TILE_LAYER_URL, OSM_TILE_OPTIONS } from "@/lib/tiles";
+import { getGoogleMapsApiKey } from "@/lib/google-maps";
+import { GoogleLocationShowcase } from "@/components/GoogleLocationShowcase";
 
 const DVF_RADIUS_M = 500; // cohérent avec le calculateur de rentabilité
 const NEARBY_RADIUS_KM = 0.2; // phase 1 : 200 m
@@ -44,6 +46,16 @@ function nearbyPopup(s: AuctionSale): string {
 }
 
 export function SaleContextMap({ sale }: { sale: AuctionSale }) {
+  const googleMapsApiKey = getGoogleMapsApiKey();
+
+  if (googleMapsApiKey && sale.latitude != null && sale.longitude != null) {
+    return <GoogleLocationShowcase sale={sale} apiKey={googleMapsApiKey} />;
+  }
+
+  return <OsmSaleContextMap sale={sale} />;
+}
+
+function OsmSaleContextMap({ sale }: { sale: AuctionSale }) {
   const lat = sale.latitude;
   const lng = sale.longitude;
   const containerRef = useRef<HTMLDivElement>(null);
