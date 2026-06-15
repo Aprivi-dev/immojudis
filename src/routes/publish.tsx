@@ -304,8 +304,8 @@ function PublishPage() {
               Transmettre une annonce complète pour validation Immojudis.
             </h1>
             <p className="mt-5 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Les informations et pièces déposées sont enregistrées dans Supabase en statut
-              "en attente". L'équipe peut ensuite contrôler, compléter et valider la mise en ligne
+              Les informations et pièces déposées sont enregistrées dans Supabase en statut "en
+              attente". L'équipe peut ensuite contrôler, compléter et valider la mise en ligne
               depuis le panel admin.
             </p>
           </div>
@@ -675,7 +675,10 @@ function safeStorageFileName(fileName: string): string {
 }
 
 function parseEuroAmount(value: string): number | null {
-  const normalized = value.replace(/\s/g, "").replace(/[^\d.,-]/g, "").replace(",", ".");
+  const normalized = value
+    .replace(/\s/g, "")
+    .replace(/[^\d.,-]/g, "")
+    .replace(",", ".");
   const amount = Number.parseFloat(normalized);
   return Number.isFinite(amount) ? amount : null;
 }
