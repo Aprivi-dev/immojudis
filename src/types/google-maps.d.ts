@@ -254,6 +254,26 @@ declare global {
           flyCameraAround(options: FlyAroundAnimationOptions): void;
           stopCameraAnimation(): void;
         }
+
+        enum AltitudeMode {
+          ABSOLUTE = "ABSOLUTE",
+          CLAMP_TO_GROUND = "CLAMP_TO_GROUND",
+          RELATIVE_TO_GROUND = "RELATIVE_TO_GROUND",
+          RELATIVE_TO_MESH = "RELATIVE_TO_MESH",
+        }
+
+        interface Marker3DElementOptions {
+          altitudeMode?: AltitudeMode;
+          extruded?: boolean;
+          label?: string;
+          position?: LatLngAltitudeLiteral | LatLngLiteral;
+          sizePreserved?: boolean;
+          zIndex?: number;
+        }
+
+        class Marker3DElement extends HTMLElement {
+          constructor(options?: Marker3DElementOptions);
+        }
       }
     }
   }

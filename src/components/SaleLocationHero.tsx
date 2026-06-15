@@ -13,6 +13,7 @@ const ORBIT_DEG_PER_S = 4.5;
 const AERIAL_RANGE_M = 350;
 const AERIAL_TILT_DEG = 60;
 const ORBIT_DURATION_MS = 60000;
+const MARKER_ALTITUDE_M = 45;
 
 type StreetState = "idle" | "loading" | "ready" | "missing" | "error";
 
@@ -80,7 +81,8 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
       try {
         const g = await loadGoogleMaps(apiKey);
         if (cancelled || !container) return;
-        const { Map3DElement, MapMode } = await g.maps.importLibrary("maps3d");
+        const { Map3DElement, Marker3DElement, MapMode, AltitudeMode } =
+          await g.maps.importLibrary("maps3d");
         if (cancelled || !container || map3dRef.current || mapObjRef.current) return;
 
         // L'altitude du centre doit suivre le terrain : avec altitude 0 (niveau de
@@ -109,6 +111,16 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
         map3d.style.height = "100%";
         container.appendChild(map3d);
         map3dRef.current = map3d;
+
+        // Pin 3D extrudé (poteau jusqu'au sol) pour repérer le bien pendant l'orbite.
+        const marker = new Marker3DElement({
+          position: { lat, lng, altitude: MARKER_ALTITUDE_M },
+          altitudeMode: AltitudeMode.RELATIVE_TO_GROUND,
+          extruded: true,
+          label: title,
+        });
+        map3d.append(marker);
+
         setMode3d(true);
         setMapReady(true);
         setMapError(false);
