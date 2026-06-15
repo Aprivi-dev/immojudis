@@ -22,11 +22,8 @@ import { FavoriteButton } from "@/components/FavoriteButton";
 import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
 import { PropertyOverview } from "@/components/PropertyOverview";
 import { SaleCountdown } from "@/components/SaleCountdown";
-import { SaleContextMap } from "@/components/SaleContextMap";
-import { MapThumbnail } from "@/components/MapThumbnail";
-import { SourceImage } from "@/components/SourceImage";
+import { SaleLocationHero } from "@/components/SaleLocationHero";
 import { BrandMark } from "@/components/BrandLogo";
-import { NeighborhoodInsights } from "@/components/NeighborhoodInsights";
 import { EvidenceTrail } from "@/components/EvidenceTrail";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -67,7 +64,6 @@ const SECTION_NAV = [
   { id: "bien", label: "Le bien" },
   { id: "assistant", label: "Mise plafond" },
   { id: "preuves", label: "Conditions" },
-  { id: "territoire", label: "Territoire" },
   { id: "documents", label: "Documents" },
 ] as const;
 
@@ -83,24 +79,12 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
 
   return (
     <main className="liquid-page bg-background pb-24">
-      {/* ───────── Hero éditorial plein écran ───────── */}
-      <section className="relative isolate overflow-hidden border-b border-white/10">
-        {sale.source_url ? (
-          <div className="absolute inset-0 -z-10">
-            <SourceImage
-              sourceUrl={sale.source_url}
-              alt={referenceLabel}
-              className="h-full w-full"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/85 to-background/40" />
-            <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/40 to-transparent" />
-          </div>
-        ) : (
-          <div className="absolute inset-0 -z-10 bg-gradient-to-br from-surface via-background to-background" />
-        )}
-
+      {/* ───────── Hero : localisation (deux tuiles) + carte titre ───────── */}
+      <section className="relative border-b border-white/10">
         <div className="mx-auto max-w-6xl px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-8">
-          <div className="glass-shell rounded-lg px-5 py-5 sm:px-7 sm:py-6">
+          <SaleLocationHero sale={sale} />
+
+          <div className="glass-shell mt-4 rounded-lg px-5 py-5 sm:px-7 sm:py-6">
             {/* Fil d'Ariane */}
             <nav className="flex items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
               <Link
@@ -179,30 +163,6 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
         <div className="space-y-14">
           {/* 1. Le bien — tout ce que nous savons */}
           <Section id="bien" eyebrow="Le dossier" title="Ce que nous savons du bien">
-            {(sale.latitude != null && sale.longitude != null) || sale.source_url ? (
-              <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {sale.source_url && (
-                  <Frame>
-                    <SourceImage
-                      sourceUrl={sale.source_url}
-                      alt={referenceLabel}
-                      className="h-56 w-full sm:h-64"
-                    />
-                  </Frame>
-                )}
-                {sale.latitude != null && sale.longitude != null && (
-                  <Frame>
-                    <MapThumbnail
-                      lat={sale.latitude}
-                      lng={sale.longitude}
-                      zoom={16}
-                      className="h-56 w-full sm:h-64"
-                      alt={`Localisation ${sale.city ?? ""}`}
-                    />
-                  </Frame>
-                )}
-              </div>
-            ) : null}
             <PropertyOverview sale={sale} />
           </Section>
 
@@ -221,17 +181,7 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
             <EvidenceTrail sale={sale} />
           </FoldableSection>
 
-          {/* 4. Territoire & marché */}
-          <Section id="territoire" eyebrow="Marché local" title="Contexte géographique">
-            <SaleContextMap sale={sale} />
-            {sale.latitude != null && sale.longitude != null && (
-              <div className="mt-10">
-                <NeighborhoodInsights lat={sale.latitude} lng={sale.longitude} />
-              </div>
-            )}
-          </Section>
-
-          {/* 5. Documents */}
+          {/* 4. Documents */}
           <Section id="documents" eyebrow="Dossier" title="Documents officiels">
             {sale.documents_rich && sale.documents_rich.length > 0 ? (
               <ul className="divide-y divide-border/60 border-y border-border/60">
@@ -508,10 +458,6 @@ function FoldableSection({
       </details>
     </section>
   );
-}
-
-function Frame({ children }: { children: React.ReactNode }) {
-  return <div className="liquid-media overflow-hidden rounded-lg">{children}</div>;
 }
 
 function Meta({ label, value }: { label: string; value: React.ReactNode }) {
