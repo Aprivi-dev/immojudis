@@ -46,7 +46,11 @@ export function Navbar() {
     <header className="app-navbar sticky top-0 z-40 border-b border-white/10 bg-background/62 shadow-[0_18px_54px_rgb(0_0_0_/_22%)] backdrop-blur-2xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2.5">
-          <BrandLogo markClassName="h-7 w-7 sm:h-8 sm:w-8" textClassName="text-sm sm:text-base" />
+          <BrandLogo
+            markVariant="transparent"
+            markClassName="h-7 w-7 sm:h-8 sm:w-8"
+            textClassName="text-sm sm:text-base"
+          />
         </Link>
 
         <nav className="hidden items-center gap-2 text-xs font-medium uppercase text-muted-foreground md:flex">
@@ -101,7 +105,12 @@ export function Navbar() {
             className="liquid-panel absolute right-3 top-3 flex h-[calc(100svh-1.5rem)] w-[min(88vw,22rem)] flex-col overflow-hidden border-white/10 bg-background/92"
           >
             <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
-              <BrandLogo showTagline markClassName="h-10 w-10" textClassName="text-lg" />
+              <BrandLogo
+                showTagline
+                markVariant="transparent"
+                markClassName="h-10 w-10"
+                textClassName="text-lg"
+              />
               <button
                 type="button"
                 aria-label="Fermer le menu"

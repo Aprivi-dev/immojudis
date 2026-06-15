@@ -2,7 +2,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import { BrandMark } from "@/components/BrandLogo";
 
 export const Route = createFileRoute("/contact")({
   head: () => ({
@@ -80,7 +79,6 @@ function ContactPage() {
               Un bon support commence par une preuve claire.
             </p>
           </div>
-          <BrandMark className="absolute bottom-8 right-8 h-40 w-40 max-w-[58%] opacity-85 drop-shadow-[0_30px_62px_rgba(0,0,0,0.5)]" />
         </aside>
       </div>
     </main>
