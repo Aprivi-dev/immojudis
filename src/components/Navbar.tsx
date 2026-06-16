@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { to: "/map", label: "Carte" },
   { to: "/favorites", label: "Favoris" },
   { to: "/alerts", label: "Alertes" },
+  { to: "/ventes-immobilieres-judiciaires", label: "Guide" },
 ] as const;
 
 const PRO_NAV_ITEM = { to: "/publish", label: "Publier" } as const;
