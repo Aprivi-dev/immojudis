@@ -336,6 +336,16 @@ export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
             />
           )}
 
+          {/* Enveloppe travaux : combien engager en travaux en restant sous le
+              seuil de marché, à la mise simulée (mise à prix par défaut). */}
+          {verdictAvailable && (
+            <WorksEnvelope
+              maxWorks={selected.result.maxWorksAtSimulatedPrice}
+              simulatedPrice={state.price}
+              startingPrice={startingPrice}
+            />
+          )}
+
           {/* Marché manquant : la saisie arrive ici, pas cachée plus bas */}
           {!verdictAvailable && (
             <div className="mt-5">
@@ -506,6 +516,54 @@ function RangeBar({
           manœuvre en salle.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Works envelope: the maximum renovation budget that still keeps the all-in cost
+ * (purchase + fees + works) under the scenario's market threshold, at the
+ * simulated bid. Defaults to the starting price; shrinks as the bid rises.
+ */
+function WorksEnvelope({
+  maxWorks,
+  simulatedPrice,
+  startingPrice,
+}: {
+  maxWorks: number;
+  simulatedPrice: number;
+  startingPrice: number;
+}) {
+  const atStartingPrice = Math.round(simulatedPrice) === Math.round(startingPrice);
+  const noRoom = maxWorks <= 0;
+  return (
+    <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-lg border border-white/10 bg-white/[0.04] p-4">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-gold/30 bg-gold/10 text-gold">
+        <Wrench className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-soft">
+          Enveloppe travaux maximale
+        </div>
+        <div className="mt-1 font-display text-3xl leading-none tabular-nums text-foreground">
+          {fmt(maxWorks)}
+        </div>
+      </div>
+      <p className="min-w-[12rem] flex-1 text-sm leading-relaxed text-muted-foreground">
+        {noRoom ? (
+          <>
+            À cette mise{atStartingPrice ? " (la mise à prix)" : ""}, le coût d'acquisition atteint
+            déjà le seuil de marché : plus aucune marge pour des travaux sans sortir du plafond.
+          </>
+        ) : (
+          <>
+            Montant maximum à engager en travaux si vous l'emportez
+            {atStartingPrice ? " à la mise à prix" : ` à ${fmt(simulatedPrice)}`}, sans que le coût
+            complet (achat + frais + travaux) dépasse le seuil de marché du scénario. Plus votre
+            mise monte, plus cette enveloppe se réduit.
+          </>
+        )}
+      </p>
     </div>
   );
 }
