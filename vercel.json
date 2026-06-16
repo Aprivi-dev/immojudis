@@ -1,5 +1,6 @@
 {
   "framework": "tanstack-start",
   "installCommand": "npm install",
-  "buildCommand": "npm run build"
+  "buildCommand": "npm run build",
+  "regions": ["cdg1"]
 }

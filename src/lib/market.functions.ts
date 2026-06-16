@@ -272,13 +272,21 @@ async function fetchDvfYear(
         await sleep(350 * (attempt + 1));
         continue;
       }
-      if (!response.ok) return [];
+      if (!response.ok) {
+        console.warn(`[dvf] millésime ${year} : HTTP ${response.status}`);
+        return [];
+      }
       const json = (await response.json()) as { features?: DvfFeature[] };
       const features = Array.isArray(json.features) ? json.features : [];
       pageCache.set(url, { expiresAt: Date.now() + PAGE_CACHE_TTL_MS, features });
       return features;
-    } catch {
-      if (attempt === 2) return [];
+    } catch (err) {
+      if (attempt === 2) {
+        console.warn(
+          `[dvf] millésime ${year} : ${err instanceof Error ? `${err.name} ${err.message}` : "échec réseau"}`,
+        );
+        return [];
+      }
       await sleep(350 * (attempt + 1));
     }
   }
@@ -609,13 +617,6 @@ function assessQuality({
 export const getMarketEstimate = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => inputSchema.parse(input))
   .handler(async ({ data }): Promise<MarketContext> => {
-    // Cache CDN 24 h (les données DVF changent au mieux trimestriellement).
-    setResponseHeaders(
-      new Headers({
-        "cache-control": "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800",
-      }),
-    );
-
     try {
       const estimate = await buildEstimate({
         lat: data.lat,
@@ -625,9 +626,21 @@ export const getMarketEstimate = createServerFn({ method: "GET" })
         surfaceM2: data.surfaceM2,
         pricePerM2Ref: data.pricePerM2Ref,
       });
+      // On ne fige pas 24 h un résultat vide/fragile (souvent un aléa réseau en
+      // amont) : il doit pouvoir se recalculer vite. Cache long uniquement quand
+      // l'échantillon est exploitable.
+      const reliable = estimate.sampleSize >= 3;
+      setResponseHeaders(
+        new Headers({
+          "cache-control": reliable
+            ? "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800"
+            : "public, max-age=300, s-maxage=300",
+        }),
+      );
       return { ok: true, error: null, estimate };
     } catch (err) {
       console.error("DVF fetch failed", err);
+      setResponseHeaders(new Headers({ "cache-control": "public, max-age=60" }));
       return {
         ok: false,
         error: "Estimation de marché temporairement indisponible.",
