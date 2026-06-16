@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VentesImmobilieresJudiciairesRouteImport } from './routes/ventes-immobilieres-judiciaires'
 import { Route as SalesRouteImport } from './routes/sales'
 import { Route as PublishRouteImport } from './routes/publish'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -24,6 +25,12 @@ import { Route as SalesIndexRouteImport } from './routes/sales.index'
 import { Route as SalesIdRouteImport } from './routes/sales.$id'
 import { Route as AdminQualityRouteImport } from './routes/admin.quality'
 
+const VentesImmobilieresJudiciairesRoute =
+  VentesImmobilieresJudiciairesRouteImport.update({
+    id: '/ventes-immobilieres-judiciaires',
+    path: '/ventes-immobilieres-judiciaires',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const SalesRoute = SalesRouteImport.update({
   id: '/sales',
   path: '/sales',
@@ -107,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/publish': typeof PublishRoute
   '/sales': typeof SalesRouteWithChildren
+  '/ventes-immobilieres-judiciaires': typeof VentesImmobilieresJudiciairesRoute
   '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
   '/sales/': typeof SalesIndexRoute
@@ -122,6 +130,7 @@ export interface FileRoutesByTo {
   '/map': typeof MapRoute
   '/privacy': typeof PrivacyRoute
   '/publish': typeof PublishRoute
+  '/ventes-immobilieres-judiciaires': typeof VentesImmobilieresJudiciairesRoute
   '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
   '/sales': typeof SalesIndexRoute
@@ -139,6 +148,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/publish': typeof PublishRoute
   '/sales': typeof SalesRouteWithChildren
+  '/ventes-immobilieres-judiciaires': typeof VentesImmobilieresJudiciairesRoute
   '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
   '/sales/': typeof SalesIndexRoute
@@ -157,6 +167,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/publish'
     | '/sales'
+    | '/ventes-immobilieres-judiciaires'
     | '/admin/quality'
     | '/sales/$id'
     | '/sales/'
@@ -172,6 +183,7 @@ export interface FileRouteTypes {
     | '/map'
     | '/privacy'
     | '/publish'
+    | '/ventes-immobilieres-judiciaires'
     | '/admin/quality'
     | '/sales/$id'
     | '/sales'
@@ -188,6 +200,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/publish'
     | '/sales'
+    | '/ventes-immobilieres-judiciaires'
     | '/admin/quality'
     | '/sales/$id'
     | '/sales/'
@@ -205,10 +218,18 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   PublishRoute: typeof PublishRoute
   SalesRoute: typeof SalesRouteWithChildren
+  VentesImmobilieresJudiciairesRoute: typeof VentesImmobilieresJudiciairesRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/ventes-immobilieres-judiciaires': {
+      id: '/ventes-immobilieres-judiciaires'
+      path: '/ventes-immobilieres-judiciaires'
+      fullPath: '/ventes-immobilieres-judiciaires'
+      preLoaderRoute: typeof VentesImmobilieresJudiciairesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sales': {
       id: '/sales'
       path: '/sales'
@@ -344,6 +365,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   PublishRoute: PublishRoute,
   SalesRoute: SalesRouteWithChildren,
+  VentesImmobilieresJudiciairesRoute: VentesImmobilieresJudiciairesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { isAdminAccount, isProfessionalAccount } from "@/lib/account";
 import { BrandMark } from "@/components/BrandLogo";
 
-const PUBLIC_PATHS = new Set(["/", "/login"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/ventes-immobilieres-judiciaires"]);
 const PROFESSIONAL_PATHS = new Set(["/publish"]);
 const ADMIN_PREFIX = "/admin";
 
