@@ -4,11 +4,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import MapIcon from "lucide-react/dist/esm/icons/map.js";
-import Radar from "lucide-react/dist/esm/icons/radar.js";
 import { getMapPins } from "@/lib/queries";
 import type { SaleFilters, SortKey } from "@/lib/types";
 import { SaleMap } from "@/components/SaleMap";
-import { SaleFilters as SaleFiltersForm } from "@/components/SaleFilters";
+import { MapFilterBar } from "@/components/MapFilterBar";
+import { MapResultsRail, MapSaleCard } from "@/components/MapResultsRail";
 import {
   estimateGrossYieldPct,
   geocodeAddress,
@@ -54,7 +54,7 @@ export const Route = createFileRoute("/map")({
       {
         name: "description",
         content:
-          "Visualisez toutes les ventes aux enchères immobilières sur une carte interactive.",
+          "Visualisez toutes les ventes aux enchères immobilières sur une carte interactive, synchronisée avec la liste des annonces.",
       },
     ],
   }),
@@ -81,7 +81,7 @@ function MapPage() {
     staleTime: 60_000,
   });
 
-  // Géocodage "autour de l'adresse"
+  // Géocodage "autour de l'adresse".
   const [center, setCenter] = useState<GeoPoint | null>(null);
   useEffect(() => {
     if (!search.around_address) {
@@ -119,105 +119,156 @@ function MapPage() {
 
   const fitToMarkers = Boolean(
     search.department ||
-    search.city ||
-    search.type ||
-    search.max_price ||
-    search.min_surface ||
-    search.occupancy ||
-    search.min_score ||
-    search.max_price_per_m2 ||
-    search.min_yield ||
-    (center && search.around_radius != null),
+      search.city ||
+      search.type ||
+      search.max_price ||
+      search.min_surface ||
+      search.occupancy ||
+      search.min_score ||
+      search.max_price_per_m2 ||
+      search.min_yield ||
+      (center && search.around_radius != null),
   );
 
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [view, setView] = useState<"map" | "list">("map");
+
+  // Désélectionne si l'annonce sort du jeu filtré.
+  useEffect(() => {
+    if (selectedId && !filtered.some((s) => s.id === selectedId)) setSelectedId(null);
+  }, [filtered, selectedId]);
+
+  const selectedSale = selectedId ? (filtered.find((s) => s.id === selectedId) ?? null) : null;
+
+  // Sélectionner depuis la liste révèle la carte sur mobile.
+  const handleSelect = (id: string | null) => {
+    setSelectedId(id);
+    if (id) setView("map");
+  };
+
+  const showRadiusNote = Boolean(center && search.around_radius != null);
+  const showLimitNote = sales.length >= MAP_LIMIT;
+
   return (
-    <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-10">
-      <div className="mx-auto max-w-7xl">
-        <header className="glass-shell mb-6 rounded-lg p-6 sm:p-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
-                <MapIcon className="h-4 w-4" />
-                Vue territoire
-              </div>
-              <h1 className="mt-4 font-display text-4xl leading-tight text-foreground sm:text-5xl">
-                Carte des ventes
-              </h1>
-              <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-                Repérez les opportunités par zone, anticipez les dates d'audience et gardez une
-                lecture claire du marché local.
-              </p>
-            </div>
-            <div className="grid min-w-[min(100%,26rem)] gap-3 sm:grid-cols-2">
-              <MapMetric
-                label="Géolocalisées"
-                value={
-                  isLoading ? "..." : `${filtered.length} annonce${filtered.length > 1 ? "s" : ""}`
-                }
-              />
-              <MapMetric
-                label="Lecture"
-                value={
-                  center && search.around_radius != null
-                    ? `${search.around_radius} km`
-                    : "France SO"
-                }
-              />
-            </div>
+    <main className="flex h-[calc(100svh-4rem)] flex-col overflow-hidden bg-background text-foreground">
+      {/* ── Barre d'outils (titre + filtres + bascule mobile) ──────────── */}
+      <div className="z-10 border-b border-white/10 bg-background/70 px-3 py-2.5 backdrop-blur-xl sm:px-4">
+        <div className="flex items-center gap-3">
+          <div className="hidden shrink-0 items-center gap-2 pr-1 lg:flex">
+            <MapIcon className="h-4 w-4 text-gold" />
+            <span className="font-display text-lg leading-none text-foreground">Carte</span>
           </div>
-          {center && search.around_radius != null ? (
-            <div className="signal-chip mt-5 inline-flex rounded-full px-3 py-1.5 text-xs text-gold-soft">
-              Autour de {center.label}
+          <div className="min-w-0 flex-1">
+            <MapFilterBar />
+          </div>
+          <div className="flex shrink-0 rounded-full border border-white/12 bg-black/25 p-1 lg:hidden">
+            <ViewToggle active={view === "list"} onClick={() => setView("list")}>
+              Liste
+            </ViewToggle>
+            <ViewToggle active={view === "map"} onClick={() => setView("map")}>
+              Carte
+            </ViewToggle>
+          </div>
+        </div>
+        {(showRadiusNote || showLimitNote) && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            {showRadiusNote && (
+              <span className="signal-chip inline-flex rounded-full px-2.5 py-1 text-gold-soft">
+                Autour de {center?.label} · {search.around_radius} km
+              </span>
+            )}
+            {showLimitNote && (
+              <span className="text-amber-100">
+                {MAP_LIMIT} résultats max affichés — affinez les filtres pour une zone plus précise.
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Espace de travail : rail liste + carte ─────────────────────── */}
+      <div className="flex min-h-0 flex-1">
+        <aside
+          className={`w-full shrink-0 border-r border-white/10 bg-background/30 lg:w-[400px] ${
+            view === "map" ? "hidden lg:block" : "block"
+          }`}
+        >
+          <MapResultsRail
+            sales={filtered}
+            isLoading={isLoading}
+            selectedId={selectedId}
+            hoveredId={hoveredId}
+            onSelect={handleSelect}
+            onHover={setHoveredId}
+          />
+        </aside>
+
+        <div className={`relative min-w-0 flex-1 ${view === "list" ? "hidden lg:block" : "block"}`}>
+          <SaleMap
+            sales={filtered}
+            fitToMarkers={fitToMarkers}
+            selectedId={selectedId}
+            hoveredId={hoveredId}
+            onSelect={handleSelect}
+            onHover={setHoveredId}
+          />
+
+          <MapLegend />
+
+          {selectedSale && (
+            <div className="absolute inset-x-3 bottom-3 z-[1000] sm:inset-x-auto sm:left-3 sm:w-[22rem]">
+              <MapSaleCard
+                sale={selectedSale}
+                selected
+                floating
+                onClose={() => setSelectedId(null)}
+              />
             </div>
-          ) : null}
-          {sales.length >= MAP_LIMIT ? (
-            <div className="mt-3 text-xs leading-relaxed text-amber-100">
-              Affichage limité aux {MAP_LIMIT} premiers résultats : affinez les filtres pour une
-              zone plus précise.
-            </div>
-          ) : null}
-        </header>
-
-        <section className="mb-5">
-          <SaleFiltersForm from="/map" />
-        </section>
-
-        <section className="glass-shell overflow-hidden rounded-lg p-3">
-          <SaleMap sales={filtered} fitToMarkers={fitToMarkers} />
-        </section>
-
-        <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
-          <LegendItem color="#0f9d6e" label="Vente dans 30 j ou plus" />
-          <LegendItem color="#d97706" label="Moins de 30 j" />
-          <LegendItem color="#dc2626" label="Moins de 7 j" />
-          <LegendItem color="#6b7280" label="Vente passée" />
-          <LegendItem color="#9ca3af" label="Date inconnue" />
-          <span className="ml-auto inline-flex items-center gap-1.5 text-gold-soft">
-            <Radar className="h-3.5 w-3.5" />
-            Lecture géographique
-          </span>
+          )}
         </div>
       </div>
     </main>
   );
 }
 
-function MapMetric({ label, value }: { label: string; value: string }) {
+function ViewToggle({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="liquid-panel-soft rounded-lg p-4">
-      <div className="font-display text-2xl tabular-nums text-gold-soft">{value}</div>
-      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+        active ? "bg-gold text-background" : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
-function LegendItem({ color, label }: { color: string; label: string }) {
+function MapLegend() {
+  const items: Array<[string, string]> = [
+    ["#0f9d6e", "≥ 30 j"],
+    ["#d97706", "< 30 j"],
+    ["#dc2626", "< 7 j"],
+    ["#6b7280", "passée"],
+  ];
   return (
-    <span className="liquid-panel-soft inline-flex items-center gap-1.5 rounded-full px-3 py-1.5">
-      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />
-      {label}
-    </span>
+    <div className="liquid-panel-soft absolute bottom-3 right-3 z-[500] hidden items-center gap-3 rounded-full px-3.5 py-2 text-[11px] text-muted-foreground shadow-lg sm:flex">
+      {items.map(([color, label]) => (
+        <span key={label} className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+          {label}
+        </span>
+      ))}
+    </div>
   );
 }

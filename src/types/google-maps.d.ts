@@ -58,8 +58,10 @@ declare global {
 
       class Map {
         constructor(mapDiv: HTMLElement, opts?: MapOptions);
+        addListener(eventName: string, handler: () => void): MapsEventListener;
         fitBounds(bounds: LatLngBounds): void;
         getHeading(): number | undefined;
+        panTo(latLng: LatLngLiteral): void;
         setCenter(latLng: LatLngLiteral): void;
         setHeading(heading: number): void;
         setTilt(tilt: number): void;
@@ -93,7 +95,9 @@ declare global {
       class Marker {
         constructor(opts?: MarkerOptions);
         addListener(eventName: string, handler: () => void): MapsEventListener;
+        setIcon(icon: Icon | string): void;
         setMap(map: Map | null): void;
+        setZIndex(zIndex: number): void;
       }
 
       class MapsEventListener {
