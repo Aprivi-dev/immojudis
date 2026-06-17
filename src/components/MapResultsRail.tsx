@@ -4,12 +4,7 @@ import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import type { AuctionMapPin } from "@/lib/types";
-import {
-  formatPrice,
-  formatPricePerM2,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
+import { formatPrice, formatPricePerM2, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
 import { getSaleSurface } from "@/lib/surface";
 import { SaleCountdown } from "@/components/SaleCountdown";
@@ -188,7 +183,10 @@ function RailSkeleton() {
   return (
     <div className="space-y-2.5">
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="liquid-panel-soft h-28 animate-pulse rounded-lg border border-white/10" />
+        <div
+          key={i}
+          className="liquid-panel-soft h-28 animate-pulse rounded-lg border border-white/10"
+        />
       ))}
     </div>
   );
