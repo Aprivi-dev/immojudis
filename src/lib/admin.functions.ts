@@ -11,6 +11,11 @@ const SCROLL_SOURCES = [
   "vench",
   "info_encheres",
   "encheres_publiques",
+  "petites_affiches",
+  "cessions_etat",
+  "agrasc",
+  "encheres_immobilieres",
+  "notaires",
 ] as const;
 
 const startScrollSchema = z.object({

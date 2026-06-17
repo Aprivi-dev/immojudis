@@ -55,6 +55,7 @@ def test_parse_licitor_detail_html_accepts_missing_postal_code() -> None:
     <h3>Maître Juliette André, de ABR et associés, Avocat</h3>
     <p>4, quai Hubert Prom - 33300 Bordeaux</p>
     <p>Tél.: 05 35 54 98 12</p>
+    <p>Surface habitable : 90 m² environ</p>
     """
 
     raw = parse_licitor_detail_html(
@@ -64,6 +65,7 @@ def test_parse_licitor_detail_html_accepts_missing_postal_code() -> None:
     sale = normalize_sale(raw)
 
     assert raw["external_id"] == "108625"
+    assert raw["surface_m2"] == "90"
     assert sale.source_name == "licitor"
     assert sale.department == "33"
     assert sale.city == "Mérignac"

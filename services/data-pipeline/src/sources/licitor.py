@@ -186,6 +186,7 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "property_type": title,
         "title": title,
         "description": description or title,
+        "surface_m2": _extract_surface_m2(raw_text),
         "starting_price_eur": _extract_after(raw_text, r"Mise à prix\s*:?\s*([^\n]+)"),
         "sale_date": _extract_sale_date(lines),
         "visit_dates": _extract_visit_dates(lines),
@@ -385,6 +386,12 @@ def _extract_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, s
 def _is_disallowed_document_url(url: str) -> bool:
     path = urlparse(url).path
     return path.startswith("/data/pub/doc/") or path.startswith("/data/pub/media/")
+
+
+def _extract_surface_m2(text: str) -> str | None:
+    # Première surface bâtie plausible mentionnée dans la page (en m²).
+    match = re.search(r"(\d{1,4}(?:[.,]\d{1,2})?)\s*m(?:²|2)\b", text, re.I)
+    return clean_text(match.group(1)) if match else None
 
 
 def _extract_after(text: str, pattern: str) -> str | None:

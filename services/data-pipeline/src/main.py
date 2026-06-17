@@ -19,11 +19,16 @@ from src.normalize import normalize_sale
 from src.pdf_enrichment import PdfEnrichmentStats, enrich_sale_from_pdfs
 from src.config import load_settings
 from src.quality import build_quality_report, format_quality_report
+from src.sources.agrasc import scrape_agrasc_aquitaine_result
+from src.sources.cessions_etat import scrape_cessions_etat_aquitaine_result
 from src.sources.common import ScrapeResult
+from src.sources.encheres_immobilieres import scrape_encheres_immobilieres_aquitaine_result
 from src.sources.encheres_publiques import scrape_encheres_publiques_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.info_encheres import scrape_info_encheres_aquitaine_result
 from src.sources.licitor import scrape_licitor_aquitaine_result
+from src.sources.notaires import scrape_notaires_aquitaine_result
+from src.sources.petites_affiches import scrape_petites_affiches_aquitaine_result
 from src.sources.vench import scrape_vench_aquitaine_result
 from src.storage.supabase_client import upsert_sales_to_supabase
 from src.storage.supabase_client import upsert_observations_to_supabase
@@ -44,7 +49,18 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 LOGGER = logging.getLogger(__name__)
-SOURCE_NAMES = ("avoventes", "licitor", "vench", "info_encheres", "encheres_publiques")
+SOURCE_NAMES = (
+    "avoventes",
+    "licitor",
+    "vench",
+    "info_encheres",
+    "encheres_publiques",
+    "petites_affiches",
+    "cessions_etat",
+    "agrasc",
+    "encheres_immobilieres",
+    "notaires",
+)
 
 
 @dataclass
@@ -315,6 +331,35 @@ def _enabled_scrapers(
             lambda: scrape_encheres_publiques_aquitaine_result(
                 max_pages=int(settings["encheres_publiques_max_pages"]), known=known
             ),
+        ),
+        (
+            "petites_affiches",
+            bool(settings["enable_petites_affiches_benchmark"]),
+            lambda: scrape_petites_affiches_aquitaine_result(),
+        ),
+        (
+            "cessions_etat",
+            bool(settings["enable_cessions_etat_benchmark"]),
+            lambda: scrape_cessions_etat_aquitaine_result(
+                max_pages=int(settings["cessions_etat_max_pages"]), known=known
+            ),
+        ),
+        (
+            "agrasc",
+            bool(settings["enable_agrasc_benchmark"]),
+            lambda: scrape_agrasc_aquitaine_result(),
+        ),
+        (
+            "encheres_immobilieres",
+            bool(settings["enable_encheres_immobilieres_benchmark"]),
+            lambda: scrape_encheres_immobilieres_aquitaine_result(
+                max_pages=int(settings["encheres_immobilieres_max_pages"])
+            ),
+        ),
+        (
+            "notaires",
+            bool(settings["enable_notaires_benchmark"]),
+            lambda: scrape_notaires_aquitaine_result(max_pages=int(settings["notaires_max_pages"])),
         ),
     ]
     enabled: dict[str, "Callable[[], ScrapeResult]"] = {}

@@ -101,4 +101,19 @@ def load_settings() -> dict[str, str | float | None]:
             "ENCHERES_PUBLIQUES_PLACES",
             "bordeaux-33,libourne-33,bayonne-64,pau-64,dax-40,mont-de-marsan-40,perigueux-24,bergerac-24,agen-47,marmande-47",
         ),
+        "enable_petites_affiches_benchmark": os.getenv("ENABLE_PETITES_AFFICHES_BENCHMARK", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "enable_cessions_etat_benchmark": os.getenv("ENABLE_CESSIONS_ETAT_BENCHMARK", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "cessions_etat_max_pages": int(os.getenv("CESSIONS_ETAT_MAX_PAGES", "3")),
+        "enable_agrasc_benchmark": os.getenv("ENABLE_AGRASC_BENCHMARK", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "enable_encheres_immobilieres_benchmark": os.getenv(
+            "ENABLE_ENCHERES_IMMOBILIERES_BENCHMARK", "true"
+        ).lower()
+        in {"1", "true", "yes", "on"},
+        "encheres_immobilieres_max_pages": int(os.getenv("ENCHERES_IMMOBILIERES_MAX_PAGES", "1")),
+        "enable_notaires_benchmark": os.getenv("ENABLE_NOTAIRES_BENCHMARK", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "notaires_max_pages": int(os.getenv("NOTAIRES_MAX_PAGES", "2")),
     }
