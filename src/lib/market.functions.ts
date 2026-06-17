@@ -88,7 +88,7 @@ export type MarketEstimate = {
   qualityScore: number;
   qualityLabel: "forte" | "correcte" | "fragile";
   qualityWarnings: string[];
-  comparableMode: "surface_matched" | "nearby_type_only";
+  comparableMode: "surface_matched" | "nearby_type_only" | "address_history";
   surfaceMinM2: number | null;
   surfaceMaxM2: number | null;
   medianPricePerM2: number | null;
@@ -455,16 +455,26 @@ async function buildEstimate(input: {
     surfaceMinM2 == null || surfaceMaxM2 == null
       ? []
       : perParcel.filter((s) => s.surface >= surfaceMinM2 && s.surface <= surfaceMaxM2);
-  const comparableMode: MarketEstimate["comparableMode"] =
+  let comparableMode: MarketEstimate["comparableMode"] =
     surfaceMatched.length >= 4 ? "surface_matched" : "nearby_type_only";
-  const basis = comparableMode === "surface_matched" ? surfaceMatched : perParcel;
-
-  // Filtre des valeurs aberrantes (IQR) sur le prix au m².
-  const outlierFiltered = removeOutliers(basis.map((s) => s.pricePerM2));
-  const ppm2Values = outlierFiltered.values;
-  const sortedPpm2 = [...ppm2Values].sort((a, b) => a - b);
 
   const addressHistory = addressMutations.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const addressPrices = addressHistory
+    .map((sale) => sale.pricePerM2)
+    .filter((value): value is number => value != null && value >= MIN_PPM2 && value <= MAX_PPM2);
+
+  // Filtre des valeurs aberrantes (IQR) sur le prix au m².
+  let basisPrices = (comparableMode === "surface_matched" ? surfaceMatched : perParcel).map(
+    (s) => s.pricePerM2,
+  );
+  // ponytail: exact-address fallback; upgrade when DVF exposes enough parcel-level neighbours.
+  if (basisPrices.length < 2 && addressPrices.length >= 2) {
+    comparableMode = "address_history";
+    basisPrices = addressPrices;
+  }
+  const outlierFiltered = removeOutliers(basisPrices);
+  const ppm2Values = outlierFiltered.values;
+  const sortedPpm2 = [...ppm2Values].sort((a, b) => a - b);
 
   const recentTransactions = [...perParcel]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -569,7 +579,10 @@ function assessQuality({
   const warnings: string[] = [];
   let score = 100;
 
-  if (parcelCount < 3) {
+  if (comparableMode === "address_history" && parcelCount < 3) {
+    score -= 55;
+    warnings.push("moins de 3 ventes historiques à l'adresse");
+  } else if (parcelCount < 3) {
     score -= 55;
     warnings.push("moins de 3 parcelles comparables");
   } else if (parcelCount < 6) {
@@ -579,7 +592,10 @@ function assessQuality({
     score -= 10;
   }
 
-  if (comparableMode !== "surface_matched") {
+  if (comparableMode === "address_history") {
+    score -= 16;
+    warnings.push("historique de l'adresse utilisé faute de voisins exploitables");
+  } else if (comparableMode !== "surface_matched") {
     score -= 12;
     warnings.push("surfaces non comparables");
   }
