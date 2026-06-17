@@ -122,8 +122,8 @@ par RLS. L'amorçage d'un nouveau projet se fait via
 ## Pipeline de données
 
 Le scraper Python collecte les ventes judiciaires publiques (Avoventes en source
-prioritaire, autres sources en croisement), normalise, dédoublonne, géocode,
-enrichit puis insère dans Supabase. Il tourne via GitHub Actions
+prioritaire, sources publiques complémentaires en croisement), normalise,
+dédoublonne, géocode, enrichit puis insère dans Supabase. Il tourne via GitHub Actions
 (`data-pipeline.yml`) et peut être déclenché depuis `/admin`. Détails et
 installation : [`services/data-pipeline/README.md`](services/data-pipeline/README.md).
 

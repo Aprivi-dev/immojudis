@@ -14,6 +14,11 @@ La source prioritaire est Avoventes. Licitor est disponible comme source optionn
   - `src/sources/info_encheres.py` : scraper Info Enchères avec fiches détail et PDF publics.
   - `src/sources/vench.py` : scraper Vench pour couverture/listings publics, sans contourner les contenus abonnés.
   - `src/sources/encheres_publiques.py` : scraper Enchères-Publiques.com via les pages SEO publiques.
+  - `src/sources/petites_affiches.py` : scraper Petites Affiches via le formulaire public par département.
+  - `src/sources/cessions_etat.py` : scraper Cessions immobilières de l'Etat via les cartes HTML publiques.
+  - `src/sources/agrasc.py` : scraper AGRASC via les cartes immobilières publiques.
+  - `src/sources/encheres_immobilieres.py` : scraper Enchères Immobilières via les données Next publiques.
+  - `src/sources/notaires.py` : scraper Immobilier.notaires.fr via l'API publique des annonces VAE/VNI.
   - `src/sources/cabinet_generic.py` : point d'extension pour les pages de cabinets locaux.
 
 ## Installation
@@ -105,9 +110,18 @@ INFO_ENCHERES_MAX_PAGES=4
 ENABLE_ENCHERES_PUBLIQUES_BENCHMARK=true
 ENCHERES_PUBLIQUES_MAX_PAGES=10
 ENCHERES_PUBLIQUES_PLACES=bordeaux-33,libourne-33,bayonne-64,pau-64,dax-40,mont-de-marsan-40,perigueux-24,bergerac-24,agen-47,marmande-47
+ENABLE_PETITES_AFFICHES_BENCHMARK=true
+ENABLE_CESSIONS_ETAT_BENCHMARK=true
+CESSIONS_ETAT_MAX_PAGES=3
+ENABLE_AGRASC_BENCHMARK=true
+ENABLE_ENCHERES_IMMOBILIERES_BENCHMARK=true
+ENCHERES_IMMOBILIERES_MAX_PAGES=1
+ENABLE_NOTAIRES_BENCHMARK=true
+NOTAIRES_MAX_PAGES=2
 ```
 
 Tous les scrapers respectent `robots.txt`. Si une source refuse une URL ou masque une partie des documents, le pipeline journalise l'erreur et continue avec les autres sources, sans tentative de contournement.
+`encheres-domaine.gouv.fr` et `immonotairesencheres.com` ne sont pas intégrés tant qu'ils ne publient pas de page/API de listings exploitable sans session JS/cookies.
 
 Créer la table dans Supabase automatiquement avec :
 
@@ -154,8 +168,8 @@ par le workflow GitHub Actions planifié.
 Le pipeline :
 
 1. collecte Avoventes pour les départements Aquitaine ;
-2. collecte Licitor, Info Enchères, Vench et Enchères-Publiques si les sources de croisement sont activées ;
-3. inspecte les fiches détail publiques Avoventes, Info Enchères et Vench pour enrichir les champs et les documents autorisés ;
+2. collecte Licitor, Info Enchères, Vench, Enchères-Publiques et les sources publiques complémentaires si elles sont activées ;
+3. inspecte les fiches détail publiques disponibles pour enrichir les champs et les documents autorisés ;
 4. normalise légèrement chaque observation source ;
 5. calcule un hash de contenu indépendant de la source ;
 6. déduplique et fusionne les doublons inter-sources en une vente canonique ;

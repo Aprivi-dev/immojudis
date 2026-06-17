@@ -58,12 +58,37 @@ class RawEncheresPubliquesSale(RawAuctionSale):
     source_name: Literal["encheres_publiques"]
 
 
+class RawPetitesAffichesSale(RawAuctionSale):
+    source_name: Literal["petites_affiches"]
+
+
+class RawCessionsEtatSale(RawAuctionSale):
+    source_name: Literal["cessions_etat"]
+
+
+class RawAgrascSale(RawAuctionSale):
+    source_name: Literal["agrasc"]
+
+
+class RawEncheresImmobilieresSale(RawAuctionSale):
+    source_name: Literal["encheres_immobilieres"]
+
+
+class RawNotairesSale(RawAuctionSale):
+    source_name: Literal["notaires"]
+
+
 SOURCE_MODELS: dict[str, type[RawAuctionSale]] = {
     "avoventes": RawAvoventesSale,
     "licitor": RawLicitorSale,
     "vench": RawVenchSale,
     "info_encheres": RawInfoEncheresSale,
     "encheres_publiques": RawEncheresPubliquesSale,
+    "petites_affiches": RawPetitesAffichesSale,
+    "cessions_etat": RawCessionsEtatSale,
+    "agrasc": RawAgrascSale,
+    "encheres_immobilieres": RawEncheresImmobilieresSale,
+    "notaires": RawNotairesSale,
 }
 
 

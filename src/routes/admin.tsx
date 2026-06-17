@@ -50,6 +50,11 @@ const SOURCE_OPTIONS: Array<{ value: AdminScrollSource; label: string }> = [
   { value: "vench", label: "Vench" },
   { value: "info_encheres", label: "Info Enchères" },
   { value: "encheres_publiques", label: "Enchères-Publiques" },
+  { value: "petites_affiches", label: "Petites Affiches" },
+  { value: "cessions_etat", label: "Cessions État" },
+  { value: "agrasc", label: "AGRASC" },
+  { value: "encheres_immobilieres", label: "Enchères Immobilières" },
+  { value: "notaires", label: "Notaires" },
 ];
 
 export const Route = createFileRoute("/admin")({
