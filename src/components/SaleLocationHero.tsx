@@ -57,6 +57,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
   const [isRotating, setIsRotating] = useState(!reducedMotion);
   const [isVisible, setIsVisible] = useState(true);
   const [mode3d, setMode3d] = useState(false);
+  const [showStreetView, setShowStreetView] = useState(false);
 
   const aerialRef = useRef<HTMLDivElement>(null);
   const streetRef = useRef<HTMLDivElement>(null);
@@ -228,7 +229,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
 
   // Street View : recherche du panorama le plus proche, sinon état "missing".
   useEffect(() => {
-    if (!hasMaps || lat == null || lng == null || !streetRef.current) return;
+    if (!showStreetView || !hasMaps || lat == null || lng == null || !streetRef.current) return;
     let cancelled = false;
     setStreetState("loading");
 
@@ -276,7 +277,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
     return () => {
       cancelled = true;
     };
-  }, [apiKey, hasMaps, lat, lng]);
+  }, [apiKey, hasMaps, lat, lng, showStreetView]);
 
   if (!hasMaps) {
     return (
@@ -315,8 +316,26 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
 
       {/* Tuile 2 — Street View */}
       <div className="liquid-media relative min-h-[260px] overflow-hidden rounded-lg lg:min-h-[440px]">
-        <div ref={streetRef} className="absolute inset-0" />
+        {showStreetView ? <div ref={streetRef} className="absolute inset-0" /> : null}
         <TileBadge>Street View</TileBadge>
+        {!showStreetView && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 px-6 text-center backdrop-blur-sm">
+            <MapPin className="h-5 w-5 text-gold" />
+            <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
+              Chargez Street View uniquement si vous souhaitez inspecter la rue.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowStreetView(true)}
+              className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-soft transition-colors hover:border-gold/60 hover:bg-gold/15 hover:text-gold"
+            >
+              Afficher Street View
+            </button>
+          </div>
+        )}
+        {showStreetView && streetState === "loading" && (
+          <FallbackOverlay text="Chargement de Street View..." link={mapsLink} />
+        )}
         {(streetState === "missing" || streetState === "error") && (
           <FallbackOverlay
             text={

@@ -4,13 +4,6 @@ import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
 import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 type RawSearch = Record<string, string | number | undefined>;
@@ -116,19 +109,19 @@ export function MapFilterBar() {
         onChange={(e) => set({ city: e.target.value })}
         className="h-9 w-32 bg-background/40"
       />
-      <Select value={local.type || "all"} onValueChange={(v) => set({ type: v === "all" ? "" : v })}>
-        <SelectTrigger aria-label="Type de bien" className="h-9 w-36">
-          <SelectValue placeholder="Tous types" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Tous types</SelectItem>
-          <SelectItem value="apartment">Appartement</SelectItem>
-          <SelectItem value="house">Maison</SelectItem>
-          <SelectItem value="land">Terrain</SelectItem>
-          <SelectItem value="commercial">Commercial</SelectItem>
-          <SelectItem value="garage">Garage</SelectItem>
-        </SelectContent>
-      </Select>
+      <select
+        aria-label="Type de bien"
+        className="form-input h-9 w-36 bg-background/40 text-sm"
+        value={local.type || "all"}
+        onChange={(e) => set({ type: e.target.value === "all" ? "" : e.target.value })}
+      >
+        <option value="all">Tous types</option>
+        <option value="apartment">Appartement</option>
+        <option value="house">Maison</option>
+        <option value="land">Terrain</option>
+        <option value="commercial">Commercial</option>
+        <option value="garage">Garage</option>
+      </select>
       <Input
         aria-label="Prix maximum"
         type="number"
@@ -137,18 +130,18 @@ export function MapFilterBar() {
         onChange={(e) => set({ max_price: e.target.value })}
         className="h-9 w-28 bg-background/40"
       />
-      <Select value={local.sort} onValueChange={(v) => set({ sort: v })}>
-        <SelectTrigger aria-label="Tri" className="h-9 w-40">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="date_asc">Date (plus proche)</SelectItem>
-          <SelectItem value="score_desc">Pertinence</SelectItem>
-          <SelectItem value="price_asc">Prix croissant</SelectItem>
-          <SelectItem value="price_desc">Prix décroissant</SelectItem>
-          <SelectItem value="surface_desc">Plus grande surface</SelectItem>
-        </SelectContent>
-      </Select>
+      <select
+        aria-label="Tri"
+        className="form-input h-9 w-40 bg-background/40 text-sm"
+        value={local.sort}
+        onChange={(e) => set({ sort: e.target.value })}
+      >
+        <option value="date_asc">Date (plus proche)</option>
+        <option value="score_desc">Pertinence</option>
+        <option value="price_asc">Prix croissant</option>
+        <option value="price_desc">Prix décroissant</option>
+        <option value="surface_desc">Plus grande surface</option>
+      </select>
 
       <Popover>
         <PopoverTrigger asChild>
@@ -169,20 +162,19 @@ export function MapFilterBar() {
         <PopoverContent align="end" className="w-80 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Occupation">
-              <Select
+              <select
+                aria-label="Occupation"
+                className="form-input h-9 w-full bg-background/40 text-sm"
                 value={local.occupancy || "all"}
-                onValueChange={(v) => set({ occupancy: v === "all" ? "" : v })}
+                onChange={(e) =>
+                  set({ occupancy: e.target.value === "all" ? "" : e.target.value })
+                }
               >
-                <SelectTrigger aria-label="Occupation" className="h-9">
-                  <SelectValue placeholder="Toutes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Toutes</SelectItem>
-                  <SelectItem value="free">Libre</SelectItem>
-                  <SelectItem value="occupied">Occupé</SelectItem>
-                  <SelectItem value="rented">Loué</SelectItem>
-                </SelectContent>
-              </Select>
+                <option value="all">Toutes</option>
+                <option value="free">Libre</option>
+                <option value="occupied">Occupé</option>
+                <option value="rented">Loué</option>
+              </select>
             </Field>
             <Field label="Surface min (m²)">
               <Input

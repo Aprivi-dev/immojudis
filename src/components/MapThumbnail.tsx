@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import { osmTileUrl, osmTileMarkerPct } from "@/lib/tiles";
+import { osmTileMarkerPct, osmTileUrl } from "@/lib/tiles";
 import { googleStaticMapUrl } from "@/lib/google-maps";
 
 type Props = {
@@ -22,7 +22,7 @@ export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
 
   useEffect(() => {
     setProvider(googleUrl ? "google" : "osm");
-  }, [googleUrl, lat, lng, zoom]);
+  }, [googleUrl]);
 
   if (lat == null || lng == null) {
     return (
