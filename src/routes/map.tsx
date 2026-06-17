@@ -119,15 +119,15 @@ function MapPage() {
 
   const fitToMarkers = Boolean(
     search.department ||
-      search.city ||
-      search.type ||
-      search.max_price ||
-      search.min_surface ||
-      search.occupancy ||
-      search.min_score ||
-      search.max_price_per_m2 ||
-      search.min_yield ||
-      (center && search.around_radius != null),
+    search.city ||
+    search.type ||
+    search.max_price ||
+    search.min_surface ||
+    search.occupancy ||
+    search.min_score ||
+    search.max_price_per_m2 ||
+    search.min_yield ||
+    (center && search.around_radius != null),
   );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);

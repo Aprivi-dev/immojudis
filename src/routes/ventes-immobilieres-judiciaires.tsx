@@ -97,7 +97,10 @@ const METHOD: Array<{ n: string; title: string; text: string }> = [
 ];
 
 const LEXIQUE: Array<{ term: string; def: string }> = [
-  { term: "Adjudication", def: "Attribution du bien au meilleur enchérisseur à l'issue de l'audience." },
+  {
+    term: "Adjudication",
+    def: "Attribution du bien au meilleur enchérisseur à l'issue de l'audience.",
+  },
   {
     term: "Adjudicataire",
     def: "Personne qui remporte la vente et devient acquéreur du bien, sous réserve des suites de la procédure.",
@@ -137,15 +140,27 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
 ];
 
 const INSTITUTIONAL_LINKS: Array<{ href: string; label: string }> = [
-  { href: "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987", label: "Service-Public.fr — Saisie immobilière" },
+  {
+    href: "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987",
+    label: "Service-Public.fr — Saisie immobilière",
+  },
   {
     href: "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939111/",
     label: "Légifrance — Code des procédures civiles d'exécution, vente par adjudication",
   },
-  { href: "https://www.legifrance.gouv.fr/codes/id/LEGISCTA000025939177", label: "Légifrance — Surenchère" },
-  { href: "https://www.justice.fr/", label: "Justice.fr — Portail officiel du ministère de la Justice" },
+  {
+    href: "https://www.legifrance.gouv.fr/codes/id/LEGISCTA000025939177",
+    label: "Légifrance — Surenchère",
+  },
+  {
+    href: "https://www.justice.fr/",
+    label: "Justice.fr — Portail officiel du ministère de la Justice",
+  },
   { href: "https://www.cnb.avocat.fr/", label: "Conseil national des barreaux" },
-  { href: "https://commissaire-justice.fr/", label: "Chambre nationale des commissaires de justice" },
+  {
+    href: "https://commissaire-justice.fr/",
+    label: "Chambre nationale des commissaires de justice",
+  },
   {
     href: "https://consignations.caissedesdepots.fr/professionnel-du-droit/difficultes-financieres/saisie-immobiliere",
     label: "Caisse des Dépôts — Saisie immobilière et consignations",
@@ -191,7 +206,6 @@ function GuidePage() {
     <main className="liquid-page min-h-screen bg-background pb-24 text-foreground">
       <script
         type="application/ld+json"
-        // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_JSON_LD) }}
       />
 
@@ -207,8 +221,8 @@ function GuidePage() {
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
             Acheter un bien lors d'une vente immobilière judiciaire peut être une opportunité. Mais
             ce n'est jamais un achat immobilier classique. Avant d'enchérir, il faut comprendre la
-            procédure, lire les pièces, évaluer les risques, intégrer les frais et fixer une limite à
-            ne pas dépasser.
+            procédure, lire les pièces, évaluer les risques, intégrer les frais et fixer une limite
+            à ne pas dépasser.
           </p>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
@@ -217,8 +231,8 @@ function GuidePage() {
               d'audience et mise à prix.
             </IntroCard>
             <IntroCard title="Analyse du dossier">
-              Identifiez les éléments clés : occupation, cahier des conditions de vente, diagnostics,
-              frais, travaux et contraintes.
+              Identifiez les éléments clés : occupation, cahier des conditions de vente,
+              diagnostics, frais, travaux et contraintes.
             </IntroCard>
             <IntroCard title="Prix plafond">
               Décidez avec méthode grâce à une approche en coût complet, intégrant les frais, les
@@ -270,8 +284,8 @@ function GuidePage() {
               courts et des conséquences importantes en cas de mauvaise préparation.
             </P>
             <P>
-              Pour consulter le cadre général de la saisie immobilière, vous pouvez vous référer à la
-              page officielle de Service-Public :{" "}
+              Pour consulter le cadre général de la saisie immobilière, vous pouvez vous référer à
+              la page officielle de Service-Public :{" "}
               <Ext href="https://www.service-public.gouv.fr/particuliers/vosdroits/F16987">
                 Saisie immobilière – Service-Public.fr
               </Ext>
@@ -282,19 +296,19 @@ function GuidePage() {
           <Section id="origine" title="Pourquoi un bien est-il vendu aux enchères judiciaires ?">
             <P>
               Un bien immobilier peut être vendu judiciairement dans plusieurs situations. La plus
-              connue est la saisie immobilière. Lorsqu'un débiteur ne paie pas sa dette, un créancier
-              peut engager une procédure visant à faire vendre le bien afin de récupérer tout ou
-              partie des sommes dues.
+              connue est la saisie immobilière. Lorsqu'un débiteur ne paie pas sa dette, un
+              créancier peut engager une procédure visant à faire vendre le bien afin de récupérer
+              tout ou partie des sommes dues.
             </P>
             <P>
               Une vente judiciaire peut aussi intervenir dans le cadre d'une liquidation judiciaire,
-              d'un partage judiciaire entre indivisaires, d'une succession conflictuelle, d'un divorce
-              ou d'une décision de justice ordonnant la vente d'un immeuble.
+              d'un partage judiciaire entre indivisaires, d'une succession conflictuelle, d'un
+              divorce ou d'une décision de justice ordonnant la vente d'un immeuble.
             </P>
             <P>
               Dans tous les cas, l'acheteur doit comprendre que la vente est liée à une procédure.
-              Cela explique la présence du tribunal, des avocats, du greffe, du commissaire de justice
-              et de documents juridiques spécifiques.
+              Cela explique la présence du tribunal, des avocats, du greffe, du commissaire de
+              justice et de documents juridiques spécifiques.
             </P>
           </Section>
 
@@ -302,12 +316,12 @@ function GuidePage() {
             <P>
               Immojudis est conçu pour les acheteurs qui veulent aller plus loin qu'une simple
               annonce. Une annonce de vente judiciaire donne des informations de base : adresse du
-              bien, mise à prix, date d'audience, tribunal compétent, avocat poursuivant, modalités de
-              visite. Mais elle ne suffit pas pour décider.
+              bien, mise à prix, date d'audience, tribunal compétent, avocat poursuivant, modalités
+              de visite. Mais elle ne suffit pas pour décider.
             </P>
             <P>
-              Ce qui compte réellement, c'est l'analyse du dossier. Immojudis aide à structurer cette
-              analyse autour de plusieurs questions essentielles.
+              Ce qui compte réellement, c'est l'analyse du dossier. Immojudis aide à structurer
+              cette analyse autour de plusieurs questions essentielles.
             </P>
             <Checklist
               items={[
@@ -334,18 +348,18 @@ function GuidePage() {
               référencement.
             </P>
             <P>
-              En pratique, l'information est souvent fragmentée. Une vente peut être connue localement,
-              mais difficile à repérer pour un acheteur qui surveille plusieurs départements ou
-              plusieurs tribunaux.
+              En pratique, l'information est souvent fragmentée. Une vente peut être connue
+              localement, mais difficile à repérer pour un acheteur qui surveille plusieurs
+              départements ou plusieurs tribunaux.
             </P>
             <P>
-              Immojudis centralise les annonces et facilite la recherche par critères : localisation,
-              tribunal, date d'audience, type de bien, mise à prix, surface, occupation, niveau de
-              risque ou potentiel d'investissement.
+              Immojudis centralise les annonces et facilite la recherche par critères :
+              localisation, tribunal, date d'audience, type de bien, mise à prix, surface,
+              occupation, niveau de risque ou potentiel d'investissement.
             </P>
             <P>
-              L'objectif est de permettre une veille efficace sur les ventes judiciaires à venir, sans
-              perdre de temps à consulter manuellement des sources dispersées.
+              L'objectif est de permettre une veille efficace sur les ventes judiciaires à venir,
+              sans perdre de temps à consulter manuellement des sources dispersées.
             </P>
           </Section>
 
@@ -357,8 +371,8 @@ function GuidePage() {
 
             <SubTitle>1. Avant la vente : analyser le dossier</SubTitle>
             <P>
-              La phase préparatoire est la plus importante. C'est avant l'audience que se gagne ou se
-              perd une bonne opération.
+              La phase préparatoire est la plus importante. C'est avant l'audience que se gagne ou
+              se perd une bonne opération.
             </P>
 
             <SubTitle>Lire l'annonce de vente</SubTitle>
@@ -369,9 +383,9 @@ function GuidePage() {
             </P>
             <P>
               La mise à prix doit être interprétée avec prudence. Elle correspond au prix de départ
-              des enchères, pas à la valeur de marché du bien. Une mise à prix faible peut attirer de
-              nombreux enchérisseurs. Elle peut aussi traduire des contraintes : occupation, travaux
-              lourds, procédure complexe, faible liquidité ou incertitude juridique.
+              des enchères, pas à la valeur de marché du bien. Une mise à prix faible peut attirer
+              de nombreux enchérisseurs. Elle peut aussi traduire des contraintes : occupation,
+              travaux lourds, procédure complexe, faible liquidité ou incertitude juridique.
             </P>
 
             <SubTitle>Consulter le cahier des conditions de vente</SubTitle>
@@ -387,10 +401,10 @@ function GuidePage() {
               accessibles en ligne.
             </P>
             <P>
-              Immojudis accorde une importance particulière à ce document, car il contient souvent les
-              informations qui changent complètement la lecture d'une opportunité : bail en cours,
-              occupation incertaine, procédure d'expulsion à prévoir, servitude, copropriété en
-              difficulté, état du bien, contraintes de jouissance ou charges particulières.
+              Immojudis accorde une importance particulière à ce document, car il contient souvent
+              les informations qui changent complètement la lecture d'une opportunité : bail en
+              cours, occupation incertaine, procédure d'expulsion à prévoir, servitude, copropriété
+              en difficulté, état du bien, contraintes de jouissance ou charges particulières.
             </P>
             <P>
               Pour consulter les textes applicables à la vente par adjudication, vous pouvez vous
@@ -409,33 +423,33 @@ function GuidePage() {
             </P>
             <P>
               L'impact est majeur : délai de prise de possession, possibilité de louer, coût d'une
-              procédure, décote à appliquer, stratégie de revente ou de travaux. Un appartement occupé
-              avec un bail opposable ne se valorise pas comme un appartement libre.
+              procédure, décote à appliquer, stratégie de revente ou de travaux. Un appartement
+              occupé avec un bail opposable ne se valorise pas comme un appartement libre.
             </P>
             <P>
-              Avant toute enchère, il faut donc vérifier précisément la situation d'occupation dans les
-              pièces du dossier, et ne pas se contenter d'une simple mention dans l'annonce.
+              Avant toute enchère, il faut donc vérifier précisément la situation d'occupation dans
+              les pièces du dossier, et ne pas se contenter d'une simple mention dans l'annonce.
             </P>
 
             <SubTitle>Visiter le bien</SubTitle>
             <P>
-              Les visites sont généralement organisées avant l'audience, sur un ou plusieurs créneaux.
-              Elles sont souvent collectives et encadrées par un commissaire de justice.
+              Les visites sont généralement organisées avant l'audience, sur un ou plusieurs
+              créneaux. Elles sont souvent collectives et encadrées par un commissaire de justice.
             </P>
             <P>
               Il est fortement recommandé d'y assister. Les photos et descriptifs ne suffisent pas.
               Lors de la visite, il faut observer l'état général, les travaux visibles, les
-              installations, les traces d'humidité, la luminosité, les accès, les parties communes, le
-              voisinage immédiat et les contraintes pratiques.
+              installations, les traces d'humidité, la luminosité, les accès, les parties communes,
+              le voisinage immédiat et les contraintes pratiques.
             </P>
             <P>
-              Pour les biens à rénover, il peut être utile de se faire accompagner par un professionnel
-              du bâtiment. Une estimation trop optimiste des travaux peut transformer une enchère
-              intéressante en mauvaise opération.
+              Pour les biens à rénover, il peut être utile de se faire accompagner par un
+              professionnel du bâtiment. Une estimation trop optimiste des travaux peut transformer
+              une enchère intéressante en mauvaise opération.
             </P>
             <P>
-              Pour mieux comprendre le rôle des commissaires de justice, vous pouvez consulter le site
-              institutionnel de la profession :{" "}
+              Pour mieux comprendre le rôle des commissaires de justice, vous pouvez consulter le
+              site institutionnel de la profession :{" "}
               <Ext href="https://commissaire-justice.fr/">
                 Chambre nationale des commissaires de justice
               </Ext>
@@ -444,21 +458,23 @@ function GuidePage() {
 
             <SubTitle>Évaluer le marché local</SubTitle>
             <P>
-              Une vente judiciaire doit être comparée au marché réel. La bonne question n'est pas : «
-              la mise à prix est-elle basse ? » mais : « à quel prix total ce bien reste-t-il
+              Une vente judiciaire doit être comparée au marché réel. La bonne question n'est pas :
+              « la mise à prix est-elle basse ? » mais : « à quel prix total ce bien reste-t-il
               intéressant, compte tenu des frais, travaux et risques ? »
             </P>
             <P>
-              Immojudis raisonne en coût complet. Le prix d'adjudication n'est qu'un élément du calcul.
-              Il faut ajouter les frais préalables, droits de mutation, émoluments, honoraires
-              d'avocat, frais de publication, travaux, charges, financement et marge de sécurité.
+              Immojudis raisonne en coût complet. Le prix d'adjudication n'est qu'un élément du
+              calcul. Il faut ajouter les frais préalables, droits de mutation, émoluments,
+              honoraires d'avocat, frais de publication, travaux, charges, financement et marge de
+              sécurité.
             </P>
             <P>Cette approche permet de fixer un prix plafond rationnel avant l'audience.</P>
 
             <SubTitle>Préparer le financement</SubTitle>
             <P>
               L'achat aux enchères judiciaires ne fonctionne pas comme une vente classique avec
-              condition suspensive d'obtention de prêt. Si vous remportez l'enchère, vous êtes engagé.
+              condition suspensive d'obtention de prêt. Si vous remportez l'enchère, vous êtes
+              engagé.
             </P>
             <P>
               Il est donc nécessaire de sécuriser son financement avant l'audience : accord bancaire
@@ -466,15 +482,15 @@ function GuidePage() {
               avec les exigences de la procédure.
             </P>
             <P>
-              Un refus de prêt après adjudication ne permet pas de se désengager simplement. Le défaut
-              de paiement peut entraîner des conséquences financières importantes.
+              Un refus de prêt après adjudication ne permet pas de se désengager simplement. Le
+              défaut de paiement peut entraîner des conséquences financières importantes.
             </P>
 
             <SubTitle>Être représenté par un avocat</SubTitle>
             <P>
               Pour enchérir lors d'une vente immobilière judiciaire, l'acheteur doit être représenté
-              par un avocat inscrit au barreau du tribunal compétent. L'acheteur ne porte pas lui-même
-              les enchères.
+              par un avocat inscrit au barreau du tribunal compétent. L'acheteur ne porte pas
+              lui-même les enchères.
             </P>
             <P>
               Avant l'audience, l'avocat prépare le pouvoir d'enchérir, vérifie les garanties
@@ -518,17 +534,19 @@ function GuidePage() {
               enchérisseur est déclaré adjudicataire.
             </P>
             <P>
-              Pour un premier achat, il peut être utile d'assister à une audience sans enchérir. Cela
-              permet de comprendre le rythme, la procédure, le rôle des avocats et l'ambiance de la
-              salle de vente.
+              Pour un premier achat, il peut être utile d'assister à une audience sans enchérir.
+              Cela permet de comprendre le rythme, la procédure, le rôle des avocats et l'ambiance
+              de la salle de vente.
             </P>
 
             <SubTitle>3. Après l'adjudication : surenchère, paiement et propriété</SubTitle>
-            <P>Remporter l'audience ne signifie pas toujours que l'achat est immédiatement définitif.</P>
+            <P>
+              Remporter l'audience ne signifie pas toujours que l'achat est immédiatement définitif.
+            </P>
             <P>
               Après l'adjudication, une surenchère peut être formée dans le délai légal. Elle doit
-              respecter les conditions prévues par les textes, notamment être déposée par acte d'avocat
-              au greffe compétent.
+              respecter les conditions prévues par les textes, notamment être déposée par acte
+              d'avocat au greffe compétent.
             </P>
             <P>
               Vous pouvez consulter le texte officiel sur Légifrance :{" "}
@@ -551,8 +569,8 @@ function GuidePage() {
               .
             </P>
             <P>
-              Après paiement et formalités de publication, le jugement d'adjudication constitue le titre
-              de propriété.
+              Après paiement et formalités de publication, le jugement d'adjudication constitue le
+              titre de propriété.
             </P>
           </Section>
 
@@ -576,22 +594,26 @@ function GuidePage() {
               ]}
             />
             <P>
-              Immojudis met l'accent sur cette logique de coût complet. Un bien adjugé sous le prix du
-              marché peut rester une mauvaise opération si les frais, travaux ou délais de libération
-              sont sous-estimés.
+              Immojudis met l'accent sur cette logique de coût complet. Un bien adjugé sous le prix
+              du marché peut rester une mauvaise opération si les frais, travaux ou délais de
+              libération sont sous-estimés.
             </P>
           </Section>
 
-          <Section id="avantages" title="Quels sont les avantages des ventes immobilières judiciaires ?">
+          <Section
+            id="avantages"
+            title="Quels sont les avantages des ventes immobilières judiciaires ?"
+          >
             <P>
-              Les ventes immobilières judiciaires peuvent donner accès à des biens peu visibles sur le
-              marché classique. Certaines ventes présentent une mise à prix attractive, des biens à
-              rénover, des emplacements recherchés ou des opportunités adaptées à une stratégie
+              Les ventes immobilières judiciaires peuvent donner accès à des biens peu visibles sur
+              le marché classique. Certaines ventes présentent une mise à prix attractive, des biens
+              à rénover, des emplacements recherchés ou des opportunités adaptées à une stratégie
               d'investissement.
             </P>
             <P>
-              La procédure est publique et encadrée. Tous les enchérisseurs participent selon les mêmes
-              règles. Le prix final se forme en audience, par confrontation directe entre les offres.
+              La procédure est publique et encadrée. Tous les enchérisseurs participent selon les
+              mêmes règles. Le prix final se forme en audience, par confrontation directe entre les
+              offres.
             </P>
             <P>
               Pour un investisseur préparé, ce marché peut donc offrir des opportunités. Mais la
@@ -606,20 +628,20 @@ function GuidePage() {
             </P>
             <P>
               Le deuxième risque est de mal lire le dossier. Une servitude, une occupation, une
-              procédure en cours, une copropriété fragile ou un diagnostic défavorable peuvent modifier
-              fortement la valeur du bien.
+              procédure en cours, une copropriété fragile ou un diagnostic défavorable peuvent
+              modifier fortement la valeur du bien.
             </P>
             <P>
-              Le troisième risque est financier. Si le financement n'est pas sécurisé, l'adjudicataire
-              peut se retrouver dans l'incapacité de payer le prix.
+              Le troisième risque est financier. Si le financement n'est pas sécurisé,
+              l'adjudicataire peut se retrouver dans l'incapacité de payer le prix.
             </P>
             <P>
               Le quatrième risque concerne les travaux. Une visite rapide ne permet pas toujours
               d'identifier précisément le coût de remise en état.
             </P>
             <P>
-              Le cinquième risque est émotionnel. En audience, la concurrence peut pousser à dépasser
-              son prix plafond. C'est précisément ce qu'il faut éviter.
+              Le cinquième risque est émotionnel. En audience, la concurrence peut pousser à
+              dépasser son prix plafond. C'est précisément ce qu'il faut éviter.
             </P>
             <Callout>
               Immojudis a été pensé pour limiter ces risques en donnant une lecture structurée du
@@ -657,16 +679,17 @@ function GuidePage() {
               saisie, d'une liquidation ou d'une décision de justice.
             </P>
             <P>
-              La vente notariale est une vente aux enchères organisée par un notaire, généralement dans
-              un cadre amiable. Pour plus d'informations sur ce type de vente, vous pouvez consulter les
-              Notaires de France :{" "}
+              La vente notariale est une vente aux enchères organisée par un notaire, généralement
+              dans un cadre amiable. Pour plus d'informations sur ce type de vente, vous pouvez
+              consulter les Notaires de France :{" "}
               <Ext href="https://www.notaires.fr/fr/immobilier-fiscalite/vente-rapide/les-ventes-aux-encheres-immobilieres-notariales">
                 Les ventes aux enchères immobilières notariales
               </Ext>
               .
             </P>
             <P>
-              La vente domaniale concerne des biens vendus par l'État ou certaines personnes publiques.
+              La vente domaniale concerne des biens vendus par l'État ou certaines personnes
+              publiques.
             </P>
             <P>
               Ces procédures ne répondent pas exactement aux mêmes règles. Avant d'enchérir, il faut
@@ -784,7 +807,10 @@ function Checklist({ items }: { items: string[] }) {
   return (
     <ul className="mt-4 grid gap-2.5">
       {items.map((item) => (
-        <li key={item} className="flex items-start gap-2.5 text-[15px] leading-relaxed text-muted-foreground">
+        <li
+          key={item}
+          className="flex items-start gap-2.5 text-[15px] leading-relaxed text-muted-foreground"
+        >
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
           <span>{item}</span>
         </li>

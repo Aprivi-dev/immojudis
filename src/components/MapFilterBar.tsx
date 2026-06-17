@@ -166,9 +166,7 @@ export function MapFilterBar() {
                 aria-label="Occupation"
                 className="form-input h-9 w-full bg-background/40 text-sm"
                 value={local.occupancy || "all"}
-                onChange={(e) =>
-                  set({ occupancy: e.target.value === "all" ? "" : e.target.value })
-                }
+                onChange={(e) => set({ occupancy: e.target.value === "all" ? "" : e.target.value })}
               >
                 <option value="all">Toutes</option>
                 <option value="free">Libre</option>
