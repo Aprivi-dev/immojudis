@@ -694,6 +694,12 @@ function MarketLocalCard({
 }) {
   const areaLabel = estimate?.areaKind === "urban" ? "ville" : "campagne";
   const hasRange = Boolean(estimate?.medianPricePerM2);
+  const usesAddressHistory = estimate?.comparableMode === "address_history";
+  const sampleLabel = estimate
+    ? usesAddressHistory
+      ? `vente${estimate.sampleSize > 1 ? "s" : ""} de l'adresse`
+      : `parcelle${estimate.sampleSize > 1 ? "s" : ""} bâtie${estimate.sampleSize > 1 ? "s" : ""} (une vente par parcelle)`
+    : "";
 
   return (
     <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4">
@@ -724,10 +730,8 @@ function MarketLocalCard({
           <PriceRange estimate={estimate!} />
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
             Fourchette établie sur{" "}
-            <strong className="text-foreground">{estimate!.sampleSize}</strong> parcelle
-            {estimate!.sampleSize > 1 ? "s" : ""} bâtie{estimate!.sampleSize > 1 ? "s" : ""} (une
-            vente par parcelle), sur {estimate!.totalNearbySampleSize} ventes recensées dans le
-            rayon.
+            <strong className="text-foreground">{estimate!.sampleSize}</strong> {sampleLabel}, sur{" "}
+            {estimate!.totalNearbySampleSize} ventes recensées dans le rayon.
             {usingCachedEstimate ? " Estimation conservée en cache." : ""}
           </p>
           {estimate!.qualityWarnings.length > 0 && (
@@ -1195,7 +1199,11 @@ function buildSuccessConditions(
       title: "Marché local",
       text:
         estimate && !useManualMarket
-          ? `Référence DVF ${estimate.qualityLabel} : ${estimate.sampleSize} ventes comparables retenues dans un rayon de ${estimate.radiusM} m.`
+          ? `Référence DVF ${estimate.qualityLabel} : ${estimate.sampleSize} ${
+              estimate.comparableMode === "address_history"
+                ? "ventes de l'adresse"
+                : "ventes comparables"
+            } retenues dans un rayon de ${estimate.radiusM} m.`
           : "Référence à compléter manuellement si les ventes DVF ne suffisent pas autour de l'adresse.",
     },
   ];
