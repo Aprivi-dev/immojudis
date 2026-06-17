@@ -13,7 +13,6 @@ import {
 } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
 import { getSaleSurface } from "@/lib/surface";
-import { FeatureBadges } from "./FeatureBadges";
 import { SaleCountdown, isNew } from "./SaleCountdown";
 import { MapThumbnail } from "./MapThumbnail";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
@@ -120,7 +119,6 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
               Aucun point bloquant détecté
             </span>
           )}
-          <FeatureBadges sale={sale} max={2} />
         </div>
 
         <Link

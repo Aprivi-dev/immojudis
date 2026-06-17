@@ -9,12 +9,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { BrandLogo } from "@/components/BrandLogo";
 import { isAdminAccount, isProfessionalAccount } from "@/lib/account";
 
-const NAV_ITEMS = [
+const AUTH_NAV_ITEMS = [
   { to: "/sales", label: "Annonces" },
   { to: "/map", label: "Carte" },
   { to: "/favorites", label: "Favoris" },
   { to: "/alerts", label: "Alertes" },
-  { to: "/ventes-immobilieres-judiciaires", label: "Guide" },
 ] as const;
 
 const PRO_NAV_ITEM = { to: "/publish", label: "Publier" } as const;
@@ -25,7 +24,8 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const admin = isAdminAccount(user);
   const navItems = [
-    ...NAV_ITEMS,
+    ...(user ? AUTH_NAV_ITEMS : []),
+    { to: "/ventes-immobilieres-judiciaires", label: "Guide" },
     ...(isProfessionalAccount(user, profile) ? [PRO_NAV_ITEM] : []),
     ...(admin ? [ADMIN_NAV_ITEM] : []),
   ];

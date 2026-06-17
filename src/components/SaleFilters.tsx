@@ -1,20 +1,12 @@
 import type * as React from "react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
 import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -214,38 +206,39 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
           />
         </FilterField>
         <FilterField label="Type">
-          <Select
+          <select
+            aria-label="Type de bien"
+            className="form-input h-9 w-full bg-background/35 text-sm"
             value={local.type || "all"}
-            onValueChange={(v) => setLocal({ ...local, type: v === "all" ? "" : v })}
+            onChange={(e) =>
+              setLocal({ ...local, type: e.target.value === "all" ? "" : e.target.value })
+            }
           >
-            <SelectTrigger aria-label="Type de bien">
-              <SelectValue placeholder="Tous les types" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous les types</SelectItem>
-              <SelectItem value="apartment">Appartement</SelectItem>
-              <SelectItem value="house">Maison</SelectItem>
-              <SelectItem value="land">Terrain</SelectItem>
-              <SelectItem value="commercial">Commercial</SelectItem>
-              <SelectItem value="garage">Garage</SelectItem>
-            </SelectContent>
-          </Select>
+            <option value="all">Tous les types</option>
+            <option value="apartment">Appartement</option>
+            <option value="house">Maison</option>
+            <option value="land">Terrain</option>
+            <option value="commercial">Commercial</option>
+            <option value="garage">Garage</option>
+          </select>
         </FilterField>
         <FilterField label="Occupation">
-          <Select
+          <select
+            aria-label="Occupation"
+            className="form-input h-9 w-full bg-background/35 text-sm"
             value={local.occupancy || "all"}
-            onValueChange={(v) => setLocal({ ...local, occupancy: v === "all" ? "" : v })}
+            onChange={(e) =>
+              setLocal({
+                ...local,
+                occupancy: e.target.value === "all" ? "" : e.target.value,
+              })
+            }
           >
-            <SelectTrigger aria-label="Occupation">
-              <SelectValue placeholder="Occupation" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Toutes</SelectItem>
-              <SelectItem value="free">Libre</SelectItem>
-              <SelectItem value="occupied">Occupé</SelectItem>
-              <SelectItem value="rented">Loué</SelectItem>
-            </SelectContent>
-          </Select>
+            <option value="all">Toutes</option>
+            <option value="free">Libre</option>
+            <option value="occupied">Occupé</option>
+            <option value="rented">Loué</option>
+          </select>
         </FilterField>
         <FilterField label="Prix max">
           <Input
@@ -268,20 +261,19 @@ export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = 
           />
         </FilterField>
         <FilterField label="Tri">
-          <Select value={local.sort} onValueChange={(v) => setLocal({ ...local, sort: v })}>
-            <SelectTrigger aria-label="Tri des annonces">
-              <ArrowUpDown className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="score_desc">Pertinence</SelectItem>
-              <SelectItem value="date_asc">Date (plus proche)</SelectItem>
-              <SelectItem value="date_desc">Date (plus lointaine)</SelectItem>
-              <SelectItem value="price_asc">Prix croissant</SelectItem>
-              <SelectItem value="price_desc">Prix décroissant</SelectItem>
-              <SelectItem value="surface_desc">Plus grande surface</SelectItem>
-            </SelectContent>
-          </Select>
+          <select
+            aria-label="Tri des annonces"
+            className="form-input h-9 w-full bg-background/35 text-sm"
+            value={local.sort}
+            onChange={(e) => setLocal({ ...local, sort: e.target.value })}
+          >
+            <option value="score_desc">Pertinence</option>
+            <option value="date_asc">Date (plus proche)</option>
+            <option value="date_desc">Date (plus lointaine)</option>
+            <option value="price_asc">Prix croissant</option>
+            <option value="price_desc">Prix décroissant</option>
+            <option value="surface_desc">Plus grande surface</option>
+          </select>
         </FilterField>
       </div>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">

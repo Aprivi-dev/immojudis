@@ -12,13 +12,6 @@ import type { UserAlert } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -167,21 +160,22 @@ function AlertsPage() {
               value={form.city}
               onChange={(e) => setForm({ ...form, city: e.target.value })}
             />
-            <Select
+            <select
+              className="form-input h-9 w-full text-sm"
               value={form.property_type || "all"}
-              onValueChange={(v) => setForm({ ...form, property_type: v === "all" ? "" : v })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  property_type: e.target.value === "all" ? "" : e.target.value,
+                })
+              }
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Type de bien" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous les types</SelectItem>
-                <SelectItem value="apartment">Appartement</SelectItem>
-                <SelectItem value="house">Maison</SelectItem>
-                <SelectItem value="land">Terrain</SelectItem>
-                <SelectItem value="commercial">Commercial</SelectItem>
-              </SelectContent>
-            </Select>
+              <option value="all">Tous les types</option>
+              <option value="apartment">Appartement</option>
+              <option value="house">Maison</option>
+              <option value="land">Terrain</option>
+              <option value="commercial">Commercial</option>
+            </select>
             <Input
               type="number"
               placeholder="Prix max (€)"
@@ -194,20 +188,21 @@ function AlertsPage() {
               value={form.min_surface_m2}
               onChange={(e) => setForm({ ...form, min_surface_m2: e.target.value })}
             />
-            <Select
+            <select
+              className="form-input h-9 w-full text-sm"
               value={form.occupancy_status || "all"}
-              onValueChange={(v) => setForm({ ...form, occupancy_status: v === "all" ? "" : v })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  occupancy_status: e.target.value === "all" ? "" : e.target.value,
+                })
+              }
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Occupation" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Toutes</SelectItem>
-                <SelectItem value="free">Libre</SelectItem>
-                <SelectItem value="occupied">Occupé</SelectItem>
-                <SelectItem value="rented">Loué</SelectItem>
-              </SelectContent>
-            </Select>
+              <option value="all">Toutes</option>
+              <option value="free">Libre</option>
+              <option value="occupied">Occupé</option>
+              <option value="rented">Loué</option>
+            </select>
           </div>
           <Button
             type="submit"
