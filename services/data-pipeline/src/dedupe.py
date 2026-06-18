@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import hashlib
+import re
+import unicodedata
 from typing import Any
 
 from src.models import AuctionSale
 from src.normalize import clean_text
+
+_STREET_NUMBER_RE = re.compile(r"\d")
 
 PRIMARY_SOURCE_PRIORITY = {
     "avoventes": 0,
@@ -61,7 +65,13 @@ def merge_duplicate_sales(sales: Iterable[AuctionSale]) -> list[AuctionSale]:
             secondary = existing
             by_hash[key] = sale
         _merge_into(preferred, secondary, confidence="content_hash")
-    return [*by_hash.values(), *passthrough]
+
+    # Dernière passe : fusionner les annonces partageant une même adresse précise
+    # (numéro + voie + commune) même si la date ou le prix diffèrent légèrement —
+    # cas typique de deux sources référençant le même bien. Le hash de contenu
+    # ci-dessus ne les rapproche pas car il inclut date et prix.
+    survivors = [*by_hash.values(), *passthrough]
+    return _merge_by_address(survivors)
 
 
 def _is_richer(candidate: AuctionSale, current: AuctionSale) -> bool:
@@ -141,6 +151,78 @@ def _has_strong_dedupe_signal(sale: AuctionSale) -> bool:
         bool(clean_text(sale.postal_code)),
     ]
     return sum(signals) >= 3
+
+
+def _normalize_street_text(value: str) -> str:
+    ascii_text = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii").lower()
+    ascii_text = re.sub(r"\bfrance\b", " ", ascii_text)
+    ascii_text = re.sub(r"\bcedex\b\s*\d*", " ", ascii_text)
+    ascii_text = re.sub(r"[^a-z0-9]+", " ", ascii_text)
+    return re.sub(r"\s+", " ", ascii_text).strip()
+
+
+def _address_dedupe_key(sale: AuctionSale) -> str | None:
+    address = clean_text(sale.address)
+    if not address:
+        return None
+    street = address
+    for token in (clean_text(sale.postal_code), clean_text(sale.city)):
+        if token:
+            street = re.sub(re.escape(token), " ", street, flags=re.IGNORECASE)
+    street_key = _normalize_street_text(street)
+    # Exiger une adresse précise (numéro de voie) : sans numéro on risquerait de
+    # fusionner des biens distincts d'une même commune (ex. « 33000 Bordeaux »).
+    if not _STREET_NUMBER_RE.search(street_key) or len(street_key) < 6:
+        return None
+    locality = clean_text(sale.postal_code) or _normalize_street_text(clean_text(sale.city) or "")
+    return f"{street_key}|{(locality or '').lower()}"
+
+
+def _prices_close(first: Any, second: Any, tolerance: float = 0.02) -> bool:
+    try:
+        left = float(first)
+        right = float(second)
+    except (TypeError, ValueError):
+        return False
+    if left <= 0 or right <= 0:
+        return False
+    return abs(left - right) <= tolerance * max(left, right)
+
+
+def _same_property(first: AuctionSale, second: AuctionSale) -> bool:
+    # Deux annonces à la même adresse précise = même bien, SAUF si elles sont
+    # clairement deux lots/ventes distincts : date ET prix renseignés des deux
+    # côtés et tous deux différents (ex. deux lots d'un même immeuble). Sinon
+    # (date ou prix concordant, ou champ manquant) on fusionne.
+    if first.sale_date and second.sale_date and first.starting_price_eur and second.starting_price_eur:
+        dates_differ = first.sale_date != second.sale_date
+        prices_differ = not _prices_close(first.starting_price_eur, second.starting_price_eur)
+        if dates_differ and prices_differ:
+            return False
+    return True
+
+
+def _merge_by_address(sales: list[AuctionSale]) -> list[AuctionSale]:
+    by_address: dict[str, AuctionSale] = {}
+    passthrough: list[AuctionSale] = []
+    for sale in sales:
+        key = _address_dedupe_key(sale)
+        if key is None:
+            passthrough.append(sale)
+            continue
+        existing = by_address.get(key)
+        if existing is None:
+            by_address[key] = sale
+            continue
+        if not _same_property(existing, sale):
+            # Même adresse mais lots/ventes distincts : on conserve les deux.
+            passthrough.append(sale)
+            continue
+        preferred = _choose_primary(existing, sale)
+        secondary = sale if preferred is existing else existing
+        _merge_into(preferred, secondary, confidence="address")
+        by_address[key] = preferred
+    return [*by_address.values(), *passthrough]
 
 
 def _mergeable_fields() -> tuple[str, ...]:

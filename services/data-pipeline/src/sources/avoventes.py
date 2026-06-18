@@ -14,7 +14,7 @@ import httpx
 from src.config import AQUITAINE_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
-from src.sources.common import ScrapeResult, should_fetch_detail
+from src.sources.common import ScrapeResult
 
 
 BASE_URL = "https://avoventes.fr"
@@ -93,8 +93,9 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
             if sale["source_url"] in seen_urls:
                 continue
             seen_urls.add(sale["source_url"])
-            if should_fetch_detail(sale, known):
-                _enrich_sale_from_detail(client, sale, errors)
+            # Avoventes keeps photos and several detail fields off the list page;
+            # always refresh the detail page after filtering to Aquitaine.
+            _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
     return ScrapeResult(validate_raw_sales("avoventes", raw_sales, errors), errors)
 
@@ -214,6 +215,12 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
     details = parse_avoventes_detail_html(html, source_url)
     if details.get("documents"):
         sale["documents"] = _merge_documents(sale.get("documents", []), details["documents"])
+    if details.get("source_images"):
+        sale["source_images"] = _merge_text_values(sale.get("source_images"), details["source_images"])
+        if not sale.get("raw_image_url") and sale["source_images"]:
+            sale["raw_image_url"] = sale["source_images"][0]
+    elif details.get("raw_image_url") and not sale.get("raw_image_url"):
+        sale["raw_image_url"] = details["raw_image_url"]
     if details.get("raw_text"):
         sale["raw_text"] = f"{sale.get('raw_text') or ''}\n{details['raw_text']}".strip()
     for key in ("tribunal", "description", "lawyer_contact", "surface_m2"):
@@ -225,14 +232,42 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
     soup = BeautifulSoup(html, "html.parser")
     raw_text = soup.get_text("\n", strip=True)
     documents = _extract_documents(soup.find_all("a", href=True), page_url)
+    images = _extract_images(soup, page_url)
     return {
         "documents": documents,
+        "source_images": images,
+        "raw_image_url": images[0] if images else None,
         "raw_text": raw_text,
         "tribunal": _extract_after_label(raw_text, r"(?:Tribunal\s+Judiciaire|TJ)\s+de?\s*([^\n]+)"),
         "description": _extract_description(raw_text),
         "lawyer_contact": _extract_after_label(raw_text, r"(?:Téléphone|Tél\.?|Tel\.?)\s*:?\s*([^\n]+)"),
         "surface_m2": _extract_after_label(raw_text, r"Surface\s*:?\s*([0-9\s,.]+)\s*m"),
     }
+
+
+def _extract_images(soup: BeautifulSoup, page_url: str) -> list[str]:
+    images: list[str] = []
+    for selector in ("meta[property='og:image']", "meta[name='twitter:image']"):
+        for node in soup.select(selector):
+            _append_image(images, node.get("content"), page_url)
+    for node in soup.select("#lightSliderDetails [data-src]"):
+        _append_image(images, node.get("data-src"), page_url)
+    return _unique_text_values(images)
+
+
+def _append_image(images: list[str], value: object | None, page_url: str) -> None:
+    image_url = clean_text(value)
+    if not image_url or image_url.startswith("data:"):
+        return
+    absolute = urljoin(page_url, image_url)
+    lowered = absolute.lower()
+    if "/documents/" in lowered or lowered.endswith(".pdf"):
+        return
+    if not re.search(r"\.(?:avif|jpe?g|png|webp)(?:[?#].*)?$", lowered):
+        return
+    if "/public/uploads/" not in lowered:
+        return
+    images.append(absolute)
 
 
 def _merge_documents(existing: object, incoming: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -246,6 +281,23 @@ def _merge_documents(existing: object, incoming: list[dict[str, str]]) -> list[d
                 "type": str(document.get("type") or _document_type(str(document["url"]), str(document.get("label") or ""))),
             }
     return list(merged.values())
+
+
+def _merge_text_values(existing: object, incoming: object) -> list[str]:
+    values: list[str] = []
+    if isinstance(existing, list):
+        values.extend(str(value) for value in existing if value)
+    elif existing:
+        values.append(str(existing))
+    if isinstance(incoming, list):
+        values.extend(str(value) for value in incoming if value)
+    elif incoming:
+        values.append(str(incoming))
+    return _unique_text_values(values)
+
+
+def _unique_text_values(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(value for value in values if value))
 
 
 def _document_type(href: str, label: str) -> str:

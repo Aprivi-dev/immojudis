@@ -173,6 +173,7 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     lawyer_name, lawyer_contact = _extract_lawyer(lines)
     latitude, longitude = _extract_coordinates(soup)
     description = _extract_description(soup, title)
+    images = _extract_images(soup, source_url)
 
     return {
         "source_name": "licitor",
@@ -197,6 +198,8 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "latitude": latitude,
         "longitude": longitude,
         "documents": _extract_documents(soup, source_url),
+        "source_images": images,
+        "raw_image_url": images[0] if images else None,
         "raw_text": raw_text,
     }
 
@@ -381,6 +384,31 @@ def _extract_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, s
             url = urljoin(source_url, href)
             documents.append({"label": label, "url": url, "type": "pdf"})
     return documents
+
+
+def _extract_images(soup: BeautifulSoup, source_url: str) -> list[str]:
+    images: list[str] = []
+    for selector in ("meta[property='og:image']", "meta[name='twitter:image']", ".LegalAd img"):
+        for node in soup.select(selector):
+            value = node.get("content") if node.name == "meta" else node.get("src")
+            _append_image(images, value, source_url)
+    return _unique(images)
+
+
+def _append_image(images: list[str], value: object | None, source_url: str) -> None:
+    image_url = clean_text(value)
+    if not image_url or image_url.startswith("data:"):
+        return
+    absolute = urljoin(source_url, image_url)
+    lowered = absolute.lower()
+    path = urlparse(absolute).path.lower()
+    if any(asset in lowered for asset in ("licitor.png", "app-store", "google-play", "la-loupe-immo", "favicon")):
+        return
+    if path.startswith("/static/"):
+        return
+    if not re.search(r"\.(?:avif|jpe?g|png|webp)(?:[?#].*)?$", lowered):
+        return
+    images.append(absolute)
 
 
 def _is_disallowed_document_url(url: str) -> bool:

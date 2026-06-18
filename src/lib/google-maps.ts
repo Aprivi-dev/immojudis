@@ -79,13 +79,18 @@ export function googleMapsUrl(lat: number, lng: number, query?: string | null) {
   return `https://www.google.com/maps/search/?api=1&query=${encodedQuery}`;
 }
 
+// NB: `roadmap` (et non `satellite`/`hybrid`) par défaut. L'API Static Maps de
+// Google refuse l'imagerie satellite/hybride pour les comptes de l'EEE (réponse
+// HTTP 403 "satellite and hybrid map types are not available for your account
+// and region"), ce qui faisait échouer le chargement des vignettes → repli OSM.
+// Le type `roadmap` est servi normalement (200) ; ne pas revenir à `hybrid` ici.
 export function googleStaticMapUrl({
   lat,
   lng,
   zoom = 16,
   width = 640,
   height = 360,
-  maptype = "hybrid",
+  maptype = "roadmap",
 }: {
   lat: number;
   lng: number;
