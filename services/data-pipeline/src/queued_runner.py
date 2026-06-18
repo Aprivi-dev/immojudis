@@ -4,7 +4,7 @@ import logging
 import sys
 
 from src.main import PipelineOptions, SOURCE_NAMES, run_pipeline
-from src.storage.supabase_client import fetch_next_queued_run_from_supabase, finish_run_in_supabase
+from src.storage.supabase_client import fetch_next_queued_run_from_supabase, finish_run_in_supabase, mark_past_sales_in_supabase
 
 
 LOGGER = logging.getLogger(__name__)
@@ -14,7 +14,8 @@ VALID_SOURCES = {"all", *SOURCE_NAMES}
 def main() -> int:
     run = fetch_next_queued_run_from_supabase()
     if not run:
-        print("No queued Immojudis data run found.")
+        cleaned = mark_past_sales_in_supabase()
+        print(f"No queued Immojudis data run found. Marked past sales: {cleaned}.")
         return 0
 
     run_id = str(run.get("id") or "")
