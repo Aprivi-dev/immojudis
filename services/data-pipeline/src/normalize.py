@@ -296,6 +296,8 @@ def extract_rooms_count_from_text(*values: object) -> int | None:
     patterns = (
         r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pi[eè]ces?\s+[1-9][0-9]?\s*chambres?\b",
         r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pi[eè]ces?\s+(?:à\s+propos\s+du\s+bien|a\s+propos\s+du\s+bien)\b",
+        r"\b(?:appartement|maison|villa|immeuble)\s+(?:de\s+)?([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pi[eè]ces?\b",
+        r"\b(?:appartement|maison|villa)\s+de\s+[0-9]+(?:[,.][0-9]+)?\s*m(?:2|²)\s*,?\s+de\s+([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pi[eè]ces?\b",
         r"\b(?:nombre\s+de\s+)?pi[eè]ces?\s*(?:principales?)?\s*:?\s*([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\b",
         r"\bappartement\s+(?:de\s+)?type\s*([1-9]|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\b",
         r"\btype\s+([1-9]|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\b",
@@ -366,6 +368,9 @@ def _count_numbered_bedrooms(text: str) -> int | None:
 
 
 def _is_rooms_count_false_positive(text: str, start: int, end: int) -> bool:
+    nearby = text[max(0, start - 40) : min(len(text), end + 80)]
+    if re.search(r"\b(?:d[ée]pendance|annexe|remise)\b", nearby, re.I):
+        return True
     before = text[max(0, start - 180) : start]
     after = text[end : min(len(text), end + 160)]
     context = before + after

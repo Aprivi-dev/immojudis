@@ -114,6 +114,30 @@ def test_normalize_sale_extracts_written_room_and_bedroom_counts() -> None:
     assert sale.bedrooms_count == 2
 
 
+def test_normalize_sale_extracts_rooms_from_listing_title() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-165170-un-appartement-de-4-pieces-pau.html",
+            "title": "UN APPARTEMENT DE 4 PIÈCES - Pau",
+        }
+    )
+
+    assert sale.rooms_count == 4
+
+
+def test_normalize_sale_extracts_rooms_before_parking_count() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/un-appartement/pau/109107.html",
+            "raw_text": "Un appartement de 79,06 m², de trois pièces deux places de parking.",
+        }
+    )
+
+    assert sale.rooms_count == 3
+
+
 def test_normalize_sale_counts_numbered_bedrooms() -> None:
     sale = normalize_sale(
         {
