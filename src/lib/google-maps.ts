@@ -3,8 +3,20 @@ const GOOGLE_MAPS_SCRIPT_ID = "immojudis-google-maps-js";
 
 let googleMapsPromise: Promise<typeof google> | null = null;
 
+// Jeton navigateur public Google Maps, restreint par référent HTTP au domaine
+// immojudis. Il est déjà servi en clair dans chaque bundle client, donc le
+// committer comme repli de build est sans risque (un tiers ne peut pas l'utiliser
+// hors domaine grâce à la restriction de référent). La variable d'env Vercel
+// reste prioritaire ; en cas de rotation, mettre à jour l'env ET cette constante.
+const FALLBACK_GOOGLE_MAPS_API_KEY = "AIzaSyAgTPSC3WC_Buscats-mlTUieaXE1d1jW0";
+
 export function getGoogleMapsApiKey() {
-  return (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined)?.trim() ?? "";
+  const fromEnv = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined)?.trim();
+  if (fromEnv) return fromEnv;
+  // En production, garantir la clé même si le build n'a pas reçu la variable d'env
+  // (déploiements prébuildés / CLI qui « perdent » les env vars). En dev local,
+  // on garde le repli Leaflet/OSM (pas de clé → pas de Google).
+  return import.meta.env.PROD ? FALLBACK_GOOGLE_MAPS_API_KEY : "";
 }
 
 export function loadGoogleMaps(apiKey: string): Promise<typeof google> {
