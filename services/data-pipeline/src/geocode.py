@@ -11,6 +11,14 @@ from src.normalize import clean_text
 
 
 LOGGER = logging.getLogger(__name__)
+# ponytail: broad Aquitaine bboxes; tighten only if we ingest finer geodata later.
+DEPARTMENT_BOUNDS = {
+    "24": (44.55, 45.75, -0.1, 1.5),
+    "33": (44.15, 45.65, -1.35, 0.05),
+    "40": (43.45, 44.55, -1.55, 0.15),
+    "47": (43.95, 44.85, -0.15, 1.15),
+    "64": (42.75, 43.65, -1.95, 0.15),
+}
 
 
 def geocode_sale(sale: AuctionSale) -> AuctionSale:
@@ -18,8 +26,14 @@ def geocode_sale(sale: AuctionSale) -> AuctionSale:
 
     Defaults to BAN adresse.data.gouv.fr. Existing coordinates are preserved.
     """
-    if sale.latitude is not None and sale.longitude is not None:
+    if sale.latitude is not None and sale.longitude is not None and _coordinates_match_department(sale):
         return sale
+    if sale.latitude is not None and sale.longitude is not None:
+        LOGGER.warning("Ignoring implausible coordinates for %s", sale.source_url)
+        sale.latitude = None
+        sale.longitude = None
+        if "implausible_coordinates" not in sale.quality_flags:
+            sale.quality_flags.append("implausible_coordinates")
 
     settings = load_settings()
     if not settings["geocode_enabled"]:
@@ -71,6 +85,21 @@ def geocode_address(
 
 
 def _build_query(sale: AuctionSale) -> str | None:
-    parts = [sale.address, sale.postal_code, sale.city]
+    address = sale.address or ""
+    address_lower = address.lower()
+    parts = [sale.address]
+    if sale.postal_code and sale.postal_code not in address:
+        parts.append(sale.postal_code)
+    if sale.city and sale.city.lower() not in address_lower:
+        parts.append(sale.city)
     query = clean_text(" ".join(part for part in parts if part))
     return query
+
+
+def _coordinates_match_department(sale: AuctionSale) -> bool:
+    department = sale.department or (sale.postal_code[:2] if sale.postal_code else None)
+    bounds = DEPARTMENT_BOUNDS.get(department or "")
+    if not bounds:
+        return True
+    min_lat, max_lat, min_lon, max_lon = bounds
+    return min_lat <= float(sale.latitude) <= max_lat and min_lon <= float(sale.longitude) <= max_lon
