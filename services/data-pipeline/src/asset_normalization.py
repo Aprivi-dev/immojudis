@@ -78,6 +78,9 @@ FACTOR_AXIS = {
 SURFACE_PATTERNS = {
     "habitable_surface_m2": (
         r"surface\s*habitable\s*:?\s*(?:de\s+)?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
+        r"superficie\s+(?:de\s+|d['’]environ\s+)?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
+        r"([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\s+superficie\b",
+        r"\bappartement\s+de\s+([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b",
         r"([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\s+habitables?",
     ),
     "carrez_surface_m2": (
@@ -401,6 +404,15 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         sale.land_surface_m2 = _extract_surface_kind(text, "land_surface_m2", sale)
     if sale.surface_m2 is None:
         sale.surface_m2 = _extract_built_surface(text, sale)
+    explicit_app_surface = None
+    min_app_surface = Decimal("20")
+    if sale.property_type == "apartment":
+        explicit_app_surface = sale.carrez_surface_m2 or sale.habitable_surface_m2
+        min_app_surface = Decimal("9")
+    elif sale.property_type == "house":
+        explicit_app_surface = sale.habitable_surface_m2
+    if explicit_app_surface is not None and explicit_app_surface >= min_app_surface:
+        sale.surface_m2 = explicit_app_surface
     if sale.habitable_surface_m2 is None and sale.property_type == "house":
         sale.habitable_surface_m2 = sale.surface_m2
         if sale.surface_m2 is not None:
@@ -607,7 +619,11 @@ def _extract_surface_kind(text: str, kind: str, sale: AuctionSale | None = None)
         if len(match.groups()) == 2:
             return Decimal(match.group(1)) * Decimal("100") + Decimal(match.group(2))
         value = _parse_surface_decimal(match.group(1))
-        if value and not _surface_false_positive(text, match.start(), match.end()):
+        if (
+            value
+            and not _surface_false_positive(text, match.start(), match.end())
+            and not _living_surface_false_positive(text, match.start(), match.end(), kind)
+        ):
             if sale is not None:
                 _set_surface_evidence(sale, kind, _evidence(text, match.start(), match.end()))
             return value
@@ -639,8 +655,9 @@ def _fill_counts(sale: AuctionSale, text: str) -> None:
         sale.parking_count = _extract_count(
             text,
             (
-                r"\b([1-9][0-9]?)\s+(?:places?\s+de\s+)?parkings?\b",
-                r"\b([1-9][0-9]?)\s+garages?\b",
+                r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+(?:places?\s+de\s+)?parkings?\b",
+                r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+places?\s+de\s+stationnement\b",
+                r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+garages?\b",
             ),
         )
         if sale.parking_count is None and re.search(r"\bparking\b|\bgarage\b", text, re.I):
@@ -1900,7 +1917,8 @@ def _extract_count(text: str, patterns: tuple[str, ...]) -> int | None:
     for pattern in patterns:
         match = re.search(pattern, text, re.I)
         if match:
-            return int(match.group(1))
+            value = match.group(1)
+            return int(value) if value.isdigit() else _number_word_to_int(value)
     return None
 
 
@@ -1945,7 +1963,19 @@ def _infer_rooms_count(text: str, sale: AuctionSale) -> int | None:
 
 def _number_word_to_int(value: str) -> int | None:
     lowered = value.lower()
-    mapping = {"une": 1, "un": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5}
+    mapping = {
+        "une": 1,
+        "un": 1,
+        "deux": 2,
+        "trois": 3,
+        "quatre": 4,
+        "cinq": 5,
+        "six": 6,
+        "sept": 7,
+        "huit": 8,
+        "neuf": 9,
+        "dix": 10,
+    }
     if lowered in mapping:
         return mapping[lowered]
     if lowered.isdigit():
@@ -2013,6 +2043,13 @@ def _text_has_works_signal(text: str) -> bool:
 def _surface_false_positive(text: str, start: int, end: int) -> bool:
     context = text[max(0, start - 20) : min(len(text), end + 30)]
     return bool(re.search(r"\bkwh\b|kg\s*co2|\bges\b|dpe\b", context, re.I))
+
+
+def _living_surface_false_positive(text: str, start: int, end: int, kind: str) -> bool:
+    if kind == "land_surface_m2":
+        return False
+    context = text[max(0, start - 45) : start]
+    return bool(re.search(r"\b(?:terrain|parcelle|jardin|garage|cave|parking|stationnement|d[ée]pendance)\b", context, re.I))
 
 
 def _parse_surface_decimal(value: str) -> Decimal | None:

@@ -344,6 +344,63 @@ def test_asset_normalization_uses_built_surface_for_commercial_assets() -> None:
     assert sale.surface_evidence is not None
 
 
+def test_asset_normalization_prefers_source_description_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/maison-dhabitation-124",
+            "property_type": "Maison",
+            "surface_m2": "50",
+            "raw_text": (
+                "Une maison d'habitation d’une superficie de 110 m2 composée de 3 chambres, "
+                "grand séjour, salle d'eau, cuisine, chaufferie. "
+                "Une ancienne maison de 2 pièces principales à usage de dépendance."
+            ),
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("110")
+    assert sale.habitable_surface_m2 == Decimal("110")
+    assert sale.app_surface_m2 == Decimal("110")
+    assert sale.rooms_count == 4
+
+
+def test_asset_normalization_reads_surface_value_before_surface_label() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/maison-a-biganos-2",
+            "property_type": "Maison",
+            "raw_text": "5 pièces 3 chambres 93.16 m² superficie.",
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("93.16")
+    assert sale.habitable_surface_m2 == Decimal("93.16")
+
+
+def test_asset_normalization_reads_licitor_apartment_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/un-appartement/pau/109107.html",
+            "property_type": "Appartement",
+            "raw_text": "Un appartement de 79,06 m², de trois pièces deux places de parking.",
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("79.06")
+    assert sale.habitable_surface_m2 == Decimal("79.06")
+    assert sale.rooms_count == 3
+    assert sale.parking_count == 2
+
+
 def test_asset_normalization_rejects_room_surface_as_app_surface_for_house() -> None:
     sale = normalize_sale(
         {
