@@ -10,19 +10,32 @@ from bs4 import BeautifulSoup, Tag
 from src.config import AQUITAINE_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
-from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
 
 BASE_URL = "https://www.petitesaffiches.fr"
 LIST_URL = f"{BASE_URL}/encheres-immobilieres/"
 LOGGER = logging.getLogger(__name__)
+DETAIL_FIELDS = {
+    "description",
+    "address",
+    "postal_code",
+    "surface_m2",
+    "starting_price_eur",
+    "lawyer_name",
+    "lawyer_contact",
+    "tribunal",
+    "raw_text",
+}
 
 
 def scrape_petites_affiches_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
     return scrape_petites_affiches_aquitaine_result(max_pages=max_pages).sales
 
 
-def scrape_petites_affiches_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
+def scrape_petites_affiches_aquitaine_result(
+    max_pages: int | None = None, known: dict[str, str] | None = None
+) -> ScrapeResult:
     settings = load_settings()
     client = PoliteHttpClient(
         base_url=BASE_URL,
@@ -40,7 +53,10 @@ def scrape_petites_affiches_aquitaine_result(max_pages: int | None = None) -> Sc
             LOGGER.error("Petites Affiches list fetch failed for department %s: %s", department, exc)
             errors.append(f"department {department}: {exc}")
             continue
-        raw_sales.extend(parse_petites_affiches_html(html, page_url=LIST_URL, fallback_department=department))
+        for sale in parse_petites_affiches_html(html, page_url=LIST_URL, fallback_department=department):
+            if should_fetch_detail(sale, known):
+                _enrich_sale_from_detail(client, sale, errors)
+            raw_sales.append(sale)
 
     return ScrapeResult(
         validate_raw_sales("petites_affiches", unique_dicts(raw_sales, "source_url"), errors),
@@ -99,6 +115,63 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
     }
 
 
+def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, Any]:
+    soup = BeautifulSoup(html, "html.parser")
+    page_text = "\n".join(
+        line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line
+    )
+    detail_text = _scoped_text(soup.select_one(".row.detail")) or page_text
+    contact_text = _scoped_text(soup.select_one(".contact-container")) or page_text
+    address = _detail_address(soup)
+    description = _meta_description(soup)
+    price = _extract_price(detail_text)
+    tribunal = _detail_tribunal(soup)
+    lawyer_name = _extract_lawyer(contact_text)
+    lawyer_contact = _extract_phone(contact_text)
+    blocks = [
+        description,
+        f"Adresse: {address}" if address else None,
+        f"Mise a prix: {price}" if price else None,
+        f"Tribunal: {tribunal}" if tribunal else None,
+        f"Avocat: {lawyer_name}" if lawyer_name else None,
+        f"Contact: {lawyer_contact}" if lawyer_contact else None,
+    ]
+    return {
+        "source_name": "petites_affiches",
+        "source_url": source_url,
+        "description": description,
+        "address": address,
+        "postal_code": _extract_postal(address or ""),
+        "surface_m2": _extract_surface(detail_text),
+        "starting_price_eur": price,
+        "lawyer_name": lawyer_name,
+        "lawyer_contact": lawyer_contact,
+        "tribunal": tribunal,
+        "raw_text": "\n".join(part for part in blocks if part),
+    }
+
+
+def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> None:
+    source_url = str(sale.get("source_url") or "")
+    if not source_url.startswith(BASE_URL):
+        return
+    try:
+        html = client.get(source_url)
+    except Exception as exc:
+        LOGGER.warning("Petites Affiches detail fetch failed for %s: %s", source_url, exc)
+        errors.append(f"detail {source_url}: {exc}")
+        return
+    detail = parse_petites_affiches_detail_html(html, source_url)
+    for key in DETAIL_FIELDS:
+        value = detail.get(key)
+        if value in (None, "", []):
+            continue
+        if key == "raw_text" and sale.get("raw_text"):
+            sale[key] = f"{sale['raw_text']}\n{value}"
+        elif not sale.get(key):
+            sale[key] = value
+
+
 def _title_reference_type(text: str) -> tuple[str | None, str | None, str | None]:
     text = clean_text(text)
     if not text:
@@ -124,6 +197,11 @@ def _extract_surface(text: str) -> str | None:
     return clean_text(match.group(1)) if match else None
 
 
+def _extract_price(text: str) -> str | None:
+    match = re.search(r"Mise\s*[àa]\s*Prix\s*:?\s*([0-9][0-9\s.,]+)\s*€", text, re.I)
+    return clean_text(match.group(1)) if match else None
+
+
 def _extract_postal(text: str) -> str | None:
     match = re.search(r"\b((?:24|33|40|47|64)\d{3})\b", text)
     return match.group(1) if match else None
@@ -132,6 +210,35 @@ def _extract_postal(text: str) -> str | None:
 def _extract_lawyer(text: str) -> str | None:
     match = re.search(r"\b(?:Ma[îi]tre|SELARL|SELAS|SCP)\b[^\n|]{0,80}", text, re.I)
     return clean_text(match.group(0)) if match else None
+
+
+def _extract_phone(text: str) -> str | None:
+    match = re.search(r"\b(?:0|\+33\s?)[1-9](?:[\s.()-]?\d{2}){4}\b", text)
+    return clean_text(match.group(0)) if match else None
+
+
+def _detail_address(soup: BeautifulSoup) -> str | None:
+    node = soup.select_one(".lot-adresse h4")
+    text = clean_text(node.get_text(" ", strip=True)) if node else None
+    if not text:
+        return None
+    return clean_text(re.sub(r"^Adresse\s*:\s*", "", text, flags=re.I))
+
+
+def _detail_tribunal(soup: BeautifulSoup) -> str | None:
+    node = soup.select_one(".lieu-vente strong a") or soup.select_one(".lieu-vente strong")
+    return clean_text(node.get_text(" ", strip=True)) if node else None
+
+
+def _meta_description(soup: BeautifulSoup) -> str | None:
+    node = soup.find("meta", attrs={"name": "description"})
+    return clean_text(node.get("content")) if node and node.get("content") else None
+
+
+def _scoped_text(node: Tag | None) -> str | None:
+    if node is None:
+        return None
+    return "\n".join(line for line in (clean_text(part) for part in node.get_text("\n", strip=True).splitlines()) if line)
 
 
 def _node_text(node: Tag | None) -> str | None:

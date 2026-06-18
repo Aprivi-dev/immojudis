@@ -335,7 +335,7 @@ def _enabled_scrapers(
         (
             "petites_affiches",
             bool(settings["enable_petites_affiches_benchmark"]),
-            lambda: scrape_petites_affiches_aquitaine_result(),
+            lambda: scrape_petites_affiches_aquitaine_result(known=known),
         ),
         (
             "cessions_etat",

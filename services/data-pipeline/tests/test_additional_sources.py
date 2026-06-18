@@ -5,7 +5,7 @@ from src.sources.agrasc import parse_agrasc_html
 from src.sources.cessions_etat import parse_cessions_etat_html
 from src.sources.encheres_immobilieres import parse_encheres_immobilieres_html
 from src.sources.notaires import parse_notaires_json
-from src.sources.petites_affiches import parse_petites_affiches_html
+from src.sources.petites_affiches import parse_petites_affiches_detail_html, parse_petites_affiches_html
 
 
 def test_parse_petites_affiches_public_cards() -> None:
@@ -43,6 +43,34 @@ def test_parse_petites_affiches_public_cards() -> None:
     assert sales[0]["postal_code"] == "33000"
     assert sales[0]["lawyer_name"].startswith("Maître Dupont")
     assert validate_raw_sales("petites_affiches", sales, []) == sales
+
+
+def test_parse_petites_affiches_public_detail() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un lot : UN APPARTEMENT à Bordeaux vendu au tribunal judiciaire de TJ DE BORDEAUX le 18/06/2026" />
+    <div class="row detail default">
+      <h4>Mise à Prix : <strong>15 300</strong> €</h4>
+      <div class="alert">réservée aux abonnés</div>
+      <div class="lot-adresse"><h4>Adresse : 33000 Bordeaux</h4></div>
+    </div>
+    <div class="contact-container">
+      <ul>
+        <li><a title="Maître MERLIN-LABRE"><strong>Maître MERLIN-LABRE</strong></a></li>
+        <li>0422140871</li>
+      </ul>
+      <div class="lieu-vente"><strong><a>TJ DE BORDEAUX</a></strong></div>
+    </div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["description"].startswith("Vente aux enchères")
+    assert detail["address"] == "33000 Bordeaux"
+    assert detail["postal_code"] == "33000"
+    assert detail["starting_price_eur"] == "15 300"
+    assert detail["lawyer_name"] == "Maître MERLIN-LABRE"
+    assert detail["lawyer_contact"] == "0422140871"
+    assert detail["tribunal"] == "TJ DE BORDEAUX"
 
 
 def test_parse_cessions_etat_public_cards() -> None:

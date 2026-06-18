@@ -7,6 +7,7 @@ from src.pdf_enrichment import (
     _read_document_text_cache,
     _select_documents_for_extraction,
     _store_document_analysis_status,
+    _verify_tls,
     _write_document_text_cache,
     classify_document_type,
     download_documents,
@@ -21,6 +22,11 @@ def test_classify_document_type_prioritizes_known_pdf_labels() -> None:
     assert classify_document_type("Diagnostics techniques DPE.pdf") == "diagnostics_techniques"
     assert classify_document_type("Avis simplifié.pdf") == "annonce_vente"
     assert classify_document_type("PV de notaire.pdf") == "pv_notaire"
+
+
+def test_verify_tls_only_skips_broken_cessions_etat_chain() -> None:
+    assert _verify_tls("https://cessions.immobilier-etat.gouv.fr/sites/default/files/doc.pdf") is False
+    assert _verify_tls("https://avoventes.fr/doc.pdf") is True
 
 
 def test_enrich_sale_from_pdf_text_extracts_fields() -> None:

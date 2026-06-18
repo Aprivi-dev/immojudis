@@ -19,6 +19,11 @@ on:
           - vench
           - info_encheres
           - encheres_publiques
+          - petites_affiches
+          - cessions_etat
+          - agrasc
+          - encheres_immobilieres
+          - notaires
       use_llm:
         description: "Enable LLM enrichment"
         required: false
@@ -59,6 +64,11 @@ jobs:
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
       ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: true
+      ENABLE_PETITES_AFFICHES_BENCHMARK: true
+      ENABLE_CESSIONS_ETAT_BENCHMARK: true
+      ENABLE_AGRASC_BENCHMARK: true
+      ENABLE_ENCHERES_IMMOBILIERES_BENCHMARK: true
+      ENABLE_NOTAIRES_BENCHMARK: true
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

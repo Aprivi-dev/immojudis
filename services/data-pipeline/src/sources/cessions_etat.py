@@ -41,6 +41,8 @@ def scrape_cessions_etat_aquitaine_result(
         user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
+        # ponytail: the public site currently serves an incomplete cert chain to Python/httpx.
+        verify=False,
     )
     max_pages = max_pages or int(settings["cessions_etat_max_pages"])
 
