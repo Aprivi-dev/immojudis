@@ -32,6 +32,14 @@ def test_parse_french_datetime_handles_month_and_hour() -> None:
     assert parsed.minute == 30
 
 
+def test_parse_french_datetime_keeps_day_before_french_month() -> None:
+    parsed = parse_french_datetime("Vente immobilière le 11 Juin 2026")
+    assert parsed is not None
+    assert parsed.year == 2026
+    assert parsed.month == 6
+    assert parsed.day == 11
+
+
 def test_normalize_sale_extracts_department_and_property_type() -> None:
     sale = normalize_sale(
         {
