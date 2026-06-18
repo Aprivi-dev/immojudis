@@ -103,7 +103,12 @@ def download_documents(
         file_path = sale_dir / filename
         if not file_path.exists():
             try:
-                response = httpx.get(url, headers=headers, timeout=float(settings["request_timeout_seconds"]))
+                response = httpx.get(
+                    url,
+                    headers=headers,
+                    timeout=float(settings["request_timeout_seconds"]),
+                    verify=_verify_tls(url),
+                )
                 response.raise_for_status()
                 file_path.write_bytes(response.content)
                 if stats:
@@ -128,6 +133,11 @@ def _is_robots_disallowed_licitor_document(url: str) -> bool:
         return False
     path = parsed.path
     return path.startswith("/data/pub/doc/") or path.startswith("/data/pub/media/")
+
+
+def _verify_tls(url: str) -> bool:
+    # ponytail: public Cessions Etat PDFs currently ship an incomplete cert chain to Python/httpx.
+    return urlparse(url).netloc.lower() != "cessions.immobilier-etat.gouv.fr"
 
 
 def extract_pdf_text(file: str | Path, document: dict[str, str] | None = None) -> str:

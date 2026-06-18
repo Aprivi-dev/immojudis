@@ -85,13 +85,16 @@ class PoliteHttpClient:
     user_agent: str
     delay_seconds: float
     timeout_seconds: float
+    accept: str = "text/html,application/xhtml+xml"
+    verify: bool = True
 
     def __post_init__(self) -> None:
         self._last_request_at = 0.0
         self._client = httpx.Client(
-            headers={"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml"},
+            headers={"User-Agent": self.user_agent, "Accept": self.accept},
             timeout=self.timeout_seconds,
             follow_redirects=True,
+            verify=self.verify,
         )
         self._robots = RobotsRules()
         try:

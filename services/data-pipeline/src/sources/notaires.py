@@ -28,6 +28,7 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
         user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
+        accept="application/json,text/plain,*/*",
     )
     max_pages = max_pages or int(settings["notaires_max_pages"])
 
