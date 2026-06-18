@@ -102,3 +102,21 @@ def test_parse_licitor_detail_html_keeps_linked_pdf_documents() -> None:
             "type": "pdf",
         },
     ]
+
+
+def test_parse_licitor_detail_html_extracts_ad_images_without_site_assets() -> None:
+    html = """
+    <h1>Annonce n°108762 : divers biens à Montardon (Pyrénées-Atlantiques), mise à prix : 500 000 €</h1>
+    <article class="LegalAd">
+      <img src="static/img/licitor.png">
+      <img src="/data/pub/media/annonce/10/87/62/maison.jpg">
+    </article>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/87/62/vente-aux-encheres/divers-biens/montardon/pyrenees-atlantiques/108762.html",
+    )
+
+    assert raw["raw_image_url"] == "https://www.licitor.com/data/pub/media/annonce/10/87/62/maison.jpg"
+    assert raw["source_images"] == ["https://www.licitor.com/data/pub/media/annonce/10/87/62/maison.jpg"]

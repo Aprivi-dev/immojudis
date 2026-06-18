@@ -14,7 +14,7 @@ type Props = {
 export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
   const googleUrl =
     lat != null && lng != null
-      ? googleStaticMapUrl({ lat, lng, zoom, width: 640, height: 420, maptype: "hybrid" })
+      ? googleStaticMapUrl({ lat, lng, zoom, width: 640, height: 420, maptype: "roadmap" })
       : "";
   const [provider, setProvider] = useState<"google" | "osm" | "fallback">(
     googleUrl ? "google" : "osm",

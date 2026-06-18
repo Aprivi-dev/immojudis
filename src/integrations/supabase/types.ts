@@ -94,6 +94,7 @@ export type Database = {
           land_surface_m2: number | null;
           latitude: number | null;
           longitude: number | null;
+          media: Json | null;
           occupancy_status: string | null;
           parking_count: number | null;
           postal_code: string | null;
@@ -465,6 +466,7 @@ export type Database = {
           land_surface_m2: number | null;
           latitude: number | null;
           longitude: number | null;
+          media: Json | null;
           occupancy_status: string | null;
           parking_count: number | null;
           postal_code: string | null;

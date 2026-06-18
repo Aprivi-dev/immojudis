@@ -27,7 +27,7 @@ import { BrandMark } from "@/components/BrandLogo";
 import { EvidenceTrail } from "@/components/EvidenceTrail";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { AuctionSale, SaleDocumentRich } from "@/lib/types";
+import type { AuctionSale, SaleDocumentRich, SaleMedia } from "@/lib/types";
 
 export const Route = createFileRoute("/sales/$id")({
   component: SaleDetailPage,
@@ -77,6 +77,7 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
   const referenceLabel = sale.title ?? propertyTypeLabel(sale.property_type);
   const statusLabel = saleStatusLabel(sale.status);
   const surfaceInfo = getSaleSurface(sale);
+  const media = saleImages(sale.media);
 
   return (
     <main className="liquid-page bg-background pb-24">
@@ -137,6 +138,8 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
               </dl>
             </div>
           </div>
+
+          {media.length > 0 && <SaleMediaGallery media={media} />}
 
           {/* Navigation par ancres (ordre de lecture de la décision) */}
           <nav
@@ -258,6 +261,81 @@ export function SaleDetailView({ sale }: { sale: AuctionSale }) {
       </div>
     </main>
   );
+}
+
+function SaleMediaGallery({ media }: { media: SaleMedia[] }) {
+  const featured = media[0];
+  const thumbnails = media.slice(1, 5);
+  const source = featured.source ?? media.find((item) => item.source)?.source;
+
+  return (
+    <section className="mt-4 overflow-hidden rounded-lg border border-white/10 bg-black/20">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-5">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.26em] text-gold-soft">
+          Photos du bien
+        </h2>
+        {source && (
+          <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            Source · {source}
+          </span>
+        )}
+      </header>
+      <div
+        className={
+          thumbnails.length > 0
+            ? "grid gap-px bg-white/10 md:grid-cols-[minmax(0,2fr)_minmax(220px,1fr)]"
+            : "bg-white/10"
+        }
+      >
+        <SaleMediaImage media={featured} featured />
+        {thumbnails.length > 0 && (
+          <div className="grid grid-cols-2 gap-px">
+            {thumbnails.map((item) => (
+              <SaleMediaImage key={item.url} media={item} />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SaleMediaImage({ media, featured = false }: { media: SaleMedia; featured?: boolean }) {
+  return (
+    <a
+      href={media.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={
+        featured
+          ? "group relative block aspect-[16/9] overflow-hidden bg-surface"
+          : "group relative block aspect-[4/3] overflow-hidden bg-surface"
+      }
+    >
+      <img
+        src={media.url}
+        alt="Photo du bien"
+        loading={featured ? "eager" : "lazy"}
+        decoding="async"
+        referrerPolicy="no-referrer"
+        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+      />
+      <span className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/45 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
+        Ouvrir <ExternalLink className="h-3 w-3" />
+      </span>
+    </a>
+  );
+}
+
+function saleImages(media: AuctionSale["media"] | undefined): SaleMedia[] {
+  if (!Array.isArray(media)) return [];
+  const seen = new Set<string>();
+  return media.filter((item): item is SaleMedia => {
+    const url = typeof item?.url === "string" ? item.url.trim() : "";
+    if (!url || seen.has(url) || !/^https?:\/\//i.test(url)) return false;
+    seen.add(url);
+    return true;
+  });
 }
 
 /**

@@ -48,6 +48,7 @@ export type AuctionSale = {
   quality_flags: unknown;
   documents: unknown;
   documents_rich: SaleDocumentRich[] | null;
+  media: SaleMedia[] | null;
   risks: SaleRisk[] | null;
   status: string | null;
   created_at: string | null;
@@ -129,6 +130,12 @@ export type SaleDocumentRich = {
   download_status?: string | null;
   docling_status?: string | null;
   text_chars?: number | null;
+};
+
+export type SaleMedia = {
+  type: "image";
+  url: string;
+  source?: string | null;
 };
 
 export type SaleScoreFactor = {

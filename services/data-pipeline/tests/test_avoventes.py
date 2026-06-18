@@ -47,3 +47,28 @@ def test_parse_avoventes_detail_html_extracts_pdf_documents() -> None:
             "type": "pdf",
         }
     ]
+
+
+def test_parse_avoventes_detail_html_extracts_source_images() -> None:
+    html = """
+    <html>
+      <head>
+        <meta property="og:image" content="/public/uploads/cabinet/114/images/cropped_photo.jpg">
+        <meta name="twitter:image" content="/public/uploads/cabinet/114/images/cropped_photo.jpg">
+      </head>
+      <body>
+        <ul id="lightSliderDetails">
+          <li data-src="/public/uploads/cabinet/114/images/resized_photo.jpg"></li>
+        </ul>
+        <img src="/images/logo.svg">
+      </body>
+    </html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/test")
+
+    assert details["raw_image_url"] == "https://avoventes.fr/public/uploads/cabinet/114/images/cropped_photo.jpg"
+    assert details["source_images"] == [
+        "https://avoventes.fr/public/uploads/cabinet/114/images/cropped_photo.jpg",
+        "https://avoventes.fr/public/uploads/cabinet/114/images/resized_photo.jpg",
+    ]

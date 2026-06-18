@@ -4,7 +4,7 @@ from src.raw_models import validate_raw_sales
 from src.sources.agrasc import parse_agrasc_html
 from src.sources.cessions_etat import parse_cessions_etat_html
 from src.sources.encheres_immobilieres import parse_encheres_immobilieres_html
-from src.sources.notaires import parse_notaires_json
+from src.sources.notaires import parse_notaires_detail_json, parse_notaires_json
 from src.sources.petites_affiches import parse_petites_affiches_detail_html, parse_petites_affiches_html
 
 
@@ -185,5 +185,113 @@ def test_parse_notaires_public_api_payload() -> None:
     assert len(sales) == 1
     assert sales[0]["source_name"] == "notaires"
     assert sales[0]["department"] == "33"
+    assert sales[0]["property_type"] == "maison"
     assert sales[0]["starting_price_eur"] == 250000
     assert validate_raw_sales("notaires", sales, []) == sales
+
+
+def test_parse_notaires_detail_api_payload_extracts_rich_fields() -> None:
+    payload = json.dumps(
+        {
+            "id": 1963393,
+            "typeTransaction": "VAE",
+            "vae": {
+                "reference": "260633VaeTondu",
+                "multimedias": [
+                    {
+                        "urlHighestResolution": (
+                            "https://media.immobilier.notaires.fr/inotr/media/0/33015/1963393/photo_QXGA.jpg"
+                        ),
+                        "vga": {
+                            "url": "https://media.immobilier.notaires.fr/inotr/media/0/33015/1963393/photo_VGA.jpg"
+                        },
+                    }
+                ],
+                "descriptions": [
+                    {
+                        "langue": "fr",
+                        "descCourte": "Immeuble en pierre",
+                        "descLongue": (
+                            "VENTE AUX ENCHERES\nBORDEAUX (33000) 65, RUE DU TONDU\n"
+                            "Maison avec 2 chambres, salle d'eau et dépendance à usage de garage. "
+                            "Arrêté de péril. ABSENCE DE VISITE. DPE Non soumis."
+                        ),
+                    }
+                ],
+                "visite": {"visiteLibre": "mercredi 27 mai de 14h00 a 15h00"},
+                "miseAPrix": 300000,
+                "consignation": 60000,
+                "seanceDate": "2026-06-24T12:30:00Z",
+                "bienVendu": "NON",
+                "origineJudiciaire": "ADJUDICATION",
+            },
+            "bien": {
+                "typeBien": "MAI",
+                "maison": {
+                    "typeBien": "MAI",
+                    "adresse4": "65 RUE DU TONDU",
+                    "codePostal": "33000",
+                    "communeNom": "Bordeaux",
+                    "inseeDepartement": "33",
+                    "departementNom": "Gironde",
+                    "surfaceHabitable": 206.9,
+                    "surfaceTerrain": 266,
+                    "nbPieces": 4,
+                    "situationLocative": "LIBRE",
+                    "stationnement": "INCONNU",
+                    "coordonneesExactesW84": {"coordonneeX": -0.57918, "coordonneeY": 44.837789},
+                },
+            },
+            "contact": {"nom": "Service immobilier", "telephone": "0761761899", "mail": "vente@example.test"},
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["address"] == "65 RUE DU TONDU, 33000 Bordeaux"
+    assert detail["property_type"] == "maison"
+    assert detail["description"].startswith("VENTE AUX ENCHERES BORDEAUX (33000) 65, RUE DU TONDU")
+    assert detail["habitable_surface_m2"] == 206.9
+    assert detail["land_surface_m2"] == 266
+    assert detail["bedrooms_count"] == 2
+    assert detail["bathrooms_count"] == 1
+    assert detail["has_garage"] is True
+    assert detail["occupancy_status"] == "LIBRE"
+    assert detail["risk_notes"] == "Arrêté de péril; Absence de visite; DPE non soumis"
+    assert detail["latitude"] == 44.837789
+    assert detail["longitude"] == -0.57918
+    assert detail["source_images"] == [
+        "https://media.immobilier.notaires.fr/inotr/media/0/33015/1963393/photo_QXGA.jpg"
+    ]
+    assert detail["lawyer_contact"] == "0761761899 | vente@example.test"
+    assert detail["source_blocks"]["consignation"] == 60000
+    assert detail["source_blocks"]["origine_judiciaire"] == "ADJUDICATION"
+
+
+def test_parse_notaires_detail_extracts_address_from_description() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VAE",
+            "vae": {
+                "descriptions": [
+                    {
+                        "langue": "fr",
+                        "descLongue": "LE TEICH (33470) – 20 Rue du Milon Quartier résidentiel Maison à démolir.",
+                    }
+                ],
+            },
+            "bien": {
+                "typeBien": "MAI",
+                "maison": {
+                    "typeBien": "MAI",
+                    "codePostal": "33470",
+                    "communeNom": "Teich",
+                    "inseeDepartement": "33",
+                },
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["address"] == "20 Rue du Milon, 33470 Teich"
