@@ -44,6 +44,7 @@ export type AuctionSale = {
   source_url: string | null;
   primary_source: string | null;
   source_urls: unknown;
+  source_blocks: Record<string, unknown> | null;
   dedupe_confidence: string | null;
   quality_flags: unknown;
   documents: unknown;

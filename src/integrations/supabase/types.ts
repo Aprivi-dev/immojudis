@@ -479,6 +479,7 @@ export type Database = {
           sale_date: string | null;
           score_version: string | null;
           source_name: string | null;
+          source_blocks: Json | null;
           source_url: string | null;
           source_urls: Json | null;
           starting_price_eur: number | null;

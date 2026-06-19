@@ -58,7 +58,8 @@ select
   s.quality_flags,
   s.created_at,
   s.updated_at,
-  coalesce(m.media, '[]'::jsonb) as media
+  coalesce(m.media, '[]'::jsonb) as media,
+  s.raw_payload->'source_blocks' as source_blocks
 from public.auction_sales s
 left join public.tribunals t on t.code = s.tribunal_code
 left join lateral (

@@ -50,6 +50,7 @@ export function PropertyOverview({ sale }: { sale: AuctionSale }) {
   const surfaceConfidence =
     sale.surface_confidence != null ? Math.round(sale.surface_confidence * 100) : null;
   const surfaceSource = surfaceSourceLabel(sale.surface_source);
+  const sourceFacts = sourceFactRows(sale);
 
   return (
     <div className="liquid-panel rounded-lg p-5 sm:p-6">
@@ -133,6 +134,21 @@ export function PropertyOverview({ sale }: { sale: AuctionSale }) {
         )}
       </Block>
 
+      {sourceFacts.length > 0 && (
+        <Block icon={<FileLikeIcon />} title="Détails source">
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+            {sourceFacts.map((fact) => (
+              <div key={fact.label} className="border-b border-white/10 pb-2">
+                <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  {fact.label}
+                </dt>
+                <dd className="mt-1 font-medium text-foreground">{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </Block>
+      )}
+
       {/* ── Points à vérifier (cadre positif : intégrés au plafond) ──────── */}
       {risks.length > 0 && (
         <Block
@@ -202,6 +218,71 @@ function Block({ icon, title, children }: { icon: ReactNode; title: string; chil
       <div className="mt-2.5">{children}</div>
     </div>
   );
+}
+
+function FileLikeIcon() {
+  return <Landmark className="h-4 w-4" />;
+}
+
+function sourceFactRows(sale: AuctionSale): Array<{ label: string; value: string }> {
+  const blocks = sale.source_blocks ?? {};
+  return [
+    { label: "Adresse exacte", value: sale.address },
+    { label: "Usage", value: labelValue(textValue(blocks.usage ?? blocks.sous_type)) },
+    {
+      label: "Terrain",
+      value: sale.land_surface_m2 != null ? formatSurface(sale.land_surface_m2) : null,
+    },
+    {
+      label: "Situation locative",
+      value: sale.occupancy_status ? occupancyLabel(sale.occupancy_status) : null,
+    },
+    { label: "Ancien / neuf", value: labelValue(textValue(blocks.ancien_neuf)) },
+    { label: "État", value: labelValue(textValue(blocks.etat)) },
+    { label: "Niveaux", value: textValue(blocks.nb_etages) },
+    { label: "DPE", value: dpeLabel(textValue(blocks.dpe_classe)) },
+    { label: "Consignation", value: priceValue(blocks.consignation) },
+    { label: "Mode de vente", value: labelValue(textValue(blocks.mode_vente)) },
+    { label: "Paiement", value: labelValue(textValue(blocks.seance_paiement)) },
+    { label: "Lieu de vente", value: textValue(blocks.auction_location) },
+    { label: "Notaire", value: textValue(blocks.notary_name) || sale.lawyer_name },
+    { label: "Mise à jour source", value: dateValue(blocks.source_updated_at) },
+  ].filter((fact): fact is { label: string; value: string } => Boolean(fact.value));
+}
+
+function textValue(value: unknown): string | null {
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : null;
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function priceValue(value: unknown): string | null {
+  const amount = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(amount) && amount > 0 ? formatPrice(amount) : null;
+}
+
+function dateValue(value: unknown): string | null {
+  const text = textValue(value);
+  return text ? formatDate(text) : null;
+}
+
+function dpeLabel(value: string | null): string | null {
+  if (!value) return null;
+  return value.toUpperCase() === "Z" ? "Non soumis" : value;
+}
+
+function labelValue(value: string | null): string | null {
+  if (!value) return null;
+  const labels: Record<string, string> = {
+    ANCIEN: "Ancien",
+    NEUF: "Neuf",
+    RENOVER: "À rénover",
+    VILLE: "Ville",
+    CHEQUE_BANQUE: "Chèque de banque",
+    BOUGIE: "Bougie",
+    OUI: "Oui",
+    NON: "Non",
+  };
+  return labels[value.toUpperCase()] ?? value.replaceAll("_", " ");
 }
 
 function occupancyHeadline(status: string | null | undefined): string {
