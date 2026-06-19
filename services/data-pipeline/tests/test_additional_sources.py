@@ -213,7 +213,8 @@ def test_parse_notaires_detail_api_payload_extracts_rich_fields() -> None:
                         "descCourte": "Immeuble en pierre",
                         "descLongue": (
                             "VENTE AUX ENCHERES\nBORDEAUX (33000) 65, RUE DU TONDU\n"
-                            "Maison avec 2 chambres, salle d'eau et dépendance à usage de garage. "
+                            "Un immeuble en pierre à usage d'habitation et de commerce de 206.90 m², "
+                            "avec 2 chambres, salle d'eau et dépendance à usage de garage. "
                             "Arrêté de péril. ABSENCE DE VISITE. DPE Non soumis. "
                             "Me Edouard FIGEROU, notaire à Bordeaux."
                         ),
@@ -258,10 +259,13 @@ def test_parse_notaires_detail_api_payload_extracts_rich_fields() -> None:
     detail = parse_notaires_detail_json(payload)
 
     assert detail["address"] == "65 RUE DU TONDU, 33000 Bordeaux"
-    assert detail["property_type"] == "maison"
+    assert detail["property_type"] == "immeuble"
     assert detail["description"].startswith("VENTE AUX ENCHERES BORDEAUX (33000) 65, RUE DU TONDU")
     assert detail["habitable_surface_m2"] == 206.9
     assert detail["land_surface_m2"] == 266
+    assert detail["surface_source"] == "notaires.surfaceHabitable"
+    assert detail["surface_confidence"] == 0.95
+    assert "immeuble en pierre" in detail["surface_evidence"]
     assert detail["bedrooms_count"] == 2
     assert detail["bathrooms_count"] == 1
     assert detail["has_garage"] is True
@@ -292,7 +296,11 @@ def test_parse_notaires_detail_extracts_address_from_description() -> None:
                 "descriptions": [
                     {
                         "langue": "fr",
-                        "descLongue": "LE TEICH (33470) – 20 Rue du Milon Quartier résidentiel Maison à démolir.",
+                        "descLongue": (
+                            "LE TEICH (33470) – 20 Rue du Milon Quartier résidentiel "
+                            "Maison à démolir 52 m² environ, faisant l'objet d'un arrêté de péril. "
+                            "Le tout sur un terrain cadastré pour 322 m²."
+                        ),
                     }
                 ],
             },
@@ -303,6 +311,7 @@ def test_parse_notaires_detail_extracts_address_from_description() -> None:
                     "codePostal": "33470",
                     "communeNom": "Teich",
                     "inseeDepartement": "33",
+                    "surfaceTerrain": 322,
                 },
             },
         }
@@ -311,6 +320,56 @@ def test_parse_notaires_detail_extracts_address_from_description() -> None:
     detail = parse_notaires_detail_json(payload)
 
     assert detail["address"] == "20 Rue du Milon, 33470 Teich"
+    assert detail["property_type"] == "maison"
+    assert detail["surface_m2"] == 52
+    assert detail["habitable_surface_m2"] == 52
+    assert detail["land_surface_m2"] == 322
+    assert detail["surface_source"] == "notaires.description.surface_batie"
+    assert "Maison à démolir 52 m² environ" in detail["surface_evidence"]
+
+
+def test_parse_notaires_detail_extracts_main_surface_from_description_without_structured_field() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VAE",
+            "vae": {
+                "descriptions": [
+                    {
+                        "langue": "fr",
+                        "descCourte": "Immeuble en pierre",
+                        "descLongue": (
+                            "BORDEAUX (33000) 65, RUE DU TONDU "
+                            "Un immeuble en pierre à usage d'habitation et de commerce de 206.90 m², comprenant : "
+                            "- Sous-sol partiel de 35 m² environ. "
+                            "- A l'étage : un appartement de 84 m² environ. "
+                            "Ledit ensemble est cadastré section n° 179 et HN n°219 pour un total de 266 m²."
+                        ),
+                    }
+                ],
+            },
+            "bien": {
+                "typeBien": "MAI",
+                "maison": {
+                    "typeBien": "MAI",
+                    "adresse4": "65 RUE DU TONDU",
+                    "codePostal": "33000",
+                    "communeNom": "Bordeaux",
+                    "inseeDepartement": "33",
+                    "surfaceTerrain": 266,
+                    "nbPieces": 4,
+                },
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["property_type"] == "immeuble"
+    assert detail["surface_m2"] == 206.9
+    assert detail["habitable_surface_m2"] == 206.9
+    assert detail["land_surface_m2"] == 266
+    assert detail["surface_source"] == "notaires.description.surface_batie"
+    assert "immeuble en pierre" in detail["surface_evidence"]
 
 
 def test_parse_notaires_detail_keeps_cadastral_surface_when_habitable_placeholder() -> None:
