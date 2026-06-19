@@ -53,6 +53,26 @@ def test_normalize_asset_features_extracts_surfaces_features_and_score() -> None
     assert any(item["key"] == "surface" for item in analysis["questions"])
 
 
+def test_notaires_short_house_code_promotes_surface_to_app_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://www.immobilier.notaires.fr/fr/annonce-immo/adjudication/maison/le-bouscat-33/1741074",
+            "property_type": "MAI",
+            "title": "Maison 5 pièces (R+1)de 106 m² env avec jardin",
+            "surface_m2": 106,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.property_type == "house"
+    assert sale.habitable_surface_m2 == Decimal("106")
+    assert sale.app_surface_m2 == Decimal("106")
+    assert sale.app_surface_kind == "habitable"
+    assert "ambiguous_surface" not in sale.quality_flags
+
+
 def test_asset_rows_are_storage_ready() -> None:
     sale = normalize_sale(
         {

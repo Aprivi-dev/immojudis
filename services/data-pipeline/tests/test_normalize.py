@@ -70,6 +70,32 @@ def test_normalize_sale_preserves_canonical_property_type() -> None:
     assert sale.property_type == "house"
 
 
+def test_normalize_sale_maps_notaires_short_property_code() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://www.immobilier.notaires.fr/fr/annonce-immo/adjudication/maison/le-bouscat-33/1741074",
+            "property_type": "MAI",
+            "title": "Maison 5 pièces de 106 m²",
+        }
+    )
+
+    assert sale.property_type == "house"
+
+
+def test_normalize_sale_recovers_specific_type_from_title_when_raw_type_is_other() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://example.test/notaires-other-title",
+            "property_type": "Autre",
+            "title": "Maison 5 pièces de 106 m² avec jardin",
+        }
+    )
+
+    assert sale.property_type == "house"
+
+
 def test_normalize_sale_corrects_legacy_price_with_raw_text_evidence() -> None:
     sale = normalize_sale(
         {
