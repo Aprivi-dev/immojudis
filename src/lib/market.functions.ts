@@ -423,10 +423,13 @@ async function buildEstimate(input: {
   const areaKind: "urban" | "rural" =
     commune && commune.population >= URBAN_POPULATION_THRESHOLD ? "urban" : "rural";
 
-  // En ville le rayon reste serré (parcellaire dense). En campagne on part de
-  // 300 m puis on élargit seulement s'il y a trop peu de ventes pour une
-  // fourchette fiable — l'élargissement est signalé dans les avertissements.
-  const radii = areaKind === "urban" ? [URBAN_RADIUS_M] : [RURAL_RADIUS_M, 600, 1000];
+  // On commence serré en ville, mais certaines communes périurbaines dépassent
+  // le seuil de population sans offrir assez de mutations à 100 m.
+  const radii = input.radiusOverride
+    ? [input.radiusOverride]
+    : areaKind === "urban"
+      ? [URBAN_RADIUS_M, RURAL_RADIUS_M, 600, 1000]
+      : [RURAL_RADIUS_M, 600, 1000];
   let analysis = await analyzeAtRadius(lat, lng, radii[0]);
   let radiusM = radii[0];
   for (let i = 1; i < radii.length && analysis.perParcel.length < 3; i += 1) {
@@ -434,10 +437,6 @@ async function buildEstimate(input: {
     analysis = await analyzeAtRadius(lat, lng, radiusM);
   }
   const radiusWidened = !input.radiusOverride && radiusM > radii[0];
-  if (input.radiusOverride) {
-    radiusM = input.radiusOverride;
-    analysis = await analyzeAtRadius(lat, lng, radiusM);
-  }
 
   const { perParcel, addressMutations, totalNearby } = analysis;
 
