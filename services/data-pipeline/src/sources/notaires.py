@@ -201,7 +201,8 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         or transaction.get("dateDebutEncheres")
         or transaction.get("dateFinEncheres"),
         "visit_dates": _visit_dates(visit),
-        "lawyer_name": clean_text(contact.get("nom") or visit.get("visiteNomContact")),
+        "lawyer_name": _notary_from_text(description_text)
+        or clean_text(contact.get("nom") or visit.get("visiteNomContact")),
         "lawyer_contact": _contact_text(contact) or clean_text(visit.get("visiteContact")),
         "status": _status(transaction),
         "latitude": latitude,
@@ -214,13 +215,17 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         "source_blocks": {
             "type_transaction": transaction_type,
             "reference": clean_text(transaction.get("reference")),
+            "source_updated_at": clean_text(transaction.get("dateMaj") or data.get("dateMaj")),
             "type_adjudication": clean_text(transaction.get("typeAdjudication")),
             "origine_judiciaire": clean_text(transaction.get("origineJudiciaire")),
             "consignation": transaction.get("consignation"),
+            "auction_location": _address(transaction, clean_text(transaction.get("codePostal")), clean_text(transaction.get("ville"))),
             "mode_vente": clean_text(transaction.get("modeVente")),
             "surenchere": clean_text(transaction.get("surenchere")),
             "seance_heure_depot": clean_text(transaction.get("seanceHeureDepot")),
             "seance_paiement": clean_text(transaction.get("seancePaiement")),
+            "notary_name": _notary_from_text(description_text),
+            "usage": clean_text(property_block.get("sousType")),
             "etat": clean_text(property_block.get("etat")),
             "ancien_neuf": clean_text(property_block.get("ancienNeuf")),
             "sous_type": clean_text(property_block.get("sousType")),
@@ -396,6 +401,14 @@ def _visit_dates(visit: dict[str, Any]) -> list[str]:
 
 def _contact_text(contact: dict[str, Any]) -> str | None:
     return clean_text(" | ".join(part for part in (contact.get("telephone"), contact.get("mail")) if clean_text(part)))
+
+
+def _notary_from_text(value: str | None) -> str | None:
+    text = clean_text(value)
+    if not text:
+        return None
+    match = re.search(r"\bM(?:e|a[iî]tre)\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿa-zà-ÿ' -]+?),\s+notaire\b", text, re.I)
+    return clean_text(f"Me {match.group(1)}") if match else None
 
 
 def _status(transaction: dict[str, Any]) -> str:

@@ -214,14 +214,19 @@ def test_parse_notaires_detail_api_payload_extracts_rich_fields() -> None:
                         "descLongue": (
                             "VENTE AUX ENCHERES\nBORDEAUX (33000) 65, RUE DU TONDU\n"
                             "Maison avec 2 chambres, salle d'eau et dépendance à usage de garage. "
-                            "Arrêté de péril. ABSENCE DE VISITE. DPE Non soumis."
+                            "Arrêté de péril. ABSENCE DE VISITE. DPE Non soumis. "
+                            "Me Edouard FIGEROU, notaire à Bordeaux."
                         ),
                     }
                 ],
                 "visite": {"visiteLibre": "mercredi 27 mai de 14h00 a 15h00"},
                 "miseAPrix": 300000,
                 "consignation": 60000,
+                "dateMaj": "2026-06-08T08:58:49Z",
                 "seanceDate": "2026-06-24T12:30:00Z",
+                "adresse4": "6 rue Mably",
+                "codePostal": "33000",
+                "ville": "BORDEAUX",
                 "bienVendu": "NON",
                 "origineJudiciaire": "ADJUDICATION",
             },
@@ -239,6 +244,10 @@ def test_parse_notaires_detail_api_payload_extracts_rich_fields() -> None:
                     "nbPieces": 4,
                     "situationLocative": "LIBRE",
                     "stationnement": "INCONNU",
+                    "ancienNeuf": "ANCIEN",
+                    "etat": "RENOVER",
+                    "sousType": "VILLE",
+                    "nbEtages": 1,
                     "coordonneesExactesW84": {"coordonneeX": -0.57918, "coordonneeY": 44.837789},
                 },
             },
@@ -266,6 +275,13 @@ def test_parse_notaires_detail_api_payload_extracts_rich_fields() -> None:
     assert detail["lawyer_contact"] == "0761761899 | vente@example.test"
     assert detail["source_blocks"]["consignation"] == 60000
     assert detail["source_blocks"]["origine_judiciaire"] == "ADJUDICATION"
+    assert detail["source_blocks"]["source_updated_at"] == "2026-06-08T08:58:49Z"
+    assert detail["source_blocks"]["auction_location"] == "6 rue Mably, 33000 BORDEAUX"
+    assert detail["source_blocks"]["notary_name"] == "Me Edouard FIGEROU"
+    assert detail["source_blocks"]["usage"] == "VILLE"
+    assert detail["source_blocks"]["etat"] == "RENOVER"
+    assert detail["source_blocks"]["ancien_neuf"] == "ANCIEN"
+    assert detail["source_blocks"]["nb_etages"] == 1
 
 
 def test_parse_notaires_detail_extracts_address_from_description() -> None:
