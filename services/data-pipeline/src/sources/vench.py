@@ -74,7 +74,40 @@ def scrape_vench_aquitaine_result(
                 _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
 
-    return ScrapeResult(validate_raw_sales("vench", unique_dicts(raw_sales, "source_url"), errors), errors)
+    catalog_sales = _filter_catalog_sales(unique_dicts(raw_sales, "source_url"))
+    return ScrapeResult(validate_raw_sales("vench", catalog_sales, errors), errors)
+
+
+def _filter_catalog_sales(sales: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    kept: list[dict[str, Any]] = []
+    for sale in sales:
+        if sale.get("_known_unchanged") or _has_surface_signal(sale):
+            kept.append(sale)
+            continue
+        LOGGER.info("Skipping Vench listing without surface: %s", sale.get("source_url"))
+    return kept
+
+
+def _has_surface_signal(sale: dict[str, Any]) -> bool:
+    for key in (
+        "surface_m2",
+        "habitable_surface_m2",
+        "carrez_surface_m2",
+        "app_surface_m2",
+        "land_surface_m2",
+    ):
+        if sale.get(key) not in (None, "", 0, "0"):
+            return True
+    text_values = [
+        sale.get("title"),
+        sale.get("description"),
+        sale.get("raw_text"),
+    ]
+    source_blocks = sale.get("source_blocks")
+    if isinstance(source_blocks, dict):
+        text_values.extend(source_blocks.values())
+    text = " ".join(clean_text(value) or "" for value in text_values)
+    return bool(re.search(r"\b[1-9][0-9]*(?:[,.][0-9]+)?\s*m(?:2|²)\b", text, re.I))
 
 
 def parse_vench_list_html(

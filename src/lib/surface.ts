@@ -10,6 +10,7 @@ type SurfaceSaleLike = {
   app_surface_m2?: number | null;
   habitable_surface_m2?: number | null;
   carrez_surface_m2?: number | null;
+  land_surface_m2?: number | null;
   rooms_count?: number | null;
 };
 
@@ -17,6 +18,8 @@ export type SaleSurface = {
   value: number | null;
   estimated: boolean;
   label: string;
+  metricLabel: string;
+  kind: "recorded" | "estimated" | "land" | "none";
   helperText: string | null;
 };
 
@@ -60,6 +63,8 @@ export function getSaleSurface(sale: SurfaceSaleLike): SaleSurface {
       value: recorded,
       estimated: false,
       label: formatSurface(recorded),
+      metricLabel: "Surface",
+      kind: "recorded",
       helperText: null,
     };
   }
@@ -68,6 +73,8 @@ export function getSaleSurface(sale: SurfaceSaleLike): SaleSurface {
     value: STUDIO_ESTIMATED_SURFACE_M2,
     estimated: true,
     label: `${formatSurface(STUDIO_ESTIMATED_SURFACE_M2)} estimés`,
+    metricLabel: "Surface estimée",
+    kind: "estimated",
     helperText: `Surface provisoire retenue pour ${kind} sans surface publiée. À confirmer dans les pièces avant d'enchérir.`,
   });
 
@@ -78,6 +85,28 @@ export function getSaleSurface(sale: SurfaceSaleLike): SaleSurface {
     value: null,
     estimated: false,
     label: "—",
+    metricLabel: "Surface",
+    kind: "none",
     helperText: null,
   };
+}
+
+export function getDisplaySurface(sale: SurfaceSaleLike): SaleSurface {
+  const primary = getSaleSurface(sale);
+  if (primary.value != null) return primary;
+
+  const land = positiveSurface(sale.land_surface_m2);
+  if (land != null) {
+    return {
+      value: land,
+      estimated: false,
+      label: formatSurface(land),
+      metricLabel: "Terrain",
+      kind: "land",
+      helperText:
+        "Surface terrain ou cadastrale connue. Elle n'est pas utilisée comme surface habitable pour le prix au m².",
+    };
+  }
+
+  return primary;
 }

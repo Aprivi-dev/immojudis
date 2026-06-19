@@ -73,6 +73,29 @@ def test_notaires_short_house_code_promotes_surface_to_app_surface() -> None:
     assert "ambiguous_surface" not in sale.quality_flags
 
 
+def test_notaires_cadastral_surface_does_not_become_habitable_area() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://www.immobilier.notaires.fr/fr/annonce-immo/adjudication/maison/bordeaux-33/1963348",
+            "property_type": "MAI",
+            "surface_m2": 1,
+            "habitable_surface_m2": 1,
+            "description": "Une maison à réhabiliter. Cadastrée section CT n°363 pour un total de 44 m².",
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.property_type == "house"
+    assert sale.surface_m2 is None
+    assert sale.habitable_surface_m2 is None
+    assert sale.land_surface_m2 == Decimal("44")
+    assert sale.app_surface_m2 is None
+    assert sale.surface_scope == "land"
+    assert "ambiguous_surface" not in sale.quality_flags
+
+
 def test_asset_rows_are_storage_ready() -> None:
     sale = normalize_sale(
         {

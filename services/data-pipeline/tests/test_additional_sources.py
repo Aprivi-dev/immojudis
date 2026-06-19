@@ -311,3 +311,48 @@ def test_parse_notaires_detail_extracts_address_from_description() -> None:
     detail = parse_notaires_detail_json(payload)
 
     assert detail["address"] == "20 Rue du Milon, 33470 Teich"
+
+
+def test_parse_notaires_detail_keeps_cadastral_surface_when_habitable_placeholder() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VAE",
+            "vae": {
+                "descriptions": [
+                    {
+                        "langue": "fr",
+                        "descCourte": "Maison à réhabiliter",
+                        "descLongue": (
+                            "BORDEAUX (33000) 135, RUE KLÉBER Une maison à réhabiliter. "
+                            "Cadastrée section CT n°363 pour un total de 44 m². DPE : Non soumis."
+                        ),
+                    }
+                ],
+            },
+            "bien": {
+                "typeBien": "MAI",
+                "maison": {
+                    "typeBien": "MAI",
+                    "adresse4": "135 RUE KLÉBER",
+                    "codePostal": "33000",
+                    "communeNom": "Bordeaux",
+                    "inseeDepartement": "33",
+                    "surfaceHabitable": 1.0,
+                    "nbPieces": 5,
+                },
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["address"] == "135 RUE KLÉBER, 33000 Bordeaux"
+    assert detail["property_type"] == "maison"
+    assert detail["surface_m2"] is None
+    assert detail["habitable_surface_m2"] is None
+    assert detail["land_surface_m2"] == 44
+    assert detail["surface_source"] == "notaires.description.cadastre"
+    assert detail["surface_confidence"] == 0.9
+    assert detail["surface_evidence"] == "Cadastrée section CT n°363 pour un total de 44 m²."
+    assert detail["rooms_count"] == 5
+    assert detail["risk_notes"] == "DPE non soumis"

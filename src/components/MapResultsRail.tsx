@@ -6,7 +6,7 @@ import X from "lucide-react/dist/esm/icons/x.js";
 import type { AuctionMapPin } from "@/lib/types";
 import { formatPrice, formatPricePerM2, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
-import { getSaleSurface } from "@/lib/surface";
+import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { SaleCountdown } from "@/components/SaleCountdown";
 
 function occupancyChipClass(label: string): string {
@@ -33,6 +33,7 @@ export function MapSaleCard({
   floating?: boolean;
 }) {
   const surfaceInfo = getSaleSurface(sale);
+  const displaySurface = getDisplaySurface(sale);
   const surface = surfaceInfo.value;
   const ppm = pricePerM2(sale.starting_price_eur, surface);
   const occ = occupancyLabel(sale.occupancy_status);
@@ -100,7 +101,9 @@ export function MapSaleCard({
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <span className="text-[11px] tabular-nums text-muted-foreground">
-            {surface ? surfaceInfo.label : "Surface —"}
+            {displaySurface.value
+              ? `${displaySurface.metricLabel} ${displaySurface.label}`
+              : "Surface —"}
           </span>
           <span className={`chip ${occupancyChipClass(occ)} text-[10px]`}>
             <span aria-hidden className="chip-dot" />

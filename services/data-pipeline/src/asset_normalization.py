@@ -90,6 +90,8 @@ SURFACE_PATTERNS = {
         r"superficie\s*approximative\s*habitable\s*totale\s*:?\s*([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²|\?)",
     ),
     "land_surface_m2": (
+        r"\bcadastr[ée]e?.{0,140}?\b(?:total|superficie|contenance)\b.{0,30}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
+        r"\bsection\s+[A-Z]{1,4}\s*(?:n[°o]\s*)?[0-9A-Z]+.{0,100}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
         r"(?:terrain|parcelle|jardin).{0,60}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
         r"contenance\s+(?:totale\s+)?(?:de\s+)?([0-9]+)\s*a\s*([0-9]+)\s*ca",
         r"([0-9]+)\s*a\s*([0-9]+)\s*ca",
@@ -402,6 +404,7 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         sale.carrez_surface_m2 = _extract_surface_kind(text, "carrez_surface_m2", sale)
     if sale.land_surface_m2 is None:
         sale.land_surface_m2 = _extract_surface_kind(text, "land_surface_m2", sale)
+    _discard_placeholder_built_surface(sale)
     if sale.surface_m2 is None:
         sale.surface_m2 = _extract_built_surface(text, sale)
     explicit_app_surface = None
@@ -426,6 +429,22 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
     _flag_ambiguous_surface(sale)
     if sale.land_surface_m2 is not None and sale.property_type not in {"land", "house", "building"}:
         sale.land_surface_m2 = None
+    if (
+        sale.surface_scope is None
+        and sale.app_surface_m2 is None
+        and sale.land_surface_m2 is not None
+        and sale.property_type in {"house", "building"}
+    ):
+        sale.surface_scope = "land"
+
+
+def _discard_placeholder_built_surface(sale: AuctionSale) -> None:
+    if sale.property_type not in {"house", "building"} or sale.land_surface_m2 is None:
+        return
+    if sale.habitable_surface_m2 is not None and sale.habitable_surface_m2 < Decimal("9"):
+        sale.habitable_surface_m2 = None
+    if sale.surface_m2 is not None and sale.surface_m2 < Decimal("9") and sale.habitable_surface_m2 is None:
+        sale.surface_m2 = None
 
 
 def _apply_document_consistency_corrections(sale: AuctionSale, text: str) -> None:
