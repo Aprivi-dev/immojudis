@@ -12,6 +12,8 @@ export type AuctionSale = {
   property_type: string | null;
   starting_price_eur: number | null;
   sale_date: string | null;
+  lawyer_name: string | null;
+  lawyer_contact: string | null;
   latitude: number | null;
   longitude: number | null;
   occupancy_status: string | null;

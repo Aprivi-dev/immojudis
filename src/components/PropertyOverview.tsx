@@ -20,7 +20,7 @@ import {
   propertyTypeLabel,
   surfaceSourceLabel,
 } from "@/lib/format";
-import { getSaleSurface } from "@/lib/surface";
+import { getDisplaySurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
 const EQUIPMENTS: Array<[keyof AuctionSale, string]> = [
@@ -38,10 +38,14 @@ const EQUIPMENTS: Array<[keyof AuctionSale, string]> = [
  * vente, fiabilité des données et points à vérifier).
  */
 export function PropertyOverview({ sale }: { sale: AuctionSale }) {
-  const primarySurface = getSaleSurface(sale);
-  const surfaceKind = sale.app_surface_kind ? ` (${sale.app_surface_kind})` : "";
+  const primarySurface = getDisplaySurface(sale);
+  const surfaceKind =
+    primarySurface.kind === "recorded" && sale.app_surface_kind
+      ? ` (${sale.app_surface_kind})`
+      : "";
   const propertyType = (sale.property_type ?? "").toLowerCase();
   const showLand =
+    primarySurface.kind !== "land" &&
     sale.land_surface_m2 != null &&
     /land|terrain|house|maison|building|immeuble/.test(propertyType);
   const equipments = EQUIPMENTS.filter(([key]) => sale[key] === true).map(([, label]) => label);
@@ -64,7 +68,10 @@ export function PropertyOverview({ sale }: { sale: AuctionSale }) {
         <Fact icon={<Home className="h-4 w-4" />} label="Type de bien">
           {propertyTypeLabel(sale.property_type)}
         </Fact>
-        <Fact icon={<Ruler className="h-4 w-4" />} label={`Surface${surfaceKind}`}>
+        <Fact
+          icon={<Ruler className="h-4 w-4" />}
+          label={`${primarySurface.metricLabel}${surfaceKind}`}
+        >
           {primarySurface.value ? primarySurface.label : "Non précisée"}
         </Fact>
         <Fact icon={<LayoutGrid className="h-4 w-4" />} label="Pièces">

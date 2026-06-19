@@ -155,6 +155,21 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
     city = clean_text(property_block.get("communeNom") or property_block.get("localiteNom") or transaction.get("ville"))
     source_images = _multimedia_images(transaction.get("multimedias"))
     address = _address(property_block, postal_code, city, description_text)
+    habitable_surface = _usable_habitable_surface(property_block.get("surfaceHabitable"), description_text)
+    source_land_surface = _surface_value(property_block.get("surfaceTerrain"))
+    cadastral_surface, cadastral_evidence = _cadastral_surface_from_text(description_text)
+    land_surface = source_land_surface or cadastral_surface
+    generic_surface = _usable_generic_surface(property_block.get("surface"), land_surface)
+    if source_land_surface is not None:
+        land_surface_source = "notaires.surfaceTerrain"
+        land_surface_evidence = cadastral_evidence or f"surfaceTerrain: {source_land_surface} m²"
+    elif cadastral_surface is not None:
+        land_surface_source = "notaires.description.cadastre"
+        land_surface_evidence = cadastral_evidence
+    else:
+        land_surface_source = None
+        land_surface_evidence = None
+    is_land_only_surface = habitable_surface is None and generic_surface is None and land_surface is not None
     raw_text = _raw_text(
         [
             clean_text(transaction.get("reference")),
@@ -177,10 +192,13 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         "property_type": _property_type_label(property_block.get("typeBien") or bien.get("typeBien")),
         "title": description.get("short"),
         "description": description.get("long") or description.get("short"),
-        "surface_m2": property_block.get("surfaceHabitable") or property_block.get("surface"),
-        "habitable_surface_m2": property_block.get("surfaceHabitable"),
+        "surface_m2": habitable_surface or generic_surface,
+        "habitable_surface_m2": habitable_surface,
         "carrez_surface_m2": property_block.get("surfaceCarrez"),
-        "land_surface_m2": property_block.get("surfaceTerrain"),
+        "land_surface_m2": land_surface,
+        "surface_source": land_surface_source if is_land_only_surface else None,
+        "surface_confidence": 0.9 if is_land_only_surface else None,
+        "surface_evidence": land_surface_evidence if is_land_only_surface else None,
         "rooms_count": property_block.get("nbPieces"),
         "bedrooms_count": property_block.get("nbChambres") or _bedrooms_from_text(description_text),
         "bathrooms_count": property_block.get("nbSdb") or _bathrooms_from_text(description_text),
@@ -376,6 +394,62 @@ def _coordinates(property_block: dict[str, Any]) -> tuple[Any, Any]:
     return coords.get("coordonneeY"), coords.get("coordonneeX")
 
 
+def _surface_value(value: object | None) -> int | float | None:
+    if value in (None, ""):
+        return None
+    try:
+        number = float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+    if number <= 0:
+        return None
+    return int(number) if number.is_integer() else number
+
+
+def _usable_habitable_surface(value: object | None, description_text: str | None) -> int | float | None:
+    surface = _surface_value(value)
+    if surface is None:
+        return None
+    if surface >= 9:
+        return surface
+    text = clean_text(description_text) or ""
+    if re.search(r"\b(?:surface\s+habitable|m(?:2|²)\s+habitables?|habitables?)\b", text, re.I):
+        return surface
+    return None
+
+
+def _usable_generic_surface(value: object | None, land_surface: object | None) -> int | float | None:
+    surface = _surface_value(value)
+    if surface is None:
+        return None
+    if land_surface is not None and surface < 9:
+        return None
+    return surface
+
+
+def _cadastral_surface_from_text(value: str | None) -> tuple[int | float | None, str | None]:
+    text = clean_text(value)
+    if not text:
+        return None, None
+    patterns = (
+        r"\bcadastr[ée]e?.{0,140}?\b(?:total|superficie|contenance)\b.{0,30}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b",
+        r"\bsection\s+[A-Z]{1,4}\s*(?:n[°o]\s*)?[0-9A-Z]+.{0,100}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I | re.S)
+        if match:
+            return _surface_value(match.group(1)), _evidence_sentence(text, match.start(), match.end())
+    return None, None
+
+
+def _evidence_sentence(text: str, start: int, end: int) -> str:
+    before = text.rfind(".", 0, start)
+    before = text.rfind("\n", 0, start) if before == -1 else before
+    after = text.find(".", end)
+    after = len(text) if after == -1 else after + 1
+    return clean_text(text[max(0, before + 1) : after]) or text[start:end]
+
+
 def _multimedia_images(value: object | None) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -451,7 +525,7 @@ def _risk_notes(value: str | None) -> str | None:
         notes.append("Arrêté de péril")
     if re.search(r"\babsence\s+de\s+visite\b", text, re.I):
         notes.append("Absence de visite")
-    if re.search(r"\bdpe\s+non\s+soumis\b", text, re.I):
+    if re.search(r"\bdpe\s*:?\s+non\s+soumis\b", text, re.I):
         notes.append("DPE non soumis")
     return "; ".join(notes) or None
 

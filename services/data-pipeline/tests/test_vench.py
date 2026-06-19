@@ -1,5 +1,5 @@
 from src.normalize import normalize_sale
-from src.sources.vench import parse_vench_detail_html, parse_vench_list_html
+from src.sources.vench import _filter_catalog_sales, parse_vench_detail_html, parse_vench_list_html
 
 
 def test_parse_vench_list_html_extracts_public_card_fields() -> None:
@@ -77,3 +77,25 @@ def test_parse_vench_detail_html_keeps_public_details_without_disallowed_uploads
     assert raw["source_blocks"]["adresse"] == "40440 Ondres"
     assert raw["source_blocks"]["caracteristiques"] == "Terrasse, Jardin"
     assert raw["source_images"] == ["https://www.vench.fr/images/vente.jpg"]
+
+
+def test_filter_catalog_sales_keeps_vench_listing_with_surface_signal() -> None:
+    sale = {
+        "source_name": "vench",
+        "source_url": "https://www.vench.fr/vente-165177-un-appartement-orthez.html",
+        "title": "UN APPARTEMENT DE 4 PIÈCES",
+        "raw_text": "UN APPARTEMENT DE 4 PIÈCES • 82,45m² • Orthez",
+    }
+
+    assert _filter_catalog_sales([sale]) == [sale]
+
+
+def test_filter_catalog_sales_drops_vench_listing_without_surface_signal() -> None:
+    sale = {
+        "source_name": "vench",
+        "source_url": "https://www.vench.fr/vente-165999-maison.html",
+        "title": "UNE MAISON D'HABITATION",
+        "raw_text": "Mise à prix : 100 000 € Date de la vente : 25/06/26",
+    }
+
+    assert _filter_catalog_sales([sale]) == []

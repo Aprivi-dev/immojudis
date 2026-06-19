@@ -4,21 +4,16 @@ import Calendar from "lucide-react/dist/esm/icons/calendar.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import type { AuctionSale } from "@/lib/types";
-import {
-  formatPrice,
-  formatDate,
-  formatSurface,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
+import { formatPrice, formatDate, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
-import { getSaleSurface } from "@/lib/surface";
+import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { SaleCountdown, isNew } from "./SaleCountdown";
 import { MapThumbnail } from "./MapThumbnail";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 
 export function SaleCard({ sale }: { sale: AuctionSale }) {
   const surfaceInfo = getSaleSurface(sale);
+  const displaySurface = getDisplaySurface(sale);
   const surface = surfaceInfo.value;
   const riskCount = sale.risks?.length ?? 0;
   const fresh = isNew(sale.created_at);
@@ -91,10 +86,8 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
           </div>
           <div className="grid min-w-24 gap-2 text-right text-xs text-muted-foreground">
             <CardMetric
-              label={surfaceInfo.estimated ? "Surface estimée" : "Surface"}
-              value={
-                surfaceInfo.estimated ? surfaceInfo.label : surface ? formatSurface(surface) : "—"
-              }
+              label={displaySurface.metricLabel}
+              value={displaySurface.value ? displaySurface.label : "—"}
             />
             <CardMetric
               label="Pièces"
