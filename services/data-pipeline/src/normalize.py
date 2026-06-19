@@ -59,6 +59,17 @@ PROPERTY_TYPE_MAP = {
     "unknown": "unknown",
 }
 
+PROPERTY_TYPE_CODE_MAP = {
+    "app": "apartment",
+    "mai": "house",
+    "ter": "land",
+    "imb": "building",
+    "loc": "commercial",
+    "com": "commercial",
+    "gar": "parking",
+    "pkg": "parking",
+}
+
 VALID_STATUSES = {"upcoming", "past", "adjudicated", "unknown"}
 
 
@@ -195,10 +206,33 @@ def parse_french_datetime(value: object | None) -> datetime | None:
 
 def normalize_property_type(value: object | None) -> str:
     text = strip_accents(clean_text(value) or "").lower()
+    if text in PROPERTY_TYPE_CODE_MAP:
+        return PROPERTY_TYPE_CODE_MAP[text]
     for needle, normalized in PROPERTY_TYPE_MAP.items():
         if needle in text:
             return normalized
     return "other"
+
+
+def normalize_sale_property_type(raw_sale: dict[str, object]) -> str:
+    property_type = normalize_property_type(raw_sale.get("property_type"))
+    if property_type not in {"other", "unknown"}:
+        return property_type
+
+    fallback_text = " ".join(
+        filter(
+            None,
+            (
+                clean_text(raw_sale.get("title")),
+                clean_text(raw_sale.get("description")),
+                clean_text(raw_sale.get("raw_text")),
+            ),
+        )
+    )
+    fallback_type = normalize_property_type(fallback_text)
+    if fallback_type not in {"other", "unknown"}:
+        return fallback_type
+    return property_type
 
 
 def normalize_occupancy_status(value: object | None) -> str | None:
@@ -419,7 +453,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         city=city,
         address=address,
         postal_code=postal_code,
-        property_type=normalize_property_type(raw_sale.get("property_type") or raw_sale.get("title")),
+        property_type=normalize_sale_property_type(raw_sale),
         title=clean_text(raw_sale.get("title")),
         description=clean_text(raw_sale.get("description")),
         surface_m2=parse_surface(raw_sale.get("surface_m2")),
