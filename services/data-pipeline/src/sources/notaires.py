@@ -67,7 +67,8 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
                 if not sales:
                     break
                 for sale in sales:
-                    _enrich_sale_from_detail(client, sale, errors)
+                    if not _enrich_sale_from_detail(client, sale, errors):
+                        continue
                     if sale.get("department") in AQUITAINE_DEPARTMENTS:
                         raw_sales.append(sale)
 
@@ -155,7 +156,21 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
     city = clean_text(property_block.get("communeNom") or property_block.get("localiteNom") or transaction.get("ville"))
     source_images = _multimedia_images(transaction.get("multimedias"))
     address = _address(property_block, postal_code, city, description_text)
+    text_surface, text_surface_evidence = _built_surface_from_text(description_text, description.get("short"))
     habitable_surface = _usable_habitable_surface(property_block.get("surfaceHabitable"), description_text)
+    if habitable_surface is None and text_surface is not None:
+        habitable_surface = text_surface
+        habitable_surface_source = "notaires.description.surface_batie"
+        habitable_surface_confidence = 0.86
+        habitable_surface_evidence = text_surface_evidence
+    elif habitable_surface is not None:
+        habitable_surface_source = "notaires.surfaceHabitable"
+        habitable_surface_confidence = 0.95
+        habitable_surface_evidence = text_surface_evidence or f"surfaceHabitable: {habitable_surface} m²"
+    else:
+        habitable_surface_source = None
+        habitable_surface_confidence = None
+        habitable_surface_evidence = None
     source_land_surface = _surface_value(property_block.get("surfaceTerrain"))
     cadastral_surface, cadastral_evidence = _cadastral_surface_from_text(description_text)
     land_surface = source_land_surface or cadastral_surface
@@ -170,6 +185,22 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         land_surface_source = None
         land_surface_evidence = None
     is_land_only_surface = habitable_surface is None and generic_surface is None and land_surface is not None
+    if habitable_surface is not None:
+        surface_source = habitable_surface_source
+        surface_confidence = habitable_surface_confidence
+        surface_evidence = habitable_surface_evidence
+    elif generic_surface is not None:
+        surface_source = "notaires.surface"
+        surface_confidence = 0.8
+        surface_evidence = f"surface: {generic_surface} m²"
+    elif is_land_only_surface:
+        surface_source = land_surface_source
+        surface_confidence = 0.9
+        surface_evidence = land_surface_evidence
+    else:
+        surface_source = None
+        surface_confidence = None
+        surface_evidence = None
     raw_text = _raw_text(
         [
             clean_text(transaction.get("reference")),
@@ -189,16 +220,20 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         "city": city,
         "postal_code": postal_code,
         "address": address,
-        "property_type": _property_type_label(property_block.get("typeBien") or bien.get("typeBien")),
+        "property_type": _property_type_from_detail(
+            property_block.get("typeBien") or bien.get("typeBien"),
+            description.get("short"),
+            description_text,
+        ),
         "title": description.get("short"),
         "description": description.get("long") or description.get("short"),
         "surface_m2": habitable_surface or generic_surface,
         "habitable_surface_m2": habitable_surface,
         "carrez_surface_m2": property_block.get("surfaceCarrez"),
         "land_surface_m2": land_surface,
-        "surface_source": land_surface_source if is_land_only_surface else None,
-        "surface_confidence": 0.9 if is_land_only_surface else None,
-        "surface_evidence": land_surface_evidence if is_land_only_surface else None,
+        "surface_source": surface_source,
+        "surface_confidence": surface_confidence,
+        "surface_evidence": surface_evidence,
         "rooms_count": property_block.get("nbPieces"),
         "bedrooms_count": property_block.get("nbChambres") or _bedrooms_from_text(description_text),
         "bathrooms_count": property_block.get("nbSdb") or _bathrooms_from_text(description_text),
@@ -250,6 +285,7 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
             "dpe_classe": clean_text(property_block.get("consommationClasse")),
             "ges_classe": clean_text(property_block.get("emissionGesClasse")),
             "nb_etages": property_block.get("nbEtages"),
+            "detail_enriched": True,
         },
     }
 
@@ -266,17 +302,22 @@ def _detail_api_url(sale: dict[str, Any]) -> str | None:
     return f"{API_URL}/{external_id}" if external_id else None
 
 
-def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> None:
+def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> bool:
     detail_url = _detail_api_url(sale)
     if not detail_url:
-        return
+        errors.append(f"missing detail url for {sale.get('source_url')}")
+        return False
     try:
         detail = parse_notaires_detail_json(client.get(detail_url), fallback=sale)
     except Exception as exc:
         LOGGER.warning("Notaires detail fetch failed for %s: %s", detail_url, exc)
         errors.append(f"detail {detail_url}: {exc}")
-        return
+        return False
+    if not detail:
+        errors.append(f"detail {detail_url}: empty or invalid JSON")
+        return False
     _merge_detail(sale, detail)
+    return True
 
 
 def _merge_detail(sale: dict[str, Any], detail: dict[str, Any]) -> None:
@@ -305,6 +346,18 @@ def _fallback_source_url(item: dict[str, Any]) -> str:
 def _property_type_label(value: object | None) -> str | None:
     code = clean_text(value)
     return PROPERTY_TYPE_LABELS.get((code or "").upper(), code)
+
+
+def _property_type_from_detail(code: object | None, *texts: str | None) -> str | None:
+    label = _property_type_label(code)
+    code_text = (clean_text(code) or "").upper()
+    text = clean_text(" ".join(value for value in texts if value)) or ""
+    headline = text[:600]
+    if code_text in {"", "MAI", "IMB"} and re.search(r"\b(?:immeuble|ensemble\s+immobilier)\b", headline, re.I):
+        return "immeuble"
+    if code_text in {"", "MAI"} and re.search(r"\b(?:maison|villa)\b", headline, re.I):
+        return "maison"
+    return label
 
 
 def _property_block(value: object | None) -> dict[str, Any]:
@@ -425,6 +478,40 @@ def _usable_generic_surface(value: object | None, land_surface: object | None) -
     if land_surface is not None and surface < 9:
         return None
     return surface
+
+
+def _built_surface_from_text(*values: str | None) -> tuple[int | float | None, str | None]:
+    text = clean_text("\n".join(value for value in values if value))
+    if not text:
+        return None, None
+    patterns = (
+        r"\b(?:surface|superficie)\s+habitable\s*:?\s*(?:de\s+)?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b",
+        (
+            r"\b(?:un|une|l['’]|le|la)?\s*"
+            r"(?:immeuble|maison|appartement|local|commerce|ensemble\s+immobilier|bien\s+immobilier)\b"
+            r".{0,140}?\b(?:de|d['’]une\s+superficie\s+de|d['’]une\s+surface\s+de)\s+"
+            r"([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b"
+        ),
+        (
+            r"\b(?:maison|immeuble|appartement|local|commerce)\b"
+            r"[^.;\n]{0,90}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\s*(?:environ|env\.?)?\b"
+        ),
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.I | re.S):
+            if _is_surface_context_excluded(text, match.start(), match.end()):
+                continue
+            return _surface_value(match.group(1)), _evidence_sentence(text, match.start(), match.end())
+    return None, None
+
+
+def _is_surface_context_excluded(text: str, start: int, end: int) -> bool:
+    context = text[max(0, start - 80) : end]
+    if re.search(r"\b(?:cadastr[ée]e?|terrain|parcelle|jardin|terrasse|balcon)\b", context, re.I):
+        return True
+    if re.search(r"\b(?:sous-sol|garage|r[ée]serve|cellier|cave|d[ée]pendance)\b", context, re.I):
+        return not re.search(r"\b(?:surface|superficie)\s+habitable\b", context, re.I)
+    return False
 
 
 def _cadastral_surface_from_text(value: str | None) -> tuple[int | float | None, str | None]:
