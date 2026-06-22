@@ -2,7 +2,12 @@ import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
-import { isAdminAccount, isProfessionalAccount } from "@/lib/account";
+import {
+  getAccountType,
+  getProfessionalStatus,
+  isAdminAccount,
+  isProfessionalAccount,
+} from "@/lib/account";
 import { BrandMark } from "@/components/BrandLogo";
 
 const PUBLIC_PATHS = new Set(["/", "/login", "/ventes-immobilieres-judiciaires"]);
@@ -23,6 +28,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const requiresProfessionalAccount = PROFESSIONAL_PATHS.has(pathname);
   const requiresAdminAccount = pathname === ADMIN_PREFIX || pathname.startsWith(`${ADMIN_PREFIX}/`);
   const isAdmin = isAdminAccount(user);
+  const isPendingProfessional =
+    getAccountType(user, profile) === "b2b" && getProfessionalStatus(profile) !== "approved";
 
   useEffect(() => {
     if (isPublic || loading || user) return;
@@ -95,11 +102,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
             Pro
           </div>
           <h1 className="mt-5 font-display text-2xl text-foreground">
-            Espace réservé aux professionnels
+            {isPendingProfessional
+              ? "Accès pro en cours de validation"
+              : "Espace réservé aux professionnels"}
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            La publication d'annonces est destinée aux comptes B2B : avocats, notaires, huissiers ou
-            commissaires de justice. Votre compte actuel reste orienté investisseur.
+            {isPendingProfessional
+              ? "Votre compte professionnel doit être validé avant de transmettre une annonce."
+              : "La publication d'annonces est destinée aux comptes B2B : avocats, notaires, huissiers ou commissaires de justice."}
           </p>
           <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
             <a

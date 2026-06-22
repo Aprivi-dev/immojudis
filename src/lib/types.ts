@@ -94,13 +94,32 @@ export type SaleFilters = {
   only_new?: boolean;
 };
 
-export type SortKey =
-  | "date_asc"
-  | "date_desc"
-  | "price_asc"
-  | "price_desc"
-  | "score_desc"
-  | "surface_desc";
+export const SORT_KEYS = [
+  "date_asc",
+  "date_desc",
+  "price_asc",
+  "price_desc",
+  "score_desc",
+  "surface_desc",
+] as const;
+
+export type SortKey = (typeof SORT_KEYS)[number];
+
+export function asSearchString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+export function asFiniteNumber(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+export function asSortKey(value: unknown): SortKey | undefined {
+  return typeof value === "string" && SORT_KEYS.includes(value as SortKey)
+    ? (value as SortKey)
+    : undefined;
+}
 
 export type UserAlert = {
   id: string;

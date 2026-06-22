@@ -118,10 +118,3 @@ function Stat({ n, label }: { n: number; label: string }) {
     </div>
   );
 }
-
-export function isNew(createdAt: string | null | undefined, days = 7): boolean {
-  if (!createdAt) return false;
-  const d = new Date(createdAt);
-  if (isNaN(d.getTime())) return false;
-  return Date.now() - d.getTime() < days * 24 * 60 * 60 * 1000;
-}

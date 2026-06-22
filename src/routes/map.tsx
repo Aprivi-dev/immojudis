@@ -5,7 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import MapIcon from "lucide-react/dist/esm/icons/map.js";
 import { getMapPins } from "@/lib/queries";
-import type { SaleFilters, SortKey } from "@/lib/types";
+import {
+  asFiniteNumber,
+  asSearchString,
+  asSortKey,
+  type SaleFilters,
+  type SortKey,
+} from "@/lib/types";
 import { SaleMap } from "@/components/SaleMap";
 import { MapFilterBar } from "@/components/MapFilterBar";
 import { MapResultsRail, MapSaleCard } from "@/components/MapResultsRail";
@@ -26,7 +32,7 @@ type Search = {
   min_surface?: number;
   occupancy?: string;
   min_score?: number;
-  sort?: string;
+  sort?: SortKey;
   max_price_per_m2?: number;
   min_yield?: number;
   around_address?: string;
@@ -35,18 +41,18 @@ type Search = {
 
 export const Route = createFileRoute("/map")({
   validateSearch: (search: Record<string, unknown>): Search => ({
-    department: search.department as string | undefined,
-    city: search.city as string | undefined,
-    type: search.type as string | undefined,
-    max_price: search.max_price ? Number(search.max_price) : undefined,
-    min_surface: search.min_surface ? Number(search.min_surface) : undefined,
-    occupancy: search.occupancy as string | undefined,
-    min_score: search.min_score ? Number(search.min_score) : undefined,
-    sort: search.sort as string | undefined,
-    max_price_per_m2: search.max_price_per_m2 ? Number(search.max_price_per_m2) : undefined,
-    min_yield: search.min_yield ? Number(search.min_yield) : undefined,
-    around_address: search.around_address as string | undefined,
-    around_radius: search.around_radius ? Number(search.around_radius) : undefined,
+    department: asSearchString(search.department),
+    city: asSearchString(search.city),
+    type: asSearchString(search.type),
+    max_price: asFiniteNumber(search.max_price),
+    min_surface: asFiniteNumber(search.min_surface),
+    occupancy: asSearchString(search.occupancy),
+    min_score: asFiniteNumber(search.min_score),
+    sort: asSortKey(search.sort),
+    max_price_per_m2: asFiniteNumber(search.max_price_per_m2),
+    min_yield: asFiniteNumber(search.min_yield),
+    around_address: asSearchString(search.around_address),
+    around_radius: asFiniteNumber(search.around_radius),
   }),
   head: () => ({
     meta: [
@@ -72,7 +78,7 @@ function MapPage() {
     occupancy_status: search.occupancy,
     min_score: search.min_score,
   };
-  const sort = (search.sort as SortKey) || "date_asc";
+  const sort = search.sort || "date_asc";
 
   const { data: sales = [], isLoading } = useQuery({
     queryKey: ["sales-map", filters, sort],

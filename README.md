@@ -25,7 +25,7 @@ Le dépôt réunit deux briques :
 - **Routing / data** : TanStack Router (file-based) + TanStack Query
 - **Backend** : [Supabase](https://supabase.com) (Postgres, Auth, RLS)
 - **Cartographie** : Google Maps (Static, JavaScript, Photorealistic 3D Tiles) avec repli **Leaflet + OpenStreetMap**
-- **Formulaires / validation** : react-hook-form + Zod
+- **Formulaires / validation** : formulaires natifs + Zod
 - **Langage** : TypeScript strict
 - **Hébergement** : Vercel
 

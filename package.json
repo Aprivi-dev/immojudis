@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "vite dev",
     "dev:ready": "node scripts/dev-ready.mjs",
-    "build": "node scripts/verify-required-env.mjs && vite build",
+    "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",

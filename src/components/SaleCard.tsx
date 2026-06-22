@@ -3,11 +3,12 @@ import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import Calendar from "lucide-react/dist/esm/icons/calendar.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
+import { isNew } from "@/lib/dates";
 import type { AuctionSale } from "@/lib/types";
 import { formatPrice, formatDate, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
-import { SaleCountdown, isNew } from "./SaleCountdown";
+import { SaleCountdown } from "./SaleCountdown";
 import { MapThumbnail } from "./MapThumbnail";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 

@@ -119,7 +119,10 @@ export function isProfessionalAccount(
   user: User | null | undefined,
   profile?: AccountProfile | null,
 ) {
-  return isAdminAccount(user) || getAccountType(user, profile) === "b2b";
+  return (
+    isAdminAccount(user) ||
+    (getAccountType(user, profile) === "b2b" && getProfessionalStatus(profile) === "approved")
+  );
 }
 
 export function getProfessionalRole(
