@@ -97,6 +97,7 @@ function HomePage() {
   const { data: stats } = useQuery({
     queryKey: ["stats"],
     queryFn: getStats,
+    enabled: Boolean(user),
     staleTime: 5 * 60_000,
   });
   useScrollReveal();

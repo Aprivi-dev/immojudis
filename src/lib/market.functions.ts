@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { setResponseHeaders } from "@tanstack/react-start/server";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 // ─── DVF (Demandes de Valeurs Foncières) via API Cerema ─────────────────
 // Données ouvertes DGFiP, toutes les transactions immobilières de France.
@@ -630,6 +631,7 @@ function assessQuality({
 }
 
 export const getMarketEstimate = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => inputSchema.parse(input))
   .handler(async ({ data }): Promise<MarketContext> => {
     try {

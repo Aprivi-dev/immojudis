@@ -66,6 +66,15 @@ type GoogleMarkerMeta = {
   pos: google.maps.LatLngLiteral;
 };
 
+function clearGoogleListeners(listeners: google.maps.MapsEventListener[]) {
+  listeners.splice(0).forEach((listener) => listener.remove());
+}
+
+function clearGoogleMarkers(markers: Map<string, GoogleMarkerMeta>) {
+  markers.forEach((meta) => meta.marker.setMap(null));
+  markers.clear();
+}
+
 function GoogleSaleMap({
   sales,
   fitToMarkers = false,
@@ -92,6 +101,8 @@ function GoogleSaleMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let cancelled = false;
+    const listeners = listenersRef.current;
+    const markers = markersRef.current;
 
     loadGoogleMaps(apiKey)
       .then((api) => {
@@ -125,10 +136,8 @@ function GoogleSaleMap({
 
     return () => {
       cancelled = true;
-      listenersRef.current.forEach((l) => l.remove());
-      listenersRef.current = [];
-      markersRef.current.forEach((m) => m.marker.setMap(null));
-      markersRef.current.clear();
+      clearGoogleListeners(listeners);
+      clearGoogleMarkers(markers);
       userMarkerRef.current?.setMap(null);
       userMarkerRef.current = null;
       mapRef.current = null;
@@ -142,10 +151,8 @@ function GoogleSaleMap({
     const map = mapRef.current;
     if (!api || !map || !ready) return;
 
-    listenersRef.current.forEach((l) => l.remove());
-    listenersRef.current = [];
-    markersRef.current.forEach((m) => m.marker.setMap(null));
-    markersRef.current.clear();
+    clearGoogleListeners(listenersRef.current);
+    clearGoogleMarkers(markersRef.current);
 
     const bounds = new api.maps.LatLngBounds();
     let firstPos: google.maps.LatLngLiteral | null = null;
@@ -272,6 +279,7 @@ function LeafletSaleMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let cancelled = false;
+    const markers = markersRef.current;
 
     (async () => {
       try {
@@ -327,7 +335,7 @@ function LeafletSaleMap({
       mapRef.current = null;
       clusterRef.current = null;
       lRef.current = null;
-      markersRef.current.clear();
+      markers.clear();
       userMarkerRef.current = null;
     };
   }, []);
