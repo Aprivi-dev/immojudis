@@ -6,29 +6,28 @@
 - TypeScript strict
 - Tailwind CSS v4 + shadcn/ui
 - Supabase JS (auth, queries, RLS)
-- Google Maps sur les pages détail (vue aérienne + Street View), Leaflet + OpenStreetMap en fallback
+- Google Maps sur les pages détail, listes et carte (vue aérienne + Street View)
 
 ## 1. Installation locale
 
 ```bash
 npm install
 cp .env.example .env
-# Renseigner VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY et VITE_GOOGLE_MAPS_API_KEY si besoin
+# Renseigner VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY et VITE_GOOGLE_MAPS_API_KEY
 npm run dev        # http://localhost:3000
 ```
 
 ## 2. Variables d'environnement
 
-| Variable                        | Requis | Description                                                                                      |
-| ------------------------------- | ------ | ------------------------------------------------------------------------------------------------ |
-| `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)                                               |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)                                          |
-| `VITE_GOOGLE_MAPS_API_KEY`      | ❌     | Clé Google Maps restreinte par domaine. Active la vue aérienne/Street View sur les pages détail. |
-| `VITE_MAPBOX_TOKEN`             | ❌     | Optionnel. Non utilisé en V1 (Leaflet + OSM par défaut).                                         |
-| `GITHUB_SCROLL_TOKEN`           | ❌     | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`. |
-| `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                         |
-| `GITHUB_SCROLL_WORKFLOW`        | ❌     | Workflow cible. Défaut : `data-pipeline.yml`.                                                    |
-| `GITHUB_SCROLL_REF`             | ❌     | Branche cible. Défaut : `main`.                                                                  |
+| Variable                        | Requis | Description                                                                                               |
+| ------------------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)                                                        |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)                                                   |
+| `VITE_GOOGLE_MAPS_API_KEY`      | ✅     | Clé Google Maps restreinte par domaine. Active vignettes, carte interactive, vue aérienne et Street View. |
+| `GITHUB_SCROLL_TOKEN`           | ❌     | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.          |
+| `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                  |
+| `GITHUB_SCROLL_WORKFLOW`        | ❌     | Workflow cible. Défaut : `data-pipeline.yml`.                                                             |
+| `GITHUB_SCROLL_REF`             | ❌     | Branche cible. Défaut : `main`.                                                                           |
 
 ⚠️ **Ne JAMAIS** ajouter `SUPABASE_SERVICE_ROLE_KEY` au front. Elle bypass RLS.
 
@@ -93,7 +92,7 @@ Le projet cible Vercel. Pour déployer :
 2. Framework preset : **Vite**.
 3. Build command : `npm run build`.
 4. Output directory : laisser la valeur auto générée par TanStack Start/Vite.
-5. Renseigner les env vars `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` dans Project Settings → Environment Variables.
+5. Renseigner les env vars `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GOOGLE_MAPS_API_KEY` dans Project Settings → Environment Variables.
 6. Deploy.
 
 > Note : le projet est configuré avec TanStack Start et Nitro pour générer le
@@ -105,7 +104,7 @@ Le projet cible Vercel. Pour déployer :
 - `/` affiche les stats (depuis Supabase)
 - `/sales` liste les annonces, filtres modifient l'URL
 - `/sales/:id` affiche le détail + documents
-- `/map` affiche les markers Leaflet
+- `/map` affiche les markers Google Maps
 - `/favorites` redirige vers `/login` si déconnecté
 - `/alerts` permet création / toggle / suppression
 - Un utilisateur ne voit JAMAIS les favoris/alertes d'un autre (RLS)

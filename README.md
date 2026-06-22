@@ -11,10 +11,10 @@ localisation (vue aérienne 3D + Street View) et les documents officiels.
 
 Le dépôt réunit deux briques :
 
-| Brique | Dossier | Stack | Rôle |
-| --- | --- | --- | --- |
-| **Application web** | racine (`src/`) | TanStack Start · React 19 · Vite 7 | Front + API serveur consommés par l'investisseur |
-| **Pipeline de données** | [`services/data-pipeline/`](services/data-pipeline/README.md) | Python 3.11 | Scraping → normalisation → déduplication → Supabase |
+| Brique                  | Dossier                                                       | Stack                              | Rôle                                                |
+| ----------------------- | ------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------- |
+| **Application web**     | racine (`src/`)                                               | TanStack Start · React 19 · Vite 7 | Front + API serveur consommés par l'investisseur    |
+| **Pipeline de données** | [`services/data-pipeline/`](services/data-pipeline/README.md) | Python 3.11                        | Scraping → normalisation → déduplication → Supabase |
 
 ---
 
@@ -24,7 +24,7 @@ Le dépôt réunit deux briques :
 - **UI** : React 19, **Tailwind CSS v4**, composants [shadcn/ui](https://ui.shadcn.com) (Radix UI)
 - **Routing / data** : TanStack Router (file-based) + TanStack Query
 - **Backend** : [Supabase](https://supabase.com) (Postgres, Auth, RLS)
-- **Cartographie** : Google Maps (Static, JavaScript, Photorealistic 3D Tiles) avec repli **Leaflet + OpenStreetMap**
+- **Cartographie** : Google Maps (Static, JavaScript, Photorealistic 3D Tiles)
 - **Formulaires / validation** : formulaires natifs + Zod
 - **Langage** : TypeScript strict
 - **Hébergement** : Vercel
@@ -34,7 +34,7 @@ Le dépôt réunit deux briques :
 - **Node ≥ 20.19** (recommandé : 24, voir [`.nvmrc`](.nvmrc) — `nvm use`)
 - **npm 10**
 - Un projet **Supabase** (URL + clé publishable)
-- *(optionnel mais recommandé)* une **clé Google Maps** restreinte par domaine
+- une **clé Google Maps** restreinte par domaine
 
 ## Démarrage rapide
 
@@ -53,16 +53,16 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 
 ## Variables d'environnement
 
-| Variable | Requis | Description |
-| --- | :---: | --- |
-| `VITE_SUPABASE_URL` | ✅ | URL du projet Supabase (`https://xxx.supabase.co`) |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅ | Clé `anon` / publishable (publique, côté client) |
-| `VITE_GOOGLE_MAPS_API_KEY` | ➖ | Clé navigateur Google Maps restreinte par domaine. Active vignettes, vue aérienne 3D et Street View. Sans elle : repli Leaflet/OSM. |
-| `GITHUB_SCROLL_TOKEN` | ➖ | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`. |
+| Variable                        | Requis | Description                                                                                                             |
+| ------------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`             |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                                      |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` |   ✅   | Clé `anon` / publishable (publique, côté client)                                                                        |
+| `VITE_GOOGLE_MAPS_API_KEY`      |   ✅   | Clé navigateur Google Maps restreinte par domaine. Active vignettes, carte interactive, vue aérienne 3D et Street View. |
+| `GITHUB_SCROLL_TOKEN`           |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                                |
 
 > Les variables `VITE_*` sont **inlinées au moment du build**. En production
-> (Vercel) elles doivent être présentes dans *Project Settings → Environment
-> Variables* **et** suivies d'un redéploiement. Voir [`docs/vercel_setup.md`](docs/vercel_setup.md)
+> (Vercel) elles doivent être présentes dans _Project Settings → Environment
+> Variables_ **et** suivies d'un redéploiement. Voir [`docs/vercel_setup.md`](docs/vercel_setup.md)
 > pour la configuration complète (Auth, secrets CI, runner admin).
 >
 > ⚠️ Ne jamais exposer `SUPABASE_SERVICE_ROLE_KEY` côté front : elle contourne la RLS.
@@ -70,27 +70,27 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 ### Cartographie Google — APIs à activer
 
 La clé `VITE_GOOGLE_MAPS_API_KEY` doit avoir ces APIs **activées** dans Google
-Cloud, sinon chaque surface bascule sur son repli :
+Cloud :
 
-| API Google Cloud | Alimente | Repli si absente |
-| --- | --- | --- |
-| **Maps Static API** | Vignettes des cartes (liste annonces, cartes) | Tuile OpenStreetMap |
-| **Maps JavaScript API** | Carte interactive + Street View (page détail) | Placeholder « non cartographié » |
-| **Map Tiles API** | Vue aérienne photoréaliste 3D (page détail) | Satellite incliné (JS API) |
+| API Google Cloud        | Alimente                                      |
+| ----------------------- | --------------------------------------------- |
+| **Maps Static API**     | Vignettes des cartes (liste annonces, cartes) |
+| **Maps JavaScript API** | Carte interactive + Street View (page détail) |
+| **Map Tiles API**       | Vue aérienne photoréaliste 3D (page détail)   |
 
 La clé doit aussi autoriser les **référents HTTP** `http://localhost:3000/*` (dev)
 et le domaine de production.
 
 ## Scripts
 
-| Script | Effet |
-| --- | --- |
-| `npm run dev` | Serveur de dev Vite (HMR) |
+| Script              | Effet                                           |
+| ------------------- | ----------------------------------------------- |
+| `npm run dev`       | Serveur de dev Vite (HMR)                       |
 | `npm run dev:ready` | Dev + attente que le client et le SSR répondent |
-| `npm run build` | Build de production |
-| `npm run preview` | Smoke-test du build |
-| `npm run lint` | ESLint (flat config) |
-| `npm run format` | Prettier (écriture) |
+| `npm run build`     | Build de production                             |
+| `npm run preview`   | Smoke-test du build                             |
+| `npm run lint`      | ESLint (flat config)                            |
+| `npm run format`    | Prettier (écriture)                             |
 
 ## Structure du dépôt
 

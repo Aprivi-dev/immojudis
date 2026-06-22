@@ -36,7 +36,9 @@ def scrape_vench_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]
 
 
 def scrape_vench_aquitaine_result(
-    max_pages: int | None = None, known: dict[str, str] | None = None
+    max_pages: int | None = None,
+    known: dict[str, str] | None = None,
+    known_details: dict[str, dict[str, Any]] | None = None,
 ) -> ScrapeResult:
     """Collect Vench listings for the target departments.
 
@@ -74,18 +76,88 @@ def scrape_vench_aquitaine_result(
                 _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
 
-    catalog_sales = _filter_catalog_sales(unique_dicts(raw_sales, "source_url"))
+    catalog_sales = _filter_catalog_sales(unique_dicts(raw_sales, "source_url"), known_details)
     return ScrapeResult(validate_raw_sales("vench", catalog_sales, errors), errors)
 
 
-def _filter_catalog_sales(sales: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _filter_catalog_sales(
+    sales: list[dict[str, Any]],
+    known_details: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     kept: list[dict[str, Any]] = []
     for sale in sales:
+        if not _has_surface_signal(sale) or _is_paywalled_or_sparse(sale):
+            _backfill_from_known_detail(sale, known_details)
         if sale.get("_known_unchanged") or _has_surface_signal(sale):
             kept.append(sale)
             continue
         LOGGER.info("Skipping Vench listing without surface: %s", sale.get("source_url"))
     return kept
+
+
+def _backfill_from_known_detail(
+    sale: dict[str, Any],
+    known_details: dict[str, dict[str, Any]] | None,
+) -> None:
+    if not known_details:
+        return
+    known = known_details.get(str(sale.get("source_url") or ""))
+    if not known:
+        return
+    for key in (
+        "tribunal",
+        "department",
+        "city",
+        "address",
+        "postal_code",
+        "property_type",
+        "title",
+        "description",
+        "surface_m2",
+        "habitable_surface_m2",
+        "land_surface_m2",
+        "carrez_surface_m2",
+        "app_surface_m2",
+        "app_surface_kind",
+        "surface_source",
+        "surface_confidence",
+        "surface_evidence",
+        "rooms_count",
+        "bedrooms_count",
+        "bathrooms_count",
+        "parking_count",
+        "has_garden",
+        "has_terrace",
+        "has_garage",
+        "has_pool",
+        "has_air_conditioning",
+        "has_double_glazing",
+        "occupancy_status",
+        "raw_text",
+    ):
+        if sale.get(key) in (None, "", [], {}) and known.get(key) not in (None, "", [], {}):
+            sale[key] = known[key]
+    if not sale.get("documents") and known.get("documents"):
+        sale["documents"] = known["documents"]
+
+
+def _is_paywalled_or_sparse(sale: dict[str, Any]) -> bool:
+    text = " ".join(
+        clean_text(value) or ""
+        for value in (sale.get("title"), sale.get("description"), sale.get("raw_text"))
+    ).lower()
+    if "vous devez être abonné" in text or "consulter l'intégralité" in text:
+        return True
+    useful = (
+        "address",
+        "postal_code",
+        "surface_m2",
+        "starting_price_eur",
+        "sale_date",
+        "description",
+        "documents",
+    )
+    return sum(sale.get(key) not in (None, "", [], {}) for key in useful) <= 3
 
 
 def _has_surface_signal(sale: dict[str, Any]) -> bool:
