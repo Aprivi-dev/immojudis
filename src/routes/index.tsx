@@ -118,36 +118,51 @@ function HomePage() {
       <section className="hx-hero px-4 sm:px-6">
         <HeroVideo />
         <div aria-hidden className="hx-hero-veil" />
-        <div className="mx-auto grid max-w-7xl items-center gap-10 py-12 lg:min-h-[calc(100svh-4rem)] lg:grid-cols-[minmax(0,0.95fr)_minmax(27rem,0.78fr)] lg:gap-16 lg:py-10 xl:gap-20">
+        <div className="hx-hero-layout mx-auto grid max-w-7xl gap-10 lg:grid-cols-[minmax(0,0.95fr)_minmax(24rem,0.62fr)] lg:gap-16 xl:gap-20">
           <div className="hx-hero-copy">
-            <p className="hx-eyebrow">
-              <span aria-hidden className="hx-eyebrow-dot" />
-              Assistant d'analyse des ventes judiciaires
-            </p>
+            <div>
+              <p className="hx-eyebrow">
+                <span aria-hidden className="hx-eyebrow-dot" />
+                Assistant d'analyse des ventes judiciaires
+              </p>
 
-            <h1 className="hx-title">
-              Décider avant
-              <span>d'enchérir.</span>
-            </h1>
-
-            <p className="hx-lead">
-              Immojudis lit les annonces, pièces et diagnostics pour estimer la mise maximale à ne
-              pas dépasser, avec les preuves utiles et les points à vérifier avant l'audience.
-            </p>
-
-            <div className="hx-actions">
-              <a href="#demo-analysis" className="hx-btn-primary">
-                Voir une analyse exemple <ArrowRight className="h-4 w-4" />
-              </a>
-              <Link to={investorCta.to} className="hx-btn-ghost">
-                {investorCta.label}
-              </Link>
+              <h1 className="hx-title">
+                <span>Décider</span>
+                <span className="hx-title-muted">avant</span>
+                <span>d'enchérir.</span>
+              </h1>
             </div>
 
-            <div className="hx-trust-row" aria-label="Garanties de confiance">
-              <TrustPill icon={Database}>Sources publiques suivies</TrustPill>
-              <TrustPill icon={FileCheck2}>Documents tracés</TrustPill>
-              <TrustPill icon={LockKeyhole}>Accès sécurisé</TrustPill>
+            <div className="hx-hero-bottom">
+              <p className="hx-lead">
+                Immojudis lit les annonces, pièces et diagnostics pour transformer un dossier
+                judiciaire en mise plafond claire, preuves à l'appui.
+              </p>
+
+              <div className="hx-hero-score" aria-label="Couverture Immojudis">
+                <div>
+                  <Gavel aria-hidden className="h-7 w-7" />
+                  <strong>{totalSales}</strong>
+                </div>
+                <span>
+                  annonces suivies · {departments} départements · prochaine audience {nextSale}
+                </span>
+              </div>
+
+              <div className="hx-actions">
+                <a href="#demo-analysis" className="hx-btn-primary">
+                  Voir une analyse exemple <ArrowRight className="h-4 w-4" />
+                </a>
+                <Link to={investorCta.to} className="hx-btn-ghost">
+                  {investorCta.label}
+                </Link>
+              </div>
+
+              <div className="hx-trust-row" aria-label="Garanties de confiance">
+                <TrustPill icon={Database}>Sources publiques suivies</TrustPill>
+                <TrustPill icon={FileCheck2}>Documents tracés</TrustPill>
+                <TrustPill icon={LockKeyhole}>Accès sécurisé</TrustPill>
+              </div>
             </div>
           </div>
 
@@ -315,44 +330,59 @@ function ProductPreview() {
   return (
     <aside className="hx-product-preview" aria-label="Aperçu d'une analyse Immojudis">
       <div className="hx-preview-topbar">
-        <span>Analyse Immojudis</span>
+        <span>Dossier Immojudis</span>
         <span className="hx-live-chip">
           <span aria-hidden className="hx-eyebrow-dot" />
-          dossier lu
+          pièces lues
         </span>
       </div>
 
       <div className="hx-preview-main">
         <div>
           <p className="hx-mini-label">Appartement · Bordeaux</p>
-          <h2>À combien s'arrêter ?</h2>
-          <p>
-            Le plafond est calculé sous le marché local avec frais, travaux estimés et marge de
-            sécurité.
-          </p>
+          <h2>
+            Mise plafond
+            <span>avant audience</span>
+          </h2>
         </div>
-        <div className="hx-price-tile">
-          <span>Mise équilibrée</span>
-          <strong>129 400 €</strong>
-          <small>à ne pas dépasser</small>
+        <button className="hx-edit-dot" type="button" aria-label="Voir les preuves du dossier">
+          <FileSearch aria-hidden className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="hx-auction-pills" aria-label="Informations de vente">
+        <div>
+          <span>Audience</span>
+          <strong>14 fév.</strong>
+        </div>
+        <div>
+          <span>Surface</span>
+          <strong>72 m²</strong>
         </div>
       </div>
 
-      <div className="hx-bid-grid">
-        <BidOption title="Prudent" value="121 800 €" text="-14% sous marché" />
-        <BidOption title="Équilibré" value="129 400 €" text="-10% sous marché" active />
-        <BidOption title="Offensif" value="136 900 €" text="-6% sous marché" />
-      </div>
-
-      <div className="hx-meter-block">
-        <div className="hx-meter-head">
-          <span>Prix marché local</span>
+      <div className="hx-time-box">
+        <div>
+          <span>Mise à prix</span>
+          <strong>92 000 €</strong>
+        </div>
+        <div>
+          <span>Marché local</span>
           <strong>4 060 €/m²</strong>
         </div>
-        <div className="hx-meter-track" aria-hidden>
-          <span />
-        </div>
       </div>
+
+      <div className="hx-price-line">
+        <div>
+          <strong>129 400 €</strong>
+          <span>mise équilibrée</span>
+        </div>
+        <small>à ne pas dépasser</small>
+      </div>
+
+      <Link to="/sales" className="hx-reserve-button">
+        Ouvrir les annonces
+      </Link>
 
       <div className="hx-preview-notes">
         <PreviewNote icon={FileCheck2} title="Pièce utile" text="Cahier des conditions identifié" />
@@ -517,26 +547,6 @@ function AudienceCard({
         {cta} <ArrowUpRight className="h-4 w-4" />
       </Link>
     </article>
-  );
-}
-
-function BidOption({
-  title,
-  value,
-  text,
-  active = false,
-}: {
-  title: string;
-  value: string;
-  text: string;
-  active?: boolean;
-}) {
-  return (
-    <div className={active ? "hx-bid-option hx-bid-option-active" : "hx-bid-option"}>
-      <span>{title}</span>
-      <strong>{value}</strong>
-      <small>{text}</small>
-    </div>
   );
 }
 
