@@ -591,6 +591,49 @@ def mark_past_sales_in_supabase() -> int:
     return len(response.json()) if response.content else 0
 
 
+def delete_vench_sales_without_surface_in_supabase() -> int:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return 0
+    deleted = 0
+    while source_urls := _fetch_vench_without_surface_urls(str(url), str(key)):
+        for index in range(0, len(source_urls), 150):
+            batch = source_urls[index : index + 150]
+            params = {"source_url": _postgrest_in_filter(batch)}
+            _postgrest_delete(str(url), str(key), "auction_observations", params)
+            _postgrest_delete(str(url), str(key), "auction_sales", params)
+        deleted += len(source_urls)
+    return deleted
+
+
+def _fetch_vench_without_surface_urls(supabase_url: str, api_key: str) -> list[str]:
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_sales"
+    response = httpx.get(
+        endpoint,
+        params={
+            "select": "source_url",
+            "source_name": "eq.vench",
+            "surface_m2": "is.null",
+            "habitable_surface_m2": "is.null",
+            "carrez_surface_m2": "is.null",
+            "app_surface_m2": "is.null",
+            "land_surface_m2": "is.null",
+            "limit": "1000",
+        },
+        headers=_rest_headers(api_key, prefer="count=none"),
+        timeout=30,
+    )
+    if response.is_error:
+        raise httpx.HTTPStatusError(
+            f"{response.status_code} response from Supabase Vench cleanup lookup: {response.text}",
+            request=response.request,
+            response=response,
+        )
+    return [str(row["source_url"]) for row in response.json() if row.get("source_url")]
+
+
 def _upsert_with_rest(supabase_url: str, api_key: str, payload: list[dict[str, object]]) -> None:
     _postgrest_upsert(supabase_url, api_key, "auction_sales", payload, on_conflict="source_url")
 

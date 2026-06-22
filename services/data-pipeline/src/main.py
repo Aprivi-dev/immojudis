@@ -33,6 +33,7 @@ from src.sources.vench import scrape_vench_aquitaine_result
 from src.storage.supabase_client import upsert_sales_to_supabase
 from src.storage.supabase_client import upsert_observations_to_supabase
 from src.storage.supabase_client import mark_past_sales_in_supabase
+from src.storage.supabase_client import delete_vench_sales_without_surface_in_supabase
 from src.storage.supabase_client import create_run_in_supabase, finish_run_in_supabase
 from src.storage.supabase_client import (
     fetch_enriched_content_hashes,
@@ -247,6 +248,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     upserted = 0
     observations_upserted = 0
     supabase_cleaned_past = 0
+    supabase_deleted_vench_without_surface = 0
     summary = {
         "collected": len(raw_sales),
         "collected_by_source": raw_by_source,
@@ -264,6 +266,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             upserted = upsert_sales_to_supabase(enriched)
             observations_upserted = upsert_observations_to_supabase(enriched)
             supabase_cleaned_past = mark_past_sales_in_supabase()
+            supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()
             timings["supabase_seconds"] = round(time.perf_counter() - started, 2)
             summary.update(
                 {
@@ -271,6 +274,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                     "observations_upserted": observations_upserted,
                     "marked_past_in_run": lifecycle_stats.marked_past,
                     "marked_past_in_supabase": supabase_cleaned_past,
+                    "deleted_vench_without_surface": supabase_deleted_vench_without_surface,
                 }
             )
             finish_run_in_supabase(run_id, "succeeded", summary, errors)
@@ -291,6 +295,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print(f"- observations_upserted: {observations_upserted}")
     print(f"- marked_past_in_run: {lifecycle_stats.marked_past}")
     print(f"- marked_past_in_supabase: {supabase_cleaned_past}")
+    print(f"- deleted_vench_without_surface: {supabase_deleted_vench_without_surface}")
     print(f"- json: {json_path}")
     print(f"- csv: {csv_path}")
     for line in format_quality_report(quality_report):

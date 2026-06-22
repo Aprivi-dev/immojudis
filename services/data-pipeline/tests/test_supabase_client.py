@@ -63,3 +63,46 @@ def test_known_signatures_only_include_scored_rows(monkeypatch) -> None:
     assert supabase_client.fetch_known_sale_signatures() == {
         "https://example.test/scored": "2027-01-10|100000"
     }
+
+
+def test_delete_vench_sales_without_surface_removes_observations_then_sales(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        def __init__(self, rows):
+            self._rows = rows
+
+        is_error = False
+
+        def json(self):
+            return self._rows
+
+    responses = [
+        [{"source_url": "https://vench.test/no-surface"}],
+        [],
+    ]
+
+    def fake_get(endpoint, params, headers, timeout):
+        assert endpoint == "https://supabase.test/rest/v1/auction_sales"
+        assert params["source_name"] == "eq.vench"
+        assert params["surface_m2"] == "is.null"
+        assert params["habitable_surface_m2"] == "is.null"
+        assert params["carrez_surface_m2"] == "is.null"
+        assert params["app_surface_m2"] == "is.null"
+        assert params["land_surface_m2"] == "is.null"
+        return Response(responses.pop(0))
+
+    calls = []
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_delete",
+        lambda supabase_url, api_key, table, params: calls.append(table),
+    )
+
+    assert supabase_client.delete_vench_sales_without_surface_in_supabase() == 1
+    assert calls == ["auction_observations", "auction_sales"]
