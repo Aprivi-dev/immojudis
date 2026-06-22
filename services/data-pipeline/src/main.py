@@ -36,7 +36,7 @@ from src.storage.supabase_client import mark_past_sales_in_supabase
 from src.storage.supabase_client import create_run_in_supabase, finish_run_in_supabase
 from src.storage.supabase_client import (
     fetch_enriched_content_hashes,
-    fetch_known_sale_signatures,
+    fetch_known_sale_details,
     touch_last_seen_for_content_hashes,
     touch_last_seen_for_source_urls,
 )
@@ -81,17 +81,22 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     raw_by_source = {source: 0 for source in SOURCE_NAMES}
     timings: dict[str, float] = {}
 
-    # Signatures des annonces déjà enrichies (source_url → date|prix) : permet
-    # aux scrapers de sauter la page détail des annonces déjà vues et inchangées.
-    known_signatures: dict[str, str] = (
-        fetch_known_sale_signatures() if (settings["incremental_enrichment"] and options.upsert) else {}
+    # Données connues en base : Vench s'en sert comme fallback quand la page est
+    # paywall/sparse ; seules les lignes scorées peuvent servir au skip détail.
+    known_details: dict[str, dict[str, object]] = (
+        fetch_known_sale_details() if (settings["incremental_enrichment"] and options.upsert) else {}
     )
+    known_signatures = {
+        source_url: str(row["_signature"])
+        for source_url, row in known_details.items()
+        if row.get("_signature") and row.get("score_version")
+    }
 
     # ── Scraping des sources en parallèle ────────────────────────────────────
     # Chaque source est indépendante (domaine + client HTTP + délai propres), donc
     # on les lance en threads : le temps total ≈ la source la plus lente au lieu
     # de la somme. Indispensable avant de passer à toute la France.
-    scrapers = _enabled_scrapers(options.source, settings, known_signatures)
+    scrapers = _enabled_scrapers(options.source, settings, known_signatures, known_details)
     scrape_overall_started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, len(scrapers))) as executor:
         futures = {executor.submit(_timed_scrape, name, fn): name for name, fn in scrapers.items()}
@@ -297,7 +302,10 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
 
 def _enabled_scrapers(
-    source: str, settings: dict[str, object], known: dict[str, str]
+    source: str,
+    settings: dict[str, object],
+    known: dict[str, str],
+    known_details: dict[str, dict[str, object]],
 ) -> dict[str, "Callable[[], ScrapeResult]"]:
     """Map of enabled source name → zero-arg scraper callable, honouring the
     requested source and the per-source benchmark toggles. `known` (source_url →
@@ -315,7 +323,9 @@ def _enabled_scrapers(
             "vench",
             bool(settings["enable_vench_benchmark"]),
             lambda: scrape_vench_aquitaine_result(
-                max_pages=int(settings["vench_max_pages"]), known=known
+                max_pages=int(settings["vench_max_pages"]),
+                known=known,
+                known_details=known_details,
             ),
         ),
         (

@@ -117,6 +117,7 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
         return 0
     if str(key).startswith("sb_secret_"):
         _upsert_with_rest(str(url), str(key), payload)
+        _delete_secondary_sale_rows(str(url), str(key), sales)
         _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
         return len(payload)
 
@@ -125,10 +126,12 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
     except SupabaseException as exc:
         LOGGER.warning("Supabase client initialization failed, falling back to REST: %s", exc)
         _upsert_with_rest(str(url), str(key), payload)
+        _delete_secondary_sale_rows(str(url), str(key), sales)
     else:
         if client is None:
             return 0
         client.table("auction_sales").upsert(payload, on_conflict="source_url").execute()
+        _delete_secondary_sale_rows(str(url), str(key), sales)
         client.table("auction_features").upsert(
             [_timestamped(build_auction_features_row(sale), now) for sale in sales],
             on_conflict="source_url",
@@ -402,12 +405,49 @@ def fetch_enriched_content_hashes(content_hashes: list[str]) -> set[str]:
     return found
 
 
-def fetch_known_sale_signatures() -> dict[str, str]:
-    """Map source_url → change-signature for every already-enriched listing. Lets
-    the scrapers skip the detail page of listings already seen whose price/date
-    are unchanged. Past listings are kept too: skipping their detail is harmless
-    (the lifecycle step marks them past), and it avoids re-fetching them while
-    they linger on a source site. Paginated to stay safe at national scale."""
+KNOWN_SALE_DETAIL_SELECT = ",".join(
+    (
+        "source_url",
+        "source_urls",
+        "sale_date",
+        "starting_price_eur",
+        "score_version",
+        "tribunal",
+        "department",
+        "city",
+        "address",
+        "postal_code",
+        "property_type",
+        "title",
+        "description",
+        "surface_m2",
+        "habitable_surface_m2",
+        "land_surface_m2",
+        "carrez_surface_m2",
+        "app_surface_m2",
+        "app_surface_kind",
+        "surface_source",
+        "surface_confidence",
+        "surface_evidence",
+        "rooms_count",
+        "bedrooms_count",
+        "bathrooms_count",
+        "parking_count",
+        "has_garden",
+        "has_terrace",
+        "has_garage",
+        "has_pool",
+        "has_air_conditioning",
+        "has_double_glazing",
+        "occupancy_status",
+        "documents",
+        "raw_text",
+    )
+)
+
+
+def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
+    """Map every known source URL to DB fields available for fallback."""
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
@@ -415,15 +455,14 @@ def fetch_known_sale_signatures() -> dict[str, str]:
         return {}
 
     endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
-    signatures: dict[str, str] = {}
+    details: dict[str, dict[str, Any]] = {}
     offset = 0
     while True:
         try:
             response = httpx.get(
                 endpoint,
                 params={
-                    "select": "source_url,sale_date,starting_price_eur",
-                    "score_version": "not.is.null",
+                    "select": KNOWN_SALE_DETAIL_SELECT,
                     "limit": "1000",
                     "offset": str(offset),
                 },
@@ -431,22 +470,36 @@ def fetch_known_sale_signatures() -> dict[str, str]:
                 timeout=30,
             )
             if response.is_error:
-                LOGGER.warning("Could not fetch known signatures: %s", response.text[:200])
+                LOGGER.warning("Could not fetch known sale details: %s", response.text[:200])
                 break
             rows = response.json()
         except httpx.HTTPError as exc:
-            LOGGER.warning("Known-signature lookup failed: %s", exc)
+            LOGGER.warning("Known sale detail lookup failed: %s", exc)
             break
         for row in rows:
-            source_url = row.get("source_url")
-            if source_url:
-                signatures[str(source_url)] = make_sale_signature(
-                    row.get("sale_date"), row.get("starting_price_eur")
-                )
+            row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"))
+            for source_url in _known_source_urls(row):
+                details.setdefault(source_url, row)
         if len(rows) < 1000:
             break
         offset += 1000
-    return signatures
+    return details
+
+
+def fetch_known_sale_signatures() -> dict[str, str]:
+    """Map source_url → change-signature for already-enriched listings."""
+    return {
+        source_url: str(row["_signature"])
+        for source_url, row in fetch_known_sale_details().items()
+        if row.get("_signature") and row.get("score_version")
+    }
+
+
+def _known_source_urls(row: dict[str, Any]) -> list[str]:
+    urls = [row.get("source_url")]
+    if isinstance(row.get("source_urls"), list):
+        urls.extend(row["source_urls"])
+    return [str(url) for url in urls if url]
 
 
 def touch_last_seen_for_source_urls(source_urls: list[str]) -> int:
@@ -540,6 +593,32 @@ def mark_past_sales_in_supabase() -> int:
 
 def _upsert_with_rest(supabase_url: str, api_key: str, payload: list[dict[str, object]]) -> None:
     _postgrest_upsert(supabase_url, api_key, "auction_sales", payload, on_conflict="source_url")
+
+
+def _delete_secondary_sale_rows(supabase_url: str, api_key: str, sales: list[AuctionSale]) -> int:
+    secondary_urls = _secondary_source_urls(sales)
+    if not secondary_urls:
+        return 0
+    _postgrest_delete(
+        supabase_url,
+        api_key,
+        "auction_sales",
+        {"source_url": _postgrest_in_filter(secondary_urls)},
+    )
+    return len(secondary_urls)
+
+
+def _secondary_source_urls(sales: list[AuctionSale]) -> list[str]:
+    primary_urls = {sale.source_url for sale in sales if sale.source_url}
+    urls: list[str] = []
+    seen: set[str] = set()
+    for sale in sales:
+        for source_url in sale.source_urls:
+            if source_url in primary_urls or source_url in seen:
+                continue
+            seen.add(source_url)
+            urls.append(source_url)
+    return urls
 
 
 def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[AuctionSale], now: str) -> None:

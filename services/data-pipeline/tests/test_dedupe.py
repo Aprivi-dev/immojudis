@@ -53,6 +53,8 @@ def _make(
     postal_code: str | None = "33000",
     starting_price: str | None = "100 000 €",
     sale_date: str | None = "10 janvier 2027 à 9h00",
+    surface_m2: str | None = None,
+    documents: list[dict[str, str]] | None = None,
 ):
     raw: dict[str, object] = {
         "source_name": source_name,
@@ -67,6 +69,10 @@ def _make(
         raw["starting_price_eur"] = starting_price
     if sale_date is not None:
         raw["sale_date"] = sale_date
+    if surface_m2 is not None:
+        raw["surface_m2"] = surface_m2
+    if documents is not None:
+        raw["documents"] = documents
     return normalize_sale(raw)
 
 
@@ -141,3 +147,19 @@ def test_dedupe_does_not_merge_city_only_addresses() -> None:
     result = dedupe_sales([first, second])
 
     assert len(result) == 2
+
+
+def test_dedupe_keeps_richest_source_for_cross_source_duplicate() -> None:
+    poor = _make("https://avoventes.fr/enchere/1")
+    rich = _make(
+        "https://www.vench.fr/vente-1-maison.html",
+        source_name="vench",
+        surface_m2="91,78 m²",
+        documents=[{"label": "Cahier des conditions", "url": "https://example.test/cdc.pdf"}],
+    )
+
+    result = dedupe_sales([poor, rich])
+
+    assert len(result) == 1
+    assert result[0].source_url == "https://www.vench.fr/vente-1-maison.html"
+    assert "https://avoventes.fr/enchere/1" in result[0].source_urls

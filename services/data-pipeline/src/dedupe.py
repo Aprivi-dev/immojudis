@@ -19,6 +19,29 @@ PRIMARY_SOURCE_PRIORITY = {
     "vench": 4,
 }
 
+RICHNESS_FIELDS = (
+    "address",
+    "postal_code",
+    "tribunal",
+    "property_type",
+    "surface_m2",
+    "habitable_surface_m2",
+    "land_surface_m2",
+    "carrez_surface_m2",
+    "app_surface_m2",
+    "rooms_count",
+    "bedrooms_count",
+    "bathrooms_count",
+    "parking_count",
+    "occupancy_status",
+    "lawyer_name",
+    "lawyer_contact",
+    "latitude",
+    "longitude",
+    "investment_score",
+    "investment_summary",
+)
+
 
 def compute_content_hash(sale: AuctionSale) -> str:
     parts = [
@@ -75,17 +98,29 @@ def merge_duplicate_sales(sales: Iterable[AuctionSale]) -> list[AuctionSale]:
 
 
 def _is_richer(candidate: AuctionSale, current: AuctionSale) -> bool:
-    candidate_score = sum(value is not None and value != [] for value in candidate.model_dump().values())
-    current_score = sum(value is not None and value != [] for value in current.model_dump().values())
-    return candidate_score > current_score
+    return _richness_score(candidate) > _richness_score(current)
 
 
 def _choose_primary(first: AuctionSale, second: AuctionSale) -> AuctionSale:
+    first_score = _richness_score(first)
+    second_score = _richness_score(second)
+    if first_score != second_score:
+        return first if first_score > second_score else second
     first_priority = PRIMARY_SOURCE_PRIORITY.get(first.source_name, 99)
     second_priority = PRIMARY_SOURCE_PRIORITY.get(second.source_name, 99)
     if first_priority != second_priority:
         return first if first_priority < second_priority else second
-    return first if _is_richer(first, second) else second
+    return first
+
+
+def _richness_score(sale: AuctionSale) -> int:
+    score = sum(not _is_empty(getattr(sale, field)) for field in RICHNESS_FIELDS)
+    score += min(len(sale.documents), 3)
+    score += min(len(sale.score_factors), 3)
+    score += min(len(sale.quality_flags), 3)
+    if sale.raw_text:
+        score += min(len(sale.raw_text) // 250, 4)
+    return score
 
 
 def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> AuctionSale:

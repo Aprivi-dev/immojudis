@@ -19,6 +19,7 @@ const missing = [
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   ],
+  ["VITE_GOOGLE_MAPS_API_KEY", process.env.VITE_GOOGLE_MAPS_API_KEY],
 ]
   .filter(([, value]) => isMissing(value))
   .map(([label]) => label);

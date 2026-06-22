@@ -99,3 +99,27 @@ def test_filter_catalog_sales_drops_vench_listing_without_surface_signal() -> No
     }
 
     assert _filter_catalog_sales([sale]) == []
+
+
+def test_filter_catalog_sales_backfills_paywalled_vench_from_known_details() -> None:
+    sale = {
+        "source_name": "vench",
+        "source_url": "https://www.vench.fr/vente-165999-maison.html",
+        "title": "UNE MAISON D'HABITATION",
+        "raw_text": "Pour consulter l'intégralité des informations disponibles, vous devez être abonné.",
+    }
+
+    result = _filter_catalog_sales(
+        [sale],
+        {
+            sale["source_url"]: {
+                "surface_m2": 91.78,
+                "address": "12 rue Test 33000 Bordeaux",
+                "description": "Maison de 91,78 m² avec jardin.",
+            }
+        },
+    )
+
+    assert result == [sale]
+    assert sale["surface_m2"] == 91.78
+    assert sale["address"] == "12 rue Test 33000 Bordeaux"
