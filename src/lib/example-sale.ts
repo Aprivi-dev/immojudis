@@ -69,9 +69,9 @@ export const EXAMPLE_SALE = {
   risk_notes:
     "Dossier fictif : les risques ci-dessous illustrent les points qu'Immojudis rattache aux pièces.",
   source_name: "Dossier de démonstration Immojudis",
-  source_url: "/ventes-immobilieres-judiciaires",
+  source_url: "/ressources",
   primary_source: "Annonce d'exemple Immojudis",
-  source_urls: ["/ventes-immobilieres-judiciaires"],
+  source_urls: ["/ressources"],
   source_blocks: {
     usage: "Habitation",
     ancien_neuf: "Ancien",
@@ -88,19 +88,19 @@ export const EXAMPLE_SALE = {
   quality_flags: [],
   documents: [
     {
-      url: "/ventes-immobilieres-judiciaires",
+      url: "/ressources",
       name: "Cahier des conditions de vente - exemple",
       type: "cahier_conditions_vente",
     },
     {
-      url: "/ventes-immobilieres-judiciaires",
+      url: "/ressources",
       name: "PV descriptif - exemple",
       type: "pv_descriptif",
     },
   ],
   documents_rich: [
     {
-      url: "/ventes-immobilieres-judiciaires",
+      url: "/ressources",
       label: "Cahier des conditions de vente - exemple",
       type: "cahier_conditions_vente",
       document_type: "cahier_conditions_vente",
@@ -110,7 +110,7 @@ export const EXAMPLE_SALE = {
       text_chars: 18_420,
     },
     {
-      url: "/ventes-immobilieres-judiciaires",
+      url: "/ressources",
       label: "PV descriptif - exemple",
       type: "pv_descriptif",
       document_type: "pv_descriptif",
@@ -120,7 +120,7 @@ export const EXAMPLE_SALE = {
       text_chars: 9_860,
     },
     {
-      url: "/ventes-immobilieres-judiciaires",
+      url: "/ressources",
       label: "Diagnostics techniques - exemple",
       type: "diagnostics_techniques",
       document_type: "diagnostics_techniques",
@@ -175,7 +175,7 @@ export const EXAMPLE_SALE = {
       score_impact: -8,
       occurrences: [
         {
-          document_url: "/ventes-immobilieres-judiciaires",
+          document_url: "/ressources",
           document_label: "PV descriptif - exemple",
           document_type: "pv_descriptif",
           page_number: 3,
@@ -211,7 +211,7 @@ export const EXAMPLE_SALE = {
       score_impact: -6,
       occurrences: [
         {
-          document_url: "/ventes-immobilieres-judiciaires",
+          document_url: "/ressources",
           document_label: "Diagnostics techniques - exemple",
           document_type: "diagnostics_techniques",
           page_number: 6,

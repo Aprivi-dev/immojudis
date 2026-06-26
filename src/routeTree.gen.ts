@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VentesImmobilieresJudiciairesRouteImport } from './routes/ventes-immobilieres-judiciaires'
 import { Route as SalesRouteImport } from './routes/sales'
+import { Route as RessourcesRouteImport } from './routes/ressources'
 import { Route as PublishRouteImport } from './routes/publish'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as MapRouteImport } from './routes/map'
@@ -21,6 +22,8 @@ import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AnnonceExempleRouteImport } from './routes/annonce-exemple'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AccompagnementRouteImport } from './routes/accompagnement'
+import { Route as AProposRouteImport } from './routes/a-propos'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SalesIndexRouteImport } from './routes/sales.index'
 import { Route as SalesIdRouteImport } from './routes/sales.$id'
@@ -35,6 +38,11 @@ const VentesImmobilieresJudiciairesRoute =
 const SalesRoute = SalesRouteImport.update({
   id: '/sales',
   path: '/sales',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RessourcesRoute = RessourcesRouteImport.update({
+  id: '/ressources',
+  path: '/ressources',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PublishRoute = PublishRouteImport.update({
@@ -87,6 +95,16 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccompagnementRoute = AccompagnementRouteImport.update({
+  id: '/accompagnement',
+  path: '/accompagnement',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AProposRoute = AProposRouteImport.update({
+  id: '/a-propos',
+  path: '/a-propos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -110,6 +128,8 @@ const AdminQualityRoute = AdminQualityRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/a-propos': typeof AProposRoute
+  '/accompagnement': typeof AccompagnementRoute
   '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
   '/annonce-exemple': typeof AnnonceExempleRoute
@@ -120,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/map': typeof MapRoute
   '/privacy': typeof PrivacyRoute
   '/publish': typeof PublishRoute
+  '/ressources': typeof RessourcesRoute
   '/sales': typeof SalesRouteWithChildren
   '/ventes-immobilieres-judiciaires': typeof VentesImmobilieresJudiciairesRoute
   '/admin/quality': typeof AdminQualityRoute
@@ -128,6 +149,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/a-propos': typeof AProposRoute
+  '/accompagnement': typeof AccompagnementRoute
   '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
   '/annonce-exemple': typeof AnnonceExempleRoute
@@ -138,6 +161,7 @@ export interface FileRoutesByTo {
   '/map': typeof MapRoute
   '/privacy': typeof PrivacyRoute
   '/publish': typeof PublishRoute
+  '/ressources': typeof RessourcesRoute
   '/ventes-immobilieres-judiciaires': typeof VentesImmobilieresJudiciairesRoute
   '/admin/quality': typeof AdminQualityRoute
   '/sales/$id': typeof SalesIdRoute
@@ -146,6 +170,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/a-propos': typeof AProposRoute
+  '/accompagnement': typeof AccompagnementRoute
   '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
   '/annonce-exemple': typeof AnnonceExempleRoute
@@ -156,6 +182,7 @@ export interface FileRoutesById {
   '/map': typeof MapRoute
   '/privacy': typeof PrivacyRoute
   '/publish': typeof PublishRoute
+  '/ressources': typeof RessourcesRoute
   '/sales': typeof SalesRouteWithChildren
   '/ventes-immobilieres-judiciaires': typeof VentesImmobilieresJudiciairesRoute
   '/admin/quality': typeof AdminQualityRoute
@@ -166,6 +193,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/a-propos'
+    | '/accompagnement'
     | '/admin'
     | '/alerts'
     | '/annonce-exemple'
@@ -176,6 +205,7 @@ export interface FileRouteTypes {
     | '/map'
     | '/privacy'
     | '/publish'
+    | '/ressources'
     | '/sales'
     | '/ventes-immobilieres-judiciaires'
     | '/admin/quality'
@@ -184,6 +214,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/a-propos'
+    | '/accompagnement'
     | '/admin'
     | '/alerts'
     | '/annonce-exemple'
@@ -194,6 +226,7 @@ export interface FileRouteTypes {
     | '/map'
     | '/privacy'
     | '/publish'
+    | '/ressources'
     | '/ventes-immobilieres-judiciaires'
     | '/admin/quality'
     | '/sales/$id'
@@ -201,6 +234,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/a-propos'
+    | '/accompagnement'
     | '/admin'
     | '/alerts'
     | '/annonce-exemple'
@@ -211,6 +246,7 @@ export interface FileRouteTypes {
     | '/map'
     | '/privacy'
     | '/publish'
+    | '/ressources'
     | '/sales'
     | '/ventes-immobilieres-judiciaires'
     | '/admin/quality'
@@ -220,6 +256,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AProposRoute: typeof AProposRoute
+  AccompagnementRoute: typeof AccompagnementRoute
   AdminRoute: typeof AdminRouteWithChildren
   AlertsRoute: typeof AlertsRoute
   AnnonceExempleRoute: typeof AnnonceExempleRoute
@@ -230,6 +268,7 @@ export interface RootRouteChildren {
   MapRoute: typeof MapRoute
   PrivacyRoute: typeof PrivacyRoute
   PublishRoute: typeof PublishRoute
+  RessourcesRoute: typeof RessourcesRoute
   SalesRoute: typeof SalesRouteWithChildren
   VentesImmobilieresJudiciairesRoute: typeof VentesImmobilieresJudiciairesRoute
 }
@@ -248,6 +287,13 @@ declare module '@tanstack/react-router' {
       path: '/sales'
       fullPath: '/sales'
       preLoaderRoute: typeof SalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ressources': {
+      id: '/ressources'
+      path: '/ressources'
+      fullPath: '/ressources'
+      preLoaderRoute: typeof RessourcesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/publish': {
@@ -320,6 +366,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/accompagnement': {
+      id: '/accompagnement'
+      path: '/accompagnement'
+      fullPath: '/accompagnement'
+      preLoaderRoute: typeof AccompagnementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/a-propos': {
+      id: '/a-propos'
+      path: '/a-propos'
+      fullPath: '/a-propos'
+      preLoaderRoute: typeof AProposRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -375,6 +435,8 @@ const SalesRouteWithChildren = SalesRoute._addFileChildren(SalesRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AProposRoute: AProposRoute,
+  AccompagnementRoute: AccompagnementRoute,
   AdminRoute: AdminRouteWithChildren,
   AlertsRoute: AlertsRoute,
   AnnonceExempleRoute: AnnonceExempleRoute,
@@ -385,6 +447,7 @@ const rootRouteChildren: RootRouteChildren = {
   MapRoute: MapRoute,
   PrivacyRoute: PrivacyRoute,
   PublishRoute: PublishRoute,
+  RessourcesRoute: RessourcesRoute,
   SalesRoute: SalesRouteWithChildren,
   VentesImmobilieresJudiciairesRoute: VentesImmobilieresJudiciairesRoute,
 }

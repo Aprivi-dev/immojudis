@@ -7,6 +7,7 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
 import { getSales } from "@/lib/queries";
+import { useAuth } from "@/hooks/use-auth";
 import {
   asFiniteNumber,
   asSearchString,
@@ -73,6 +74,8 @@ export const Route = createFileRoute("/sales/")({
 
 function SalesPage() {
   const search = Route.useSearch();
+  const { user, loading: authLoading } = useAuth();
+  const isPreview = !user;
   const filters: SaleFilters = {
     department: search.department,
     city: search.city,
@@ -86,14 +89,17 @@ function SalesPage() {
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, error } =
     useInfiniteQuery({
-      queryKey: ["sales", filters, sort],
-      queryFn: ({ pageParam = 0 }) => getSales(filters, PAGE_SIZE, sort, pageParam),
+      queryKey: ["sales", filters, sort, isPreview],
+      queryFn: ({ pageParam = 0 }) =>
+        getSales(filters, PAGE_SIZE, sort, pageParam, { preview: isPreview }),
       initialPageParam: 0,
+      enabled: !authLoading,
       getNextPageParam: (lastPage, allPages) =>
         lastPage.length < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
       staleTime: 60_000,
     });
   const sales = useMemo(() => data?.pages.flat() ?? [], [data]);
+  const isInitialLoading = authLoading || isLoading;
 
   // Geocode "around address" when provided
   const [center, setCenter] = useState<GeoPoint | null>(null);
@@ -116,6 +122,7 @@ function SalesPage() {
   }, [search.around_address]);
 
   const filtered = useMemo(() => {
+    if (isPreview) return sales;
     return sales.filter((s) => {
       const surface = getSaleSurface(s).value;
       if (search.max_price_per_m2 != null) {
@@ -133,11 +140,11 @@ function SalesPage() {
       }
       return true;
     });
-  }, [sales, search.max_price_per_m2, search.min_yield, search.around_radius, center]);
+  }, [center, isPreview, sales, search.max_price_per_m2, search.min_yield, search.around_radius]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
-    if (!node || !hasNextPage || isLoading || isFetchingNextPage) return;
+    if (!node || !hasNextPage || isInitialLoading || isFetchingNextPage) return;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -150,11 +157,12 @@ function SalesPage() {
 
     observer.observe(node);
     return () => observer.disconnect();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, filtered.length]);
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isInitialLoading, filtered.length]);
 
   const loadedCount = sales.length;
   const filteredCount = filtered.length;
-  const hasLocalFilters = Boolean(search.max_price_per_m2 || search.min_yield || center);
+  const hasLocalFilters =
+    !isPreview && Boolean(search.max_price_per_m2 || search.min_yield || center);
 
   return (
     <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-10">
@@ -179,15 +187,15 @@ function SalesPage() {
             <div className="grid min-w-[min(100%,28rem)] gap-3 sm:grid-cols-3">
               <HeroMetric
                 label="Résultats affichés"
-                value={isLoading ? "—" : filteredCount.toLocaleString("fr-FR")}
+                value={isInitialLoading ? "—" : filteredCount.toLocaleString("fr-FR")}
               />
               <HeroMetric
                 label="Dossiers chargés"
-                value={isLoading ? "—" : loadedCount.toLocaleString("fr-FR")}
+                value={isInitialLoading ? "—" : loadedCount.toLocaleString("fr-FR")}
               />
               <HeroMetric
                 label="Chargement"
-                value={hasNextPage ? "Scroll" : isLoading ? "..." : "Complet"}
+                value={hasNextPage ? "Scroll" : isInitialLoading ? "..." : "Complet"}
               />
             </div>
           </div>
@@ -218,7 +226,7 @@ function SalesPage() {
           </div>
         )}
 
-        {!isLoading && filtered.length === 0 && !error && (
+        {!isInitialLoading && filtered.length === 0 && !error && (
           <div className="liquid-panel rounded-lg p-12 text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/25 bg-gold/10 text-gold">
               <FileSearch className="h-5 w-5" />
@@ -231,14 +239,14 @@ function SalesPage() {
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {isLoading
+          {isInitialLoading
             ? Array.from({ length: 8 }).map((_, i) => <SaleCardSkeleton key={i} />)
-            : filtered.map((s) => <SaleCard key={s.id} sale={s} />)}
+            : filtered.map((s) => <SaleCard key={s.id} sale={s} locked={isPreview} />)}
         </div>
 
         <div ref={loadMoreRef} className="h-1" aria-hidden />
 
-        {!isLoading && (hasNextPage || isFetchingNextPage) && (
+        {!isInitialLoading && (hasNextPage || isFetchingNextPage) && (
           <div className="mt-8 flex flex-col items-center gap-3">
             {isFetchingNextPage ? (
               <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
@@ -257,7 +265,7 @@ function SalesPage() {
           </div>
         )}
 
-        {!isLoading && !hasNextPage && filtered.length > 0 && (
+        {!isInitialLoading && !hasNextPage && filtered.length > 0 && (
           <div className="mt-8 text-center text-xs uppercase tracking-[0.18em] text-muted-foreground">
             Tous les dossiers chargés
           </div>

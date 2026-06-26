@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import Calendar from "lucide-react/dist/esm/icons/calendar.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
+import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import { isNew } from "@/lib/dates";
 import type { AuctionSale } from "@/lib/types";
@@ -12,22 +13,24 @@ import { SaleCountdown } from "./SaleCountdown";
 import { MapThumbnail } from "./MapThumbnail";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 
-export function SaleCard({ sale }: { sale: AuctionSale }) {
+export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?: boolean }) {
   const surfaceInfo = getSaleSurface(sale);
   const displaySurface = getDisplaySurface(sale);
   const surface = surfaceInfo.value;
-  const riskCount = sale.risks?.length ?? 0;
+  const riskCount = locked ? 0 : (sale.risks?.length ?? 0);
   const fresh = isNew(sale.created_at);
-  const ppm = pricePerM2(sale.starting_price_eur, surface);
+  const ppm = locked ? null : pricePerM2(sale.starting_price_eur, surface);
   const { isViewed } = useViewedSales();
-  const viewed = isViewed(sale.id);
-  const occLabel = occupancyLabel(sale.occupancy_status);
+  const viewed = !locked && isViewed(sale.id);
+  const occLabel = locked ? "Accès membre" : occupancyLabel(sale.occupancy_status);
   const occChip =
     occLabel === "Libre"
       ? "chip-opportunity"
       : occLabel === "Occupé" || occLabel === "Loué"
         ? "chip-watch"
         : "chip-neutral";
+  const propertyLabel = locked ? "Annonce réservée" : propertyTypeLabel(sale.property_type);
+  const title = locked ? "Détail réservé aux membres" : (sale.title ?? propertyLabel);
   return (
     <article
       className={`liquid-panel group flex min-h-[26rem] flex-col overflow-hidden rounded-lg transition duration-200 hover:-translate-y-0.5 hover:border-gold/35 ${
@@ -35,15 +38,31 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
       }`}
     >
       <div className="relative h-40 w-full overflow-hidden bg-[var(--surface)]">
-        <MapThumbnail lat={sale.latitude} lng={sale.longitude} className="h-full w-full" />
+        {locked ? (
+          <img
+            src="/media/landing/auction-bordeaux.jpg"
+            alt=""
+            width={896}
+            height={512}
+            loading="lazy"
+            className="h-full w-full scale-110 object-cover opacity-60 blur-md"
+          />
+        ) : (
+          <MapThumbnail lat={sale.latitude} lng={sale.longitude} className="h-full w-full" />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-background/88 via-background/12 to-transparent" />
         <div className="absolute left-3 top-3 flex flex-wrap gap-2">
-          {fresh && (
+          {locked ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-gold/35 bg-background/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft backdrop-blur">
+              <LockKeyhole className="h-3 w-3" />
+              Aperçu limité
+            </span>
+          ) : fresh ? (
             <span className="inline-flex items-center rounded-full border border-gold/35 bg-gold/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft backdrop-blur">
               Nouveau
             </span>
-          )}
-          <SaleCountdown date={sale.sale_date} />
+          ) : null}
+          {locked ? null : <SaleCountdown date={sale.sale_date} />}
         </div>
         {viewed && (
           <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-white/10 bg-background/80 px-2.5 py-1 text-[10px] font-medium text-muted-foreground backdrop-blur">
@@ -56,16 +75,17 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold">
             <span className="h-px w-5 bg-gold" />
-            {propertyTypeLabel(sale.property_type)}
+            {propertyLabel}
           </div>
           <h3 className="line-clamp-2 min-h-[2.75rem] text-base font-semibold leading-snug text-foreground">
-            {sale.title ?? propertyTypeLabel(sale.property_type)}
+            {title}
           </h3>
           <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <MapPin className="h-3.5 w-3.5 text-gold" />
             <span className="truncate">
-              {sale.city ?? "—"}
-              {sale.department ? ` (${sale.department})` : ""}
+              {locked
+                ? "Localisation réservée"
+                : `${sale.city ?? "—"}${sale.department ? ` (${sale.department})` : ""}`}
             </span>
           </div>
         </div>
@@ -82,17 +102,17 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
             )}
             <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
               <Calendar className="h-3 w-3" />
-              <span>{formatDate(sale.sale_date)}</span>
+              <span>{locked ? "Date réservée" : formatDate(sale.sale_date)}</span>
             </div>
           </div>
           <div className="grid min-w-24 gap-2 text-right text-xs text-muted-foreground">
             <CardMetric
-              label={displaySurface.metricLabel}
-              value={displaySurface.value ? displaySurface.label : "—"}
+              label={locked ? "Surface" : displaySurface.metricLabel}
+              value={locked ? "Réservée" : displaySurface.value ? displaySurface.label : "—"}
             />
             <CardMetric
               label="Pièces"
-              value={sale.rooms_count != null ? String(sale.rooms_count) : "—"}
+              value={locked ? "Réservé" : sale.rooms_count != null ? String(sale.rooms_count) : "—"}
             />
           </div>
         </div>
@@ -102,7 +122,12 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
             <span aria-hidden className="chip-dot" />
             {occLabel}
           </span>
-          {riskCount > 0 ? (
+          {locked ? (
+            <span className="chip chip-watch">
+              <span aria-hidden className="chip-dot" />
+              Analyse réservée
+            </span>
+          ) : riskCount > 0 ? (
             <span className={`chip ${riskCount >= 3 ? "chip-risk" : "chip-watch"}`}>
               <span aria-hidden className="chip-dot" />
               {riskCount} point{riskCount > 1 ? "s" : ""} à vérifier
@@ -120,7 +145,8 @@ export function SaleCard({ sale }: { sale: AuctionSale }) {
           params={{ id: sale.id }}
           className="liquid-button mt-auto inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-background transition hover:brightness-105"
         >
-          Voir le détail <ArrowUpRight className="h-3.5 w-3.5" />
+          {locked ? "Se connecter pour voir" : "Voir le détail"}{" "}
+          <ArrowUpRight className="h-3.5 w-3.5" />
         </Link>
       </div>
     </article>

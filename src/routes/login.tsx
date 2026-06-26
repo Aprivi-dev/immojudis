@@ -20,6 +20,9 @@ import {
 } from "@/lib/account";
 
 export const Route = createFileRoute("/login")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    redirect: safeRedirect(search.redirect),
+  }),
   component: LoginPage,
 });
 
@@ -57,6 +60,7 @@ const modeCopy: Record<
 
 function LoginPage() {
   const { user, profile } = useAuth();
+  const { redirect } = Route.useSearch();
   const navigate = useNavigate();
   const [mode, setMode] = useState<LoginMode>("login");
   const [email, setEmail] = useState("");
@@ -70,8 +74,8 @@ function LoginPage() {
   const isSignup = mode !== "login";
   const accountType: AccountType = mode === "professional" ? "b2b" : "b2c";
   const postAuthTarget = useMemo(
-    () => (isProfessionalAccount(user, profile) ? "/publish" : "/sales"),
-    [profile, user],
+    () => redirect ?? (isProfessionalAccount(user, profile) ? "/publish" : "/sales"),
+    [profile, redirect, user],
   );
 
   useEffect(() => {
@@ -99,7 +103,7 @@ function LoginPage() {
         return;
       }
 
-      const redirectPath = accountType === "b2b" ? "/publish" : "/sales";
+      const redirectPath = redirect ?? (accountType === "b2b" ? "/publish" : "/sales");
       const origin = typeof window !== "undefined" ? window.location.origin : undefined;
       const { error } = await supabase.auth.signUp({
         email,
@@ -312,6 +316,12 @@ function LoginPage() {
       </div>
     </main>
   );
+}
+
+function safeRedirect(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (!value.startsWith("/") || value.startsWith("//") || value.includes("://")) return undefined;
+  return value;
 }
 
 function ModeButton({
