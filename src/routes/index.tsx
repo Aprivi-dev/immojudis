@@ -84,7 +84,8 @@ function HeroSection() {
           <p className="ij-badge ij-reveal">Plateforme n°1 des ventes judiciaires en France</p>
 
           <h1 id="home-title" className="ij-title ij-reveal ij-reveal-2">
-            L'immobilier judiciaire, en toute <em>clarté.</em>
+            L'immobilier judiciaire,
+            <br /> en toute <em>clarté.</em>
           </h1>
 
           <p className="ij-lead ij-reveal ij-reveal-3">
@@ -110,6 +111,10 @@ function HeroSection() {
         <JusticeGoddessVisual />
 
         <div className="ij-candle-scene ij-reveal ij-reveal-6">
+          <svg className="ij-candle-arrow" viewBox="0 0 230 128" aria-hidden="true">
+            <path className="ij-candle-arrow-line" d="M8 116C42 42 128 8 205 58" />
+            <path className="ij-candle-arrow-head" d="M192 40L207 59L184 62" />
+          </svg>
           <CandleAnimation />
           <article className="ij-candle-note">
             <h2>Vente à la bougie</h2>
@@ -149,14 +154,14 @@ function SearchBar() {
 
 function JusticeGoddessVisual() {
   return (
-    <div className="ij-goddess ij-reveal ij-reveal-7" aria-hidden="true">
+    <div className="ij-goddess" aria-hidden="true">
       <div className="ij-cloud ij-cloud-a" />
       <div className="ij-cloud ij-cloud-b" />
       <img
-        src="/media/landing/justice-goddess-hero.jpg"
+        src="/media/landing/justice-goddess.png"
         alt=""
-        width={1792}
-        height={1024}
+        width={1600}
+        height={2400}
         decoding="async"
         fetchPriority="high"
       />
@@ -168,20 +173,15 @@ function JusticeGoddessVisual() {
 function CandleAnimation() {
   return (
     <div className="ij-candle" aria-hidden="true">
-      <span className="ij-particle ij-particle-1" />
-      <span className="ij-particle ij-particle-2" />
-      <span className="ij-particle ij-particle-3" />
-      <span className="ij-particle ij-particle-4" />
-      <span className="ij-particle ij-particle-5" />
-      <div className="ij-glass" />
-      <div className="ij-flame-wrap">
-        <span className="ij-flame-halo" />
-        <span className="ij-flame" />
-      </div>
-      <div className="ij-wick" />
-      <div className="ij-candle-body" />
-      <div className="ij-candle-holder" />
-      <div className="ij-pedestal" />
+      <img
+        src="/media/landing/judicial-candle.png"
+        alt=""
+        width={1188}
+        height={1324}
+        decoding="async"
+      />
+      <span className="ij-candle-glow" />
+      <span className="ij-candle-flame-glow" />
     </div>
   );
 }

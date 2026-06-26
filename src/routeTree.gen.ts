@@ -18,6 +18,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as LegalRouteImport } from './routes/legal'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ContactRouteImport } from './routes/contact'
+import { Route as AnnonceExempleRouteImport } from './routes/annonce-exemple'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
@@ -71,6 +72,11 @@ const ContactRoute = ContactRouteImport.update({
   path: '/contact',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AnnonceExempleRoute = AnnonceExempleRouteImport.update({
+  id: '/annonce-exemple',
+  path: '/annonce-exemple',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AlertsRoute = AlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
+  '/annonce-exemple': typeof AnnonceExempleRoute
   '/contact': typeof ContactRoute
   '/favorites': typeof FavoritesRoute
   '/legal': typeof LegalRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
+  '/annonce-exemple': typeof AnnonceExempleRoute
   '/contact': typeof ContactRoute
   '/favorites': typeof FavoritesRoute
   '/legal': typeof LegalRoute
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
+  '/annonce-exemple': typeof AnnonceExempleRoute
   '/contact': typeof ContactRoute
   '/favorites': typeof FavoritesRoute
   '/legal': typeof LegalRoute
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/alerts'
+    | '/annonce-exemple'
     | '/contact'
     | '/favorites'
     | '/legal'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/alerts'
+    | '/annonce-exemple'
     | '/contact'
     | '/favorites'
     | '/legal'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/alerts'
+    | '/annonce-exemple'
     | '/contact'
     | '/favorites'
     | '/legal'
@@ -210,6 +222,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   AlertsRoute: typeof AlertsRoute
+  AnnonceExempleRoute: typeof AnnonceExempleRoute
   ContactRoute: typeof ContactRoute
   FavoritesRoute: typeof FavoritesRoute
   LegalRoute: typeof LegalRoute
@@ -286,6 +299,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/annonce-exemple': {
+      id: '/annonce-exemple'
+      path: '/annonce-exemple'
+      fullPath: '/annonce-exemple'
+      preLoaderRoute: typeof AnnonceExempleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/alerts': {
       id: '/alerts'
       path: '/alerts'
@@ -357,6 +377,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   AlertsRoute: AlertsRoute,
+  AnnonceExempleRoute: AnnonceExempleRoute,
   ContactRoute: ContactRoute,
   FavoritesRoute: FavoritesRoute,
   LegalRoute: LegalRoute,
