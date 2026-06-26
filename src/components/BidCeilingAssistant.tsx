@@ -115,15 +115,22 @@ function signedMoney(value: number): string {
   return `${rounded > 0 ? "+" : "-"}${fmt(Math.abs(rounded))}`;
 }
 
-export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
+export function BidCeilingAssistant({
+  sale,
+  marketEstimateOverride = null,
+}: {
+  sale: AuctionSale;
+  marketEstimateOverride?: DvfMarketEstimate | null;
+}) {
   const surfaceInfo = getSaleSurface(sale);
   const surface = surfaceInfo.value;
   const startingPrice = sale.starting_price_eur ?? 0;
   const fetchEstimate = useServerFn(getMarketEstimate);
+  const hasMarketEstimateOverride = marketEstimateOverride != null;
 
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [cachedEstimate, setCachedEstimate] = useState<DvfMarketEstimate | null>(() =>
-    loadCachedMarketEstimate(sale.id),
+  const [cachedEstimate, setCachedEstimate] = useState<DvfMarketEstimate | null>(
+    () => marketEstimateOverride ?? loadCachedMarketEstimate(sale.id),
   );
   const [state, setState] = useState<AssistantState>(() => ({
     price: startingPrice,
@@ -137,8 +144,8 @@ export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
   useEffect(() => {
     const stored = loadState(sale.id);
     if (stored) setState((current) => ({ ...current, ...stored }));
-    setCachedEstimate(loadCachedMarketEstimate(sale.id));
-  }, [sale.id]);
+    setCachedEstimate(marketEstimateOverride ?? loadCachedMarketEstimate(sale.id));
+  }, [marketEstimateOverride, sale.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -168,20 +175,25 @@ export function BidCeilingAssistant({ sale }: { sale: AuctionSale }) {
           surfaceM2: surface,
         },
       }),
-    enabled: sale.latitude != null && sale.longitude != null && surface != null && surface > 0,
+    enabled:
+      !hasMarketEstimateOverride &&
+      sale.latitude != null &&
+      sale.longitude != null &&
+      surface != null &&
+      surface > 0,
     staleTime: 24 * 60 * 60_000,
   });
 
   const estimate = data?.estimate ?? null;
   useEffect(() => {
-    if (!estimate) return;
+    if (!estimate || hasMarketEstimateOverride) return;
     saveCachedMarketEstimate(sale.id, estimate);
     setCachedEstimate(estimate);
-  }, [sale.id, estimate]);
+  }, [hasMarketEstimateOverride, sale.id, estimate]);
 
-  const effectiveEstimate = estimate ?? cachedEstimate;
-  const usingCachedEstimate = !estimate && Boolean(cachedEstimate);
-  const hasDvfError = Boolean(error || data?.ok === false);
+  const effectiveEstimate = marketEstimateOverride ?? estimate ?? cachedEstimate;
+  const usingCachedEstimate = !hasMarketEstimateOverride && !estimate && Boolean(cachedEstimate);
+  const hasDvfError = !hasMarketEstimateOverride && Boolean(error || data?.ok === false);
   const useManualMarket = state.marketEdited || !effectiveEstimate?.medianPricePerM2;
 
   const scenarioResults = useMemo<ScenarioResult[]>(

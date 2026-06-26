@@ -10,7 +10,12 @@ import {
 } from "@/lib/account";
 import { BrandMark } from "@/components/BrandLogo";
 
-const PUBLIC_PATHS = new Set(["/", "/login", "/ventes-immobilieres-judiciaires"]);
+const PUBLIC_PATHS = new Set([
+  "/",
+  "/login",
+  "/annonce-exemple",
+  "/ventes-immobilieres-judiciaires",
+]);
 const PROFESSIONAL_PATHS = new Set(["/publish"]);
 const ADMIN_PREFIX = "/admin";
 
