@@ -13,8 +13,15 @@ import { BrandMark } from "@/components/BrandLogo";
 const PUBLIC_PATHS = new Set([
   "/",
   "/login",
+  "/sales",
   "/annonce-exemple",
+  "/accompagnement",
+  "/a-propos",
+  "/contact",
+  "/ressources",
   "/ventes-immobilieres-judiciaires",
+  "/legal",
+  "/privacy",
 ]);
 const PROFESSIONAL_PATHS = new Set(["/publish"]);
 const ADMIN_PREFIX = "/admin";
@@ -38,8 +45,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (isPublic || loading || user) return;
-    void navigate({ to: "/login", replace: true });
-  }, [isPublic, loading, navigate, user]);
+    void navigate({ to: "/login", search: { redirect: pathname }, replace: true });
+  }, [isPublic, loading, navigate, pathname, user]);
 
   if (isPublic) return <>{children}</>;
 

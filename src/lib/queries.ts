@@ -39,6 +39,8 @@ const SALE_LIST_COLUMNS = [
   "created_at",
 ].join(",");
 
+const SALE_PREVIEW_COLUMNS = ["id", "starting_price_eur"].join(",");
+
 const MAP_PIN_COLUMNS = [
   "id",
   "title",
@@ -80,12 +82,13 @@ export async function getSales(
   limit = 100,
   sort: SortKey = "date_asc",
   offset = 0,
+  options: { preview?: boolean } = {},
 ): Promise<AuctionSale[]> {
   if (!assertCloudConfigured()) return [];
   const s = SORT_MAP[sort];
   let q = supabase
     .from(VIEW)
-    .select(SALE_LIST_COLUMNS)
+    .select(options.preview ? SALE_PREVIEW_COLUMNS : SALE_LIST_COLUMNS)
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
 

@@ -122,7 +122,7 @@ function HeroSection() {
               Symbole des ventes judiciaires en France : la lumière de la transparence et de
               l'équité.
             </p>
-            <Link to="/ventes-immobilieres-judiciaires">
+            <Link to="/ressources">
               Découvrir son histoire <ArrowRight aria-hidden className="h-4 w-4" />
             </Link>
           </article>

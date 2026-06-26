@@ -3,8 +3,9 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 
-const CANONICAL = "https://immojudis-dezt.vercel.app/ventes-immobilieres-judiciaires";
-const TITLE = "Ventes immobilières judiciaires : annonces, risques et prix plafond | Immojudis";
+export const RESOURCES_CANONICAL = "https://immojudis-dezt.vercel.app/ressources";
+export const RESOURCES_TITLE =
+  "Ressources ventes immobilières judiciaires : annonces, risques et prix plafond | Immojudis";
 const DESCRIPTION =
   "Immojudis référence et analyse les ventes immobilières judiciaires : annonces, cahier des conditions de vente, risques, frais, occupation, prix plafond et enchères au tribunal.";
 
@@ -184,24 +185,24 @@ const FAQ_JSON_LD = {
 export const Route = createFileRoute("/ventes-immobilieres-judiciaires")({
   head: () => ({
     meta: [
-      { title: TITLE },
+      { title: RESOURCES_TITLE },
       { name: "description", content: DESCRIPTION },
       { name: "robots", content: "index, follow" },
       { property: "og:type", content: "website" },
-      { property: "og:title", content: TITLE },
+      { property: "og:title", content: RESOURCES_TITLE },
       {
         property: "og:description",
         content:
           "Trouvez, analysez et préparez vos ventes immobilières judiciaires avec Immojudis : annonces, risques, frais, occupation et prix plafond.",
       },
-      { property: "og:url", content: CANONICAL },
+      { property: "og:url", content: RESOURCES_CANONICAL },
     ],
-    links: [{ rel: "canonical", href: CANONICAL }],
+    links: [{ rel: "canonical", href: RESOURCES_CANONICAL }],
   }),
-  component: GuidePage,
+  component: ResourcesPage,
 });
 
-function GuidePage() {
+export function ResourcesPage() {
   return (
     <main className="liquid-page min-h-screen bg-background pb-24 text-foreground">
       <script
@@ -213,7 +214,7 @@ function GuidePage() {
         {/* ── Hero ─────────────────────────────────────────────────────── */}
         <header className="glass-shell rounded-lg p-6 sm:p-9">
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
-            Immojudis · Guide des ventes judiciaires
+            Immojudis · Ressources ventes judiciaires
           </p>
           <h1 className="mt-4 max-w-3xl font-display text-4xl leading-[1.08] text-foreground sm:text-5xl md:text-6xl">
             Ventes immobilières judiciaires : trouvez, analysez et décidez avant d'enchérir
