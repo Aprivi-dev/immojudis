@@ -1,33 +1,22 @@
-import { useEffect, useState, type ComponentType } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
-import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
-import BriefcaseBusiness from "lucide-react/dist/esm/icons/briefcase-business.js";
-import Calculator from "lucide-react/dist/esm/icons/calculator.js";
-import CircleDollarSign from "lucide-react/dist/esm/icons/circle-dollar-sign.js";
-import Database from "lucide-react/dist/esm/icons/database.js";
-import FileCheck2 from "lucide-react/dist/esm/icons/file-check-2.js";
-import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
-import Gavel from "lucide-react/dist/esm/icons/gavel.js";
+import Bell from "lucide-react/dist/esm/icons/bell.js";
+import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import Landmark from "lucide-react/dist/esm/icons/landmark.js";
-import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
-import MapPinned from "lucide-react/dist/esm/icons/map-pinned.js";
-import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
-import { getStats } from "@/lib/queries";
-import { formatDate } from "@/lib/format";
-import { useAuth } from "@/hooks/use-auth";
-import { isProfessionalAccount } from "@/lib/account";
+import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
+import Scale from "lucide-react/dist/esm/icons/scale.js";
+import Search from "lucide-react/dist/esm/icons/search.js";
+import UserRound from "lucide-react/dist/esm/icons/user-round.js";
+import type { ComponentType } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Immojudis — Décider avant d'enchérir" },
+      { title: "ImmoJudis — L'immobilier judiciaire en toute clarté" },
       {
         name: "description",
         content:
-          "Immojudis lit les annonces et pièces de ventes judiciaires pour transformer un dossier complexe en mise plafond claire avant audience.",
+          "ImmoJudis rassemble les ventes judiciaires immobilières en France dans une expérience claire, premium et accessible.",
       },
     ],
   }),
@@ -36,546 +25,202 @@ export const Route = createFileRoute("/")({
 
 type IconComponent = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 
-function useScrollReveal() {
-  useEffect(() => {
-    const els = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
-    if (els.length === 0) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    els.forEach((el) => el.classList.add("hx-reveal"));
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("hx-in");
-            io.unobserve(entry.target);
-          }
-        }
-      },
-      { threshold: 0.14 },
-    );
-    els.forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, []);
-}
+const benefits = [
+  { icon: Scale, title: "100% des ventes", text: "en France" },
+  { icon: Bell, title: "Alertes personnalisées", text: "par email" },
+  { icon: UserRound, title: "Accompagnement", text: "expert" },
+] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
 
-function HeroVideo() {
-  const [enabled, setEnabled] = useState(false);
-
-  useEffect(() => {
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const saveData =
-      (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData ===
-      true;
-    if (!reducedMotion && !saveData) setEnabled(true);
-  }, []);
-
-  if (!enabled) return null;
-
-  return (
-    <video
-      className="hx-hero-video"
-      src="/media/hero-ambient.mp4"
-      autoPlay
-      muted
-      loop
-      playsInline
-      preload="auto"
-      disablePictureInPicture
-      tabIndex={-1}
-      aria-hidden
-      onCanPlay={(event) => {
-        const video = event.currentTarget;
-        video.classList.add("hx-video-ready");
-        void video.play().catch(() => {});
-      }}
-    />
-  );
-}
+const auctionCards = [
+  {
+    image: "/media/landing/auction-bordeaux.jpg",
+    badge: "Audience le 9 juillet",
+    city: "Bordeaux",
+    tribunal: "Tribunal judiciaire de Bordeaux",
+    title: "Appartement de caractère, quartier Jardin Public",
+    price: "Mise à prix 92 000 €",
+  },
+  {
+    image: "/media/landing/auction-nantes.jpg",
+    badge: "Nouveau",
+    city: "Nantes",
+    tribunal: "Tribunal judiciaire de Nantes",
+    title: "Maison de ville en pierre avec dépendance",
+    price: "Mise à prix 138 500 €",
+  },
+  {
+    image: "/media/landing/auction-lyon.jpg",
+    badge: "Audience le 16 juillet",
+    city: "Lyon",
+    tribunal: "Tribunal judiciaire de Lyon",
+    title: "Appartement familial avec balcon et stationnement",
+    price: "Mise à prix 176 000 €",
+  },
+  {
+    image: "/media/landing/auction-toulouse.jpg",
+    badge: "Baisse de prix",
+    city: "Toulouse",
+    tribunal: "Tribunal judiciaire de Toulouse",
+    title: "Maison ancienne avec jardin arboré",
+    price: "Mise à prix 121 000 €",
+  },
+] as const;
 
 function HomePage() {
-  const { user, profile } = useAuth();
-  const { data: stats } = useQuery({
-    queryKey: ["stats"],
-    queryFn: getStats,
-    enabled: Boolean(user),
-    staleTime: 5 * 60_000,
-  });
-  useScrollReveal();
-
-  const investorCta = user
-    ? { to: "/sales", label: "Ouvrir les annonces" }
-    : { to: "/login", label: "Accès investisseur" };
-  const professionalCta = isProfessionalAccount(user, profile)
-    ? { to: "/publish", label: "Publier une vente" }
-    : { to: "/login", label: "Référencer une annonce" };
-
-  const totalSales = stats ? stats.totalSales.toLocaleString("fr-FR") : "—";
-  const departments = stats ? String(stats.departments) : "—";
-  const nextSale = stats?.nextSale ? formatDate(stats.nextSale) : "—";
-
   return (
-    <main className="hx-page min-h-screen text-foreground">
-      <section className="hx-hero px-4 sm:px-6">
-        <HeroVideo />
-        <div aria-hidden className="hx-hero-veil" />
-        <div className="hx-hero-layout mx-auto grid max-w-7xl gap-10 lg:grid-cols-[minmax(0,0.95fr)_minmax(24rem,0.62fr)] lg:gap-16 xl:gap-20">
-          <div className="hx-hero-copy">
-            <div>
-              <p className="hx-eyebrow">
-                <span aria-hidden className="hx-eyebrow-dot" />
-                Assistant d'analyse des ventes judiciaires
-              </p>
-
-              <h1 className="hx-title">
-                <span>Décider</span>
-                <span className="hx-title-muted">avant</span>
-                <span>d'enchérir.</span>
-              </h1>
-            </div>
-
-            <div className="hx-hero-bottom">
-              <p className="hx-lead">
-                Immojudis lit les annonces, pièces et diagnostics pour transformer un dossier
-                judiciaire en mise plafond claire, preuves à l'appui.
-              </p>
-
-              <div className="hx-hero-score" aria-label="Couverture Immojudis">
-                <div>
-                  <Gavel aria-hidden className="h-7 w-7" />
-                  <strong>{totalSales}</strong>
-                </div>
-                <span>
-                  annonces suivies · {departments} départements · prochaine audience {nextSale}
-                </span>
-              </div>
-
-              <div className="hx-actions">
-                <a href="#demo-analysis" className="hx-btn-primary">
-                  Voir une analyse exemple <ArrowRight className="h-4 w-4" />
-                </a>
-                <Link to={investorCta.to} className="hx-btn-ghost">
-                  {investorCta.label}
-                </Link>
-              </div>
-
-              <div className="hx-trust-row" aria-label="Garanties de confiance">
-                <TrustPill icon={Database}>Sources publiques suivies</TrustPill>
-                <TrustPill icon={FileCheck2}>Documents tracés</TrustPill>
-                <TrustPill icon={LockKeyhole}>Accès sécurisé</TrustPill>
-              </div>
-            </div>
-          </div>
-
-          <ProductPreview />
-        </div>
-      </section>
-
-      <section className="hx-section hx-proof-strip px-4 py-8 sm:px-6" data-reveal>
-        <div className="mx-auto grid max-w-7xl gap-3 md:grid-cols-3">
-          <StatCard value={totalSales} label="annonces collectées" />
-          <StatCard value={departments} label="départements suivis" />
-          <StatCard value={nextSale} label="prochaine audience" />
-        </div>
-      </section>
-
-      <section className="hx-section px-4 py-16 sm:px-6 lg:py-20">
-        <div className="mx-auto max-w-7xl">
-          <SectionHeading
-            eyebrow="Avant / après"
-            title="Le dossier judiciaire devient une décision lisible."
-            text="On ne remplace pas la relecture humaine : on met les informations utiles au bon endroit, avec une limite rationnelle avant d'enchérir."
-          />
-
-          <div className="hx-before-after mt-9" data-reveal>
-            <div className="hx-before-panel">
-              <PanelBadge tone="warm">Sans Immojudis</PanelBadge>
-              <h3>Des pièces dispersées, difficiles à arbitrer.</h3>
-              <ul>
-                <li>Annonce, diagnostics et conditions de vente séparés</li>
-                <li>Marché local difficile à comparer rapidement</li>
-                <li>Risque de fixer une limite au ressenti</li>
-              </ul>
-            </div>
-            <div className="hx-after-panel">
-              <PanelBadge tone="green">Avec Immojudis</PanelBadge>
-              <h3>Une mise plafond et les preuves qui l'expliquent.</h3>
-              <ul>
-                <li>Fourchette prudente, équilibrée et offensive</li>
-                <li>Prix au m² local et marge de sécurité visibles</li>
-                <li>Points à vérifier reliés aux pièces du dossier</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="demo-analysis" className="hx-section px-4 py-16 sm:px-6 lg:py-20">
-        <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.82fr_1.18fr]">
-          <div data-reveal>
-            <SectionHeading
-              eyebrow="Démo produit"
-              title="Une annonce judiciaire, traduite en prix maximum."
-              text="L'exemple montre la logique attendue : partir du marché local, retirer une marge de sécurité, puis intégrer frais et travaux pour obtenir une limite d'enchère."
-            />
-            <div className="hx-source-list mt-8">
-              <SourceItem
-                icon={FileSearch}
-                title="Annonce source"
-                text="Prix, audience, adresse et surface utile."
-              />
-              <SourceItem
-                icon={FileCheck2}
-                title="Pièces du dossier"
-                text="Conditions de vente, diagnostics, PV descriptif."
-              />
-              <SourceItem
-                icon={MapPinned}
-                title="Marché local"
-                text="Comparables proches et prix au m² de référence."
-              />
-            </div>
-          </div>
-
-          <DemoCaseCard />
-        </div>
-      </section>
-
-      <section className="hx-section px-4 py-16 sm:px-6 lg:py-20">
-        <div className="mx-auto max-w-7xl">
-          <SectionHeading
-            eyebrow="Fonctionnalités clés"
-            title="Trois gestes pour arriver préparé."
-            text="La home reste volontairement courte : lire le dossier, calculer la limite, préparer la décision."
-          />
-          <div className="mt-9 grid gap-4 md:grid-cols-3">
-            <FeatureCard
-              icon={FileSearch}
-              title="Lire le dossier"
-              text="Les annonces et documents utiles sont structurés pour retrouver l'information importante sans fouiller chaque PDF."
-              delay="0ms"
-            />
-            <FeatureCard
-              icon={Calculator}
-              title="Calculer la mise plafond"
-              text="Le plafond combine marché local, frais, travaux estimés et marge de sécurité pour éviter l'enchère émotionnelle."
-              delay="90ms"
-            />
-            <FeatureCard
-              icon={Gavel}
-              title="Préparer l'audience"
-              text="Vous gardez une limite claire, une synthèse courte et les points à confirmer avant la salle de vente."
-              delay="180ms"
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="hx-section px-4 py-16 sm:px-6 lg:py-20">
-        <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-2">
-          <AudienceCard
-            icon={CircleDollarSign}
-            eyebrow="Investisseurs"
-            title="Consulter les ventes avec une limite claire."
-            text="Accédez aux annonces, favoris, alertes et mises plafonds pour décider plus vite, sans perdre le fil des pièces."
-            cta={investorCta.label}
-            to={investorCta.to}
-          />
-          <AudienceCard
-            icon={BriefcaseBusiness}
-            eyebrow="Professionnels"
-            title="Référencer une vente et structurer le dossier."
-            text="Les comptes pro pourront déposer les informations, documents et visuels, puis suivre la validation côté Immojudis."
-            cta={professionalCta.label}
-            to={professionalCta.to}
-          />
-        </div>
-      </section>
-
-      <section className="hx-section px-4 pb-16 sm:px-6">
-        <div className="hx-sources mx-auto max-w-7xl" data-reveal>
-          <span>Sources suivies</span>
-          <strong>Avoventes</strong>
-          <strong>Licitor</strong>
-          <strong>Vench</strong>
-          <strong>Enchères Publiques</strong>
-          <strong>Info Enchères</strong>
-          <strong>DVF</strong>
-          <strong>OpenStreetMap</strong>
-        </div>
-      </section>
-
-      <footer className="border-t border-white/8 px-4 py-8 sm:px-6">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 text-xs text-muted-foreground md:flex-row md:items-center">
-          <div>
-            <strong className="block text-sm uppercase tracking-[0.16em] text-foreground">
-              Immojudis
-            </strong>
-            <p className="mt-2 max-w-xl leading-relaxed">
-              Aide à l'analyse des ventes immobilières judiciaires. Immojudis ne remplace pas un
-              conseil juridique, financier ou une relecture professionnelle du dossier.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-5 uppercase tracking-[0.16em]">
-            <Link to="/legal">Légal</Link>
-            <Link to="/privacy">Confidentialité</Link>
-            <Link to="/contact">Contact</Link>
-          </div>
-        </div>
-      </footer>
+    <main className="ij-page">
+      <HeroSection />
+      <AuctionCardsSection />
     </main>
   );
 }
 
-function ProductPreview() {
+function HeroSection() {
   return (
-    <aside className="hx-product-preview" aria-label="Aperçu d'une analyse Immojudis">
-      <div className="hx-preview-topbar">
-        <span>Dossier Immojudis</span>
-        <span className="hx-live-chip">
-          <span aria-hidden className="hx-eyebrow-dot" />
-          pièces lues
-        </span>
-      </div>
+    <section className="ij-hero" aria-labelledby="home-title">
+      <div className="ij-sky" aria-hidden />
+      <div className="ij-hero-inner">
+        <div className="ij-hero-copy">
+          <p className="ij-badge ij-reveal">Plateforme n°1 des ventes judiciaires en France</p>
 
-      <div className="hx-preview-main">
-        <div>
-          <p className="hx-mini-label">Appartement · Bordeaux</p>
-          <h2>
-            Mise plafond
-            <span>avant audience</span>
-          </h2>
-        </div>
-        <button className="hx-edit-dot" type="button" aria-label="Voir les preuves du dossier">
-          <FileSearch aria-hidden className="h-5 w-5" />
-        </button>
-      </div>
+          <h1 id="home-title" className="ij-title ij-reveal ij-reveal-2">
+            L'immobilier judiciaire, en toute <em>clarté.</em>
+          </h1>
 
-      <div className="hx-auction-pills" aria-label="Informations de vente">
-        <div>
-          <span>Audience</span>
-          <strong>14 fév.</strong>
+          <p className="ij-lead ij-reveal ij-reveal-3">
+            Accédez à toutes les ventes aux enchères immobilières, comprenez chaque étape et
+            saisissez les meilleures opportunités.
+          </p>
+
+          <SearchBar />
+
+          <div className="ij-benefits ij-reveal ij-reveal-5" aria-label="Bénéfices ImmoJudis">
+            {benefits.map(({ icon: Icon, title, text }) => (
+              <div key={title} className="ij-benefit">
+                <Icon aria-hidden className="h-6 w-6" />
+                <span>
+                  <strong>{title}</strong>
+                  <small>{text}</small>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div>
-          <span>Surface</span>
-          <strong>72 m²</strong>
+
+        <JusticeGoddessVisual />
+
+        <div className="ij-candle-scene ij-reveal ij-reveal-6">
+          <CandleAnimation />
+          <article className="ij-candle-note">
+            <h2>Vente à la bougie</h2>
+            <p>
+              Symbole des ventes judiciaires en France : la lumière de la transparence et de
+              l'équité.
+            </p>
+            <Link to="/ventes-immobilieres-judiciaires">
+              Découvrir son histoire <ArrowRight aria-hidden className="h-4 w-4" />
+            </Link>
+          </article>
         </div>
       </div>
-
-      <div className="hx-time-box">
-        <div>
-          <span>Mise à prix</span>
-          <strong>92 000 €</strong>
-        </div>
-        <div>
-          <span>Marché local</span>
-          <strong>4 060 €/m²</strong>
-        </div>
-      </div>
-
-      <div className="hx-price-line">
-        <div>
-          <strong>129 400 €</strong>
-          <span>mise équilibrée</span>
-        </div>
-        <small>à ne pas dépasser</small>
-      </div>
-
-      <Link to="/sales" className="hx-reserve-button">
-        Ouvrir les annonces
-      </Link>
-
-      <div className="hx-preview-notes">
-        <PreviewNote icon={FileCheck2} title="Pièce utile" text="Cahier des conditions identifié" />
-        <PreviewNote
-          icon={ShieldCheck}
-          title="À vérifier"
-          text="Occupation à confirmer avant audience"
-        />
-      </div>
-    </aside>
+    </section>
   );
 }
 
-function DemoCaseCard() {
+function SearchBar() {
   return (
-    <article className="hx-demo-card" data-reveal>
-      <div className="hx-demo-visual" aria-hidden>
-        <div className="hx-demo-map">
-          <MapPinned className="h-5 w-5" />
-          <span>Bordeaux · rayon DVF 500 m</span>
-        </div>
-        <div className="hx-demo-building">
-          <Landmark className="h-8 w-8" />
-        </div>
-      </div>
-
-      <div className="hx-demo-content">
-        <div>
-          <p className="hx-mini-label">Appartement T4 · audience à confirmer</p>
-          <h3>Fixer une limite avant la salle.</h3>
-        </div>
-        <div className="hx-demo-ceiling">
-          <span>Plafond recommandé</span>
-          <strong>129 400 €</strong>
-          <small>fourchette 121 800 € → 136 900 €</small>
-        </div>
-      </div>
-
-      <div className="hx-demo-logic">
-        <LogicStep number="1" title="Marché local" value="4 060 €/m²" />
-        <LogicStep number="2" title="Marge sécurité" value="-10%" />
-        <LogicStep number="3" title="Frais + travaux" value="intégrés" />
-      </div>
-
-      <div className="hx-demo-alert">
-        <Sparkles className="h-4 w-4" />
-        <span>
-          Lecture : rester sous ce plafond permet de conserver une marge face au marché local, sous
-          réserve de confirmer les pièces avant audience.
-        </span>
-      </div>
-    </article>
+    <form className="ij-search ij-reveal ij-reveal-4" action="/sales">
+      <label className="sr-only" htmlFor="home-search">
+        Rechercher un bien, une ville ou un tribunal
+      </label>
+      <input
+        id="home-search"
+        name="q"
+        type="search"
+        placeholder="Rechercher un bien, une ville, un tribunal..."
+        autoComplete="off"
+      />
+      <button type="submit" aria-label="Rechercher">
+        <Search aria-hidden className="h-6 w-6" />
+      </button>
+    </form>
   );
 }
 
-function TrustPill({ icon: Icon, children }: { icon: IconComponent; children: string }) {
+function JusticeGoddessVisual() {
   return (
-    <span>
-      <Icon aria-hidden className="h-3.5 w-3.5" />
-      {children}
-    </span>
-  );
-}
-
-function StatCard({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="hx-stat-card">
-      <strong>{value}</strong>
-      <span>{label}</span>
+    <div className="ij-goddess ij-reveal ij-reveal-7" aria-hidden="true">
+      <div className="ij-cloud ij-cloud-a" />
+      <div className="ij-cloud ij-cloud-b" />
+      <img
+        src="/media/landing/justice-goddess-hero.jpg"
+        alt=""
+        width={1792}
+        height={1024}
+        decoding="async"
+        fetchPriority="high"
+      />
+      <span className="ij-balance-glint" />
     </div>
   );
 }
 
-function SectionHeading({
-  eyebrow,
-  title,
-  text,
-}: {
-  eyebrow: string;
-  title: string;
-  text: string;
-}) {
+function CandleAnimation() {
   return (
-    <div className="hx-section-heading" data-reveal>
-      <p>{eyebrow}</p>
-      <h2>{title}</h2>
-      <span>{text}</span>
+    <div className="ij-candle" aria-hidden="true">
+      <span className="ij-particle ij-particle-1" />
+      <span className="ij-particle ij-particle-2" />
+      <span className="ij-particle ij-particle-3" />
+      <span className="ij-particle ij-particle-4" />
+      <span className="ij-particle ij-particle-5" />
+      <div className="ij-glass" />
+      <div className="ij-flame-wrap">
+        <span className="ij-flame-halo" />
+        <span className="ij-flame" />
+      </div>
+      <div className="ij-wick" />
+      <div className="ij-candle-body" />
+      <div className="ij-candle-holder" />
+      <div className="ij-pedestal" />
     </div>
   );
 }
 
-function PanelBadge({ children, tone }: { children: string; tone: "warm" | "green" }) {
-  return <span className={`hx-panel-badge hx-panel-badge-${tone}`}>{children}</span>;
-}
-
-function SourceItem({
-  icon: Icon,
-  title,
-  text,
-}: {
-  icon: IconComponent;
-  title: string;
-  text: string;
-}) {
+function AuctionCardsSection() {
   return (
-    <div className="hx-source-item">
-      <Icon aria-hidden className="h-4 w-4" />
-      <div>
-        <strong>{title}</strong>
-        <span>{text}</span>
+    <section className="ij-auctions" aria-labelledby="auctions-title">
+      <div className="ij-auctions-head">
+        <h2 id="auctions-title">Découvrez les ventes en cours</h2>
+        <Link to="/sales" className="ij-all-sales">
+          Voir toutes les ventes <ArrowRight aria-hidden className="h-4 w-4" />
+        </Link>
       </div>
-    </div>
-  );
-}
 
-function FeatureCard({
-  icon: Icon,
-  title,
-  text,
-  delay,
-}: {
-  icon: IconComponent;
-  title: string;
-  text: string;
-  delay: string;
-}) {
-  return (
-    <article className="hx-feature-card" data-reveal style={{ ["--d" as string]: delay }}>
-      <div className="hx-feature-icon">
-        <Icon aria-hidden className="h-5 w-5" />
+      <div className="ij-card-grid">
+        {auctionCards.map((card) => (
+          <Link key={card.title} to="/sales" className="ij-auction-card">
+            <span className="ij-card-image">
+              <img src={card.image} alt="" width={896} height={512} loading="lazy" />
+              <span>{card.badge}</span>
+            </span>
+            <span className="ij-card-body">
+              <span className="ij-card-city">
+                <MapPin aria-hidden className="h-4 w-4" />
+                {card.city}
+              </span>
+              <strong>{card.title}</strong>
+              <span className="ij-card-meta">
+                <Landmark aria-hidden className="h-4 w-4" />
+                {card.tribunal}
+              </span>
+              <span className="ij-card-price">
+                <CalendarDays aria-hidden className="h-4 w-4" />
+                {card.price}
+              </span>
+            </span>
+          </Link>
+        ))}
       </div>
-      <h3>{title}</h3>
-      <p>{text}</p>
-    </article>
-  );
-}
-
-function AudienceCard({
-  icon: Icon,
-  eyebrow,
-  title,
-  text,
-  cta,
-  to,
-}: {
-  icon: IconComponent;
-  eyebrow: string;
-  title: string;
-  text: string;
-  cta: string;
-  to: string;
-}) {
-  return (
-    <article className="hx-audience-card" data-reveal>
-      <div className="hx-feature-icon">
-        <Icon aria-hidden className="h-5 w-5" />
-      </div>
-      <p>{eyebrow}</p>
-      <h3>{title}</h3>
-      <span>{text}</span>
-      <Link to={to} className="hx-audience-link">
-        {cta} <ArrowUpRight className="h-4 w-4" />
-      </Link>
-    </article>
-  );
-}
-
-function PreviewNote({
-  icon: Icon,
-  title,
-  text,
-}: {
-  icon: IconComponent;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="hx-preview-note">
-      <Icon aria-hidden className="h-4 w-4" />
-      <div>
-        <strong>{title}</strong>
-        <span>{text}</span>
-      </div>
-    </div>
-  );
-}
-
-function LogicStep({ number, title, value }: { number: string; title: string; value: string }) {
-  return (
-    <div>
-      <span>{number}</span>
-      <strong>{title}</strong>
-      <small>{value}</small>
-    </div>
+    </section>
   );
 }

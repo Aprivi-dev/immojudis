@@ -1,6 +1,8 @@
 import type * as React from "react";
 import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
+import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import LogOut from "lucide-react/dist/esm/icons/log-out.js";
 import Menu from "lucide-react/dist/esm/icons/menu.js";
 import X from "lucide-react/dist/esm/icons/x.js";
@@ -18,13 +20,23 @@ const AUTH_NAV_ITEMS = [
 
 const PRO_NAV_ITEM = { to: "/publish", label: "Publier" } as const;
 const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin" } as const;
+const HOME_NAV_ITEMS = [
+  { to: "/sales", label: "Ventes judiciaires", chevron: true },
+  { to: "/sales", label: "Rechercher un bien" },
+  { to: "/contact", label: "Accompagnement" },
+  { to: "/ventes-immobilieres-judiciaires", label: "Ressources" },
+  { to: "/contact", label: "À propos" },
+] as const;
 
 export function Navbar() {
+  const location = useLocation();
   const { user, profile, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isHome = location.pathname === "/";
   const admin = isAdminAccount(user);
   const navItems = [
     ...(user ? AUTH_NAV_ITEMS : []),
+    { to: "/annonce-exemple", label: "Exemple" },
     { to: "/ventes-immobilieres-judiciaires", label: "Guide" },
     ...(isProfessionalAccount(user, profile) ? [PRO_NAV_ITEM] : []),
     ...(admin ? [ADMIN_NAV_ITEM] : []),
@@ -42,6 +54,101 @@ export function Navbar() {
   }, [mobileOpen]);
 
   const closeMobileMenu = () => setMobileOpen(false);
+
+  if (isHome) {
+    return (
+      <header className="ij-site-header">
+        <div className="ij-site-header-inner">
+          <Link to="/" className="ij-home-logo" aria-label="ImmoJudis — accueil">
+            <span className="ij-home-logo-mark">
+              <Landmark aria-hidden className="h-6 w-6" />
+            </span>
+            <span>
+              <strong>
+                Immo<span>Judis</span>
+              </strong>
+              <small>L'immobilier judiciaire en toute confiance</small>
+            </span>
+          </Link>
+
+          <nav className="ij-home-nav" aria-label="Navigation principale">
+            {HOME_NAV_ITEMS.map((item) => (
+              <Link key={item.label} to={item.to}>
+                {item.label}
+                {item.chevron ? <ChevronDown aria-hidden className="h-4 w-4" /> : null}
+              </Link>
+            ))}
+          </nav>
+
+          <div className="ij-home-actions">
+            <Link to="/login" className="ij-login-button">
+              Connexion
+            </Link>
+            <Link to="/login" className="ij-signup-button">
+              S'inscrire
+            </Link>
+          </div>
+
+          <button
+            type="button"
+            aria-label="Ouvrir le menu"
+            aria-controls="home-mobile-navigation"
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen(true)}
+            className="ij-home-menu-button"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
+
+        {mobileOpen ? (
+          <div className="ij-mobile-overlay" role="dialog" aria-modal="true">
+            <button
+              type="button"
+              aria-label="Fermer le menu"
+              className="ij-mobile-backdrop"
+              onClick={closeMobileMenu}
+            />
+            <aside id="home-mobile-navigation" className="ij-mobile-panel">
+              <div className="ij-mobile-panel-head">
+                <Link to="/" onClick={closeMobileMenu} className="ij-home-logo">
+                  <span className="ij-home-logo-mark">
+                    <Landmark aria-hidden className="h-6 w-6" />
+                  </span>
+                  <span>
+                    <strong>
+                      Immo<span>Judis</span>
+                    </strong>
+                    <small>L'immobilier judiciaire en toute confiance</small>
+                  </span>
+                </Link>
+                <button type="button" aria-label="Fermer le menu" onClick={closeMobileMenu}>
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <nav className="ij-mobile-nav" aria-label="Navigation mobile">
+                {HOME_NAV_ITEMS.map((item) => (
+                  <Link key={item.label} to={item.to} onClick={closeMobileMenu}>
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+
+              <div className="ij-mobile-actions">
+                <Link to="/login" onClick={closeMobileMenu} className="ij-login-button">
+                  Connexion
+                </Link>
+                <Link to="/login" onClick={closeMobileMenu} className="ij-signup-button">
+                  S'inscrire
+                </Link>
+              </div>
+            </aside>
+          </div>
+        ) : null}
+      </header>
+    );
+  }
 
   return (
     <header className="app-navbar sticky top-0 z-40 border-b border-white/10 bg-background/62 shadow-[0_18px_54px_rgb(0_0_0_/_22%)] backdrop-blur-2xl">
