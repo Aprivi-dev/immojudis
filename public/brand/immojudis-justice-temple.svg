@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Immojudis">
+  <rect width="256" height="256" rx="52" fill="#fffaf2"/>
+  <path d="M38 101h180L128 42 38 101Z" fill="none" stroke="#132238" stroke-width="18" stroke-linejoin="round"/>
+  <path d="M58 202h140M74 101v82M112 101v82M150 101v82M188 101v82" fill="none" stroke="#132238" stroke-width="18" stroke-linecap="round"/>
+  <path d="M38 216h180" fill="none" stroke="#c98d45" stroke-width="18" stroke-linecap="round"/>
+</svg>
