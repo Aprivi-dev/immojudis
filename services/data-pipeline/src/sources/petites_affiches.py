@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
 
-from src.config import AQUITAINE_DEPARTMENTS, load_settings
+from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
@@ -46,7 +46,7 @@ def scrape_petites_affiches_aquitaine_result(
 
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
-    for department in AQUITAINE_DEPARTMENTS:
+    for department in TARGET_DEPARTMENTS:
         try:
             html = client.post_form(LIST_URL, {"historique": "0", "select_dep": department})
         except Exception as exc:
@@ -203,7 +203,7 @@ def _extract_price(text: str) -> str | None:
 
 
 def _extract_postal(text: str) -> str | None:
-    match = re.search(r"\b((?:24|33|40|47|64)\d{3})\b", text)
+    match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b", text)
     return match.group(1) if match else None
 
 

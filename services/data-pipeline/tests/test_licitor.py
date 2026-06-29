@@ -17,14 +17,16 @@ def test_robots_rules_allows_public_licitor_pages_and_blocks_disallowed_document
         "immojudis-data-pipeline/1.0 (+contact@example.com)",
     )
 
-    assert rules.can_fetch("https://www.licitor.com/ventes-aux-encheres-immobilieres/aquitaine.html")
+    assert rules.can_fetch(
+        "https://www.licitor.com/ventes-aux-encheres-immobilieres/paris-et-ile-de-france/prochaines-ventes.html"
+    )
     assert rules.can_fetch("https://www.licitor.com/annonce/10/84/61/x/108461.html")
     assert not rules.can_fetch("https://www.licitor.com/data/pub/doc/example.pdf")
 
 
 def test_parse_licitor_list_html_extracts_detail_and_next_urls() -> None:
     html = """
-    <a href="/ventes-aux-encheres-immobilieres/aquitaine.html?p=2">2</a>
+    <a href="/ventes-aux-encheres-immobilieres/paris-et-ile-de-france/prochaines-ventes.html?p=2">2</a>
     <a href="/annonce/10/86/25/vente-aux-encheres/une-maison/merignac/gironde/108625.html">
       33 Mérignac Une maison Mise à prix : 200 000 €
     </a>
@@ -34,7 +36,28 @@ def test_parse_licitor_list_html_extracts_detail_and_next_urls() -> None:
     assert details == [
         "https://www.licitor.com/annonce/10/86/25/vente-aux-encheres/une-maison/merignac/gironde/108625.html"
     ]
-    assert next_urls == ["https://www.licitor.com/ventes-aux-encheres-immobilieres/aquitaine.html?p=2"]
+    assert next_urls == [
+        "https://www.licitor.com/ventes-aux-encheres-immobilieres/paris-et-ile-de-france/prochaines-ventes.html?p=2"
+    ]
+
+
+def test_parse_licitor_detail_html_extracts_national_postal_code() -> None:
+    html = """
+    <h1>Annonce n°109000 : un appartement à Paris (Paris), mise à prix : 100 000 €</h1>
+    <p>Tribunal Judiciaire de Paris</p>
+    <h2>Un appartement</h2>
+    <h3>Mise à prix : 100 000 €</h3>
+    <p>Paris</p>
+    <p>12 rue Test - 75001 Paris</p>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/90/00/vente-aux-encheres/un-appartement/paris/paris/109000.html",
+    )
+
+    assert raw["department"] == "75"
+    assert raw["postal_code"] == "75001"
 
 
 def test_parse_licitor_detail_html_accepts_missing_postal_code() -> None:

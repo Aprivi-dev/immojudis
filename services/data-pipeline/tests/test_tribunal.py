@@ -32,7 +32,7 @@ def test_fill_tribunal_prefers_explicit_raw_text() -> None:
     assert fill_tribunal(sale).tribunal == "TJ Bayonne"
 
 
-def test_fill_tribunal_rejects_non_aquitaine_without_explicit_proof() -> None:
+def test_fill_tribunal_rejects_out_of_department_known_tribunal() -> None:
     sale = normalize_sale(
         {
             "source_name": "avoventes",
@@ -49,6 +49,24 @@ def test_fill_tribunal_rejects_non_aquitaine_without_explicit_proof() -> None:
     assert sale.tribunal == "TJ Bordeaux"
     assert sale.tribunal_code == "bordeaux"
     assert "tribunal_inconsistent" in sale.quality_flags
+
+
+def test_fill_tribunal_keeps_explicit_national_tribunal() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_publiques",
+            "source_url": "https://example.test/tribunal-paris",
+            "department": "75",
+            "city": "Paris",
+            "tribunal": "Tribunal Judiciaire de PARIS",
+        }
+    )
+
+    fill_tribunal(sale)
+
+    assert sale.tribunal == "TJ Paris"
+    assert sale.tribunal_code is None
+    assert "tribunal_inconsistent" not in sale.quality_flags
 
 
 def test_fill_tribunal_canonicalizes_noisy_tribunal_text() -> None:

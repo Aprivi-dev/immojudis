@@ -19,7 +19,6 @@ const missing = [
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   ],
-  ["VITE_GOOGLE_MAPS_API_KEY", process.env.VITE_GOOGLE_MAPS_API_KEY],
 ]
   .filter(([, value]) => isMissing(value))
   .map(([label]) => label);
@@ -27,6 +26,10 @@ const missing = [
 if (missing.length) {
   console.error(`[env] Missing required build variable(s): ${missing.join(", ")}`);
   process.exit(1);
+}
+
+if (isMissing(process.env.VITE_GOOGLE_MAPS_API_KEY)) {
+  console.warn("[env] VITE_GOOGLE_MAPS_API_KEY missing: Google Maps views will use fallbacks.");
 }
 
 function unquote(value) {

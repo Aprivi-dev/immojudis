@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
 
-from src.config import AQUITAINE_DEPARTMENTS, load_settings
+from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
@@ -56,7 +56,7 @@ def scrape_cessions_etat_aquitaine_result(
             errors.append(f"{page_url}: {exc}")
             continue
         for sale in parse_cessions_etat_html(html, page_url=page_url):
-            if sale.get("department") not in AQUITAINE_DEPARTMENTS:
+            if sale.get("department") not in TARGET_DEPARTMENTS:
                 continue
             if should_fetch_detail(sale, known):
                 _enrich_sale_from_detail(client, sale, errors)
@@ -200,7 +200,7 @@ def _extract_surface(text: str) -> str | None:
 
 
 def _extract_postal(text: str) -> str | None:
-    match = re.search(r"\b((?:24|33|40|47|64)\d{3})\b", text)
+    match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b", text)
     return match.group(1) if match else None
 
 

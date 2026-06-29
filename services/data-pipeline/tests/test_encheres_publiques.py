@@ -66,6 +66,51 @@ def test_parse_encheres_publiques_html_reads_next_apollo_state() -> None:
     assert sale.tribunal == "Tribunal Judiciaire de BORDEAUX"
 
 
+def test_parse_encheres_publiques_html_keeps_national_listing() -> None:
+    html = """
+    <html>
+      <body>
+        <a href="/encheres/immobilier/appartements/paris-75/appartement-paris_129387">Voir</a>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "apolloState": {
+                "data": {
+                  "Adresse:201979": {"__typename": "Adresse", "id": "201979", "ville": "Paris", "ville_slug": "paris-75"},
+                  "Profil:5311": {"__typename": "Profil", "id": "5311", "nom": "Tribunal Judiciaire de PARIS", "categorie": "tribunal"},
+                  "Evenement:21877": {"__typename": "Evenement", "id": "21877", "ouverture_date": 1783495800},
+                  "Lot:129387": {
+                    "__typename": "Lot",
+                    "id": "129387",
+                    "nom": "Un appartement de 52,8 m² situé rue des Fossés Saint-Jacques à Paris",
+                    "type": "En salle",
+                    "categorie": "immobilier",
+                    "sous_categorie": "appartements",
+                    "adresse_defaut": {"__ref": "Adresse:201979"},
+                    "ouverture_date": 1783495800,
+                    "criteres_resume": "Paris · 52.8 m²",
+                    "mise_a_prix": 170000,
+                    "organisateur": {"__ref": "Profil:5311"},
+                    "evenement": {"__ref": "Evenement:21877"},
+                    "termine": false
+                  }
+                }
+              }
+            }
+          }
+        }
+        </script>
+      </body>
+    </html>
+    """
+
+    raw_sales = parse_encheres_publiques_html(html, "https://www.encheres-publiques.com/ventes/immobilier")
+
+    assert len(raw_sales) == 1
+    assert raw_sales[0]["department"] == "75"
+
+
 def test_parse_encheres_publiques_detail_html_extracts_rich_lot_context() -> None:
     html = """
     <html>

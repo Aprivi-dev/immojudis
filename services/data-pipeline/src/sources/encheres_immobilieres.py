@@ -8,7 +8,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
-from src.config import AQUITAINE_DEPARTMENTS, load_settings
+from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
@@ -46,7 +46,7 @@ def scrape_encheres_immobilieres_aquitaine_result(max_pages: int | None = None) 
             errors.append(f"{page_url}: {exc}")
             continue
         for sale in parse_encheres_immobilieres_html(html):
-            if sale.get("department") in AQUITAINE_DEPARTMENTS:
+            if sale.get("department") in TARGET_DEPARTMENTS:
                 raw_sales.append(sale)
 
     return ScrapeResult(

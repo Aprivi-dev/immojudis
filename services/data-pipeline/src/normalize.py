@@ -290,6 +290,8 @@ def extract_postal_code(*values: object | None) -> str | None:
 def extract_department(postal_code: str | None) -> str | None:
     if not postal_code or len(postal_code) < 2:
         return None
+    if re.match(r"^(?:97[1-8]|98[6-8])\d{2}$", postal_code):
+        return postal_code[:3]
     return postal_code[:2]
 
 

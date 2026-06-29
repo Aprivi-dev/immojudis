@@ -58,6 +58,19 @@ def test_normalize_sale_extracts_department_and_property_type() -> None:
     assert sale.status == "upcoming"
 
 
+def test_normalize_sale_extracts_overseas_department() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/guadeloupe",
+            "address": "12 rue Test 97100 Basse-Terre",
+        }
+    )
+
+    assert sale.department == "971"
+    assert sale.postal_code == "97100"
+
+
 def test_normalize_sale_preserves_canonical_property_type() -> None:
     sale = normalize_sale(
         {
