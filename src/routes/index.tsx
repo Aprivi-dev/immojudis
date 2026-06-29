@@ -7,7 +7,7 @@ import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import UserRound from "lucide-react/dist/esm/icons/user-round.js";
-import type { ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,11 +24,17 @@ export const Route = createFileRoute("/")({
 });
 
 type IconComponent = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+type CandleArrowGeometry = {
+  width: number;
+  height: number;
+  linePath: string;
+  headPath: string;
+};
 
 const benefits = [
   { icon: Scale, title: "100% des ventes", text: "en France" },
   { icon: Bell, title: "Alertes personnalisées", text: "par email" },
-  { icon: UserRound, title: "Accompagnement", text: "expert" },
+  { icon: UserRound, title: "Appui expert", text: "sur demande" },
 ] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
 
 const auctionCards = [
@@ -66,11 +72,33 @@ const auctionCards = [
   },
 ] as const;
 
+const workflowSteps = [
+  {
+    icon: Search,
+    title: "1. Repérez",
+    text: "Filtrez les ventes par ville, budget et type de bien.",
+  },
+  {
+    icon: Scale,
+    title: "2. Comprenez",
+    text: "Lisez les points clés du dossier avant l'audience.",
+  },
+  {
+    icon: Bell,
+    title: "3. Suivez",
+    text: "Créez une alerte et préparez votre mise plafond.",
+  },
+] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
+
+const searchGhostCities = ["Bordeaux", "Paris", "Lyon", "Nantes", "Toulouse", "Lille"] as const;
+
 function HomePage() {
   return (
     <main className="ij-page">
       <HeroSection />
       <AuctionCardsSection />
+      <HomeProcessSection />
+      <HomeFooter />
     </main>
   );
 }
@@ -111,10 +139,6 @@ function HeroSection() {
         <JusticeGoddessVisual />
 
         <div className="ij-candle-scene ij-reveal ij-reveal-6">
-          <svg className="ij-candle-arrow" viewBox="0 0 230 128" aria-hidden="true">
-            <path className="ij-candle-arrow-line" d="M8 116C42 42 128 8 205 58" />
-            <path className="ij-candle-arrow-head" d="M192 40L207 59L184 62" />
-          </svg>
           <CandleAnimation />
           <article className="ij-candle-note">
             <h2>Vente à la bougie</h2>
@@ -127,14 +151,166 @@ function HeroSection() {
             </Link>
           </article>
         </div>
+
+        <CandleArrow />
       </div>
     </section>
   );
 }
 
+function CandleArrow() {
+  const [geometry, setGeometry] = useState<CandleArrowGeometry | null>(null);
+
+  useEffect(() => {
+    let frame = 0;
+
+    const px = (value: number) => Math.round(value * 10) / 10;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const root = document.querySelector<HTMLElement>(".ij-hero-inner");
+        const start = document.querySelector<HTMLElement>("[data-arrow-start]");
+        const end = document.querySelector<HTMLElement>("[data-arrow-end]");
+        const candleScene = document.querySelector<HTMLElement>(".ij-candle-scene");
+
+        if (
+          !root ||
+          !start ||
+          !end ||
+          !candleScene ||
+          getComputedStyle(candleScene).display === "none"
+        ) {
+          setGeometry(null);
+          return;
+        }
+
+        const rootRect = root.getBoundingClientRect();
+        const startRect = start.getBoundingClientRect();
+        const endRect = end.getBoundingClientRect();
+        const startX = px(startRect.left + startRect.width / 2 - rootRect.left);
+        const startY = px(startRect.top + startRect.height / 2 - rootRect.top);
+        const endX = px(endRect.left + endRect.width / 2 - rootRect.left);
+        const endY = px(endRect.top + endRect.height / 2 - rootRect.top);
+        const dx = endX - startX;
+        const dy = endY - startY;
+        const lift = Math.min(132, Math.max(44, Math.abs(dx) * 0.75 + Math.abs(dy) * 0.55));
+        const c1X = px(startX + dx * 0.12);
+        const c1Y = px(startY - lift);
+        const c2X = px(startX + dx * 0.82);
+        const c2Y = px(endY - lift * 0.65);
+        const angle = Math.atan2(endY - c2Y, endX - c2X);
+        const headLength = 18;
+        const wing = 0.58;
+        const leftX = px(endX - Math.cos(angle - wing) * headLength);
+        const leftY = px(endY - Math.sin(angle - wing) * headLength);
+        const rightX = px(endX - Math.cos(angle + wing) * headLength);
+        const rightY = px(endY - Math.sin(angle + wing) * headLength);
+        const width = px(Math.max(rootRect.width, startX, endX, c1X, c2X, leftX, rightX) + 24);
+        const height = px(Math.max(rootRect.height, startY, endY, c1Y, c2Y, leftY, rightY) + 24);
+
+        setGeometry({
+          width,
+          height,
+          linePath: `M ${startX} ${startY} C ${c1X} ${c1Y} ${c2X} ${c2Y} ${endX} ${endY}`,
+          headPath: `M ${leftX} ${leftY} L ${endX} ${endY} L ${rightX} ${rightY}`,
+        });
+      });
+    };
+
+    const observer = "ResizeObserver" in window ? new ResizeObserver(update) : null;
+    const hero = document.querySelector<HTMLElement>(".ij-hero-inner");
+    const settleTimers = [120, 420, 820, 1220].map((delay) => window.setTimeout(update, delay));
+    document
+      .querySelectorAll<HTMLElement>(
+        ".ij-hero-inner, [data-arrow-start], [data-arrow-end], .ij-candle-scene",
+      )
+      .forEach((element) => observer?.observe(element));
+
+    update();
+    hero?.addEventListener("animationend", update, true);
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    window.addEventListener("load", update);
+    void document.fonts?.ready.then(update);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      settleTimers.forEach((timer) => window.clearTimeout(timer));
+      observer?.disconnect();
+      hero?.removeEventListener("animationend", update, true);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      window.removeEventListener("load", update);
+    };
+  }, []);
+
+  if (!geometry) return null;
+
+  return (
+    <svg
+      className="ij-candle-arrow"
+      viewBox={`0 0 ${geometry.width} ${geometry.height}`}
+      style={{ width: geometry.width, height: geometry.height }}
+      aria-hidden="true"
+    >
+      <defs>
+        <mask
+          id="ij-candle-arrow-mask"
+          maskUnits="userSpaceOnUse"
+          x={0}
+          y={0}
+          width={geometry.width}
+          height={geometry.height}
+        >
+          <path className="ij-candle-arrow-mask-line" d={geometry.linePath} pathLength={1} />
+        </mask>
+      </defs>
+      <g mask="url(#ij-candle-arrow-mask)">
+        <path className="ij-candle-arrow-line" d={geometry.linePath} />
+      </g>
+      <path className="ij-candle-arrow-head" d={geometry.headPath} pathLength={1} />
+    </svg>
+  );
+}
+
 function SearchBar() {
+  const [query, setQuery] = useState("");
+  const [cityIndex, setCityIndex] = useState(0);
+  const [letterCount, setLetterCount] = useState(0);
+  const ghostCity = searchGhostCities[cityIndex];
+
+  useEffect(() => {
+    if (query) return;
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      if (letterCount !== ghostCity.length) setLetterCount(ghostCity.length);
+      return;
+    }
+
+    const isComplete = letterCount >= ghostCity.length;
+    const timer = window.setTimeout(
+      () => {
+        if (isComplete) {
+          setCityIndex((current) => (current + 1) % searchGhostCities.length);
+          setLetterCount(0);
+          return;
+        }
+
+        setLetterCount((current) => current + 1);
+      },
+      isComplete ? 950 : 92,
+    );
+
+    return () => window.clearTimeout(timer);
+  }, [cityIndex, ghostCity.length, letterCount, query]);
+
   return (
     <form className="ij-search ij-reveal ij-reveal-4" action="/sales">
+      <span className="ij-search-arrow-start" data-arrow-start aria-hidden="true" />
+      <span className={`ij-search-ghost${query ? " ij-search-ghost-hidden" : ""}`} aria-hidden>
+        {ghostCity.slice(0, letterCount)}
+        <span className="ij-search-ghost-caret" />
+      </span>
       <label className="sr-only" htmlFor="home-search">
         Rechercher un bien, une ville ou un tribunal
       </label>
@@ -142,7 +318,8 @@ function SearchBar() {
         id="home-search"
         name="q"
         type="search"
-        placeholder="Rechercher un bien, une ville, un tribunal..."
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
         autoComplete="off"
       />
       <button type="submit" aria-label="Rechercher">
@@ -182,6 +359,7 @@ function CandleAnimation() {
       />
       <span className="ij-candle-glow" />
       <span className="ij-candle-flame-glow" />
+      <span className="ij-candle-arrow-end" data-arrow-end aria-hidden="true" />
     </div>
   );
 }
@@ -222,5 +400,84 @@ function AuctionCardsSection() {
         ))}
       </div>
     </section>
+  );
+}
+
+function HomeProcessSection() {
+  return (
+    <section className="ij-process" aria-labelledby="process-title">
+      <div className="ij-process-head">
+        <div>
+          <p className="ij-proof-kicker">Parcours acheteur</p>
+          <h2 id="process-title">Comment ça marche</h2>
+        </div>
+        <p>
+          Une lecture rapide des opportunités, avec juste assez de repères pour passer de la
+          découverte à la décision.
+        </p>
+      </div>
+
+      <div className="ij-process-body">
+        <div className="ij-process-steps">
+          <div className="ij-step-grid">
+            {workflowSteps.map(({ icon: Icon, title, text }) => (
+              <div key={title} className="ij-step">
+                <span className="ij-step-icon">
+                  <Icon aria-hidden className="h-4 w-4" />
+                </span>
+                <span>
+                  <strong>{title}</strong>
+                  <small>{text}</small>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="ij-freshness">
+          <CalendarDays aria-hidden className="h-5 w-5" />
+          <span>
+            <strong>Collecte planifiée toutes les 10 min</strong>
+            <small>
+              Le pipeline ImmoJudis surveille les ventes publiques et met à jour les dossiers dès
+              qu'une collecte aboutit.
+            </small>
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HomeFooter() {
+  return (
+    <footer className="ij-footer" aria-label="Pied de page">
+      <div className="ij-footer-inner">
+        <Link to="/" className="ij-footer-brand" aria-label="ImmoJudis — accueil">
+          <span className="ij-footer-mark">
+            <Landmark aria-hidden className="h-5 w-5" />
+          </span>
+          <span>
+            <strong>
+              Immo<span>Judis</span>
+            </strong>
+            <small>Ventes judiciaires immobilières</small>
+          </span>
+        </Link>
+
+        <nav className="ij-footer-nav" aria-label="Navigation pied de page">
+          <Link to="/sales">Ventes</Link>
+          <Link to="/annonce-exemple">Annonce exemple</Link>
+          <Link to="/ressources">Ressources</Link>
+          <Link to="/contact">Contact</Link>
+        </nav>
+
+        <div className="ij-footer-legal">
+          <span>© 2026 ImmoJudis</span>
+          <Link to="/legal">Mentions légales</Link>
+          <Link to="/privacy">Confidentialité</Link>
+        </div>
+      </div>
+    </footer>
   );
 }

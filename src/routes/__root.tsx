@@ -82,14 +82,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Explorez les ventes aux enchères immobilières judiciaires avec annonces analysées, carte, alertes et mise plafond.",
+          "Explorez les ventes aux enchères immobilières judiciaires avec annonces analysées, alertes et mise plafond.",
       },
       { name: "author", content: "Immojudis" },
       { property: "og:title", content: "Immojudis — Ventes immobilières judiciaires" },
       {
         property: "og:description",
         content:
-          "Carte, annonces analysées, alertes et mise plafond pour les enchères immobilières judiciaires.",
+          "Annonces analysées, alertes et mise plafond pour les enchères immobilières judiciaires.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

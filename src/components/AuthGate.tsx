@@ -62,7 +62,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
               Vérification de l'accès
             </h1>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              Les annonces, cartes et analyses Immojudis sont réservées aux comptes connectés.
+              Les annonces et analyses Immojudis sont réservées aux comptes connectés.
             </p>
             <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-white/10">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-gold" />

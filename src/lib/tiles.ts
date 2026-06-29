@@ -1,22 +1,7 @@
-import type { TileLayerOptions } from "leaflet";
-
 // OSM static tile helpers.
 // Single tile at zoom 15 ≈ 1.2km wide — perfect for a card thumbnail.
 
 const OSM_BASE = "https://tile.openstreetmap.org";
-export const OSM_TILE_LAYER_URL = `${OSM_BASE}/{z}/{x}/{y}.png`;
-export const OSM_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
-
-export const OSM_TILE_OPTIONS: TileLayerOptions = {
-  attribution: OSM_ATTRIBUTION,
-  maxZoom: 19,
-  maxNativeZoom: 19,
-  detectRetina: false,
-  referrerPolicy: "strict-origin-when-cross-origin",
-  updateWhenIdle: true,
-  keepBuffer: 1,
-};
 
 function lng2tileX(lng: number, z: number) {
   return ((lng + 180) / 360) * Math.pow(2, z);

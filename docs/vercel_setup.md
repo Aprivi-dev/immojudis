@@ -6,7 +6,7 @@
 - TypeScript strict
 - Tailwind CSS v4 + shadcn/ui
 - Supabase JS (auth, queries, RLS)
-- Google Maps sur les pages détail, listes et carte (vue aérienne + Street View)
+- Google Maps sur les pages détail et listes (vue aérienne + Street View)
 
 ## 1. Installation locale
 
@@ -23,7 +23,7 @@ npm run dev        # http://localhost:3000
 | ------------------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
 | `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)                                                        |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)                                                   |
-| `VITE_GOOGLE_MAPS_API_KEY`      | ✅     | Clé Google Maps restreinte par domaine. Active vignettes, carte interactive, vue aérienne et Street View. |
+| `VITE_GOOGLE_MAPS_API_KEY`      | ✅     | Clé Google Maps restreinte par domaine. Active vignettes, vue aérienne et Street View. |
 | `GITHUB_SCROLL_TOKEN`           | ❌     | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.          |
 | `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                  |
 | `GITHUB_SCROLL_WORKFLOW`        | ❌     | Workflow cible. Défaut : `data-pipeline.yml`.                                                             |
@@ -104,7 +104,6 @@ Le projet cible Vercel. Pour déployer :
 - `/` affiche les stats (depuis Supabase)
 - `/sales` liste les annonces, filtres modifient l'URL
 - `/sales/:id` affiche le détail + documents
-- `/map` affiche les markers Google Maps
 - `/favorites` redirige vers `/login` si déconnecté
 - `/alerts` permet création / toggle / suppression
 - Un utilisateur ne voit JAMAIS les favoris/alertes d'un autre (RLS)

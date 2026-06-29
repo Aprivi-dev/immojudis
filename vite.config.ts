@@ -26,7 +26,6 @@ export default defineConfig({
             if (!id.includes("node_modules")) return;
             if (id.includes("@supabase/")) return "vendor-supabase";
             if (id.includes("@radix-ui/")) return "vendor-radix";
-            if (id.includes("leaflet")) return "vendor-leaflet";
             if (id.includes("lucide-react")) return "vendor-icons";
           },
         },
