@@ -1,53 +1,33 @@
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
-import type { SaleDocument } from "@/lib/types";
-
-function parseDocs(raw: unknown): SaleDocument[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) {
-    return raw
-      .map((d): SaleDocument | null => {
-        if (typeof d === "string") return { url: d };
-        if (
-          d &&
-          typeof d === "object" &&
-          "url" in d &&
-          typeof (d as { url: unknown }).url === "string"
-        ) {
-          return d as SaleDocument;
-        }
-        return null;
-      })
-      .filter((d): d is SaleDocument => d !== null);
-  }
-  if (typeof raw === "object" && raw !== null) {
-    return Object.values(raw as Record<string, unknown>)
-      .filter((v): v is string => typeof v === "string")
-      .map((url) => ({ url }));
-  }
-  return [];
-}
+import { parseDocs } from "@/lib/documents";
+import { documentTypeLabel } from "@/lib/format";
 
 export function DocumentsList({ documents }: { documents: unknown }) {
   const docs = parseDocs(documents);
   if (docs.length === 0) {
-    return <p className="text-sm text-muted-foreground">Aucun document attaché.</p>;
+    return <p className="text-sm text-muted-foreground">Aucune pièce attachée pour le moment.</p>;
   }
   return (
-    <ul className="space-y-2">
+    <ul className="divide-y divide-border/60 border-y border-border/60">
       {docs.map((d, i) => (
         <li key={i}>
           <a
             href={d.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex w-full items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm transition hover:border-gold hover:text-gold-soft"
+            className="group flex w-full items-center gap-4 py-4 text-sm transition-colors hover:bg-surface/40"
           >
             <FileText className="h-4 w-4 text-gold" />
-            <span className="flex-1 truncate">
-              {d.name ?? d.url.split("/").pop() ?? `Document ${i + 1}`}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-foreground">
+                {d.name ?? d.url.split("/").pop() ?? `Pièce ${i + 1}`}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Disponible · {documentTypeLabel(d.type)}
+              </span>
             </span>
-            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-gold-soft" />
           </a>
         </li>
       ))}
