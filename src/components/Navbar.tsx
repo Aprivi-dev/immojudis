@@ -33,13 +33,14 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const isHome = location.pathname === "/";
   const admin = isAdminAccount(user);
-  const navItems = [
-    ...(user ? AUTH_NAV_ITEMS : []),
-    { to: "/annonce-exemple", label: "Exemple" },
-    { to: "/ressources", label: "Ressources" },
-    ...(isProfessionalAccount(user, profile) ? [PRO_NAV_ITEM] : []),
-    ...(admin ? [ADMIN_NAV_ITEM] : []),
-  ];
+  const navItems = user
+    ? [
+        ...AUTH_NAV_ITEMS,
+        { to: "/ressources", label: "Ressources" },
+        ...(isProfessionalAccount(user, profile) ? [PRO_NAV_ITEM] : []),
+        ...(admin ? [ADMIN_NAV_ITEM] : []),
+      ]
+    : HOME_NAV_ITEMS;
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -130,91 +131,112 @@ export function Navbar() {
   }
 
   return (
-    <header className="ij-app-header sticky top-0 z-40">
-      <div className="ij-site-header-inner ij-app-header-inner">
-        <HeaderLogo />
+    <>
+      <header className="ij-site-header">
+        <div className="ij-site-header-inner">
+          <HeaderLogo />
 
-        <nav className="ij-home-nav ij-app-nav hidden md:flex" aria-label="Navigation principale">
-          {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to}>
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+          <nav className="ij-home-nav" aria-label="Navigation principale">
+            {navItems.map((item) => (
+              <NavLink key={item.label} to={item.to} chevron={"chevron" in item && item.chevron}>
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
 
-        <div className="hidden items-center gap-2 md:flex">
-          {!loading && user ? (
-            <button onClick={() => supabase.auth.signOut()} className="ij-login-button gap-2">
-              <LogOut className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Déconnexion</span>
-            </button>
-          ) : (
-            <Link to="/login" className="ij-signup-button">
-              Connexion
-            </Link>
-          )}
-        </div>
+          <div className="ij-home-actions">
+            {!loading && user ? (
+              <button onClick={() => supabase.auth.signOut()} className="ij-login-button gap-2">
+                <LogOut className="h-3.5 w-3.5" />
+                <span>Déconnexion</span>
+              </button>
+            ) : (
+              <>
+                <Link to="/login" className="ij-login-button">
+                  Connexion
+                </Link>
+                <Link to="/login" className="ij-signup-button">
+                  S'inscrire
+                </Link>
+              </>
+            )}
+          </div>
 
-        <button
-          type="button"
-          aria-label="Ouvrir le menu"
-          aria-controls="mobile-navigation"
-          aria-expanded={mobileOpen}
-          onClick={() => setMobileOpen(true)}
-          className="ij-home-menu-button md:hidden"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-      </div>
-
-      {mobileOpen ? (
-        <div className="ij-mobile-overlay md:hidden" role="dialog" aria-modal="true">
           <button
             type="button"
-            aria-label="Fermer le menu"
-            className="ij-mobile-backdrop"
-            onClick={closeMobileMenu}
-          />
-          <aside id="mobile-navigation" className="ij-mobile-panel">
-            <div className="ij-mobile-panel-head">
-              <HeaderLogo onClick={closeMobileMenu} />
-              <button type="button" aria-label="Fermer le menu" onClick={closeMobileMenu}>
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="flex min-h-0 flex-1 flex-col">
-              <nav className="ij-mobile-nav" aria-label="Navigation mobile">
-                {navItems.map((item) => (
-                  <MobileNavLink key={item.to} to={item.to} onClick={closeMobileMenu}>
-                    {item.label}
-                  </MobileNavLink>
-                ))}
-              </nav>
-
-              <div className="ij-mobile-actions">
-                {!loading && user ? (
-                  <button
-                    onClick={() => {
-                      closeMobileMenu();
-                      void supabase.auth.signOut();
-                    }}
-                    className="ij-login-button w-full gap-2"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Déconnexion
-                  </button>
-                ) : (
-                  <Link to="/login" onClick={closeMobileMenu} className="ij-signup-button w-full">
-                    Connexion
-                  </Link>
-                )}
-              </div>
-            </div>
-          </aside>
+            aria-label="Ouvrir le menu"
+            aria-controls="mobile-navigation"
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen(true)}
+            className="ij-home-menu-button"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
         </div>
-      ) : null}
-    </header>
+
+        {mobileOpen ? (
+          <div className="ij-mobile-overlay" role="dialog" aria-modal="true">
+            <button
+              type="button"
+              aria-label="Fermer le menu"
+              className="ij-mobile-backdrop"
+              onClick={closeMobileMenu}
+            />
+            <aside id="mobile-navigation" className="ij-mobile-panel">
+              <div className="ij-mobile-panel-head">
+                <HeaderLogo onClick={closeMobileMenu} />
+                <button type="button" aria-label="Fermer le menu" onClick={closeMobileMenu}>
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="flex min-h-0 flex-1 flex-col">
+                <nav className="ij-mobile-nav" aria-label="Navigation mobile">
+                  {navItems.map((item) => (
+                    <MobileNavLink key={item.label} to={item.to} onClick={closeMobileMenu}>
+                      {item.label}
+                    </MobileNavLink>
+                  ))}
+                </nav>
+
+                <div className="ij-mobile-actions">
+                  {!loading && user ? (
+                    <button
+                      onClick={() => {
+                        closeMobileMenu();
+                        void supabase.auth.signOut();
+                      }}
+                      className="ij-login-button w-full gap-2"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Déconnexion
+                    </button>
+                  ) : (
+                    <>
+                      <Link
+                        to="/login"
+                        onClick={closeMobileMenu}
+                        className="ij-login-button w-full"
+                      >
+                        Connexion
+                      </Link>
+                      <Link
+                        to="/login"
+                        onClick={closeMobileMenu}
+                        className="ij-signup-button w-full"
+                      >
+                        S'inscrire
+                      </Link>
+                    </>
+                  )}
+                </div>
+              </div>
+            </aside>
+          </div>
+        ) : null}
+      </header>
+      <div className="ij-header-spacer" aria-hidden />
+    </>
   );
 }
 
@@ -234,7 +256,15 @@ function HeaderLogo({ onClick }: { onClick?: () => void }) {
   );
 }
 
-function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+function NavLink({
+  to,
+  children,
+  chevron,
+}: {
+  to: string;
+  children: React.ReactNode;
+  chevron?: boolean;
+}) {
   return (
     <Link
       to={to}
@@ -243,6 +273,7 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
       activeProps={{ className: "bg-[#c98d45]/10 text-[#9c642b]" }}
     >
       {children}
+      {chevron ? <ChevronDown aria-hidden className="h-4 w-4" /> : null}
     </Link>
   );
 }

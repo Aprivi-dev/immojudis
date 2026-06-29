@@ -33,6 +33,7 @@ const SALE_LIST_COLUMNS = [
   "surface_confidence",
   "risks",
   "documents",
+  "media",
   "source_url",
   "status",
   "created_at",

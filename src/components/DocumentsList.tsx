@@ -41,7 +41,7 @@ export function DocumentsList({ documents }: { documents: unknown }) {
             href={d.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="liquid-panel-soft inline-flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition hover:border-gold hover:text-gold-soft"
+            className="inline-flex w-full items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm transition hover:border-gold hover:text-gold-soft"
           >
             <FileText className="h-4 w-4 text-gold" />
             <span className="flex-1 truncate">

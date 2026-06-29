@@ -257,7 +257,7 @@ export function BidCeilingAssistant({
 
   if (!surface || surface <= 0) {
     return (
-      <section className="liquid-panel rounded-lg p-5">
+      <section className="rounded-lg border border-border bg-white p-5 shadow-sm">
         <AssistantHeader onReset={reset} />
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
           Immojudis ne peut pas calculer une mise plafond fiable tant que la surface du bien n'est
@@ -268,7 +268,7 @@ export function BidCeilingAssistant({
   }
 
   return (
-    <section className="liquid-panel overflow-hidden rounded-lg">
+    <section className="overflow-hidden rounded-lg border border-border bg-white shadow-sm">
       <div className="p-5 sm:p-6">
         <AssistantHeader onReset={reset} />
 
@@ -276,11 +276,11 @@ export function BidCeilingAssistant({
         <div className="mt-6 rounded-lg border border-gold/30 bg-gold/[0.07] p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-gold">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
                 <Target className="h-4 w-4" />
                 Votre mise plafond
               </div>
-              <div className="mt-3 font-display text-4xl leading-none tabular-nums text-foreground sm:text-5xl">
+              <div className="mt-3 text-4xl font-semibold leading-none tabular-nums text-foreground sm:text-5xl">
                 {verdictAvailable ? fmt(selected.result.maxBid) : "À compléter"}
               </div>
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
@@ -303,7 +303,7 @@ export function BidCeilingAssistant({
             <div className="flex flex-col items-end gap-2">
               {/* Sélecteur de profil */}
               <div
-                className="inline-flex rounded-full border border-white/12 bg-black/20 p-1"
+                className="inline-flex rounded-full border border-border bg-white p-1"
                 role="radiogroup"
                 aria-label="Profil d'enchère"
               >
@@ -380,8 +380,8 @@ export function BidCeilingAssistant({
           )}
 
           {/* Prochaine action */}
-          <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4 text-sm">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-soft">
+          <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
               Prochaine action
             </span>
             <span className="text-muted-foreground">{nextAction}</span>
@@ -481,8 +481,12 @@ function RangeBar({
   const span = Math.max(1, maxBid - minBid);
   const lo = minBid - span * 0.12;
   const hi = maxBid + span * 0.12;
-  const pos = (value: number) => `${Math.min(100, Math.max(0, ((value - lo) / (hi - lo)) * 100))}%`;
+  const pct = (value: number) => Math.min(100, Math.max(0, ((value - lo) / (hi - lo)) * 100));
+  const pos = (value: number) => `${pct(value)}%`;
   const startBelowRange = startingPrice > 0 && startingPrice < minBid;
+  const startPct = pct(startingPrice);
+  const startLabelClass =
+    startPct <= 8 ? "translate-x-0" : startPct >= 92 ? "-translate-x-full" : "-translate-x-1/2";
 
   return (
     <div className="mt-6">
@@ -506,7 +510,7 @@ function RangeBar({
         {/* Repère mise à prix */}
         {startingPrice > 0 && (
           <span
-            className="absolute -top-5 -translate-x-1/2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"
+            className={`absolute -top-5 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground ${startLabelClass}`}
             style={{ left: pos(startingPrice) }}
             aria-hidden
           >
@@ -549,15 +553,15 @@ function WorksEnvelope({
   const atStartingPrice = Math.round(simulatedPrice) === Math.round(startingPrice);
   const noRoom = maxWorks <= 0;
   return (
-    <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-lg border border-white/10 bg-white/[0.04] p-4">
+    <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-lg border border-border bg-muted/35 p-4">
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-gold/30 bg-gold/10 text-gold">
         <Wrench className="h-5 w-5" />
       </span>
       <div className="min-w-0">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-soft">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
           Enveloppe travaux maximale
         </div>
-        <div className="mt-1 font-display text-3xl leading-none tabular-nums text-foreground">
+        <div className="mt-1 text-3xl font-semibold leading-none tabular-nums text-foreground">
           {fmt(maxWorks)}
         </div>
       </div>
@@ -610,10 +614,10 @@ function AssistantHeader({ onReset }: { onReset: () => void }) {
           <Calculator className="h-5 w-5" />
         </span>
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             Assistant d'enchère
           </div>
-          <h2 className="mt-1 text-lg font-semibold text-foreground">
+          <h2 className="mt-1 font-sans text-lg font-semibold text-foreground">
             Déterminer une mise maximum défendable
           </h2>
         </div>
@@ -661,12 +665,12 @@ function MarketInput({
   return (
     <div
       className={`rounded-lg border p-4 ${
-        needsManual ? "border-amber-300/25 bg-amber-400/10" : "border-white/10 bg-white/[0.04]"
+        needsManual ? "border-amber-300/40 bg-amber-50" : "border-border bg-muted/35"
       }`}
     >
       <div className="grid gap-3 sm:grid-cols-[1fr_180px] sm:items-end">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
             <MapPin className="h-4 w-4" />
             Prix de marché local
           </div>
@@ -676,7 +680,7 @@ function MarketInput({
         </div>
         <label className="block">
           <span className="text-xs font-medium text-muted-foreground">Saisie manuelle</span>
-          <div className="mt-1 flex items-center rounded-md border border-white/10 bg-black/15 focus-within:ring-1 focus-within:ring-ring">
+          <div className="mt-1 flex items-center rounded-md border border-border bg-white focus-within:ring-1 focus-within:ring-ring">
             <input
               type="number"
               inputMode="decimal"
@@ -714,9 +718,9 @@ function MarketLocalCard({
     : "";
 
   return (
-    <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4">
+    <div className="mt-5 rounded-lg border border-border bg-muted/35 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
           <MapPin className="h-4 w-4" />
           Marché local
         </div>
@@ -805,8 +809,8 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
 function AddressHistory({ estimate }: { estimate: DvfMarketEstimate | null }) {
   const history = estimate?.addressHistory ?? [];
   return (
-    <div className="mt-4 border-t border-white/10 pt-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+    <div className="mt-4 border-t border-border pt-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         Historique de l'adresse
       </div>
       {history.length === 0 ? (
@@ -814,7 +818,7 @@ function AddressHistory({ estimate }: { estimate: DvfMarketEstimate | null }) {
           Aucune vente connue à cette adresse dans les données DVF récentes.
         </p>
       ) : (
-        <ul className="mt-2 divide-y divide-white/10 text-sm">
+        <ul className="mt-2 divide-y divide-border text-sm">
           {history.map((sale, index) => (
             <li
               key={`${sale.date}-${sale.totalPrice}-${index}`}
@@ -888,7 +892,7 @@ function SimulationCard({
         positive ? "border-emerald-300/20 bg-emerald-400/10" : "border-amber-300/25 bg-amber-400/10"
       }`}
     >
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         <TrendingDown className="h-4 w-4 text-gold" />
         Test de la mise simulée
       </div>
@@ -902,7 +906,7 @@ function SimulationCard({
           </p>
         </div>
         <div className="text-right">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+          <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
             Marge restante
           </div>
           <div className="mt-1 text-xl font-semibold tabular-nums text-foreground">
@@ -929,8 +933,8 @@ function MethodCard({
   estimate: DvfMarketEstimate | null;
 }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+    <div className="rounded-lg border border-border bg-muted/35 p-4">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
         <ShieldCheck className="h-4 w-4" />
         Raisonnement retenu
       </div>
@@ -964,7 +968,7 @@ function MethodCard({
         />
       </ol>
       {estimate?.qualityWarnings?.length ? (
-        <p className="mt-3 rounded-md border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+        <p className="mt-3 rounded-md border border-amber-300/40 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
           Prudence sur la référence locale : {estimate.qualityWarnings.join(", ")}.
         </p>
       ) : null}
@@ -985,14 +989,14 @@ function SuccessConditions({
 }) {
   const conditions = buildSuccessConditions(sale, result, estimate, useManualMarket);
   return (
-    <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.03] p-4">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+    <div className="mt-5 rounded-lg border border-border bg-muted/35 p-4">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
         <CheckCircle2 className="h-4 w-4" />
         Conditions pour rester gagnant
       </div>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         {conditions.map((condition) => (
-          <div key={condition.title} className="rounded-lg border border-white/10 bg-black/10 p-3">
+          <div key={condition.title} className="rounded-lg border border-border bg-white p-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <span className="text-gold">{condition.icon}</span>
               {condition.title}
@@ -1015,8 +1019,8 @@ function FeesBreakdown({
   onChange: Dispatch<SetStateAction<AssistantState>>;
 }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+    <div className="rounded-lg border border-border bg-muted/35 p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         Frais retenus
       </div>
       <dl className="mt-3 grid gap-2 text-sm">
@@ -1047,23 +1051,23 @@ function FeesBreakdown({
 function ComparableTransactions({ estimate }: { estimate: DvfMarketEstimate | null }) {
   if (!estimate || estimate.recentTransactions.length === 0) {
     return (
-      <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-muted-foreground">
+      <div className="rounded-lg border border-border bg-muted/35 p-4 text-sm text-muted-foreground">
         Aucune transaction comparable détaillée à afficher pour le moment.
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
+    <div className="rounded-lg border border-border bg-muted/35 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           Transactions DVF utilisées
         </div>
         <div className="text-xs text-muted-foreground">
           {estimate.sampleSize} ventes, rayon {estimate.radiusM} m
         </div>
       </div>
-      <ul className="mt-3 divide-y divide-white/10 text-xs">
+      <ul className="mt-3 divide-y divide-border text-xs">
         {estimate.recentTransactions.map((transaction, index) => (
           <li
             key={`${transaction.date}-${transaction.totalPrice}-${index}`}
@@ -1098,7 +1102,7 @@ function Field({
   return (
     <label className="block">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="mt-1 flex items-center rounded-md border border-white/10 bg-white/[0.05] focus-within:ring-1 focus-within:ring-ring">
+      <div className="mt-1 flex items-center rounded-md border border-border bg-white focus-within:ring-1 focus-within:ring-ring">
         <input
           type="number"
           inputMode="decimal"
@@ -1116,7 +1120,7 @@ function Field({
 
 function MethodStep({ index, title, text }: { index: string; title: string; text: string }) {
   return (
-    <li className="rounded-md border border-white/10 bg-black/10 p-3">
+    <li className="rounded-md border border-border bg-white p-3">
       <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
         <span className="grid h-5 w-5 place-items-center rounded-full bg-gold text-[11px] text-background">
           {index}
@@ -1146,7 +1150,7 @@ function Row({
   return (
     <div
       className={`flex items-center justify-between gap-3 ${
-        bold ? "border-t border-white/10 pt-2 font-semibold" : ""
+        bold ? "border-t border-border pt-2 font-semibold" : ""
       }`}
     >
       <dt className="text-muted-foreground">{label}</dt>
@@ -1155,7 +1159,7 @@ function Row({
           type="number"
           value={current ?? 0}
           onChange={(event) => onEdit(parseFloat(event.target.value) || 0)}
-          className="w-24 rounded border border-white/10 bg-background/40 px-2 py-1 text-right text-sm tabular-nums outline-none"
+          className="w-24 rounded border border-border bg-white px-2 py-1 text-right text-sm tabular-nums outline-none"
         />
       ) : (
         <dd className="tabular-nums text-foreground">{value}</dd>

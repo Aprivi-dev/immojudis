@@ -10,7 +10,7 @@ export function EvidenceTrail({ sale }: { sale: AuctionSale }) {
 
   if (sourcedRisks.length === 0 && !sale.surface_evidence) {
     return (
-      <div className="liquid-panel-soft rounded-lg p-5 text-sm text-muted-foreground">
+      <div className="rounded-lg border border-border bg-white p-5 text-sm text-muted-foreground shadow-sm">
         Aucune preuve détaillée n'est encore disponible dans les données structurées.
       </div>
     );
@@ -91,14 +91,14 @@ function EvidenceCard({
   documentType?: string | null;
 }) {
   return (
-    <details className="liquid-panel-soft group rounded-lg">
+    <details className="group rounded-lg border border-border bg-white shadow-sm">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
         <div className="flex min-w-0 gap-3">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium text-foreground">{title}</span>
-              <span className="rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
                 {status}
               </span>
             </div>
@@ -110,7 +110,7 @@ function EvidenceCard({
         </div>
         <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
       </summary>
-      <div className="space-y-3 border-t border-white/10 px-4 pb-4 pt-3 text-sm leading-relaxed">
+      <div className="space-y-3 border-t border-border px-4 pb-4 pt-3 text-sm leading-relaxed">
         <p className="text-muted-foreground">
           <span className="font-medium text-foreground">Ce qu'on retient : </span>
           {reasoning}

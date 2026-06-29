@@ -54,68 +54,65 @@ export function SaleDetailView({
   const media = saleImages(sale.media);
 
   return (
-    <main className="liquid-page bg-background pb-24">
-      {/* ───────── Hero : localisation (deux tuiles) + carte titre ───────── */}
-      <section className="relative border-b border-white/10">
-        <div className="mx-auto max-w-6xl px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-8">
-          <SaleLocationHero sale={sale} />
+    <main className="min-h-screen bg-white pb-24 text-foreground">
+      <section className="border-b border-border bg-white">
+        <div className="mx-auto max-w-7xl px-4 pb-6 pt-5 sm:px-6 lg:px-8">
+          <nav className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            <Link
+              to="/sales"
+              className="inline-flex items-center gap-1.5 transition-colors hover:text-gold-soft"
+            >
+              <ArrowLeft className="h-3 w-3" /> Annonces
+            </Link>
+            <ChevronRight className="h-3 w-3 opacity-40" />
+            <span className="text-foreground/80">{sale.city ?? sale.department ?? "Détail"}</span>
+          </nav>
 
-          <div className="glass-shell mt-4 rounded-lg px-5 py-5 sm:px-7 sm:py-6">
-            {/* Fil d'Ariane */}
-            <nav className="flex items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
-              <Link
-                to="/sales"
-                className="inline-flex items-center gap-1.5 transition-colors hover:text-gold-soft"
-              >
-                <ArrowLeft className="h-3 w-3" /> Annonces
-              </Link>
-              <ChevronRight className="h-3 w-3 opacity-40" />
-              <span className="text-foreground/80">{sale.city ?? sale.department ?? "Détail"}</span>
-            </nav>
+          <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-4xl">
+              <div className="flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-[0.16em] text-gold-soft">
+                <span>{propertyTypeLabel(sale.property_type)}</span>
+                {sale.department && (
+                  <span className="text-muted-foreground">· Département {sale.department}</span>
+                )}
+                {statusLabel && (
+                  <span className="rounded-full border border-gold/30 bg-gold/10 px-2.5 py-1 text-[10px] tracking-[0.12em] text-gold-soft">
+                    {statusLabel}
+                  </span>
+                )}
+              </div>
 
-            {/* Eyebrow */}
-            <div className="mt-5 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-[0.3em] text-gold-soft">
-              <span className="inline-flex h-px w-8 bg-gold" />
-              <span>{propertyTypeLabel(sale.property_type)}</span>
-              {sale.department && (
-                <span className="text-muted-foreground">· Département {sale.department}</span>
-              )}
-              {statusLabel && (
-                <span className="border border-gold/40 bg-gold/10 px-2 py-0.5 text-[10px] tracking-[0.2em] text-gold-soft">
-                  {statusLabel}
-                </span>
+              <h1 className="mt-3 font-sans text-3xl font-semibold leading-tight text-foreground sm:text-4xl lg:text-5xl">
+                {referenceLabel}
+              </h1>
+
+              {location && (
+                <p className="mt-3 inline-flex max-w-2xl items-center gap-2 text-sm text-muted-foreground sm:text-base">
+                  <MapPin className="h-4 w-4 text-gold-soft" />
+                  {location}
+                </p>
               )}
             </div>
 
-            {/* Titre éditorial */}
-            <h1 className="mt-4 max-w-4xl font-display text-3xl leading-[1.08] text-foreground sm:text-4xl md:text-5xl">
-              {referenceLabel}
-            </h1>
-
-            {location && (
-              <p className="mt-4 inline-flex max-w-2xl items-center gap-2 text-sm text-muted-foreground sm:text-base">
-                <MapPin className="h-4 w-4 text-gold" />
-                {location}
-              </p>
-            )}
-
-            {/* Rangée méta */}
-            <div className="mt-6 flex flex-wrap items-end justify-between gap-5 border-t border-white/10 pt-5">
-              <dl className="flex flex-wrap gap-x-10 gap-y-4">
-                <HeroMeta label="Mise à prix" value={formatPrice(sale.starting_price_eur)} accent />
-                <HeroMeta label="Date de vente" value={formatDate(sale.sale_date)} />
-                <HeroMeta
-                  label={surfaceInfo.metricLabel}
-                  value={surfaceInfo.value ? surfaceInfo.label : "—"}
-                />
-                {sale.tribunal && <HeroMeta label="Tribunal" value={sale.tribunal} />}
-              </dl>
-            </div>
+            <dl className="grid gap-3 rounded-lg border border-border bg-[#f7f7f7] p-3 sm:grid-cols-3 lg:min-w-[28rem]">
+              <HeroMeta label="Mise à prix" value={formatPrice(sale.starting_price_eur)} accent />
+              <HeroMeta label="Date de vente" value={formatDate(sale.sale_date)} />
+              <HeroMeta
+                label={surfaceInfo.metricLabel}
+                value={surfaceInfo.value ? surfaceInfo.label : "—"}
+              />
+              {sale.tribunal && <HeroMeta label="Tribunal" value={sale.tribunal} />}
+            </dl>
           </div>
 
-          {media.length > 0 && <SaleMediaGallery media={media} />}
+          {media.length > 0 ? (
+            <SaleMediaGallery media={media} />
+          ) : (
+            <div className="mt-5">
+              <SaleLocationHero sale={sale} />
+            </div>
+          )}
 
-          {/* Navigation par ancres (ordre de lecture de la décision) */}
           <nav
             aria-label="Sections du dossier"
             className="mt-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -124,7 +121,7 @@ export function SaleDetailView({
               <a
                 key={s.id}
                 href={`#${s.id}`}
-                className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-gold/40 hover:text-gold-soft"
+                className="shrink-0 rounded-full border border-border bg-white px-3.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-gold/40 hover:text-gold-soft"
               >
                 {s.label}
               </a>
@@ -133,14 +130,14 @@ export function SaleDetailView({
         </div>
       </section>
 
-      {/* ───────── Corps : éditorial + rail de décision ───────── */}
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-x-12 gap-y-10 px-4 pt-12 sm:px-6 lg:grid-cols-[1fr_360px]">
-        {/* Colonne principale — mise plafond d'abord */}
-        <div className="space-y-14">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-x-12 gap-y-10 px-4 pt-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-8">
+        <div className="space-y-12">
           {/* 1. Le bien — tout ce que nous savons */}
           <Section id="bien" eyebrow="Le dossier" title="Ce que nous savons du bien">
             <PropertyOverview sale={sale} />
           </Section>
+
+          {media.length > 0 && <SaleLocationHero sale={sale} />}
 
           {/* 2. Assistant de mise plafond */}
           <Section id="assistant" eyebrow="Mise plafond" title="À combien enchérir au maximum ?">
@@ -228,7 +225,6 @@ export function SaleDetailView({
           </Section>
         </div>
 
-        {/* Rail de décision sticky */}
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <DecisionRail sale={sale} />
         </aside>
@@ -241,29 +237,37 @@ function SaleMediaGallery({ media }: { media: SaleMedia[] }) {
   const featured = media[0];
   const thumbnails = media.slice(1, 5);
   const source = featured.source ?? media.find((item) => item.source)?.source;
+  const thumbnailGrid =
+    thumbnails.length === 1
+      ? "grid-cols-1 md:grid-cols-1 md:grid-rows-1"
+      : thumbnails.length === 2
+        ? "grid-cols-2 md:grid-cols-1 md:grid-rows-2"
+        : `grid-cols-2 md:grid-rows-2 ${
+            thumbnails.length === 3 ? "[&>a:last-child]:col-span-2" : ""
+          }`;
 
   return (
-    <section className="mt-4 overflow-hidden rounded-lg border border-white/10 bg-black/20">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.26em] text-gold-soft">
-          Photos du bien
-        </h2>
-        {source && (
-          <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-            Source · {source}
-          </span>
-        )}
-      </header>
+    <section className="relative mt-5 overflow-hidden rounded-lg border border-border bg-muted">
+      <div className="absolute left-3 top-3 z-10 rounded-full border border-white/60 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground backdrop-blur">
+        Photos du bien
+      </div>
+      {source && (
+        <span className="absolute bottom-3 right-3 z-10 rounded-full border border-white/60 bg-white/90 px-3 py-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">
+          Source · {source}
+        </span>
+      )}
       <div
         className={
           thumbnails.length > 0
-            ? "grid gap-px bg-white/10 md:grid-cols-[minmax(0,2fr)_minmax(220px,1fr)]"
-            : "bg-white/10"
+            ? "grid gap-1 bg-white md:grid-cols-[minmax(0,2fr)_minmax(220px,1fr)]"
+            : "bg-white"
         }
       >
         <SaleMediaImage media={featured} featured />
         {thumbnails.length > 0 && (
-          <div className="grid grid-cols-2 gap-px">
+          <div
+            className={`grid gap-1 md:h-full [&>a]:md:aspect-auto [&>a]:md:h-full ${thumbnailGrid}`}
+          >
             {thumbnails.map((item) => (
               <SaleMediaImage key={item.url} media={item} />
             ))}
@@ -282,8 +286,8 @@ function SaleMediaImage({ media, featured = false }: { media: SaleMedia; feature
       rel="noopener noreferrer"
       className={
         featured
-          ? "group relative block aspect-[16/9] overflow-hidden bg-surface"
-          : "group relative block aspect-[4/3] overflow-hidden bg-surface"
+          ? "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted md:aspect-[16/10]"
+          : "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted"
       }
     >
       <img
@@ -319,13 +323,11 @@ function saleImages(media: AuctionSale["media"] | undefined): SaleMedia[] {
 function DecisionRail({ sale }: { sale: AuctionSale }) {
   return (
     <div className="space-y-6">
-      <div className="liquid-panel relative rounded-lg p-7">
-        <span className="absolute -top-px left-7 h-px w-12 bg-gold" />
-
-        <div className="text-[10px] uppercase tracking-[0.3em] text-gold-soft">
+      <div className="relative rounded-lg border border-border bg-white p-6 shadow-xl shadow-slate-900/10">
+        <div className="text-[10px] uppercase tracking-[0.16em] text-gold-soft">
           Assistant de mise
         </div>
-        <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.04] p-4">
+        <div className="mt-4 rounded-lg bg-muted/45 p-4">
           <div className="text-sm font-semibold text-foreground">
             Objectif : rester sous le marché local.
           </div>
@@ -335,29 +337,29 @@ function DecisionRail({ sale }: { sale: AuctionSale }) {
           </p>
           <a
             href="#assistant"
-            className="mt-3 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.18em] text-gold-soft transition-colors hover:text-gold"
+            className="mt-3 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.12em] text-gold-soft transition-colors hover:text-gold"
           >
             Voir la mise plafond <ChevronRight className="h-3 w-3" />
           </a>
         </div>
 
         {/* Mise à prix */}
-        <div className="mt-7 border-t border-white/10 pt-5">
-          <div className="text-[10px] uppercase tracking-[0.3em] text-gold-soft">Mise à prix</div>
-          <div className="mt-2 font-display text-4xl leading-none tabular-nums text-foreground">
+        <div className="mt-6 border-t border-border pt-5">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-gold-soft">Mise à prix</div>
+          <div className="mt-2 text-4xl font-semibold leading-none tabular-nums text-foreground">
             {formatPrice(sale.starting_price_eur)}
           </div>
           <a
             href="#assistant"
-            className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.18em] text-gold-soft transition-colors hover:text-gold"
+            className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.12em] text-gold-soft transition-colors hover:text-gold"
           >
             Calculer le plafond <ChevronRight className="h-3 w-3" />
           </a>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-4 border-t border-white/10 pt-5">
+        <div className="mt-6 grid grid-cols-2 gap-4 border-t border-border pt-5">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+            <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
               Vente
             </div>
             <div className="mt-1 text-sm font-medium text-foreground">
@@ -366,7 +368,7 @@ function DecisionRail({ sale }: { sale: AuctionSale }) {
           </div>
           {sale.department && (
             <div>
-              <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+              <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                 Département
               </div>
               <div className="mt-1 text-sm font-medium text-foreground">{sale.department}</div>
@@ -377,14 +379,14 @@ function DecisionRail({ sale }: { sale: AuctionSale }) {
           <SaleCountdown date={sale.sale_date} variant="block" />
         </div>
 
-        <div className="mt-5 grid gap-3 border-t border-white/10 pt-5">
+        <div className="mt-5 grid gap-3 border-t border-border pt-5">
           <FavoriteButton saleId={sale.id} className="w-full justify-center" />
           {sale.source_url && (
             <a
               href={sale.source_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="liquid-button group flex w-full items-center justify-between rounded-lg px-4 py-3 text-[11px] font-medium uppercase tracking-[0.22em] text-background transition-colors hover:brightness-105"
+              className="group flex w-full items-center justify-between rounded-lg bg-foreground px-4 py-3 text-[11px] font-medium uppercase tracking-[0.12em] text-background transition-colors hover:bg-foreground/90"
             >
               <span>Source{sale.source_name ? ` · ${sale.source_name}` : ""}</span>
               <ExternalLink className="h-3.5 w-3.5" />
@@ -442,11 +444,11 @@ function normalizeLocation(value: string | null | undefined): string {
 function HeroMeta({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div>
-      <dt className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{label}</dt>
+      <dt className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{label}</dt>
       <dd
         className={
           accent
-            ? "mt-2 font-display text-2xl tabular-nums text-gold-soft"
+            ? "mt-1.5 text-2xl font-semibold tabular-nums text-foreground"
             : "mt-2 text-base font-medium tabular-nums text-foreground"
         }
       >
@@ -470,10 +472,12 @@ function Section({
   return (
     <section id={id} className="scroll-mt-24">
       <header className="mb-5 flex items-baseline gap-4">
-        <span className="text-[10px] uppercase tracking-[0.35em] text-gold">{eyebrow}</span>
-        <span className="liquid-hairline h-px flex-1" />
+        <span className="text-[10px] uppercase tracking-[0.16em] text-gold-soft">{eyebrow}</span>
+        <span className="h-px flex-1 bg-border" />
       </header>
-      <h2 className="font-display text-2xl text-foreground sm:text-[1.75rem]">{title}</h2>
+      <h2 className="font-sans text-2xl font-semibold text-foreground sm:text-[1.75rem]">
+        {title}
+      </h2>
       <div className="mt-6">{children}</div>
     </section>
   );
@@ -494,18 +498,18 @@ function FoldableSection({
 }) {
   return (
     <section id={id} className="scroll-mt-24">
-      <details className="group liquid-panel rounded-lg p-5">
+      <details className="group rounded-lg border border-border bg-white p-5 shadow-sm">
         <summary className="flex cursor-pointer list-none items-start justify-between gap-4">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.35em] text-gold">{eyebrow}</div>
-            <h2 className="mt-3 font-display text-2xl text-foreground sm:text-[1.75rem]">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-gold-soft">{eyebrow}</div>
+            <h2 className="mt-3 font-sans text-2xl font-semibold text-foreground sm:text-[1.75rem]">
               {title}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">{summary}</p>
           </div>
           <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
         </summary>
-        <div className="mt-5 border-t border-white/10 pt-5">{children}</div>
+        <div className="mt-5 border-t border-border pt-5">{children}</div>
       </details>
     </section>
   );
@@ -522,20 +526,20 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
 
 export function SaleDetailSkeleton() {
   return (
-    <main className="liquid-page min-h-screen px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-5xl">
-        <Skeleton className="h-4 w-20 bg-white/10" />
-        <Skeleton className="mt-4 h-8 w-2/3 bg-white/10" />
-        <Skeleton className="mt-2 h-4 w-1/2 bg-white/10" />
+    <main className="min-h-screen bg-white px-4 py-8 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <Skeleton className="h-4 w-20 bg-muted" />
+        <Skeleton className="mt-4 h-8 w-2/3 bg-muted" />
+        <Skeleton className="mt-2 h-4 w-1/2 bg-muted" />
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="space-y-6 lg:col-span-2">
-            <Skeleton className="h-48 w-full rounded-lg bg-white/10" />
-            <Skeleton className="h-40 w-full rounded-lg bg-white/10" />
-            <Skeleton className="h-32 w-full rounded-lg bg-white/10" />
+            <Skeleton className="h-96 w-full rounded-lg bg-muted" />
+            <Skeleton className="h-40 w-full rounded-lg bg-muted" />
+            <Skeleton className="h-32 w-full rounded-lg bg-muted" />
           </div>
           <aside className="space-y-4">
-            <Skeleton className="h-24 w-full rounded-lg bg-white/10" />
-            <Skeleton className="h-32 w-full rounded-lg bg-white/10" />
+            <Skeleton className="h-48 w-full rounded-lg bg-muted" />
+            <Skeleton className="h-32 w-full rounded-lg bg-muted" />
           </aside>
         </div>
       </div>
@@ -545,17 +549,19 @@ export function SaleDetailSkeleton() {
 
 export function SaleNotFoundComponent() {
   return (
-    <main className="liquid-page flex min-h-screen items-center justify-center px-4 py-16 text-center">
-      <div className="glass-shell max-w-2xl rounded-lg p-8">
+    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center">
+      <div className="max-w-2xl rounded-lg border border-border bg-white p-8 shadow-xl shadow-slate-900/10">
         <BrandMark className="mx-auto h-14 w-14" />
-        <h1 className="mt-5 font-display text-2xl text-foreground">Annonce introuvable</h1>
+        <h1 className="mt-5 font-sans text-2xl font-semibold text-foreground">
+          Annonce introuvable
+        </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Cette vente n'existe plus ou a été retirée. Elle peut avoir été adjugée ou supprimée par
           la source.
         </p>
         <Link
           to="/sales"
-          className="liquid-button mt-6 inline-flex items-center rounded-md px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-105"
+          className="mt-6 inline-flex items-center rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90"
         >
           ← Retour aux annonces
         </Link>
@@ -567,9 +573,9 @@ export function SaleNotFoundComponent() {
 export function SaleErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
   return (
-    <main className="liquid-page flex min-h-screen items-center justify-center px-4 py-16 text-center">
-      <div className="glass-shell max-w-2xl rounded-lg p-8">
-        <h1 className="font-display text-2xl text-foreground">
+    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center">
+      <div className="max-w-2xl rounded-lg border border-border bg-white p-8 shadow-xl shadow-slate-900/10">
+        <h1 className="font-sans text-2xl font-semibold text-foreground">
           Impossible d'afficher cette annonce
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
@@ -579,13 +585,13 @@ export function SaleErrorComponent({ error, reset }: { error: Error; reset: () =
               router.invalidate();
               reset();
             }}
-            className="liquid-button rounded-md px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-105"
+            className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90"
           >
             Réessayer
           </button>
           <Link
             to="/sales"
-            className="liquid-panel-soft rounded-md px-4 py-2 text-sm font-medium hover:border-gold"
+            className="rounded-md border border-border bg-white px-4 py-2 text-sm font-medium hover:border-gold"
           >
             ← Retour aux annonces
           </Link>

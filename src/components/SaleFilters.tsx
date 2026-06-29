@@ -169,10 +169,13 @@ export function SaleFilters() {
   }
 
   return (
-    <div className="liquid-panel rounded-lg p-4 sm:p-5" suppressHydrationWarning>
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <div
+      className="rounded-lg border border-border bg-white p-3 shadow-sm sm:p-4"
+      suppressHydrationWarning
+    >
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-gold">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
             <SlidersHorizontal className="h-4 w-4" />
             Filtres
           </div>
@@ -181,19 +184,19 @@ export function SaleFilters() {
           </p>
         </div>
         {hasMainFilter || hasAdvancedFilter ? (
-          <span className="liquid-panel-soft inline-flex w-fit rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
+          <span className="inline-flex w-fit rounded-full border border-border bg-muted px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
             Filtres actifs
           </span>
         ) : null}
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <FilterField label="Département">
           <Input
             aria-label="Département"
             placeholder="Ex: 33"
             value={local.department}
             onChange={(e) => setLocal({ ...local, department: e.target.value })}
-            className="bg-background/35"
+            className="h-11 bg-white"
           />
         </FilterField>
         <FilterField label="Ville">
@@ -202,13 +205,13 @@ export function SaleFilters() {
             placeholder="Bordeaux"
             value={local.city}
             onChange={(e) => setLocal({ ...local, city: e.target.value })}
-            className="bg-background/35"
+            className="h-11 bg-white"
           />
         </FilterField>
         <FilterField label="Type">
           <select
             aria-label="Type de bien"
-            className="form-input h-9 w-full bg-background/35 text-sm"
+            className="form-input h-11 w-full bg-white text-sm"
             value={local.type || "all"}
             onChange={(e) =>
               setLocal({ ...local, type: e.target.value === "all" ? "" : e.target.value })
@@ -225,7 +228,7 @@ export function SaleFilters() {
         <FilterField label="Occupation">
           <select
             aria-label="Occupation"
-            className="form-input h-9 w-full bg-background/35 text-sm"
+            className="form-input h-11 w-full bg-white text-sm"
             value={local.occupancy || "all"}
             onChange={(e) =>
               setLocal({
@@ -247,7 +250,7 @@ export function SaleFilters() {
             placeholder="250000"
             value={local.max_price}
             onChange={(e) => setLocal({ ...local, max_price: e.target.value })}
-            className="bg-background/35"
+            className="h-11 bg-white"
           />
         </FilterField>
         <FilterField label="Surface min">
@@ -257,13 +260,13 @@ export function SaleFilters() {
             placeholder="60"
             value={local.min_surface}
             onChange={(e) => setLocal({ ...local, min_surface: e.target.value })}
-            className="bg-background/35"
+            className="h-11 bg-white"
           />
         </FilterField>
         <FilterField label="Tri">
           <select
             aria-label="Tri des annonces"
-            className="form-input h-9 w-full bg-background/35 text-sm"
+            className="form-input h-11 w-full bg-white text-sm"
             value={local.sort}
             onChange={(e) => setLocal({ ...local, sort: e.target.value })}
           >
@@ -281,7 +284,7 @@ export function SaleFilters() {
           variant="outline"
           size="sm"
           onClick={reset}
-          className="liquid-panel-soft justify-start border-white/10 sm:justify-center"
+          className="justify-start border-border bg-white text-foreground hover:border-gold sm:justify-center"
         >
           <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser
         </Button>
@@ -289,7 +292,7 @@ export function SaleFilters() {
           variant="secondary"
           size="sm"
           onClick={openAlertDialog}
-          className="justify-start bg-gold/15 text-gold-soft hover:bg-gold/20 sm:justify-center"
+          className="justify-start bg-foreground text-background hover:bg-foreground/90 sm:justify-center"
         >
           <Bell className="h-3.5 w-3.5" /> Créer une alerte avec ces filtres
         </Button>
@@ -305,7 +308,7 @@ export function SaleFilters() {
       </div>
 
       {advancedOpen && (
-        <div className="liquid-panel-soft mt-3 grid grid-cols-1 gap-3 rounded-lg p-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-3 grid grid-cols-1 gap-2 rounded-lg border border-border bg-muted/40 p-3 sm:grid-cols-2 lg:grid-cols-4">
           <FilterField label="Prix au m² max">
             <Input
               aria-label="Prix au mètre carré maximum"
@@ -313,7 +316,7 @@ export function SaleFilters() {
               placeholder="3500"
               value={local.max_price_per_m2}
               onChange={(e) => setLocal({ ...local, max_price_per_m2: e.target.value })}
-              className="bg-background/35"
+              className="h-11 bg-white"
             />
           </FilterField>
           <FilterField label="Rendement min">
@@ -323,7 +326,7 @@ export function SaleFilters() {
               placeholder="5"
               value={local.min_yield}
               onChange={(e) => setLocal({ ...local, min_yield: e.target.value })}
-              className="bg-background/35"
+              className="h-11 bg-white"
             />
           </FilterField>
           <FilterField label="Autour de">
@@ -332,7 +335,7 @@ export function SaleFilters() {
               placeholder="Adresse, ville"
               value={local.around_address}
               onChange={(e) => setLocal({ ...local, around_address: e.target.value })}
-              className="bg-background/35"
+              className="h-11 bg-white"
             />
           </FilterField>
           <FilterField label="Rayon">
@@ -342,7 +345,7 @@ export function SaleFilters() {
               placeholder="10"
               value={local.around_radius}
               onChange={(e) => setLocal({ ...local, around_radius: e.target.value })}
-              className="bg-background/35"
+              className="h-11 bg-white"
             />
           </FilterField>
           <p className="col-span-full text-[11px] text-muted-foreground">
@@ -404,8 +407,8 @@ export function SaleFilters() {
 
 function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+    <div className="space-y-1">
+      <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         {label}
       </span>
       {children}
