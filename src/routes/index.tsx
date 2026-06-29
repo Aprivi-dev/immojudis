@@ -8,6 +8,7 @@ import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import UserRound from "lucide-react/dist/esm/icons/user-round.js";
 import { useEffect, useState, type ComponentType } from "react";
+import { BrandMark } from "@/components/BrandLogo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -454,8 +455,8 @@ function HomeFooter() {
     <footer className="ij-footer" aria-label="Pied de page">
       <div className="ij-footer-inner">
         <Link to="/" className="ij-footer-brand" aria-label="ImmoJudis — accueil">
-          <span className="ij-footer-mark">
-            <Landmark aria-hidden className="h-5 w-5" />
+          <span className="ij-footer-mark" aria-hidden="true">
+            <BrandMark variant="transparent" className="h-7 w-7" />
           </span>
           <span>
             <strong>
