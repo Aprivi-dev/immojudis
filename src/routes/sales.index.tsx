@@ -216,7 +216,7 @@ function SalesPage() {
           </div>
         </header>
 
-        <section className="sticky top-16 z-30 -mx-4 mb-6 border-y border-border bg-[#f7f7f7]/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <section className="-mx-4 mb-6 border-y border-border bg-[#f7f7f7]/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:sticky lg:top-16 lg:z-30 lg:-mx-8 lg:px-8">
           <SaleFiltersForm />
         </section>
 
