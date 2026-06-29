@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SaleDetailView } from "@/components/SaleDetailView";
 import { EXAMPLE_MARKET_ESTIMATE, EXAMPLE_SALE } from "@/lib/example-sale";
+import { saleSeoTitle } from "@/lib/seo";
 
 export const Route = createFileRoute("/annonce-exemple")({
   head: () => ({
     meta: [
-      { title: "Annonce d'exemple Immojudis - page annonce publique" },
+      { title: saleSeoTitle(EXAMPLE_SALE) },
+      { property: "og:title", content: saleSeoTitle(EXAMPLE_SALE) },
       {
         name: "description",
         content:
