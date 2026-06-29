@@ -2,10 +2,10 @@ import type * as React from "react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import LogOut from "lucide-react/dist/esm/icons/log-out.js";
 import Menu from "lucide-react/dist/esm/icons/menu.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import { BrandMark } from "@/components/BrandLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { isAdminAccount, isProfessionalAccount } from "@/lib/account";
@@ -243,8 +243,8 @@ export function Navbar() {
 function HeaderLogo({ onClick }: { onClick?: () => void }) {
   return (
     <Link to="/" onClick={onClick} className="ij-home-logo" aria-label="ImmoJudis — accueil">
-      <span className="ij-home-logo-mark">
-        <Landmark aria-hidden className="h-6 w-6" />
+      <span className="ij-home-logo-mark" aria-hidden="true">
+        <BrandMark variant="transparent" className="h-8 w-8" />
       </span>
       <span>
         <strong>
