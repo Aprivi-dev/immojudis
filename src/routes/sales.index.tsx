@@ -165,26 +165,26 @@ function SalesPage() {
     !isPreview && Boolean(search.max_price_per_m2 || search.min_yield || center);
 
   return (
-    <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-10">
-      <div className="mx-auto max-w-7xl">
-        <header className="glass-shell glass-sheen mb-6 overflow-hidden rounded-lg p-6 sm:p-8">
-          <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+    <main className="min-h-screen bg-[#f7f7f7] px-4 py-5 text-foreground sm:px-6 lg:px-8 lg:py-6">
+      <div className="mx-auto max-w-[1520px]">
+        <header className="mb-4 border-b border-border pb-5">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-soft">
                 <FileSearch className="h-4 w-4" />
                 Dossiers analysés
               </div>
-              <h1 className="mt-4 font-display text-4xl leading-tight text-foreground sm:text-5xl">
+              <h1 className="mt-3 font-sans text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
                 Annonces analysées
               </h1>
-              <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+              <p className="mt-3 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
                 Parcourez les ventes judiciaires avec les critères qui aident à fixer une mise
                 plafond : prix, surface, occupation, localisation et points à vérifier. Les
                 résultats continuent de se charger au scroll.
               </p>
             </div>
 
-            <div className="grid min-w-[min(100%,28rem)] gap-3 sm:grid-cols-3">
+            <div className="grid w-full gap-2 sm:grid-cols-3 lg:max-w-xl">
               <HeroMetric
                 label="Résultats affichés"
                 value={isInitialLoading ? "—" : filteredCount.toLocaleString("fr-FR")}
@@ -200,7 +200,7 @@ function SalesPage() {
             </div>
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
             {geocoding ? (
               <StatusPill icon={LoaderCircle} label="Géocodage en cours" spinning />
             ) : null}
@@ -216,29 +216,31 @@ function SalesPage() {
           </div>
         </header>
 
-        <section className="mb-6">
+        <section className="sticky top-16 z-30 -mx-4 mb-6 border-y border-border bg-[#f7f7f7]/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
           <SaleFiltersForm />
         </section>
 
         {error && (
-          <div className="liquid-panel-soft mb-4 rounded-lg border-destructive/25 p-4 text-sm text-destructive">
+          <div className="mb-4 rounded-lg border border-destructive/25 bg-white p-4 text-sm text-destructive shadow-sm">
             {error instanceof Error ? error.message : "Erreur de chargement"}
           </div>
         )}
 
         {!isInitialLoading && filtered.length === 0 && !error && (
-          <div className="liquid-panel rounded-lg p-12 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/25 bg-gold/10 text-gold">
+          <div className="rounded-lg border border-border bg-white p-12 text-center shadow-sm">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/25 bg-gold/10 text-gold-soft">
               <FileSearch className="h-5 w-5" />
             </div>
-            <h2 className="mt-5 font-display text-2xl text-foreground">Aucun dossier trouvé</h2>
+            <h2 className="mt-5 font-sans text-2xl font-semibold text-foreground">
+              Aucun dossier trouvé
+            </h2>
             <p className="mt-2 text-sm text-muted-foreground">
               Élargissez les critères ou retirez un filtre local pour relancer la lecture.
             </p>
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {isInitialLoading
             ? Array.from({ length: 8 }).map((_, i) => <SaleCardSkeleton key={i} />)
             : filtered.map((s) => <SaleCard key={s.id} sale={s} locked={isPreview} />)}
@@ -258,7 +260,7 @@ function SalesPage() {
               variant="outline"
               onClick={() => fetchNextPage()}
               disabled={isFetchingNextPage}
-              className="liquid-panel-soft border-white/10 text-gold hover:border-gold hover:text-gold-soft"
+              className="border-border bg-white text-foreground hover:border-gold hover:text-gold-soft"
             >
               {isFetchingNextPage ? "Chargement..." : "Charger plus d'annonces"}
             </Button>
@@ -277,9 +279,9 @@ function SalesPage() {
 
 function HeroMetric({ value, label }: { value: string; label: string }) {
   return (
-    <div className="liquid-panel-soft rounded-lg p-4">
-      <div className="font-display text-2xl tabular-nums text-gold-soft">{value}</div>
-      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+    <div className="rounded-lg border border-border bg-white p-3 shadow-sm">
+      <div className="text-2xl font-semibold tabular-nums text-foreground">{value}</div>
+      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
         {label}
       </div>
     </div>
@@ -296,8 +298,8 @@ function StatusPill({
   spinning?: boolean;
 }) {
   return (
-    <span className="liquid-panel-soft inline-flex items-center gap-2 rounded-full px-3 py-1.5">
-      <Icon className={`h-3.5 w-3.5 text-gold ${spinning ? "animate-spin" : ""}`} />
+    <span className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1.5 shadow-sm">
+      <Icon className={`h-3.5 w-3.5 text-gold-soft ${spinning ? "animate-spin" : ""}`} />
       {label}
     </span>
   );
@@ -305,22 +307,22 @@ function StatusPill({
 
 function SaleCardSkeleton() {
   return (
-    <div className="liquid-panel flex min-h-[26rem] flex-col overflow-hidden rounded-lg">
-      <Skeleton className="h-40 w-full rounded-none bg-white/10" />
-      <div className="flex flex-1 flex-col gap-3 p-4">
+    <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-white shadow-sm">
+      <Skeleton className="aspect-[4/3] w-full rounded-none bg-muted" />
+      <div className="flex flex-1 flex-col gap-3 p-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="grid flex-1 gap-2">
-            <Skeleton className="h-5 w-3/4 bg-white/10" />
-            <Skeleton className="h-3 w-1/2 bg-white/10" />
+            <Skeleton className="h-5 w-3/4 bg-muted" />
+            <Skeleton className="h-3 w-1/2 bg-muted" />
           </div>
-          <Skeleton className="h-7 w-16 rounded-full bg-white/10" />
+          <Skeleton className="h-7 w-16 rounded-full bg-muted" />
         </div>
-        <Skeleton className="h-8 w-1/2 bg-white/10" />
+        <Skeleton className="h-8 w-1/2 bg-muted" />
         <div className="grid grid-cols-2 gap-2">
-          <Skeleton className="h-16 rounded-md bg-white/10" />
-          <Skeleton className="h-16 rounded-md bg-white/10" />
+          <Skeleton className="h-12 rounded-md bg-muted" />
+          <Skeleton className="h-12 rounded-md bg-muted" />
         </div>
-        <Skeleton className="mt-auto h-10 w-full rounded-md bg-white/10" />
+        <Skeleton className="mt-auto h-4 w-24 bg-muted" />
       </div>
     </div>
   );

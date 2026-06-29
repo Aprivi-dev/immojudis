@@ -31,68 +31,87 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
         : "chip-neutral";
   const propertyLabel = locked ? "Annonce réservée" : propertyTypeLabel(sale.property_type);
   const title = locked ? "Détail réservé aux membres" : (sale.title ?? propertyLabel);
+  const imageUrl = locked ? "/media/landing/auction-bordeaux.jpg" : firstImage(sale.media);
+
   return (
-    <article
-      className={`liquid-panel group flex min-h-[26rem] flex-col overflow-hidden rounded-lg transition duration-200 hover:-translate-y-0.5 hover:border-gold/35 ${
+    <Link
+      to="/sales/$id"
+      params={{ id: sale.id }}
+      className={`group block h-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
         viewed ? "opacity-75" : ""
       }`}
     >
-      <div className="relative h-40 w-full overflow-hidden bg-[var(--surface)]">
-        {locked ? (
-          <img
-            src="/media/landing/auction-bordeaux.jpg"
-            alt=""
-            width={896}
-            height={512}
-            loading="lazy"
-            className="h-full w-full scale-110 object-cover opacity-60 blur-md"
-          />
-        ) : (
-          <MapThumbnail lat={sale.latitude} lng={sale.longitude} className="h-full w-full" />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background/88 via-background/12 to-transparent" />
-        <div className="absolute left-3 top-3 flex flex-wrap gap-2">
-          {locked ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-gold/35 bg-background/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft backdrop-blur">
-              <LockKeyhole className="h-3 w-3" />
-              Aperçu limité
-            </span>
-          ) : fresh ? (
-            <span className="inline-flex items-center rounded-full border border-gold/35 bg-gold/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft backdrop-blur">
-              Nouveau
-            </span>
-          ) : null}
-          {locked ? null : <SaleCountdown date={sale.sale_date} />}
-        </div>
-        {viewed && (
-          <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-white/10 bg-background/80 px-2.5 py-1 text-[10px] font-medium text-muted-foreground backdrop-blur">
-            <Eye className="h-3 w-3" /> Vu
-          </span>
-        )}
-      </div>
-
-      <div className="flex flex-1 flex-col gap-4 p-4">
-        <div className="min-w-0">
-          <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold">
-            <span className="h-px w-5 bg-gold" />
-            {propertyLabel}
+      <article className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-white shadow-sm transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-xl">
+        <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={locked ? "" : title}
+              width={896}
+              height={672}
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.03] ${
+                locked ? "scale-110 opacity-60 blur-md" : ""
+              }`}
+            />
+          ) : (
+            <MapThumbnail
+              lat={sale.latitude}
+              lng={sale.longitude}
+              zoom={14}
+              className="h-full w-full"
+              alt={title}
+            />
+          )}
+          <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/45 to-transparent" />
+          <div className="absolute left-3 top-3 flex flex-wrap gap-2">
+            {locked ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-white/40 bg-white/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground backdrop-blur">
+                <LockKeyhole className="h-3 w-3" />
+                Aperçu limité
+              </span>
+            ) : fresh ? (
+              <span className="inline-flex items-center rounded-full border border-white/40 bg-white/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground backdrop-blur">
+                Nouveau
+              </span>
+            ) : null}
+            {locked ? null : <SaleCountdown date={sale.sale_date} />}
           </div>
-          <h3 className="line-clamp-2 min-h-[2.75rem] text-base font-semibold leading-snug text-foreground">
-            {title}
-          </h3>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <MapPin className="h-3.5 w-3.5 text-gold" />
-            <span className="truncate">
-              {locked
-                ? "Localisation réservée"
-                : `${sale.city ?? "—"}${sale.department ? ` (${sale.department})` : ""}`}
+          {viewed && (
+            <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-white/40 bg-white/90 px-2.5 py-1 text-[10px] font-medium text-muted-foreground backdrop-blur">
+              <Eye className="h-3 w-3" /> Vu
             </span>
-          </div>
+          )}
         </div>
 
-        <div className="flex items-end justify-between gap-4 border-t border-white/10 pt-4">
+        <div className="flex flex-1 flex-col gap-3 p-3.5">
+          <div className="min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                {propertyLabel}
+              </span>
+              <span className={`chip ${occChip}`}>
+                <span aria-hidden className="chip-dot" />
+                {occLabel}
+              </span>
+            </div>
+            <h3 className="mt-2 line-clamp-2 min-h-[2.75rem] font-sans text-base font-semibold leading-snug text-foreground">
+              {title}
+            </h3>
+            <div className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
+              <MapPin className="h-3.5 w-3.5 text-gold-soft" />
+              <span className="truncate">
+                {locked
+                  ? "Localisation réservée"
+                  : `${sale.city ?? "—"}${sale.department ? ` (${sale.department})` : ""}`}
+              </span>
+            </div>
+          </div>
+
           <div>
-            <div className="font-display text-3xl tabular-nums text-foreground">
+            <div className="text-2xl font-semibold tabular-nums text-foreground">
               {formatPrice(sale.starting_price_eur)}
             </div>
             {ppm != null && (
@@ -105,7 +124,8 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
               <span>{locked ? "Date réservée" : formatDate(sale.sale_date)}</span>
             </div>
           </div>
-          <div className="grid min-w-24 gap-2 text-right text-xs text-muted-foreground">
+
+          <div className="grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs text-muted-foreground">
             <CardMetric
               label={locked ? "Surface" : displaySurface.metricLabel}
               value={locked ? "Réservée" : displaySurface.value ? displaySurface.label : "—"}
@@ -115,51 +135,48 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
               value={locked ? "Réservé" : sale.rooms_count != null ? String(sale.rooms_count) : "—"}
             />
           </div>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`chip ${occChip}`}>
-            <span aria-hidden className="chip-dot" />
-            {occLabel}
+          <div className="flex flex-wrap items-center gap-2">
+            {locked ? (
+              <span className="chip chip-watch">
+                <span aria-hidden className="chip-dot" />
+                Analyse réservée
+              </span>
+            ) : riskCount > 0 ? (
+              <span className={`chip ${riskCount >= 3 ? "chip-risk" : "chip-watch"}`}>
+                <span aria-hidden className="chip-dot" />
+                {riskCount} point{riskCount > 1 ? "s" : ""} à vérifier
+              </span>
+            ) : (
+              <span className="chip chip-verified">
+                <span aria-hidden className="chip-dot" />
+                Aucun point bloquant détecté
+              </span>
+            )}
+          </div>
+
+          <span className="mt-auto inline-flex items-center gap-1 text-xs font-semibold text-foreground transition-colors group-hover:text-gold-soft">
+            {locked ? "Se connecter pour voir" : "Voir le détail"}
+            <ArrowUpRight className="h-3.5 w-3.5" />
           </span>
-          {locked ? (
-            <span className="chip chip-watch">
-              <span aria-hidden className="chip-dot" />
-              Analyse réservée
-            </span>
-          ) : riskCount > 0 ? (
-            <span className={`chip ${riskCount >= 3 ? "chip-risk" : "chip-watch"}`}>
-              <span aria-hidden className="chip-dot" />
-              {riskCount} point{riskCount > 1 ? "s" : ""} à vérifier
-            </span>
-          ) : (
-            <span className="chip chip-verified">
-              <span aria-hidden className="chip-dot" />
-              Aucun point bloquant détecté
-            </span>
-          )}
         </div>
-
-        <Link
-          to="/sales/$id"
-          params={{ id: sale.id }}
-          className="liquid-button mt-auto inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-background transition hover:brightness-105"
-        >
-          {locked ? "Se connecter pour voir" : "Voir le détail"}{" "}
-          <ArrowUpRight className="h-3.5 w-3.5" />
-        </Link>
-      </div>
-    </article>
+      </article>
+    </Link>
   );
 }
 
 function CardMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         {label}
       </div>
-      <div className="mt-0.5 font-medium tabular-nums text-foreground">{value}</div>
+      <div className="mt-0.5 font-semibold tabular-nums text-foreground">{value}</div>
     </div>
   );
+}
+
+function firstImage(media: AuctionSale["media"]): string | null {
+  if (!Array.isArray(media)) return null;
+  return media.find((item) => /^https?:\/\//i.test(item?.url ?? ""))?.url ?? null;
 }

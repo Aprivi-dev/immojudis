@@ -57,7 +57,7 @@ export function PropertyOverview({ sale }: { sale: AuctionSale }) {
   const sourceFacts = sourceFactRows(sale);
 
   return (
-    <div className="liquid-panel rounded-lg p-5 sm:p-6">
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm sm:p-6">
       <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
         Immojudis a lu le dossier et en a extrait les informations ci-dessous. Elles servent de base
         au calcul de la mise plafond.
@@ -145,7 +145,7 @@ export function PropertyOverview({ sale }: { sale: AuctionSale }) {
         <Block icon={<FileLikeIcon />} title="Détails source">
           <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
             {sourceFacts.map((fact) => (
-              <div key={fact.label} className="border-b border-white/10 pb-2">
+              <div key={fact.label} className="border-b border-border pb-2">
                 <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                   {fact.label}
                 </dt>
@@ -178,7 +178,7 @@ export function PropertyOverview({ sale }: { sale: AuctionSale }) {
       )}
 
       {/* ── Fiabilité & sources ──────────────────────────────────────────── */}
-      <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/10 pt-4 text-xs text-muted-foreground">
+      <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border pt-4 text-xs text-muted-foreground">
         {primarySurface.estimated && (
           <span>
             Surface estimée : <strong className="text-foreground">{primarySurface.label}</strong> ·
@@ -205,7 +205,7 @@ export function PropertyOverview({ sale }: { sale: AuctionSale }) {
 
 function Fact({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-white/8 bg-white/[0.03] p-3">
+    <div className="rounded-lg border border-border bg-muted/35 p-3">
       <dt className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         <span className="text-gold">{icon}</span>
         {label}
@@ -218,7 +218,7 @@ function Fact({ icon, label, children }: { icon: ReactNode; label: string; child
 function Block({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
     <div className="mt-6">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
         {icon}
         {title}
       </div>
