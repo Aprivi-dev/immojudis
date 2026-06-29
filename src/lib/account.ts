@@ -26,7 +26,7 @@ export const ACCOUNT_TYPE_OPTIONS: Array<{
   {
     value: "b2c",
     label: "Investisseur particulier",
-    description: "Consulter les fiches, cartes, favoris et alertes avant d'enchérir.",
+    description: "Consulter les fiches, favoris et alertes avant d'enchérir.",
   },
   {
     value: "b2b",

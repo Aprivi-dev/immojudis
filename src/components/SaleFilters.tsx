@@ -20,8 +20,8 @@ import { createAlert } from "@/lib/queries";
 
 type RawSearch = Record<string, string | number | undefined>;
 
-export function SaleFilters({ from = "/sales" }: { from?: "/sales" | "/map" } = {}) {
-  const navigate = useNavigate({ from });
+export function SaleFilters() {
+  const navigate = useNavigate({ from: "/sales" });
   const search = useSearch({ strict: false }) as RawSearch;
   const { user } = useAuth();
 

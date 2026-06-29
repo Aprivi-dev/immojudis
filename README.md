@@ -57,7 +57,7 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 | ------------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------- |
 | `VITE_SUPABASE_URL`             |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                                      |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` |   ✅   | Clé `anon` / publishable (publique, côté client)                                                                        |
-| `VITE_GOOGLE_MAPS_API_KEY`      |   ✅   | Clé navigateur Google Maps restreinte par domaine. Active vignettes, carte interactive, vue aérienne 3D et Street View. |
+| `VITE_GOOGLE_MAPS_API_KEY`      |   ✅   | Clé navigateur Google Maps restreinte par domaine. Active vignettes, vue aérienne 3D et Street View. |
 | `GITHUB_SCROLL_TOKEN`           |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                                |
 
 > Les variables `VITE_*` sont **inlinées au moment du build**. En production
@@ -74,7 +74,7 @@ Cloud :
 
 | API Google Cloud        | Alimente                                      |
 | ----------------------- | --------------------------------------------- |
-| **Maps Static API**     | Vignettes des cartes (liste annonces, cartes) |
+| **Maps Static API**     | Vignettes des annonces                        |
 | **Maps JavaScript API** | Carte interactive + Street View (page détail) |
 | **Map Tiles API**       | Vue aérienne photoréaliste 3D (page détail)   |
 
@@ -97,8 +97,8 @@ et le domaine de production.
 ```
 immojudis/
 ├─ src/                       # Application web (TanStack Start)
-│  ├─ routes/                 # Routes file-based (/, /sales, /sales/$id, /map, /favorites, /alerts, /publish, /admin…)
-│  ├─ components/             # Composants UI + cartes (SaleMap, SaleLocationHero, MapThumbnail…)
+│  ├─ routes/                 # Routes file-based (/, /sales, /sales/$id, /favorites, /alerts, /publish, /admin…)
+│  ├─ components/             # Composants UI + localisation (SaleLocationHero, MapThumbnail…)
 │  ├─ lib/                    # Métier : queries Supabase, format, géo, surface, google-maps, tiles
 │  ├─ hooks/                  # Hooks React
 │  ├─ integrations/           # Client Supabase et intégrations

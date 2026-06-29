@@ -12,7 +12,6 @@ import { isAdminAccount, isProfessionalAccount } from "@/lib/account";
 
 const AUTH_NAV_ITEMS = [
   { to: "/sales", label: "Annonces" },
-  { to: "/map", label: "Carte" },
   { to: "/favorites", label: "Favoris" },
   { to: "/alerts", label: "Alertes" },
 ] as const;
@@ -22,6 +21,7 @@ const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin" } as const;
 const HOME_NAV_ITEMS = [
   { to: "/sales", label: "Ventes judiciaires", chevron: true },
   { to: "/sales", label: "Rechercher un bien" },
+  { to: "/annonce-exemple", label: "Annonce exemple" },
   { to: "/accompagnement", label: "Accompagnement" },
   { to: "/ressources", label: "Ressources" },
   { to: "/a-propos", label: "À propos" },

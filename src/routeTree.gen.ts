@@ -14,7 +14,6 @@ import { Route as SalesRouteImport } from './routes/sales'
 import { Route as RessourcesRouteImport } from './routes/ressources'
 import { Route as PublishRouteImport } from './routes/publish'
 import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as MapRouteImport } from './routes/map'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LegalRouteImport } from './routes/legal'
 import { Route as FavoritesRouteImport } from './routes/favorites'
@@ -53,11 +52,6 @@ const PublishRoute = PublishRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MapRoute = MapRouteImport.update({
-  id: '/map',
-  path: '/map',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -137,7 +131,6 @@ export interface FileRoutesByFullPath {
   '/favorites': typeof FavoritesRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
-  '/map': typeof MapRoute
   '/privacy': typeof PrivacyRoute
   '/publish': typeof PublishRoute
   '/ressources': typeof RessourcesRoute
@@ -158,7 +151,6 @@ export interface FileRoutesByTo {
   '/favorites': typeof FavoritesRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
-  '/map': typeof MapRoute
   '/privacy': typeof PrivacyRoute
   '/publish': typeof PublishRoute
   '/ressources': typeof RessourcesRoute
@@ -179,7 +171,6 @@ export interface FileRoutesById {
   '/favorites': typeof FavoritesRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
-  '/map': typeof MapRoute
   '/privacy': typeof PrivacyRoute
   '/publish': typeof PublishRoute
   '/ressources': typeof RessourcesRoute
@@ -202,7 +193,6 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/legal'
     | '/login'
-    | '/map'
     | '/privacy'
     | '/publish'
     | '/ressources'
@@ -223,7 +213,6 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/legal'
     | '/login'
-    | '/map'
     | '/privacy'
     | '/publish'
     | '/ressources'
@@ -243,7 +232,6 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/legal'
     | '/login'
-    | '/map'
     | '/privacy'
     | '/publish'
     | '/ressources'
@@ -265,7 +253,6 @@ export interface RootRouteChildren {
   FavoritesRoute: typeof FavoritesRoute
   LegalRoute: typeof LegalRoute
   LoginRoute: typeof LoginRoute
-  MapRoute: typeof MapRoute
   PrivacyRoute: typeof PrivacyRoute
   PublishRoute: typeof PublishRoute
   RessourcesRoute: typeof RessourcesRoute
@@ -308,13 +295,6 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/map': {
-      id: '/map'
-      path: '/map'
-      fullPath: '/map'
-      preLoaderRoute: typeof MapRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -444,7 +424,6 @@ const rootRouteChildren: RootRouteChildren = {
   FavoritesRoute: FavoritesRoute,
   LegalRoute: LegalRoute,
   LoginRoute: LoginRoute,
-  MapRoute: MapRoute,
   PrivacyRoute: PrivacyRoute,
   PublishRoute: PublishRoute,
   RessourcesRoute: RessourcesRoute,
