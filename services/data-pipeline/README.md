@@ -1,13 +1,13 @@
 # Immojudis Data Pipeline
 
-Socle technique minimal pour collecter, normaliser, dédupliquer, exporter et insérer dans Supabase des annonces de ventes aux enchères immobilières judiciaires en ancienne Aquitaine.
+Socle technique minimal pour collecter, normaliser, dédupliquer, exporter et insérer dans Supabase des annonces de ventes aux enchères immobilières judiciaires en France.
 
 La source prioritaire est Avoventes. Licitor est disponible comme source optionnelle de benchmark/croisement, pas comme source primaire de vérité.
 
 ## Périmètre
 
-- Départements : 33, 64, 40, 24, 47.
-- Tribunaux cibles : Bordeaux, Libourne, Bayonne, Pau, Dax, Mont-de-Marsan, Périgueux, Bergerac, Agen, Marmande.
+- Départements : France entière.
+- Tribunaux : normalisation explicite quand la source les fournit ; inférence locale conservée quand elle est connue.
 - Sources prévues :
   - `src/sources/avoventes.py` : scraper Avoventes.
   - `src/sources/licitor.py` : scraper Licitor optionnel pour benchmark de couverture.
@@ -109,7 +109,8 @@ ENABLE_INFO_ENCHERES_BENCHMARK=true
 INFO_ENCHERES_MAX_PAGES=4
 ENABLE_ENCHERES_PUBLIQUES_BENCHMARK=true
 ENCHERES_PUBLIQUES_MAX_PAGES=10
-ENCHERES_PUBLIQUES_PLACES=bordeaux-33,libourne-33,bayonne-64,pau-64,dax-40,mont-de-marsan-40,perigueux-24,bergerac-24,agen-47,marmande-47
+# Optionnel. Vide = page nationale /ventes/immobilier.
+ENCHERES_PUBLIQUES_PLACES=
 ENABLE_PETITES_AFFICHES_BENCHMARK=true
 ENABLE_CESSIONS_ETAT_BENCHMARK=true
 CESSIONS_ETAT_MAX_PAGES=3
@@ -167,7 +168,7 @@ par le workflow GitHub Actions planifié.
 
 Le pipeline :
 
-1. collecte Avoventes pour les départements Aquitaine ;
+1. collecte Avoventes sur la liste nationale ;
 2. collecte Licitor, Info Enchères, Vench, Enchères-Publiques et les sources publiques complémentaires si elles sont activées ;
 3. inspecte les fiches détail publiques disponibles pour enrichir les champs et les documents autorisés ;
 4. normalise légèrement chaque observation source ;
@@ -262,8 +263,7 @@ Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiab
 
 ## Source Licitor
 
-Le scraper [licitor.py](src/sources/licitor.py) collecte systématiquement la page publique
-`Sud-Ouest, Pyrénées` filtrée sur `Aquitaine`, puis suit les pages détail des annonces.
+Le scraper [licitor.py](src/sources/licitor.py) collecte les six zones publiques Licitor, puis suit les pages détail des annonces.
 
 Champs exploités :
 

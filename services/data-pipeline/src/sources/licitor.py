@@ -10,14 +10,22 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 import httpx
 
-from src.config import AQUITAINE_DEPARTMENTS, load_settings
-from src.normalize import clean_text
+from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
+from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import ScrapeResult
 
 
 BASE_URL = "https://www.licitor.com"
-AQUITAINE_URL = f"{BASE_URL}/ventes-aux-encheres-immobilieres/sud-ouest-pyrenees/prochaines-ventes.html?area%5B0%5D=AQ"
+LICITOR_ZONE_URLS = (
+    f"{BASE_URL}/ventes-aux-encheres-immobilieres/paris-et-ile-de-france/prochaines-ventes.html",
+    f"{BASE_URL}/ventes-aux-encheres-immobilieres/regions-du-nord-est/prochaines-ventes.html",
+    f"{BASE_URL}/ventes-aux-encheres-immobilieres/bretagne-grand-ouest/prochaines-ventes.html",
+    f"{BASE_URL}/ventes-aux-encheres-immobilieres/centre-loire-limousin/prochaines-ventes.html",
+    f"{BASE_URL}/ventes-aux-encheres-immobilieres/sud-ouest-pyrenees/prochaines-ventes.html",
+    f"{BASE_URL}/ventes-aux-encheres-immobilieres/sud-est-mediterrannee/prochaines-ventes.html",
+)
+AQUITAINE_URL = LICITOR_ZONE_URLS[4]
 LOGGER = logging.getLogger(__name__)
 
 
@@ -114,7 +122,7 @@ def scrape_licitor_aquitaine(max_pages: int | None = None) -> list[dict[str, Any
 
 
 def scrape_licitor_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
-    """Collect Licitor Aquitaine listings as an optional benchmark source."""
+    """Collect Licitor listings as an optional benchmark source."""
     settings = load_settings()
     client = LicitorClient(
         user_agent=str(settings["user_agent"]),
@@ -139,8 +147,8 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None) -> ScrapeResul
             continue
         sale = parse_licitor_detail_html(detail_html, detail_url)
         postal_code = sale.get("postal_code")
-        department = str(sale.get("department") or (str(postal_code)[:2] if postal_code else ""))
-        if department and department not in AQUITAINE_DEPARTMENTS:
+        department = str(sale.get("department") or extract_department(str(postal_code) if postal_code else None) or "")
+        if department and department not in TARGET_DEPARTMENTS:
             continue
         raw_sales.append(sale)
     return ScrapeResult(validate_raw_sales("licitor", raw_sales, errors), errors)
@@ -155,7 +163,7 @@ def parse_licitor_list_html(html: str, page_url: str = AQUITAINE_URL) -> tuple[l
         absolute = urljoin(page_url, href)
         if re.search(r"/annonce/.+/\d+\.html$", href):
             detail_urls.append(absolute)
-        elif "/ventes-aux-encheres-immobilieres/aquitaine.html?p=" in href:
+        elif re.search(r"/ventes-aux-encheres-immobilieres/.+/prochaines-ventes\.html\?p=", href):
             next_urls.append(absolute)
     return _unique(detail_urls), _unique(next_urls)
 
@@ -180,7 +188,7 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "source_url": source_url,
         "external_id": _extract_external_id(source_url, raw_text),
         "tribunal": _extract_after(raw_text, r"(Tribunal\s+Judiciaire[^\n]+)"),
-        "department": department or (postal_code[:2] if postal_code else None),
+        "department": department or extract_department(postal_code),
         "city": city,
         "address": address,
         "postal_code": postal_code,
@@ -205,24 +213,25 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
 
 
 def _collect_detail_urls(client: LicitorClient, max_pages: int, errors: list[str]) -> list[str]:
-    pending = [AQUITAINE_URL]
-    visited: set[str] = set()
     detail_urls: list[str] = []
 
-    while pending and len(visited) < max_pages:
-        page_url = pending.pop(0)
-        if page_url in visited:
-            continue
-        visited.add(page_url)
-        try:
-            html = client.get(page_url)
-        except Exception as exc:
-            LOGGER.error("Licitor list fetch failed for %s: %s", page_url, exc)
-            errors.append(f"{page_url}: {exc}")
-            continue
-        page_detail_urls, next_urls = parse_licitor_list_html(html, page_url)
-        detail_urls.extend(page_detail_urls)
-        pending.extend(url for url in next_urls if url not in visited and url not in pending)
+    for start_url in LICITOR_ZONE_URLS:
+        pending = [start_url]
+        visited: set[str] = set()
+        while pending and len(visited) < max_pages:
+            page_url = pending.pop(0)
+            if page_url in visited:
+                continue
+            visited.add(page_url)
+            try:
+                html = client.get(page_url)
+            except Exception as exc:
+                LOGGER.error("Licitor list fetch failed for %s: %s", page_url, exc)
+                errors.append(f"{page_url}: {exc}")
+                continue
+            page_detail_urls, next_urls = parse_licitor_list_html(html, page_url)
+            detail_urls.extend(page_detail_urls)
+            pending.extend(url for url in next_urls if url not in visited and url not in pending)
     return _unique(detail_urls)
 
 
@@ -293,7 +302,7 @@ def _extract_department(raw_text: str) -> str | None:
 
 
 def _extract_postal_code(raw_text: str) -> str | None:
-    match = re.search(r"\b((?:24|33|40|47|64)\d{3})\b", raw_text)
+    match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b", raw_text)
     return match.group(1) if match else None
 
 

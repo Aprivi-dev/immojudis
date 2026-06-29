@@ -228,7 +228,20 @@ def canonicalize_tribunal(value: object | None) -> str | None:
     for key, tribunal in FINGERPRINT_TO_TRIBUNAL.items():
         if key and key in fp:
             return tribunal
+    generic = _generic_tribunal_name(text)
+    if generic:
+        return generic
     return None
+
+
+def _generic_tribunal_name(text: str) -> str | None:
+    match = re.search(r"\bTribunal\s+Judiciaire\s+de\s+([A-Za-zÀ-ÿ' -]{2,60})\b", text, re.I)
+    if not match:
+        match = re.search(r"\bTJ\s+([A-Za-zÀ-ÿ' -]{2,60})\b", text, re.I)
+    if not match:
+        return None
+    city = clean_text(re.split(r"[,.;:\n(]", match.group(1), maxsplit=1)[0])
+    return f"TJ {city.title()}" if city else None
 
 
 def _fingerprint(value: object | None) -> str:

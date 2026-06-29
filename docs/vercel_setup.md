@@ -23,7 +23,7 @@ npm run dev        # http://localhost:3000
 | ------------------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
 | `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)                                                        |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)                                                   |
-| `VITE_GOOGLE_MAPS_API_KEY`      | ✅     | Clé Google Maps restreinte par domaine. Active vignettes, vue aérienne et Street View. |
+| `VITE_GOOGLE_MAPS_API_KEY`      | ❌     | Clé Google Maps restreinte par domaine. Active vignettes, vue aérienne et Street View ; sinon repli OSM/placeholder. |
 | `GITHUB_SCROLL_TOKEN`           | ❌     | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.          |
 | `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                  |
 | `GITHUB_SCROLL_WORKFLOW`        | ❌     | Workflow cible. Défaut : `data-pipeline.yml`.                                                             |
@@ -92,7 +92,7 @@ Le projet cible Vercel. Pour déployer :
 2. Framework preset : **Vite**.
 3. Build command : `npm run build`.
 4. Output directory : laisser la valeur auto générée par TanStack Start/Vite.
-5. Renseigner les env vars `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GOOGLE_MAPS_API_KEY` dans Project Settings → Environment Variables.
+5. Renseigner les env vars `VITE_SUPABASE_URL` et `VITE_SUPABASE_PUBLISHABLE_KEY` dans Project Settings → Environment Variables. Ajouter `VITE_GOOGLE_MAPS_API_KEY` si Google Maps doit être actif.
 6. Deploy.
 
 > Note : le projet est configuré avec TanStack Start et Nitro pour générer le

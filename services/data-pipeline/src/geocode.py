@@ -7,11 +7,11 @@ import httpx
 
 from src.config import load_settings
 from src.models import AuctionSale
-from src.normalize import clean_text
+from src.normalize import clean_text, extract_department
 
 
 LOGGER = logging.getLogger(__name__)
-# ponytail: broad Aquitaine bboxes; tighten only if we ingest finer geodata later.
+# ponytail: only departments with known historical false positives need bboxes.
 DEPARTMENT_BOUNDS = {
     "24": (44.55, 45.75, -0.1, 1.5),
     "33": (44.15, 45.65, -1.35, 0.05),
@@ -97,7 +97,7 @@ def _build_query(sale: AuctionSale) -> str | None:
 
 
 def _coordinates_match_department(sale: AuctionSale) -> bool:
-    department = sale.department or (sale.postal_code[:2] if sale.postal_code else None)
+    department = sale.department or extract_department(sale.postal_code)
     bounds = DEPARTMENT_BOUNDS.get(department or "")
     if not bounds:
         return True

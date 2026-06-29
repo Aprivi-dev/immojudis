@@ -6,7 +6,7 @@ import re
 from typing import Any
 from urllib.parse import urlencode
 
-from src.config import AQUITAINE_DEPARTMENTS, load_settings
+from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
@@ -54,7 +54,7 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
     for transaction_type in TRANSACTION_TYPES:
-        for department in AQUITAINE_DEPARTMENTS:
+        for department in TARGET_DEPARTMENTS:
             for page in range(1, max_pages + 1):
                 url = _api_url(page, transaction_type, department)
                 try:
@@ -69,7 +69,7 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
                 for sale in sales:
                     if not _enrich_sale_from_detail(client, sale, errors):
                         continue
-                    if sale.get("department") in AQUITAINE_DEPARTMENTS:
+                    if sale.get("department") in TARGET_DEPARTMENTS:
                         raw_sales.append(sale)
 
     return ScrapeResult(validate_raw_sales("notaires", unique_dicts(raw_sales, "source_url"), errors), errors)

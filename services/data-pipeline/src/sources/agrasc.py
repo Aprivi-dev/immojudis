@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
 
-from src.config import AQUITAINE_DEPARTMENTS, load_settings
+from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
@@ -39,7 +39,7 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
         errors.append(f"{LIST_URL}: {exc}")
     else:
         for sale in parse_agrasc_html(html, page_url=LIST_URL):
-            if sale.get("department") in AQUITAINE_DEPARTMENTS:
+            if sale.get("department") in TARGET_DEPARTMENTS:
                 raw_sales.append(sale)
 
     return ScrapeResult(validate_raw_sales("agrasc", unique_dicts(raw_sales, "source_url"), errors), errors)

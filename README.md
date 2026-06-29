@@ -57,7 +57,7 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 | ------------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------- |
 | `VITE_SUPABASE_URL`             |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                                      |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` |   ✅   | Clé `anon` / publishable (publique, côté client)                                                                        |
-| `VITE_GOOGLE_MAPS_API_KEY`      |   ✅   | Clé navigateur Google Maps restreinte par domaine. Active vignettes, vue aérienne 3D et Street View. |
+| `VITE_GOOGLE_MAPS_API_KEY`      |   ➖   | Clé navigateur Google Maps restreinte par domaine. Active vignettes, vue aérienne 3D et Street View ; sinon repli OSM/placeholder. |
 | `GITHUB_SCROLL_TOKEN`           |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                                |
 
 > Les variables `VITE_*` sont **inlinées au moment du build**. En production
@@ -69,7 +69,7 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 
 ### Cartographie Google — APIs à activer
 
-La clé `VITE_GOOGLE_MAPS_API_KEY` doit avoir ces APIs **activées** dans Google
+Si elle est configurée, la clé `VITE_GOOGLE_MAPS_API_KEY` doit avoir ces APIs **activées** dans Google
 Cloud :
 
 | API Google Cloud        | Alimente                                      |

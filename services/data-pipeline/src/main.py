@@ -417,7 +417,7 @@ def _add_llm_stats(total: LLMEnrichmentStats, item: LLMEnrichmentStats) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> PipelineOptions:
-    parser = argparse.ArgumentParser(description="Collecte et enrichit les ventes aux enchères Aquitaine.")
+    parser = argparse.ArgumentParser(description="Collecte et enrichit les ventes aux enchères en France.")
     parser.add_argument("--source", choices=("all", *SOURCE_NAMES), default="all")
     parser.add_argument("--no-llm", action="store_true", help="Désactive les appels LLM Replicate pour ce run.")
     parser.add_argument("--no-upsert", action="store_true", help="N'écrit pas dans Supabase.")

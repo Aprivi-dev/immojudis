@@ -16,19 +16,26 @@ PDF_DOCUMENT_TEXTS_DIR = PDF_TEXTS_DIR / "documents"
 DOCLING_TEXTS_DIR = RAW_DIR / "docling_texts"
 LLM_EXTRACTIONS_DIR = PROCESSED_DIR / "llm_extractions"
 
-AQUITAINE_DEPARTMENTS = ("33", "64", "40", "24", "47")
-AQUITAINE_TRIBUNALS = (
-    "Bordeaux",
-    "Libourne",
-    "Bayonne",
-    "Pau",
-    "Dax",
-    "Mont-de-Marsan",
-    "Périgueux",
-    "Bergerac",
-    "Agen",
-    "Marmande",
+FRANCE_DEPARTMENTS = (
+    *(f"{department:02d}" for department in range(1, 96)),
+    "2A",
+    "2B",
+    "971",
+    "972",
+    "973",
+    "974",
+    "975",
+    "976",
+    "977",
+    "978",
+    "986",
+    "987",
+    "988",
 )
+TARGET_DEPARTMENTS = FRANCE_DEPARTMENTS
+# Backward-compatible import for old scraper function names.
+AQUITAINE_DEPARTMENTS = TARGET_DEPARTMENTS
+FRENCH_POSTAL_CODE_PATTERN = r"(?:(?:0[1-9]|[1-8]\d|9[0-5])\d{3}|97[1-8]\d{2}|98[6-8]\d{2})"
 
 
 def load_settings() -> dict[str, str | float | None]:
@@ -97,10 +104,7 @@ def load_settings() -> dict[str, str | float | None]:
         "enable_encheres_publiques_benchmark": os.getenv("ENABLE_ENCHERES_PUBLIQUES_BENCHMARK", "true").lower()
         in {"1", "true", "yes", "on"},
         "encheres_publiques_max_pages": int(os.getenv("ENCHERES_PUBLIQUES_MAX_PAGES", "10")),
-        "encheres_publiques_places": os.getenv(
-            "ENCHERES_PUBLIQUES_PLACES",
-            "bordeaux-33,libourne-33,bayonne-64,pau-64,dax-40,mont-de-marsan-40,perigueux-24,bergerac-24,agen-47,marmande-47",
-        ),
+        "encheres_publiques_places": os.getenv("ENCHERES_PUBLIQUES_PLACES"),
         "enable_petites_affiches_benchmark": os.getenv("ENABLE_PETITES_AFFICHES_BENCHMARK", "true").lower()
         in {"1", "true", "yes", "on"},
         "enable_cessions_etat_benchmark": os.getenv("ENABLE_CESSIONS_ETAT_BENCHMARK", "true").lower()

@@ -11,8 +11,8 @@ from urllib.robotparser import RobotFileParser
 from bs4 import BeautifulSoup, Tag
 import httpx
 
-from src.config import AQUITAINE_DEPARTMENTS, load_settings
-from src.normalize import clean_text
+from src.config import TARGET_DEPARTMENTS, load_settings
+from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import ScrapeResult
 
@@ -87,14 +87,15 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
     if html:
         for sale in parse_avoventes_html(html, page_url=url, fallback_department=None):
             postal_code = sale.get("postal_code")
-            if not postal_code or str(postal_code)[:2] not in AQUITAINE_DEPARTMENTS:
+            department = extract_department(str(postal_code) if postal_code else None)
+            if not department or department not in TARGET_DEPARTMENTS:
                 continue
-            sale["department"] = str(postal_code)[:2]
+            sale["department"] = department
             if sale["source_url"] in seen_urls:
                 continue
             seen_urls.add(sale["source_url"])
             # Avoventes keeps photos and several detail fields off the list page;
-            # always refresh the detail page after filtering to Aquitaine.
+            # always refresh the detail page after filtering to the target territory.
             _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
     return ScrapeResult(validate_raw_sales("avoventes", raw_sales, errors), errors)
@@ -160,7 +161,7 @@ def _parse_text_block(
         "source_name": "avoventes",
         "source_url": source_url,
         "external_id": source_url.rstrip("/").split("/")[-1],
-        "department": fallback_department or (postal_code[:2] if postal_code else None),
+        "department": fallback_department or extract_department(postal_code),
         "title": title,
         "address": address,
         "city": city,

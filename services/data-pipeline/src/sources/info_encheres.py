@@ -7,8 +7,8 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
-from src.config import AQUITAINE_DEPARTMENTS, load_settings
-from src.normalize import clean_text
+from src.config import TARGET_DEPARTMENTS, load_settings
+from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
@@ -62,7 +62,7 @@ def scrape_info_encheres_aquitaine_result(
             errors.append(f"{page_url}: {exc}")
             continue
         for sale in parse_info_encheres_list_html(html, page_url=page_url):
-            if sale.get("department") not in AQUITAINE_DEPARTMENTS:
+            if sale.get("department") not in TARGET_DEPARTMENTS:
                 continue
             if should_fetch_detail(sale, known):
                 _enrich_sale_from_detail(client, sale, errors)
@@ -146,7 +146,7 @@ def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any
         "source_name": "info_encheres",
         "source_url": source_url,
         "external_id": details.get("reference") or _extract_after(page_text, r"\bref[ée]rence\s*:?\s*(\d+)"),
-        "department": (postal_code[:2] if postal_code else None) or _extract_department_from_url(source_url),
+        "department": extract_department(postal_code) or _extract_department_from_url(source_url),
         "city": city,
         "address": address,
         "postal_code": postal_code,

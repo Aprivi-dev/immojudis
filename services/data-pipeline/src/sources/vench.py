@@ -7,8 +7,8 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from src.config import AQUITAINE_DEPARTMENTS, load_settings
-from src.normalize import clean_text
+from src.config import TARGET_DEPARTMENTS, load_settings
+from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
@@ -56,7 +56,7 @@ def scrape_vench_aquitaine_result(
 
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
-    for department in AQUITAINE_DEPARTMENTS:
+    for department in TARGET_DEPARTMENTS:
         try:
             html = client.post_form(
                 LIST_URL,
@@ -217,7 +217,7 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "source_url": source_url,
         "external_id": _extract_external_id(source_url),
         "tribunal": _extract_after(page_text, r"Tribunal judiciaire de\s+([A-ZÀ-Ÿ' -]+)"),
-        "department": postal_code[:2] if postal_code else None,
+        "department": extract_department(postal_code),
         "city": city,
         "address": _join_address(postal_code, city),
         "postal_code": postal_code,

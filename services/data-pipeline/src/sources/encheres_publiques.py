@@ -10,25 +10,14 @@ from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
-from src.config import AQUITAINE_DEPARTMENTS, load_settings
-from src.normalize import clean_text
+from src.config import TARGET_DEPARTMENTS, load_settings
+from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
 
 BASE_URL = "https://www.encheres-publiques.com"
-DEFAULT_PLACES = (
-    "bordeaux-33",
-    "libourne-33",
-    "bayonne-64",
-    "pau-64",
-    "dax-40",
-    "mont-de-marsan-40",
-    "perigueux-24",
-    "bergerac-24",
-    "agen-47",
-    "marmande-47",
-)
+NATIONAL_LIST_URL = f"{BASE_URL}/ventes/immobilier"
 LOGGER = logging.getLogger(__name__)
 PARIS_TZ = ZoneInfo("Europe/Paris")
 DETAIL_OVERRIDE_FIELDS = {
@@ -68,7 +57,7 @@ def scrape_encheres_publiques_aquitaine(max_pages: int | None = None) -> list[di
 def scrape_encheres_publiques_aquitaine_result(
     max_pages: int | None = None, known: dict[str, str] | None = None
 ) -> ScrapeResult:
-    """Collect Encheres-Publiques.com public listing data for Aquitaine places.
+    """Collect Encheres-Publiques.com public listing data.
 
     The site exposes structured Next/Apollo state on SEO pages. We consume only
     allowed public pages and avoid disallowed query, backend service and document
@@ -86,8 +75,12 @@ def scrape_encheres_publiques_aquitaine_result(
 
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
-    for place in places[:max_pages]:
-        page_url = f"{BASE_URL}/ventes/immobilier/v/{place}"
+    page_urls = (
+        [f"{BASE_URL}/ventes/immobilier/v/{place}" for place in places[:max_pages]]
+        if places
+        else [NATIONAL_LIST_URL]
+    )
+    for page_url in page_urls:
         try:
             html = client.get(page_url)
         except Exception as exc:
@@ -121,7 +114,7 @@ def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, An
         address = _resolve_ref(state, lot.get("adresse_defaut"))
         city_slug = str(address.get("ville_slug") or "")
         department = _department_from_slug(city_slug)
-        if department not in AQUITAINE_DEPARTMENTS:
+        if department not in TARGET_DEPARTMENTS:
             continue
         organizer = _resolve_ref(state, lot.get("organisateur"))
         event = _resolve_ref(state, lot.get("evenement"))
@@ -312,13 +305,12 @@ def _resolve_profile(state: dict[str, Any], lot: dict[str, Any]) -> dict[str, An
 
 
 def _configured_places(value: str) -> tuple[str, ...]:
-    places = tuple(clean_text(part) or "" for part in value.split(",") if clean_text(part))
-    return places or DEFAULT_PLACES
+    return tuple(clean_text(part) or "" for part in value.split(",") if clean_text(part))
 
 
 def _department_from_slug(slug: str) -> str | None:
-    match = re.search(r"-(\d{2,3})$", slug)
-    return match.group(1) if match else None
+    match = re.search(r"-([0-9]{2,3}|2[ab])$", slug, re.I)
+    return match.group(1).upper() if match else None
 
 
 def _city_from_slug(slug: str) -> str | None:
@@ -330,7 +322,7 @@ def _city_from_slug(slug: str) -> str | None:
 
 def _department_from_address(address: dict[str, Any]) -> str | None:
     postal_code = _postal_code(_address_text(address))
-    return postal_code[:2] if postal_code else None
+    return extract_department(postal_code)
 
 
 def _address_text(address: dict[str, Any]) -> str | None:
