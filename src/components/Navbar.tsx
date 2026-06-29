@@ -244,7 +244,7 @@ function HeaderLogo({ onClick }: { onClick?: () => void }) {
   return (
     <Link to="/" onClick={onClick} className="ij-home-logo" aria-label="ImmoJudis — accueil">
       <span className="ij-home-logo-mark" aria-hidden="true">
-        <BrandMark variant="transparent" className="h-8 w-8" />
+        <BrandMark variant="transparent" className="h-6 w-6" />
       </span>
       <span>
         <strong>

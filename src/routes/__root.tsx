@@ -99,9 +99,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", type: "image/png", href: "/brand/immojudis-mark-transparent.png" },
-      { rel: "apple-touch-icon", href: "/brand/immojudis-mark-transparent.png" },
-      { rel: "preload", as: "image", href: "/brand/immojudis-mark-transparent.png" },
+      { rel: "icon", type: "image/svg+xml", href: "/brand/immojudis-justice-temple.svg" },
+      { rel: "apple-touch-icon", href: "/brand/immojudis-justice-temple.svg" },
+      { rel: "preload", as: "image", href: "/brand/immojudis-justice-temple.svg" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {

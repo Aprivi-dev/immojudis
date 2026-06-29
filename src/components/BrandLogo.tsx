@@ -1,15 +1,12 @@
+import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import { cn } from "@/lib/utils";
 
-const BRAND_MARKS = {
-  light: "/brand/immojudis-mark-light.png",
-  dark: "/brand/immojudis-mark-dark.png",
-  transparent: "/brand/immojudis-mark-transparent.png",
-} as const;
+type BrandMarkVariant = "light" | "dark" | "transparent";
 
 type BrandLogoProps = {
   className?: string;
   markClassName?: string;
-  markVariant?: keyof typeof BRAND_MARKS;
+  markVariant?: BrandMarkVariant;
   textClassName?: string;
   showTagline?: boolean;
 };
@@ -51,16 +48,16 @@ export function BrandMark({
   variant = "light",
 }: {
   className?: string;
-  variant?: keyof typeof BRAND_MARKS;
+  variant?: BrandMarkVariant;
 }) {
+  const toneClass = variant === "dark" ? "text-white" : "text-current";
+
   return (
-    <img
-      src={BRAND_MARKS[variant]}
-      alt="Immojudis"
-      className={cn("object-contain", className)}
-      width={256}
-      height={256}
-      decoding="async"
+    <Landmark
+      role="img"
+      aria-label="Immojudis"
+      className={cn("shrink-0", toneClass, className)}
+      strokeWidth={2}
     />
   );
 }

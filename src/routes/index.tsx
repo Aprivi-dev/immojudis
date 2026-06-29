@@ -456,7 +456,7 @@ function HomeFooter() {
       <div className="ij-footer-inner">
         <Link to="/" className="ij-footer-brand" aria-label="ImmoJudis — accueil">
           <span className="ij-footer-mark" aria-hidden="true">
-            <BrandMark variant="transparent" className="h-7 w-7" />
+            <BrandMark variant="transparent" className="h-5 w-5" />
           </span>
           <span>
             <strong>
