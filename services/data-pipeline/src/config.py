@@ -32,9 +32,26 @@ FRANCE_DEPARTMENTS = (
     "987",
     "988",
 )
-TARGET_DEPARTMENTS = FRANCE_DEPARTMENTS
+AQUITAINE_DEPARTMENTS = ("24", "33", "40", "47", "64")
+
+
+def _target_departments_from_env() -> tuple[str, ...]:
+    load_dotenv(ROOT_DIR / ".env")
+    raw = (os.getenv("TARGET_DEPARTMENTS") or "").strip()
+    if not raw:
+        return AQUITAINE_DEPARTMENTS
+    if raw.lower() in {"all", "france", "france_entire"}:
+        return FRANCE_DEPARTMENTS
+    requested = tuple(part.strip().upper() for part in raw.split(",") if part.strip())
+    valid = set(FRANCE_DEPARTMENTS)
+    unknown = [department for department in requested if department not in valid]
+    if unknown:
+        raise ValueError(f"Unsupported TARGET_DEPARTMENTS: {', '.join(unknown)}")
+    return requested
+
+
+TARGET_DEPARTMENTS = _target_departments_from_env()
 # Backward-compatible import for old scraper function names.
-AQUITAINE_DEPARTMENTS = TARGET_DEPARTMENTS
 FRENCH_POSTAL_CODE_PATTERN = r"(?:(?:0[1-9]|[1-8]\d|9[0-5])\d{3}|97[1-8]\d{2}|98[6-8]\d{2})"
 
 

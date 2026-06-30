@@ -166,7 +166,6 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                 len(to_enrich),
             )
 
-    enriched: list[AuctionSale] = []
     pdf_stats = PdfEnrichmentStats()
     llm_stats = LLMEnrichmentStats()
     llm_client = None
@@ -185,11 +184,40 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     for sale in to_enrich:
         sale.last_run_id = run_id
 
+    # Les ventes doivent être visibles même si PDF/OCR/LLM prend trop longtemps
+    # ou échoue. On prépare donc une version exploitable par l'app, puis le lourd
+    # ne fait qu'améliorer ces lignes.
+    early_upserted = 0
+    early_observations_upserted = 0
+    app_ready: list[AuctionSale] = []
+    started = time.perf_counter()
+    for sale in to_enrich:
+        try:
+            _finalize_sale_for_app(sale)
+            app_ready.append(sale)
+        except Exception as exc:
+            LOGGER.exception("Light finalisation failed for %s: %s", sale.source_url, exc)
+            errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
+    timings["app_ready_seconds"] = round(time.perf_counter() - started, 2)
+    lifecycle_stats = mark_past_sales(app_ready)
+
+    if options.upsert and app_ready:
+        try:
+            started = time.perf_counter()
+            early_upserted = upsert_sales_to_supabase(app_ready)
+            early_observations_upserted = upsert_observations_to_supabase(app_ready)
+            timings["early_supabase_seconds"] = round(time.perf_counter() - started, 2)
+        except Exception as exc:
+            LOGGER.exception("Early Supabase upsert failed: %s", exc)
+            errors.setdefault("supabase", []).append(str(exc))
+
+    heavy_targets = [sale for sale in app_ready if _needs_heavy_enrichment(sale)]
+
     # ── Phase 1 : PDF / Docling / OCR (CPU+RAM) — concurrence modérée ─────────
     started = time.perf_counter()
-    if to_enrich:
+    if heavy_targets:
         with ThreadPoolExecutor(max_workers=pdf_workers) as executor:
-            futures = {executor.submit(enrich_sale_from_pdfs, sale): sale for sale in to_enrich}
+            futures = {executor.submit(enrich_sale_from_pdfs, sale): sale for sale in heavy_targets}
             for future in as_completed(futures):
                 sale = futures[future]
                 try:
@@ -202,7 +230,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
     # ── Phase 2 : LLM Replicate (réseau) — forte concurrence ─────────────────
     started = time.perf_counter()
-    llm_targets = [sale for sale in to_enrich if sale.source_url not in failed_urls]
+    llm_targets = [sale for sale in heavy_targets if sale.source_url not in failed_urls]
     if options.use_llm and llm_client is not None and llm_targets:
         with ThreadPoolExecutor(max_workers=llm_workers) as executor:
             futures = {
@@ -225,14 +253,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
     # ── Phase 3 : finition (géocode réseau léger, tribunal, scoring) ─────────
     started = time.perf_counter()
-    for sale in to_enrich:
-        if sale.source_url in failed_urls:
-            continue
+    for sale in heavy_targets:
         try:
-            geocode_sale(sale)
-            fill_tribunal(sale)
-            normalize_asset_features(sale)
-            enriched.append(sale)
+            _finalize_sale_for_app(sale)
         except Exception as exc:
             LOGGER.exception("Finalisation failed for %s: %s", sale.source_url, exc)
             errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
@@ -240,13 +263,18 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     timings["enrich_wall_seconds"] = round(time.perf_counter() - enrich_started, 2)
     timings["enrich_pdf_workers"] = pdf_workers
     timings["enrich_llm_workers"] = llm_workers
+    timings["heavy_enrich_targets"] = len(heavy_targets)
+    timings["heavy_enrich_skipped"] = len(app_ready) - len(heavy_targets)
 
-    lifecycle_stats = mark_past_sales(enriched)
+    enriched = app_ready
+    lifecycle_stats.marked_past += mark_past_sales(enriched).marked_past
     quality_report = build_quality_report(enriched, pdf_stats=pdf_stats, llm_stats=llm_stats)
     json_path, csv_path = export_sales(enriched)
 
     upserted = 0
     observations_upserted = 0
+    final_upserted = 0
+    final_observations_upserted = 0
     supabase_cleaned_past = 0
     supabase_deleted_vench_without_surface = 0
     summary = {
@@ -263,8 +291,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     if options.upsert:
         try:
             started = time.perf_counter()
-            upserted = upsert_sales_to_supabase(enriched)
-            observations_upserted = upsert_observations_to_supabase(enriched)
+            if heavy_targets:
+                final_upserted = upsert_sales_to_supabase(heavy_targets)
+                final_observations_upserted = upsert_observations_to_supabase(heavy_targets)
+            upserted = max(early_upserted, final_upserted)
+            observations_upserted = max(early_observations_upserted, final_observations_upserted)
             supabase_cleaned_past = mark_past_sales_in_supabase()
             supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()
             timings["supabase_seconds"] = round(time.perf_counter() - started, 2)
@@ -272,6 +303,10 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                 {
                     "upserted": upserted,
                     "observations_upserted": observations_upserted,
+                    "early_upserted": early_upserted,
+                    "early_observations_upserted": early_observations_upserted,
+                    "final_upserted": final_upserted,
+                    "final_observations_upserted": final_observations_upserted,
                     "marked_past_in_run": lifecycle_stats.marked_past,
                     "marked_past_in_supabase": supabase_cleaned_past,
                     "deleted_vench_without_surface": supabase_deleted_vench_without_surface,
@@ -293,6 +328,8 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print(f"- enriched: {len(enriched)}")
     print(f"- upserted: {upserted}")
     print(f"- observations_upserted: {observations_upserted}")
+    print(f"- early_upserted: {early_upserted}")
+    print(f"- final_upserted: {final_upserted}")
     print(f"- marked_past_in_run: {lifecycle_stats.marked_past}")
     print(f"- marked_past_in_supabase: {supabase_cleaned_past}")
     print(f"- deleted_vench_without_surface: {supabase_deleted_vench_without_surface}")
@@ -388,6 +425,30 @@ def _timed_scrape(name: str, fn: "Callable[[], ScrapeResult]") -> tuple[ScrapeRe
     started = time.perf_counter()
     result = fn()
     return result, round(time.perf_counter() - started, 2)
+
+
+def _finalize_sale_for_app(sale: AuctionSale) -> None:
+    geocode_sale(sale)
+    fill_tribunal(sale)
+    normalize_asset_features(sale)
+
+
+def _needs_heavy_enrichment(sale: AuctionSale) -> bool:
+    if not sale.documents and not sale.raw_text:
+        return False
+    has_surface = any(
+        (
+            sale.app_surface_m2,
+            sale.habitable_surface_m2,
+            sale.carrez_surface_m2,
+            sale.surface_m2,
+            sale.land_surface_m2,
+        )
+    )
+    has_type = bool(sale.property_type and sale.property_type not in {"unknown", "other"})
+    has_occupancy = bool(sale.occupancy_status and sale.occupancy_status != "unknown")
+    needs_rooms = sale.property_type not in {"land", "parking"} and sale.rooms_count is None
+    return not (has_surface and has_type and has_occupancy and not needs_rooms)
 
 
 def _merge_pdf_stats(total: PdfEnrichmentStats, item: PdfEnrichmentStats) -> None:
