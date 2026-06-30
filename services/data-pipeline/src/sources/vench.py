@@ -202,7 +202,8 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line
     )
     title = _extract_title_from_detail(soup)
-    postal_code = _extract_after(page_text, r"\b(\d{5})\b")
+    address = _extract_address_block(page_text)
+    postal_code = _extract_postal_code_from_address(address)
     city = _extract_city_from_detail(soup, source_url)
     documents = _extract_documents(soup, source_url)
     sale_date = _extract_after(page_text, r"DATE DE L['’]AUDIENCE\s*([0-9/]{8,10}(?:\s+à\s+\d{1,2}:\d{2})?)")
@@ -219,7 +220,7 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "tribunal": _extract_after(page_text, r"Tribunal judiciaire de\s+([A-ZÀ-Ÿ' -]+)"),
         "department": extract_department(postal_code),
         "city": city,
-        "address": _join_address(postal_code, city),
+        "address": address or _join_address(postal_code, city),
         "postal_code": postal_code,
         "property_type": _extract_property_type(title),
         "title": title,
@@ -413,8 +414,29 @@ def _extract_amenities(soup: BeautifulSoup) -> list[str]:
 
 
 def _extract_address_block(page_text: str) -> str | None:
-    match = re.search(r"\b(\d{5}\s+[A-ZÀ-ŸA-Za-z' -]+)\b", page_text)
-    return _text(match.group(1)) if match else None
+    lines = [line for line in (clean_text(part) for part in page_text.splitlines()) if line]
+    stop_pattern = re.compile(
+        r"^(date de|mise à prix|prochaine visite|tribunal|description|pour consulter|documents?)",
+        re.I,
+    )
+    for index, line in enumerate(lines):
+        if not re.fullmatch(r"adresse|localisation", line, re.I):
+            continue
+        candidates: list[str] = []
+        for following in lines[index + 1 :]:
+            if stop_pattern.search(following):
+                break
+            candidates.append(following)
+            if len(candidates) >= 3:
+                break
+        match = re.search(r"\b(\d{5}\s+[A-ZÀ-ŸA-Za-z' -]+)\b", " ".join(candidates))
+        if match:
+            return _text(match.group(1))
+    return None
+
+
+def _extract_postal_code_from_address(address: str | None) -> str | None:
+    return _extract_after(address or "", r"\b(\d{5})\b")
 
 
 def _build_detail_raw_text(source_blocks: dict[str, str]) -> str | None:

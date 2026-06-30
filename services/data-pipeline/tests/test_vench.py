@@ -79,6 +79,26 @@ def test_parse_vench_detail_html_keeps_public_details_without_disallowed_uploads
     assert raw["source_images"] == ["https://www.vench.fr/images/vente.jpg"]
 
 
+def test_parse_vench_detail_html_ignores_lawyer_postal_code_when_address_is_missing() -> None:
+    html = """
+    <div id="page-heading"><h1>APPARTEMENT 49 m² &bull; Paris</h1></div>
+    <p>Ventes aux enchères publiques - Tribunal judiciaire de PARIS</p>
+    <p>DATE DE L'AUDIENCE</p><strong>09/07/2026 à 14:00</strong>
+    <p>Maître Example</p>
+    <p>12 rue Avocat 47000 Agen</p>
+    """
+
+    raw = parse_vench_detail_html(
+        html,
+        "https://www.vench.fr/vente-165306-un-appartement-paris.html",
+    )
+
+    assert raw["city"] == "Paris"
+    assert raw["postal_code"] is None
+    assert raw["department"] is None
+    assert raw["address"] == "Paris"
+
+
 def test_filter_catalog_sales_keeps_vench_listing_with_surface_signal() -> None:
     sale = {
         "source_name": "vench",
