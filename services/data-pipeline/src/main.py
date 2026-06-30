@@ -68,6 +68,7 @@ SOURCE_NAMES = (
 class PipelineOptions:
     source: str = "all"
     use_llm: bool = True
+    heavy_enrichment: bool = True
     upsert: bool = True
     limit: int | None = None
     run_id: str | None = None
@@ -169,7 +170,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     pdf_stats = PdfEnrichmentStats()
     llm_stats = LLMEnrichmentStats()
     llm_client = None
-    if options.use_llm:
+    if options.heavy_enrichment and options.use_llm:
         try:
             llm_client = create_llm_client()
         except LLMClientUnavailable as exc:
@@ -211,7 +212,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             LOGGER.exception("Early Supabase upsert failed: %s", exc)
             errors.setdefault("supabase", []).append(str(exc))
 
-    heavy_targets = [sale for sale in app_ready if _needs_heavy_enrichment(sale)]
+    heavy_targets = [sale for sale in app_ready if _needs_heavy_enrichment(sale)] if options.heavy_enrichment else []
 
     # ── Phase 1 : PDF / Docling / OCR (CPU+RAM) — concurrence modérée ─────────
     started = time.perf_counter()
@@ -287,6 +288,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         "enriched": len(enriched),
         "quality_report": quality_report,
         "timings": timings,
+        "heavy_enrichment_enabled": options.heavy_enrichment,
     }
     if options.upsert:
         try:
@@ -481,6 +483,11 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
     parser = argparse.ArgumentParser(description="Collecte et enrichit les ventes aux enchères en France.")
     parser.add_argument("--source", choices=("all", *SOURCE_NAMES), default="all")
     parser.add_argument("--no-llm", action="store_true", help="Désactive les appels LLM Replicate pour ce run.")
+    parser.add_argument(
+        "--no-heavy-enrichment",
+        action="store_true",
+        help="Publie les annonces sans PDF/OCR/LLM. Utile pour un scrape rapide orienté visibilité front.",
+    )
     parser.add_argument("--no-upsert", action="store_true", help="N'écrit pas dans Supabase.")
     parser.add_argument("--limit", type=int, default=None, help="Limite le nombre d'annonces brutes traitées.")
     parser.add_argument(
@@ -492,6 +499,7 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
     return PipelineOptions(
         source=args.source,
         use_llm=not args.no_llm,
+        heavy_enrichment=not args.no_heavy_enrichment,
         upsert=not args.no_upsert,
         limit=args.limit,
         run_id=args.run_id,
