@@ -1,4 +1,5 @@
 from src.normalize import normalize_sale
+from src.sources import vench
 from src.sources.vench import _filter_catalog_sales, parse_vench_detail_html, parse_vench_list_html
 
 
@@ -43,6 +44,18 @@ def test_parse_vench_list_html_uses_last_bullet_as_city() -> None:
 
     assert sales[0]["title"] == "UN APPARTEMENT DE 4 PIÈCES"
     assert sales[0]["city"] == "Orthez"
+
+
+def test_vench_uses_single_national_listing_for_all_departments(monkeypatch) -> None:
+    monkeypatch.setattr(vench, "TARGET_DEPARTMENTS", vench.FRANCE_DEPARTMENTS)
+
+    assert vench._department_filters() == (None,)
+
+
+def test_vench_keeps_department_filter_for_targeted_override(monkeypatch) -> None:
+    monkeypatch.setattr(vench, "TARGET_DEPARTMENTS", ("33", "75"))
+
+    assert vench._department_filters() == ("33", "75")
 
 
 def test_parse_vench_detail_html_keeps_public_details_without_disallowed_uploads() -> None:

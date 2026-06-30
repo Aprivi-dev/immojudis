@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from src.config import TARGET_DEPARTMENTS, load_settings
+from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
@@ -56,16 +56,18 @@ def scrape_vench_aquitaine_result(
 
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
-    for department in TARGET_DEPARTMENTS:
+    for department in _department_filters():
         try:
+            form = {
+                "searching": "1",
+                "orderResult": "1",
+                "resetInput": "0",
+            }
+            if department:
+                form["departement"] = department
             html = client.post_form(
                 LIST_URL,
-                {
-                    "searching": "1",
-                    "orderResult": "1",
-                    "resetInput": "0",
-                    "departement": department,
-                },
+                form,
             )
         except Exception as exc:
             LOGGER.error("Vench list fetch failed for department %s: %s", department, exc)
@@ -78,6 +80,12 @@ def scrape_vench_aquitaine_result(
 
     catalog_sales = _filter_catalog_sales(unique_dicts(raw_sales, "source_url"), known_details)
     return ScrapeResult(validate_raw_sales("vench", catalog_sales, errors), errors)
+
+
+def _department_filters() -> tuple[str | None, ...]:
+    if set(TARGET_DEPARTMENTS) == set(FRANCE_DEPARTMENTS):
+        return (None,)
+    return TARGET_DEPARTMENTS
 
 
 def _filter_catalog_sales(
