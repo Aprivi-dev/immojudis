@@ -1,6 +1,7 @@
 import json
 
 from src.raw_models import validate_raw_sales
+from src.sources import notaires
 from src.sources.agrasc import parse_agrasc_html
 from src.sources.cessions_etat import parse_cessions_etat_html
 from src.sources.encheres_immobilieres import parse_encheres_immobilieres_html
@@ -188,6 +189,20 @@ def test_parse_notaires_public_api_payload() -> None:
     assert sales[0]["property_type"] == "maison"
     assert sales[0]["starting_price_eur"] == 250000
     assert validate_raw_sales("notaires", sales, []) == sales
+
+
+def test_notaires_uses_national_api_when_all_departments_are_targeted(monkeypatch) -> None:
+    monkeypatch.setattr(notaires, "TARGET_DEPARTMENTS", notaires.FRANCE_DEPARTMENTS)
+
+    assert notaires._department_filters() == (None,)
+    assert "departements=" not in notaires._api_url(1, "VAE", None)
+
+
+def test_notaires_keeps_department_filter_for_targeted_override(monkeypatch) -> None:
+    monkeypatch.setattr(notaires, "TARGET_DEPARTMENTS", ("33", "75"))
+
+    assert notaires._department_filters() == ("33", "75")
+    assert "departements=33" in notaires._api_url(1, "VAE", "33")
 
 
 def test_parse_notaires_detail_api_payload_extracts_rich_fields() -> None:
