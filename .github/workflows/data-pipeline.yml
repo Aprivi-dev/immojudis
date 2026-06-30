@@ -116,6 +116,7 @@ jobs:
             fi
             if [ "${REQUESTED_USE_LLM:-false}" != "true" ]; then
               args+=(--no-llm)
+              args+=(--no-heavy-enrichment)
             fi
             if [ -n "$REQUESTED_LIMIT" ]; then
               args+=(--limit "$REQUESTED_LIMIT")

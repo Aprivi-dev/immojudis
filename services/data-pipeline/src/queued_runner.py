@@ -43,9 +43,18 @@ def main() -> int:
         print(message)
         return 1
 
-    print(f"Running queued Immojudis data pipeline: {run_id} ({source}, llm={use_llm})")
+    heavy_enrichment = use_llm
+    print(f"Running queued Immojudis data pipeline: {run_id} ({source}, llm={use_llm}, heavy={heavy_enrichment})")
     try:
-        return run_pipeline(PipelineOptions(source=source, use_llm=use_llm, upsert=True, run_id=run_id))
+        return run_pipeline(
+            PipelineOptions(
+                source=source,
+                use_llm=use_llm,
+                heavy_enrichment=heavy_enrichment,
+                upsert=True,
+                run_id=run_id,
+            )
+        )
     except Exception as exc:
         LOGGER.exception("Queued run failed: %s", exc)
         finish_run_in_supabase(
