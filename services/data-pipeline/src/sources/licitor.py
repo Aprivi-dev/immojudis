@@ -215,7 +215,7 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
 def _collect_detail_urls(client: LicitorClient, max_pages: int, errors: list[str]) -> list[str]:
     detail_urls: list[str] = []
 
-    for start_url in LICITOR_ZONE_URLS:
+    for start_url in _start_urls_for_target_departments():
         pending = [start_url]
         visited: set[str] = set()
         while pending and len(visited) < max_pages:
@@ -233,6 +233,13 @@ def _collect_detail_urls(client: LicitorClient, max_pages: int, errors: list[str
             detail_urls.extend(page_detail_urls)
             pending.extend(url for url in next_urls if url not in visited and url not in pending)
     return _unique(detail_urls)
+
+
+def _start_urls_for_target_departments() -> tuple[str, ...]:
+    aquitaine = {"24", "33", "40", "47", "64"}
+    if set(TARGET_DEPARTMENTS).issubset(aquitaine):
+        return (AQUITAINE_URL,)
+    return LICITOR_ZONE_URLS
 
 
 def _extract_external_id(source_url: str, raw_text: str) -> str | None:
