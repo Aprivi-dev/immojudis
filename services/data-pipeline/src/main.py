@@ -98,7 +98,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     # Chaque source est indépendante (domaine + client HTTP + délai propres), donc
     # on les lance en threads : le temps total ≈ la source la plus lente au lieu
     # de la somme. Indispensable avant de passer à toute la France.
-    scrapers = _enabled_scrapers(options.source, settings, known_signatures, known_details)
+    scrapers = _enabled_scrapers(
+        options.source,
+        settings,
+        known_signatures,
+        known_details,
+        fetch_detail_heavy=options.heavy_enrichment,
+    )
     scrape_overall_started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, len(scrapers))) as executor:
         futures = {executor.submit(_timed_scrape, name, fn): name for name, fn in scrapers.items()}
@@ -350,6 +356,7 @@ def _enabled_scrapers(
     settings: dict[str, object],
     known: dict[str, str],
     known_details: dict[str, dict[str, object]],
+    fetch_detail_heavy: bool = True,
 ) -> dict[str, "Callable[[], ScrapeResult]"]:
     """Map of enabled source name → zero-arg scraper callable, honouring the
     requested source and the per-source benchmark toggles. `known` (source_url →
@@ -361,7 +368,10 @@ def _enabled_scrapers(
         (
             "licitor",
             bool(settings["enable_licitor_benchmark"]),
-            lambda: scrape_licitor_aquitaine_result(max_pages=int(settings["licitor_max_pages"])),
+            lambda: scrape_licitor_aquitaine_result(
+                max_pages=int(settings["licitor_max_pages"]),
+                fetch_details=fetch_detail_heavy,
+            ),
         ),
         (
             "vench",

@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from src.normalize import normalize_sale
 from src.sources import licitor
-from src.sources.licitor import RobotsRules, parse_licitor_detail_html, parse_licitor_list_html
+from src.sources.licitor import RobotsRules, parse_licitor_detail_html, parse_licitor_list_html, parse_licitor_list_sales
 
 
 def test_robots_rules_allows_public_licitor_pages_and_blocks_disallowed_documents() -> None:
@@ -40,6 +40,34 @@ def test_parse_licitor_list_html_extracts_detail_and_next_urls() -> None:
     assert next_urls == [
         "https://www.licitor.com/ventes-aux-encheres-immobilieres/paris-et-ile-de-france/prochaines-ventes.html?p=2"
     ]
+
+
+def test_parse_licitor_list_sales_extracts_light_listing() -> None:
+    html = """
+    <div class="Result">
+      <a href="/annonce/10/91/27/vente-aux-encheres/trois-appartements/paris-2eme/paris/109127.html">
+        <span>75</span>
+        <span>Paris 2ème</span>
+        <strong>Trois appartements</strong>
+        <p>dans le bâtiment A, au 2ème, 3ème et 4ème étage</p>
+        <span>Mise à prix :</span>
+        <span>82 610 €</span>
+        <time>Mercredi 10 juin</time>
+      </a>
+    </div>
+    """
+
+    sales = parse_licitor_list_sales(html)
+
+    assert sales[0]["source_url"] == (
+        "https://www.licitor.com/annonce/10/91/27/vente-aux-encheres/"
+        "trois-appartements/paris-2eme/paris/109127.html"
+    )
+    assert sales[0]["external_id"] == "109127"
+    assert sales[0]["department"] == "75"
+    assert sales[0]["city"] == "Paris 2ème"
+    assert sales[0]["title"] == "Trois appartements"
+    assert sales[0]["starting_price_eur"] == "82 610 €"
 
 
 def test_licitor_uses_aquitaine_listing_page_for_aquitaine_targets(monkeypatch) -> None:

@@ -121,7 +121,7 @@ def scrape_licitor_aquitaine(max_pages: int | None = None) -> list[dict[str, Any
     return scrape_licitor_aquitaine_result(max_pages=max_pages).sales
 
 
-def scrape_licitor_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
+def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details: bool = True) -> ScrapeResult:
     """Collect Licitor listings as an optional benchmark source."""
     settings = load_settings()
     client = LicitorClient(
@@ -132,8 +132,12 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None) -> ScrapeResul
     max_pages = max_pages or int(settings["licitor_max_pages"])
 
     errors: list[str] = []
-    detail_urls = _collect_detail_urls(client, max_pages=max_pages, errors=errors)
     raw_sales: list[dict[str, Any]] = []
+    if not fetch_details:
+        raw_sales = _collect_list_sales(client, max_pages=max_pages, errors=errors)
+        return ScrapeResult(validate_raw_sales("licitor", raw_sales, errors), errors)
+
+    detail_urls = _collect_detail_urls(client, max_pages=max_pages, errors=errors)
     seen: set[str] = set()
     for detail_url in detail_urls:
         if detail_url in seen:
@@ -166,6 +170,33 @@ def parse_licitor_list_html(html: str, page_url: str = AQUITAINE_URL) -> tuple[l
         elif re.search(r"/ventes-aux-encheres-immobilieres/.+/prochaines-ventes\.html\?p=", href):
             next_urls.append(absolute)
     return _unique(detail_urls), _unique(next_urls)
+
+
+def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[dict[str, Any]]:
+    soup = BeautifulSoup(html, "html.parser")
+    sales: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for link in soup.find_all("a", href=True):
+        href = str(link.get("href"))
+        if not re.search(r"/annonce/.+/\d+\.html$", href):
+            continue
+        source_url = urljoin(page_url, href)
+        if source_url in seen:
+            continue
+        seen.add(source_url)
+        container = _list_item_container(link)
+        raw_text = "\n".join(
+            line
+            for line in (
+                clean_text(part)
+                for part in (container or link).get_text("\n", strip=True).splitlines()
+            )
+            if line
+        )
+        sale = _parse_list_sale(source_url, raw_text)
+        if sale:
+            sales.append(sale)
+    return sales
 
 
 def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
@@ -235,11 +266,104 @@ def _collect_detail_urls(client: LicitorClient, max_pages: int, errors: list[str
     return _unique(detail_urls)
 
 
+def _collect_list_sales(client: LicitorClient, max_pages: int, errors: list[str]) -> list[dict[str, Any]]:
+    raw_sales: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for start_url in _start_urls_for_target_departments():
+        pending = [start_url]
+        visited: set[str] = set()
+        while pending and len(visited) < max_pages:
+            page_url = pending.pop(0)
+            if page_url in visited:
+                continue
+            visited.add(page_url)
+            try:
+                html = client.get(page_url)
+            except Exception as exc:
+                LOGGER.error("Licitor list fetch failed for %s: %s", page_url, exc)
+                errors.append(f"{page_url}: {exc}")
+                continue
+            for sale in parse_licitor_list_sales(html, page_url):
+                source_url = str(sale.get("source_url") or "")
+                if source_url in seen:
+                    continue
+                seen.add(source_url)
+                department = str(sale.get("department") or "")
+                if department and department not in TARGET_DEPARTMENTS:
+                    continue
+                raw_sales.append(sale)
+            _, next_urls = parse_licitor_list_html(html, page_url)
+            pending.extend(url for url in next_urls if url not in visited and url not in pending)
+    return raw_sales
+
+
 def _start_urls_for_target_departments() -> tuple[str, ...]:
     aquitaine = {"24", "33", "40", "47", "64"}
     if set(TARGET_DEPARTMENTS).issubset(aquitaine):
         return (AQUITAINE_URL,)
     return LICITOR_ZONE_URLS
+
+
+def _list_item_container(link: Any) -> Any:
+    if "Mise à prix" in link.get_text(" ", strip=True) or "Mise a prix" in link.get_text(" ", strip=True):
+        return link
+    node = link
+    for _ in range(5):
+        parent = getattr(node, "parent", None)
+        if parent is None:
+            break
+        text = parent.get_text(" ", strip=True)
+        if "Mise à prix" in text or "Mise a prix" in text:
+            return parent
+        node = parent
+    return link
+
+
+def _parse_list_sale(source_url: str, raw_text: str) -> dict[str, Any] | None:
+    lines = [line for line in (clean_text(part) for part in raw_text.splitlines()) if line]
+    if not lines:
+        return None
+    department = next((line for line in lines if re.fullmatch(r"\d{2,3}|2A|2B", line)), None)
+    department_index = lines.index(department) if department in lines else -1
+    city = lines[department_index + 1] if department_index >= 0 and department_index + 1 < len(lines) else None
+    title = lines[department_index + 2] if department_index >= 0 and department_index + 2 < len(lines) else None
+    price = _list_value_after(lines, r"Mise à prix")
+    sale_date = lines[-1] if lines else None
+    description_lines = []
+    if department_index >= 0:
+        for line in lines[department_index + 3 :]:
+            if re.match(r"Mise à prix", line, re.I):
+                break
+            description_lines.append(line)
+    description = clean_text(" ".join(description_lines)) or title
+    return {
+        "source_name": "licitor",
+        "source_url": source_url,
+        "external_id": _extract_external_id(source_url, raw_text),
+        "department": department,
+        "city": city,
+        "property_type": title,
+        "title": title,
+        "description": description,
+        "surface_m2": _extract_surface_m2(raw_text),
+        "starting_price_eur": price,
+        "sale_date": sale_date,
+        "status": "unknown",
+        "documents": [],
+        "raw_text": raw_text,
+    }
+
+
+def _list_value_after(lines: list[str], label_pattern: str) -> str | None:
+    for index, line in enumerate(lines):
+        if not re.match(label_pattern, line, re.I):
+            continue
+        inline_value = re.sub(rf"^{label_pattern}\s*:?\s*", "", line, flags=re.I).strip(" :")
+        if inline_value:
+            return clean_text(inline_value)
+        if index + 1 < len(lines):
+            return clean_text(lines[index + 1])
+    return None
 
 
 def _extract_external_id(source_url: str, raw_text: str) -> str | None:
