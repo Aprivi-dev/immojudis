@@ -9,7 +9,6 @@ from typing import Any
 
 import httpx
 from supabase import Client, create_client
-from supabase._sync.client import SupabaseException
 
 from src.asset_normalization import (
     build_auction_features_row,
@@ -27,6 +26,7 @@ from src.pdf_enrichment import classify_document_type, sale_storage_id
 LOGGER = logging.getLogger(__name__)
 POSTGREST_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
 POSTGREST_UPSERT_RETRIES = 3
+POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 522, 524}
 UPSERT_COLUMNS = (
     "source_name",
     "source_url",
@@ -115,64 +115,9 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
         payload.append(row)
     if not payload:
         return 0
-    if str(key).startswith("sb_secret_"):
-        _upsert_with_rest(str(url), str(key), payload)
-        _delete_secondary_sale_rows(str(url), str(key), sales)
-        _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
-        return len(payload)
-
-    try:
-        client = get_supabase_client()
-    except SupabaseException as exc:
-        LOGGER.warning("Supabase client initialization failed, falling back to REST: %s", exc)
-        _upsert_with_rest(str(url), str(key), payload)
-        _delete_secondary_sale_rows(str(url), str(key), sales)
-    else:
-        if client is None:
-            return 0
-        client.table("auction_sales").upsert(payload, on_conflict="source_url").execute()
-        _delete_secondary_sale_rows(str(url), str(key), sales)
-        client.table("auction_features").upsert(
-            [_timestamped(build_auction_features_row(sale), now) for sale in sales],
-            on_conflict="source_url",
-        ).execute()
-        client.table("auction_surfaces").upsert(
-            [_timestamped(build_auction_surfaces_row(sale), now) for sale in sales],
-            on_conflict="source_url",
-        ).execute()
-        source_urls = [sale.source_url for sale in sales]
-        if source_urls:
-            client.table("auction_risks").delete().in_("source_url", source_urls).execute()
-            client.table("auction_risk_occurrences").delete().in_("source_url", source_urls).execute()
-            client.table("auction_score_factors").delete().in_("source_url", source_urls).execute()
-        risk_occurrences_by_source = {sale.source_url: _risk_occurrence_rows_for_sale(sale) for sale in sales}
-        risk_rows = [
-            _timestamped(row, now)
-            for sale in sales
-            for row in build_auction_risk_rows_from_occurrences(
-                sale.source_url,
-                risk_occurrences_by_source.get(sale.source_url, []),
-            )
-        ]
-        if risk_rows:
-            client.table("auction_risks").insert(risk_rows).execute()
-        risk_occurrences = [
-            _timestamped(row, now) for rows in risk_occurrences_by_source.values() for row in rows
-        ]
-        if risk_occurrences:
-            client.table("auction_risk_occurrences").insert(risk_occurrences).execute()
-        score_factors = [
-            _timestamped(row, now)
-            for sale in sales
-            for row in build_auction_score_factor_rows(
-                sale,
-                risk_occurrences_by_source.get(sale.source_url, []),
-            )
-        ]
-        if score_factors:
-            client.table("auction_score_factors").insert(score_factors).execute()
-        upsert_documents_to_supabase(sales)
-        upsert_extractions_to_supabase(sales)
+    _upsert_with_rest(str(url), str(key), payload)
+    _delete_secondary_sale_rows(str(url), str(key), sales)
+    _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
     return len(payload)
 
 
@@ -392,18 +337,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
             )
     if not payload:
         return 0
-    if str(key).startswith("sb_secret_"):
-        _postgrest_upsert(str(url), str(key), "auction_observations", payload, on_conflict="source_url")
-        return len(payload)
-    try:
-        client = get_supabase_client()
-    except SupabaseException as exc:
-        LOGGER.warning("Supabase client initialization failed, falling back to REST: %s", exc)
-        _postgrest_upsert(str(url), str(key), "auction_observations", payload, on_conflict="source_url")
-    else:
-        if client is None:
-            return 0
-        client.table("auction_observations").upsert(payload, on_conflict="source_url").execute()
+    _postgrest_upsert(str(url), str(key), "auction_observations", payload, on_conflict="source_url")
     return len(payload)
 
 
@@ -629,11 +563,8 @@ def mark_past_sales_in_supabase() -> int:
         timeout=30,
     )
     if response.is_error:
-        raise httpx.HTTPStatusError(
-            f"{response.status_code} response from Supabase auction_sales cleanup: {response.text}",
-            request=response.request,
-            response=response,
-        )
+        LOGGER.warning("Supabase auction_sales cleanup failed (%s): %s", response.status_code, response.text[:200])
+        return 0
     return len(response.json()) if response.content else 0
 
 
@@ -799,12 +730,22 @@ def _postgrest_upsert_batch(
     last_timeout: httpx.TimeoutException | None = None
     for attempt in range(1, POSTGREST_UPSERT_RETRIES + 1):
         try:
-            return httpx.post(
+            response = httpx.post(
                 endpoint,
                 params={"on_conflict": on_conflict},
                 headers=_rest_headers(api_key, prefer="resolution=merge-duplicates,return=minimal"),
                 json=_sanitize_postgrest_payload(payload),
                 timeout=POSTGREST_TIMEOUT,
+            )
+            if response.status_code not in POSTGREST_RETRYABLE_STATUS_CODES or attempt == POSTGREST_UPSERT_RETRIES:
+                return response
+            LOGGER.warning(
+                "Supabase %s upsert returned %s on attempt %s/%s for %s rows; retrying",
+                table,
+                response.status_code,
+                attempt,
+                POSTGREST_UPSERT_RETRIES,
+                len(payload),
             )
         except httpx.TimeoutException as exc:
             last_timeout = exc
@@ -817,7 +758,7 @@ def _postgrest_upsert_batch(
                 POSTGREST_UPSERT_RETRIES,
                 len(payload),
             )
-            time.sleep(2 * attempt)
+        time.sleep(2 * attempt)
     if last_timeout is not None:
         raise last_timeout
     raise RuntimeError(f"Supabase {table} upsert failed before request")
@@ -826,8 +767,10 @@ def _postgrest_upsert_batch(
 def _postgrest_insert(supabase_url: str, api_key: str, table: str, payload: list[dict[str, object]]) -> None:
     endpoint = f"{supabase_url.rstrip('/')}/rest/v1/{table}"
     for batch in _postgrest_batches(payload, _postgrest_batch_size(table)):
-        response = httpx.post(
+        response = _postgrest_request_with_retries(
+            "POST",
             endpoint,
+            table=table,
             headers=_rest_headers(api_key, prefer="return=minimal"),
             json=_sanitize_postgrest_payload(batch),
             timeout=POSTGREST_TIMEOUT,
@@ -842,13 +785,52 @@ def _postgrest_insert(supabase_url: str, api_key: str, table: str, payload: list
 
 def _postgrest_delete(supabase_url: str, api_key: str, table: str, params: dict[str, str]) -> None:
     endpoint = f"{supabase_url.rstrip('/')}/rest/v1/{table}"
-    response = httpx.delete(endpoint, params=params, headers=_rest_headers(api_key, prefer="return=minimal"), timeout=30)
+    response = _postgrest_request_with_retries(
+        "DELETE",
+        endpoint,
+        table=table,
+        params=params,
+        headers=_rest_headers(api_key, prefer="return=minimal"),
+        timeout=30,
+    )
     if response.is_error:
         raise httpx.HTTPStatusError(
             f"{response.status_code} response from Supabase {table}: {response.text}",
             request=response.request,
             response=response,
         )
+
+
+def _postgrest_request_with_retries(method: str, endpoint: str, table: str, **kwargs: Any) -> httpx.Response:
+    last_timeout: httpx.TimeoutException | None = None
+    for attempt in range(1, POSTGREST_UPSERT_RETRIES + 1):
+        try:
+            response = httpx.request(method, endpoint, **kwargs)
+            if response.status_code not in POSTGREST_RETRYABLE_STATUS_CODES or attempt == POSTGREST_UPSERT_RETRIES:
+                return response
+            LOGGER.warning(
+                "Supabase %s %s returned %s on attempt %s/%s; retrying",
+                table,
+                method,
+                response.status_code,
+                attempt,
+                POSTGREST_UPSERT_RETRIES,
+            )
+        except httpx.TimeoutException as exc:
+            last_timeout = exc
+            if attempt == POSTGREST_UPSERT_RETRIES:
+                raise
+            LOGGER.warning(
+                "Supabase %s %s timed out on attempt %s/%s; retrying",
+                table,
+                method,
+                attempt,
+                POSTGREST_UPSERT_RETRIES,
+            )
+        time.sleep(2 * attempt)
+    if last_timeout is not None:
+        raise last_timeout
+    raise RuntimeError(f"Supabase {table} {method} failed before request")
 
 
 def _postgrest_in_filter(values: list[str]) -> str:
