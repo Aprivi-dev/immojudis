@@ -109,9 +109,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -n "$REQUESTED_RUN_ID" ]; then
-            args=(--run-id "$REQUESTED_RUN_ID" --source "${REQUESTED_SOURCE:-all}")
-            if [ "${REQUESTED_USE_LLM:-true}" != "true" ]; then
+          if [ -n "$REQUESTED_RUN_ID" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+            args=(--source "${REQUESTED_SOURCE:-all}")
+            if [ -n "$REQUESTED_RUN_ID" ]; then
+              args+=(--run-id "$REQUESTED_RUN_ID")
+            fi
+            if [ "${REQUESTED_USE_LLM:-false}" != "true" ]; then
               args+=(--no-llm)
             fi
             if [ -n "$REQUESTED_LIMIT" ]; then
