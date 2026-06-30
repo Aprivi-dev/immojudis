@@ -22,12 +22,24 @@ alter table public.auction_score_factors enable row level security;
 alter table public.auction_scoring_versions enable row level security;
 alter table public.tribunals enable row level security;
 
-revoke all on table public.v_auction_sales_app from anon;
-revoke all on table public.v_auction_map_pins from anon;
-revoke all on table public.public_auction_sales from anon;
-revoke all on table public.auction_sales_quality_issues from anon;
-revoke all on table public.auction_sales_investment_candidates from anon;
-revoke all on table public.auction_source_coverage from anon;
+do $$
+declare
+  relation_name text;
+begin
+  foreach relation_name in array array[
+    'public.v_auction_sales_app',
+    'public.v_auction_map_pins',
+    'public.public_auction_sales',
+    'public.auction_sales_quality_issues',
+    'public.auction_sales_investment_candidates',
+    'public.auction_source_coverage'
+  ] loop
+    if to_regclass(relation_name) is not null then
+      execute format('revoke all on table %s from anon', relation_name);
+      execute format('grant select on table %s to authenticated', relation_name);
+    end if;
+  end loop;
+end $$;
 
 revoke all on table public.auction_sales from anon;
 revoke all on table public.auction_features from anon;
@@ -40,13 +52,6 @@ revoke all on table public.auction_scoring_versions from anon;
 revoke all on table public.tribunals from anon;
 
 revoke all on table public.v_auction_sales_app_preview from anon, authenticated;
-
-grant select on table public.v_auction_sales_app to authenticated;
-grant select on table public.v_auction_map_pins to authenticated;
-grant select on table public.public_auction_sales to authenticated;
-grant select on table public.auction_sales_quality_issues to authenticated;
-grant select on table public.auction_sales_investment_candidates to authenticated;
-grant select on table public.auction_source_coverage to authenticated;
 
 grant select on table public.auction_sales to authenticated;
 grant select on table public.auction_features to authenticated;
