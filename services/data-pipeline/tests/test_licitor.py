@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from src.normalize import normalize_sale
+from src.sources import licitor
 from src.sources.licitor import RobotsRules, parse_licitor_detail_html, parse_licitor_list_html
 
 
@@ -39,6 +40,18 @@ def test_parse_licitor_list_html_extracts_detail_and_next_urls() -> None:
     assert next_urls == [
         "https://www.licitor.com/ventes-aux-encheres-immobilieres/paris-et-ile-de-france/prochaines-ventes.html?p=2"
     ]
+
+
+def test_licitor_uses_aquitaine_listing_page_for_aquitaine_targets(monkeypatch) -> None:
+    monkeypatch.setattr(licitor, "TARGET_DEPARTMENTS", ("24", "33", "40", "47", "64"))
+
+    assert licitor._start_urls_for_target_departments() == (licitor.AQUITAINE_URL,)
+
+
+def test_licitor_uses_all_listing_pages_for_national_targets(monkeypatch) -> None:
+    monkeypatch.setattr(licitor, "TARGET_DEPARTMENTS", ("33", "75"))
+
+    assert licitor._start_urls_for_target_departments() == licitor.LICITOR_ZONE_URLS
 
 
 def test_parse_licitor_detail_html_extracts_national_postal_code() -> None:
