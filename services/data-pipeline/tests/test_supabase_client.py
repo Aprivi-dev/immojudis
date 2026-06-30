@@ -108,6 +108,100 @@ def test_delete_vench_sales_without_surface_removes_observations_then_sales(monk
     assert calls == ["auction_observations", "auction_sales"]
 
 
+def test_delete_vench_sales_without_surface_is_best_effort_on_lookup_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        is_error = True
+        status_code = 522
+        text = "connection timed out"
+
+    monkeypatch.setattr(supabase_client.httpx, "get", lambda *args, **kwargs: Response())
+
+    assert supabase_client.delete_vench_sales_without_surface_in_supabase() == 0
+
+
+def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/sale",
+            "source_urls": ["https://example.test/sale"],
+            "raw_payload": {"text": "hello\x00"},
+        }
+    )
+    calls: list[tuple[str, str, int]] = []
+
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://example",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgres_upsert",
+        lambda db_url, table, payload, on_conflict: calls.append((db_url, table, len(payload))),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_delete_secondary_sale_rows_with_postgres",
+        lambda db_url, sales: calls.append((db_url, "delete_secondary", len(sales))) or 0,
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_with_rest",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("REST upsert should not run")),
+    )
+
+    assert supabase_client.upsert_sales_to_supabase([sale]) == 1
+    assert calls == [
+        ("postgresql://example", "auction_sales", 1),
+        ("postgresql://example", "delete_secondary", 1),
+    ]
+
+
+def test_upsert_observations_prefers_direct_postgres_when_db_url_is_configured(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/sale",
+            "observations": [{"source_name": "avoventes", "source_url": "https://example.test/sale"}],
+        }
+    )
+    calls: list[tuple[str, str, int]] = []
+
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://example",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgres_upsert",
+        lambda db_url, table, payload, on_conflict: calls.append((db_url, table, len(payload))),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("REST observation upsert should not run")),
+    )
+
+    assert supabase_client.upsert_observations_to_supabase([sale]) == 1
+    assert calls == [("postgresql://example", "auction_observations", 1)]
+
+
 def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
     monkeypatch.setattr(
         supabase_client,

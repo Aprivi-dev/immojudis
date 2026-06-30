@@ -10,6 +10,15 @@ from typing import Any
 import httpx
 from supabase import Client, create_client
 
+try:
+    import psycopg
+    from psycopg import sql
+    from psycopg.types.json import Jsonb
+except ModuleNotFoundError:  # pragma: no cover - GitHub Actions installs psycopg on Python 3.11.
+    psycopg = None
+    sql = None
+    Jsonb = None
+
 from src.asset_normalization import (
     build_auction_features_row,
     build_auction_risk_rows_from_occurrences,
@@ -27,6 +36,16 @@ LOGGER = logging.getLogger(__name__)
 POSTGREST_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
 POSTGREST_UPSERT_RETRIES = 3
 POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 522, 524}
+POSTGRES_CONNECT_TIMEOUT = 15
+POSTGRES_JSON_COLUMNS = {
+    "source_urls",
+    "visit_dates",
+    "documents",
+    "score_factors",
+    "quality_flags",
+    "raw_payload",
+    "observations",
+}
 UPSERT_COLUMNS = (
     "source_name",
     "source_url",
@@ -102,6 +121,7 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
+    db_url = settings.get("supabase_db_url")
     if not url or not key:
         LOGGER.info("Supabase variables are missing; skipping upsert")
         return 0
@@ -115,6 +135,13 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
         payload.append(row)
     if not payload:
         return 0
+    if db_url:
+        try:
+            _postgres_upsert(str(db_url), "auction_sales", payload, on_conflict="source_url")
+            _delete_secondary_sale_rows_with_postgres(str(db_url), sales)
+            return len(payload)
+        except Exception as exc:
+            LOGGER.warning("Direct Postgres auction_sales upsert failed; falling back to REST: %s", exc)
     _upsert_with_rest(str(url), str(key), payload)
     _delete_secondary_sale_rows(str(url), str(key), sales)
     _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
@@ -307,6 +334,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
+    db_url = settings.get("supabase_db_url")
     if not url or not key:
         return 0
     now = datetime.now(timezone.utc).isoformat()
@@ -337,6 +365,12 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
             )
     if not payload:
         return 0
+    if db_url:
+        try:
+            _postgres_upsert(str(db_url), "auction_observations", payload, on_conflict="source_url")
+            return len(payload)
+        except Exception as exc:
+            LOGGER.warning("Direct Postgres auction_observations upsert failed; falling back to REST: %s", exc)
     _postgrest_upsert(str(url), str(key), "auction_observations", payload, on_conflict="source_url")
     return len(payload)
 
@@ -603,11 +637,8 @@ def _fetch_vench_without_surface_urls(supabase_url: str, api_key: str) -> list[s
         timeout=30,
     )
     if response.is_error:
-        raise httpx.HTTPStatusError(
-            f"{response.status_code} response from Supabase Vench cleanup lookup: {response.text}",
-            request=response.request,
-            response=response,
-        )
+        LOGGER.warning("Supabase Vench cleanup lookup failed (%s): %s", response.status_code, response.text[:200])
+        return []
     return [str(row["source_url"]) for row in response.json() if row.get("source_url")]
 
 
@@ -626,6 +657,64 @@ def _delete_secondary_sale_rows(supabase_url: str, api_key: str, sales: list[Auc
         {"source_url": _postgrest_in_filter(secondary_urls)},
     )
     return len(secondary_urls)
+
+
+def _delete_secondary_sale_rows_with_postgres(db_url: str, sales: list[AuctionSale]) -> int:
+    if psycopg is None:
+        raise RuntimeError("psycopg is required for direct Postgres writes")
+    secondary_urls = _secondary_source_urls(sales)
+    if not secondary_urls:
+        return 0
+    with psycopg.connect(db_url, connect_timeout=POSTGRES_CONNECT_TIMEOUT) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "delete from public.auction_observations where source_url = any(%s)",
+                (secondary_urls,),
+            )
+            cursor.execute(
+                "delete from public.auction_sales where source_url = any(%s)",
+                (secondary_urls,),
+            )
+    return len(secondary_urls)
+
+
+def _postgres_upsert(
+    db_url: str,
+    table: str,
+    payload: list[dict[str, object]],
+    on_conflict: str,
+) -> None:
+    if psycopg is None or sql is None:
+        raise RuntimeError("psycopg is required for direct Postgres writes")
+    if not payload:
+        return
+    columns = list(payload[0].keys())
+    insert_statement = sql.SQL(
+        "insert into {} ({}) values ({}) on conflict ({}) do update set {}"
+    ).format(
+        sql.Identifier("public", table),
+        sql.SQL(", ").join(sql.Identifier(column) for column in columns),
+        sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+        sql.Identifier(on_conflict),
+        sql.SQL(", ").join(
+            sql.SQL("{} = excluded.{}").format(sql.Identifier(column), sql.Identifier(column))
+            for column in columns
+            if column != on_conflict
+        ),
+    )
+    rows = [tuple(_postgres_value(column, row.get(column)) for column in columns) for row in payload]
+    with psycopg.connect(db_url, connect_timeout=POSTGRES_CONNECT_TIMEOUT) as connection:
+        with connection.cursor() as cursor:
+            cursor.executemany(insert_statement, rows)
+
+
+def _postgres_value(column: str, value: object) -> object:
+    value = _sanitize_postgrest_payload(value)
+    if value is None:
+        return None
+    if column in POSTGRES_JSON_COLUMNS:
+        return Jsonb(value) if Jsonb is not None else value
+    return value
 
 
 def _secondary_source_urls(sales: list[AuctionSale]) -> list[str]:
