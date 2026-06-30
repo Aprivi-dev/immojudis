@@ -78,7 +78,7 @@ function AdminDashboardPage() {
     data: { source: AdminScrollSource; useLlm: boolean };
   }) => Promise<StartScrollResult>;
   const [source, setSource] = useState<AdminScrollSource>("all");
-  const [useLlm, setUseLlm] = useState(true);
+  const [useLlm, setUseLlm] = useState(false);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["admin-dashboard"],
