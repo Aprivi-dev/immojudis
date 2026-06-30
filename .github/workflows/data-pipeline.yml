@@ -93,6 +93,7 @@ jobs:
             immojudis-data-pipeline-${{ runner.os }}-
 
       - name: Install OCR system packages
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.use_llm == 'true' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
