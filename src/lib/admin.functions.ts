@@ -20,7 +20,7 @@ const SCROLL_SOURCES = [
 
 const startScrollSchema = z.object({
   source: z.enum(SCROLL_SOURCES).default("all"),
-  useLlm: z.boolean().default(true),
+  useLlm: z.boolean().default(false),
 });
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };

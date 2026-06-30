@@ -27,7 +27,7 @@ on:
       use_llm:
         description: "Enable LLM enrichment"
         required: false
-        default: true
+        default: false
         type: boolean
       limit:
         description: "Optional raw listing limit"
