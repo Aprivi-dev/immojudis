@@ -6,7 +6,7 @@ import re
 from typing import Any
 from urllib.parse import urlencode
 
-from src.config import TARGET_DEPARTMENTS, load_settings
+from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
@@ -54,7 +54,7 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
     for transaction_type in TRANSACTION_TYPES:
-        for department in TARGET_DEPARTMENTS:
+        for department in _department_filters():
             for page in range(1, max_pages + 1):
                 url = _api_url(page, transaction_type, department)
                 try:
@@ -73,6 +73,12 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
                         raw_sales.append(sale)
 
     return ScrapeResult(validate_raw_sales("notaires", unique_dicts(raw_sales, "source_url"), errors), errors)
+
+
+def _department_filters() -> tuple[str | None, ...]:
+    if set(TARGET_DEPARTMENTS) == set(FRANCE_DEPARTMENTS):
+        return (None,)
+    return TARGET_DEPARTMENTS
 
 
 def parse_notaires_json(payload: str) -> list[dict[str, Any]]:
@@ -290,8 +296,10 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
     }
 
 
-def _api_url(page: int, transaction_type: str, department: str) -> str:
-    params = {"page": page, "parPage": 24, "typeTransactions": transaction_type, "departements": department}
+def _api_url(page: int, transaction_type: str, department: str | None) -> str:
+    params = {"page": page, "parPage": 24, "typeTransactions": transaction_type}
+    if department:
+        params["departements"] = department
     if transaction_type == "VAE":
         params["isProchainesVae"] = "true"
     return f"{API_URL}?{urlencode(params)}"
