@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
 
-from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
+from src.config import FRENCH_POSTAL_CODE_PATTERN, FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
@@ -46,9 +46,12 @@ def scrape_petites_affiches_aquitaine_result(
 
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
-    for department in TARGET_DEPARTMENTS:
+    for department in _department_filters():
         try:
-            html = client.post_form(LIST_URL, {"historique": "0", "select_dep": department})
+            form = {"historique": "0"}
+            if department is not None:
+                form["select_dep"] = department
+            html = client.post_form(LIST_URL, form)
         except Exception as exc:
             LOGGER.error("Petites Affiches list fetch failed for department %s: %s", department, exc)
             errors.append(f"department {department}: {exc}")
@@ -62,6 +65,12 @@ def scrape_petites_affiches_aquitaine_result(
         validate_raw_sales("petites_affiches", unique_dicts(raw_sales, "source_url"), errors),
         errors,
     )
+
+
+def _department_filters() -> tuple[str | None, ...]:
+    if set(TARGET_DEPARTMENTS) == set(FRANCE_DEPARTMENTS):
+        return (None,)
+    return TARGET_DEPARTMENTS
 
 
 def parse_petites_affiches_html(
