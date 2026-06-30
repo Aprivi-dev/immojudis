@@ -16,7 +16,14 @@ export type AccountProfile = {
   updated_at?: string;
 };
 
-export const ADMIN_EMAILS = ["a.privileggio@gmail.com"] as const;
+const DEFAULT_ADMIN_EMAILS = ["a.privileggio@gmail.com"];
+
+function parseAdminEmails(value: string | undefined): string[] {
+  return (value ?? "").split(",").map(normalizeEmail).filter(Boolean);
+}
+
+export const ADMIN_EMAILS = parseAdminEmails(import.meta.env.VITE_ADMIN_EMAILS);
+if (ADMIN_EMAILS.length === 0) ADMIN_EMAILS.push(...DEFAULT_ADMIN_EMAILS);
 
 export const ACCOUNT_TYPE_OPTIONS: Array<{
   value: AccountType;
@@ -74,11 +81,17 @@ export function normalizeEmail(email: string | null | undefined): string {
 }
 
 export function isAdminEmail(email: string | null | undefined): boolean {
-  return ADMIN_EMAILS.includes(normalizeEmail(email) as (typeof ADMIN_EMAILS)[number]);
+  return ADMIN_EMAILS.includes(normalizeEmail(email));
+}
+
+export function hasAdminRole(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const metadata = value as { app_metadata?: { role?: unknown }; user_role?: unknown };
+  return metadata.app_metadata?.role === "admin" || metadata.user_role === "admin";
 }
 
 export function isAdminAccount(user: User | null | undefined): boolean {
-  return isAdminEmail(user?.email);
+  return hasAdminRole(user) || isAdminEmail(user?.email);
 }
 
 export function profileFromUserMetadata(user: User | null | undefined): AccountProfile | null {

@@ -8,6 +8,7 @@ import { isNew } from "@/lib/dates";
 import type { AuctionSale } from "@/lib/types";
 import { formatPrice, formatDate, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
+import { firstPropertyImage, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { SaleCountdown } from "./SaleCountdown";
 import { MapThumbnail } from "./MapThumbnail";
@@ -31,7 +32,8 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
         : "chip-neutral";
   const propertyLabel = locked ? "Annonce réservée" : propertyTypeLabel(sale.property_type);
   const title = locked ? "Détail réservé aux membres" : (sale.title ?? propertyLabel);
-  const imageUrl = locked ? "/media/landing/auction-bordeaux.jpg" : firstImage(sale.media);
+  const fallbackImage = "/media/landing/auction-bordeaux.jpg";
+  const imageUrl = locked ? fallbackImage : firstPropertyImage(sale.media);
 
   return (
     <Link
@@ -52,6 +54,14 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
               loading="lazy"
               decoding="async"
               referrerPolicy="no-referrer"
+              onError={(event) => {
+                event.currentTarget.src = fallbackImage;
+              }}
+              onLoad={(event) => {
+                if (!locked && shouldRejectRenderedPropertyImage(event.currentTarget)) {
+                  event.currentTarget.src = fallbackImage;
+                }
+              }}
               className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.03] ${
                 locked ? "scale-110 opacity-60 blur-md" : ""
               }`}
@@ -174,9 +184,4 @@ function CardMetric({ label, value }: { label: string; value: string }) {
       <div className="mt-0.5 font-semibold tabular-nums text-foreground">{value}</div>
     </div>
   );
-}
-
-function firstImage(media: AuctionSale["media"]): string | null {
-  if (!Array.isArray(media)) return null;
-  return media.find((item) => /^https?:\/\//i.test(item?.url ?? ""))?.url ?? null;
 }

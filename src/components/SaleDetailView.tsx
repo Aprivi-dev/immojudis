@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import type * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useRouter } from "@tanstack/react-router";
-import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
+import { useServerFn } from "@tanstack/react-start";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
-import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
+import Camera from "lucide-react/dist/esm/icons/camera.js";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
 import CircleHelp from "lucide-react/dist/esm/icons/circle-help.js";
 import ClipboardCheck from "lucide-react/dist/esm/icons/clipboard-check.js";
@@ -24,20 +25,27 @@ import {
   formatPricePerM2,
   occupancyLabel,
   propertyTypeLabel,
-  saleStatusLabel,
 } from "@/lib/format";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { parseDocs } from "@/lib/documents";
-import { DocumentsList } from "@/components/DocumentsList";
 import { FavoriteButton } from "@/components/FavoriteButton";
-import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
-import { PropertyOverview } from "@/components/PropertyOverview";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleLocationHero } from "@/components/SaleLocationHero";
+import { MapThumbnail } from "@/components/MapThumbnail";
 import { BrandMark } from "@/components/BrandLogo";
 import { EvidenceTrail } from "@/components/EvidenceTrail";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { MarketEstimate } from "@/lib/market.functions";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { getEnvironmentalContext, type EnvironmentalContext } from "@/lib/environment.functions";
+import { getMarketEstimate, type MarketEstimate } from "@/lib/market.functions";
+import { propertyImages } from "@/lib/sale-media";
 import {
   computeAcquisitionCosts,
   computeMarketCeiling,
@@ -45,27 +53,23 @@ import {
   MARKET_CEILING_SCENARIOS,
   type MarketCeilingResult,
 } from "@/lib/profitability";
+import {
+  buildSaleProductSources,
+  type ProductComparable,
+  type ProductFact,
+  type ProductGroup,
+  type ProductHistoryRow,
+  type ProductRisk,
+  type SaleProductSources,
+} from "@/lib/sale-detail-sources";
 import type { AuctionSale, SaleDocumentRich, SaleMedia, SaleRiskOccurrence } from "@/lib/types";
 
-// Anchors follow the reading order: what we know → bid ceiling → conditions →
-// territory → documents.
 const SECTION_NAV = [
-  { id: "decision", label: "Décision" },
-  { id: "assistant", label: "Plafond" },
-  { id: "cout", label: "Coût complet" },
-  { id: "hypotheses", label: "Hypothèses" },
-  { id: "points", label: "Points à vérifier" },
-  { id: "occupation", label: "Occupation" },
-  { id: "travaux", label: "Travaux" },
-  { id: "marche", label: "Marché" },
+  { id: "overview", label: "Aperçu" },
+  { id: "lawyer", label: "Avocat" },
+  { id: "details", label: "Détails" },
   { id: "documents", label: "Pièces" },
-  { id: "checklist", label: "Checklist" },
-  { id: "assistant-dossier", label: "Assistant" },
-  { id: "notes", label: "Notes" },
-  { id: "alertes", label: "Alertes" },
-  { id: "comparaison", label: "Comparer" },
-  { id: "similaires", label: "Similaires" },
-  { id: "actions", label: "Actions" },
+  { id: "risks", label: "Risques" },
 ] as const;
 
 /**
@@ -82,11 +86,61 @@ export function SaleDetailView({
 }) {
   const location = saleLocation(sale.address, sale.postal_code, sale.city);
   const referenceLabel = sale.title ?? propertyTypeLabel(sale.property_type);
-  const statusLabel = saleStatusLabel(sale.status);
-  const surfaceInfo = getDisplaySurface(sale);
+  const saleSurface = getSaleSurface(sale).value;
   const media = saleImages(sale.media);
-  const decision = buildDecisionSummary(sale, marketEstimateOverride);
-  const documentCount = countDocuments(sale);
+  const fetchMarketEstimate = useServerFn(getMarketEstimate);
+  const marketQuery = useQuery({
+    queryKey: [
+      "market-estimate",
+      sale.id,
+      sale.latitude,
+      sale.longitude,
+      sale.property_type,
+      Math.round(saleSurface ?? 0),
+    ],
+    queryFn: () =>
+      fetchMarketEstimate({
+        data: {
+          lat: sale.latitude!,
+          lng: sale.longitude!,
+          propertyType: sale.property_type,
+          surfaceM2: saleSurface,
+        },
+      }),
+    enabled:
+      marketEstimateOverride == null &&
+      sale.latitude != null &&
+      sale.longitude != null &&
+      saleSurface != null &&
+      saleSurface > 0,
+    staleTime: 24 * 60 * 60_000,
+  });
+  const marketEstimate = marketEstimateOverride ?? marketQuery.data?.estimate ?? null;
+  const marketLoading = marketEstimateOverride == null && marketQuery.isLoading;
+  const marketError =
+    marketEstimateOverride == null &&
+    Boolean(marketQuery.isError || marketQuery.data?.ok === false);
+  const fetchEnvironmentalContext = useServerFn(getEnvironmentalContext);
+  const environmentalQuery = useQuery({
+    queryKey: ["environmental-context", sale.id, location, sale.latitude, sale.longitude],
+    queryFn: () =>
+      fetchEnvironmentalContext({
+        data: {
+          address: location,
+          lat: sale.latitude,
+          lng: sale.longitude,
+        },
+      }),
+    enabled: Boolean(location || (sale.latitude != null && sale.longitude != null)),
+    staleTime: 7 * 24 * 60 * 60_000,
+  });
+  const environmentalContext: EnvironmentalContext | null =
+    environmentalQuery.data?.context ?? null;
+  const environmentalLoading = environmentalQuery.isLoading;
+  const environmentalError = Boolean(
+    environmentalQuery.isError || environmentalQuery.data?.ok === false,
+  );
+  const decision = buildDecisionSummary(sale, marketEstimate);
   const acquisitionCost = computeAcquisitionCosts({
     price: decision.ceiling?.available
       ? decision.ceiling.maxBid
@@ -94,328 +148,1552 @@ export function SaleDetailView({
     works: DEFAULTS.works,
     fpt: DEFAULTS.fpt,
   });
+  const product = buildSaleProductSources({
+    sale,
+    ceiling: decision.ceiling,
+    primaryCheck: decision.primaryCheck,
+    primaryDocument: decision.primaryDocument,
+    action: decision.action,
+    acquisitionCost,
+    marketEstimate,
+    marketLoading,
+    marketError,
+    environmentalContext,
+    environmentalLoading,
+    environmentalError,
+  });
 
   return (
-    <main className="min-h-screen bg-white pb-28 text-foreground lg:pb-24">
+    <main className="min-h-screen bg-[#f7f5f3] pb-28 text-foreground lg:pb-20">
+      <ListingActionBar
+        sale={sale}
+        title={referenceLabel}
+        decision={decision}
+        acquisitionCost={acquisitionCost}
+        location={location}
+      />
+
       <section className="border-b border-border bg-white">
-        <div className="mx-auto max-w-7xl px-4 pb-6 pt-5 sm:px-6 lg:px-8">
-          <nav className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            <Link
-              to="/sales"
-              className="inline-flex items-center gap-1.5 transition-colors hover:text-gold-soft"
-            >
-              <ArrowLeft className="h-3 w-3" /> Annonces
-            </Link>
-            <ChevronRight className="h-3 w-3 opacity-40" />
-            <span className="text-foreground/80">{sale.city ?? sale.department ?? "Détail"}</span>
-          </nav>
-
-          <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-4xl">
-              <div className="flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-[0.16em] text-gold-soft">
-                <span>{propertyTypeLabel(sale.property_type)}</span>
-                {sale.department && (
-                  <span className="text-muted-foreground">· Département {sale.department}</span>
-                )}
-                {statusLabel && (
-                  <span className="rounded-full border border-gold/30 bg-gold/10 px-2.5 py-1 text-[10px] tracking-[0.12em] text-gold-soft">
-                    {statusLabel}
-                  </span>
-                )}
-              </div>
-
-              <h1 className="mt-3 font-sans text-3xl font-semibold leading-tight text-foreground sm:text-4xl lg:text-5xl">
-                {referenceLabel}
-              </h1>
-
-              {location && (
-                <p className="mt-3 inline-flex max-w-2xl items-center gap-2 text-sm text-muted-foreground sm:text-base">
-                  <MapPin className="h-4 w-4 text-gold-soft" />
-                  {location}
-                </p>
-              )}
-            </div>
-
-            <dl className="grid gap-3 rounded-lg border border-border bg-[#f7f7f7] p-3 sm:grid-cols-3 lg:min-w-[32rem]">
-              <HeroMeta label="Mise à prix" value={formatPrice(sale.starting_price_eur)} accent />
-              <HeroMeta label="Audience" value={formatDate(sale.sale_date)} />
-              <HeroMeta
-                label={surfaceInfo.metricLabel}
-                value={surfaceInfo.value ? surfaceInfo.label : "—"}
-              />
-              <HeroMeta label="Occupation" value={occupancyLabel(sale.occupancy_status)} />
-              <HeroMeta
-                label="Pièces"
-                value={`${documentCount} disponible${documentCount > 1 ? "s" : ""}`}
-              />
-              <HeroMeta label="Temps restant" value={timeRemainingLabel(sale.sale_date)} />
-            </dl>
-          </div>
-
-          <div className="mt-5 grid gap-3 rounded-lg border border-border bg-surface/50 p-3 sm:grid-cols-2 lg:grid-cols-4">
-            <QuickStat
-              icon={<Target className="h-4 w-4" />}
-              label="Plafond estimé"
-              value={
-                decision.ceiling?.available ? formatPrice(decision.ceiling.maxBid) : "À compléter"
-              }
-              detail={
-                decision.ceiling?.available ? "Scénario équilibré" : "Marché local à renseigner"
-              }
-            />
-            <QuickStat
-              icon={<BadgeEuro className="h-4 w-4" />}
-              label="Coût complet"
-              value={formatPrice(acquisitionCost.totalCost)}
-              detail="Avec frais estimés, hors travaux"
-            />
-            <QuickStat
-              icon={<TriangleAlert className="h-4 w-4" />}
-              label="Point principal"
-              value={decision.primaryCheck}
-              detail={decision.primaryDocument}
-            />
-            <QuickStat
-              icon={<Scale className="h-4 w-4" />}
-              label="Tribunal"
-              value={sale.tribunal ?? sale.tribunal_name ?? "À confirmer"}
-              detail={statusLabel ?? "Statut à vérifier"}
-            />
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <FavoriteButton saleId={sale.id} className="justify-center px-4 py-2" />
-            <HeaderAction href="#assistant" icon={<Target className="h-4 w-4" />}>
-              Préparer mon enchère
-            </HeaderAction>
-            <HeaderAction onClick={printAnalysis} icon={<Download className="h-4 w-4" />}>
-              Exporter l'analyse
-            </HeaderAction>
-            <HeaderAction
-              onClick={() => void shareCurrentPage(referenceLabel)}
-              icon={<Share2 className="h-4 w-4" />}
-            >
-              Partager le dossier
-            </HeaderAction>
-          </div>
-
+        <div className="w-full px-4 pb-3">
           {media.length > 0 ? (
             <SaleMediaGallery media={media} />
           ) : (
-            <div className="mt-5">
+            <div className="mt-3 overflow-hidden rounded-md border border-border">
               <SaleLocationHero sale={sale} />
             </div>
           )}
-
-          <nav
-            aria-label="Sections du dossier"
-            className="mt-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {SECTION_NAV.map((s) => (
-              <a
-                key={s.id}
-                href={`#${s.id}`}
-                className="shrink-0 rounded-full border border-border bg-white px-3.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-gold/40 hover:text-gold-soft"
-              >
-                {s.label}
-              </a>
-            ))}
-          </nav>
         </div>
       </section>
 
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-x-12 gap-y-10 px-4 pt-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-8">
-        <div className="space-y-12">
-          <Section id="decision" eyebrow="Décision rapide" title="Ce qui change la décision">
-            <QuickDecision sale={sale} decision={decision} acquisitionCost={acquisitionCost} />
+      <section className="mx-auto grid max-w-[1074px] gap-4 px-4 pt-4 sm:px-6 lg:grid-cols-[minmax(0,728px)_328px] lg:items-start lg:px-0">
+        <ReferenceListingCard
+          sale={sale}
+          product={product}
+          title={referenceLabel}
+          decision={decision}
+          acquisitionCost={acquisitionCost}
+        />
+        <RedfinTourCard sale={sale} decision={decision} acquisitionCost={acquisitionCost} />
+      </section>
+
+      <div className="mx-auto max-w-[1074px] px-4 pb-16 pt-4 sm:px-6 lg:px-0">
+        <div className="space-y-3">
+          <Section id="overview" eyebrow="Vue d'ensemble" title="À propos de ce bien">
+            <AboutThisSale sale={sale} decision={decision} acquisitionCost={acquisitionCost} />
           </Section>
 
-          {media.length > 0 && <SaleLocationHero sale={sale} />}
-
-          <Section id="assistant" eyebrow="Mise plafond" title="Plafond d'enchère recommandé">
-            <BidCeilingAssistant sale={sale} marketEstimateOverride={marketEstimateOverride} />
+          <Section id="lawyer" eyebrow="Avocat" title="Trouver et contacter un avocat">
+            <LawyerPreparationCard product={product} sale={sale} />
           </Section>
 
-          <Section id="cout" eyebrow="Coût complet" title="Coût complet d'acquisition">
-            <AcquisitionCostBlock
-              sale={sale}
-              cost={acquisitionCost}
-              ceiling={decision.ceiling}
-              marketEstimate={marketEstimateOverride}
-            />
-          </Section>
-
-          <Section
-            id="hypotheses"
-            eyebrow="Simulation"
-            title="Modifier travaux, frais et marge de sécurité"
-          >
-            <AdvancedAssumptionsBlock sale={sale} ceiling={decision.ceiling} />
-          </Section>
-
-          <Section id="points" eyebrow="Avant enchère" title="Points à vérifier avant enchère">
-            <VerificationPoints sale={sale} />
-          </Section>
-
-          <Section id="occupation" eyebrow="Occupation" title="Situation d'occupation">
-            <OccupationBlock sale={sale} ceiling={decision.ceiling} />
-          </Section>
-
-          <Section id="travaux" eyebrow="Travaux" title="Travaux à prévoir">
-            <WorksBlock sale={sale} />
-          </Section>
-
-          <Section id="marche" eyebrow="Marché local" title="Marché local et comparables">
-            <MarketLocalSection sale={sale} marketEstimate={marketEstimateOverride} />
-          </Section>
-
-          <Section id="bien" eyebrow="Synthèse du bien" title="Ce que nous savons du bien">
-            <PropertyOverview sale={sale} />
-          </Section>
-
-          <FoldableSection
-            id="preuves"
-            eyebrow="Informations vérifiées"
-            title="Ce que le dossier dit vraiment"
-            summary="Voir les extraits utiles et les points à intégrer au prix plafond"
-          >
-            <EvidenceTrail sale={sale} />
-          </FoldableSection>
-
-          <Section
-            id="documents"
-            eyebrow="Pièces du dossier"
-            title="Pièces à relire avant audience"
-          >
-            <DocumentsWorkspace sale={sale} />
-          </Section>
-
-          <Section id="checklist" eyebrow="Checklist" title="Checklist avant audience">
-            <HearingChecklist sale={sale} />
-          </Section>
-
-          <Section id="questions" eyebrow="Préparation" title="Questions et calendrier">
-            <PreparationGrid sale={sale} />
+          <Section id="details" eyebrow="Détails" title="Détails du bien">
+            <RedfinPropertyDetailsSection product={product} media={media} />
           </Section>
 
           <Section
-            id="assistant-dossier"
-            eyebrow="Assistant de dossier"
-            title="Interroger le dossier"
+            id="history"
+            eyebrow="Historique"
+            title={`Historique de vente et fiscalité pour ${product.addressLabel || referenceLabel}`}
           >
-            <DossierAssistant sale={sale} cost={acquisitionCost} ceiling={decision.ceiling} />
+            <RedfinHistoryTable rows={product.historyRows} />
+          </Section>
+
+          <Section id="public-record" eyebrow="Dossier public" title="Dossier public">
+            <RedfinPublicRecordSection product={product} sale={sale} />
+          </Section>
+
+          <Section id="documents" eyebrow="Sources" title="Pièces et sources">
+            <SourcesAndDocumentsBlock sale={sale} product={product} />
+          </Section>
+
+          <Section id="risks" eyebrow="Risques" title="Risques et points de dossier">
+            <RedfinRiskGrid risks={product.riskCards} />
+          </Section>
+
+          <Section id="weather" eyebrow="Météo" title="Météo historique">
+            <RedfinWeatherBlock product={product} />
+          </Section>
+
+          <Section id="sun" eyebrow="Exposition" title="Exposition au soleil">
+            <RedfinSunBlock product={product} />
+          </Section>
+
+          <Section id="offer-insights" eyebrow="Offre" title="Analyse de l'offre">
+            <RedfinInsightsBlock product={product} />
+          </Section>
+
+          <Section id="ask" eyebrow="Avocat" title="Préparer le contact avocat">
+            <LawyerContactPanel sale={sale} />
           </Section>
 
           <Section
-            id="notes"
-            eyebrow="Notes et partage"
-            title="Notes personnelles et partage privé"
+            id="estimate"
+            eyebrow="Estimation"
+            title={`Estimation Immojudis pour ${referenceLabel}`}
           >
-            <NotesAndSharingBlock sale={sale} />
-          </Section>
-
-          <Section id="alertes" eyebrow="Veille" title="Alertes liées à cette fiche">
-            <SaleAlertsBlock sale={sale} />
-          </Section>
-
-          <Section id="comparaison" eyebrow="Comparer" title="Comparer cette vente">
-            <ComparisonBlock sale={sale} ceiling={decision.ceiling} cost={acquisitionCost} />
-          </Section>
-
-          <Section id="similaires" eyebrow="Biens similaires" title="Biens et ventes comparables">
-            <SimilarPropertiesBlock sale={sale} marketEstimate={marketEstimateOverride} />
-          </Section>
-
-          <Section id="actions" eyebrow="Actions finales" title="Actions finales avant audience">
-            <FinalActionsBlock sale={sale} />
-          </Section>
-
-          <Section eyebrow="Référence" title="Informations techniques">
-            <dl className="grid grid-cols-1 gap-x-8 gap-y-5 border-t border-border/60 pt-8 text-sm sm:grid-cols-2">
-              <Meta
-                label="Identifiant"
-                value={<code className="break-all text-xs text-muted-foreground">{sale.id}</code>}
+            <RedfinFactGrid facts={product.estimateFacts} />
+            <div className="mt-3">
+              <RedfinComparableHomesBlock
+                title="Biens comparables à proximité"
+                items={product.comparables}
+                media={media}
               />
-              <Meta label="Source" value={sale.source_name ?? "—"} />
-              {sale.tribunal_name && (
-                <Meta
-                  label="Tribunal"
-                  value={`${sale.tribunal_name}${sale.tribunal_city ? ` — ${sale.tribunal_city}` : ""}`}
-                />
-              )}
-              {sale.primary_source && (
-                <Meta label="Source principale" value={sale.primary_source} />
-              )}
-              <Meta
-                label="Latitude"
-                value={sale.latitude != null ? sale.latitude.toFixed(6) : "—"}
-              />
-              <Meta
-                label="Longitude"
-                value={sale.longitude != null ? sale.longitude.toFixed(6) : "—"}
-              />
-              <Meta label="Ajoutée le" value={formatDateTime(sale.created_at)} />
-              <Meta label="Mise à jour" value={formatDateTime(sale.updated_at)} />
-            </dl>
-            {sale.latitude != null && sale.longitude != null && (
-              <a
-                href={`https://www.google.com/maps?q=${sale.latitude},${sale.longitude}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-6 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-gold-soft hover:text-gold"
-              >
-                <MapPin className="h-3.5 w-3.5" /> Ouvrir sur Google Maps
-              </a>
-            )}
+            </div>
           </Section>
+
+          {product.nearbyHomes.length > 0 && (
+            <Section wide id="nearby-homes" eyebrow="À proximité" title="Autres repères DVF">
+              <RedfinComparableHomesBlock
+                title="Repères DVF"
+                items={product.nearbyHomes}
+                media={media}
+              />
+            </Section>
+          )}
         </div>
-
-        <aside className="hidden lg:sticky lg:top-24 lg:block lg:self-start">
-          <DecisionRail sale={sale} decision={decision} acquisitionCost={acquisitionCost} />
-        </aside>
       </div>
+
       <MobileActionBar sale={sale} decision={decision} />
     </main>
   );
 }
 
-function SaleMediaGallery({ media }: { media: SaleMedia[] }) {
-  const featured = media[0];
-  const thumbnails = media.slice(1, 5);
-  const source = featured.source ?? media.find((item) => item.source)?.source;
-  const thumbnailGrid =
-    thumbnails.length === 1
-      ? "grid-cols-1 md:grid-cols-1 md:grid-rows-1"
-      : thumbnails.length === 2
-        ? "grid-cols-2 md:grid-cols-1 md:grid-rows-2"
-        : `grid-cols-2 md:grid-rows-2 ${
-            thumbnails.length === 3 ? "[&>a:last-child]:col-span-2" : ""
-          }`;
+function ReferenceListingCard({
+  sale,
+  product,
+  title,
+  decision,
+  acquisitionCost,
+}: {
+  sale: AuctionSale;
+  product: SaleProductSources;
+  title: string;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+}) {
+  const displaySurface = getDisplaySurface(sale);
+  const mapTitle = product.addressLabel || title;
+  const headlineStats = [
+    sale.rooms_count != null ? `${sale.rooms_count} pièces` : null,
+    sale.bedrooms_count != null ? `${sale.bedrooms_count} ch.` : null,
+    displaySurface.value ? displaySurface.label : null,
+  ].filter(Boolean);
+  const judicialMeta = [
+    `Consignation ${sourceBlockMoney(sale, "consignation") ?? "à vérifier"}`,
+    `Coût complet ${formatPrice(acquisitionCost.totalCost)}`,
+    `Audience ${formatDate(sale.sale_date)}`,
+  ];
 
   return (
-    <section className="relative mt-5 overflow-hidden rounded-lg border border-border bg-muted">
-      <div className="absolute left-3 top-3 z-10 rounded-full border border-white/60 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground backdrop-blur">
-        Photos du bien
+    <article className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <div className="grid gap-4 sm:grid-cols-[1fr_122px]">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-normal text-foreground">
+            <span className="h-2 w-2 rounded-full bg-emerald-700" />
+            Vente judiciaire
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h1 className="text-[28px] font-bold leading-none tracking-normal text-foreground">
+              {product.priceLabel}
+            </h1>
+            <span className="rounded-md bg-emerald-50 px-2 py-1 text-sm font-semibold text-emerald-700">
+              {decision.ceiling.available
+                ? `Plafond ${formatPrice(decision.ceiling.maxBid)}`
+                : "Plafond à compléter"}
+            </span>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-lg font-semibold text-foreground">
+            {headlineStats.map((stat, index) => (
+              <span key={stat}>
+                {index > 0 && <span className="mr-2 text-muted-foreground">•</span>}
+                {stat}
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 text-base leading-relaxed text-foreground">
+            {product.addressLabel || product.subtitle}
+          </p>
+          <p className="mt-4 flex flex-wrap gap-x-2 gap-y-1 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
+            {judicialMeta.map((item, index) => (
+              <span key={item}>
+                {index > 0 && <span className="mr-2">•</span>}
+                {item}
+              </span>
+            ))}
+          </p>
+        </div>
+        <a
+          href={
+            sale.latitude != null && sale.longitude != null
+              ? `https://www.google.com/maps?q=${sale.latitude},${sale.longitude}`
+              : "#details"
+          }
+          target={sale.latitude != null && sale.longitude != null ? "_blank" : undefined}
+          rel={sale.latitude != null && sale.longitude != null ? "noopener noreferrer" : undefined}
+          className="hidden overflow-hidden rounded-md border border-border bg-muted transition-colors hover:border-gold/50 sm:block"
+          aria-label={`Voir la carte pour ${mapTitle}`}
+        >
+          <MapThumbnail
+            lat={sale.latitude}
+            lng={sale.longitude}
+            zoom={16}
+            className="h-full min-h-[122px]"
+            alt={mapTitle}
+          />
+        </a>
       </div>
+    </article>
+  );
+}
+
+function LawyerPreparationCard({
+  product,
+  sale,
+}: {
+  product: SaleProductSources;
+  sale: AuctionSale;
+}) {
+  const sourceHref = cleanHref(sale.source_url);
+  const contact = cleanContactValue(sale.lawyer_contact);
+  const contactHref = lawyerContactHref(contact);
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+      <div className="grid gap-3 sm:grid-cols-[1fr_250px]">
+        <RedfinFactList facts={product.openHouseRows} />
+        <div className="rounded-md border border-border bg-muted/30 p-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+            Avocat
+          </div>
+          <div className="mt-2 text-sm font-semibold text-foreground">
+            {sale.lawyer_name ?? "Avocat à confirmer"}
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {contact ?? "Coordonnées à vérifier dans l'annonce ou auprès du greffe."}
+          </p>
+          <div className="mt-3 grid gap-2">
+            {contactHref ? (
+              <a
+                href={contactHref}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-gold-soft px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-gold"
+              >
+                Contacter l'avocat <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            ) : (
+              <span className="inline-flex items-center justify-center rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-muted-foreground">
+                Contact à compléter
+              </span>
+            )}
+            <a
+              href={sourceHref ?? "#documents"}
+              target={sourceHref && isExternalHref(sourceHref) ? "_blank" : undefined}
+              rel={sourceHref && isExternalHref(sourceHref) ? "noopener noreferrer" : undefined}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+            >
+              Vérifier la source <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </div>
+        </div>
+      </div>
+      <p className="mt-3 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
+        L'annuaire avocat Immojudis sera branché ici. En attendant, cette fiche met en avant les
+        coordonnées disponibles et les pièces à transmettre avant l'audience.
+      </p>
+    </div>
+  );
+}
+
+function LawyerContactPanel({ sale }: { sale: AuctionSale }) {
+  const contact = cleanContactValue(sale.lawyer_contact);
+  const contactHref = lawyerContactHref(contact);
+  const sourceHref = cleanHref(sale.source_url);
+  const questions = lawyerQuestions(sale);
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+      <div className="grid gap-4 sm:grid-cols-[1fr_240px]">
+        <div>
+          <p className="text-sm leading-relaxed text-foreground">
+            Préparez un échange court avec l'avocat poursuivant ou votre avocat adjudication :
+            consignation, conditions de vente, occupation, frais particuliers et pièces
+            prioritaires.
+          </p>
+          <dl className="mt-4 grid gap-2 text-sm">
+            <CostRow label="Avocat identifié" value={sale.lawyer_name ?? "À confirmer"} />
+            <CostRow label="Contact" value={contact ?? "À récupérer"} />
+            <CostRow
+              label="Tribunal"
+              value={sale.tribunal ?? sale.tribunal_name ?? "À confirmer"}
+            />
+          </dl>
+        </div>
+        <div className="rounded-md border border-border bg-muted/30 p-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+            Action
+          </div>
+          <div className="mt-3 grid gap-2">
+            {contactHref ? (
+              <a
+                href={contactHref}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-gold-soft px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-gold"
+              >
+                Contacter l'avocat <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            ) : (
+              <span className="inline-flex items-center justify-center rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-muted-foreground">
+                Annuaire bientôt disponible
+              </span>
+            )}
+            <a
+              href={sourceHref ?? "#documents"}
+              target={sourceHref && isExternalHref(sourceHref) ? "_blank" : undefined}
+              rel={sourceHref && isExternalHref(sourceHref) ? "noopener noreferrer" : undefined}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+            >
+              Vérifier l'annonce <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            L'annuaire Immojudis remplacera ce bloc dès qu'il sera disponible.
+          </p>
+        </div>
+      </div>
+      <LawyerQuestionsList questions={questions} />
+    </div>
+  );
+}
+
+function LawyerQuestionsBlock({
+  sale,
+  decision,
+  acquisitionCost,
+}: {
+  sale: AuctionSale;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+      <dl className="grid gap-3 rounded-md border border-border bg-muted/30 p-3 text-sm sm:grid-cols-2">
+        <CostRow label="Audience" value={formatDate(sale.sale_date)} />
+        <CostRow label="Tribunal" value={sale.tribunal ?? sale.tribunal_name ?? "À confirmer"} />
+        <CostRow
+          label="Plafond"
+          value={decision.ceiling.available ? formatPrice(decision.ceiling.maxBid) : "À compléter"}
+        />
+        <CostRow label="Coût complet" value={formatPrice(acquisitionCost.totalCost)} />
+      </dl>
+      <LawyerQuestionsList questions={lawyerQuestions(sale)} />
+    </div>
+  );
+}
+
+function LawyerQuestionsList({ questions }: { questions: string[] }) {
+  return (
+    <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+        Questions à préparer
+      </div>
+      <ul className="mt-3 grid gap-2 text-sm leading-relaxed text-muted-foreground">
+        {questions.map((question) => (
+          <li key={question} className="flex gap-2">
+            <ClipboardCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" />
+            <span>{question}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ReferenceInput({
+  id,
+  label,
+  type = "text",
+  placeholder,
+}: {
+  id: string;
+  label: string;
+  type?: string;
+  placeholder?: string;
+}) {
+  return (
+    <label htmlFor={id} className="block">
+      <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+      <input
+        id={id}
+        type={type}
+        placeholder={placeholder}
+        className="mt-1 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+      />
+    </label>
+  );
+}
+
+function RedfinListingHeader({ product, title }: { product: SaleProductSources; title: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="grid gap-5 sm:flex sm:flex-wrap sm:items-end sm:gap-x-8 sm:gap-y-4">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-gold-soft">
+            Mise à prix
+          </div>
+          <div className="mt-1 text-4xl font-bold leading-none tracking-normal text-foreground sm:text-5xl">
+            {product.priceLabel}
+          </div>
+        </div>
+        <dl className="grid w-full grid-cols-2 gap-x-5 gap-y-3 sm:flex-1 sm:grid-cols-4">
+          {product.mainStats.map((stat) => (
+            <div key={stat.label} className="min-w-0">
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                {stat.label}
+              </dt>
+              <dd className="mt-1 text-xl font-semibold leading-none text-foreground sm:text-2xl">
+                {stat.value}
+              </dd>
+              {stat.detail && (
+                <p className="mt-1 truncate text-xs text-muted-foreground">{stat.detail}</p>
+              )}
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <h1 className="mt-5 font-sans text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
+        {title}
+      </h1>
+      <p className="mt-2 flex max-w-3xl items-start gap-2 text-sm leading-relaxed text-muted-foreground">
+        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" />
+        <span>{product.addressLabel || product.subtitle}</span>
+      </p>
+    </div>
+  );
+}
+
+function ListingNeighborhoodCard({
+  sale,
+  product,
+}: {
+  sale: AuctionSale;
+  product: SaleProductSources;
+}) {
+  const hasLocation = sale.latitude != null && sale.longitude != null;
+
+  return (
+    <aside className="hidden overflow-hidden rounded-lg border border-border bg-white shadow-sm xl:block">
+      <a
+        href={
+          hasLocation
+            ? `https://www.google.com/maps?q=${sale.latitude},${sale.longitude}`
+            : "#details"
+        }
+        target={hasLocation ? "_blank" : undefined}
+        rel={hasLocation ? "noopener noreferrer" : undefined}
+        className="group block"
+      >
+        <MapThumbnail
+          lat={sale.latitude}
+          lng={sale.longitude}
+          zoom={15}
+          className="h-[126px] border-b border-border"
+          alt={product.addressLabel || product.subtitle}
+        />
+        <div className="p-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+            <MapPin className="h-3.5 w-3.5 text-gold-soft" />
+            Quartier
+          </div>
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+            {product.addressLabel || product.subtitle}
+          </p>
+          <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-gold-soft group-hover:text-gold">
+            Voir la carte <ChevronRight className="h-3 w-3" />
+          </span>
+        </div>
+      </a>
+    </aside>
+  );
+}
+
+function RedfinTourCard({
+  sale,
+  decision,
+  acquisitionCost,
+}: {
+  sale: AuctionSale;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+}) {
+  return (
+    <aside className="hidden rounded-lg border border-border bg-white p-4 shadow-sm lg:sticky lg:top-[7.25rem] lg:block">
+      <a
+        href="#lawyer"
+        className="flex w-full items-center justify-center rounded-full bg-gold-soft px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-gold"
+      >
+        Trouver un avocat
+      </a>
+      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+        Préparez l'audience avec un avocat et des consignes vérifiables.
+      </p>
+      <a
+        href="#offer-insights"
+        className="mt-4 flex w-full items-center justify-center rounded-full border border-foreground bg-white px-4 py-3 text-base font-semibold text-foreground transition-colors hover:border-gold hover:text-gold"
+      >
+        Préparer les consignes
+      </a>
+      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+        Simuler l'enchère avant de transmettre un plafond.
+      </p>
+      <Dialog>
+        <DialogTrigger asChild>
+          <button
+            type="button"
+            className="mt-4 w-full cursor-pointer border-t border-border pt-4 text-left text-base font-semibold text-gold-soft transition-colors hover:text-gold"
+          >
+            Questions à poser
+          </button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Questions à poser à l'avocat</DialogTitle>
+            <DialogDescription>
+              Points concrets à clarifier avant de fixer le plafond d'enchère.
+            </DialogDescription>
+          </DialogHeader>
+          <LawyerQuestionsBlock sale={sale} decision={decision} acquisitionCost={acquisitionCost} />
+        </DialogContent>
+      </Dialog>
+    </aside>
+  );
+}
+
+function RedfinStickyRail(props: {
+  sale: AuctionSale;
+  title: string;
+  product: SaleProductSources;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+}) {
+  return (
+    <div className="space-y-4">
+      <RedfinTourCard {...props} />
+      <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+        <div className="text-sm font-semibold text-foreground">Sources de l'annonce</div>
+        <dl className="mt-3 grid gap-2">
+          {props.product.sourceFacts.map((fact) => (
+            <div key={fact.label} className="flex items-baseline justify-between gap-3 text-xs">
+              <dt className="text-muted-foreground">{fact.label}</dt>
+              <dd className="text-right font-medium text-foreground">{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </div>
+  );
+}
+
+function RedfinOverviewPanel({ product }: { product: SaleProductSources }) {
+  return (
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <RedfinFactGrid facts={product.overviewFacts} />
+    </div>
+  );
+}
+
+function RedfinFactGrid({ facts }: { facts: ProductFact[] }) {
+  return (
+    <dl className="grid gap-2 sm:grid-cols-2">
+      {facts.map((fact) => (
+        <div key={fact.label} className="rounded-md border border-border bg-muted/30 p-3">
+          <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+            {fact.label}
+          </dt>
+          <dd className="mt-1 text-sm font-semibold tabular-nums text-foreground">{fact.value}</dd>
+          {fact.detail && (
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{fact.detail}</p>
+          )}
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function RedfinOpenHousesBlock({ product }: { product: SaleProductSources }) {
+  return (
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <RedfinFactGrid facts={product.openHouseRows} />
+    </div>
+  );
+}
+
+function RedfinAroundBlock({ product }: { product: SaleProductSources }) {
+  return (
+    <div className="mt-5 rounded-lg border border-border bg-white p-5 shadow-sm">
+      <RedfinFactGrid facts={product.aroundFacts} />
+    </div>
+  );
+}
+
+function RedfinPropertyDetailsBlock({ groups }: { groups: ProductGroup[] }) {
+  return (
+    <div>
+      <div className="grid gap-6 md:grid-cols-2">
+        {groups.map((group) => (
+          <section key={group.title}>
+            <h3 className="text-base font-semibold text-foreground">{group.title}</h3>
+            <dl className="mt-3 divide-y divide-border">
+              {group.facts.map((fact) => (
+                <div
+                  key={`${group.title}-${fact.label}`}
+                  className="grid grid-cols-[150px_1fr] gap-4 py-2 text-sm"
+                >
+                  <dt className="text-muted-foreground">{fact.label}</dt>
+                  <dd className="font-medium text-foreground">{fact.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RedfinHistoryTable({ rows }: { rows: ProductHistoryRow[] }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border bg-white shadow-sm">
+      <table className="w-full min-w-[620px] text-left text-sm">
+        <thead className="bg-muted/50 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          <tr>
+            <th className="px-4 py-3">Événement</th>
+            <th className="px-4 py-3">Date</th>
+            <th className="px-4 py-3">Prix</th>
+            <th className="px-4 py-3">Source</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.map((row, index) => (
+            <tr key={`${row.event}-${index}`}>
+              <td className="px-4 py-3 font-medium text-foreground">{row.event}</td>
+              <td className="px-4 py-3 text-muted-foreground">{row.date}</td>
+              <td className="px-4 py-3 tabular-nums text-foreground">{row.amount}</td>
+              <td className="px-4 py-3 text-muted-foreground">{row.source}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RedfinRiskGrid({ risks }: { risks: ProductRisk[] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-white shadow-sm">
+      {risks.map((risk) => (
+        <button
+          key={risk.label}
+          type="button"
+          className="flex w-full cursor-pointer items-center gap-3 border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-muted/30"
+        >
+          <span
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+              risk.tone === "high"
+                ? "bg-red-50 text-red-700"
+                : risk.tone === "medium"
+                  ? "bg-amber-50 text-amber-800"
+                  : risk.tone === "low"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {risk.value.split(" ")[0]}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-foreground">{risk.label}</span>
+            <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+              {risk.detail}
+            </span>
+            <span className="mt-1 block text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+              Source : {risk.source}
+            </span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RedfinInsightsBlock({ product }: { product: SaleProductSources }) {
+  return (
+    <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+      <RedfinFactGrid facts={product.insightFacts} />
+    </div>
+  );
+}
+
+function RedfinSchoolsBlock({ product }: { product: SaleProductSources }) {
+  return (
+    <div className="mt-5 rounded-lg border border-border bg-white p-5 shadow-sm">
+      <RedfinMiniTabs labels={["Écoles", "Rattachement", "À proximité"]} />
+      <h3 className="mt-4 text-lg font-semibold text-foreground">Écoles</h3>
+      <RedfinFactList facts={product.schoolFacts} />
+    </div>
+  );
+}
+
+function RedfinLifestyleBlock({ product }: { product: SaleProductSources }) {
+  return (
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <RedfinMiniTabs labels={["Marche", "Transports", "Vélo"]} />
+      <RedfinFactList facts={product.lifestyleFacts} />
+    </div>
+  );
+}
+
+function RedfinPropertyDetailsSection({
+  product,
+  media,
+}: {
+  product: SaleProductSources;
+  media: SaleMedia[];
+}) {
+  const preview = media.slice(0, 5);
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border bg-white p-4 shadow-sm">
+      <RedfinMiniTabs labels={["Intérieur", "Extérieur", "Finances"]} />
+      {preview.length > 0 && (
+        <div className="grid grid-cols-5 gap-1 overflow-hidden rounded-md">
+          {preview.map((image, index) => (
+            <div key={`${image.url}-${index}`}>
+              <img
+                src={image.url}
+                alt={`Vue du bien ${index + 1}`}
+                className="aspect-square w-full object-cover"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
+              <div className="truncate bg-white py-1 text-center text-[10px] text-muted-foreground">
+                Photo {index + 1}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <RedfinPropertyDetailsBlock groups={product.propertyGroups} />
+    </div>
+  );
+}
+
+function RedfinPublicRecordSection({
+  product,
+  sale,
+}: {
+  product: SaleProductSources;
+  sale: AuctionSale;
+}) {
+  const publicRecordFacts = [
+    {
+      label: "Zonage",
+      value: "À connecter",
+      detail: "PLU, servitudes et règlement local",
+    },
+    {
+      label: "Permis",
+      value: "À vérifier",
+      detail: "Autorisations et travaux connus",
+    },
+    {
+      label: "Fiscalité",
+      value: sale.tribunal ?? sale.tribunal_name ?? "Tribunal à confirmer",
+      detail: "Source judiciaire",
+    },
+  ];
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border bg-white p-4 shadow-sm">
+      <RedfinMiniTabs labels={["Dossier public", "Zonage", "Permis"]} />
+      <RedfinPropertyDetailsBlock groups={product.publicRecordGroups} />
+      <div className="border-t border-border pt-1">
+        <RedfinFactList facts={publicRecordFacts} />
+      </div>
+    </div>
+  );
+}
+
+function SourcesAndDocumentsBlock({
+  sale,
+  product,
+}: {
+  sale: AuctionSale;
+  product: SaleProductSources;
+}) {
+  const links = saleSourceLinks(sale);
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+        <div className="grid gap-4 sm:grid-cols-[1fr_240px]">
+          <dl className="grid gap-2 sm:grid-cols-2">
+            {product.sourceFacts.map((fact) => (
+              <div key={fact.label} className="rounded-md border border-border bg-muted/30 p-3">
+                <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                  {fact.label}
+                </dt>
+                <dd className="mt-1 text-sm font-semibold text-foreground">{fact.value}</dd>
+                {fact.detail && (
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {fact.detail}
+                  </p>
+                )}
+              </div>
+            ))}
+          </dl>
+          <div className="rounded-md border border-border bg-muted/30 p-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              Liens source
+            </div>
+            {links.length > 0 ? (
+              <div className="mt-3 grid gap-2">
+                {links.map((link) => (
+                  <a
+                    key={link.href}
+                    href={link.href}
+                    target={isExternalHref(link.href) ? "_blank" : undefined}
+                    rel={isExternalHref(link.href) ? "noopener noreferrer" : undefined}
+                    className="inline-flex items-center justify-between gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+                  >
+                    <span className="truncate">{link.label}</span>
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                Aucun lien source n'est encore attaché à cette annonce.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+      <DocumentsWorkspace sale={sale} />
+      <EvidenceTrail sale={sale} />
+    </div>
+  );
+}
+
+function RedfinWeatherBlock({ product }: { product: SaleProductSources }) {
+  const temperatures = product.weatherMonthly.flatMap((month) =>
+    [month.avgLowC, month.avgHighC].filter((value): value is number => value != null),
+  );
+  const minTemp = temperatures.length ? Math.min(...temperatures) : 0;
+  const maxTemp = temperatures.length ? Math.max(...temperatures) : 30;
+  const tempRange = Math.max(1, maxTemp - minTemp);
+  const hasWeather = temperatures.length > 0;
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+      <RedfinMiniTabs labels={["Température", "Pluie", "Neige", "Vent"]} />
+      <p className="mt-4 text-xs font-semibold text-foreground">
+        Moyenne basse et haute des températures
+      </p>
+      <div className="mt-4 grid h-40 grid-cols-12 gap-2 border-b border-border px-1">
+        {product.weatherMonthly.map((month) => {
+          const low = month.avgLowC;
+          const high = month.avgHighC;
+          const bottom = low == null ? 0 : ((low - minTemp) / tempRange) * 92;
+          const height =
+            low == null || high == null ? 18 : Math.max(12, ((high - low) / tempRange) * 92);
+          return (
+            <div
+              key={month.label}
+              className="flex h-full min-w-0 flex-col items-center justify-end gap-1"
+            >
+              <span className="text-[10px] font-semibold text-muted-foreground">
+                {high == null ? "—" : `${Math.round(high)}°`}
+              </span>
+              <div className="relative h-28 w-5">
+                <span
+                  className={`absolute left-1/2 w-3 -translate-x-1/2 rounded-full ${
+                    hasWeather ? "bg-foreground" : "bg-muted"
+                  }`}
+                  style={{ bottom: `${bottom}px`, height: `${height}px` }}
+                />
+              </div>
+              <span className="text-[9px] text-muted-foreground">{month.label}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {product.weatherMonthly.slice(0, 12).map((month) => (
+          <div
+            key={`${month.label}-rain`}
+            className="flex items-center justify-between border-b border-border py-1 text-[11px]"
+          >
+            <span className="font-medium text-foreground">{month.label}</span>
+            <span className="text-muted-foreground">
+              {month.avgPrecipitationMm == null
+                ? "—"
+                : `${Math.round(month.avgPrecipitationMm)} mm`}
+            </span>
+          </div>
+        ))}
+      </div>
+      <RedfinFactList facts={product.weatherFacts} />
+    </div>
+  );
+}
+
+function RedfinSunBlock({ product }: { product: SaleProductSources }) {
+  const june = product.sunMonthly[5]?.sunshineRatioPct ?? null;
+  const december = product.sunMonthly[11]?.sunshineRatioPct ?? null;
+  const annual = averageKnownProductMetric(
+    product.sunMonthly.map((month) => month.sunshineRatioPct),
+  );
+  const bars = [
+    ["Juin", june],
+    ["Décembre", december],
+    ["Annuel", annual],
+  ] as const;
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        Estimation d'ensoleillement par adresse à partir des séries historiques. L'orientation et
+        les ombres précises du bâtiment restent à confirmer par les plans, photos et dossier
+        technique.
+      </p>
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        {bars.map(([label, value]) => (
+          <div key={label}>
+            <div className="mb-1 flex justify-between text-xs font-semibold">
+              <span>{label}</span>
+              <span className="text-gold-soft">{value == null ? "—" : `${value}%`}</span>
+            </div>
+            <div className="h-8 rounded bg-muted">
+              <div
+                className="h-full rounded bg-gold"
+                style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <RedfinFactList facts={product.sunFacts} />
+    </div>
+  );
+}
+
+function averageKnownProductMetric(values: Array<number | null>): number | null {
+  const known = values.filter((value): value is number => value != null);
+  if (known.length === 0) return null;
+  return Math.round(known.reduce((sum, value) => sum + value, 0) / known.length);
+}
+
+function RedfinComparableHomesBlock({
+  title,
+  items,
+  media = [],
+}: {
+  title: string;
+  items: ProductComparable[];
+  media?: SaleMedia[];
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-white p-5 text-sm text-muted-foreground shadow-sm">
+        Aucun comparable disponible pour {title.toLowerCase()}.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {items.map((item, index) => (
+        <article
+          key={`${item.title}-${index}`}
+          className="overflow-hidden rounded-lg border border-border bg-white shadow-sm"
+        >
+          <div className="relative aspect-[4/3] overflow-hidden bg-muted/50">
+            {media.length > 0 ? (
+              <img
+                src={media[index % media.length].url}
+                alt=""
+                className="h-full w-full object-cover"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="h-full w-full bg-muted/70" />
+            )}
+            <span className="absolute left-2 top-2 rounded bg-gold-soft px-2 py-1 text-[10px] font-semibold uppercase text-white">
+              {item.badge ?? "À proximité"}
+            </span>
+          </div>
+          <div className="p-3">
+            <div className="text-base font-semibold tabular-nums text-foreground">{item.price}</div>
+            <h3 className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
+              {item.title}
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground">{item.facts}</p>
+            {item.detail && (
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{item.detail}</p>
+            )}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function RedfinPendingBlock({ sale, product }: { sale: AuctionSale; product: SaleProductSources }) {
+  return (
+    <div className="mb-5 rounded-lg border border-border bg-white p-5 shadow-sm">
+      <div className="grid gap-5 lg:grid-cols-[1fr_240px] lg:items-start">
+        <div>
+          <div className="text-base font-semibold text-foreground">
+            Préparation de l'audience en cours
+          </div>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            Cette fiche est structurée comme une page d'annonce complète : état du dossier, contact
+            légal, points à valider et mise plafond avant l'audience.
+          </p>
+          <RedfinFactList facts={product.agentFacts} />
+        </div>
+        <a
+          href={sale.source_url ?? "#public-record"}
+          target={sale.source_url ? "_blank" : undefined}
+          rel={sale.source_url ? "noopener noreferrer" : undefined}
+          className="inline-flex items-center justify-center rounded-md bg-gold-soft px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-gold"
+        >
+          Contacter / vérifier la source
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function RedfinResourcesBlock({ product }: { product: SaleProductSources }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {product.resourceLinks.map((link) => (
+        <a
+          key={link.label}
+          href={link.href}
+          className="rounded-lg border border-border bg-white p-4 shadow-sm transition-colors hover:border-gold/50"
+        >
+          <div className="text-sm font-semibold text-foreground">{link.label}</div>
+          <p className="mt-1 text-sm text-muted-foreground">{link.detail}</p>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function RedfinFactList({ facts }: { facts: ProductFact[] }) {
+  return (
+    <dl className="mt-4 divide-y divide-border">
+      {facts.map((fact) => (
+        <div key={fact.label} className="grid gap-2 py-3 text-sm sm:grid-cols-[150px_1fr]">
+          <dt className="font-medium text-muted-foreground">{fact.label}</dt>
+          <dd className="font-semibold text-foreground">
+            {fact.value}
+            {fact.detail && (
+              <p className="mt-1 text-xs font-normal leading-relaxed text-muted-foreground">
+                {fact.detail}
+              </p>
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function RedfinMiniTabs({ labels }: { labels: string[] }) {
+  return (
+    <div className="flex gap-1 overflow-x-auto rounded-lg bg-muted/50 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {labels.map((label, index) => (
+        <button
+          key={label}
+          type="button"
+          className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold ${
+            index === 0
+              ? "bg-white text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ListingActionBar({
+  sale,
+  title,
+  decision,
+  acquisitionCost,
+  location,
+}: {
+  sale: AuctionSale;
+  title: string;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+  location: string;
+}) {
+  const actionClass =
+    "inline-flex cursor-pointer items-center justify-center gap-1.5 px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-gold-soft";
+
+  return (
+    <nav className="sticky top-16 z-40 border-b border-border bg-white/95 backdrop-blur">
+      <div className="flex h-9 w-full items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            to="/sales"
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-gold-soft hover:text-gold"
+          >
+            <ChevronRight className="h-3 w-3 rotate-180" />
+            Retour
+          </Link>
+          <div className="hidden items-center gap-4 overflow-x-auto text-[11px] font-semibold text-muted-foreground md:flex">
+            {SECTION_NAV.map((s) => (
+              <a key={s.id} href={`#${s.id}`} className="shrink-0 hover:text-foreground">
+                {s.label}
+              </a>
+            ))}
+          </div>
+          <span className="truncate text-[11px] text-muted-foreground md:hidden">
+            {location || title}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <FavoriteButton
+            saleId={sale.id}
+            className="border-0 bg-transparent px-2 py-1 text-[11px] shadow-none"
+          />
+          <Dialog>
+            <DialogTrigger asChild>
+              <button type="button" className={actionClass}>
+                <Scale className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Comparer</span>
+              </button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Comparer cette vente</DialogTitle>
+                <DialogDescription>
+                  Les repères essentiels de cette fiche pour la comparaison.
+                </DialogDescription>
+              </DialogHeader>
+              <ComparisonBlock sale={sale} ceiling={decision.ceiling} cost={acquisitionCost} />
+            </DialogContent>
+          </Dialog>
+          <button type="button" onClick={printAnalysis} className={actionClass}>
+            <Download className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Exporter</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void shareCurrentPage(title)}
+            className={actionClass}
+          >
+            <Share2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Partager</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function ListingHeroSummary({
+  sale,
+  title,
+  location,
+  surfaceLabel,
+  surfaceMetric,
+  documentCount,
+  decision,
+  acquisitionCost,
+}: {
+  sale: AuctionSale;
+  title: string;
+  location: string;
+  surfaceLabel: string;
+  surfaceMetric: string;
+  documentCount: number;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+}) {
+  const stats = [
+    {
+      label: "Plafond recommandé",
+      value: decision.ceiling.available ? formatPrice(decision.ceiling.maxBid) : "À compléter",
+      detail: "à ne pas dépasser",
+      accent: true,
+    },
+    { label: surfaceMetric, value: surfaceLabel, detail: "surface retenue" },
+    {
+      label: "Pièces",
+      value: sale.rooms_count != null ? String(sale.rooms_count) : "—",
+      detail: "donnée source",
+    },
+    {
+      label: "Chambres",
+      value: sale.bedrooms_count != null ? String(sale.bedrooms_count) : "—",
+      detail: "donnée source",
+    },
+    {
+      label: "Audience",
+      value: formatDate(sale.sale_date),
+      detail: timeRemainingLabel(sale.sale_date),
+    },
+    { label: "Occupation", value: occupancyLabel(sale.occupancy_status), detail: "à vérifier" },
+    {
+      label: "Documents",
+      value: `${documentCount}`,
+      detail: `pièce${documentCount > 1 ? "s" : ""} disponible${documentCount > 1 ? "s" : ""}`,
+    },
+    { label: "Coût complet", value: formatPrice(acquisitionCost.totalCost), detail: "simulation" },
+  ];
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+            <div className="text-4xl font-semibold leading-none tabular-nums text-foreground sm:text-5xl">
+              {formatPrice(sale.starting_price_eur)}
+            </div>
+            <span className="rounded-full border border-border bg-muted/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Vente judiciaire
+            </span>
+          </div>
+          <h1 className="mt-3 font-sans text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
+            {title}
+          </h1>
+          {location && (
+            <p className="mt-2 flex max-w-3xl items-start gap-2 text-sm leading-relaxed text-muted-foreground sm:text-base">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" />
+              <span>{location}</span>
+            </p>
+          )}
+        </div>
+      </div>
+
+      <dl className="mt-7 grid grid-cols-2 divide-x-0 divide-y divide-border border-y border-border sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+        {stats.map((stat) => (
+          <ListingStat key={stat.label} {...stat} />
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function ListingStat({
+  label,
+  value,
+  detail,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="min-w-0 px-3 py-4 first:pl-0 sm:last:pr-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        {label}
+      </dt>
+      <dd
+        className={`mt-1 truncate text-xl font-semibold tabular-nums ${
+          accent ? "text-gold-soft" : "text-foreground"
+        }`}
+      >
+        {value}
+      </dd>
+      <p className="mt-1 truncate text-xs text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function RedfinOverviewGrid({
+  sale,
+  decision,
+  acquisitionCost,
+  marketEstimate,
+  marketLoading = false,
+  marketError = false,
+}: {
+  sale: AuctionSale;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+  marketEstimate?: MarketEstimate | null;
+  marketLoading?: boolean;
+  marketError?: boolean;
+}) {
+  const surface = getDisplaySurface(sale);
+  const marketValue = marketLoading
+    ? "Recherche..."
+    : marketError
+      ? "Indisponible"
+      : formatPricePerM2(marketEstimate?.medianPricePerM2);
+  const items = [
+    ["Mise à prix", formatPrice(sale.starting_price_eur), "Prix de départ"],
+    [
+      "Plafond Immojudis",
+      decision.ceiling.available ? formatPrice(decision.ceiling.maxBid) : "À compléter",
+      "Bloc conservé à la place du calculateur",
+    ],
+    [surface.metricLabel, surface.value ? surface.label : "Non précisée", "Surface retenue"],
+    ["Coût complet", formatPrice(acquisitionCost.totalCost), "Frais estimés inclus"],
+    ["Marché local", marketValue, "Référence comparable"],
+    ["Audience", formatDate(sale.sale_date), timeRemainingLabel(sale.sale_date)],
+  ];
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map(([label, value, detail]) => (
+          <div key={label} className="rounded-md border border-border bg-muted/30 p-4">
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              {label}
+            </dt>
+            <dd className="mt-1 text-lg font-semibold tabular-nums text-foreground">{value}</dd>
+            <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function AboutThisSale({
+  sale,
+  decision,
+  acquisitionCost,
+}: {
+  sale: AuctionSale;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+}) {
+  const summary =
+    sale.about_description?.trim() ||
+    sale.llm_display_description?.trim() ||
+    sale.source_description?.trim() ||
+    sale.description?.trim() ||
+    sale.investment_summary?.trim() ||
+    sale.risk_notes?.trim() ||
+    `${propertyTypeLabel(sale.property_type)} proposé en vente judiciaire. La décision se joue surtout sur ${decision.primaryCheck.toLowerCase()} et sur la mise plafond.`;
+  const detailRows = [
+    { label: "Type", value: propertyTypeLabel(sale.property_type) },
+    { label: "Mise à prix", value: formatPrice(sale.starting_price_eur) },
+    { label: "Audience", value: formatDate(sale.sale_date) },
+    {
+      label: "Plafond",
+      value: decision.ceiling.available ? formatPrice(decision.ceiling.maxBid) : "À compléter",
+    },
+    { label: "Coût complet", value: formatPrice(acquisitionCost.totalCost) },
+    { label: "Document", value: decision.primaryDocument },
+  ];
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+      <p className="text-sm leading-relaxed text-foreground">{summary}</p>
+      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4">
+        {detailRows.map((row) => (
+          <div key={row.label} className="min-w-0">
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              {row.label}
+            </dt>
+            <dd className="mt-1 truncate text-sm font-semibold text-foreground">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="mt-4 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
+        {decision.action}
+      </div>
+    </div>
+  );
+}
+
+function ReviewedByBlock({
+  sale,
+  decision,
+  marketEstimate,
+}: {
+  sale: AuctionSale;
+  decision: DecisionSummary;
+  marketEstimate?: MarketEstimate | null;
+}) {
+  const reviewers = [
+    {
+      name: "Analyse juridique",
+      role: primaryDocumentLabel(sale, decision.primaryCheck),
+      detail: `${countDocuments(sale)} pièce${countDocuments(sale) > 1 ? "s" : ""} au dossier`,
+    },
+    {
+      name: "Analyse marché",
+      role: marketEstimate?.qualityLabel
+        ? `Fiabilité ${marketEstimate.qualityLabel}`
+        : "DVF à compléter",
+      detail: marketEstimate
+        ? `${marketEstimate.sampleSize} comparable${marketEstimate.sampleSize > 1 ? "s" : ""} retenu${marketEstimate.sampleSize > 1 ? "s" : ""}`
+        : "Référence locale à confirmer",
+    },
+    {
+      name: "Analyse enchère",
+      role: decision.ceiling.available
+        ? formatPrice(decision.ceiling.maxBid)
+        : "Plafond à compléter",
+      detail: decision.action,
+    },
+  ];
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <div className="grid gap-3 md:grid-cols-3">
+        {reviewers.map((reviewer) => (
+          <div key={reviewer.name} className="rounded-md border border-border bg-muted/30 p-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
+              {reviewer.name.slice(8, 9) || "I"}
+            </div>
+            <div className="mt-3 text-sm font-semibold text-foreground">{reviewer.name}</div>
+            <div className="mt-1 text-sm text-muted-foreground">{reviewer.role}</div>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{reviewer.detail}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OpenHousesBlock({ sale }: { sale: AuctionSale }) {
+  const location = sale.tribunal ?? sale.tribunal_name ?? "Tribunal à confirmer";
+  const rows = [
+    ["Audience", formatDate(sale.sale_date), location],
+    [
+      "Avocat",
+      cleanContactValue(sale.lawyer_name) ??
+        cleanContactValue(sale.lawyer_contact) ??
+        "À identifier",
+      "Identifier le contact avant audience",
+    ],
+    [
+      "Consignation",
+      sourceBlockMoney(sale, "consignation") ?? "À vérifier",
+      "Montant et forme à valider avec l'avocat",
+    ],
+  ];
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <div className="grid gap-3 md:grid-cols-3">
+        {rows.map(([label, value, detail]) => (
+          <div key={label} className="rounded-md border border-border bg-muted/30 p-4">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
+              {label}
+            </div>
+            <div className="mt-2 text-lg font-semibold text-foreground">{value}</div>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{detail}</p>
+          </div>
+        ))}
+      </div>
+      <a
+        href="#lawyer"
+        className="mt-5 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft hover:text-gold"
+      >
+        Voir la checklist avant audience <ChevronRight className="h-3.5 w-3.5" />
+      </a>
+    </div>
+  );
+}
+
+function AroundThisHomeBlock({ sale }: { sale: AuctionSale }) {
+  const location = saleLocation(sale.address, sale.postal_code, sale.city) || "Adresse à confirmer";
+  const items = [
+    ["Adresse", location],
+    ["Secteur", [sale.city, sale.department].filter(Boolean).join(" · ") || "À confirmer"],
+    ["Transport", "À vérifier sur la carte ou dans le dossier"],
+    ["Vie locale", "À recouper avec le marché local et les contraintes du dossier"],
+  ];
+
+  return (
+    <div className="mt-5 rounded-lg border border-border bg-white p-5 shadow-sm">
+      <div className="grid gap-3 md:grid-cols-4">
+        {items.map(([label, value]) => (
+          <div key={label} className="rounded-md border border-border bg-muted/30 p-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              {label}
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-foreground">{value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SaleMediaGallery({ media }: { media: SaleMedia[] }) {
+  const featured = media[0];
+  const thumbnails =
+    media.length > 1
+      ? Array.from({ length: 6 }, (_, index) => media[(index + 1) % media.length])
+      : [];
+  const source = featured.source ?? media.find((item) => item.source)?.source;
+
+  return (
+    <section className="relative mt-3 overflow-hidden rounded-md border border-border bg-muted shadow-sm md:h-[clamp(360px,29vw,548px)]">
+      <a
+        href={featured.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-2 rounded-md border border-white/70 bg-white px-3 py-2 text-xs font-semibold text-foreground shadow-sm transition-colors hover:bg-white/90"
+      >
+        {media.length} photo{media.length > 1 ? "s" : ""} <Camera className="h-3.5 w-3.5" />
+      </a>
       {source && (
-        <span className="absolute bottom-3 right-3 z-10 rounded-full border border-white/60 bg-white/90 px-3 py-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">
+        <span className="absolute right-3 top-3 z-10 rounded-md border border-white/60 bg-white/90 px-3 py-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">
           Source · {source}
         </span>
       )}
       <div
         className={
           thumbnails.length > 0
-            ? "grid gap-1 bg-white md:grid-cols-[minmax(0,2fr)_minmax(220px,1fr)]"
-            : "bg-white"
+            ? "grid h-full gap-1 bg-white md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+            : "h-full bg-white"
         }
       >
         <SaleMediaImage media={featured} featured />
         {thumbnails.length > 0 && (
-          <div
-            className={`grid gap-1 md:h-full [&>a]:md:aspect-auto [&>a]:md:h-full ${thumbnailGrid}`}
-          >
-            {thumbnails.map((item) => (
-              <SaleMediaImage key={item.url} media={item} />
+          <div className="hidden h-full grid-cols-3 grid-rows-2 gap-1 md:grid">
+            {thumbnails.map((item, index) => (
+              <SaleMediaImage key={`${item.url}-${index}`} media={item} />
             ))}
           </div>
         )}
@@ -432,8 +1710,8 @@ function SaleMediaImage({ media, featured = false }: { media: SaleMedia; feature
       rel="noopener noreferrer"
       className={
         featured
-          ? "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted md:aspect-[16/10]"
-          : "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted"
+          ? "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted md:h-full md:aspect-auto"
+          : "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted md:h-full md:aspect-auto"
       }
     >
       <img
@@ -452,14 +1730,7 @@ function SaleMediaImage({ media, featured = false }: { media: SaleMedia; feature
 }
 
 function saleImages(media: AuctionSale["media"] | undefined): SaleMedia[] {
-  if (!Array.isArray(media)) return [];
-  const seen = new Set<string>();
-  return media.filter((item): item is SaleMedia => {
-    const url = typeof item?.url === "string" ? item.url.trim() : "";
-    if (!url || seen.has(url) || !/^https?:\/\//i.test(url)) return false;
-    seen.add(url);
-    return true;
-  });
+  return propertyImages(media);
 }
 
 type DecisionSummary = {
@@ -467,10 +1738,79 @@ type DecisionSummary = {
   primaryCheck: string;
   primaryDocument: string;
   action: string;
-  dossierStatus: string;
 };
 
 type AcquisitionCost = ReturnType<typeof computeAcquisitionCosts>;
+
+function HeroActionCard({
+  sale,
+  decision,
+  acquisitionCost,
+  title,
+}: {
+  sale: AuctionSale;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+  title: string;
+}) {
+  const ceilingLabel = decision.ceiling.available
+    ? formatPrice(decision.ceiling.maxBid)
+    : "À compléter";
+  const secondaryClass =
+    "inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft";
+
+  return (
+    <aside className="rounded-lg border border-border bg-surface p-5 shadow-sm">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
+        À retenir
+      </div>
+      <dl className="mt-4 grid gap-3 text-sm">
+        <CostRow label="Plafond conseillé" value={ceilingLabel} strong />
+        <CostRow label="Coût complet estimé" value={formatPrice(acquisitionCost.totalCost)} />
+        <CostRow label="Point à vérifier" value={decision.primaryCheck} />
+        <CostRow label="Action suivante" value={decision.action} />
+      </dl>
+      <a
+        href="#offer-insights"
+        className="mt-5 flex items-center justify-center gap-2 rounded-md bg-foreground px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-background transition-colors hover:bg-foreground/90"
+      >
+        Préparer mon enchère <Target className="h-3.5 w-3.5" />
+      </a>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <FavoriteButton
+          saleId={sale.id}
+          className="justify-center border border-border bg-white px-3 py-2"
+        />
+        <Dialog>
+          <DialogTrigger asChild>
+            <button type="button" className={secondaryClass}>
+              Comparer
+            </button>
+          </DialogTrigger>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Comparer cette vente</DialogTitle>
+              <DialogDescription>
+                Les repères essentiels de cette fiche pour la comparaison.
+              </DialogDescription>
+            </DialogHeader>
+            <ComparisonBlock sale={sale} ceiling={decision.ceiling} cost={acquisitionCost} />
+          </DialogContent>
+        </Dialog>
+        <button type="button" onClick={printAnalysis} className={secondaryClass}>
+          Exporter <Download className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => void shareCurrentPage(title)}
+          className={secondaryClass}
+        >
+          Partager <Share2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </aside>
+  );
+}
 
 function QuickStat({
   icon,
@@ -497,190 +1837,260 @@ function QuickStat({
   );
 }
 
-function HeaderAction({
-  href,
-  onClick,
-  icon,
-  children,
-}: {
-  href?: string;
-  onClick?: () => void;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const className =
-    "inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft";
-
-  if (href) {
-    return (
-      <a href={href} className={className}>
-        {icon}
-        {children}
-      </a>
-    );
-  }
-
-  return (
-    <button type="button" onClick={onClick} className={className}>
-      {icon}
-      {children}
-    </button>
-  );
-}
-
 function QuickDecision({
   sale,
   decision,
+  marketEstimate,
+  marketLoading = false,
+  marketError = false,
   acquisitionCost,
 }: {
   sale: AuctionSale;
   decision: DecisionSummary;
+  marketEstimate?: MarketEstimate | null;
+  marketLoading?: boolean;
+  marketError?: boolean;
   acquisitionCost: AcquisitionCost;
 }) {
-  const documentCount = countDocuments(sale);
   const ceilingAvailable = decision.ceiling.available;
+  const surface = getSaleSurface(sale).value;
+  const costPerM2 = surface ? acquisitionCost.totalCost / surface : null;
+  const referencePerM2 = marketEstimate?.medianPricePerM2 ?? null;
+  const reason = marketLoading
+    ? "Lecture de la référence locale DVF en cours."
+    : marketError
+      ? "Référence locale temporairement indisponible."
+      : costPerM2 != null && referencePerM2 != null
+        ? costPerM2 <= referencePerM2
+          ? "Le coût complet reste sous la référence locale retenue."
+          : "Le coût complet dépasse la référence locale retenue."
+        : "La référence locale reste à compléter.";
   const rows = [
     {
       label: "Plafond conseillé",
       value: ceilingAvailable ? formatPrice(decision.ceiling.maxBid) : "À compléter",
-      detail: ceilingAvailable
-        ? "Ce montant vient du scénario équilibré."
-        : "Ajoutez le marché local dans l'assistant pour sortir un plafond.",
+      detail: "",
     },
     {
-      label: "Point principal à vérifier",
+      label: "Pourquoi",
+      value: reason,
+      detail: "",
+    },
+    {
+      label: "Point bloquant",
       value: decision.primaryCheck,
-      detail: "Ce point peut modifier le plafond avant audience.",
+      detail: decision.primaryDocument,
     },
     {
-      label: "Document prioritaire",
-      value: decision.primaryDocument,
-      detail: "À relire ou faire confirmer si l'information reste floue.",
-    },
-    {
-      label: "Coût complet simulé",
-      value: formatPrice(acquisitionCost.totalCost),
-      detail: "Enchère simulée, droits, émoluments et FPT.",
-    },
-    {
-      label: "Action recommandée",
+      label: "Prochaine action",
       value: decision.action,
-      detail: "À traiter avant de transmettre vos consignes.",
-    },
-    {
-      label: "Statut du dossier",
-      value: decision.dossierStatus,
-      detail: `${documentCount} pièce${documentCount > 1 ? "s" : ""} disponible${documentCount > 1 ? "s" : ""}.`,
+      detail: "Avant de fixer l'enchère.",
     },
   ];
 
   return (
     <div className="rounded-lg border border-border bg-white p-5 shadow-sm sm:p-6">
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3">
         {rows.map((row) => (
-          <div key={row.label} className="rounded-lg border border-border bg-muted/30 p-4">
+          <div
+            key={row.label}
+            className="grid gap-2 rounded-md border border-border bg-muted/30 p-4 sm:grid-cols-[180px_1fr]"
+          >
             <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
               {row.label}
             </div>
-            <div className="mt-2 text-base font-semibold text-foreground">{row.value}</div>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{row.detail}</p>
+            <div>
+              <div className="text-base font-semibold text-foreground">{row.value}</div>
+              {row.detail && (
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{row.detail}</p>
+              )}
+            </div>
           </div>
         ))}
       </div>
-      <p className="mt-4 rounded-lg border border-gold/20 bg-gold/[0.06] px-4 py-3 text-sm leading-relaxed text-muted-foreground">
-        Ce bloc ne donne pas de note. Il isole ce qui est connu, ce qui reste à confirmer et ce qui
-        peut faire bouger votre plafond d'enchère.
-      </p>
+      <a
+        href="#offer-insights"
+        className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft transition-colors hover:text-gold"
+      >
+        Voir le détail du raisonnement <ChevronRight className="h-3.5 w-3.5" />
+      </a>
     </div>
   );
 }
 
-function AcquisitionCostBlock({
+function BidBudgetBlock({
   sale,
   cost,
   ceiling,
   marketEstimate,
+  marketLoading = false,
+  marketError = false,
 }: {
   sale: AuctionSale;
   cost: AcquisitionCost;
   ceiling: MarketCeilingResult;
   marketEstimate?: MarketEstimate | null;
+  marketLoading?: boolean;
+  marketError?: boolean;
 }) {
   const surface = getSaleSurface(sale).value;
   const costPerM2 = surface ? cost.totalCost / surface : null;
-  const marketGap =
-    costPerM2 != null && marketEstimate?.medianPricePerM2
-      ? marketEstimate.medianPricePerM2 - costPerM2
-      : null;
-  const safetyBudget = ceiling.available
-    ? Math.max(0, ceiling.targetTotalCost - cost.totalCost)
-    : 0;
+  const referenceValue = marketLoading
+    ? "Recherche DVF..."
+    : marketError
+      ? "Indisponible"
+      : formatPricePerM2(marketEstimate?.medianPricePerM2);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-      <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-        <dl className="grid gap-3 text-sm">
-          <CostRow label="Prix d'enchère simulé" value={formatPrice(cost.price)} strong />
-          <CostRow label="Frais de procédure estimés" value={formatPrice(cost.fpt)} />
-          <CostRow label="Émoluments avocat TTC" value={formatPrice(cost.emolumentsTTC)} />
-          <CostRow label="Droits et taxes" value={formatPrice(cost.registrationDuties)} />
-          <CostRow label="Travaux estimés" value={formatPrice(cost.works)} />
-          <CostRow label="Budget de sécurité restant" value={formatPrice(safetyBudget)} />
-          <CostRow label="Coût total estimé" value={formatPrice(cost.totalCost)} strong />
-        </dl>
-      </div>
-      <div className="rounded-lg border border-border bg-muted/35 p-5">
-        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
-          Lecture financière
-        </div>
-        <dl className="mt-4 grid gap-3 text-sm">
-          <CostRow label="Coût complet au m²" value={formatPricePerM2(costPerM2)} />
-          <CostRow
-            label="Prix/m² du secteur"
-            value={formatPricePerM2(marketEstimate?.medianPricePerM2)}
-          />
-          <CostRow
-            label="Écart estimé avec le marché"
-            value={marketGap == null ? "À compléter" : formatPricePerM2(marketGap)}
-          />
-          <CostRow
-            label="Seuil à ne pas dépasser"
-            value={ceiling.available ? formatPrice(ceiling.maxBid) : "À compléter"}
-          />
-        </dl>
-        <a
-          href="#assistant"
-          className="mt-5 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft transition-colors hover:text-gold"
-        >
-          Modifier travaux, frais et marge de sécurité <ChevronRight className="h-3.5 w-3.5" />
-        </a>
-      </div>
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <dl className="grid gap-3 text-sm md:grid-cols-2">
+        <CostRow
+          label="Plafond conseillé"
+          value={ceiling.available ? formatPrice(ceiling.maxBid) : "À compléter"}
+          strong
+        />
+        <CostRow label="Mise à prix" value={formatPrice(sale.starting_price_eur)} />
+        <CostRow label="Coût complet estimé" value={formatPrice(cost.totalCost)} strong />
+        <CostRow label="Référence locale" value={referenceValue} />
+        <CostRow label="Coût complet au m²" value={formatPricePerM2(costPerM2)} />
+      </dl>
+      <Dialog>
+        <DialogTrigger asChild>
+          <button
+            type="button"
+            className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+          >
+            Modifier les hypothèses <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Modifier les hypothèses</DialogTitle>
+            <DialogDescription>
+              Travaux, frais, marge de sécurité, revente et loyer potentiel.
+            </DialogDescription>
+          </DialogHeader>
+          <AdvancedAssumptionsBlock sale={sale} ceiling={ceiling} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function VerificationPoints({ sale }: { sale: AuctionSale }) {
+function VerificationPoints({
+  sale,
+  ceiling,
+}: {
+  sale: AuctionSale;
+  ceiling: MarketCeilingResult;
+}) {
   const points = buildVerificationPoints(sale);
+  const visible = points.slice(0, 4);
+  const extra = points.slice(4);
+  const unknownOccupation = isUnknownOccupation(sale.occupancy_status);
+  const worksRisk = hasWorksRisk(sale);
+
   return (
-    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-      <ul className="divide-y divide-border/60">
-        {points.map((point) => (
-          <li key={point.label} className="grid gap-3 py-4 sm:grid-cols-[1fr_auto] sm:items-start">
-            <div>
-              <div className="font-medium text-foreground">{point.label}</div>
-              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{point.detail}</p>
-            </div>
-            <StatusBadge status={point.status} tone={point.tone} />
-          </li>
-        ))}
-      </ul>
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+        <ul className="divide-y divide-border/60">
+          {visible.map((point) => (
+            <li
+              key={point.label}
+              className="grid gap-3 py-4 sm:grid-cols-[1fr_auto] sm:items-start"
+            >
+              <div>
+                <div className="font-medium text-foreground">{point.label}</div>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{point.detail}</p>
+              </div>
+              <StatusBadge status={point.status} tone={point.tone} />
+            </li>
+          ))}
+        </ul>
+        {extra.length > 0 && (
+          <details className="mt-3 border-t border-border pt-3">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+              Voir tous les points de contrôle
+            </summary>
+            <ul className="mt-3 divide-y divide-border/60">
+              {extra.map((point) => (
+                <li
+                  key={point.label}
+                  className="grid gap-3 py-3 sm:grid-cols-[1fr_auto] sm:items-start"
+                >
+                  <div>
+                    <div className="font-medium text-foreground">{point.label}</div>
+                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                      {point.detail}
+                    </p>
+                  </div>
+                  <StatusBadge status={point.status} tone={point.tone} />
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+          <div className="font-medium text-foreground">Occupation</div>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {unknownOccupation
+              ? "Situation non confirmée dans les données. Relire le PV descriptif avant de fixer l'enchère."
+              : `${occupancyLabel(sale.occupancy_status)}. Vérifier le titre et le délai de libération dans les pièces.`}
+          </p>
+          <Dialog>
+            <DialogTrigger asChild>
+              <button
+                type="button"
+                className="mt-4 inline-flex cursor-pointer items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft transition-colors hover:text-gold"
+              >
+                Voir le détail occupation <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+              <DialogHeader>
+                <DialogTitle>Occupation</DialogTitle>
+                <DialogDescription>Résumé, source et scénarios à vérifier.</DialogDescription>
+              </DialogHeader>
+              <OccupationBlock sale={sale} ceiling={ceiling} />
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+          <div className="font-medium text-foreground">Travaux</div>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {worksRisk
+              ? "Un point travaux est détecté. Il doit devenir une enveloppe chiffrée avant audience."
+              : "Aucun poste travaux fiable n'est chiffré. Prévoir une estimation artisan ou une enveloppe prudente."}
+          </p>
+          <Dialog>
+            <DialogTrigger asChild>
+              <button
+                type="button"
+                className="mt-4 inline-flex cursor-pointer items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft transition-colors hover:text-gold"
+              >
+                Chiffrer les travaux <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+              <DialogHeader>
+                <DialogTitle>Travaux à prévoir</DialogTitle>
+                <DialogDescription>Postes à chiffrer et éléments détectés.</DialogDescription>
+              </DialogHeader>
+              <WorksBlock sale={sale} />
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
     </div>
   );
 }
 
 function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
   const richDocs = sale.documents_rich ?? [];
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const [state, setState] = useLocalState<{
     notes: Record<string, string>;
     readPages: Record<string, boolean>;
@@ -692,187 +2102,334 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
   });
 
   if (richDocs.length === 0) {
+    const basicDocs = parseDocs(sale.documents);
+    if (basicDocs.length === 0) {
+      return (
+        <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+          <p className="text-sm text-muted-foreground">Aucune pièce attachée pour le moment.</p>
+        </div>
+      );
+    }
+
+    const actionClass =
+      "inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft";
+
     return (
       <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-        <DocumentsList documents={sale.documents} />
+        <ul className="divide-y divide-border/60">
+          {basicDocs.map((document, index) => {
+            const key = `${document.type ?? "document"}:${document.name ?? document.url}`;
+            const name = document.name ?? document.url.split("/").pop() ?? `Pièce ${index + 1}`;
+            return (
+              <li
+                key={`${document.url}-${index}`}
+                className="grid gap-4 py-4 lg:grid-cols-[1fr_auto] lg:items-center"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+                      <FileCheck2 className="h-4 w-4" />
+                      {documentTypeLabel(document.type)}
+                    </div>
+                    <span className="text-xs text-muted-foreground">Disponible</span>
+                  </div>
+                  <h3 className="mt-2 truncate text-base font-semibold text-foreground">{name}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Résumé à compléter après lecture de la pièce.
+                  </p>
+                </div>
+                <Dialog>
+                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                    <a
+                      href={document.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={actionClass}
+                    >
+                      Ouvrir <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                    <DialogTrigger asChild>
+                      <button type="button" className={actionClass}>
+                        Résumé
+                      </button>
+                    </DialogTrigger>
+                    <DialogTrigger asChild>
+                      <button type="button" className={actionClass}>
+                        Note
+                      </button>
+                    </DialogTrigger>
+                  </div>
+                  <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle>{name}</DialogTitle>
+                      <DialogDescription>
+                        Résumé rapide et note personnelle pour cette pièce.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="rounded-md border border-border bg-muted/30 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Résumé
+                      </div>
+                      <p className="mt-2 text-sm leading-relaxed text-foreground">
+                        Ouvrir la pièce pour confirmer occupation, conditions, diagnostics ou frais
+                        particuliers.
+                      </p>
+                    </div>
+                    <label className="block rounded-md border border-border bg-white p-3">
+                      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Note personnelle
+                      </span>
+                      <textarea
+                        rows={4}
+                        value={state.notes[key] ?? ""}
+                        onChange={(event) =>
+                          setState((current) => ({
+                            ...current,
+                            notes: { ...current.notes, [key]: event.target.value },
+                          }))
+                        }
+                        className="mt-2 w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                        placeholder="Point à demander à l'avocat..."
+                      />
+                    </label>
+                  </DialogContent>
+                </Dialog>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     );
   }
 
-  const selected = richDocs[Math.min(selectedIndex, richDocs.length - 1)];
-  const selectedKey = documentKey(selected);
-  const selectedOccurrences = documentOccurrences(sale, selected);
-
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3">
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <ul className="divide-y divide-border/60">
         {richDocs.map((document, index) => {
           const pages = documentPagesToReview(sale, document);
           const key = documentKey(document);
+          const occurrences = documentOccurrences(sale, document);
           const readCount = Object.keys(state.readPages).filter((pageKey) =>
             pageKey.startsWith(`${key}:`),
           ).length;
+          const name = document.label ?? document.url.split("/").pop() ?? `Pièce ${index + 1}`;
+          const actionClass =
+            "inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft";
+
           return (
-            <article
+            <li
               key={`${document.url}-${index}`}
-              className={`rounded-lg border bg-white p-5 shadow-sm ${
-                index === selectedIndex ? "border-gold/40" : "border-border"
-              }`}
+              className="grid gap-4 py-4 lg:grid-cols-[1fr_auto] lg:items-center"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
                     <FileCheck2 className="h-4 w-4" />
                     {documentTypeLabel(document.document_type ?? document.type)}
                   </div>
-                  <h3 className="mt-2 truncate text-base font-semibold text-foreground">
-                    {document.label ?? document.url.split("/").pop() ?? `Pièce ${index + 1}`}
-                  </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Disponible ·{" "}
-                    {document.text_chars
-                      ? `${document.text_chars.toLocaleString("fr-FR")} caractères lus`
-                      : "lecture à confirmer"}
-                    {readCount
-                      ? ` · ${readCount} page${readCount > 1 ? "s" : ""} relue${readCount > 1 ? "s" : ""}`
-                      : ""}
-                  </p>
+                  <span className="text-xs text-muted-foreground">Disponible</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedIndex(index)}
-                    className="inline-flex items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
-                  >
-                    Ouvrir lecteur
-                  </button>
-                  <a
-                    href={document.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
-                  >
-                    Ouvrir <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                </div>
+                <h3 className="mt-2 truncate text-base font-semibold text-foreground">{name}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {documentReviewPrompt(document)}
+                  {pages ? ` Pages signalées : ${pages}.` : ""}
+                  {readCount
+                    ? ` ${readCount} page${readCount > 1 ? "s" : ""} relue${readCount > 1 ? "s" : ""}.`
+                    : ""}
+                </p>
               </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]">
-                <div className="rounded-md border border-border bg-muted/30 p-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    À relire
-                  </div>
-                  <p className="mt-2 text-sm leading-relaxed text-foreground">
-                    {documentReviewPrompt(document)}
-                  </p>
-                  {pages && (
-                    <p className="mt-2 text-xs text-muted-foreground">Pages signalées : {pages}</p>
-                  )}
-                </div>
-                <label className="block rounded-md border border-border bg-white p-3">
-                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    Note personnelle
-                  </span>
-                  <textarea
-                    rows={3}
-                    value={state.notes[key] ?? ""}
-                    onChange={(event) =>
-                      setState((current) => ({
-                        ...current,
-                        notes: { ...current.notes, [key]: event.target.value },
-                      }))
-                    }
-                    className="mt-2 w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                    placeholder="Point à demander à l'avocat..."
-                  />
-                </label>
-              </div>
-            </article>
-          );
-        })}
-      </div>
 
-      <div className="grid gap-4 rounded-lg border border-border bg-white p-5 shadow-sm lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-        <div className="min-h-[420px] overflow-hidden rounded-lg border border-border bg-muted/30">
-          <iframe
-            title={`Lecteur ${selected.label ?? "document"}`}
-            src={selected.url}
-            className="h-[420px] w-full bg-white"
-          />
-        </div>
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
-            Lecteur de pièces
-          </div>
-          <h3 className="mt-2 text-lg font-semibold text-foreground">
-            {selected.label ?? selected.url.split("/").pop() ?? "Pièce du dossier"}
-          </h3>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Passages importants, notes personnelles et pages relues restent reliés à cette pièce.
-          </p>
-          <div className="mt-4 space-y-3">
-            {selectedOccurrences.length ? (
-              selectedOccurrences.map((occurrence, index) => {
-                const page = occurrence.page_number ?? index + 1;
-                const pageKey = `${selectedKey}:${page}`;
-                return (
-                  <div
-                    key={`${pageKey}-${index}`}
-                    className={`rounded-md border p-3 ${
-                      state.highlighted === occurrence.excerpt
-                        ? "border-gold/50 bg-gold/[0.08]"
-                        : "border-border bg-muted/30"
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        Page {page}
-                      </span>
-                      <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(state.readPages[pageKey])}
+              <Dialog>
+                <div className="flex flex-wrap gap-2 lg:justify-end">
+                  <DialogTrigger asChild>
+                    <button type="button" className={actionClass}>
+                      Ouvrir <ExternalLink className="h-3.5 w-3.5" />
+                    </button>
+                  </DialogTrigger>
+                  <DialogTrigger asChild>
+                    <button type="button" className={actionClass}>
+                      Résumé
+                    </button>
+                  </DialogTrigger>
+                  <DialogTrigger asChild>
+                    <button type="button" className={actionClass}>
+                      Note
+                    </button>
+                  </DialogTrigger>
+                </div>
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+                  <DialogHeader>
+                    <DialogTitle>{name}</DialogTitle>
+                    <DialogDescription>
+                      Résumé, lecteur et note personnelle pour cette pièce.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+                    <div className="min-h-[420px] overflow-hidden rounded-lg border border-border bg-muted/30">
+                      <iframe
+                        title={`Lecteur ${name}`}
+                        src={document.url}
+                        className="h-[420px] w-full bg-white"
+                      />
+                    </div>
+                    <div className="space-y-4">
+                      <div className="rounded-md border border-border bg-muted/30 p-3">
+                        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          Résumé
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-foreground">
+                          {documentReviewPrompt(document)}
+                        </p>
+                        {pages && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Pages signalées : {pages}
+                          </p>
+                        )}
+                      </div>
+                      <label className="block rounded-md border border-border bg-white p-3">
+                        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          Note personnelle
+                        </span>
+                        <textarea
+                          rows={4}
+                          value={state.notes[key] ?? ""}
                           onChange={(event) =>
                             setState((current) => ({
                               ...current,
-                              readPages: {
-                                ...current.readPages,
-                                [pageKey]: event.target.checked,
-                              },
+                              notes: { ...current.notes, [key]: event.target.value },
                             }))
                           }
-                          className="h-4 w-4 accent-[var(--gold)]"
+                          className="mt-2 w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                          placeholder="Point à demander à l'avocat..."
                         />
-                        Page relue
                       </label>
+                      <div className="space-y-3">
+                        {occurrences.length ? (
+                          occurrences.map((occurrence, occurrenceIndex) => {
+                            const page = occurrence.page_number ?? occurrenceIndex + 1;
+                            const pageKey = `${key}:${page}`;
+                            return (
+                              <div
+                                key={`${pageKey}-${occurrenceIndex}`}
+                                className={`rounded-md border p-3 ${
+                                  state.highlighted === occurrence.excerpt
+                                    ? "border-gold/50 bg-gold/[0.08]"
+                                    : "border-border bg-muted/30"
+                                }`}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                                    Page {page}
+                                  </span>
+                                  <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(state.readPages[pageKey])}
+                                      onChange={(event) =>
+                                        setState((current) => ({
+                                          ...current,
+                                          readPages: {
+                                            ...current.readPages,
+                                            [pageKey]: event.target.checked,
+                                          },
+                                        }))
+                                      }
+                                      className="h-4 w-4 accent-[var(--gold)]"
+                                    />
+                                    Page relue
+                                  </label>
+                                </div>
+                                <p className="mt-2 text-sm leading-relaxed text-foreground">
+                                  {occurrence.excerpt ?? "Extrait à relire dans la pièce."}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setState((current) => ({
+                                      ...current,
+                                      highlighted:
+                                        current.highlighted === occurrence.excerpt
+                                          ? null
+                                          : occurrence.excerpt,
+                                    }))
+                                  }
+                                  className="mt-3 cursor-pointer text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft hover:text-gold"
+                                >
+                                  Surligner l'élément sensible
+                                </button>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <p className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                            Aucun extrait sensible n'est associé automatiquement à cette pièce.
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <p className="mt-2 text-sm leading-relaxed text-foreground">
-                      {occurrence.excerpt ?? "Extrait à relire dans la pièce."}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setState((current) => ({
-                          ...current,
-                          highlighted:
-                            current.highlighted === occurrence.excerpt ? null : occurrence.excerpt,
-                        }))
-                      }
-                      className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft hover:text-gold"
-                    >
-                      Surligner l'élément sensible
-                    </button>
                   </div>
-                );
-              })
-            ) : (
-              <p className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
-                Aucun extrait sensible n'est associé automatiquement à cette pièce. Relire et
-                ajouter une note si nécessaire.
-              </p>
-            )}
+                </DialogContent>
+              </Dialog>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function PreparationBeforeHearing({ sale }: { sale: AuctionSale }) {
+  const actions = [
+    "Mandater un avocat",
+    isUnknownOccupation(sale.occupancy_status) ? "Confirmer l'occupation" : "Relire les conditions",
+    "Préparer la consignation",
+  ];
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <div className="grid gap-5 lg:grid-cols-[1fr_260px]">
+        <div>
+          <div className="text-sm font-semibold text-foreground">3 actions restantes</div>
+          <ul className="mt-4 grid gap-3">
+            {actions.map((action) => (
+              <li key={action} className="flex items-start gap-3 text-sm text-muted-foreground">
+                <ClipboardCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" />
+                <span>{action}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="rounded-md border border-border bg-muted/30 p-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Rappel audience
+          </div>
+          <div className="mt-2 text-lg font-semibold text-foreground">
+            {formatDate(sale.sale_date)}
+          </div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            {timeRemainingLabel(sale.sale_date)}
           </div>
         </div>
       </div>
+      <Dialog>
+        <DialogTrigger asChild>
+          <button
+            type="button"
+            className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+          >
+            Voir ma checklist complète <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Checklist avant audience</DialogTitle>
+            <DialogDescription>
+              Statuts de préparation enregistrés sur ce navigateur.
+            </DialogDescription>
+          </DialogHeader>
+          <HearingChecklist sale={sale} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -943,59 +2500,6 @@ function HearingChecklist({ sale }: { sale: AuctionSale }) {
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function PreparationGrid({ sale }: { sale: AuctionSale }) {
-  const questions = [
-    "L'occupation du bien est-elle confirmée dans le PV descriptif ?",
-    "Le cahier des conditions contient-il des clauses ou frais particuliers ?",
-    "Quel budget travaux faut-il provisionner avant l'audience ?",
-    "Le financement couvre-t-il le prix, les frais et les délais ?",
-    "À quel montant l'opération ne m'intéresse plus ?",
-  ];
-  const timeline = [
-    ["Relire les pièces", "Avant de fixer le plafond"],
-    ["Mandater l'avocat", "Avant toute enchère"],
-    ["Préparer la consignation", "Avant l'audience"],
-    ["Audience d'adjudication", formatDate(sale.sale_date)],
-    ["Délai de surenchère", "Après adjudication"],
-  ];
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
-          <CircleHelp className="h-4 w-4" />
-          Questions à poser
-        </div>
-        <ul className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground">
-          {questions.map((question) => (
-            <li key={question} className="flex gap-2">
-              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
-              <span>{question}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
-          <CalendarDays className="h-4 w-4" />
-          Calendrier de procédure
-        </div>
-        <ol className="mt-4 space-y-3">
-          {timeline.map(([label, date]) => (
-            <li key={label} className="flex items-start gap-3 text-sm">
-              <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" />
-              <span className="min-w-0">
-                <span className="block font-medium text-foreground">{label}</span>
-                <span className="block text-muted-foreground">{date}</span>
-              </span>
-            </li>
-          ))}
-        </ol>
-      </div>
     </div>
   );
 }
@@ -1161,26 +2665,15 @@ function AdvancedAssumptionsBlock({
       totalBudget: 0,
     },
   );
-  const extraFees =
-    assumptions.lawyerFees +
-    assumptions.adjudicationFees +
-    assumptions.publicationFees +
-    assumptions.otherFees;
+  const extraFees = assumptions.lawyerFees + assumptions.adjudicationFees + assumptions.otherFees;
   const simulatedCost = computeAcquisitionCosts({
     price: ceiling.available ? ceiling.maxBid : Math.max(0, sale.starting_price_eur ?? 0),
     works: assumptions.works,
     fpt: DEFAULTS.fpt + extraFees,
   });
-  const resaleMargin = assumptions.resalePrice
-    ? assumptions.resalePrice - simulatedCost.totalCost
-    : null;
-  const rentalIncome =
-    assumptions.monthlyRent > 0 && assumptions.holdingMonths > 0
-      ? assumptions.monthlyRent * assumptions.holdingMonths
-      : null;
-  const budgetDelta = assumptions.totalBudget
-    ? assumptions.totalBudget - simulatedCost.totalCost
-    : null;
+  const safetyReserve = Math.round(simulatedCost.totalCost * (assumptions.safetyMarginPct / 100));
+  const adjustedTotal = simulatedCost.totalCost + safetyReserve;
+  const resaleMargin = assumptions.resalePrice ? assumptions.resalePrice - adjustedTotal : null;
 
   const update = (key: keyof AdvancedAssumptions, value: number) =>
     setAssumptions((current) => ({ ...current, [key]: Math.max(0, value || 0) }));
@@ -1204,11 +2697,6 @@ function AdvancedAssumptionsBlock({
           onChange={(v) => update("adjudicationFees", v)}
         />
         <MoneyField
-          label="Frais de publication"
-          value={assumptions.publicationFees}
-          onChange={(v) => update("publicationFees", v)}
-        />
-        <MoneyField
           label="Frais divers"
           value={assumptions.otherFees}
           onChange={(v) => update("otherFees", v)}
@@ -1222,17 +2710,6 @@ function AdvancedAssumptionsBlock({
           label="Loyer potentiel mensuel"
           value={assumptions.monthlyRent}
           onChange={(v) => update("monthlyRent", v)}
-        />
-        <MoneyField
-          label="Durée avant revente/location"
-          suffix="mois"
-          value={assumptions.holdingMonths}
-          onChange={(v) => update("holdingMonths", v)}
-        />
-        <MoneyField
-          label="Budget total disponible"
-          value={assumptions.totalBudget}
-          onChange={(v) => update("totalBudget", v)}
         />
       </div>
       <label className="mt-4 block">
@@ -1249,20 +2726,17 @@ function AdvancedAssumptionsBlock({
         />
       </label>
       <dl className="mt-5 grid gap-3 rounded-lg border border-border bg-muted/30 p-4 text-sm md:grid-cols-3">
-        <CostRow label="Coût complet ajusté" value={formatPrice(simulatedCost.totalCost)} strong />
+        <CostRow label="Coût complet ajusté" value={formatPrice(adjustedTotal)} strong />
+        <CostRow label="Marge de sécurité" value={formatPrice(safetyReserve)} />
+        <CostRow label="Frais personnalisés" value={formatPrice(extraFees)} />
         <CostRow
           label="Marge à la revente"
           value={resaleMargin == null ? "À compléter" : signedAmount(resaleMargin)}
         />
         <CostRow
-          label="Revenu locatif période"
-          value={rentalIncome == null ? "À compléter" : formatPrice(rentalIncome)}
+          label="Loyer potentiel"
+          value={assumptions.monthlyRent ? formatPrice(assumptions.monthlyRent) : "À compléter"}
         />
-        <CostRow
-          label="Budget restant"
-          value={budgetDelta == null ? "À compléter" : signedAmount(budgetDelta)}
-        />
-        <CostRow label="Frais personnalisés" value={formatPrice(extraFees)} />
         <CostRow
           label="Plafond actuel"
           value={ceiling.available ? formatPrice(ceiling.maxBid) : "À compléter"}
@@ -1439,9 +2913,13 @@ function WorksBlock({ sale }: { sale: AuctionSale }) {
 function MarketLocalSection({
   sale,
   marketEstimate,
+  marketLoading = false,
+  marketError = false,
 }: {
   sale: AuctionSale;
   marketEstimate?: MarketEstimate | null;
+  marketLoading?: boolean;
+  marketError?: boolean;
 }) {
   const [filters, setFilters] = useLocalState(saleStorageKey(sale.id, "market-filters"), {
     distance: "rayon actuel",
@@ -1452,126 +2930,151 @@ function MarketLocalSection({
   const excluded = marketEstimate
     ? Math.max(0, marketEstimate.totalNearbySampleSize - marketEstimate.sampleSize)
     : 0;
+  const missingLabel = marketLoading
+    ? "Recherche DVF..."
+    : marketError
+      ? "Indisponible"
+      : "À compléter";
+  const range =
+    marketEstimate?.p25PricePerM2 && marketEstimate.p75PricePerM2
+      ? `${formatPricePerM2(marketEstimate.p25PricePerM2)} à ${formatPricePerM2(
+          marketEstimate.p75PricePerM2,
+        )}`
+      : missingLabel;
+  const referenceValue = marketEstimate?.medianPricePerM2
+    ? formatPricePerM2(marketEstimate.medianPricePerM2)
+    : missingLabel;
+  const sampleValue = marketEstimate
+    ? String(marketEstimate.sampleSize)
+    : marketLoading
+      ? "Recherche..."
+      : marketError
+        ? "Indisponible"
+        : "À compléter";
+  const dialogDescription = marketLoading
+    ? "Lecture des ventes DVF proches en cours."
+    : marketError
+      ? "L'estimation DVF est temporairement indisponible."
+      : `${excluded} vente${excluded > 1 ? "s" : ""} exclue${
+          excluded > 1 ? "s" : ""
+        } de l'échantillon retenu.`;
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-4">
-        <QuickStat
-          icon={<MapPin className="h-4 w-4" />}
-          label="Prix médian"
-          value={formatPricePerM2(marketEstimate?.medianPricePerM2)}
-          detail={marketEstimate?.commune ?? sale.city ?? "Secteur"}
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <dl className="grid gap-3 text-sm md:grid-cols-2">
+        <CostRow label="Référence retenue" value={referenceValue} strong />
+        <CostRow label="Fourchette observée" value={range} />
+        <CostRow label="Comparables retenus" value={sampleValue} />
+        <CostRow
+          label="Méthode"
+          value="Ventes proches, surfaces similaires, biens atypiques exclus"
         />
-        <QuickStat
-          icon={<Scale className="h-4 w-4" />}
-          label="Fourchette basse"
-          value={formatPricePerM2(marketEstimate?.p25PricePerM2)}
-          detail="Quartile bas"
-        />
-        <QuickStat
-          icon={<Scale className="h-4 w-4" />}
-          label="Fourchette haute"
-          value={formatPricePerM2(marketEstimate?.p75PricePerM2)}
-          detail="Quartile haut"
-        />
-        <QuickStat
-          icon={<FileCheck2 className="h-4 w-4" />}
-          label="Comparables retenus"
-          value={marketEstimate ? String(marketEstimate.sampleSize) : "À compléter"}
-          detail={`${excluded} exclu${excluded > 1 ? "s" : ""}`}
-        />
-      </div>
-      <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-        <div className="grid gap-3 md:grid-cols-3">
-          <FilterSelect
-            label="Distance"
-            value={filters.distance}
-            values={["rayon actuel", "100 m", "300 m", "1 km"]}
-            onChange={(distance) => setFilters((current) => ({ ...current, distance }))}
-          />
-          <FilterSelect
-            label="Période"
-            value={filters.period}
-            values={["6 ans", "3 ans", "12 mois"]}
-            onChange={(period) => setFilters((current) => ({ ...current, period }))}
-          />
-          <FilterSelect
-            label="Surface"
-            value={filters.surface}
-            values={[
-              "surface proche",
-              "toutes surfaces",
-              "surface inférieure",
-              "surface supérieure",
-            ]}
-            onChange={(surface) => setFilters((current) => ({ ...current, surface }))}
-          />
-        </div>
-        <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
-          <div className="rounded-lg border border-border bg-muted/30 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Carte des comparables
-            </div>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              {sale.latitude != null && sale.longitude != null
-                ? "Ouvrir la carte pour inspecter le secteur autour de l'adresse."
-                : "Coordonnées manquantes : carte indisponible pour ce dossier."}
-            </p>
-            {sale.latitude != null && sale.longitude != null && (
-              <a
-                href={`https://www.google.com/maps?q=${sale.latitude},${sale.longitude}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft hover:text-gold"
-              >
-                Ouvrir la carte <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            )}
+      </dl>
+      <Dialog>
+        <DialogTrigger asChild>
+          <button
+            type="button"
+            className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+          >
+            Voir les comparables <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Comparables du marché local</DialogTitle>
+            <DialogDescription>{dialogDescription}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 md:grid-cols-3">
+            <FilterSelect
+              label="Distance"
+              value={filters.distance}
+              values={["rayon actuel", "100 m", "300 m", "1 km"]}
+              onChange={(distance) => setFilters((current) => ({ ...current, distance }))}
+            />
+            <FilterSelect
+              label="Période"
+              value={filters.period}
+              values={["6 ans", "3 ans", "12 mois"]}
+              onChange={(period) => setFilters((current) => ({ ...current, period }))}
+            />
+            <FilterSelect
+              label="Surface"
+              value={filters.surface}
+              values={[
+                "surface proche",
+                "toutes surfaces",
+                "surface inférieure",
+                "surface supérieure",
+              ]}
+              onChange={(surface) => setFilters((current) => ({ ...current, surface }))}
+            />
           </div>
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-muted/50 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2">Surface</th>
-                  <th className="px-3 py-2">Prix</th>
-                  <th className="px-3 py-2">Prix/m²</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {transactions.length ? (
-                  transactions.slice(0, 6).map((transaction, index) => (
-                    <tr key={`${transaction.date}-${index}`}>
-                      <td className="px-3 py-2 text-muted-foreground">
-                        {formatDate(transaction.date)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {transaction.surface ? `${Math.round(transaction.surface)} m²` : "—"}
-                      </td>
-                      <td className="px-3 py-2 tabular-nums">
-                        {formatPrice(transaction.totalPrice)}
-                      </td>
-                      <td className="px-3 py-2 tabular-nums">
-                        {formatPricePerM2(transaction.pricePerM2)}
+          <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+            <div className="rounded-lg border border-border bg-muted/30 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Carte des comparables
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                {sale.latitude != null && sale.longitude != null
+                  ? "Ouvrir la carte pour inspecter le secteur autour de l'adresse."
+                  : "Coordonnées manquantes : carte indisponible pour ce dossier."}
+              </p>
+              {sale.latitude != null && sale.longitude != null && (
+                <a
+                  href={`https://www.google.com/maps?q=${sale.latitude},${sale.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft hover:text-gold"
+                >
+                  Ouvrir la carte <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
+            <div className="overflow-hidden rounded-lg border border-border">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-muted/50 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Surface</th>
+                    <th className="px-3 py-2">Prix</th>
+                    <th className="px-3 py-2">Prix/m²</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {transactions.length ? (
+                    transactions.slice(0, 6).map((transaction, index) => (
+                      <tr key={`${transaction.date}-${index}`}>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {formatDate(transaction.date)}
+                        </td>
+                        <td className="px-3 py-2">
+                          {transaction.surface ? `${Math.round(transaction.surface)} m²` : "—"}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {formatPrice(transaction.totalPrice)}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {formatPricePerM2(transaction.pricePerM2)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-4 text-sm text-muted-foreground">
+                        {marketLoading
+                          ? "Lecture des transactions DVF en cours."
+                          : marketError
+                            ? "Estimation DVF temporairement indisponible."
+                            : "Les comparables détaillés apparaîtront quand l'estimation DVF sera disponible."}
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={4} className="px-3 py-4 text-sm text-muted-foreground">
-                      Les comparables détaillés apparaîtront quand l'estimation DVF sera disponible.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-          Méthode : conserver les ventes proches du bien, exclure les surfaces trop différentes et
-          les caractéristiques atypiques, puis comparer le coût complet au prix de marché local.
-        </p>
-      </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1795,7 +3298,7 @@ function NoteField({
 function SaleAlertsBlock({ sale }: { sale: AuctionSale }) {
   const alertOptions = [
     "Rappel avant audience",
-    "Rappel avant visite",
+    "Rappel contact avocat",
     "Ajout d'un document",
     "Modification de la date",
     "Modification de la mise à prix",
@@ -1911,7 +3414,7 @@ function SimilarPropertiesBlock({
     <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
       {transactions.length ? (
         <div className="grid gap-3 md:grid-cols-2">
-          {transactions.slice(0, 4).map((transaction, index) => (
+          {transactions.slice(0, 3).map((transaction, index) => (
             <div
               key={`${transaction.date}-${index}`}
               className="rounded-md border border-border bg-muted/30 p-3"
@@ -1936,42 +3439,192 @@ function SimilarPropertiesBlock({
   );
 }
 
-function FinalActionsBlock({ sale }: { sale: AuctionSale }) {
+function SaleAndTaxHistoryBlock({
+  sale,
+  marketEstimate,
+}: {
+  sale: AuctionSale;
+  marketEstimate?: MarketEstimate | null;
+}) {
+  const rows = [
+    [
+      "Publication dossier",
+      formatDateTime(sale.created_at),
+      formatPrice(sale.starting_price_eur),
+      sale.source_name ?? "Source",
+    ],
+    ["Mise à jour", formatDateTime(sale.updated_at), "—", sale.primary_source ?? "Immojudis"],
+    [
+      "Audience prévue",
+      formatDate(sale.sale_date),
+      formatPrice(sale.starting_price_eur),
+      sale.tribunal ?? sale.tribunal_name ?? "Tribunal",
+    ],
+  ];
+  const history = marketEstimate?.addressHistory ?? [];
+
   return (
-    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-        <FavoriteButton saleId={sale.id} className="justify-center px-4 py-3" />
-        <a
-          href="#assistant"
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-foreground px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-background hover:bg-foreground/90"
-        >
-          Préparer mon enchère <Target className="h-3.5 w-3.5" />
-        </a>
-        <button
-          type="button"
-          onClick={printAnalysis}
-          className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-foreground hover:border-gold/50 hover:text-gold-soft"
-        >
-          Export PDF <Download className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => void shareCurrentPage(sale.title ?? "Dossier Immojudis")}
-          className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-foreground hover:border-gold/50 hover:text-gold-soft"
-        >
-          Partager <Share2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <div className="mt-5 rounded-lg border border-border bg-muted/30 p-4">
-        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Fonctions premium prêtes à brancher
+    <div className="overflow-hidden rounded-lg border border-border bg-white shadow-sm">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-muted/50 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          <tr>
+            <th className="px-4 py-3">Événement</th>
+            <th className="px-4 py-3">Date</th>
+            <th className="px-4 py-3">Montant</th>
+            <th className="px-4 py-3">Source</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.map(([event, date, amount, source]) => (
+            <tr key={event}>
+              <td className="px-4 py-3 font-medium text-foreground">{event}</td>
+              <td className="px-4 py-3 text-muted-foreground">{date}</td>
+              <td className="px-4 py-3 tabular-nums">{amount}</td>
+              <td className="px-4 py-3 text-muted-foreground">{source}</td>
+            </tr>
+          ))}
+          {history.slice(0, 3).map((item, index) => (
+            <tr key={`${item.date}-${index}`}>
+              <td className="px-4 py-3 font-medium text-foreground">Vente comparable adresse</td>
+              <td className="px-4 py-3 text-muted-foreground">{formatDate(item.date)}</td>
+              <td className="px-4 py-3 tabular-nums">{formatPrice(item.totalPrice)}</td>
+              <td className="px-4 py-3 text-muted-foreground">
+                {formatPricePerM2(item.pricePerM2)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PublicRecordBlock({ sale }: { sale: AuctionSale }) {
+  const surface = getDisplaySurface(sale);
+  const facts = [
+    ["Type", propertyTypeLabel(sale.property_type)],
+    ["Surface", surface.value ? surface.label : "Non précisée"],
+    ["Pièces", sale.rooms_count != null ? String(sale.rooms_count) : "Non précisé"],
+    ["Chambres", sale.bedrooms_count != null ? String(sale.bedrooms_count) : "Non précisé"],
+    ["Tribunal", sale.tribunal ?? sale.tribunal_name ?? "À confirmer"],
+    ["Consignation", sourceBlockMoney(sale, "consignation") ?? "À vérifier"],
+    ["Occupation", occupancyLabel(sale.occupancy_status)],
+    ["Documents", `${countDocuments(sale)} pièce${countDocuments(sale) > 1 ? "s" : ""}`],
+  ];
+
+  return (
+    <div className="mb-5 rounded-lg border border-border bg-white p-5 shadow-sm">
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {facts.map(([label, value]) => (
+          <div key={label} className="border-b border-border pb-3">
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              {label}
+            </dt>
+            <dd className="mt-1 text-sm font-medium text-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function ClimateRisksBlock({ sale, ceiling }: { sale: AuctionSale; ceiling: MarketCeilingResult }) {
+  const risks = sale.risks ?? [];
+  const fallback: NonNullable<AuctionSale["risks"]> = [
+    {
+      risk_type: "occupation",
+      risk_label: "Occupation",
+      severity: isUnknownOccupation(sale.occupancy_status) ? 2 : 1,
+      evidence: primaryCheckLabel(sale),
+    },
+    {
+      risk_type: "works",
+      risk_label: "Travaux",
+      severity: hasWorksRisk(sale) ? 2 : 1,
+      evidence: "Enveloppe à confirmer avant audience.",
+    },
+  ];
+  const visible = risks.length ? risks : fallback;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-2">
+          {visible.slice(0, 4).map((risk, index) => (
+            <div
+              key={`${risk.risk_label}-${index}`}
+              className="rounded-md border border-border bg-muted/30 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium text-foreground">
+                    {risk.risk_label || risk.risk_type}
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    {risk.evidence || "À vérifier dans les pièces."}
+                  </p>
+                </div>
+                <StatusBadge
+                  status={severityLabel(risk.severity)}
+                  tone={risk.severity && risk.severity >= 3 ? "risk" : "watch"}
+                />
+              </div>
+            </div>
+          ))}
         </div>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Export PDF complet, suivi de ventes, alertes personnalisées, comparateur, simulateur
-          achat-revente, simulateur locatif, notes privées, partage avec avocat, lecture assistée et
-          historique des changements.
+        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+          Ces risques remplacent le bloc climat de Redfin pour une vente judiciaire : ils peuvent
+          déplacer la valeur, le délai de possession et la mise plafond.
         </p>
       </div>
+      <VerificationPoints sale={sale} ceiling={ceiling} />
+    </div>
+  );
+}
+
+function OfferInsightsBlock({
+  sale,
+  decision,
+  acquisitionCost,
+  marketEstimate,
+}: {
+  sale: AuctionSale;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+  marketEstimate?: MarketEstimate | null;
+}) {
+  const surface = getSaleSurface(sale).value;
+  const allInPerM2 = surface ? acquisitionCost.totalCost / surface : null;
+  const deltaPct =
+    allInPerM2 && marketEstimate?.medianPricePerM2
+      ? Math.round((1 - allInPerM2 / marketEstimate.medianPricePerM2) * 100)
+      : null;
+  const rows = [
+    [
+      "Mise maximum",
+      decision.ceiling.available ? formatPrice(decision.ceiling.maxBid) : "À compléter",
+    ],
+    ["Coût complet", formatPrice(acquisitionCost.totalCost)],
+    ["Écart marché", deltaPct == null ? "À compléter" : `${deltaPct > 0 ? "+" : ""}${deltaPct}%`],
+    ["Consigne", decision.action],
+  ];
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {rows.map(([label, value]) => (
+          <div key={label} className="rounded-md border border-border bg-muted/30 p-4">
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              {label}
+            </dt>
+            <dd className="mt-2 text-lg font-semibold tabular-nums text-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+        Si un nouveau document change l'occupation, les travaux ou les frais particuliers, le
+        plafond doit être recalculé avant de transmettre les consignes à l'avocat.
+      </p>
     </div>
   );
 }
@@ -2007,7 +3660,7 @@ function DecisionRail({
             {decision.primaryCheck}. À valider avec les pièces et les professionnels compétents.
           </p>
           <a
-            href="#assistant"
+            href="#offer-insights"
             className="mt-3 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.12em] text-gold-soft transition-colors hover:text-gold"
           >
             Préparer mon enchère <ChevronRight className="h-3 w-3" />
@@ -2030,9 +3683,31 @@ function DecisionRail({
         </div>
 
         <div className="mt-5 grid gap-3 border-t border-border pt-5">
-          <FavoriteButton saleId={sale.id} className="w-full justify-center" />
+          <div className="grid grid-cols-2 gap-2">
+            <FavoriteButton saleId={sale.id} className="w-full justify-center" />
+            <Dialog>
+              <DialogTrigger asChild>
+                <button
+                  type="button"
+                  className="group flex w-full cursor-pointer items-center justify-between rounded-lg border border-border bg-white px-3 py-2 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+                >
+                  <span>Comparer</span>
+                  <Scale className="h-3.5 w-3.5" />
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+                <DialogHeader>
+                  <DialogTitle>Comparer cette vente</DialogTitle>
+                  <DialogDescription>
+                    Les repères essentiels de cette fiche pour la comparaison.
+                  </DialogDescription>
+                </DialogHeader>
+                <ComparisonBlock sale={sale} ceiling={decision.ceiling} cost={acquisitionCost} />
+              </DialogContent>
+            </Dialog>
+          </div>
           <a
-            href="#assistant"
+            href="#offer-insights"
             className="group flex w-full items-center justify-between rounded-lg bg-foreground px-4 py-3 text-[11px] font-medium uppercase tracking-[0.12em] text-background transition-colors hover:bg-foreground/90"
           >
             <span>Préparer mon enchère</span>
@@ -2054,6 +3729,44 @@ function DecisionRail({
             <span>Partager le dossier</span>
             <Share2 className="h-3.5 w-3.5" />
           </button>
+          <div className="grid grid-cols-2 gap-2">
+            <Dialog>
+              <DialogTrigger asChild>
+                <button
+                  type="button"
+                  className="group flex w-full cursor-pointer items-center justify-between rounded-lg border border-border bg-white px-3 py-2 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+                >
+                  <span>Notes</span>
+                  <FileCheck2 className="h-3.5 w-3.5" />
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+                <DialogHeader>
+                  <DialogTitle>Notes personnelles</DialogTitle>
+                  <DialogDescription>Notes privées et partage ciblé.</DialogDescription>
+                </DialogHeader>
+                <NotesAndSharingBlock sale={sale} />
+              </DialogContent>
+            </Dialog>
+            <Dialog>
+              <DialogTrigger asChild>
+                <button
+                  type="button"
+                  className="group flex w-full cursor-pointer items-center justify-between rounded-lg border border-border bg-white px-3 py-2 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+                >
+                  <span>Alerte</span>
+                  <Clock3 className="h-3.5 w-3.5" />
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+                <DialogHeader>
+                  <DialogTitle>Créer une alerte</DialogTitle>
+                  <DialogDescription>Rappels et changements à surveiller.</DialogDescription>
+                </DialogHeader>
+                <SaleAlertsBlock sale={sale} />
+              </DialogContent>
+            </Dialog>
+          </div>
           {sale.source_url && (
             <a
               href={sale.source_url}
@@ -2071,6 +3784,39 @@ function DecisionRail({
   );
 }
 
+function FloatingDossierAssistant({
+  sale,
+  cost,
+  ceiling,
+}: {
+  sale: AuctionSale;
+  cost: AcquisitionCost;
+  ceiling: MarketCeilingResult;
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="fixed bottom-6 right-4 z-40 hidden cursor-pointer items-center gap-2 rounded-full border border-border bg-foreground px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-background shadow-xl shadow-slate-900/20 transition-colors hover:bg-foreground/90 lg:inline-flex"
+        >
+          <CircleHelp className="h-4 w-4" />
+          Interroger le dossier
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>Interroger le dossier</DialogTitle>
+          <DialogDescription>
+            Questions rapides sourcées par les données de la fiche.
+          </DialogDescription>
+        </DialogHeader>
+        <DossierAssistant sale={sale} cost={cost} ceiling={ceiling} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function RailMeta({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -2084,7 +3830,7 @@ function MobileActionBar({ sale, decision }: { sale: AuctionSale; decision: Deci
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-white/95 px-3 py-2 shadow-[0_-8px_24px_rgb(19_34_56/10%)] backdrop-blur lg:hidden">
       <div className="mx-auto grid max-w-7xl grid-cols-[1fr_1fr_auto_auto] items-center gap-2">
-        <a href="#assistant" className="min-w-0 rounded-md px-2 py-1.5 text-xs">
+        <a href="#offer-insights" className="min-w-0 rounded-md px-2 py-1.5 text-xs">
           <span className="block text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
             Plafond
           </span>
@@ -2138,10 +3884,6 @@ function buildDecisionSummary(
     primaryCheck,
     primaryDocument: primaryDocumentLabel(sale, primaryCheck),
     action: recommendedAction(sale, ceiling),
-    dossierStatus:
-      countDocuments(sale) > 0
-        ? "Exploitable, sous réserve de validation des pièces"
-        : "À compléter avant décision",
   };
 }
 
@@ -2184,46 +3926,42 @@ function buildVerificationPoints(sale: AuctionSale): Array<{
 
   return [
     {
-      label: "Occupation du bien",
+      label: "Occupation",
       detail: unknownOccupation
-        ? "Statut à confirmer dans le PV descriptif avant de figer le plafond."
-        : `${occupancyLabel(sale.occupancy_status)} : vérifier le titre et le délai de libération.`,
-      status: unknownOccupation ? "À confirmer" : "Document disponible",
+        ? "À confirmer dans le PV descriptif."
+        : `${occupancyLabel(sale.occupancy_status)} : vérifier le titre et le délai.`,
+      status: unknownOccupation ? "À confirmer" : "À vérifier",
       tone: unknownOccupation ? "watch" : "verified",
     },
     {
-      label: "État intérieur et travaux",
-      detail: worksRisk
-        ? "Un point travaux est détecté : il doit devenir une enveloppe chiffrée."
-        : "Aucun budget travaux fiable n'est encore saisi dans les hypothèses.",
+      label: "Travaux",
+      detail: worksRisk ? "À chiffrer avant audience." : "À estimer avant audience.",
       status: worksRisk ? "À chiffrer" : "À confirmer",
       tone: worksRisk ? "risk" : "watch",
     },
     {
-      label: "Diagnostics",
-      detail:
-        "Relire les diagnostics pour amiante, plomb, DPE, termites et contraintes techniques.",
-      status: hasDiagnostics ? "Document disponible" : "Document manquant",
-      tone: hasDiagnostics ? "verified" : "missing",
-    },
-    {
       label: "Conditions de vente",
-      detail:
-        "Vérifier clauses particulières, frais, consignation, délai de paiement et surenchère.",
+      detail: "À faire relire par l'avocat.",
       status: hasConditions ? "À faire relire" : "Document manquant",
       tone: hasConditions ? "watch" : "missing",
+    },
+    {
+      label: "Financement / avocat",
+      detail: "À valider avant enchère.",
+      status: "À valider",
+      tone: "watch",
+    },
+    {
+      label: "Diagnostics",
+      detail: "Contrôler amiante, plomb, DPE, termites et contraintes techniques.",
+      status: hasDiagnostics ? "Document disponible" : "Document manquant",
+      tone: hasDiagnostics ? "verified" : "missing",
     },
     {
       label: "PV descriptif",
       detail: "Source prioritaire pour occupation, accès au bien, état visible et équipements.",
       status: hasPv ? "Document disponible" : "Document manquant",
       tone: hasPv ? "verified" : "missing",
-    },
-    {
-      label: "Financement et avocat",
-      detail: "Valider la capacité de paiement et le mandat d'avocat avant l'audience.",
-      status: "À valider",
-      tone: "watch",
     },
   ];
 }
@@ -2529,6 +4267,90 @@ function normalizeLocation(value: string | null | undefined): string {
     .trim();
 }
 
+function sourceBlockText(sale: AuctionSale, key: string): string | null {
+  const value = sale.source_blocks?.[key];
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function sourceBlockMoney(sale: AuctionSale, key: string): string | null {
+  const value = sale.source_blocks?.[key];
+  const amount = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(amount) && amount > 0 ? formatPrice(amount) : null;
+}
+
+type SaleSourceLink = { label: string; href: string };
+
+function cleanHref(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function isExternalHref(href: string): boolean {
+  return /^https?:\/\//i.test(href);
+}
+
+function saleSourceLinks(sale: AuctionSale): SaleSourceLink[] {
+  const links: SaleSourceLink[] = [];
+  const add = (label: string, href: unknown) => {
+    const clean = cleanHref(href);
+    if (!clean || links.some((link) => link.href === clean)) return;
+    links.push({ label, href: clean });
+  };
+
+  add(sale.source_name ?? "Source officielle", sale.source_url);
+  if (Array.isArray(sale.source_urls)) {
+    sale.source_urls.forEach((href, index) => add(`Source ${index + 1}`, href));
+  } else if (sale.source_urls && typeof sale.source_urls === "object") {
+    Object.entries(sale.source_urls as Record<string, unknown>).forEach(([label, href]) =>
+      add(label, href),
+    );
+  }
+  return links;
+}
+
+function cleanContactValue(value: string | null | undefined): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function lawyerContactHref(contact: string | null): string | null {
+  if (!contact) return null;
+  if (/^https?:\/\//i.test(contact)) return contact;
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) return `mailto:${contact}`;
+  const phone = contact.replace(/[^\d+]/g, "");
+  return phone.length >= 8 ? `tel:${phone}` : null;
+}
+
+function lawyerQuestions(sale: AuctionSale): string[] {
+  const questions = [
+    "Quel montant exact de consignation et quelle forme de paiement sont exigés ?",
+    "Quels frais particuliers du cahier des conditions doivent être ajoutés au coût complet ?",
+    "Quel délai de paiement, délai de surenchère et calendrier post-adjudication retenir ?",
+  ];
+
+  if (isUnknownOccupation(sale.occupancy_status)) {
+    questions.unshift("Le bien est-il libre, occupé, loué ou seulement partiellement décrit ?");
+  }
+  if (!hasDocumentType(sale, /cahier|conditions/)) {
+    questions.push("Comment récupérer le cahier des conditions de vente avant l'audience ?");
+  }
+  if (!hasDocumentType(sale, /diagnostic|dpe|amiante|plomb|termite/)) {
+    questions.push("Quels diagnostics techniques sont disponibles et lesquels manquent encore ?");
+  }
+  if (!sourceBlockMoney(sale, "consignation")) {
+    questions.push("La consignation est-elle confirmée par la source ou encore à vérifier ?");
+  }
+
+  return questions;
+}
+
+function severityLabel(severity: number | null | undefined): string {
+  if (severity == null) return "À vérifier";
+  if (severity >= 3) return "Élevé";
+  if (severity >= 2) return "Modéré";
+  return "Faible";
+}
+
 function HeroMeta({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div>
@@ -2550,23 +4372,24 @@ function Section({
   id,
   eyebrow,
   title,
+  wide = false,
   children,
 }: {
   id?: string;
   eyebrow: string;
   title: string;
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-24">
-      <header className="mb-5 flex items-baseline gap-4">
-        <span className="text-[10px] uppercase tracking-[0.16em] text-gold-soft">{eyebrow}</span>
-        <span className="h-px flex-1 bg-border" />
+    <section id={id} className={`scroll-mt-28 ${wide ? "max-w-full" : "max-w-[728px]"}`}>
+      <header className="mb-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
+          {eyebrow}
+        </span>
+        <h2 className="mt-1 font-sans text-base font-semibold text-foreground">{title}</h2>
       </header>
-      <h2 className="font-sans text-2xl font-semibold text-foreground sm:text-[1.75rem]">
-        {title}
-      </h2>
-      <div className="mt-6">{children}</div>
+      {children}
     </section>
   );
 }

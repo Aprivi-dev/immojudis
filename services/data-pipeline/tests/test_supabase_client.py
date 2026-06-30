@@ -160,11 +160,17 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
         "_upsert_with_rest",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("REST upsert should not run")),
     )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_asset_tables_with_rest",
+        lambda supabase_url, api_key, sales, now: calls.append((supabase_url, "asset_tables", len(sales))),
+    )
 
     assert supabase_client.upsert_sales_to_supabase([sale]) == 1
     assert calls == [
         ("postgresql://example", "auction_sales", 1),
         ("postgresql://example", "delete_secondary", 1),
+        ("https://supabase.test", "asset_tables", 1),
     ]
 
 

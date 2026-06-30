@@ -59,7 +59,16 @@ select
   s.created_at,
   s.updated_at,
   coalesce(m.media, '[]'::jsonb) as media,
-  s.raw_payload->'source_blocks' as source_blocks
+  s.raw_payload->'source_blocks' as source_blocks,
+  s.description,
+  nullif(s.raw_payload->>'source_description', '') as source_description,
+  nullif(s.raw_payload->>'llm_display_description', '') as llm_display_description,
+  coalesce(
+    nullif(s.raw_payload->>'llm_display_description', ''),
+    nullif(s.raw_payload->>'source_description', ''),
+    nullif(s.raw_payload->'source_blocks'->>'description', ''),
+    nullif(s.description, '')
+  ) as about_description
 from public.auction_sales s
 left join public.tribunals t on t.code = s.tribunal_code
 left join lateral (
@@ -216,7 +225,7 @@ where s.status in ('upcoming', 'unknown')
   and s.latitude is not null
   and s.longitude is not null;
 
-grant select on table public.v_auction_sales_app to authenticated;
+grant select on table public.v_auction_sales_app to anon, authenticated;
 
 notify pgrst, 'reload schema';
 

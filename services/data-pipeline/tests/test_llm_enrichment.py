@@ -5,6 +5,7 @@ from src.enrichment.extract_structured import (
     LLMExtraction,
     build_reduced_pdf_context,
     enrich_sale_with_llm,
+    extract_source_description,
     load_llm_context_for_sale,
 )
 from src.enrichment.llm_client import ReplicateClient, _retry_sleep_seconds, _stringify_output, parse_json_response
@@ -27,6 +28,10 @@ class FakeReplicateClient:
             "bedrooms_count": 3,
             "occupancy_status": "rented",
             "occupancy_details": "Bail mentionné dans le cahier.",
+            "display_description": (
+                "Maison de 91,4 m² décrite par la source, avec occupation locative et "
+                "points techniques à vérifier avant l'audience."
+            ),
             "legal_risks": ["servitude de passage"],
             "physical_risks": ["amiante"],
             "copropriete": False,
@@ -180,12 +185,34 @@ def test_llm_extraction_validates_values_and_confidence() -> None:
     assert extraction.confidence["surface_m2"] == 1.0
 
 
+def test_extract_source_description_prefers_usable_source_blocks() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-source-description.html",
+            "description": "Pour consulter l'intégralité des informations disponibles, vous devez être abonné.",
+            "raw_text": "Texte de page trop générique.",
+            "source_blocks": {
+                "description": "Appartement de type trois avec balcon, cave et stationnement privatif.",
+                "page_text": "Texte complet de page avec navigation et informations annexes.",
+            },
+        }
+    )
+
+    assert extract_source_description(sale) == (
+        "Appartement de type trois avec balcon, cave et stationnement privatif."
+    )
+
+
 def test_enrich_sale_with_llm_uses_cached_pdf_text_and_preserves_reliable_fields(tmp_path, monkeypatch) -> None:
     sale = normalize_sale(
         {
             "source_name": "avoventes",
             "source_url": "https://avoventes.fr/enchere/llm",
             "property_type": "Appartement",
+            "source_blocks": {
+                "description": "Maison de 91,4 m² avec occupation locative indiquée par la source."
+            },
         }
     )
     pdf_dir = tmp_path / "pdf_texts"
@@ -208,6 +235,7 @@ def test_enrich_sale_with_llm_uses_cached_pdf_text_and_preserves_reliable_fields
     assert sale.bedrooms_count == 3
     assert sale.occupancy_status == "rented"
     assert sale.property_type == "apartment"
+    assert sale.raw_payload["llm_display_description"].startswith("Maison de 91,4 m²")
     assert "llm_extraction" in sale.raw_payload
     assert (out_dir / f"{sale_storage_id(sale)}.json").exists()
 

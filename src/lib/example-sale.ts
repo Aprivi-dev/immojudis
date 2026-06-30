@@ -5,6 +5,14 @@ import type { AuctionSale } from "@/lib/types";
 export const EXAMPLE_SALE = {
   id: "example-immojudis-bordeaux-t2",
   title: "Appartement T2 avec balcon - annonce d'exemple Immojudis",
+  description:
+    "Appartement de deux pièces avec balcon, situé à Bordeaux, dans un immeuble ancien proche du tribunal.",
+  source_description:
+    "Appartement de deux pièces avec balcon, situé à Bordeaux, dans un immeuble ancien proche du tribunal.",
+  llm_display_description:
+    "Appartement de deux pièces situé à Bordeaux, dans un immeuble ancien à proximité du tribunal. Le descriptif d'exemple mentionne un balcon, une surface Carrez de 42,6 m² et un rafraîchissement à prévoir avant remise en location ou revente.",
+  about_description:
+    "Appartement de deux pièces situé à Bordeaux, dans un immeuble ancien à proximité du tribunal. Le descriptif d'exemple mentionne un balcon, une surface Carrez de 42,6 m² et un rafraîchissement à prévoir avant remise en location ou revente.",
   city: "Bordeaux",
   department: "Gironde",
   postal_code: "33000",
@@ -158,7 +166,7 @@ export const EXAMPLE_SALE = {
       risk_label: "Occupation à confirmer",
       severity: 2,
       evidence:
-        "Le PV descriptif d'exemple signale une présence lors de la visite, sans bail annexe au dossier.",
+        "Le PV descriptif d'exemple signale une présence lors du constat sur place, sans bail annexe au dossier.",
       evidence_json: {
         risk_status: "to_verify",
         reasoning:

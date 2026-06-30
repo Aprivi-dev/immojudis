@@ -93,6 +93,17 @@ Pour appliquer automatiquement le schéma SQL depuis la machine locale, ajouter 
 SUPABASE_DB_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
 ```
 
+Quand `SUPABASE_DB_URL` est présent, l'upsert principal des ventes passe par
+Postgres direct, puis les tables dérivées (`auction_risks`, documents, score
+factors, surfaces, etc.) sont synchronisées via l'API REST service-role.
+
+Les enrichissements peuvent être parallélisés :
+
+```bash
+PIPELINE_ENRICH_WORKERS=6
+PIPELINE_PDF_WORKERS=2
+```
+
 Activer Licitor uniquement pour un benchmark :
 
 ```bash
@@ -241,7 +252,7 @@ REPLICATE_RETRY_MAX_SLEEP_SECONDS=180
 REPLICATE_MIN_INTERVAL_SECONDS=10
 REPLICATE_THINKING_BUDGET=0
 REPLICATE_DYNAMIC_THINKING=false
-LLM_PROMPT_VERSION=auction_llm_v2
+LLM_PROMPT_VERSION=auction_llm_v3
 LLM_PDF_MAX_CHARS=12000
 INCREMENTAL_ENRICHMENT=true
 PDF_DOCLING_FAST_TIMEOUT_SECONDS=60
@@ -253,7 +264,7 @@ Pour Gemini via Replicate, le client envoie le prompt système dans `system_inst
 Les erreurs temporaires Replicate, dont `429 Too Many Requests`, sont retentées avec backoff exponentiel et un délai minimal entre appels pour éviter les rafales en fin de run.
 Les textes PDF et les extractions LLM sont mis en cache par empreinte de document/contexte. Le run suivant réutilise les résultats inchangés, limite les documents transmis aux plus utiles et applique un timeout Docling plus court sur les PDF signés ou très lourds avant fallback.
 
-Le pipeline tente systématiquement l'enrichissement LLM pour chaque annonce canonique disposant d'un texte exploitable, sauf option `--no-llm`. Il utilise d'abord le contexte PDF réduit, puis retombe sur `raw_text` si aucun texte PDF n'est disponible. Il continue sans LLM si le provider configuré n'est pas disponible. Les réponses doivent être du JSON valide, validé par Pydantic, puis sauvegardé dans `data/processed/llm_extractions/{sale_id}.json`.
+Le pipeline tente systématiquement l'enrichissement LLM pour chaque annonce canonique disposant d'un texte exploitable, sauf option `--no-llm`. Il conserve le descriptif source dans `raw_payload.source_description`, puis demande au LLM une version d'affichage `display_description` stockée en `raw_payload.llm_display_description`. Il utilise d'abord le contexte PDF réduit pour l'analyse structurée, puis retombe sur `raw_text` si aucun texte PDF n'est disponible. Il continue sans LLM si le provider configuré n'est pas disponible. Les réponses doivent être du JSON valide, validé par Pydantic, puis sauvegardé dans `data/processed/llm_extractions/{sale_id}.json`.
 
 Un cache évite de rappeler Replicate quand le couple `modèle + contexte réduit` n'a pas changé. Cela limite le coût, accélère les relances et stabilise les extractions.
 

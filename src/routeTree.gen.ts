@@ -16,10 +16,8 @@ import { Route as PublishRouteImport } from './routes/publish'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LegalRouteImport } from './routes/legal'
-import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AnnonceExempleRouteImport } from './routes/annonce-exemple'
-import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AccompagnementRouteImport } from './routes/accompagnement'
 import { Route as AProposRouteImport } from './routes/a-propos'
@@ -64,11 +62,6 @@ const LegalRoute = LegalRouteImport.update({
   path: '/legal',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FavoritesRoute = FavoritesRouteImport.update({
-  id: '/favorites',
-  path: '/favorites',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ContactRoute = ContactRouteImport.update({
   id: '/contact',
   path: '/contact',
@@ -77,11 +70,6 @@ const ContactRoute = ContactRouteImport.update({
 const AnnonceExempleRoute = AnnonceExempleRouteImport.update({
   id: '/annonce-exemple',
   path: '/annonce-exemple',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AlertsRoute = AlertsRouteImport.update({
-  id: '/alerts',
-  path: '/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -125,10 +113,8 @@ export interface FileRoutesByFullPath {
   '/a-propos': typeof AProposRoute
   '/accompagnement': typeof AccompagnementRoute
   '/admin': typeof AdminRouteWithChildren
-  '/alerts': typeof AlertsRoute
   '/annonce-exemple': typeof AnnonceExempleRoute
   '/contact': typeof ContactRoute
-  '/favorites': typeof FavoritesRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
@@ -145,10 +131,8 @@ export interface FileRoutesByTo {
   '/a-propos': typeof AProposRoute
   '/accompagnement': typeof AccompagnementRoute
   '/admin': typeof AdminRouteWithChildren
-  '/alerts': typeof AlertsRoute
   '/annonce-exemple': typeof AnnonceExempleRoute
   '/contact': typeof ContactRoute
-  '/favorites': typeof FavoritesRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
@@ -165,10 +149,8 @@ export interface FileRoutesById {
   '/a-propos': typeof AProposRoute
   '/accompagnement': typeof AccompagnementRoute
   '/admin': typeof AdminRouteWithChildren
-  '/alerts': typeof AlertsRoute
   '/annonce-exemple': typeof AnnonceExempleRoute
   '/contact': typeof ContactRoute
-  '/favorites': typeof FavoritesRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
@@ -187,10 +169,8 @@ export interface FileRouteTypes {
     | '/a-propos'
     | '/accompagnement'
     | '/admin'
-    | '/alerts'
     | '/annonce-exemple'
     | '/contact'
-    | '/favorites'
     | '/legal'
     | '/login'
     | '/privacy'
@@ -207,10 +187,8 @@ export interface FileRouteTypes {
     | '/a-propos'
     | '/accompagnement'
     | '/admin'
-    | '/alerts'
     | '/annonce-exemple'
     | '/contact'
-    | '/favorites'
     | '/legal'
     | '/login'
     | '/privacy'
@@ -226,10 +204,8 @@ export interface FileRouteTypes {
     | '/a-propos'
     | '/accompagnement'
     | '/admin'
-    | '/alerts'
     | '/annonce-exemple'
     | '/contact'
-    | '/favorites'
     | '/legal'
     | '/login'
     | '/privacy'
@@ -247,10 +223,8 @@ export interface RootRouteChildren {
   AProposRoute: typeof AProposRoute
   AccompagnementRoute: typeof AccompagnementRoute
   AdminRoute: typeof AdminRouteWithChildren
-  AlertsRoute: typeof AlertsRoute
   AnnonceExempleRoute: typeof AnnonceExempleRoute
   ContactRoute: typeof ContactRoute
-  FavoritesRoute: typeof FavoritesRoute
   LegalRoute: typeof LegalRoute
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -311,13 +285,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LegalRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/favorites': {
-      id: '/favorites'
-      path: '/favorites'
-      fullPath: '/favorites'
-      preLoaderRoute: typeof FavoritesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/contact': {
       id: '/contact'
       path: '/contact'
@@ -330,13 +297,6 @@ declare module '@tanstack/react-router' {
       path: '/annonce-exemple'
       fullPath: '/annonce-exemple'
       preLoaderRoute: typeof AnnonceExempleRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/alerts': {
-      id: '/alerts'
-      path: '/alerts'
-      fullPath: '/alerts'
-      preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -418,10 +378,8 @@ const rootRouteChildren: RootRouteChildren = {
   AProposRoute: AProposRoute,
   AccompagnementRoute: AccompagnementRoute,
   AdminRoute: AdminRouteWithChildren,
-  AlertsRoute: AlertsRoute,
   AnnonceExempleRoute: AnnonceExempleRoute,
   ContactRoute: ContactRoute,
-  FavoritesRoute: FavoritesRoute,
   LegalRoute: LegalRoute,
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,

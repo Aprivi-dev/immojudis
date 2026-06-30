@@ -4,22 +4,18 @@ import { Link, useLocation } from "@tanstack/react-router";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import LogOut from "lucide-react/dist/esm/icons/log-out.js";
 import Menu from "lucide-react/dist/esm/icons/menu.js";
+import Search from "lucide-react/dist/esm/icons/search.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { BrandMark } from "@/components/BrandLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { isAdminAccount, isProfessionalAccount } from "@/lib/account";
 
-const AUTH_NAV_ITEMS = [
-  { to: "/sales", label: "Annonces" },
-  { to: "/favorites", label: "Favoris" },
-  { to: "/alerts", label: "Alertes" },
-] as const;
+const AUTH_NAV_ITEMS = [{ to: "/sales", label: "Annonces" }] as const;
 
 const PRO_NAV_ITEM = { to: "/publish", label: "Publier" } as const;
 const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin" } as const;
 const HOME_NAV_ITEMS = [
-  { to: "/sales", label: "Ventes judiciaires", chevron: true },
   { to: "/sales", label: "Rechercher un bien" },
   { to: "/annonce-exemple", label: "Annonce exemple" },
   { to: "/accompagnement", label: "Accompagnement" },
@@ -32,6 +28,9 @@ export function Navbar() {
   const { user, profile, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const isHome = location.pathname === "/";
+  const isSalesListing = location.pathname === "/sales" || location.pathname === "/sales/";
+  const isProductPage =
+    location.pathname === "/annonce-exemple" || /^\/sales\/[^/]+/.test(location.pathname);
   const admin = isAdminAccount(user);
   const navItems = user
     ? [
@@ -55,6 +54,148 @@ export function Navbar() {
 
   const closeMobileMenu = () => setMobileOpen(false);
 
+  if (isSalesListing) return null;
+
+  if (isProductPage) {
+    return (
+      <>
+        <header className="fixed inset-x-0 top-0 z-50 border-b border-border bg-white/95 text-foreground shadow-sm backdrop-blur">
+          <div className="flex h-16 w-full items-center gap-4 px-4 sm:px-6 lg:px-8">
+            <Link
+              to="/"
+              className="inline-flex shrink-0 items-center gap-2 font-display text-2xl font-semibold text-foreground"
+              aria-label="ImmoJudis — accueil"
+            >
+              <BrandMark variant="transparent" className="h-7 w-7" />
+              <span>
+                Immo<span className="text-gold">Judis</span>
+              </span>
+            </Link>
+
+            <form
+              action="/sales"
+              method="get"
+              className="hidden min-w-[18rem] max-w-xl flex-1 items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm shadow-inner md:flex"
+            >
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <label htmlFor="product-search" className="sr-only">
+                Rechercher une vente judiciaire
+              </label>
+              <input type="hidden" name="around_radius" value="5" />
+              <input
+                id="product-search"
+                name="around_address"
+                type="search"
+                placeholder="Adresse, ville, tribunal ou référence"
+                className="w-full bg-transparent font-medium text-foreground outline-none placeholder:text-muted-foreground"
+              />
+            </form>
+
+            <nav
+              className="hidden items-center gap-1 text-sm font-semibold text-foreground lg:flex"
+              aria-label="Navigation produit"
+            >
+              {navItems.slice(0, 5).map((item) => (
+                <NavLink key={item.label} to={item.to} chevron={hasNavChevron(item)}>
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
+
+            <div className="ml-auto hidden shrink-0 items-center gap-2 md:flex">
+              {!loading && user ? (
+                <button
+                  type="button"
+                  onClick={() => supabase.auth.signOut()}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-gold/50 hover:text-gold-soft"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Déconnexion
+                </button>
+              ) : (
+                <>
+                  <Link
+                    to="/login"
+                    search={{ redirect: undefined }}
+                    className="rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-gold/50 hover:text-gold-soft"
+                  >
+                    Connexion
+                  </Link>
+                  <Link
+                    to="/login"
+                    search={{ redirect: undefined }}
+                    className="rounded-md bg-gold-soft px-3 py-2 text-sm font-semibold text-white hover:bg-gold"
+                  >
+                    S'inscrire
+                  </Link>
+                </>
+              )}
+            </div>
+
+            <button
+              type="button"
+              aria-label="Ouvrir le menu"
+              aria-controls="product-mobile-navigation"
+              aria-expanded={mobileOpen}
+              onClick={() => setMobileOpen(true)}
+              className="ml-auto inline-grid h-10 w-10 place-items-center rounded-md border border-border bg-white md:hidden"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          </div>
+
+          {mobileOpen ? (
+            <div className="ij-mobile-overlay" role="dialog" aria-modal="true">
+              <button
+                type="button"
+                aria-label="Fermer le menu"
+                className="ij-mobile-backdrop"
+                onClick={closeMobileMenu}
+              />
+              <aside id="product-mobile-navigation" className="ij-mobile-panel">
+                <div className="ij-mobile-panel-head">
+                  <HeaderLogo onClick={closeMobileMenu} />
+                  <button type="button" aria-label="Fermer le menu" onClick={closeMobileMenu}>
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <form
+                    action="/sales"
+                    method="get"
+                    className="mb-3 flex items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm"
+                  >
+                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <label htmlFor="product-mobile-search" className="sr-only">
+                      Rechercher une vente judiciaire
+                    </label>
+                    <input type="hidden" name="around_radius" value="5" />
+                    <input
+                      id="product-mobile-search"
+                      name="around_address"
+                      type="search"
+                      placeholder="Adresse, ville ou tribunal"
+                      className="w-full bg-transparent outline-none"
+                    />
+                  </form>
+                  <nav className="ij-mobile-nav" aria-label="Navigation mobile">
+                    {navItems.map((item) => (
+                      <MobileNavLink key={item.label} to={item.to} onClick={closeMobileMenu}>
+                        {item.label}
+                      </MobileNavLink>
+                    ))}
+                  </nav>
+                </div>
+              </aside>
+            </div>
+          ) : null}
+        </header>
+        <div className="h-16" aria-hidden />
+      </>
+    );
+  }
+
   if (isHome) {
     return (
       <header className="ij-site-header">
@@ -71,10 +212,10 @@ export function Navbar() {
           </nav>
 
           <div className="ij-home-actions">
-            <Link to="/login" className="ij-login-button">
+            <Link to="/login" search={{ redirect: undefined }} className="ij-login-button">
               Connexion
             </Link>
-            <Link to="/login" className="ij-signup-button">
+            <Link to="/login" search={{ redirect: undefined }} className="ij-signup-button">
               S'inscrire
             </Link>
           </div>
@@ -116,10 +257,20 @@ export function Navbar() {
               </nav>
 
               <div className="ij-mobile-actions">
-                <Link to="/login" onClick={closeMobileMenu} className="ij-login-button">
+                <Link
+                  to="/login"
+                  search={{ redirect: undefined }}
+                  onClick={closeMobileMenu}
+                  className="ij-login-button"
+                >
                   Connexion
                 </Link>
-                <Link to="/login" onClick={closeMobileMenu} className="ij-signup-button">
+                <Link
+                  to="/login"
+                  search={{ redirect: undefined }}
+                  onClick={closeMobileMenu}
+                  className="ij-signup-button"
+                >
                   S'inscrire
                 </Link>
               </div>
@@ -152,10 +303,10 @@ export function Navbar() {
               </button>
             ) : (
               <>
-                <Link to="/login" className="ij-login-button">
+                <Link to="/login" search={{ redirect: undefined }} className="ij-login-button">
                   Connexion
                 </Link>
-                <Link to="/login" className="ij-signup-button">
+                <Link to="/login" search={{ redirect: undefined }} className="ij-signup-button">
                   S'inscrire
                 </Link>
               </>
@@ -215,6 +366,7 @@ export function Navbar() {
                     <>
                       <Link
                         to="/login"
+                        search={{ redirect: undefined }}
                         onClick={closeMobileMenu}
                         className="ij-login-button w-full"
                       >
@@ -222,6 +374,7 @@ export function Navbar() {
                       </Link>
                       <Link
                         to="/login"
+                        search={{ redirect: undefined }}
                         onClick={closeMobileMenu}
                         className="ij-signup-button w-full"
                       >

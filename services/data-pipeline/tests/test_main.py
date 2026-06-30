@@ -29,7 +29,10 @@ def test_needs_heavy_enrichment_skips_complete_sale() -> None:
         raw_text="Appartement libre de 42 m2.",
     )
 
-    assert main._needs_heavy_enrichment(sale) is False
+    assert main._needs_heavy_enrichment(sale, use_llm=False) is False
+    assert main._needs_heavy_enrichment(sale, use_llm=True) is True
+    sale.raw_payload["llm_display_description"] = "Appartement libre de 42 m2."
+    assert main._needs_heavy_enrichment(sale, use_llm=True) is False
 
 
 def test_needs_heavy_enrichment_keeps_incomplete_sale() -> None:

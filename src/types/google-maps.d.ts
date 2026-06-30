@@ -61,9 +61,11 @@ declare global {
         addListener(eventName: string, handler: () => void): MapsEventListener;
         fitBounds(bounds: LatLngBounds): void;
         getHeading(): number | undefined;
+        getZoom(): number | undefined;
         panTo(latLng: LatLngLiteral): void;
         setCenter(latLng: LatLngLiteral): void;
         setHeading(heading: number): void;
+        setMapTypeId(mapTypeId: string): void;
         setTilt(tilt: number): void;
         setZoom(zoom: number): void;
       }

@@ -28,7 +28,11 @@ export function FavoriteButton({ saleId, className = "" }: { saleId: string; cla
   async function toggle() {
     if (loading) return;
     if (!user) {
-      navigate({ to: "/login" });
+      const redirect =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : "/sales";
+      navigate({ to: "/login", search: { redirect } });
       return;
     }
     setBusy(true);

@@ -485,11 +485,28 @@ select
   bedrooms_count, has_garden, has_terrace, has_garage, has_pool,
   has_air_conditioning, has_double_glazing, investment_score,
   investment_summary, risk_notes, source_name, source_url, documents,
-  status, created_at, updated_at
+  status, created_at, updated_at,
+  description,
+  nullif(raw_payload->>'source_description', '') as source_description,
+  nullif(raw_payload->>'llm_display_description', '') as llm_display_description,
+  coalesce(
+    nullif(raw_payload->>'llm_display_description', ''),
+    nullif(raw_payload->>'source_description', ''),
+    nullif(raw_payload->'source_blocks'->>'description', ''),
+    nullif(description, '')
+  ) as about_description
 from auction_sales
 where status in ('upcoming', 'unknown')
   and latitude is not null
   and longitude is not null;
+
+create or replace view v_auction_sales_app_preview
+with (security_invoker = true)
+as
+select
+  id,
+  starting_price_eur
+from auction_sales;
 
 create table if not exists auction_sales_app_read (
   source_url text primary key references auction_sales(source_url) on delete cascade,
@@ -617,6 +634,7 @@ revoke all on table auction_sales_quality_issues from anon, authenticated;
 revoke all on table auction_sales_investment_candidates from anon, authenticated;
 revoke all on table auction_source_coverage from anon, authenticated;
 revoke all on table v_auction_sales_app from anon, authenticated;
+revoke all on table v_auction_sales_app_preview from anon, authenticated;
 revoke all on table auction_sales_app_read from anon, authenticated;
 revoke all on table v_auction_map_pins from anon, authenticated;
 do $$
@@ -626,61 +644,68 @@ begin
   end if;
 end $$;
 
-grant select (id, source_url, source_name, primary_source, tribunal, tribunal_code, department, city, address, postal_code,
-  property_type, title, description, habitable_surface_m2, land_surface_m2, carrez_surface_m2,
-  surface_m2, app_surface_m2, app_surface_kind, surface_scope, surface_source, surface_confidence, surface_evidence,
-  rooms_count, bedrooms_count, bathrooms_count,
-  parking_count, has_garden, has_terrace, has_garage, has_pool, has_air_conditioning,
-  has_double_glazing, starting_price_eur, sale_date, visit_dates, status, documents,
-  latitude, longitude, occupancy_status, risk_notes, investment_score, investment_summary, source_urls,
-  score_version, score_confidence, score_factors, dedupe_confidence, quality_flags,
-  first_seen_at, last_seen_at, created_at, updated_at) on auction_sales to anon, authenticated;
-grant select on auction_features to anon, authenticated;
-grant select on auction_surfaces to anon, authenticated;
-grant select (source_url, risk_type, risk_label, severity, evidence, evidence_json, confidence, detector, detector_version, score_impact, updated_at) on auction_risks to anon, authenticated;
-grant select (source_url, document_url, label, document_type, download_status, extraction_status,
-  docling_status, text_chars, updated_at) on auction_documents to anon, authenticated;
-grant select (source_url, risk_type, risk_label, severity, document_url, document_label, document_type,
-  page_number, excerpt, confidence, detector, detector_version, matched_terms, is_negated, score_impact,
-  created_at, updated_at) on auction_risk_occurrences to anon, authenticated;
-grant select (source_url, factor_order, factor_key, label, reason, delta, weight, raw_value,
-  normalized_value, confidence, evidence, evidence_refs, created_at, updated_at) on auction_score_factors to anon, authenticated;
-grant select on tribunals to anon, authenticated;
-grant select on auction_scoring_versions to anon, authenticated;
-grant select on public_auction_sales to anon, authenticated;
-grant select on auction_sales_quality_issues to anon, authenticated;
-grant select on auction_sales_investment_candidates to anon, authenticated;
-grant select on auction_source_coverage to anon, authenticated;
-grant select on v_auction_sales_app to anon, authenticated;
+grant select (id, starting_price_eur) on auction_sales to anon;
+grant select on v_auction_sales_app_preview to anon, authenticated;
+
+grant select on auction_sales to authenticated;
+grant select on auction_features to authenticated;
+grant select on auction_surfaces to authenticated;
+grant select on auction_risks to authenticated;
+grant select on auction_documents to authenticated;
+grant select on auction_risk_occurrences to authenticated;
+grant select on auction_score_factors to authenticated;
+grant select on tribunals to authenticated;
+grant select on auction_scoring_versions to authenticated;
+grant select on public_auction_sales to authenticated;
+grant select on auction_sales_quality_issues to authenticated;
+grant select on auction_sales_investment_candidates to authenticated;
+grant select on auction_source_coverage to authenticated;
+grant select on v_auction_sales_app to authenticated;
 grant select (
   source_url, id, title, city, department, postal_code, property_type,
   starting_price_eur, sale_date, latitude, longitude, occupancy_status,
   app_surface_m2, investment_score, score_confidence, score_version,
   deal_memo, quality_summary, risks, score_factors, documents_rich,
   created_at, updated_at
-) on auction_sales_app_read to anon, authenticated;
-grant select on v_auction_map_pins to anon, authenticated;
+) on auction_sales_app_read to authenticated;
+grant select on v_auction_map_pins to authenticated;
 
 drop policy if exists auction_sales_public_read on auction_sales;
-create policy auction_sales_public_read on auction_sales for select to anon, authenticated using (true);
+drop policy if exists auction_sales_public_preview_read on auction_sales;
+drop policy if exists auction_sales_authenticated_read on auction_sales;
+create policy auction_sales_public_preview_read on auction_sales for select to anon using (
+  coalesce(status, 'unknown') in ('upcoming', 'unknown')
+  and latitude is not null
+  and longitude is not null
+);
+create policy auction_sales_authenticated_read on auction_sales for select to authenticated using (true);
 drop policy if exists auction_features_public_read on auction_features;
-create policy auction_features_public_read on auction_features for select to anon, authenticated using (true);
+drop policy if exists auction_features_authenticated_read on auction_features;
+create policy auction_features_authenticated_read on auction_features for select to authenticated using (true);
 drop policy if exists auction_surfaces_public_read on auction_surfaces;
-create policy auction_surfaces_public_read on auction_surfaces for select to anon, authenticated using (true);
+drop policy if exists auction_surfaces_authenticated_read on auction_surfaces;
+create policy auction_surfaces_authenticated_read on auction_surfaces for select to authenticated using (true);
 drop policy if exists auction_risks_public_read on auction_risks;
-create policy auction_risks_public_read on auction_risks for select to anon, authenticated using (true);
+drop policy if exists auction_risks_authenticated_read on auction_risks;
+create policy auction_risks_authenticated_read on auction_risks for select to authenticated using (true);
 drop policy if exists auction_documents_public_read on auction_documents;
-create policy auction_documents_public_read on auction_documents for select to anon, authenticated using (true);
+drop policy if exists auction_documents_authenticated_read on auction_documents;
+create policy auction_documents_authenticated_read on auction_documents for select to authenticated using (true);
 drop policy if exists auction_risk_occurrences_public_read on auction_risk_occurrences;
-create policy auction_risk_occurrences_public_read on auction_risk_occurrences for select to anon, authenticated using (true);
+drop policy if exists auction_risk_occurrences_authenticated_read on auction_risk_occurrences;
+create policy auction_risk_occurrences_authenticated_read on auction_risk_occurrences for select to authenticated using (true);
 drop policy if exists auction_score_factors_public_read on auction_score_factors;
-create policy auction_score_factors_public_read on auction_score_factors for select to anon, authenticated using (true);
+drop policy if exists auction_score_factors_authenticated_read on auction_score_factors;
+create policy auction_score_factors_authenticated_read on auction_score_factors for select to authenticated using (true);
 drop policy if exists tribunals_public_read on tribunals;
-create policy tribunals_public_read on tribunals for select to anon, authenticated using (true);
+drop policy if exists tribunals_authenticated_read on tribunals;
+create policy tribunals_authenticated_read on tribunals for select to authenticated using (true);
 drop policy if exists auction_scoring_versions_public_read on auction_scoring_versions;
-create policy auction_scoring_versions_public_read on auction_scoring_versions for select to anon, authenticated using (true);
+drop policy if exists auction_scoring_versions_authenticated_read on auction_scoring_versions;
+create policy auction_scoring_versions_authenticated_read on auction_scoring_versions for select to authenticated using (true);
 drop policy if exists auction_sales_app_read_public_read on auction_sales_app_read;
-create policy auction_sales_app_read_public_read on auction_sales_app_read for select to anon, authenticated using (true);
+drop policy if exists auction_sales_app_read_authenticated_read on auction_sales_app_read;
+create policy auction_sales_app_read_authenticated_read on auction_sales_app_read for select to authenticated using (true);
 do $$
 begin
   if exists (
@@ -691,9 +716,10 @@ begin
       and c.relname = 'spatial_ref_sys'
       and pg_get_userbyid(c.relowner) = current_user
   ) then
-    grant select on spatial_ref_sys to anon, authenticated;
+    grant select on spatial_ref_sys to authenticated;
     drop policy if exists spatial_ref_sys_public_read on spatial_ref_sys;
-    create policy spatial_ref_sys_public_read on spatial_ref_sys for select to anon, authenticated using (true);
+    drop policy if exists spatial_ref_sys_authenticated_read on spatial_ref_sys;
+    create policy spatial_ref_sys_authenticated_read on spatial_ref_sys for select to authenticated using (true);
   end if;
 end $$;
 
