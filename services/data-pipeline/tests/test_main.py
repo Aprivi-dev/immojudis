@@ -54,6 +54,7 @@ def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> N
     monkeypatch.setattr(main, "touch_last_seen_for_content_hashes", lambda hashes: 0)
     monkeypatch.setattr(main, "touch_last_seen_for_source_urls", lambda urls: 0)
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    _fake_geocode.calls = calls
     monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
     monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
     monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
@@ -67,7 +68,10 @@ def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> N
 
     def upsert_sales(sales: list[AuctionSale]) -> int:
         calls.append("upsert")
-        assert sales[0].latitude is not None
+        if "geocode" in calls:
+            assert sales[0].latitude is not None
+        else:
+            assert sales[0].latitude is None
         assert sales[0].last_run_id == "run-1"
         return len(sales)
 
@@ -76,6 +80,46 @@ def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> N
 
     assert main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=False, upsert=True)) == 0
     assert calls.index("upsert") < calls.index("pdf")
+    assert calls.index("upsert") < calls.index("geocode")
+
+
+def test_light_pipeline_skips_geocode_when_heavy_enrichment_disabled(monkeypatch) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(main, "load_settings", lambda: _settings())
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "touch_last_seen_for_content_hashes", lambda hashes: 0)
+    monkeypatch.setattr(main, "touch_last_seen_for_source_urls", lambda urls: 0)
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "geocode_sale", lambda sale: calls.append("geocode") or sale)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+
+    def upsert_sales(sales: list[AuctionSale]) -> int:
+        calls.append("upsert")
+        assert sales[0].latitude is None
+        assert sales[0].last_run_id == "run-1"
+        return len(sales)
+
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", upsert_sales)
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales))
+
+    assert (
+        main.run_pipeline(
+            main.PipelineOptions(source="avoventes", use_llm=False, heavy_enrichment=False, upsert=True)
+        )
+        == 0
+    )
+    assert "upsert" in calls
+    assert "geocode" not in calls
 
 
 def _settings() -> dict[str, object]:
@@ -117,6 +161,12 @@ def _raw_sale() -> dict[str, object]:
 
 
 def _fake_geocode(sale: AuctionSale) -> AuctionSale:
+    try:
+        main_calls = getattr(_fake_geocode, "calls")
+    except AttributeError:
+        main_calls = None
+    if isinstance(main_calls, list):
+        main_calls.append("geocode")
     sale.latitude = Decimal("44.84")
     sale.longitude = Decimal("-0.57")
     return sale
