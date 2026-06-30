@@ -36,6 +36,7 @@ LOGGER = logging.getLogger(__name__)
 POSTGREST_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
 POSTGREST_UPSERT_RETRIES = 3
 POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 522, 524}
+POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE = 50
 POSTGRES_CONNECT_TIMEOUT = 15
 POSTGRES_JSON_COLUMNS = {
     "source_urls",
@@ -610,11 +611,8 @@ def delete_vench_sales_without_surface_in_supabase() -> int:
         return 0
     deleted = 0
     while source_urls := _fetch_vench_without_surface_urls(str(url), str(key)):
-        for index in range(0, len(source_urls), 150):
-            batch = source_urls[index : index + 150]
-            params = {"source_url": _postgrest_in_filter(batch)}
-            _postgrest_delete(str(url), str(key), "auction_observations", params)
-            _postgrest_delete(str(url), str(key), "auction_sales", params)
+        _postgrest_delete_by_source_urls(str(url), str(key), "auction_observations", source_urls)
+        _postgrest_delete_by_source_urls(str(url), str(key), "auction_sales", source_urls)
         deleted += len(source_urls)
     return deleted
 
@@ -650,13 +648,7 @@ def _delete_secondary_sale_rows(supabase_url: str, api_key: str, sales: list[Auc
     secondary_urls = _secondary_source_urls(sales)
     if not secondary_urls:
         return 0
-    _postgrest_delete(
-        supabase_url,
-        api_key,
-        "auction_sales",
-        {"source_url": _postgrest_in_filter(secondary_urls)},
-    )
-    return len(secondary_urls)
+    return _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_sales", secondary_urls)
 
 
 def _delete_secondary_sale_rows_with_postgres(db_url: str, sales: list[AuctionSale]) -> int:
@@ -739,24 +731,9 @@ def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[
         _postgrest_upsert(supabase_url, api_key, "auction_surfaces", surfaces, on_conflict="source_url")
     source_urls = [sale.source_url for sale in sales]
     if source_urls:
-        _postgrest_delete(
-            supabase_url,
-            api_key,
-            "auction_risks",
-            {"source_url": _postgrest_in_filter(source_urls)},
-        )
-        _postgrest_delete(
-            supabase_url,
-            api_key,
-            "auction_risk_occurrences",
-            {"source_url": _postgrest_in_filter(source_urls)},
-        )
-        _postgrest_delete(
-            supabase_url,
-            api_key,
-            "auction_score_factors",
-            {"source_url": _postgrest_in_filter(source_urls)},
-        )
+        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_risks", source_urls)
+        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_risk_occurrences", source_urls)
+        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_score_factors", source_urls)
     risk_occurrences_by_source = {sale.source_url: _risk_occurrence_rows_for_sale(sale) for sale in sales}
     risk_rows = [
         _timestamped(row, now)
@@ -888,6 +865,25 @@ def _postgrest_delete(supabase_url: str, api_key: str, table: str, params: dict[
             request=response.request,
             response=response,
         )
+
+
+def _postgrest_delete_by_source_urls(supabase_url: str, api_key: str, table: str, source_urls: list[str]) -> int:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for source_url in source_urls:
+        if not source_url or source_url in seen:
+            continue
+        seen.add(source_url)
+        unique.append(source_url)
+    for index in range(0, len(unique), POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE):
+        batch = unique[index : index + POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE]
+        _postgrest_delete(
+            supabase_url,
+            api_key,
+            table,
+            {"source_url": _postgrest_in_filter(batch)},
+        )
+    return len(unique)
 
 
 def _postgrest_request_with_retries(method: str, endpoint: str, table: str, **kwargs: Any) -> httpx.Response:
