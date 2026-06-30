@@ -20,11 +20,16 @@ import {
 } from "@/lib/account";
 
 export const Route = createFileRoute("/login")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    redirect: safeRedirect(search.redirect),
-  }),
+  validateSearch: (search: Record<string, unknown>): LoginSearch => {
+    const redirect = safeRedirect(search.redirect);
+    return redirect ? { redirect } : {};
+  },
   component: LoginPage,
 });
+
+type LoginSearch = {
+  redirect?: string;
+};
 
 type LoginMode = "login" | "investor" | "professional";
 
