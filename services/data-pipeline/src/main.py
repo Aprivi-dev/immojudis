@@ -86,7 +86,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     # Données connues en base : Vench s'en sert comme fallback quand la page est
     # paywall/sparse ; seules les lignes scorées peuvent servir au skip détail.
     known_details: dict[str, dict[str, object]] = (
-        fetch_known_sale_details() if (settings["incremental_enrichment"] and options.upsert) else {}
+        fetch_known_sale_details()
+        if (settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment)
+        else {}
     )
     known_signatures = {
         source_url: str(row["_signature"])
@@ -157,7 +159,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     # re-téléchargée / ré-OCR / renvoyée au LLM.
     skipped_unchanged = 0
     to_enrich = canonical_sales
-    if settings["incremental_enrichment"] and options.upsert:
+    if settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment:
         existing_hashes = fetch_enriched_content_hashes(
             [sale.content_hash for sale in canonical_sales if sale.content_hash]
         )
