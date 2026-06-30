@@ -200,7 +200,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     started = time.perf_counter()
     for sale in to_enrich:
         try:
-            _finalize_sale_for_app(sale)
+            _finalize_sale_for_app(sale, geocode=False)
             app_ready.append(sale)
         except Exception as exc:
             LOGGER.exception("Light finalisation failed for %s: %s", sale.source_url, exc)
@@ -439,8 +439,9 @@ def _timed_scrape(name: str, fn: "Callable[[], ScrapeResult]") -> tuple[ScrapeRe
     return result, round(time.perf_counter() - started, 2)
 
 
-def _finalize_sale_for_app(sale: AuctionSale) -> None:
-    geocode_sale(sale)
+def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
+    if geocode:
+        geocode_sale(sale)
     fill_tribunal(sale)
     normalize_asset_features(sale)
 
