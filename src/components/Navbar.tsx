@@ -65,7 +65,7 @@ export function Navbar() {
             {HOME_NAV_ITEMS.map((item) => (
               <Link key={item.label} to={item.to}>
                 {item.label}
-                {item.chevron ? <ChevronDown aria-hidden className="h-4 w-4" /> : null}
+                {hasNavChevron(item) ? <ChevronDown aria-hidden className="h-4 w-4" /> : null}
               </Link>
             ))}
           </nav>
@@ -138,7 +138,7 @@ export function Navbar() {
 
           <nav className="ij-home-nav" aria-label="Navigation principale">
             {navItems.map((item) => (
-              <NavLink key={item.label} to={item.to} chevron={"chevron" in item && item.chevron}>
+              <NavLink key={item.label} to={item.to} chevron={hasNavChevron(item)}>
                 {item.label}
               </NavLink>
             ))}
@@ -254,6 +254,10 @@ function HeaderLogo({ onClick }: { onClick?: () => void }) {
       </span>
     </Link>
   );
+}
+
+function hasNavChevron(item: { readonly to: string; readonly label: string }): boolean {
+  return "chevron" in item && (item as { readonly chevron?: unknown }).chevron === true;
 }
 
 function NavLink({
