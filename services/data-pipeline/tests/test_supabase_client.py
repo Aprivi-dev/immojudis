@@ -202,6 +202,47 @@ def test_upsert_observations_prefers_direct_postgres_when_db_url_is_configured(m
     assert calls == [("postgresql://example", "auction_observations", 1)]
 
 
+def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
+    sales = [
+        normalize_sale(
+            {
+                "source_name": "licitor",
+                "source_url": f"https://example.test/annonce/{index}/" + ("path-" * 30),
+            }
+        )
+        for index in range(supabase_client.POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE + 1)
+    ]
+    delete_calls: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(supabase_client, "_postgrest_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_postgrest_insert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "upsert_documents_to_supabase", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(supabase_client, "upsert_extractions_to_supabase", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_delete",
+        lambda supabase_url, api_key, table, params: delete_calls.append((table, params["source_url"])),
+    )
+
+    supabase_client._upsert_asset_tables_with_rest(
+        "https://supabase.test",
+        "secret",
+        sales,
+        "2026-06-30T13:00:00+00:00",
+    )
+
+    assert [table for table, _filter in delete_calls] == [
+        "auction_risks",
+        "auction_risks",
+        "auction_risk_occurrences",
+        "auction_risk_occurrences",
+        "auction_score_factors",
+        "auction_score_factors",
+    ]
+    assert delete_calls[0][1].count("https://example.test") == supabase_client.POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE
+    assert delete_calls[1][1].count("https://example.test") == 1
+
+
 def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
     monkeypatch.setattr(
         supabase_client,
