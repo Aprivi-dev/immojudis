@@ -1,0 +1,61 @@
+name: Apply Supabase Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_target:
+        description: "Type production to apply the audited Supabase migrations"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-supabase-migrations
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply audited migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - name: Check target confirmation
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.inputs.confirm_target }}" != "production" ]; then
+            echo "confirm_target must be exactly: production" >&2
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply migrations
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "SUPABASE_DB_URL secret is missing." >&2
+            exit 1
+          fi
+
+          migrations=(
+            "supabase/migrations/20260630163056_add_about_description_to_app_view.sql"
+            "supabase/migrations/20260630180814_restrict_sales_detail_to_authenticated.sql"
+            "supabase/migrations/20260630181544_use_admin_app_metadata.sql"
+          )
+
+          for migration in "${migrations[@]}"; do
+            echo "::group::${migration}"
+            psql "$SUPABASE_DB_URL" --set=ON_ERROR_STOP=1 --file "$migration"
+            echo "::endgroup::"
+          done
