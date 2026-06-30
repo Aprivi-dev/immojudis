@@ -404,8 +404,8 @@ begin
   if not exists (select 1 from pg_constraint where conname = 'auction_sales_occupancy_status_check') then
     alter table auction_sales add constraint auction_sales_occupancy_status_check check (occupancy_status is null or occupancy_status in ('vacant','occupied','rented','owner_occupied','squatted','unknown'));
   end if;
-  if not exists (select 1 from pg_constraint where conname = 'auction_sales_department_check') then
-    alter table auction_sales add constraint auction_sales_department_check check (department is null or department in ('24','33','40','47','64'));
+  if exists (select 1 from pg_constraint where conname = 'auction_sales_department_check') then
+    alter table auction_sales drop constraint auction_sales_department_check;
   end if;
   if not exists (select 1 from pg_constraint where conname = 'auction_sales_surface_confidence_check') then
     alter table auction_sales add constraint auction_sales_surface_confidence_check check (surface_confidence is null or (surface_confidence >= 0 and surface_confidence <= 1));

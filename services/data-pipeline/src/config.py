@@ -32,14 +32,11 @@ FRANCE_DEPARTMENTS = (
     "987",
     "988",
 )
-AQUITAINE_DEPARTMENTS = ("24", "33", "40", "47", "64")
-
-
 def _target_departments_from_env() -> tuple[str, ...]:
     load_dotenv(ROOT_DIR / ".env")
     raw = (os.getenv("TARGET_DEPARTMENTS") or "").strip()
     if not raw:
-        return AQUITAINE_DEPARTMENTS
+        return FRANCE_DEPARTMENTS
     if raw.lower() in {"all", "france", "france_entire"}:
         return FRANCE_DEPARTMENTS
     requested = tuple(part.strip().upper() for part in raw.split(",") if part.strip())
