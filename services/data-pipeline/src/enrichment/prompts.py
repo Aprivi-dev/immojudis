@@ -27,6 +27,13 @@ def build_user_prompt(context_text: str) -> str:
         "- Si une valeur semble venir d'un tableau de diagnostics, d'un DPE, d'une page, d'un article ou d'un numéro de lot, ne l'utilise pas.\n"
         "- Ne convertis pas les ares/centiares en m² sauf si le document donne explicitement une surface en m².\n"
         "- Les champs texte doivent rester courts et citer les mots utiles du document quand c'est possible.\n\n"
+        "Règles description d'affichage :\n"
+        "- display_description reformule uniquement le bloc descriptif de l'annonce source, repéré par les libellés Description source, source_description ou source_blocks.description.\n"
+        "- N'utilise pas les PDF, diagnostics ou cahiers pour enrichir display_description ; ces documents servent aux autres champs d'analyse.\n"
+        "- Si aucun descriptif source exploitable n'est fourni, si le texte indique un paywall/abonnement, ou si le descriptif est trop vague, retourne display_description null.\n"
+        "- Rédige en français naturel, 1 à 2 courts paragraphes, sans markdown, sans puces, sans promesse commerciale.\n"
+        "- Conserve seulement les faits écrits dans le descriptif source : type, localisation, surface, composition, annexes, occupation ou visites si explicitement présents.\n"
+        "- Ne mentionne jamais que le texte a été reformulé par un LLM.\n\n"
         "Règles surfaces :\n"
         "- surface_m2 doit représenter la surface principale du bien, pas une surface de terrain, garage, cave, dépendance, local annexe ou piscine.\n"
         "- Pour un appartement, privilégie une surface loi Carrez explicitement mentionnée.\n"
@@ -74,6 +81,7 @@ def build_user_prompt(context_text: str) -> str:
         "Schéma JSON attendu, sans markdown et sans commentaire :\n"
         "{\n"
         '  "property_type": "apartment|house|building|land|commercial|parking|mixed|other|unknown|null",\n'
+        '  "display_description": null,\n'
         '  "surface_m2": 0.0,\n'
         '  "rooms_count": null,\n'
         '  "bedrooms_count": null,\n'
@@ -96,6 +104,7 @@ def build_user_prompt(context_text: str) -> str:
         '    "physical_risks": 0.0,\n'
         '    "copropriete": 0.0,\n'
         '    "servitudes": 0.0,\n'
+        '    "display_description": 0.0,\n'
         '    "summary": 0.0\n'
         "  },\n"
         '  "evidence": {\n'

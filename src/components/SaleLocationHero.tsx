@@ -35,9 +35,9 @@ function useReducedMotion(): boolean {
 
 /**
  * Hero localisation : deux tuiles Google Maps en tête de la page détail —
- * vue aérienne 3D (satellite incliné + orbite douce) et Street View. Remplace les
+ * vue aérienne 3D (satellite incliné + orbite douce) et vue de rue. Remplace les
  * visuels extraits, sans aucune dépendance aux photos source : si la clé Maps ou
- * les coordonnées manquent, on affiche un placeholder de marque ; si Street View
+ * les coordonnées manquent, on affiche un état de repli de marque ; si la vue de rue
  * est absent à l'adresse (fréquent en zone rurale), la tuile droite bascule sur un
  * message dédié. L'orbite respecte prefers-reduced-motion et se met en pause
  * lorsque le bloc sort de l'écran.
@@ -227,7 +227,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
     return () => obs.disconnect();
   }, [hasMaps]);
 
-  // Street View : recherche du panorama le plus proche, sinon état "missing".
+  // Vue de rue : recherche du panorama le plus proche, sinon état "missing".
   useEffect(() => {
     if (!showStreetView || !hasMaps || lat == null || lng == null || !streetRef.current) return;
     let cancelled = false;
@@ -285,7 +285,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
         <MapPin className="h-6 w-6 text-gold" />
         <p className="mt-3 text-sm font-medium text-foreground">Localisation non cartographiée</p>
         <p className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
-          La vue aérienne et Street View ne sont pas disponibles pour ce bien.
+          La vue aérienne et la vue de rue ne sont pas disponibles pour ce bien.
         </p>
       </div>
     );
@@ -314,34 +314,34 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
         )}
       </div>
 
-      {/* Tuile 2 — Street View */}
+      {/* Tuile 2 — vue de rue */}
       <div className="liquid-media relative min-h-[260px] overflow-hidden rounded-lg lg:min-h-[440px]">
         {showStreetView ? <div ref={streetRef} className="absolute inset-0" /> : null}
-        <TileBadge>Street View</TileBadge>
+        <TileBadge>Vue de rue</TileBadge>
         {!showStreetView && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 px-6 text-center backdrop-blur-sm">
             <MapPin className="h-5 w-5 text-gold" />
             <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
-              Chargez Street View uniquement si vous souhaitez inspecter la rue.
+              Chargez la vue de rue uniquement si vous souhaitez inspecter la rue.
             </p>
             <button
               type="button"
               onClick={() => setShowStreetView(true)}
               className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-soft transition-colors hover:border-gold/60 hover:bg-gold/15 hover:text-gold"
             >
-              Afficher Street View
+              Afficher la vue de rue
             </button>
           </div>
         )}
         {showStreetView && streetState === "loading" && (
-          <FallbackOverlay text="Chargement de Street View..." link={mapsLink} />
+          <FallbackOverlay text="Chargement de la vue de rue..." link={mapsLink} />
         )}
         {(streetState === "missing" || streetState === "error") && (
           <FallbackOverlay
             text={
               streetState === "missing"
-                ? "Pas de Street View à cette adresse."
-                : "Street View indisponible."
+                ? "Pas de vue de rue à cette adresse."
+                : "Vue de rue indisponible."
             }
             link={mapsLink}
           />

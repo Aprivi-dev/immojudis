@@ -103,6 +103,32 @@ PRIORITY_LABEL_PATTERNS = re.compile(
     re.I,
 )
 PDF_TEXT_ENRICHMENT_MARKER = "--- PDF TEXT ENRICHMENT ---"
+SOURCE_DESCRIPTION_KEYS = (
+    "source_description",
+    "description",
+    "descriptif",
+    "designation",
+    "désignation",
+    "renseignements_de_vente",
+    "criteres_resume",
+    "complement",
+    "body",
+)
+SOURCE_DESCRIPTION_EXCLUDED_KEYS = {
+    "documents",
+    "page_text",
+    "raw_text",
+    "contact",
+    "contact_avocat",
+    "avocat",
+    "lawyer",
+    "source_images",
+}
+UNUSABLE_SOURCE_DESCRIPTION_RE = re.compile(
+    r"abonn[ée]|connectez-vous|connexion|int[ée]gralit[ée]\s+des\s+informations|"
+    r"pour\s+consulter\s+l['’]int[ée]gralit[ée]|vous\s+devez\s+[êe]tre\s+abonn[ée]",
+    re.I,
+)
 
 PropertyType = Literal[
     "apartment",
@@ -122,6 +148,7 @@ class LLMExtraction(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     property_type: PropertyType | None = None
+    display_description: str | None = None
     surface_m2: float | None = None
     rooms_count: int | None = None
     bedrooms_count: int | None = None
@@ -218,7 +245,7 @@ class LLMExtraction(BaseModel):
             return [_stringify_llm_value(item) for item in value if _stringify_llm_value(item)]
         return [_stringify_llm_value(value)]
 
-    @field_validator("works_needed", "occupancy_details", "summary", "investor_notes", mode="before")
+    @field_validator("display_description", "works_needed", "occupancy_details", "summary", "investor_notes", mode="before")
     @classmethod
     def stringify_text_fields(cls, value: Any) -> Any:
         return _stringify_llm_value(value)
@@ -264,6 +291,10 @@ def enrich_sale_with_llm(
     settings = load_settings()
     if not settings["llm_enabled"]:
         return stats
+
+    source_description = extract_source_description(sale)
+    if source_description:
+        sale.raw_payload["source_description"] = source_description
 
     llm_context = load_llm_context_for_sale(sale, max_chars=int(settings["llm_pdf_max_chars"]))
     if not llm_context:
@@ -355,6 +386,66 @@ def build_source_page_context(sale: AuctionSale, max_chars: int = 5000) -> str |
     return _join_unique_sections(sections, max_chars=max_chars)
 
 
+def extract_source_description(sale: AuctionSale) -> str | None:
+    source_block_candidates: list[str] = []
+    for payload in _source_payloads_for_sale(sale):
+        source_block_candidates.extend(_source_description_candidates_from_payload(payload))
+    best_source_block = _best_source_description(source_block_candidates)
+    if best_source_block:
+        return best_source_block
+    return _best_source_description([value for value in (sale.description, sale.raw_text) if value])
+
+
+def _source_description_candidates_from_payload(payload: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    for key in SOURCE_DESCRIPTION_KEYS:
+        text = clean_text(payload.get(key))
+        if text:
+            candidates.append(text)
+
+    blocks = payload.get("source_blocks")
+    if isinstance(blocks, dict):
+        for key in SOURCE_DESCRIPTION_KEYS:
+            text = clean_text(blocks.get(key))
+            if text:
+                candidates.append(text)
+        for key, value in blocks.items():
+            normalized_key = str(key).lower()
+            if normalized_key in SOURCE_DESCRIPTION_EXCLUDED_KEYS:
+                continue
+            if "description" in normalized_key or "descriptif" in normalized_key:
+                text = clean_text(value)
+                if text:
+                    candidates.append(text)
+    return candidates
+
+
+def _best_source_description(candidates: list[str]) -> str | None:
+    seen: set[str] = set()
+    usable: list[str] = []
+    for candidate in candidates:
+        text = _usable_source_description(candidate)
+        if not text:
+            continue
+        fingerprint = text.lower()
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        usable.append(text)
+    if not usable:
+        return None
+    return max(usable, key=len)
+
+
+def _usable_source_description(value: str | None) -> str | None:
+    text = clean_text(value)
+    if not text or len(text) < 20:
+        return None
+    if UNUSABLE_SOURCE_DESCRIPTION_RE.search(text):
+        return None
+    return text[:2500]
+
+
 def build_reduced_pdf_context(
     pdf_texts: list[dict[str, Any]],
     max_chars: int = 12000,
@@ -409,7 +500,7 @@ def _source_metadata_section(sale: AuctionSale) -> str | None:
         f"Source primaire: {sale.primary_source or sale.source_name}",
         f"URL: {sale.source_url}",
         _metadata_line("Titre", raw_payload.get("title") or sale.title),
-        _metadata_line("Description", raw_payload.get("description")),
+        _metadata_line("Description source", raw_payload.get("source_description") or raw_payload.get("description")),
         _metadata_line("Adresse", raw_payload.get("address") or sale.address),
         _metadata_line("Ville", raw_payload.get("city") or sale.city),
         _metadata_line("Code postal", raw_payload.get("postal_code") or sale.postal_code),
@@ -607,6 +698,10 @@ def _apply_extraction_to_sale(
     if sale.property_type in (None, "unknown", "other") and extraction.property_type not in (None, "unknown"):
         if confidence.get("property_type", 0) >= 0.7:
             sale.property_type = extraction.property_type
+
+    display_description = clean_text(extraction.display_description)
+    if display_description and sale.raw_payload.get("source_description"):
+        sale.raw_payload["llm_display_description"] = display_description
 
     risk_notes = _format_risk_notes(extraction)
     if risk_notes:

@@ -1,9 +1,16 @@
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
 
-const VIEW = "v_auction_sales_app";
+const DETAIL_VIEW = "v_auction_sales_app";
+const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
 const CONFIGURATION_ERROR =
   "La configuration Supabase est absente. Ajoutez les variables d'environnement Supabase pour afficher les données.";
+
+type SupabaseQueryError = {
+  code?: string;
+  message?: string;
+  details?: string;
+};
 
 const SALE_LIST_COLUMNS = [
   "id",
@@ -41,6 +48,22 @@ const SALE_LIST_COLUMNS = [
 
 const SALE_PREVIEW_COLUMNS = ["id", "starting_price_eur"].join(",");
 
+const SALE_MAP_COLUMNS = [
+  "id",
+  "title",
+  "city",
+  "department",
+  "property_type",
+  "starting_price_eur",
+  "sale_date",
+  "latitude",
+  "longitude",
+  "app_surface_m2",
+  "habitable_surface_m2",
+  "carrez_surface_m2",
+  "rooms_count",
+].join(",");
+
 function assertCloudConfigured() {
   if (isSupabaseConfigured) return true;
   // On the SSR worker the env may not be hydrated yet — return false so
@@ -48,6 +71,45 @@ function assertCloudConfigured() {
   // refetch once the user session and env are available.
   if (typeof window === "undefined") return false;
   throw new Error(CONFIGURATION_ERROR);
+}
+
+function isMissingPreviewViewError(error: SupabaseQueryError | null): boolean {
+  if (!error) return false;
+  const text = `${error.code ?? ""} ${error.message ?? ""} ${error.details ?? ""}`;
+  return text.includes("PGRST205") || text.includes(PUBLIC_PREVIEW_VIEW);
+}
+
+function previewSortDirection(sort: SortKey): boolean {
+  return sort === "price_desc" ? false : true;
+}
+
+async function getSalesFromLegacyPreview(
+  filters: SaleFilters,
+  limit: number,
+  sort: SortKey,
+  offset: number,
+): Promise<AuctionSale[]> {
+  let q = supabase
+    .from(DETAIL_VIEW)
+    .select(SALE_PREVIEW_COLUMNS)
+    .order("starting_price_eur", { ascending: previewSortDirection(sort), nullsFirst: false })
+    .range(offset, offset + limit - 1);
+
+  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as unknown as AuctionSale[];
+}
+
+async function getSalesPreviewCountFromLegacyView(filters: SaleFilters): Promise<number> {
+  let q = supabase.from(DETAIL_VIEW).select("id", { count: "exact" }).range(0, 999);
+
+  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
+
+  const { count, data, error } = await q;
+  if (error) throw error;
+  return count && count > 0 ? count : (data?.length ?? 0);
 }
 
 const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst?: boolean }> = {
@@ -67,10 +129,28 @@ export async function getSales(
   options: { preview?: boolean } = {},
 ): Promise<AuctionSale[]> {
   if (!assertCloudConfigured()) return [];
+
+  if (options.preview) {
+    let q = supabase
+      .from(PUBLIC_PREVIEW_VIEW)
+      .select(SALE_PREVIEW_COLUMNS)
+      .order("starting_price_eur", { ascending: previewSortDirection(sort), nullsFirst: false })
+      .range(offset, offset + limit - 1);
+
+    if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
+
+    const { data, error } = await q;
+    if (isMissingPreviewViewError(error)) {
+      return getSalesFromLegacyPreview(filters, limit, sort, offset);
+    }
+    if (error) throw error;
+    return (data ?? []) as unknown as AuctionSale[];
+  }
+
   const s = SORT_MAP[sort];
   let q = supabase
-    .from(VIEW)
-    .select(options.preview ? SALE_PREVIEW_COLUMNS : SALE_LIST_COLUMNS)
+    .from(DETAIL_VIEW)
+    .select(SALE_LIST_COLUMNS)
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
@@ -91,22 +171,81 @@ export async function getSales(
   return (data ?? []) as unknown as AuctionSale[];
 }
 
+export async function getSalesCount(filters: SaleFilters = {}): Promise<number> {
+  if (!assertCloudConfigured()) return 0;
+  let q = supabase.from(DETAIL_VIEW).select("id", { count: "exact", head: true });
+
+  if (filters.department) q = q.eq("department", filters.department);
+  if (filters.city) q = q.ilike("city", `%${filters.city}%`);
+  if (filters.property_type) q = q.eq("property_type", filters.property_type);
+  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
+  if (filters.min_surface != null) q = q.gte("app_surface_m2", filters.min_surface);
+  if (filters.occupancy_status) q = q.eq("occupancy_status", filters.occupancy_status);
+  if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
+  if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
+  if (filters.only_new) {
+    q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  }
+
+  const { count, error } = await q;
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function getSalesPreviewCount(filters: SaleFilters = {}): Promise<number> {
+  if (!assertCloudConfigured()) return 0;
+  let q = supabase.from(PUBLIC_PREVIEW_VIEW).select("id", { count: "exact", head: true });
+
+  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
+
+  const { count, error } = await q;
+  if (isMissingPreviewViewError(error)) {
+    return getSalesPreviewCountFromLegacyView(filters);
+  }
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function getSaleById(id: string): Promise<AuctionSale | null> {
   if (!assertCloudConfigured()) return null;
-  const { data, error } = await supabase.from(VIEW).select("*").eq("id", id).maybeSingle();
+  if (typeof window === "undefined") return null;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return null;
+  const { data, error } = await supabase.from(DETAIL_VIEW).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   return data as AuctionSale | null;
 }
 
-export async function getSalesWithCoords(limit = 500): Promise<AuctionSale[]> {
+export async function getSalesWithCoords(
+  filters: SaleFilters = {},
+  limit = 500,
+  sort: SortKey = "date_asc",
+): Promise<AuctionSale[]> {
   if (!assertCloudConfigured()) return [];
-  const { data, error } = await supabase
-    .from(VIEW)
-    .select(SALE_LIST_COLUMNS)
+  const s = SORT_MAP[sort];
+  let q = supabase
+    .from(DETAIL_VIEW)
+    .select(SALE_MAP_COLUMNS)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
-    .order("sale_date", { ascending: true })
+    .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .limit(limit);
+
+  if (filters.department) q = q.eq("department", filters.department);
+  if (filters.city) q = q.ilike("city", `%${filters.city}%`);
+  if (filters.property_type) q = q.eq("property_type", filters.property_type);
+  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
+  if (filters.min_surface != null) q = q.gte("app_surface_m2", filters.min_surface);
+  if (filters.occupancy_status) q = q.eq("occupancy_status", filters.occupancy_status);
+  if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
+  if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
+  if (filters.only_new) {
+    q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  }
+
+  const { data, error } = await q;
   if (error) throw error;
   return (data ?? []) as unknown as AuctionSale[];
 }
@@ -128,7 +267,7 @@ export async function getNearbySales(
   const dLat = radiusKm / 111;
   const dLng = radiusKm / (111 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
   let q = supabase
-    .from(VIEW)
+    .from(DETAIL_VIEW)
     .select(SALE_LIST_COLUMNS)
     .gte("latitude", lat - dLat)
     .lte("latitude", lat + dLat)
@@ -148,9 +287,30 @@ export async function getStats(): Promise<{
   nextSale: string | null;
 }> {
   if (!assertCloudConfigured()) return { totalSales: 0, departments: 0, nextSale: null };
-  const { count } = await supabase.from(VIEW).select("*", { count: "exact", head: true });
+  const { count, error } = await supabase
+    .from(PUBLIC_PREVIEW_VIEW)
+    .select("*", { count: "exact", head: true });
+  let totalSales = count ?? 0;
+
+  if (isMissingPreviewViewError(error)) {
+    const { count: legacyCount, error: legacyError } = await supabase
+      .from(DETAIL_VIEW)
+      .select("id", { count: "exact", head: true });
+    if (legacyError) throw legacyError;
+    totalSales = legacyCount ?? 0;
+  } else if (error) {
+    throw error;
+  }
+
+  if (typeof window === "undefined") {
+    return { totalSales, departments: 0, nextSale: null };
+  }
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return { totalSales, departments: 0, nextSale: null };
   const { data: deps } = await supabase
-    .from(VIEW)
+    .from(DETAIL_VIEW)
     .select("department")
     .not("department", "is", null)
     .limit(1000);
@@ -158,13 +318,13 @@ export async function getStats(): Promise<{
     (deps ?? []).map((r: { department: string | null }) => r.department).filter(Boolean),
   );
   const { data: next } = await supabase
-    .from(VIEW)
+    .from(DETAIL_VIEW)
     .select("sale_date")
     .gte("sale_date", new Date().toISOString())
     .order("sale_date", { ascending: true })
     .limit(1);
   return {
-    totalSales: count ?? 0,
+    totalSales,
     departments: uniqueDeps.size,
     nextSale: next?.[0]?.sale_date ?? null,
   };
@@ -180,7 +340,10 @@ export async function getFavorites(userId: string): Promise<AuctionSale[]> {
   if (error) throw error;
   const ids = (favs ?? []).map((f: { sale_id: string }) => f.sale_id);
   if (ids.length === 0) return [];
-  const { data, error: e2 } = await supabase.from(VIEW).select(SALE_LIST_COLUMNS).in("id", ids);
+  const { data, error: e2 } = await supabase
+    .from(DETAIL_VIEW)
+    .select(SALE_LIST_COLUMNS)
+    .in("id", ids);
   if (e2) throw e2;
   return (data ?? []) as unknown as AuctionSale[];
 }

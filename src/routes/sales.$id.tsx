@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   SaleDetailSkeleton,
@@ -8,10 +8,25 @@ import {
   SaleNotFoundComponent,
 } from "@/components/SaleDetailView";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
+import { supabase } from "@/integrations/supabase/client";
 import { getSaleById } from "@/lib/queries";
 import { saleSeoTitle } from "@/lib/seo";
 
 export const Route = createFileRoute("/sales/$id")({
+  beforeLoad: async ({ location }) => {
+    if (typeof window === "undefined") return;
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      throw redirect({
+        to: "/login",
+        search: { redirect: location.href },
+      });
+    }
+  },
   loader: ({ params }) => getSaleById(params.id),
   head: ({ loaderData }) => {
     const title = saleSeoTitle(loaderData);

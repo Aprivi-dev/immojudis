@@ -440,6 +440,7 @@ export type Database = {
       v_auction_sales_app: {
         Row: {
           address: string | null;
+          about_description: string | null;
           app_surface_kind: string | null;
           app_surface_m2: number | null;
           bathrooms_count: number | null;
@@ -449,6 +450,7 @@ export type Database = {
           created_at: string | null;
           dedupe_confidence: string | null;
           department: string | null;
+          description: string | null;
           documents: Json | null;
           documents_rich: Json | null;
           habitable_surface_m2: number | null;
@@ -465,6 +467,7 @@ export type Database = {
           investment_summary: string | null;
           land_surface_m2: number | null;
           latitude: number | null;
+          llm_display_description: string | null;
           longitude: number | null;
           media: Json | null;
           occupancy_status: string | null;
@@ -480,6 +483,7 @@ export type Database = {
           score_version: string | null;
           source_name: string | null;
           source_blocks: Json | null;
+          source_description: string | null;
           source_url: string | null;
           source_urls: Json | null;
           starting_price_eur: number | null;
@@ -514,6 +518,13 @@ export type Database = {
           starting_price_eur: number | null;
           status: string | null;
           title: string | null;
+        };
+        Relationships: [];
+      };
+      v_auction_sales_app_preview: {
+        Row: {
+          id: string | null;
+          starting_price_eur: number | null;
         };
         Relationships: [];
       };

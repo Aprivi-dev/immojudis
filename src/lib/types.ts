@@ -1,6 +1,10 @@
 export type AuctionSale = {
   id: string;
   title: string | null;
+  description: string | null;
+  source_description: string | null;
+  llm_display_description: string | null;
+  about_description: string | null;
   city: string | null;
   department: string | null;
   postal_code: string | null;

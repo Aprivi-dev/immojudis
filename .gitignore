@@ -18,6 +18,8 @@ dist-ssr
 .tanstack
 .nitro
 supabase/.temp
+output/
+.playwright-cli/
 *.local
 
 # Environment
@@ -39,3 +41,4 @@ supabase/.temp
 
 # Claude Code local config (agents, preview launch config, settings)
 .claude/
+.env*.local

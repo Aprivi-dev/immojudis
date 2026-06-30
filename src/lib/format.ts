@@ -21,6 +21,7 @@ export function formatDate(value: string | null | undefined): string {
   return new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit",
     month: "long",
+    timeZone: "Europe/Paris",
     year: "numeric",
   }).format(d);
 }
@@ -32,6 +33,7 @@ export function formatDateTime(value: string | null | undefined): string {
   return new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit",
     month: "long",
+    timeZone: "Europe/Paris",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",

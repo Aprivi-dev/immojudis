@@ -3,8 +3,7 @@
 [![CI](https://github.com/Aprivi-dev/immojudis/actions/workflows/ci.yml/badge.svg)](https://github.com/Aprivi-dev/immojudis/actions/workflows/ci.yml)
 
 Plateforme d'exploration des **ventes immobilières aux enchères judiciaires** en
-Nouvelle-Aquitaine (Gironde, Pyrénées-Atlantiques, Landes, Dordogne,
-Lot-et-Garonne). L'application aide l'investisseur à décider **jusqu'à combien
+France. L'application aide l'investisseur à décider **jusqu'à combien
 enchérir** : pour chaque bien, un assistant calcule une mise plafond à partir du
 marché local (DVF), des frais, des travaux et d'une marge de sécurité, avec la
 localisation (vue aérienne 3D + Street View) et les documents officiels.
@@ -53,12 +52,13 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 
 ## Variables d'environnement
 
-| Variable                        | Requis | Description                                                                                                             |
-| ------------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------- |
-| `VITE_SUPABASE_URL`             |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                                      |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` |   ✅   | Clé `anon` / publishable (publique, côté client)                                                                        |
+| Variable                        | Requis | Description                                                                                                                        |
+| ------------------------------- | :----: | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`             |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                                                 |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` |   ✅   | Clé `anon` / publishable (publique, côté client)                                                                                   |
 | `VITE_GOOGLE_MAPS_API_KEY`      |   ➖   | Clé navigateur Google Maps restreinte par domaine. Active vignettes, vue aérienne 3D et Street View ; sinon repli OSM/placeholder. |
-| `GITHUB_SCROLL_TOKEN`           |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                                |
+| `VITE_ADMIN_EMAILS`             |   ➖   | Fallback public, séparé par virgules, pour afficher l'accès admin. Préférer `app_metadata.role = admin` dans Supabase Auth.        |
+| `GITHUB_SCROLL_TOKEN`           |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                                           |
 
 > Les variables `VITE_*` sont **inlinées au moment du build**. En production
 > (Vercel) elles doivent être présentes dans _Project Settings → Environment
@@ -97,7 +97,7 @@ et le domaine de production.
 ```
 immojudis/
 ├─ src/                       # Application web (TanStack Start)
-│  ├─ routes/                 # Routes file-based (/, /sales, /sales/$id, /favorites, /alerts, /publish, /admin…)
+│  ├─ routes/                 # Routes file-based (/, /sales, /sales/$id, /publish, /admin…)
 │  ├─ components/             # Composants UI + localisation (SaleLocationHero, MapThumbnail…)
 │  ├─ lib/                    # Métier : queries Supabase, format, géo, surface, google-maps, tiles
 │  ├─ hooks/                  # Hooks React
@@ -113,9 +113,10 @@ immojudis/
 
 ## Base de données (Supabase)
 
-Le front lit principalement la vue `public.v_auction_sales_app` (annonces à venir
-géolocalisées) et utilise les tables `user_favorites` / `user_alerts` protégées
-par RLS. L'amorçage d'un nouveau projet se fait via
+Le front lit `public.v_auction_sales_app_preview` pour l'aperçu public limité,
+puis `public.v_auction_sales_app` pour les comptes connectés. Les détails
+d'annonce, documents, risques, cartes et tables `user_favorites` / `user_alerts`
+sont protégés par RLS. L'amorçage d'un nouveau projet se fait via
 [`sql/vercel_app_setup.sql`](sql/vercel_app_setup.sql) ; l'historique des
 évolutions vit dans [`supabase/migrations/`](supabase/migrations/).
 

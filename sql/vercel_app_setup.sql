@@ -21,7 +21,9 @@ CREATE INDEX IF NOT EXISTS idx_auction_sales_latlng            ON public.auction
 -- Filtre : status IN ('upcoming','unknown') AND lat/lng NOT NULL
 -- Multi-sources : on conserve Avoventes, Licitor et toute autre source.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE VIEW public.v_auction_sales_app AS
+CREATE OR REPLACE VIEW public.v_auction_sales_app
+WITH (security_invoker = true)
+AS
 SELECT
     id,
     title,
@@ -61,18 +63,42 @@ WHERE status IN ('upcoming', 'unknown')
   AND latitude  IS NOT NULL
   AND longitude IS NOT NULL;
 
--- Permettre la lecture publique de la vue (anon + authenticated)
-GRANT SELECT ON public.v_auction_sales_app TO anon, authenticated;
+CREATE OR REPLACE VIEW public.v_auction_sales_app_preview
+WITH (security_invoker = true)
+AS
+SELECT
+    id,
+    starting_price_eur
+FROM public.auction_sales;
 
--- Lecture publique de la table sous-jacente (la vue ne s'évalue pas avec
--- les droits du créateur en SECURITY INVOKER par défaut). On garde RLS
--- activée sur auction_sales et on ouvre uniquement le SELECT.
 ALTER TABLE public.auction_sales ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "auction_sales_public_read" ON public.auction_sales;
-CREATE POLICY "auction_sales_public_read"
+DROP POLICY IF EXISTS "auction_sales_public_preview_read" ON public.auction_sales;
+DROP POLICY IF EXISTS "auction_sales_authenticated_read" ON public.auction_sales;
+
+REVOKE ALL ON public.auction_sales FROM anon, authenticated;
+REVOKE ALL ON public.v_auction_sales_app FROM anon, authenticated;
+REVOKE ALL ON public.v_auction_sales_app_preview FROM anon, authenticated;
+
+GRANT SELECT (id, starting_price_eur) ON public.auction_sales TO anon;
+GRANT SELECT ON public.v_auction_sales_app_preview TO anon, authenticated;
+
+GRANT SELECT ON public.auction_sales TO authenticated;
+GRANT SELECT ON public.v_auction_sales_app TO authenticated;
+
+CREATE POLICY "auction_sales_public_preview_read"
     ON public.auction_sales FOR SELECT
-    TO anon, authenticated
+    TO anon
+    USING (
+      COALESCE(status, 'unknown') IN ('upcoming', 'unknown')
+      AND latitude IS NOT NULL
+      AND longitude IS NOT NULL
+    );
+
+CREATE POLICY "auction_sales_authenticated_read"
+    ON public.auction_sales FOR SELECT
+    TO authenticated
     USING (true);
 -- (Pas de policy INSERT/UPDATE/DELETE pour anon/authenticated → écriture
 -- réservée au service_role qui bypass RLS, donc au pipeline de scraping.)

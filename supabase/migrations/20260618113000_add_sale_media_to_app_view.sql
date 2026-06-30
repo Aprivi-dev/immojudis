@@ -207,7 +207,8 @@ left join lateral (
     ) source_media
     where image_url is not null
       and image_url ~* '^https?://'
-      and image_url !~* '\.(pdf|docx?)([?#].*)?$'
+      and image_url !~* '\.(pdf|docx?|svg)([?#].*)?$'
+      and image_url !~* '(^|[/_.-])(avatar|brand|default|favicon|icon|icone|logo|placeholder|profile|sprite|user)([/_.-]|$)'
     order by image_url, source_rank
   ) deduped_media
 ) m on true

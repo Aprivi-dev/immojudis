@@ -10,7 +10,7 @@ import time
 
 from src.asset_normalization import normalize_asset_features
 from src.dedupe import merge_duplicate_sales
-from src.enrichment.extract_structured import LLMEnrichmentStats, enrich_sale_with_llm
+from src.enrichment.extract_structured import LLMEnrichmentStats, enrich_sale_with_llm, extract_source_description
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
 from src.export import export_sales
 from src.geocode import geocode_sale
@@ -220,7 +220,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             LOGGER.exception("Early Supabase upsert failed: %s", exc)
             errors.setdefault("supabase", []).append(str(exc))
 
-    heavy_targets = [sale for sale in app_ready if _needs_heavy_enrichment(sale)] if options.heavy_enrichment else []
+    heavy_targets = (
+        [sale for sale in app_ready if _needs_heavy_enrichment(sale, use_llm=options.use_llm)]
+        if options.heavy_enrichment
+        else []
+    )
 
     # ── Phase 1 : PDF / Docling / OCR (CPU+RAM) — concurrence modérée ─────────
     started = time.perf_counter()
@@ -442,13 +446,22 @@ def _timed_scrape(name: str, fn: "Callable[[], ScrapeResult]") -> tuple[ScrapeRe
 
 
 def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
+    source_description = extract_source_description(sale)
+    if source_description:
+        sale.raw_payload["source_description"] = source_description
     if geocode:
         geocode_sale(sale)
     fill_tribunal(sale)
     normalize_asset_features(sale)
 
 
-def _needs_heavy_enrichment(sale: AuctionSale) -> bool:
+def _needs_heavy_enrichment(sale: AuctionSale, *, use_llm: bool = True) -> bool:
+    source_description = extract_source_description(sale)
+    needs_display_description = bool(
+        source_description and not clean_payload_text(sale.raw_payload.get("llm_display_description"))
+    )
+    if use_llm and needs_display_description:
+        return True
     if not sale.documents and not sale.raw_text:
         return False
     has_surface = any(
@@ -464,6 +477,10 @@ def _needs_heavy_enrichment(sale: AuctionSale) -> bool:
     has_occupancy = bool(sale.occupancy_status and sale.occupancy_status != "unknown")
     needs_rooms = sale.property_type not in {"land", "parking"} and sale.rooms_count is None
     return not (has_surface and has_type and has_occupancy and not needs_rooms)
+
+
+def clean_payload_text(value: object | None) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _merge_pdf_stats(total: PdfEnrichmentStats, item: PdfEnrichmentStats) -> None:

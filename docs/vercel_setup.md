@@ -19,15 +19,16 @@ npm run dev        # http://localhost:3000
 
 ## 2. Variables d'environnement
 
-| Variable                        | Requis | Description                                                                                               |
-| ------------------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
-| `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)                                                        |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)                                                   |
+| Variable                        | Requis | Description                                                                                                          |
+| ------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)                                                                   |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)                                                              |
 | `VITE_GOOGLE_MAPS_API_KEY`      | ❌     | Clé Google Maps restreinte par domaine. Active vignettes, vue aérienne et Street View ; sinon repli OSM/placeholder. |
-| `GITHUB_SCROLL_TOKEN`           | ❌     | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.          |
-| `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                  |
-| `GITHUB_SCROLL_WORKFLOW`        | ❌     | Workflow cible. Défaut : `data-pipeline.yml`.                                                             |
-| `GITHUB_SCROLL_REF`             | ❌     | Branche cible. Défaut : `main`.                                                                           |
+| `VITE_ADMIN_EMAILS`             | ❌     | Fallback public pour l'accès admin. Préférer `app_metadata.role = admin` dans Supabase Auth.                         |
+| `GITHUB_SCROLL_TOKEN`           | ❌     | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.                     |
+| `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                             |
+| `GITHUB_SCROLL_WORKFLOW`        | ❌     | Workflow cible. Défaut : `data-pipeline.yml`.                                                                        |
+| `GITHUB_SCROLL_REF`             | ❌     | Branche cible. Défaut : `main`.                                                                                      |
 
 ⚠️ **Ne JAMAIS** ajouter `SUPABASE_SERVICE_ROLE_KEY` au front. Elle bypass RLS.
 
@@ -60,10 +61,11 @@ sql/vercel_app_setup.sql
 
 Ce script :
 
-- crée la vue `public.v_auction_sales_app` (filtrée sur status upcoming/unknown + lat/lng) ;
+- crée `public.v_auction_sales_app_preview` pour l'aperçu public limité ;
+- crée `public.v_auction_sales_app` pour les détails réservés aux comptes connectés ;
 - crée les tables `public.user_favorites` et `public.user_alerts` ;
 - active RLS + policies (chaque user ne voit que ses favoris/alertes) ;
-- ouvre la lecture publique de `auction_sales` (SELECT only) ;
+- limite la lecture anonyme à `id` + `starting_price_eur` sur les annonces éligibles ;
 - crée les index nécessaires.
 
 ### Configuration Auth (Supabase Dashboard → Authentication → URL configuration)
@@ -89,11 +91,12 @@ npm run preview    # smoke test du build
 Le projet cible Vercel. Pour déployer :
 
 1. Importer le repo dans Vercel.
-2. Framework preset : **Vite**.
+2. Framework preset : **TanStack Start** si disponible, sinon laisser Vercel détecter le build.
 3. Build command : `npm run build`.
 4. Output directory : laisser la valeur auto générée par TanStack Start/Vite.
 5. Renseigner les env vars `VITE_SUPABASE_URL` et `VITE_SUPABASE_PUBLISHABLE_KEY` dans Project Settings → Environment Variables. Ajouter `VITE_GOOGLE_MAPS_API_KEY` si Google Maps doit être actif.
-6. Deploy.
+6. Donner le rôle admin via Supabase Auth `app_metadata.role = admin`. `VITE_ADMIN_EMAILS` peut rester un fallback temporaire.
+7. Deploy.
 
 > Note : le projet est configuré avec TanStack Start et Nitro pour générer le
 > serveur Vercel. Les variables Supabase publiques restent injectées via
@@ -104,6 +107,4 @@ Le projet cible Vercel. Pour déployer :
 - `/` affiche les stats (depuis Supabase)
 - `/sales` liste les annonces, filtres modifient l'URL
 - `/sales/:id` affiche le détail + documents
-- `/favorites` redirige vers `/login` si déconnecté
-- `/alerts` permet création / toggle / suppression
-- Un utilisateur ne voit JAMAIS les favoris/alertes d'un autre (RLS)
+- Les données utilisateur restent isolées par compte via RLS.
