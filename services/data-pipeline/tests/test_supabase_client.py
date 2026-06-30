@@ -106,3 +106,44 @@ def test_delete_vench_sales_without_surface_removes_observations_then_sales(monk
 
     assert supabase_client.delete_vench_sales_without_surface_in_supabase() == 1
     assert calls == ["auction_observations", "auction_sales"]
+
+
+def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        is_error = False
+
+        def json(self):
+            return [
+                {
+                    "id": "run-1",
+                    "summary": {"trigger": "admin_dashboard"},
+                    "errors": {},
+                    "started_at": "2026-06-29T14:41:12Z",
+                }
+            ]
+
+    def fake_get(endpoint, params, headers, timeout):
+        assert endpoint == "https://supabase.test/rest/v1/auction_runs"
+        assert params["status"] == "eq.running"
+        assert params["started_at"].startswith("lt.")
+        return Response()
+
+    finished = []
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    monkeypatch.setattr(
+        supabase_client,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finished.append((run_id, status, summary, errors)),
+    )
+
+    assert supabase_client.fail_stale_running_runs_in_supabase(max_age_minutes=190) == 1
+    assert finished[0][0] == "run-1"
+    assert finished[0][1] == "failed"
+    assert "stale_cleanup" in finished[0][2]
+    assert finished[0][3]["runner"]

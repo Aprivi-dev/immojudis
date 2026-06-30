@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 import logging
 from pathlib import Path
@@ -254,6 +254,52 @@ def fetch_next_queued_run_from_supabase() -> dict[str, Any] | None:
     if not rows:
         return None
     return rows[0]
+
+
+def fail_stale_running_runs_in_supabase(max_age_minutes: int = 190) -> int:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return 0
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
+    response = httpx.get(
+        f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        params={
+            "select": "id,summary,errors,started_at",
+            "status": "eq.running",
+            "started_at": f"lt.{cutoff.isoformat()}",
+        },
+        headers=_rest_headers(str(key), prefer="count=none"),
+        timeout=30,
+    )
+    if response.is_error:
+        LOGGER.warning("Supabase stale run fetch failed: %s", response.text)
+        return 0
+
+    rows = response.json()
+    for row in rows:
+        run_id = str(row.get("id") or "")
+        if not run_id:
+            continue
+        summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+        errors = row.get("errors") if isinstance(row.get("errors"), dict) else {}
+        runner_errors = errors.get("runner") if isinstance(errors.get("runner"), list) else []
+        runner_errors = [
+            *runner_errors,
+            f"Run marqué failed automatiquement après {max_age_minutes} min sans fin GitHub Actions.",
+        ]
+        summary = {
+            **summary,
+            "stale_cleanup": {
+                "max_age_minutes": max_age_minutes,
+                "started_at": row.get("started_at"),
+                "cleaned_at": datetime.now(timezone.utc).isoformat(),
+            },
+        }
+        finish_run_in_supabase(run_id, "failed", summary, {**errors, "runner": runner_errors})
+    return len(rows)
 
 
 def finish_run_in_supabase(
