@@ -202,6 +202,26 @@ def test_upsert_observations_prefers_direct_postgres_when_db_url_is_configured(m
     assert calls == [("postgresql://example", "auction_observations", 1)]
 
 
+def test_postgres_connect_disables_prepared_statements_for_pooler(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+    connection = object()
+
+    class Psycopg:
+        def connect(self, *args, **kwargs):
+            calls["args"] = args
+            calls["kwargs"] = kwargs
+            return connection
+
+    monkeypatch.setattr(supabase_client, "psycopg", Psycopg())
+
+    assert supabase_client._postgres_connect("postgresql://example") is connection
+    assert calls["args"] == ("postgresql://example",)
+    assert calls["kwargs"] == {
+        "connect_timeout": supabase_client.POSTGRES_CONNECT_TIMEOUT,
+        "prepare_threshold": None,
+    }
+
+
 def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
     sales = [
         normalize_sale(

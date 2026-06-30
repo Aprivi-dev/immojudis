@@ -657,7 +657,7 @@ def _delete_secondary_sale_rows_with_postgres(db_url: str, sales: list[AuctionSa
     secondary_urls = _secondary_source_urls(sales)
     if not secondary_urls:
         return 0
-    with psycopg.connect(db_url, connect_timeout=POSTGRES_CONNECT_TIMEOUT) as connection:
+    with _postgres_connect(db_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 "delete from public.auction_observations where source_url = any(%s)",
@@ -695,9 +695,19 @@ def _postgres_upsert(
         ),
     )
     rows = [tuple(_postgres_value(column, row.get(column)) for column in columns) for row in payload]
-    with psycopg.connect(db_url, connect_timeout=POSTGRES_CONNECT_TIMEOUT) as connection:
+    with _postgres_connect(db_url) as connection:
         with connection.cursor() as cursor:
             cursor.executemany(insert_statement, rows)
+
+
+def _postgres_connect(db_url: str) -> Any:
+    if psycopg is None:
+        raise RuntimeError("psycopg is required for direct Postgres writes")
+    return psycopg.connect(
+        db_url,
+        connect_timeout=POSTGRES_CONNECT_TIMEOUT,
+        prepare_threshold=None,
+    )
 
 
 def _postgres_value(column: str, value: object) -> object:
