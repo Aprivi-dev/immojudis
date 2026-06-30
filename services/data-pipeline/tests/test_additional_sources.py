@@ -2,6 +2,7 @@ import json
 
 from src.raw_models import validate_raw_sales
 from src.sources import notaires
+from src.sources import petites_affiches
 from src.sources.agrasc import parse_agrasc_html
 from src.sources.cessions_etat import parse_cessions_etat_html
 from src.sources.encheres_immobilieres import parse_encheres_immobilieres_html
@@ -72,6 +73,18 @@ def test_parse_petites_affiches_public_detail() -> None:
     assert detail["lawyer_name"] == "Maître MERLIN-LABRE"
     assert detail["lawyer_contact"] == "0422140871"
     assert detail["tribunal"] == "TJ DE BORDEAUX"
+
+
+def test_petites_affiches_uses_single_national_listing_when_all_departments_are_targeted(monkeypatch) -> None:
+    monkeypatch.setattr(petites_affiches, "TARGET_DEPARTMENTS", petites_affiches.FRANCE_DEPARTMENTS)
+
+    assert petites_affiches._department_filters() == (None,)
+
+
+def test_petites_affiches_keeps_department_listing_for_partial_scope(monkeypatch) -> None:
+    monkeypatch.setattr(petites_affiches, "TARGET_DEPARTMENTS", ("33", "75"))
+
+    assert petites_affiches._department_filters() == ("33", "75")
 
 
 def test_parse_cessions_etat_public_cards() -> None:
