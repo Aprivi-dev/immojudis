@@ -40,22 +40,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Apply migrations
-        run: |
-          set -euo pipefail
-          if [ -z "${SUPABASE_DB_URL:-}" ]; then
-            echo "SUPABASE_DB_URL secret is missing." >&2
-            exit 1
-          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
 
-          migrations=(
-            "supabase/migrations/20260630163056_add_about_description_to_app_view.sql"
-            "supabase/migrations/20260630180814_restrict_sales_detail_to_authenticated.sql"
-            "supabase/migrations/20260630181544_use_admin_app_metadata.sql"
-          )
-
-          for migration in "${migrations[@]}"; do
-            echo "::group::${migration}"
-            psql "$SUPABASE_DB_URL" --set=ON_ERROR_STOP=1 --file "$migration"
-            echo "::endgroup::"
-          done
+      - name: Apply pending migrations
+        run: node scripts/apply-supabase-migrations.mjs

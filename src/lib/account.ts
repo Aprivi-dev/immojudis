@@ -16,15 +16,6 @@ export type AccountProfile = {
   updated_at?: string;
 };
 
-const DEFAULT_ADMIN_EMAILS = ["a.privileggio@gmail.com"];
-
-function parseAdminEmails(value: string | undefined): string[] {
-  return (value ?? "").split(",").map(normalizeEmail).filter(Boolean);
-}
-
-export const ADMIN_EMAILS = parseAdminEmails(import.meta.env.VITE_ADMIN_EMAILS);
-if (ADMIN_EMAILS.length === 0) ADMIN_EMAILS.push(...DEFAULT_ADMIN_EMAILS);
-
 export const ACCOUNT_TYPE_OPTIONS: Array<{
   value: AccountType;
   label: string;
@@ -80,10 +71,6 @@ export function normalizeEmail(email: string | null | undefined): string {
   return (email ?? "").trim().toLowerCase();
 }
 
-export function isAdminEmail(email: string | null | undefined): boolean {
-  return ADMIN_EMAILS.includes(normalizeEmail(email));
-}
-
 export function hasAdminRole(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const metadata = value as { app_metadata?: { role?: unknown }; user_role?: unknown };
@@ -91,7 +78,7 @@ export function hasAdminRole(value: unknown): boolean {
 }
 
 export function isAdminAccount(user: User | null | undefined): boolean {
-  return hasAdminRole(user) || isAdminEmail(user?.email);
+  return hasAdminRole(user);
 }
 
 export function profileFromUserMetadata(user: User | null | undefined): AccountProfile | null {
