@@ -14,7 +14,7 @@
 npm install
 cp .env.example .env
 # Renseigner VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY et VITE_GOOGLE_MAPS_API_KEY
-npm run dev        # http://localhost:3000
+npm run dev        # http://localhost:5173
 ```
 
 ## 2. Variables d'environnement
@@ -24,7 +24,6 @@ npm run dev        # http://localhost:3000
 | `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)                                                                   |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)                                                              |
 | `VITE_GOOGLE_MAPS_API_KEY`      | ❌     | Clé Google Maps restreinte par domaine. Active vignettes, vue aérienne et Street View ; sinon repli OSM/placeholder. |
-| `VITE_ADMIN_EMAILS`             | ❌     | Fallback public pour l'accès admin. Préférer `app_metadata.role = admin` dans Supabase Auth.                         |
 | `GITHUB_SCROLL_TOKEN`           | ❌     | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.                     |
 | `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                             |
 | `GITHUB_SCROLL_WORKFLOW`        | ❌     | Workflow cible. Défaut : `data-pipeline.yml`.                                                                        |
@@ -47,6 +46,7 @@ Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans
 | --------------------------- | ------ | ---------------------------------------------------------- |
 | `SUPABASE_URL`              | ✅     | URL Supabase projet `immojudis`.                           |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅     | Clé serveur Supabase utilisée uniquement par le worker CI. |
+| `SUPABASE_DB_URL`           | ✅     | URL Postgres utilisée par le workflow de migrations.       |
 | `REPLICATE_API_TOKEN`       | ❌     | Token LLM pour l'enrichissement premium, si disponible.    |
 
 Le token `GITHUB_SCROLL_TOKEN` côté Vercel doit être un fine-grained PAT GitHub limité au repo `Aprivi-dev/immojudis` avec accès Actions en écriture.
@@ -72,7 +72,7 @@ Ce script :
 
 - **Site URL** : URL prod Vercel (ex: `https://enchères-immo.vercel.app`)
 - **Redirect URLs** :
-  - `http://localhost:3000/**`
+  - `http://localhost:5173/**`
   - `https://<your-domain>.vercel.app/**`
   - (et le cas échéant le domaine custom)
 
@@ -95,7 +95,7 @@ Le projet cible Vercel. Pour déployer :
 3. Build command : `npm run build`.
 4. Output directory : laisser la valeur auto générée par TanStack Start/Vite.
 5. Renseigner les env vars `VITE_SUPABASE_URL` et `VITE_SUPABASE_PUBLISHABLE_KEY` dans Project Settings → Environment Variables. Ajouter `VITE_GOOGLE_MAPS_API_KEY` si Google Maps doit être actif.
-6. Donner le rôle admin via Supabase Auth `app_metadata.role = admin`. `VITE_ADMIN_EMAILS` peut rester un fallback temporaire.
+6. Donner le rôle admin via Supabase Auth `app_metadata.role = admin`.
 7. Deploy.
 
 > Note : le projet est configuré avec TanStack Start et Nitro pour générer le
