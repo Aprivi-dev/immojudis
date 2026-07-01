@@ -28,8 +28,21 @@ if (missing.length) {
   process.exit(1);
 }
 
-if (isMissing(process.env.VITE_GOOGLE_MAPS_API_KEY)) {
-  console.warn("[env] VITE_GOOGLE_MAPS_API_KEY missing: Google Maps views will use fallbacks.");
+if (
+  isMissing(process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)
+) {
+  console.warn(
+    "[env] VITE_GOOGLE_MAPS_API_KEY or NEXT_PUBLIC_GOOGLE_MAPS_API_KEY missing: Google Maps views will use fallbacks.",
+  );
+}
+
+if (
+  !isMissing(process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) &&
+  isMissing(process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || process.env.VITE_GOOGLE_MAPS_MAP_ID)
+) {
+  console.warn(
+    "[env] NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID missing: Google Maps will fall back to legacy markers.",
+  );
 }
 
 function unquote(value) {

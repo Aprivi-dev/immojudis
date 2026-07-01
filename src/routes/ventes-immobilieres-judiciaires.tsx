@@ -1,10 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@/lib/router-compat";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 
-export const RESOURCES_CANONICAL = "https://immojudis-dezt.vercel.app/ressources";
-export const RESOURCES_TITLE =
+const RESOURCES_CANONICAL = "https://immojudis-dezt.vercel.app/ventes-immobilieres-judiciaires";
+const RESOURCES_TITLE =
   "Ressources ventes immobilières judiciaires : annonces, risques et prix plafond | Immojudis";
 const DESCRIPTION =
   "Immojudis référence et analyse les ventes immobilières judiciaires : annonces, cahier des conditions de vente, risques, frais, occupation, prix plafond et enchères au tribunal.";
@@ -202,7 +202,7 @@ export const Route = createFileRoute("/ventes-immobilieres-judiciaires")({
   component: ResourcesPage,
 });
 
-export function ResourcesPage() {
+function ResourcesPage() {
   return (
     <main className="liquid-page min-h-screen bg-background pb-24 text-foreground">
       <script

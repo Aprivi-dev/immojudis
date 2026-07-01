@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import type * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useRouter } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
+import { Link, useRouter } from "@/lib/router-compat";
+import { toast } from "sonner";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
 import Camera from "lucide-react/dist/esm/icons/camera.js";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
@@ -15,6 +15,7 @@ import FileCheck2 from "lucide-react/dist/esm/icons/file-check-2.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
+import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import Target from "lucide-react/dist/esm/icons/target.js";
 import TriangleAlert from "lucide-react/dist/esm/icons/triangle-alert.js";
 import {
@@ -43,8 +44,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { getEnvironmentalContext, type EnvironmentalContext } from "@/lib/environment.functions";
-import { getMarketEstimate, type MarketEstimate } from "@/lib/market.functions";
+import { fetchEnvironmentalContext, fetchMarketEstimate } from "@/lib/client-api";
+import type { EnvironmentalContext } from "@/lib/environment.functions";
+import type { MarketEstimate } from "@/lib/market.functions";
+import {
+  googleMapsAerial3dUrl,
+  googleMapsQueryUrl,
+  googleMapsStreetViewUrl,
+} from "@/lib/google-maps";
 import { propertyImages } from "@/lib/sale-media";
 import {
   computeAcquisitionCosts,
@@ -60,6 +67,7 @@ import {
   type ProductGroup,
   type ProductHistoryRow,
   type ProductRisk,
+  type ProductWeatherMonth,
   type SaleProductSources,
 } from "@/lib/sale-detail-sources";
 import type { AuctionSale, SaleDocumentRich, SaleMedia, SaleRiskOccurrence } from "@/lib/types";
@@ -68,8 +76,12 @@ const SECTION_NAV = [
   { id: "overview", label: "Aperçu" },
   { id: "lawyer", label: "Avocat" },
   { id: "details", label: "Détails" },
+  { id: "history", label: "Historique" },
+  { id: "public-record", label: "Public" },
   { id: "documents", label: "Pièces" },
   { id: "risks", label: "Risques" },
+  { id: "offer-insights", label: "Offre" },
+  { id: "estimate", label: "Estimation" },
 ] as const;
 
 /**
@@ -88,7 +100,6 @@ export function SaleDetailView({
   const referenceLabel = sale.title ?? propertyTypeLabel(sale.property_type);
   const saleSurface = getSaleSurface(sale).value;
   const media = saleImages(sale.media);
-  const fetchMarketEstimate = useServerFn(getMarketEstimate);
   const marketQuery = useQuery({
     queryKey: [
       "market-estimate",
@@ -120,7 +131,6 @@ export function SaleDetailView({
   const marketError =
     marketEstimateOverride == null &&
     Boolean(marketQuery.isError || marketQuery.data?.ok === false);
-  const fetchEnvironmentalContext = useServerFn(getEnvironmentalContext);
   const environmentalQuery = useQuery({
     queryKey: ["environmental-context", sale.id, location, sale.latitude, sale.longitude],
     queryFn: () =>
@@ -176,7 +186,7 @@ export function SaleDetailView({
       <section className="border-b border-border bg-white">
         <div className="w-full px-4 pb-3">
           {media.length > 0 ? (
-            <SaleMediaGallery media={media} />
+            <SaleMediaGallery media={media} sale={sale} location={location} />
           ) : (
             <div className="mt-3 overflow-hidden rounded-md border border-border">
               <SaleLocationHero sale={sale} />
@@ -416,8 +426,8 @@ function LawyerPreparationCard({
         </div>
       </div>
       <p className="mt-3 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
-        L'annuaire avocat Immojudis sera branché ici. En attendant, cette fiche met en avant les
-        coordonnées disponibles et les pièces à transmettre avant l'audience.
+        Cette fiche met en avant les coordonnées disponibles, la source officielle et les pièces à
+        transmettre avant l'audience.
       </p>
     </div>
   );
@@ -461,7 +471,7 @@ function LawyerContactPanel({ sale }: { sale: AuctionSale }) {
               </a>
             ) : (
               <span className="inline-flex items-center justify-center rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-muted-foreground">
-                Annuaire bientôt disponible
+                Contact à vérifier
               </span>
             )}
             <a
@@ -474,7 +484,8 @@ function LawyerContactPanel({ sale }: { sale: AuctionSale }) {
             </a>
           </div>
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            L'annuaire Immojudis remplacera ce bloc dès qu'il sera disponible.
+            Vérifiez toujours les coordonnées dans l'annonce officielle ou auprès du greffe avant
+            tout envoi de pièces.
           </p>
         </div>
       </div>
@@ -810,37 +821,62 @@ function RedfinRiskGrid({ risks }: { risks: ProductRisk[] }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-white shadow-sm">
       {risks.map((risk) => (
-        <button
-          key={risk.label}
-          type="button"
-          className="flex w-full cursor-pointer items-center gap-3 border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-muted/30"
-        >
-          <span
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-              risk.tone === "high"
-                ? "bg-red-50 text-red-700"
-                : risk.tone === "medium"
-                  ? "bg-amber-50 text-amber-800"
-                  : risk.tone === "low"
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-muted text-muted-foreground"
-            }`}
-          >
-            {risk.value.split(" ")[0]}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-foreground">{risk.label}</span>
-            <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-              {risk.detail}
-            </span>
-            <span className="mt-1 block text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-              Source : {risk.source}
-            </span>
-          </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        </button>
+        <Dialog key={risk.label}>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Voir le détail du risque ${risk.label}`}
+              className="flex w-full cursor-pointer items-center gap-3 border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-muted/30"
+            >
+              <RiskToneBadge risk={risk} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-foreground">{risk.label}</span>
+                <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                  {risk.detail}
+                </span>
+                <span className="mt-1 block text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                  Source : {risk.source}
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>{risk.label}</DialogTitle>
+              <DialogDescription>{risk.detail}</DialogDescription>
+            </DialogHeader>
+            <dl className="grid gap-3 rounded-md border border-border bg-muted/30 p-4 text-sm">
+              <CostRow label="Niveau" value={risk.value} />
+              <CostRow label="Source" value={risk.source} />
+            </dl>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              À traiter avant l'audience : relire la pièce source, vérifier l'impact sur le prix
+              plafond et transmettre le point à l'avocat si le risque modifie les conditions
+              d'acquisition.
+            </p>
+          </DialogContent>
+        </Dialog>
       ))}
     </div>
+  );
+}
+
+function RiskToneBadge({ risk }: { risk: ProductRisk }) {
+  return (
+    <span
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+        risk.tone === "high"
+          ? "bg-red-50 text-red-700"
+          : risk.tone === "medium"
+            ? "bg-amber-50 text-amber-800"
+            : risk.tone === "low"
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-muted text-muted-foreground"
+      }`}
+    >
+      {risk.value.split(" ")[0]}
+    </span>
   );
 }
 
@@ -879,10 +915,13 @@ function RedfinPropertyDetailsSection({
   media: SaleMedia[];
 }) {
   const preview = media.slice(0, 5);
+  const tabs = product.propertyGroups.map((group) => group.title);
+  const [activeTab, setActiveTab] = useState(tabs[0] ?? "Détails");
+  const visibleGroups = product.propertyGroups.filter((group) => group.title === activeTab);
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-white p-4 shadow-sm">
-      <RedfinMiniTabs labels={["Intérieur", "Extérieur", "Finances"]} />
+      <RedfinMiniTabs labels={tabs} value={activeTab} onChange={setActiveTab} />
       {preview.length > 0 && (
         <div className="grid grid-cols-5 gap-1 overflow-hidden rounded-md">
           {preview.map((image, index) => (
@@ -901,7 +940,9 @@ function RedfinPropertyDetailsSection({
           ))}
         </div>
       )}
-      <RedfinPropertyDetailsBlock groups={product.propertyGroups} />
+      <RedfinPropertyDetailsBlock
+        groups={visibleGroups.length ? visibleGroups : product.propertyGroups}
+      />
     </div>
   );
 }
@@ -916,7 +957,7 @@ function RedfinPublicRecordSection({
   const publicRecordFacts = [
     {
       label: "Zonage",
-      value: "À connecter",
+      value: "À vérifier",
       detail: "PLU, servitudes et règlement local",
     },
     {
@@ -930,14 +971,21 @@ function RedfinPublicRecordSection({
       detail: "Source judiciaire",
     },
   ];
+  const groups = [
+    ...product.publicRecordGroups,
+    { title: "Zonage et permis", facts: publicRecordFacts },
+  ];
+  const [activeTab, setActiveTab] = useState(groups[0]?.title ?? "Dossier public");
+  const visibleGroups = groups.filter((group) => group.title === activeTab);
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-white p-4 shadow-sm">
-      <RedfinMiniTabs labels={["Dossier public", "Zonage", "Permis"]} />
-      <RedfinPropertyDetailsBlock groups={product.publicRecordGroups} />
-      <div className="border-t border-border pt-1">
-        <RedfinFactList facts={publicRecordFacts} />
-      </div>
+      <RedfinMiniTabs
+        labels={groups.map((group) => group.title)}
+        value={activeTab}
+        onChange={setActiveTab}
+      />
+      <RedfinPropertyDetailsBlock groups={visibleGroups.length ? visibleGroups : groups} />
     </div>
   );
 }
@@ -1011,57 +1059,94 @@ function RedfinWeatherBlock({ product }: { product: SaleProductSources }) {
   const maxTemp = temperatures.length ? Math.max(...temperatures) : 30;
   const tempRange = Math.max(1, maxTemp - minTemp);
   const hasWeather = temperatures.length > 0;
+  const [activeMetric, setActiveMetric] = useState("Température");
 
   return (
     <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
-      <RedfinMiniTabs labels={["Température", "Pluie", "Neige", "Vent"]} />
-      <p className="mt-4 text-xs font-semibold text-foreground">
-        Moyenne basse et haute des températures
-      </p>
-      <div className="mt-4 grid h-40 grid-cols-12 gap-2 border-b border-border px-1">
-        {product.weatherMonthly.map((month) => {
-          const low = month.avgLowC;
-          const high = month.avgHighC;
-          const bottom = low == null ? 0 : ((low - minTemp) / tempRange) * 92;
-          const height =
-            low == null || high == null ? 18 : Math.max(12, ((high - low) / tempRange) * 92);
-          return (
-            <div
-              key={month.label}
-              className="flex h-full min-w-0 flex-col items-center justify-end gap-1"
-            >
-              <span className="text-[10px] font-semibold text-muted-foreground">
-                {high == null ? "—" : `${Math.round(high)}°`}
-              </span>
-              <div className="relative h-28 w-5">
-                <span
-                  className={`absolute left-1/2 w-3 -translate-x-1/2 rounded-full ${
-                    hasWeather ? "bg-foreground" : "bg-muted"
-                  }`}
-                  style={{ bottom: `${bottom}px`, height: `${height}px` }}
-                />
-              </div>
-              <span className="text-[9px] text-muted-foreground">{month.label}</span>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        {product.weatherMonthly.slice(0, 12).map((month) => (
+      <RedfinMiniTabs
+        labels={["Température", "Pluie", "Vent"]}
+        value={activeMetric}
+        onChange={setActiveMetric}
+      />
+      {activeMetric === "Température" && (
+        <>
+          <p className="mt-4 text-xs font-semibold text-foreground">
+            Moyenne basse et haute des températures
+          </p>
+          <div className="mt-4 grid h-40 grid-cols-12 gap-2 border-b border-border px-1">
+            {product.weatherMonthly.map((month) => {
+              const low = month.avgLowC;
+              const high = month.avgHighC;
+              const bottom = low == null ? 0 : ((low - minTemp) / tempRange) * 92;
+              const height =
+                low == null || high == null ? 18 : Math.max(12, ((high - low) / tempRange) * 92);
+              return (
+                <div
+                  key={month.label}
+                  className="flex h-full min-w-0 flex-col items-center justify-end gap-1"
+                >
+                  <span className="text-[10px] font-semibold text-muted-foreground">
+                    {high == null ? "—" : `${Math.round(high)}°`}
+                  </span>
+                  <div className="relative h-28 w-5">
+                    <span
+                      className={`absolute left-1/2 w-3 -translate-x-1/2 rounded-full ${
+                        hasWeather ? "bg-foreground" : "bg-muted"
+                      }`}
+                      style={{ bottom: `${bottom}px`, height: `${height}px` }}
+                    />
+                  </div>
+                  <span className="text-[9px] text-muted-foreground">{month.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+      {activeMetric === "Pluie" && (
+        <MonthlyMetricList
+          months={product.weatherMonthly}
+          getValue={(month) => month.avgPrecipitationMm}
+          unit="mm"
+        />
+      )}
+      {activeMetric === "Vent" && (
+        <MonthlyMetricList
+          months={product.weatherMonthly}
+          getValue={(month) => month.avgWindKmh}
+          unit="km/h"
+        />
+      )}
+      <RedfinFactList facts={product.weatherFacts} />
+    </div>
+  );
+}
+
+function MonthlyMetricList({
+  months,
+  getValue,
+  unit,
+}: {
+  months: ProductWeatherMonth[];
+  getValue: (month: ProductWeatherMonth) => number | null;
+  unit: string;
+}) {
+  return (
+    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      {months.slice(0, 12).map((month) => {
+        const value = getValue(month);
+        return (
           <div
-            key={`${month.label}-rain`}
+            key={`${month.label}-${unit}`}
             className="flex items-center justify-between border-b border-border py-1 text-[11px]"
           >
             <span className="font-medium text-foreground">{month.label}</span>
             <span className="text-muted-foreground">
-              {month.avgPrecipitationMm == null
-                ? "—"
-                : `${Math.round(month.avgPrecipitationMm)} mm`}
+              {value == null ? "—" : `${Math.round(value)} ${unit}`}
             </span>
           </div>
-        ))}
-      </div>
-      <RedfinFactList facts={product.weatherFacts} />
+        );
+      })}
     </div>
   );
 }
@@ -1232,15 +1317,37 @@ function RedfinFactList({ facts }: { facts: ProductFact[] }) {
   );
 }
 
-function RedfinMiniTabs({ labels }: { labels: string[] }) {
+function RedfinMiniTabs({
+  labels,
+  value,
+  onChange,
+}: {
+  labels: string[];
+  value?: string;
+  onChange?: (label: string) => void;
+}) {
+  const [internalValue, setInternalValue] = useState(labels[0] ?? "");
+  const selected = value ?? internalValue;
+  const active = labels.includes(selected) ? selected : (labels[0] ?? "");
+  const select = (label: string) => {
+    setInternalValue(label);
+    onChange?.(label);
+  };
+
   return (
-    <div className="flex gap-1 overflow-x-auto rounded-lg bg-muted/50 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {labels.map((label, index) => (
+    <div
+      role="tablist"
+      className="flex gap-1 overflow-x-auto rounded-lg bg-muted/50 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {labels.map((label) => (
         <button
           key={label}
           type="button"
+          role="tab"
+          aria-selected={active === label}
+          onClick={() => select(label)}
           className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold ${
-            index === 0
+            active === label
               ? "bg-white text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
           }`}
@@ -1297,7 +1404,7 @@ function ListingActionBar({
           />
           <Dialog>
             <DialogTrigger asChild>
-              <button type="button" className={actionClass}>
+              <button type="button" aria-label="Comparer cette vente" className={actionClass}>
                 <Scale className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Comparer</span>
               </button>
@@ -1312,12 +1419,18 @@ function ListingActionBar({
               <ComparisonBlock sale={sale} ceiling={decision.ceiling} cost={acquisitionCost} />
             </DialogContent>
           </Dialog>
-          <button type="button" onClick={printAnalysis} className={actionClass}>
+          <button
+            type="button"
+            aria-label="Imprimer ou enregistrer l'analyse"
+            onClick={printAnalysis}
+            className={actionClass}
+          >
             <Download className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Exporter</span>
+            <span className="hidden sm:inline">Imprimer</span>
           </button>
           <button
             type="button"
+            aria-label="Partager cette vente"
             onClick={() => void shareCurrentPage(title)}
             className={actionClass}
           >
@@ -1502,14 +1615,24 @@ function AboutThisSale({
   decision: DecisionSummary;
   acquisitionCost: AcquisitionCost;
 }) {
-  const summary =
+  const [showSource, setShowSource] = useState(false);
+  const aiDescription = sale.llm_display_description?.trim() || null;
+  const displayDescription =
+    aiDescription ||
     sale.about_description?.trim() ||
-    sale.llm_display_description?.trim() ||
     sale.source_description?.trim() ||
     sale.description?.trim() ||
     sale.investment_summary?.trim() ||
     sale.risk_notes?.trim() ||
-    `${propertyTypeLabel(sale.property_type)} proposé en vente judiciaire. La décision se joue surtout sur ${decision.primaryCheck.toLowerCase()} et sur la mise plafond.`;
+    `${propertyTypeLabel(sale.property_type)} proposé à ${sale.city ?? "adresse à confirmer"}. Les informations détaillées seront complétées depuis les pièces disponibles.`;
+  const originalDescription =
+    sale.source_description?.trim() ||
+    sale.description?.trim() ||
+    sale.about_description?.trim() ||
+    sale.llm_display_description?.trim() ||
+    sale.investment_summary?.trim() ||
+    "Description source non renseignée.";
+  const descriptionLabel = aiDescription ? "Synthèse rédigée par IA" : "Description source";
   const detailRows = [
     { label: "Type", value: propertyTypeLabel(sale.property_type) },
     { label: "Mise à prix", value: formatPrice(sale.starting_price_eur) },
@@ -1524,7 +1647,33 @@ function AboutThisSale({
 
   return (
     <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
-      <p className="text-sm leading-relaxed text-foreground">{summary}</p>
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="inline-flex items-center gap-2 rounded-md border border-gold/20 bg-gold/[0.08] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
+          <Sparkles className="h-3.5 w-3.5" />
+          {descriptionLabel}
+        </div>
+      </div>
+
+      <p className="mt-4 text-sm leading-relaxed text-foreground" aria-live="polite">
+        {displayDescription}
+      </p>
+
+      <button
+        type="button"
+        onClick={() => setShowSource((current) => !current)}
+        className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-gold-soft transition-colors hover:text-gold"
+      >
+        {showSource ? "Masquer la description source" : "Voir la description source"}
+        <ChevronRight
+          className={`h-3.5 w-3.5 transition-transform ${showSource ? "rotate-90" : ""}`}
+        />
+      </button>
+      {showSource && (
+        <p className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-sm leading-relaxed text-muted-foreground">
+          {originalDescription}
+        </p>
+      )}
+
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4">
         {detailRows.map((row) => (
           <div key={row.label} className="min-w-0">
@@ -1659,16 +1808,44 @@ function AroundThisHomeBlock({ sale }: { sale: AuctionSale }) {
   );
 }
 
-function SaleMediaGallery({ media }: { media: SaleMedia[] }) {
+function SaleMediaGallery({
+  media,
+  sale,
+  location,
+}: {
+  media: SaleMedia[];
+  sale: AuctionSale;
+  location: string;
+}) {
   const featured = media[0];
-  const thumbnails =
-    media.length > 1
-      ? Array.from({ length: 6 }, (_, index) => media[(index + 1) % media.length])
-      : [];
+  const thumbnails = media.slice(1, 7);
   const source = featured.source ?? media.find((item) => item.source)?.source;
+  const mapLinks = saleGoogleMapLinks(sale, location);
 
   return (
     <section className="relative mt-3 overflow-hidden rounded-md border border-border bg-muted shadow-sm md:h-[clamp(360px,29vw,548px)]">
+      <div className="absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-7.5rem)] flex-wrap gap-2 sm:max-w-none">
+        <a
+          href={mapLinks.aerial3d}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Ouvrir la vue 3D aérienne dans Google Maps"
+          className="inline-flex min-h-9 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
+        >
+          <Camera className="h-3.5 w-3.5" />
+          Vue 3D
+        </a>
+        <a
+          href={mapLinks.streetView}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Ouvrir Street View dans Google Maps"
+          className="inline-flex min-h-9 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
+        >
+          <MapPin className="h-3.5 w-3.5" />
+          Street View
+        </a>
+      </div>
       <a
         href={featured.url}
         target="_blank"
@@ -1700,6 +1877,26 @@ function SaleMediaGallery({ media }: { media: SaleMedia[] }) {
       </div>
     </section>
   );
+}
+
+function saleGoogleMapLinks(
+  sale: AuctionSale,
+  location: string,
+): { aerial3d: string; streetView: string } {
+  if (sale.latitude != null && sale.longitude != null) {
+    return {
+      aerial3d: googleMapsAerial3dUrl(sale.latitude, sale.longitude),
+      streetView: googleMapsStreetViewUrl(sale.latitude, sale.longitude),
+    };
+  }
+
+  const query =
+    location ||
+    [sale.address, sale.postal_code, sale.city, sale.department].filter(Boolean).join(", ") ||
+    sale.title ||
+    "France";
+  const fallback = googleMapsQueryUrl(query);
+  return { aerial3d: fallback, streetView: fallback };
 }
 
 function SaleMediaImage({ media, featured = false }: { media: SaleMedia; featured?: boolean }) {
@@ -1797,11 +1994,17 @@ function HeroActionCard({
             <ComparisonBlock sale={sale} ceiling={decision.ceiling} cost={acquisitionCost} />
           </DialogContent>
         </Dialog>
-        <button type="button" onClick={printAnalysis} className={secondaryClass}>
-          Exporter <Download className="h-3.5 w-3.5" />
+        <button
+          type="button"
+          aria-label="Imprimer ou enregistrer l'analyse"
+          onClick={printAnalysis}
+          className={secondaryClass}
+        >
+          Imprimer <Download className="h-3.5 w-3.5" />
         </button>
         <button
           type="button"
+          aria-label="Partager cette vente"
           onClick={() => void shareCurrentPage(title)}
           className={secondaryClass}
         >
@@ -2135,7 +2338,7 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                   </div>
                   <h3 className="mt-2 truncate text-base font-semibold text-foreground">{name}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Résumé à compléter après lecture de la pièce.
+                    Pièce à ouvrir pour confirmer les informations sensibles du dossier.
                   </p>
                 </div>
                 <Dialog>
@@ -2213,6 +2416,7 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
             pageKey.startsWith(`${key}:`),
           ).length;
           const name = document.label ?? document.url.split("/").pop() ?? `Pièce ${index + 1}`;
+          const canEmbedDocument = isEmbeddableDocumentUrl(document.url);
           const actionClass =
             "inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft";
 
@@ -2243,7 +2447,8 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                 <div className="flex flex-wrap gap-2 lg:justify-end">
                   <DialogTrigger asChild>
                     <button type="button" className={actionClass}>
-                      Ouvrir <ExternalLink className="h-3.5 w-3.5" />
+                      {canEmbedDocument ? "Ouvrir" : "Analyser"}{" "}
+                      <ExternalLink className="h-3.5 w-3.5" />
                     </button>
                   </DialogTrigger>
                   <DialogTrigger asChild>
@@ -2265,13 +2470,39 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-                    <div className="min-h-[420px] overflow-hidden rounded-lg border border-border bg-muted/30">
-                      <iframe
-                        title={`Lecteur ${name}`}
-                        src={document.url}
-                        className="h-[420px] w-full bg-white"
-                      />
-                    </div>
+                    {canEmbedDocument ? (
+                      <div className="min-h-[420px] overflow-hidden rounded-lg border border-border bg-muted/30">
+                        <iframe
+                          title={`Lecteur ${name}`}
+                          src={document.url}
+                          className="h-[420px] w-full bg-white"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex min-h-[420px] flex-col justify-between rounded-lg border border-border bg-muted/30 p-5">
+                        <div>
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-gold-soft">
+                            <FileCheck2 className="h-5 w-5" />
+                          </div>
+                          <h3 className="mt-4 text-base font-semibold text-foreground">
+                            Source non intégrable
+                          </h3>
+                          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                            Cette URL pointe vers une page ou une source externe. Ouvrez-la dans un
+                            nouvel onglet pour consulter la pièce originale, puis utilisez le résumé
+                            et les notes ci-contre.
+                          </p>
+                        </div>
+                        <a
+                          href={document.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-5 inline-flex items-center justify-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+                        >
+                          Ouvrir la source <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      </div>
+                    )}
                     <div className="space-y-4">
                       <div className="rounded-md border border-border bg-muted/30 p-3">
                         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
@@ -3241,8 +3472,8 @@ function NotesAndSharingBlock({ sale }: { sale: AuctionSale }) {
           Partage privé
         </div>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Préparez un lien et un message pour avocat, associé, artisan ou courtier. Les permissions
-          fines seront à brancher côté compte.
+          Préparez un message à transmettre à un avocat, associé, artisan ou courtier. Les notes
+          restent stockées dans ce navigateur.
         </p>
         <div className="mt-4 grid gap-2">
           {[
@@ -3351,12 +3582,14 @@ function ComparisonBlock({
 }) {
   const [comparison, setComparison] = useLocalState<string[]>("immojudis:comparison-list", []);
   const included = comparison.includes(sale.id);
-  const toggle = () =>
+  const toggle = () => {
     setComparison((current) =>
       current.includes(sale.id)
         ? current.filter((id) => id !== sale.id)
         : [...current, sale.id].slice(-6),
     );
+    toast.success(included ? "Vente retirée" : "Vente ajoutée à la comparaison");
+  };
 
   return (
     <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
@@ -3395,8 +3628,8 @@ function ComparisonBlock({
         </table>
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        Dossiers dans la comparaison locale : {comparison.length}. Les autres ventes seront visibles
-        dès qu'une page comparateur dédiée lira cette liste.
+        Dossiers dans la comparaison locale : {comparison.length}. Cette liste reste enregistrée
+        dans ce navigateur pour comparer rapidement vos ventes suivies.
       </p>
     </div>
   );
@@ -3715,14 +3948,16 @@ function DecisionRail({
           </a>
           <button
             type="button"
+            aria-label="Imprimer ou enregistrer l'analyse"
             onClick={printAnalysis}
             className="group flex w-full items-center justify-between rounded-lg border border-border bg-white px-4 py-3 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
           >
-            <span>Exporter l'analyse</span>
+            <span>Imprimer l'analyse</span>
             <Download className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
+            aria-label="Partager cette vente"
             onClick={() => void shareCurrentPage(sale.title ?? "Dossier Immojudis")}
             className="group flex w-full items-center justify-between rounded-lg border border-border bg-white px-4 py-3 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
           >
@@ -3851,7 +4086,7 @@ function MobileActionBar({ sale, decision }: { sale: AuctionSale; decision: Deci
           type="button"
           onClick={printAnalysis}
           className="grid h-10 w-10 place-items-center rounded-md border border-border text-foreground"
-          aria-label="Exporter l'analyse"
+          aria-label="Imprimer ou enregistrer l'analyse"
         >
           <Download className="h-4 w-4" />
         </button>
@@ -4170,6 +4405,7 @@ function notesToText(sale: AuctionSale, notes: StoredNotes): string {
 async function copyText(text: string): Promise<void> {
   if (typeof navigator !== "undefined" && navigator.clipboard) {
     await navigator.clipboard.writeText(text);
+    toast.success("Texte copié");
     return;
   }
   if (typeof document === "undefined") return;
@@ -4182,6 +4418,7 @@ async function copyText(text: string): Promise<void> {
   field.select();
   document.execCommand("copy");
   document.body.removeChild(field);
+  toast.success("Texte copié");
 }
 
 function downloadText(filename: string, text: string): void {
@@ -4195,6 +4432,7 @@ function downloadText(filename: string, text: string): void {
   link.click();
   document.body.removeChild(link);
   window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
+  toast.success("Fichier préparé");
 }
 
 function timeRemainingLabel(value: string | null | undefined): string {
@@ -4211,17 +4449,25 @@ function timeRemainingLabel(value: string | null | undefined): string {
 }
 
 function printAnalysis() {
-  if (typeof window !== "undefined") window.print();
+  if (typeof window === "undefined") return;
+  toast.message("Ouverture de l'impression");
+  window.print();
 }
 
 async function shareCurrentPage(title: string) {
   if (typeof window === "undefined") return;
   const url = window.location.href;
-  if (navigator.share) {
-    await navigator.share({ title, url });
-    return;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, url });
+      toast.success("Partage ouvert");
+      return;
+    }
+    await copyText(url);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    toast.error("Impossible de partager ce lien");
   }
-  await navigator.clipboard?.writeText(url);
 }
 
 function saleLocation(
@@ -4288,6 +4534,10 @@ function cleanHref(value: unknown): string | null {
 
 function isExternalHref(href: string): boolean {
   return /^https?:\/\//i.test(href);
+}
+
+function isEmbeddableDocumentUrl(href: string): boolean {
+  return /\.(pdf|png|jpe?g|webp)(?:[?#].*)?$/i.test(href);
 }
 
 function saleSourceLinks(sale: AuctionSale): SaleSourceLink[] {

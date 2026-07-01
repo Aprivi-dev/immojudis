@@ -27,11 +27,11 @@ export function BrandLogo({
       <span className="min-w-0">
         <span
           className={cn(
-            "brand-logo-text block text-base font-bold uppercase leading-none text-foreground",
+            "brand-logo-text block text-lg font-semibold leading-none text-foreground",
             textClassName,
           )}
         >
-          Immojudis
+          ImmoJudis
         </span>
         {showTagline ? (
           <span className="mt-1 block text-xs font-medium leading-tight text-[var(--gold)]">

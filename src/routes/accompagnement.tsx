@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@/lib/router-compat";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";

@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&display=swap");
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
@@ -8,7 +7,13 @@
 /*
  * Design system — Immojudis
  * Direction 2026 : ciel clair / cuivre judiciaire / crème, reprise de la homepage.
- * Typo : Cormorant Garamond (display) + IBM Plex Sans (body).
+ * Typo : Cormorant Garamond (brand/display) + IBM Plex Sans (UI/body).
+ * Référence homepage :
+ * - Logo : Cormorant Garamond 600, 32px desktop.
+ * - H1 : Cormorant Garamond 500, 84px grand desktop, 76-78px desktop médian, line-height 0.98.
+ * - Accent H1 : Cormorant Garamond italic 400, cuivre.
+ * - Headings sections : Cormorant Garamond 500, 38-41px.
+ * - Navigation, formulaires, labels : IBM Plex Sans 400-600.
  */
 
 @theme inline {
@@ -63,9 +68,9 @@
   --color-signal-verified: var(--signal-verified);
   --color-signal-missing: var(--signal-missing);
   --color-signal-action: var(--signal-action);
-  --font-display: "Cormorant Garamond", ui-serif, Georgia, serif;
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-brand: "Cormorant Garamond", ui-serif, Georgia, serif;
+  --font-display: var(--font-cormorant-garamond), "Cormorant Garamond", ui-serif, Georgia, serif;
+  --font-sans: var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-brand: var(--font-cormorant-garamond), "Cormorant Garamond", ui-serif, Georgia, serif;
 }
 
 :root {
@@ -141,8 +146,12 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizelegibility;
   }
 
   h1,
@@ -152,6 +161,9 @@
   .font-display {
     font-family: var(--font-display);
     letter-spacing: 0;
+    font-feature-settings:
+      "liga" 1,
+      "kern" 1;
   }
 
   ::selection {
@@ -208,7 +220,8 @@
 
   .brand-logo-text {
     font-family: var(--font-brand);
-    letter-spacing: 0.08em;
+    font-weight: 600;
+    letter-spacing: 0;
   }
 
   .cinematic-grid {
@@ -1899,10 +1912,13 @@
 .ij-home-logo strong {
   display: block;
   font-family: var(--font-display);
-  font-size: clamp(1.58rem, 2vw, 2.08rem);
+  font-size: 2rem;
   font-weight: 600;
-  line-height: 0.98;
+  line-height: 0.96;
   letter-spacing: 0;
+  font-feature-settings:
+    "liga" 1,
+    "kern" 1;
 }
 
 .ij-home-logo > span {
@@ -1915,11 +1931,11 @@
 
 .ij-home-logo small {
   display: block;
-  margin-top: 0.35rem;
+  margin-top: 0.38rem;
   overflow: hidden;
   color: rgb(19 34 56 / 64%);
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-size: 0.84rem;
+  font-weight: 400;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1937,8 +1953,9 @@
   justify-content: center;
   gap: clamp(1rem, 2.5vw, 2.6rem);
   color: rgb(19 34 56 / 86%);
-  font-size: 1.04rem;
-  font-weight: 600;
+  font-size: 0.98rem;
+  font-weight: 500;
+  line-height: 1;
 }
 
 .ij-home-nav a,
@@ -1994,8 +2011,8 @@
   background: rgb(255 255 255 / 58%);
   padding: 0.72rem 1.28rem;
   color: #132238;
-  font-size: 1.02rem;
-  font-weight: 600;
+  font-size: 0.96rem;
+  font-weight: 500;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -2006,8 +2023,8 @@
   background: linear-gradient(145deg, #d39b56, #b97731);
   padding: 0.72rem 1.28rem;
   color: #fff9ef;
-  font-size: 1.02rem;
-  font-weight: 650;
+  font-size: 0.96rem;
+  font-weight: 600;
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 32%),
     0 1rem 2.5rem rgb(201 141 69 / 22%);
@@ -2170,8 +2187,9 @@
   background: rgb(255 250 242 / 70%);
   padding: 0.52rem 1.08rem;
   color: rgb(19 34 56 / 86%);
-  font-size: clamp(0.96rem, 1vw, 1.08rem);
-  font-weight: 600;
+  font-size: 0.96rem;
+  font-weight: 500;
+  line-height: 1.2;
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 70%),
     0 1rem 2.4rem rgb(19 34 56 / 6%);
@@ -2184,17 +2202,20 @@
   margin-top: clamp(1.2rem, 2.5vw, 1.85rem);
   color: var(--ij-navy);
   font-family: var(--font-display);
-  font-size: clamp(3.55rem, 4.8vw, 5.15rem);
-  font-weight: 600;
-  line-height: 1.04;
+  font-size: 5.25rem;
+  font-weight: 500;
+  line-height: 0.98;
   letter-spacing: 0;
   text-wrap: normal;
+  font-feature-settings:
+    "liga" 1,
+    "kern" 1;
 }
 
 .ij-title em {
   color: var(--ij-copper);
   font-style: italic;
-  font-weight: 500;
+  font-weight: 400;
   white-space: nowrap;
 }
 
@@ -2202,9 +2223,9 @@
   max-width: 36.5rem;
   margin-top: clamp(1.15rem, 2vw, 1.45rem);
   color: rgb(19 34 56 / 76%);
-  font-size: clamp(1.14rem, 1.32vw, 1.3rem);
-  font-weight: 500;
-  line-height: 1.45;
+  font-size: 1.2rem;
+  font-weight: 400;
+  line-height: 1.55;
 }
 
 .ij-search {
@@ -2241,8 +2262,8 @@
   max-width: calc(100% - 7rem);
   overflow: hidden;
   color: rgb(19 34 56 / 34%);
-  font-size: clamp(1.05rem, 1.2vw, 1.16rem);
-  font-weight: 500;
+  font-size: 1.08rem;
+  font-weight: 400;
   line-height: 1;
   pointer-events: none;
   transform: translateY(-50%);
@@ -2273,8 +2294,8 @@
   background: transparent;
   padding: 0 1.15rem;
   color: var(--ij-navy);
-  font-size: clamp(1.05rem, 1.2vw, 1.16rem);
-  font-weight: 500;
+  font-size: 1.08rem;
+  font-weight: 400;
   outline: none;
 }
 
@@ -2331,16 +2352,16 @@
 
 .ij-benefit strong {
   color: var(--ij-navy);
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-size: 0.98rem;
+  font-weight: 600;
   line-height: 1.25;
 }
 
 .ij-benefit small {
   margin-top: 0.18rem;
   color: rgb(19 34 56 / 50%);
-  font-size: 0.94rem;
-  font-weight: 500;
+  font-size: 0.88rem;
+  font-weight: 400;
 }
 
 .ij-goddess {
@@ -2706,16 +2727,18 @@
 
 .ij-candle-note h2 {
   color: var(--ij-navy);
-  font-size: 1.08rem;
+  font-family: var(--font-sans);
+  font-size: 1rem;
   font-weight: 700;
+  line-height: 1.3;
 }
 
 .ij-candle-note p {
   margin-top: 0.85rem;
   color: rgb(19 34 56 / 66%);
-  font-size: 0.94rem;
-  font-weight: 500;
-  line-height: 1.48;
+  font-size: 0.88rem;
+  font-weight: 400;
+  line-height: 1.55;
 }
 
 .ij-candle-note a {
@@ -2724,8 +2747,8 @@
   gap: 0.35rem;
   margin-top: 1.05rem;
   color: var(--ij-navy);
-  font-size: 0.94rem;
-  font-weight: 650;
+  font-size: 0.88rem;
+  font-weight: 600;
   text-decoration: underline;
   text-decoration-color: rgb(201 141 69 / 45%);
   text-underline-offset: 0.18rem;
@@ -2753,9 +2776,12 @@
 .ij-auctions h2 {
   color: var(--ij-navy);
   font-family: var(--font-display);
-  font-size: clamp(2.1rem, 3.15vw, 3rem);
-  font-weight: 600;
-  line-height: 1.12;
+  font-size: 2.55rem;
+  font-weight: 500;
+  line-height: 1.06;
+  font-feature-settings:
+    "liga" 1,
+    "kern" 1;
 }
 
 .ij-all-sales {
@@ -2766,7 +2792,7 @@
   padding: 0.72rem 1rem;
   color: #132238;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: 0 0.8rem 2rem rgb(72 104 132 / 8%);
 }
 
@@ -2835,8 +2861,8 @@
   background: linear-gradient(145deg, #d59d56, #b97731);
   color: #fffaf1;
   padding: 0.4rem 0.55rem;
-  font-size: 0.76rem;
-  font-weight: 700;
+  font-size: 0.75rem;
+  font-weight: 600;
   box-shadow: 0 0.6rem 1.4rem rgb(87 54 24 / 18%);
 }
 
@@ -2866,9 +2892,9 @@
 .ij-card-body strong {
   color: var(--ij-navy);
   font-family: var(--font-display);
-  font-size: 1.12rem;
-  font-weight: 700;
-  line-height: 1.25;
+  font-size: 1.28rem;
+  font-weight: 600;
+  line-height: 1.18;
 }
 
 .ij-card-meta svg,
@@ -2906,9 +2932,9 @@
   margin-top: 0.18rem;
   color: var(--ij-navy);
   font-family: var(--font-display);
-  font-size: clamp(2rem, 3vw, 2.75rem);
-  font-weight: 600;
-  line-height: 1.1;
+  font-size: 2.35rem;
+  font-weight: 500;
+  line-height: 1.08;
 }
 
 .ij-process-head > p {
@@ -3045,8 +3071,8 @@
 
 .ij-footer-brand strong {
   font-family: var(--font-display);
-  font-size: 1.55rem;
-  font-weight: 650;
+  font-size: 1.75rem;
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -3246,10 +3272,25 @@
   }
 }
 
+@media (max-width: 1536px) {
+  .ij-hero-copy {
+    max-width: min(46rem, 52vw);
+  }
+
+  .ij-title {
+    font-size: 4.85rem;
+  }
+
+  .ij-goddess {
+    right: clamp(-33rem, -22vw, -18rem);
+    width: min(118vw, 96rem);
+  }
+}
+
 @media (max-width: 1400px) {
   .ij-home-nav {
     gap: 0.65rem;
-    font-size: 0.84rem;
+    font-size: 0.86rem;
   }
 
   .ij-home-nav a {
@@ -3259,7 +3300,7 @@
   .ij-login-button,
   .ij-signup-button {
     padding-inline: 1rem;
-    font-size: 0.94rem;
+    font-size: 0.9rem;
   }
 }
 
@@ -3273,6 +3314,14 @@
   .ij-home-nav {
     gap: 0.55rem;
     font-size: 0.8rem;
+  }
+
+  .ij-title {
+    font-size: 4.55rem;
+  }
+
+  .ij-auctions h2 {
+    font-size: 2.35rem;
   }
 
   .ij-candle-scene {
@@ -3318,6 +3367,18 @@
     max-width: 42rem;
   }
 
+  .ij-home-logo strong {
+    font-size: 1.86rem;
+  }
+
+  .ij-title {
+    font-size: 4.05rem;
+  }
+
+  .ij-lead {
+    font-size: 1.1rem;
+  }
+
   .ij-goddess {
     --ij-goddess-opacity: 0.28;
     right: -22rem;
@@ -3358,6 +3419,10 @@
     font-size: 0.72rem;
   }
 
+  .ij-home-logo strong {
+    font-size: 1.58rem;
+  }
+
   .ij-hero {
     padding-inline: 1rem;
     padding-bottom: 2.4rem;
@@ -3371,17 +3436,18 @@
 
   .ij-badge {
     justify-content: center;
-    font-size: 0.78rem;
+    font-size: 0.82rem;
   }
 
   .ij-title {
     max-width: none;
-    font-size: clamp(2.45rem, 11vw, 3.3rem);
+    font-size: 3.15rem;
+    line-height: 1;
   }
 
   .ij-lead {
     margin-inline: auto;
-    font-size: 0.95rem;
+    font-size: 1rem;
   }
 
   .ij-search {
@@ -3427,6 +3493,11 @@
   .ij-auctions-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .ij-auctions h2,
+  .ij-process-head h2 {
+    font-size: 2rem;
   }
 
   .ij-card-grid {

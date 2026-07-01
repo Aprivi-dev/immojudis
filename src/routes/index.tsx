@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@/lib/router-compat";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";

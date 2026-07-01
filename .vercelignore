@@ -1,3 +1,4 @@
 .codex/
+.next/
 .playwright-cli/
 output/

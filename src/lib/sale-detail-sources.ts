@@ -138,7 +138,7 @@ export function buildSaleProductSources({
       ? "Recherche en cours"
       : environmentalError
         ? "Source indisponible"
-        : "À connecter";
+        : "Source non disponible";
   const environmentalAddressLabel =
     environmentalContext?.resolvedAddress.label || addressLabel || cityLabel;
   const weatherMonthly = environmentalContext?.weather.monthly ?? fallbackEnvironmentMonths();
@@ -255,14 +255,14 @@ export function buildSaleProductSources({
       },
       {
         label: "Source carte",
-        value: sale.latitude != null ? "Carte et vue de rue" : "À connecter",
+        value: sale.latitude != null ? "Carte et vue de rue" : "Carte non disponible",
       },
     ],
     schoolFacts: [
       {
         label: "Écoles",
-        value: sale.city ? `Secteur ${sale.city}` : "À connecter",
-        detail: "Source scolaire locale à brancher",
+        value: sale.city ? `Secteur ${sale.city}` : "Secteur à confirmer",
+        detail: "Carte scolaire et établissements à vérifier",
       },
       {
         label: "À pied",
@@ -271,15 +271,15 @@ export function buildSaleProductSources({
       },
       {
         label: "Source",
-        value: "À connecter",
-        detail: "Équivalent français à brancher",
+        value: "Source locale à vérifier",
+        detail: "Sectorisation scolaire et services de proximité",
       },
     ],
     lifestyleFacts: [
-      { label: "Marche", value: "À connecter", detail: "Marchabilité du quartier" },
-      { label: "Transports", value: "À connecter", detail: "Accès transports" },
+      { label: "Marche", value: "À évaluer", detail: "Marchabilité du quartier" },
+      { label: "Transports", value: "À vérifier", detail: "Accès transports" },
       { label: "Bruit", value: "À vérifier", detail: "Nuisances à documenter" },
-      { label: "Services", value: "À connecter", detail: "Commerces et santé proches" },
+      { label: "Services", value: "À vérifier", detail: "Commerces et santé proches" },
     ],
     propertyGroups: [
       {
@@ -360,7 +360,7 @@ export function buildSaleProductSources({
               ? "Recherche..."
               : environmentalError
                 ? "Indisponible"
-                : "À connecter",
+                : "Non disponible",
         detail: environmentalContext
           ? `${environmentalSourceLabel} · ${environmentalAddressLabel}`
           : "Historique par adresse",
@@ -379,7 +379,7 @@ export function buildSaleProductSources({
               ? "Recherche..."
               : environmentalError
                 ? "Indisponible"
-                : "À connecter",
+                : "Non disponible",
         detail: "Radiation courte moyenne au sol",
       },
       {
@@ -528,7 +528,7 @@ function buildWeatherFacts({
     ? "Recherche..."
     : environmentalError
       ? "Indisponible"
-      : "À connecter";
+      : "Non disponible";
   return [
     { label: "Température", value, detail: `Historique météo ${environmentalAddressLabel}` },
     { label: "Précipitation", value, detail: "Open-Meteo Archive" },

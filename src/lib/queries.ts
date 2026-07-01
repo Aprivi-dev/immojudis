@@ -15,9 +15,18 @@ type SupabaseQueryError = {
 const SALE_LIST_COLUMNS = [
   "id",
   "title",
+  "description",
+  "source_description",
+  "llm_display_description",
+  "about_description",
   "city",
   "department",
   "postal_code",
+  "address",
+  "tribunal",
+  "tribunal_code",
+  "tribunal_name",
+  "tribunal_city",
   "property_type",
   "starting_price_eur",
   "sale_date",
@@ -29,6 +38,7 @@ const SALE_LIST_COLUMNS = [
   "app_surface_m2",
   "rooms_count",
   "bedrooms_count",
+  "bathrooms_count",
   "has_garden",
   "has_terrace",
   "has_garage",
@@ -41,7 +51,9 @@ const SALE_LIST_COLUMNS = [
   "risks",
   "documents",
   "media",
+  "source_name",
   "source_url",
+  "primary_source",
   "status",
   "created_at",
 ].join(",");
@@ -53,6 +65,10 @@ const SALE_MAP_COLUMNS = [
   "title",
   "city",
   "department",
+  "address",
+  "tribunal",
+  "tribunal_name",
+  "tribunal_city",
   "property_type",
   "starting_price_eur",
   "sale_date",
@@ -62,6 +78,9 @@ const SALE_MAP_COLUMNS = [
   "habitable_surface_m2",
   "carrez_surface_m2",
   "rooms_count",
+  "bedrooms_count",
+  "bathrooms_count",
+  "status",
 ].join(",");
 
 function assertCloudConfigured() {
@@ -95,6 +114,7 @@ async function getSalesFromLegacyPreview(
     .order("starting_price_eur", { ascending: previewSortDirection(sort), nullsFirst: false })
     .range(offset, offset + limit - 1);
 
+  if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
   if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
 
   const { data, error } = await q;
@@ -102,9 +122,20 @@ async function getSalesFromLegacyPreview(
   return (data ?? []) as unknown as AuctionSale[];
 }
 
+async function getSalePreviewFromLegacyView(id: string): Promise<AuctionSale | null> {
+  const { data, error } = await supabase
+    .from(DETAIL_VIEW)
+    .select(SALE_PREVIEW_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data as unknown as AuctionSale | null;
+}
+
 async function getSalesPreviewCountFromLegacyView(filters: SaleFilters): Promise<number> {
   let q = supabase.from(DETAIL_VIEW).select("id", { count: "exact" }).range(0, 999);
 
+  if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
   if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
 
   const { count, data, error } = await q;
@@ -120,6 +151,59 @@ const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst
   score_desc: { column: "investment_score", ascending: false },
   surface_desc: { column: "app_surface_m2", ascending: false },
 };
+
+type FilterableQuery = {
+  eq: (column: string, value: string | number | boolean) => FilterableQuery;
+  gte: (column: string, value: string | number) => FilterableQuery;
+  lte: (column: string, value: string | number) => FilterableQuery;
+  in: (column: string, values: string[]) => FilterableQuery;
+  ilike: (column: string, pattern: string) => FilterableQuery;
+  or: (filters: string) => FilterableQuery;
+};
+
+function textPattern(value: string) {
+  return `%${value.replace(/[,%()]/g, " ").trim()}%`;
+}
+
+function applyTextSearch(query: FilterableQuery, columns: string[], value: string | undefined) {
+  if (!value?.trim()) return query;
+  const pattern = textPattern(value);
+  return query.or(columns.map((column) => `${column}.ilike.${pattern}`).join(","));
+}
+
+function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilters) {
+  let q = query as unknown as FilterableQuery;
+
+  if (filters.department) q = q.eq("department", filters.department);
+  if (filters.city) q = q.ilike("city", textPattern(filters.city));
+  if (filters.property_type) q = q.eq("property_type", filters.property_type);
+  if (filters.property_types?.length) q = q.in("property_type", filters.property_types);
+  if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
+  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
+  if (filters.min_surface != null) q = q.gte("app_surface_m2", filters.min_surface);
+  if (filters.max_surface != null) q = q.lte("app_surface_m2", filters.max_surface);
+  if (filters.min_bedrooms != null) q = q.gte("bedrooms_count", filters.min_bedrooms);
+  if (filters.min_bathrooms != null) q = q.gte("bathrooms_count", filters.min_bathrooms);
+  if (filters.occupancy_status) q = q.eq("occupancy_status", filters.occupancy_status);
+  if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
+  if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
+  if (filters.status_in?.length) q = q.in("status", filters.status_in);
+  if (filters.only_new) {
+    q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  }
+  q = applyTextSearch(
+    q,
+    ["tribunal", "tribunal_name", "tribunal_city", "tribunal_code"],
+    filters.tribunal,
+  );
+  q = applyTextSearch(
+    q,
+    ["title", "description", "source_description", "city", "address", "tribunal_name"],
+    filters.keywords,
+  );
+
+  return q as unknown as TQuery;
+}
 
 export async function getSales(
   filters: SaleFilters = {},
@@ -137,6 +221,7 @@ export async function getSales(
       .order("starting_price_eur", { ascending: previewSortDirection(sort), nullsFirst: false })
       .range(offset, offset + limit - 1);
 
+    if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
     if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
 
     const { data, error } = await q;
@@ -154,17 +239,7 @@ export async function getSales(
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
-  if (filters.department) q = q.eq("department", filters.department);
-  if (filters.city) q = q.ilike("city", `%${filters.city}%`);
-  if (filters.property_type) q = q.eq("property_type", filters.property_type);
-  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
-  if (filters.min_surface != null) q = q.gte("app_surface_m2", filters.min_surface);
-  if (filters.occupancy_status) q = q.eq("occupancy_status", filters.occupancy_status);
-  if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
-  if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
-  if (filters.only_new) {
-    q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
-  }
+  q = applyAuthenticatedSaleFilters(q, filters);
 
   const { data, error } = await q;
   if (error) throw error;
@@ -175,17 +250,7 @@ export async function getSalesCount(filters: SaleFilters = {}): Promise<number> 
   if (!assertCloudConfigured()) return 0;
   let q = supabase.from(DETAIL_VIEW).select("id", { count: "exact", head: true });
 
-  if (filters.department) q = q.eq("department", filters.department);
-  if (filters.city) q = q.ilike("city", `%${filters.city}%`);
-  if (filters.property_type) q = q.eq("property_type", filters.property_type);
-  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
-  if (filters.min_surface != null) q = q.gte("app_surface_m2", filters.min_surface);
-  if (filters.occupancy_status) q = q.eq("occupancy_status", filters.occupancy_status);
-  if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
-  if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
-  if (filters.only_new) {
-    q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
-  }
+  q = applyAuthenticatedSaleFilters(q, filters);
 
   const { count, error } = await q;
   if (error) throw error;
@@ -196,6 +261,7 @@ export async function getSalesPreviewCount(filters: SaleFilters = {}): Promise<n
   if (!assertCloudConfigured()) return 0;
   let q = supabase.from(PUBLIC_PREVIEW_VIEW).select("id", { count: "exact", head: true });
 
+  if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
   if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
 
   const { count, error } = await q;
@@ -218,6 +284,18 @@ export async function getSaleById(id: string): Promise<AuctionSale | null> {
   return data as AuctionSale | null;
 }
 
+export async function getSalePreviewById(id: string): Promise<AuctionSale | null> {
+  if (!assertCloudConfigured()) return null;
+  const { data, error } = await supabase
+    .from(PUBLIC_PREVIEW_VIEW)
+    .select(SALE_PREVIEW_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+  if (isMissingPreviewViewError(error)) return getSalePreviewFromLegacyView(id);
+  if (error) throw error;
+  return data as unknown as AuctionSale | null;
+}
+
 export async function getSalesWithCoords(
   filters: SaleFilters = {},
   limit = 500,
@@ -233,17 +311,7 @@ export async function getSalesWithCoords(
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .limit(limit);
 
-  if (filters.department) q = q.eq("department", filters.department);
-  if (filters.city) q = q.ilike("city", `%${filters.city}%`);
-  if (filters.property_type) q = q.eq("property_type", filters.property_type);
-  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
-  if (filters.min_surface != null) q = q.gte("app_surface_m2", filters.min_surface);
-  if (filters.occupancy_status) q = q.eq("occupancy_status", filters.occupancy_status);
-  if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
-  if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
-  if (filters.only_new) {
-    q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
-  }
+  q = applyAuthenticatedSaleFilters(q, filters);
 
   const { data, error } = await q;
   if (error) throw error;

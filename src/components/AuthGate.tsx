@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@/lib/router-compat";
 import { useAuth } from "@/hooks/use-auth";
 import {
   getAccountType,
@@ -22,6 +22,7 @@ const PUBLIC_PATHS = new Set([
   "/ventes-immobilieres-judiciaires",
   "/legal",
   "/privacy",
+  "/properties",
 ]);
 const PROFESSIONAL_PATHS = new Set(["/publish"]);
 const ADMIN_PREFIX = "/admin";
@@ -36,7 +37,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const pathname = normalizePath(location.pathname);
-  const isPublic = PUBLIC_PATHS.has(pathname);
+  const isPublic =
+    PUBLIC_PATHS.has(pathname) ||
+    pathname.startsWith("/sales/") ||
+    pathname.startsWith("/properties/");
   const requiresProfessionalAccount = PROFESSIONAL_PATHS.has(pathname);
   const requiresAdminAccount = pathname === ADMIN_PREFIX || pathname.startsWith(`${ADMIN_PREFIX}/`);
   const isAdmin = isAdminAccount(user);

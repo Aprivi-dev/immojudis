@@ -1,7 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
-import { setResponseHeaders } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 // ─── DVF (Demandes de Valeurs Foncières) via API Cerema ─────────────────
 // Données ouvertes DGFiP, toutes les transactions immobilières de France.
@@ -630,38 +627,34 @@ function assessQuality({
   };
 }
 
-export const getMarketEstimate = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => inputSchema.parse(input))
-  .handler(async ({ data }): Promise<MarketContext> => {
-    try {
-      const estimate = await buildEstimate({
-        lat: data.lat,
-        lng: data.lng,
-        radiusOverride: data.radiusM ?? null,
-        propertyType: data.propertyType,
-        surfaceM2: data.surfaceM2,
-        pricePerM2Ref: data.pricePerM2Ref,
-      });
-      // On ne fige pas 24 h un résultat vide/fragile (souvent un aléa réseau en
-      // amont) : il doit pouvoir se recalculer vite. Cache long uniquement quand
-      // l'échantillon est exploitable.
-      const reliable = estimate.sampleSize >= 3;
-      setResponseHeaders(
-        new Headers({
-          "cache-control": reliable
-            ? "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800"
-            : "public, max-age=300, s-maxage=300",
-        }),
-      );
-      return { ok: true, error: null, estimate };
-    } catch (err) {
-      console.error("DVF fetch failed", err);
-      setResponseHeaders(new Headers({ "cache-control": "public, max-age=60" }));
-      return {
-        ok: false,
-        error: "Estimation de marché temporairement indisponible.",
-        estimate: null,
-      };
-    }
-  });
+export function marketEstimateCacheControl(context: MarketContext): string {
+  const reliable = (context.estimate?.sampleSize ?? 0) >= 3;
+  if (!context.ok) return "public, max-age=60";
+  return reliable
+    ? "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800"
+    : "public, max-age=300, s-maxage=300";
+}
+
+export async function getMarketEstimate(input: unknown): Promise<MarketContext> {
+  const data = inputSchema.parse(input);
+
+  try {
+    const estimate = await buildEstimate({
+      lat: data.lat,
+      lng: data.lng,
+      radiusOverride: data.radiusM ?? null,
+      propertyType: data.propertyType,
+      surfaceM2: data.surfaceM2,
+      pricePerM2Ref: data.pricePerM2Ref,
+    });
+
+    return { ok: true, error: null, estimate };
+  } catch (err) {
+    console.error("DVF fetch failed", err);
+    return {
+      ok: false,
+      error: "Estimation de marché temporairement indisponible.",
+      estimate: null,
+    };
+  }
+}

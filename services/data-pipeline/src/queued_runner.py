@@ -30,7 +30,7 @@ def main() -> int:
     source = str(run.get("source") or "all")
     use_llm = run.get("use_llm")
     if not isinstance(use_llm, bool):
-        use_llm = False
+        use_llm = True
 
     if not run_id:
         print("Queued run has no id; skipping.")

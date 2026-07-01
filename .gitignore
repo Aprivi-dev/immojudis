@@ -13,10 +13,12 @@ node_modules
 # Build output
 dist
 dist-ssr
+.next
 .output
 .vinxi
 .tanstack
 .nitro
+tsconfig.tsbuildinfo
 supabase/.temp
 output/
 .playwright-cli/
