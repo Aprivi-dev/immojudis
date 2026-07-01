@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { hasAdminRole, isAdminEmail, normalizeEmail } from "@/lib/account";
+import { hasAdminRole, normalizeEmail } from "@/lib/account";
 
 const SCROLL_SOURCES = [
   "all",
@@ -180,24 +180,13 @@ function claimEmail(context: AdminContext): string | null {
 }
 
 async function assertAdminContext(context: AdminContext): Promise<{ email: string }> {
-  const admin = getAdminClient();
-  let email = claimEmail(context);
+  const email = claimEmail(context);
 
   if (hasAdminRole(context.claims)) {
     return { email: normalizeEmail(email) || "admin" };
   }
 
-  if (!email) {
-    const { data, error } = await admin.auth.admin.getUserById(context.userId);
-    if (error) throw new Error(error.message ?? "Impossible de vérifier le compte admin.");
-    email = data.user?.email ?? null;
-  }
-
-  if (!isAdminEmail(email)) {
-    throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
-  }
-
-  return { email: normalizeEmail(email) };
+  throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
 }
 
 async function countRows(table: string): Promise<number> {
