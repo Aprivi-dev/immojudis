@@ -12,7 +12,6 @@ from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
-
 BASE_URL = "https://cessions.immobilier-etat.gouv.fr"
 LIST_URL = f"{BASE_URL}/"
 LOGGER = logging.getLogger(__name__)

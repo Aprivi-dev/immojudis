@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import logging
 import re
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from src.config import load_settings
-
 
 LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -248,10 +247,10 @@ def parse_json_response(raw_response: str) -> dict[str, Any]:
         text = re.sub(r"```$", "", text).strip()
     try:
         value = json.loads(text)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
         match = re.search(r"\{.*\}", text, re.S)
         if not match:
-            raise ValueError("No JSON object found in LLM response")
+            raise ValueError("No JSON object found in LLM response") from exc
         try:
             value = json.loads(match.group(0))
         except json.JSONDecodeError as exc:

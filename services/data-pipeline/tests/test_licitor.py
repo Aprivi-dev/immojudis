@@ -2,7 +2,12 @@ from decimal import Decimal
 
 from src.normalize import normalize_sale
 from src.sources import licitor
-from src.sources.licitor import RobotsRules, parse_licitor_detail_html, parse_licitor_list_html, parse_licitor_list_sales
+from src.sources.licitor import (
+    RobotsRules,
+    parse_licitor_detail_html,
+    parse_licitor_list_html,
+    parse_licitor_list_sales,
+)
 
 
 def test_robots_rules_allows_public_licitor_pages_and_blocks_disallowed_documents() -> None:

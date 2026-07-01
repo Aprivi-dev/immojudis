@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 import re
 import time
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin
 from urllib.robotparser import RobotFileParser
 
-from bs4 import BeautifulSoup, Tag
 import httpx
+from bs4 import BeautifulSoup, Tag
 
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import ScrapeResult
-
 
 BASE_URL = "https://avoventes.fr"
 SEARCH_URL = f"{BASE_URL}/recherche"

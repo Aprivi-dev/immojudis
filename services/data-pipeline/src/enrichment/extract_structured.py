@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import logging
-from pathlib import Path
 import re
+from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -17,7 +17,6 @@ from src.enrichment.prompts import SYSTEM_PROMPT, build_user_prompt
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.pdf_enrichment import sale_storage_id
-
 
 LOGGER = logging.getLogger(__name__)
 LLM_CONTEXT_KEYWORDS = (

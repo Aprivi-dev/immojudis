@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from collections import Counter
-from decimal import Decimal, InvalidOperation
 import hashlib
+import importlib
 import json
 import logging
-from pathlib import Path
-import re
 import os
+import re
 import subprocess
 import sys
 import tempfile
+from collections import Counter
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from urllib.parse import urlparse
 
 import fitz
@@ -19,8 +20,12 @@ import httpx
 
 from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
 from src.models import AuctionSale
-from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text, normalize_property_type
-
+from src.normalize import (
+    clean_text,
+    extract_bedrooms_count_from_text,
+    extract_rooms_count_from_text,
+    normalize_property_type,
+)
 
 LOGGER = logging.getLogger(__name__)
 PDF_TEXT_CACHE_VERSION = "pdf_text_v2_page_level"
@@ -205,10 +210,7 @@ def extract_pdf_text_with_docling(file: str | Path, timeout_seconds: float | Non
 
 def _extract_pdf_text_with_docling_direct(path: Path) -> str:
     try:
-        from docling.datamodel.base_models import InputFormat
-        from docling.datamodel.pipeline_options import PdfPipelineOptions
-        from docling.document_converter import DocumentConverter
-        from docling.document_converter import PdfFormatOption
+        _ensure_docling_available()
     except Exception as exc:
         LOGGER.warning("Docling is unavailable: %s", exc)
         return ""
@@ -226,6 +228,15 @@ def _extract_pdf_text_with_docling_direct(path: Path) -> str:
         LOGGER.warning("Docling extraction failed for %s: %s", path, exc)
         return ""
     return text
+
+
+def _ensure_docling_available() -> None:
+    for module_name in (
+        "docling.datamodel.base_models",
+        "docling.datamodel.pipeline_options",
+        "docling.document_converter",
+    ):
+        importlib.import_module(module_name)
 
 
 def _build_docling_converter(do_ocr: bool, settings: dict[str, object]) -> object:

@@ -1,6 +1,6 @@
-from decimal import Decimal
 import sys
 import types
+from decimal import Decimal
 
 from src.models import AuctionSale
 from src.sources.common import ScrapeResult
@@ -165,7 +165,7 @@ def _raw_sale() -> dict[str, object]:
 
 def _fake_geocode(sale: AuctionSale) -> AuctionSale:
     try:
-        main_calls = getattr(_fake_geocode, "calls")
+        main_calls = _fake_geocode.calls
     except AttributeError:
         main_calls = None
     if isinstance(main_calls, list):

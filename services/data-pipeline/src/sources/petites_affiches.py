@@ -7,11 +7,10 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
 
-from src.config import FRENCH_POSTAL_CODE_PATTERN, FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
+from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
-
 
 BASE_URL = "https://www.petitesaffiches.fr"
 LIST_URL = f"{BASE_URL}/encheres-immobilieres/"

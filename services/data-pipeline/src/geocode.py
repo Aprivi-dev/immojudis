@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from decimal import Decimal
 import logging
+from decimal import Decimal
 
 import httpx
 
 from src.config import load_settings
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_department
-
 
 LOGGER = logging.getLogger(__name__)
 # ponytail: only departments with known historical false positives need bboxes.

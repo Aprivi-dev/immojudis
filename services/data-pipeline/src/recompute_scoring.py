@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
-from dotenv import load_dotenv
 import httpx
+from dotenv import load_dotenv
 
 from src.asset_normalization import normalize_asset_features
 from src.config import ROOT_DIR, load_settings
 from src.normalize import normalize_sale
 from src.storage.supabase_client import upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
-
 
 LOGGER = logging.getLogger(__name__)
 PAGE_SIZE = 200
@@ -127,7 +126,7 @@ def _parse_datetime(value: object | None):
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
+        return parsed.replace(tzinfo=UTC)
     return parsed
 
 

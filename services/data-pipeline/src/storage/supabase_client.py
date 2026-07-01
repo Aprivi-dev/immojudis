@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
 import json
 import logging
-from pathlib import Path
 import time
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -30,7 +30,6 @@ from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
 from src.models import AuctionSale
 from src.normalize import make_sale_signature
 from src.pdf_enrichment import classify_document_type, sale_storage_id
-
 
 LOGGER = logging.getLogger(__name__)
 POSTGREST_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
@@ -126,7 +125,7 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
     if not url or not key:
         LOGGER.info("Supabase variables are missing; skipping upsert")
         return 0
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     payload = []
     for sale in sales:
         data = sale.to_storage_dict(exclude_none=False)
@@ -162,7 +161,7 @@ def create_run_in_supabase(source: str, use_llm: bool, run_id: str | None = None
         "status": "running",
         "source": source,
         "use_llm": use_llm,
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(UTC).isoformat(),
     }
     response = httpx.post(
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
@@ -187,7 +186,7 @@ def start_existing_run_in_supabase(run_id: str, source: str, use_llm: bool) -> s
         "status": "running",
         "source": source,
         "use_llm": use_llm,
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(UTC).isoformat(),
         "finished_at": None,
     }
     response = httpx.patch(
@@ -237,7 +236,7 @@ def fail_stale_running_runs_in_supabase(max_age_minutes: int = 190) -> int:
     if not url or not key:
         return 0
 
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
+    cutoff = datetime.now(UTC) - timedelta(minutes=max_age_minutes)
     response = httpx.get(
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
         params={
@@ -269,7 +268,7 @@ def fail_stale_running_runs_in_supabase(max_age_minutes: int = 190) -> int:
             "stale_cleanup": {
                 "max_age_minutes": max_age_minutes,
                 "started_at": row.get("started_at"),
-                "cleaned_at": datetime.now(timezone.utc).isoformat(),
+                "cleaned_at": datetime.now(UTC).isoformat(),
             },
         }
         finish_run_in_supabase(run_id, "failed", summary, {**errors, "runner": runner_errors})
@@ -291,7 +290,7 @@ def finish_run_in_supabase(
         return
     payload = {
         "status": status,
-        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": datetime.now(UTC).isoformat(),
         "summary": summary,
         "errors": errors or {},
     }
@@ -339,7 +338,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
     db_url = settings.get("supabase_db_url")
     if not url or not key:
         return 0
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     payload = []
     for sale in sales:
         observations = sale.observations or [
@@ -527,7 +526,7 @@ def touch_last_seen_for_source_urls(source_urls: list[str]) -> int:
     if not url or not key or not unique:
         return 0
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
     touched = 0
     for index in range(0, len(unique), 150):
@@ -557,7 +556,7 @@ def touch_last_seen_for_content_hashes(content_hashes: list[str]) -> int:
     if not url or not key or not unique:
         return 0
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
     touched = 0
     for index in range(0, len(unique), 150):
@@ -583,7 +582,7 @@ def mark_past_sales_in_supabase() -> int:
     key = settings["supabase_service_role_key"]
     if not url or not key:
         return 0
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
     response = httpx.patch(
         endpoint,
@@ -1086,7 +1085,7 @@ def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
                 "extraction_status": "extracted" if extracted.get("text") else "pending",
                 "docling_status": extracted.get("extraction_method"),
                 "raw_payload": raw_payload,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
         )
     return rows
@@ -1108,7 +1107,7 @@ def _extraction_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
                 "schema_version": "pdf_text_v2_page_level",
                 "result": payload,
                 "confidence": _pdf_extraction_confidence(payload),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
         )
     llm_payload = sale.raw_payload.get("llm_extraction")
@@ -1124,7 +1123,7 @@ def _extraction_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
                 "schema_version": "llm_extraction_v1",
                 "result": llm_payload,
                 "confidence": llm_payload.get("confidence") or {},
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
         )
     return rows
