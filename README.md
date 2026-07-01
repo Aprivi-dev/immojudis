@@ -40,7 +40,7 @@ Le dépôt réunit deux briques :
 ```bash
 npm install
 cp .env.example .env.local      # puis renseigner les variables (voir ci-dessous)
-npm run dev                     # http://localhost:3000
+npm run dev                     # http://localhost:5173
 ```
 
 `npm run dev:ready` est une alternative qui attend que Vite **et** les routes SSR
@@ -57,7 +57,6 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 | `VITE_SUPABASE_URL`             |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                                                 |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` |   ✅   | Clé `anon` / publishable (publique, côté client)                                                                                   |
 | `VITE_GOOGLE_MAPS_API_KEY`      |   ➖   | Clé navigateur Google Maps restreinte par domaine. Active vignettes, vue aérienne 3D et Street View ; sinon repli OSM/placeholder. |
-| `VITE_ADMIN_EMAILS`             |   ➖   | Fallback public, séparé par virgules, pour afficher l'accès admin. Préférer `app_metadata.role = admin` dans Supabase Auth.        |
 | `GITHUB_SCROLL_TOKEN`           |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                                           |
 
 > Les variables `VITE_*` sont **inlinées au moment du build**. En production
@@ -78,19 +77,21 @@ Cloud :
 | **Maps JavaScript API** | Carte interactive + Street View (page détail) |
 | **Map Tiles API**       | Vue aérienne photoréaliste 3D (page détail)   |
 
-La clé doit aussi autoriser les **référents HTTP** `http://localhost:3000/*` (dev)
+La clé doit aussi autoriser les **référents HTTP** `http://localhost:5173/*` (dev)
 et le domaine de production.
 
 ## Scripts
 
-| Script              | Effet                                           |
-| ------------------- | ----------------------------------------------- |
-| `npm run dev`       | Serveur de dev Vite (HMR)                       |
-| `npm run dev:ready` | Dev + attente que le client et le SSR répondent |
-| `npm run build`     | Build de production                             |
-| `npm run preview`   | Smoke-test du build                             |
-| `npm run lint`      | ESLint (flat config)                            |
-| `npm run format`    | Prettier (écriture)                             |
+| Script               | Effet                                                           |
+| -------------------- | --------------------------------------------------------------- |
+| `npm run dev`        | Serveur de dev Vite (HMR)                                       |
+| `npm run dev:ready`  | Dev + attente que le client et le SSR répondent                 |
+| `npm run build`      | Build de production                                             |
+| `npm run preview`    | Smoke-test du build                                             |
+| `npm run test`       | Tests unitaires Vitest                                          |
+| `npm run lint`       | ESLint (flat config)                                            |
+| `npm run db:migrate` | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`) |
+| `npm run format`     | Prettier (écriture)                                             |
 
 ## Structure du dépôt
 
@@ -118,7 +119,9 @@ puis `public.v_auction_sales_app` pour les comptes connectés. Les détails
 d'annonce, documents, risques, cartes et tables `user_favorites` / `user_alerts`
 sont protégés par RLS. L'amorçage d'un nouveau projet se fait via
 [`sql/vercel_app_setup.sql`](sql/vercel_app_setup.sql) ; l'historique des
-évolutions vit dans [`supabase/migrations/`](supabase/migrations/).
+évolutions vit dans [`supabase/migrations/`](supabase/migrations/) et s'applique
+avec le workflow GitHub `Apply Supabase Migrations` ou `npm run db:migrate`.
+Les droits admin reposent sur `auth.users.raw_app_meta_data.role = admin`.
 
 ## Pipeline de données
 
@@ -138,5 +141,5 @@ Supabase, secrets CI, runner de scroll admin) : [`docs/vercel_setup.md`](docs/ve
 
 À chaque push / PR sur `main` ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) :
 
-- **Web** : `tsc --noEmit` + `npm run lint` (Node 24)
-- **Pipeline** : `pytest` (Python 3.11)
+- **Web** : `tsc --noEmit` + `npm run lint` + `npm run test` + `npm run build` (Node 24)
+- **Pipeline** : `ruff check` + `pytest` (Python 3.11)
