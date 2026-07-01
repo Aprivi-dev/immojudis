@@ -1,5 +1,5 @@
 {
-  "framework": "tanstack-start",
+  "framework": "nextjs",
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "regions": ["cdg1"]

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@/lib/router-compat";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import BadgeCheck from "lucide-react/dist/esm/icons/badge-check.js";

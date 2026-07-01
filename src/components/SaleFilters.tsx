@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@/lib/router-compat";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
 import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";

@@ -1,6 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@/lib/router-compat";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import Bot from "lucide-react/dist/esm/icons/bot.js";
@@ -19,13 +18,11 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json, Tables } from "@/integrations/supabase/types";
+import { fetchAdminDashboard, startAdminScrollRequest } from "@/lib/client-api";
 import {
-  getAdminDashboard,
-  startAdminScroll,
   type AdminDashboardData,
   type AdminScrollSource,
   type AuctionRun,
-  type StartScrollResult,
 } from "@/lib/admin.functions";
 
 type RunnerMode = AdminDashboardData["runner"]["mode"];
@@ -73,16 +70,11 @@ export const Route = createFileRoute("/admin")({
 function AdminDashboardPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const fetchDashboard = useServerFn(getAdminDashboard) as () => Promise<AdminDashboardData>;
-  const requestScroll = useServerFn(startAdminScroll) as (args: {
-    data: { source: AdminScrollSource; useLlm: boolean };
-  }) => Promise<StartScrollResult>;
   const [source, setSource] = useState<AdminScrollSource>("all");
-  const [useLlm, setUseLlm] = useState(false);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["admin-dashboard"],
-    queryFn: () => fetchDashboard(),
+    queryFn: () => fetchAdminDashboard(),
     staleTime: 30_000,
   });
 
@@ -106,7 +98,7 @@ function AdminDashboardPage() {
   });
 
   const startMutation = useMutation({
-    mutationFn: () => requestScroll({ data: { source, useLlm } }),
+    mutationFn: () => startAdminScrollRequest({ data: { source } }),
     onSuccess: async (result) => {
       toast.success(result.message);
       await queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
@@ -241,20 +233,15 @@ function AdminDashboardPage() {
                 </select>
               </label>
 
-              <label className="liquid-panel-soft flex items-center justify-between gap-4 rounded-lg px-4 py-3 text-sm">
+              <div className="liquid-panel-soft flex items-center justify-between gap-4 rounded-lg px-4 py-3 text-sm">
                 <span>
-                  <span className="block font-medium text-foreground">Analyse LLM</span>
+                  <span className="block font-medium text-foreground">Synthèse IA automatique</span>
                   <span className="mt-1 block text-xs text-muted-foreground">
-                    Extraction premium et preuves contextualisées.
+                    Replicate génère la description uniformisée à chaque nouvelle annonce.
                   </span>
                 </span>
-                <input
-                  type="checkbox"
-                  checked={useLlm}
-                  onChange={(event) => setUseLlm(event.target.checked)}
-                  className="h-5 w-5 accent-[var(--gold)]"
-                />
-              </label>
+                <Bot className="h-5 w-5 shrink-0 text-gold" />
+              </div>
             </div>
 
             <button
@@ -575,7 +562,7 @@ function LatestRun({ run }: { run: AuctionRun }) {
               {run.source ?? "source inconnue"}
             </span>
             <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-muted-foreground">
-              {run.useLlm ? "LLM" : "Sans LLM"}
+              {run.useLlm === false ? "Sans LLM" : "LLM auto"}
             </span>
           </div>
         </div>

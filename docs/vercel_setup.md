@@ -2,7 +2,7 @@
 
 ## Stack
 
-- TanStack Start (React 19 + Vite 7)
+- Next.js App Router (React 19)
 - TypeScript strict
 - Tailwind CSS v4 + shadcn/ui
 - Supabase JS (auth, queries, RLS)
@@ -13,8 +13,8 @@
 ```bash
 npm install
 cp .env.example .env
-# Renseigner VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY et VITE_GOOGLE_MAPS_API_KEY
-npm run dev        # http://localhost:5173
+# Renseigner les variables NEXT_PUBLIC_* ou VITE_* compatibles
+npm run dev        # http://localhost:3000
 ```
 
 ## 2. Variables d'environnement
@@ -23,7 +23,8 @@ npm run dev        # http://localhost:5173
 | ------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
 | `VITE_SUPABASE_URL`             | ✅     | URL du projet Supabase (`https://xxx.supabase.co`)                                                                   |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅     | Clé `anon` / `publishable` (publique, safe côté client)                                                              |
-| `VITE_GOOGLE_MAPS_API_KEY`      | ❌     | Clé Google Maps restreinte par domaine. Active vignettes, vue aérienne et Street View ; sinon repli OSM/placeholder. |
+| `VITE_GOOGLE_MAPS_API_KEY` / `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | ❌     | Clé Google Maps restreinte par domaine. Active vignettes, carte interactive, vue aérienne et Street View ; sinon repli OSM/placeholder. |
+| `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | ❌     | Map ID JavaScript Google Maps. Active les Advanced Markers sur la carte détail. |
 | `GITHUB_SCROLL_TOKEN`           | ❌     | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.                     |
 | `GITHUB_SCROLL_REPOSITORY`      | ❌     | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                             |
 | `GITHUB_SCROLL_WORKFLOW`        | ❌     | Workflow cible. Défaut : `data-pipeline.yml`.                                                                        |
@@ -72,7 +73,7 @@ Ce script :
 
 - **Site URL** : URL prod Vercel (ex: `https://enchères-immo.vercel.app`)
 - **Redirect URLs** :
-  - `http://localhost:5173/**`
+  - `http://localhost:3000/**`
   - `https://<your-domain>.vercel.app/**`
   - (et le cas échéant le domaine custom)
 
@@ -91,16 +92,16 @@ npm run preview    # smoke test du build
 Le projet cible Vercel. Pour déployer :
 
 1. Importer le repo dans Vercel.
-2. Framework preset : **TanStack Start** si disponible, sinon laisser Vercel détecter le build.
+2. Framework preset : **Next.js**.
 3. Build command : `npm run build`.
-4. Output directory : laisser la valeur auto générée par TanStack Start/Vite.
-5. Renseigner les env vars `VITE_SUPABASE_URL` et `VITE_SUPABASE_PUBLISHABLE_KEY` dans Project Settings → Environment Variables. Ajouter `VITE_GOOGLE_MAPS_API_KEY` si Google Maps doit être actif.
+4. Output directory : laisser la valeur auto générée par Next.js/Vercel.
+5. Renseigner les env vars Supabase publiques dans Project Settings → Environment Variables. Ajouter `VITE_GOOGLE_MAPS_API_KEY` ou `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` si Google Maps doit être actif, puis `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` pour les Advanced Markers.
 6. Donner le rôle admin via Supabase Auth `app_metadata.role = admin`.
 7. Deploy.
 
-> Note : le projet est configuré avec TanStack Start et Nitro pour générer le
-> serveur Vercel. Les variables Supabase publiques restent injectées via
-> `VITE_*`.
+> Note : le projet est configuré en Next.js App Router. Les anciennes variables
+> `VITE_*` restent lues par compatibilité, puis exposées côté Next via les
+> équivalents `NEXT_PUBLIC_*` quand nécessaire.
 
 ## 6. Tests d'acceptation
 

@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useLocation } from "@/lib/router-compat";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import LogOut from "lucide-react/dist/esm/icons/log-out.js";
 import Menu from "lucide-react/dist/esm/icons/menu.js";

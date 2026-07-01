@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@/lib/router-compat";
 import { useQuery } from "@tanstack/react-query";
 import type * as React from "react";
 import { useMemo, useState } from "react";

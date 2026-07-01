@@ -1,6 +1,5 @@
-import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { hasAdminRole, normalizeEmail } from "@/lib/account";
 
@@ -20,8 +19,8 @@ const SCROLL_SOURCES = [
 
 const startScrollSchema = z.object({
   source: z.enum(SCROLL_SOURCES).default("all"),
-  useLlm: z.boolean().default(false),
 });
+const AUTOMATIC_LLM_ENRICHMENT = true;
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -249,7 +248,6 @@ async function updateRunSummary(runId: string, summary: JsonObject, errors: Json
 async function dispatchGitHubActionsRun(
   run: AuctionRun,
   source: AdminScrollSource,
-  useLlm: boolean,
 ): Promise<Response> {
   const token = githubActionsToken();
   if (!token) throw new Error("GitHub Actions token missing.");
@@ -271,237 +269,237 @@ async function dispatchGitHubActionsRun(
       inputs: {
         run_id: run.id,
         source,
-        use_llm: String(useLlm),
       },
     }),
     signal: AbortSignal.timeout(12_000),
   });
 }
 
-export const getAdminDashboard = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<AdminDashboardData> => {
-    const adminUser = await assertAdminContext(context as AdminContext);
-    const admin = getAdminClient();
+export async function getAdminDashboard(authToken: string): Promise<AdminDashboardData> {
+  const context = await requireSupabaseAuthContext(authToken);
+  const adminUser = await assertAdminContext(context as AdminContext);
+  const admin = getAdminClient();
 
-    const runsQuery = admin
-      .from<AuctionRunRow>("auction_runs")
-      .select(RUN_COLUMNS)
-      .order("created_at", { ascending: false, nullsFirst: false })
-      .limit(25);
+  const runsQuery = admin
+    .from<AuctionRunRow>("auction_runs")
+    .select(RUN_COLUMNS)
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(25);
 
-    const [runsResult, sales, documents, extractions, riskOccurrences, scoreFactors, runsCount] =
-      await Promise.all([
-        runsQuery,
-        countRows("auction_sales"),
-        countRows("auction_documents"),
-        countRows("auction_extractions"),
-        countRows("auction_risk_occurrences"),
-        countRows("auction_score_factors"),
-        countRows("auction_runs"),
-      ]);
+  const [runsResult, sales, documents, extractions, riskOccurrences, scoreFactors, runsCount] =
+    await Promise.all([
+      runsQuery,
+      countRows("auction_sales"),
+      countRows("auction_documents"),
+      countRows("auction_extractions"),
+      countRows("auction_risk_occurrences"),
+      countRows("auction_score_factors"),
+      countRows("auction_runs"),
+    ]);
 
-    if (runsResult.error) {
-      throw new Error(runsResult.error.message ?? "Impossible de lire les runs.");
-    }
+  if (runsResult.error) {
+    throw new Error(runsResult.error.message ?? "Impossible de lire les runs.");
+  }
 
-    const runs = (runsResult.data ?? []).map(normalizeRun);
+  const runs = (runsResult.data ?? []).map(normalizeRun);
 
-    return {
-      checkedAt: new Date().toISOString(),
-      adminEmail: adminUser.email,
-      runner: {
-        instantDispatchConfigured: runnerMode() !== "queue_worker",
-        mode: runnerMode(),
-      },
-      stats: {
-        sales,
-        documents,
-        extractions,
-        riskOccurrences,
-        scoreFactors,
-        runs: runsCount,
-        queuedRuns: statusCount(runs, "queued"),
-        runningRuns: statusCount(runs, "running"),
-        failedRuns: statusCount(runs, "failed"),
-      },
-      runs,
-    };
-  });
+  return {
+    checkedAt: new Date().toISOString(),
+    adminEmail: adminUser.email,
+    runner: {
+      instantDispatchConfigured: runnerMode() !== "queue_worker",
+      mode: runnerMode(),
+    },
+    stats: {
+      sales,
+      documents,
+      extractions,
+      riskOccurrences,
+      scoreFactors,
+      runs: runsCount,
+      queuedRuns: statusCount(runs, "queued"),
+      runningRuns: statusCount(runs, "running"),
+      failedRuns: statusCount(runs, "failed"),
+    },
+    runs,
+  };
+}
 
-export const startAdminScroll = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => startScrollSchema.parse(input ?? {}))
-  .handler(async ({ context, data }): Promise<StartScrollResult> => {
-    const adminUser = await assertAdminContext(context as AdminContext);
-    const admin = getAdminClient();
-    const requestedAt = new Date().toISOString();
-    const mode = runnerMode();
-    const webhookUrl = scrollWebhookUrl();
-    const initialSummary = {
-      requested_by: adminUser.email,
-      requested_at: requestedAt,
-      trigger: "admin_dashboard",
-      runner_mode: mode,
-      runner_expectation:
-        mode === "github_actions"
-          ? "dispatch_immediate"
-          : mode === "webhook"
-            ? "webhook_immediate"
-            : "scheduled_github_actions_queue",
-    };
+export async function startAdminScroll(
+  authToken: string,
+  input: unknown,
+): Promise<StartScrollResult> {
+  const context = await requireSupabaseAuthContext(authToken);
+  const data = startScrollSchema.parse(input ?? {});
+  const adminUser = await assertAdminContext(context as AdminContext);
+  const admin = getAdminClient();
+  const requestedAt = new Date().toISOString();
+  const mode = runnerMode();
+  const webhookUrl = scrollWebhookUrl();
+  const initialSummary = {
+    requested_by: adminUser.email,
+    requested_at: requestedAt,
+    trigger: "admin_dashboard",
+    runner_mode: mode,
+    runner_expectation:
+      mode === "github_actions"
+        ? "dispatch_immediate"
+        : mode === "webhook"
+          ? "webhook_immediate"
+          : "scheduled_github_actions_queue",
+  };
 
-    const inserted = await admin
-      .from<AuctionRunRow>("auction_runs")
-      .insert({
-        status: "queued",
-        source: data.source,
-        use_llm: data.useLlm,
-        summary: initialSummary,
-        errors: {},
-      })
-      .select(RUN_COLUMNS)
-      .limit(1);
+  const inserted = await admin
+    .from<AuctionRunRow>("auction_runs")
+    .insert({
+      status: "queued",
+      source: data.source,
+      use_llm: AUTOMATIC_LLM_ENRICHMENT,
+      summary: initialSummary,
+      errors: {},
+    })
+    .select(RUN_COLUMNS)
+    .limit(1);
 
-    if (inserted.error) {
-      throw new Error(inserted.error.message ?? "Impossible de créer la demande de scroll.");
-    }
+  if (inserted.error) {
+    throw new Error(inserted.error.message ?? "Impossible de créer la demande de scroll.");
+  }
 
-    const run = normalizeRun((inserted.data ?? [])[0] ?? {});
-    if (!run.id) throw new Error("Demande créée sans identifiant de run.");
+  const run = normalizeRun((inserted.data ?? [])[0] ?? {});
+  if (!run.id) throw new Error("Demande créée sans identifiant de run.");
 
-    if (mode === "github_actions") {
-      try {
-        const response = await dispatchGitHubActionsRun(run, data.source, data.useLlm);
-        const githubSummary = {
-          ...run.summary,
-          github_actions: {
-            dispatched_at: new Date().toISOString(),
-            repository: githubActionsRepository(),
-            workflow: githubActionsWorkflow(),
-            ref: githubActionsRef(),
-            status: response.status,
-            ok: response.ok,
-          },
-        };
-        const githubErrors = response.ok
-          ? run.errors
-          : {
-              ...run.errors,
-              github_actions: `HTTP ${response.status}`,
-            };
-        await updateRunSummary(run.id, githubSummary, githubErrors);
-
-        return {
-          ok: true,
-          dispatched: response.ok,
-          dispatchMode: "github_actions",
-          run: {
-            ...run,
-            summary: githubSummary,
-            errors: githubErrors,
-          },
-          message: response.ok
-            ? "Demande envoyée au worker GitHub Actions."
-            : `Demande enregistrée, mais GitHub Actions a répondu HTTP ${response.status}. Le worker planifié prendra le relais.`,
-        };
-      } catch (error) {
-        const githubErrors = {
-          ...run.errors,
-          github_actions: error instanceof Error ? error.message : "GitHub Actions indisponible",
-        };
-        await updateRunSummary(run.id, run.summary, githubErrors);
-
-        return {
-          ok: true,
-          dispatched: false,
-          dispatchMode: "github_actions",
-          run: {
-            ...run,
-            errors: githubErrors,
-          },
-          message:
-            "Demande enregistrée, mais GitHub Actions n'a pas répondu. Le worker planifié prendra le relais.",
-        };
-      }
-    }
-
-    if (!webhookUrl) {
-      return {
-        ok: true,
-        dispatched: false,
-        dispatchMode: "queue_worker",
-        run,
-        message:
-          "Demande enregistrée. Le worker GitHub Actions planifié la prendra automatiquement dans la file.",
-      };
-    }
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    const secret = scrollWebhookSecret();
-    if (secret) headers["X-Immojudis-Secret"] = secret;
-
+  if (mode === "github_actions") {
     try {
-      const response = await fetch(webhookUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          runId: run.id,
-          source: data.source,
-          useLlm: data.useLlm,
-          requestedBy: adminUser.email,
-          requestedAt,
-        }),
-        signal: AbortSignal.timeout(12_000),
-      });
-
-      const webhookSummary = {
+      const response = await dispatchGitHubActionsRun(run, data.source);
+      const githubSummary = {
         ...run.summary,
-        webhook: {
+        github_actions: {
           dispatched_at: new Date().toISOString(),
+          repository: githubActionsRepository(),
+          workflow: githubActionsWorkflow(),
+          ref: githubActionsRef(),
           status: response.status,
           ok: response.ok,
         },
       };
-      const webhookErrors = response.ok
+      const githubErrors = response.ok
         ? run.errors
         : {
             ...run.errors,
-            webhook: `HTTP ${response.status}`,
+            github_actions: `HTTP ${response.status}`,
           };
-      await updateRunSummary(run.id, webhookSummary, webhookErrors);
+      await updateRunSummary(run.id, githubSummary, githubErrors);
 
       return {
         ok: true,
         dispatched: response.ok,
-        dispatchMode: "webhook",
+        dispatchMode: "github_actions",
         run: {
           ...run,
-          summary: webhookSummary,
-          errors: webhookErrors,
+          summary: githubSummary,
+          errors: githubErrors,
         },
         message: response.ok
-          ? "Demande envoyée au runner de scroll."
-          : `Demande enregistrée, mais le webhook a répondu HTTP ${response.status}.`,
+          ? "Demande envoyée au worker GitHub Actions."
+          : `Demande enregistrée, mais GitHub Actions a répondu HTTP ${response.status}. Le worker planifié prendra le relais.`,
       };
     } catch (error) {
-      const webhookErrors = {
+      const githubErrors = {
         ...run.errors,
-        webhook: error instanceof Error ? error.message : "Webhook indisponible",
+        github_actions: error instanceof Error ? error.message : "GitHub Actions indisponible",
       };
-      await updateRunSummary(run.id, run.summary, webhookErrors);
+      await updateRunSummary(run.id, run.summary, githubErrors);
 
       return {
         ok: true,
         dispatched: false,
-        dispatchMode: "webhook",
+        dispatchMode: "github_actions",
         run: {
           ...run,
-          errors: webhookErrors,
+          errors: githubErrors,
         },
-        message: "Demande enregistrée, mais le webhook de lancement n'a pas répondu.",
+        message:
+          "Demande enregistrée, mais GitHub Actions n'a pas répondu. Le worker planifié prendra le relais.",
       };
     }
-  });
+  }
+
+  if (!webhookUrl) {
+    return {
+      ok: true,
+      dispatched: false,
+      dispatchMode: "queue_worker",
+      run,
+      message:
+        "Demande enregistrée. Le worker GitHub Actions planifié la prendra automatiquement dans la file.",
+    };
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const secret = scrollWebhookSecret();
+  if (secret) headers["X-Immojudis-Secret"] = secret;
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        runId: run.id,
+        source: data.source,
+        useLlm: AUTOMATIC_LLM_ENRICHMENT,
+        requestedBy: adminUser.email,
+        requestedAt,
+      }),
+      signal: AbortSignal.timeout(12_000),
+    });
+
+    const webhookSummary = {
+      ...run.summary,
+      webhook: {
+        dispatched_at: new Date().toISOString(),
+        status: response.status,
+        ok: response.ok,
+      },
+    };
+    const webhookErrors = response.ok
+      ? run.errors
+      : {
+          ...run.errors,
+          webhook: `HTTP ${response.status}`,
+        };
+    await updateRunSummary(run.id, webhookSummary, webhookErrors);
+
+    return {
+      ok: true,
+      dispatched: response.ok,
+      dispatchMode: "webhook",
+      run: {
+        ...run,
+        summary: webhookSummary,
+        errors: webhookErrors,
+      },
+      message: response.ok
+        ? "Demande envoyée au runner de scroll."
+        : `Demande enregistrée, mais le webhook a répondu HTTP ${response.status}.`,
+    };
+  } catch (error) {
+    const webhookErrors = {
+      ...run.errors,
+      webhook: error instanceof Error ? error.message : "Webhook indisponible",
+    };
+    await updateRunSummary(run.id, run.summary, webhookErrors);
+
+    return {
+      ok: true,
+      dispatched: false,
+      dispatchMode: "webhook",
+      run: {
+        ...run,
+        errors: webhookErrors,
+      },
+      message: "Demande enregistrée, mais le webhook de lancement n'a pas répondu.",
+    };
+  }
+}

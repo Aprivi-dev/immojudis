@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link } from "@/lib/router-compat";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import Calendar from "lucide-react/dist/esm/icons/calendar.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";

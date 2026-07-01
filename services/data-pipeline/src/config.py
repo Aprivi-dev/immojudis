@@ -87,7 +87,7 @@ def load_settings() -> dict[str, str | float | None]:
         "replicate_thinking_budget": int(os.getenv("REPLICATE_THINKING_BUDGET", "0")),
         "replicate_dynamic_thinking": os.getenv("REPLICATE_DYNAMIC_THINKING", "false").lower()
         in {"1", "true", "yes", "on"},
-        "llm_prompt_version": os.getenv("LLM_PROMPT_VERSION", "auction_llm_v3"),
+        "llm_prompt_version": os.getenv("LLM_PROMPT_VERSION", "auction_llm_v4"),
         "llm_pdf_max_chars": int(os.getenv("LLM_PDF_MAX_CHARS", "18000")),
         "incremental_enrichment": os.getenv("INCREMENTAL_ENRICHMENT", "true").lower()
         in {"1", "true", "yes", "on"},

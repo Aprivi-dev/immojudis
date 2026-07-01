@@ -24,11 +24,6 @@ on:
           - agrasc
           - encheres_immobilieres
           - notaires
-      use_llm:
-        description: "Enable LLM enrichment"
-        required: false
-        default: false
-        type: boolean
       limit:
         description: "Optional raw listing limit"
         required: false
@@ -94,7 +89,6 @@ jobs:
             immojudis-data-pipeline-${{ runner.os }}-
 
       - name: Install OCR system packages
-        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.use_llm == 'true' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
@@ -106,7 +100,6 @@ jobs:
         env:
           REQUESTED_RUN_ID: ${{ github.event.inputs.run_id }}
           REQUESTED_SOURCE: ${{ github.event.inputs.source }}
-          REQUESTED_USE_LLM: ${{ github.event.inputs.use_llm }}
           REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
         run: |
           set -euo pipefail
@@ -115,10 +108,6 @@ jobs:
             args=(--source "${REQUESTED_SOURCE:-all}")
             if [ -n "$REQUESTED_RUN_ID" ]; then
               args+=(--run-id "$REQUESTED_RUN_ID")
-            fi
-            if [ "${REQUESTED_USE_LLM:-false}" != "true" ]; then
-              args+=(--no-llm)
-              args+=(--no-heavy-enrichment)
             fi
             if [ -n "$REQUESTED_LIMIT" ]; then
               args+=(--limit "$REQUESTED_LIMIT")

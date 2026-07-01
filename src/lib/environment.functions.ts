@@ -1,5 +1,3 @@
-import { createServerFn } from "@tanstack/react-start";
-import { setResponseHeaders } from "@tanstack/react-start/server";
 import { z } from "zod";
 
 const GEOCODING_BASE = "https://data.geopf.fr/geocodage/search";
@@ -135,55 +133,57 @@ const MONTH_LABELS = [
   "Déc",
 ] as const;
 
-export const getEnvironmentalContext = createServerFn({ method: "GET" })
-  .inputValidator((input: unknown) => inputSchema.parse(input))
-  .handler(async ({ data }): Promise<EnvironmentalContextResponse> => {
-    try {
-      const resolvedAddress = await resolveAddress({
-        address: data.address ?? null,
-        lat: data.lat ?? null,
-        lng: data.lng ?? null,
-      });
+export function environmentalContextCacheControl(response: EnvironmentalContextResponse): string {
+  return response.ok
+    ? "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800"
+    : "public, max-age=300, s-maxage=300";
+}
 
-      const endYear = new Date().getUTCFullYear() - 1;
-      const startYear = endYear - COMPLETE_YEARS_BACK + 1;
-      const archive = await fetchOpenMeteoArchive({
-        lat: resolvedAddress.latitude,
-        lng: resolvedAddress.longitude,
+export async function getEnvironmentalContext(
+  input: unknown,
+): Promise<EnvironmentalContextResponse> {
+  const data = inputSchema.parse(input);
+
+  try {
+    const resolvedAddress = await resolveAddress({
+      address: data.address ?? null,
+      lat: data.lat ?? null,
+      lng: data.lng ?? null,
+    });
+
+    const endYear = new Date().getUTCFullYear() - 1;
+    const startYear = endYear - COMPLETE_YEARS_BACK + 1;
+    const archive = await fetchOpenMeteoArchive({
+      lat: resolvedAddress.latitude,
+      lng: resolvedAddress.longitude,
+      startYear,
+      endYear,
+    });
+
+    const monthly = aggregateMonthly(archive.daily, startYear, endYear);
+    const context: EnvironmentalContext = {
+      source: "Géoplateforme + Open-Meteo Archive",
+      resolvedAddress,
+      period: {
         startYear,
         endYear,
-      });
+        years: endYear - startYear + 1,
+      },
+      weather: buildWeatherSummary(monthly),
+      sun: buildSunSummary(monthly),
+      rawUnits: archive.daily_units ?? {},
+    };
 
-      const monthly = aggregateMonthly(archive.daily, startYear, endYear);
-      const context: EnvironmentalContext = {
-        source: "Géoplateforme + Open-Meteo Archive",
-        resolvedAddress,
-        period: {
-          startYear,
-          endYear,
-          years: endYear - startYear + 1,
-        },
-        weather: buildWeatherSummary(monthly),
-        sun: buildSunSummary(monthly),
-        rawUnits: archive.daily_units ?? {},
-      };
-
-      setResponseHeaders(
-        new Headers({
-          "cache-control": "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800",
-        }),
-      );
-      return { ok: true, error: null, context };
-    } catch (err) {
-      console.error("Environmental context fetch failed", err);
-      setResponseHeaders(new Headers({ "cache-control": "public, max-age=300, s-maxage=300" }));
-      return {
-        ok: false,
-        error: "Données météo et soleil temporairement indisponibles.",
-        context: null,
-      };
-    }
-  });
+    return { ok: true, error: null, context };
+  } catch (err) {
+    console.error("Environmental context fetch failed", err);
+    return {
+      ok: false,
+      error: "Données météo et soleil temporairement indisponibles.",
+      context: null,
+    };
+  }
+}
 
 async function resolveAddress({
   address,

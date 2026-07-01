@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import Calculator from "lucide-react/dist/esm/icons/calculator.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
@@ -20,10 +19,8 @@ import {
   type MarketCeilingResult,
   type MarketCeilingScenarioKey,
 } from "@/lib/profitability";
-import {
-  getMarketEstimate,
-  type MarketEstimate as DvfMarketEstimate,
-} from "@/lib/market.functions";
+import { fetchMarketEstimate } from "@/lib/client-api";
+import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.functions";
 import {
   documentTypeLabel,
   formatDate,
@@ -125,7 +122,6 @@ export function BidCeilingAssistant({
   const surfaceInfo = getSaleSurface(sale);
   const surface = surfaceInfo.value;
   const startingPrice = sale.starting_price_eur ?? 0;
-  const fetchEstimate = useServerFn(getMarketEstimate);
   const hasMarketEstimateOverride = marketEstimateOverride != null;
 
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -166,7 +162,7 @@ export function BidCeilingAssistant({
       Math.round(surface ?? 0),
     ],
     queryFn: () =>
-      fetchEstimate({
+      fetchMarketEstimate({
         data: {
           lat: sale.latitude!,
           lng: sale.longitude!,

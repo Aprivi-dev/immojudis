@@ -56,7 +56,8 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 | ------------------------------- | :----: | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `VITE_SUPABASE_URL`             |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                                                 |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` |   ✅   | Clé `anon` / publishable (publique, côté client)                                                                                   |
-| `VITE_GOOGLE_MAPS_API_KEY`      |   ➖   | Clé navigateur Google Maps restreinte par domaine. Active vignettes, vue aérienne 3D et Street View ; sinon repli OSM/placeholder. |
+| `VITE_GOOGLE_MAPS_API_KEY` / `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` |   ➖   | Clé navigateur Google Maps restreinte par domaine. Active vignettes, carte interactive, vue aérienne 3D et Street View ; sinon repli OSM/placeholder. |
+| `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` |   ➖   | Map ID JavaScript Google Maps. Active les Advanced Markers sur la carte détail et supprime le warning de marker déprécié. |
 | `GITHUB_SCROLL_TOKEN`           |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                                           |
 
 > Les variables `VITE_*` sont **inlinées au moment du build**. En production
@@ -68,7 +69,7 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 
 ### Cartographie Google — APIs à activer
 
-Si elle est configurée, la clé `VITE_GOOGLE_MAPS_API_KEY` doit avoir ces APIs **activées** dans Google
+Si elle est configurée, la clé Google Maps doit avoir ces APIs **activées** dans Google
 Cloud :
 
 | API Google Cloud        | Alimente                                      |
@@ -77,7 +78,7 @@ Cloud :
 | **Maps JavaScript API** | Carte interactive + Street View (page détail) |
 | **Map Tiles API**       | Vue aérienne photoréaliste 3D (page détail)   |
 
-La clé doit aussi autoriser les **référents HTTP** `http://localhost:5173/*` (dev)
+La clé doit aussi autoriser les **référents HTTP** `http://localhost:3000/*` (dev)
 et le domaine de production.
 
 ## Scripts

@@ -65,12 +65,20 @@ export type AuctionSale = {
 export type SaleFilters = {
   department?: string;
   city?: string;
+  tribunal?: string;
   property_type?: string;
+  property_types?: string[];
+  min_price?: number;
   max_price?: number;
   min_surface?: number;
+  max_surface?: number;
+  min_bedrooms?: number;
+  min_bathrooms?: number;
   occupancy_status?: string;
   min_score?: number;
   tribunal_code?: string;
+  status_in?: string[];
+  keywords?: string;
   // Client-side advanced filters
   max_price_per_m2?: number;
   min_yield_pct?: number;

@@ -35,6 +35,7 @@ declare global {
         gestureHandling?: string;
         heading?: number;
         keyboardShortcuts?: boolean;
+        mapId?: string;
         mapTypeControl?: boolean;
         mapTypeId?: string;
         minZoom?: number;
@@ -60,6 +61,7 @@ declare global {
         constructor(mapDiv: HTMLElement, opts?: MapOptions);
         addListener(eventName: string, handler: () => void): MapsEventListener;
         fitBounds(bounds: LatLngBounds): void;
+        getBounds(): LatLngBounds | undefined;
         getHeading(): number | undefined;
         getZoom(): number | undefined;
         panTo(latLng: LatLngLiteral): void;
@@ -109,6 +111,8 @@ declare global {
       class LatLngBounds {
         constructor();
         extend(point: LatLngLiteral): LatLngBounds;
+        getNorthEast(): LatLng;
+        getSouthWest(): LatLng;
       }
 
       interface InfoWindowOptions {
@@ -238,6 +242,40 @@ declare global {
         }
       }
 
+      namespace marker {
+        interface AdvancedMarkerElementOptions {
+          map?: Map | null;
+          position?: LatLngLiteral | LatLngAltitudeLiteral;
+          title?: string;
+          zIndex?: number;
+        }
+
+        class AdvancedMarkerElement extends HTMLElement {
+          constructor(options?: AdvancedMarkerElementOptions);
+          map: Map | null;
+          position?: LatLngLiteral | LatLngAltitudeLiteral;
+          title: string;
+          zIndex?: number;
+        }
+
+        interface PinElementOptions {
+          background?: string;
+          borderColor?: string;
+          glyph?: string | Element | URL;
+          glyphColor?: string;
+          scale?: number;
+        }
+
+        class PinElement extends HTMLElement {
+          constructor(options?: PinElementOptions);
+          element: HTMLElement;
+        }
+      }
+
+      function importLibrary(libraryName: "marker"): Promise<{
+        AdvancedMarkerElement: typeof marker.AdvancedMarkerElement;
+        PinElement: typeof marker.PinElement;
+      }>;
       function importLibrary(libraryName: "maps3d"): Promise<typeof maps3d>;
       function importLibrary(
         libraryName: "elevation",
