@@ -1,5 +1,4 @@
 from decimal import Decimal
-from pathlib import Path
 
 from src.normalize import normalize_sale
 from src.pdf_enrichment import (

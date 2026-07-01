@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from src.models import AuctionSale
 from src.enrichment.extract_structured import LLMEnrichmentStats
+from src.models import AuctionSale
 from src.pdf_enrichment import PdfEnrichmentStats
 
 

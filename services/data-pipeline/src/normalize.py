@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
 import re
 import unicodedata
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
 from dateutil import parser
 
 from src.models import AuctionSale
-
 
 FRENCH_MONTHS = {
     "janvier": "January",
@@ -200,8 +199,8 @@ def parse_french_datetime(value: object | None) -> datetime | None:
     except (ValueError, TypeError, OverflowError):
         return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def normalize_property_type(value: object | None) -> str:
@@ -272,7 +271,7 @@ def normalize_status(value: object | None, sale_date: datetime | None = None) ->
     if text in VALID_STATUSES:
         return text
     if sale_date:
-        return "past" if sale_date < datetime.now(timezone.utc) else "upcoming"
+        return "past" if sale_date < datetime.now(UTC) else "upcoming"
     return "unknown"
 
 

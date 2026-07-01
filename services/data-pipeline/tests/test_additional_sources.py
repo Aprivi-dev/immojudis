@@ -1,8 +1,7 @@
 import json
 
 from src.raw_models import validate_raw_sales
-from src.sources import notaires
-from src.sources import petites_affiches
+from src.sources import notaires, petites_affiches
 from src.sources.agrasc import parse_agrasc_html
 from src.sources.cessions_etat import parse_cessions_etat_html
 from src.sources.encheres_immobilieres import parse_encheres_immobilieres_html

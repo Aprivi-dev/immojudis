@@ -12,7 +12,6 @@ from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
-
 BASE_URL = "https://www.vench.fr"
 LIST_URL = f"{BASE_URL}/prochaines-ventes-aux-encheres.html"
 LOGGER = logging.getLogger(__name__)

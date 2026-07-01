@@ -13,7 +13,6 @@ from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
 
-
 BASE_URL = "https://encheresimmobilieres.fr"
 LIST_URL = f"{BASE_URL}/biens-en-vente"
 LOGGER = logging.getLogger(__name__)

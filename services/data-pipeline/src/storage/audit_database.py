@@ -7,7 +7,6 @@ import psycopg
 
 from src.config import load_settings
 
-
 QUERIES = {
     "tables": """
         select c.relname as table_name, c.reltuples::bigint as estimated_rows, obj_description(c.oid) as table_comment
@@ -246,7 +245,7 @@ def run_audit() -> dict[str, list[dict[str, Any]]]:
             for name, query in QUERIES.items():
                 cursor.execute(query)
                 columns = [description.name for description in cursor.description]
-                output[name] = [dict(zip(columns, row)) for row in cursor.fetchall()]
+                output[name] = [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
     return output
 
 

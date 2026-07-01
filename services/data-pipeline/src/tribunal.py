@@ -6,7 +6,6 @@ import unicodedata
 from src.models import AuctionSale
 from src.normalize import clean_text
 
-
 CITY_TO_TRIBUNAL = {
     "bordeaux": "TJ Bordeaux",
     "floirac": "TJ Bordeaux",
@@ -154,7 +153,6 @@ def validate_tribunal(sale: AuctionSale) -> AuctionSale:
         return sale
     if sale.department not in DEPARTMENT_TRIBUNALS or not sale.tribunal:
         return sale
-    explicit = _extract_explicit_tribunal(sale.raw_text)
     sale.tribunal = canonicalize_tribunal(sale.tribunal) or sale.tribunal
     sale.tribunal_code = TRIBUNAL_CODES.get(sale.tribunal or "")
     if sale.tribunal not in AQUITAINE_TRIBUNALS:

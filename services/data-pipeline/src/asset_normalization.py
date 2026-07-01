@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from decimal import Decimal, ROUND_HALF_UP
 import json
-from pathlib import Path
 import re
+from dataclasses import dataclass, field
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+from src.config import ROOT_DIR
 from src.models import AuctionSale
 from src.normalize import clean_text
-from src.config import ROOT_DIR
 
 
 @dataclass
@@ -692,9 +691,9 @@ def _fill_booleans(sale: AuctionSale, text: str) -> None:
         "has_air_conditioning": r"\bclimatisation\b|\bclimatis[ée]\b",
         "has_double_glazing": r"double\s+vitrage",
     }
-    for field, pattern in checks.items():
-        if getattr(sale, field) is None:
-            setattr(sale, field, bool(re.search(pattern, text, re.I)))
+    for flag_name, pattern in checks.items():
+        if getattr(sale, flag_name) is None:
+            setattr(sale, flag_name, bool(re.search(pattern, text, re.I)))
 
 
 def _score_sale(sale: AuctionSale, risks: list[dict[str, Any]]) -> None:
@@ -1136,8 +1135,8 @@ def _score_amenities(sale: AuctionSale) -> ScoreComponent:
         ("has_terrace", "terrasse", Decimal("2")),
         ("has_pool", "piscine", Decimal("1")),
     )
-    for field, label, value in weights:
-        if getattr(sale, field):
+    for flag_name, label, value in weights:
+        if getattr(sale, flag_name):
             points += value
             labels.append(label)
     if sale.parking_count and sale.parking_count > 0 and not sale.has_garage:

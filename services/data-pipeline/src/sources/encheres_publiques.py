@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 import logging
 import re
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
@@ -14,7 +14,6 @@ from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
-
 
 BASE_URL = "https://www.encheres-publiques.com"
 NATIONAL_LIST_URL = f"{BASE_URL}/ventes/immobilier"
@@ -362,7 +361,7 @@ def _timestamp_to_iso(value: object) -> str | None:
         timestamp = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
-    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+    return datetime.fromtimestamp(timestamp, UTC).isoformat()
 
 
 def _timestamp_to_display(value: object) -> str | None:

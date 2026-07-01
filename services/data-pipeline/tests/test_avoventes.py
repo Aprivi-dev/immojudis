@@ -1,5 +1,4 @@
-from src.sources.avoventes import parse_avoventes_html
-from src.sources.avoventes import parse_avoventes_detail_html
+from src.sources.avoventes import parse_avoventes_detail_html, parse_avoventes_html
 
 
 def test_parse_avoventes_html_extracts_public_sale_fields() -> None:

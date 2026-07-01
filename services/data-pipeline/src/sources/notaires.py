@@ -11,7 +11,6 @@ from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
 
-
 BASE_URL = "https://www.immobilier.notaires.fr"
 API_URL = f"{BASE_URL}/pub-services/inotr-www-annonces/v1/annonces"
 TRANSACTION_TYPES = ("VAE", "VNI")

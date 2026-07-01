@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 import re
 import time
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ class RobotsRules:
     rules: tuple[tuple[str, str], ...] = ()
 
     @classmethod
-    def parse(cls, text: str, user_agent: str) -> "RobotsRules":
+    def parse(cls, text: str, user_agent: str) -> RobotsRules:
         groups: list[tuple[list[str], list[tuple[str, str]]]] = []
         agents: list[str] = []
         rules: list[tuple[str, str]] = []

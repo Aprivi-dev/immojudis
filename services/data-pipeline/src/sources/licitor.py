@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 import re
 import time
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
-from bs4 import BeautifulSoup
 import httpx
+from bs4 import BeautifulSoup
 
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import ScrapeResult
-
 
 BASE_URL = "https://www.licitor.com"
 LICITOR_ZONE_URLS = (
@@ -71,7 +70,7 @@ class RobotsRules:
     allow: tuple[str, ...] = ()
 
     @classmethod
-    def parse(cls, text: str, user_agent: str) -> "RobotsRules":
+    def parse(cls, text: str, user_agent: str) -> RobotsRules:
         groups: list[tuple[list[str], list[tuple[str, str]]]] = []
         agents: list[str] = []
         rules: list[tuple[str, str]] = []

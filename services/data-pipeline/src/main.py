@@ -1,49 +1,49 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 import logging
 import sys
 import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 
 from src.asset_normalization import normalize_asset_features
+from src.config import load_settings
 from src.dedupe import merge_duplicate_sales
 from src.enrichment.extract_structured import LLMEnrichmentStats, enrich_sale_with_llm, extract_source_description
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
 from src.export import export_sales
 from src.geocode import geocode_sale
 from src.lifecycle import mark_past_sales
+from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.pdf_enrichment import PdfEnrichmentStats, enrich_sale_from_pdfs
-from src.config import load_settings
 from src.quality import build_quality_report, format_quality_report
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
+from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.cessions_etat import scrape_cessions_etat_aquitaine_result
 from src.sources.common import ScrapeResult
 from src.sources.encheres_immobilieres import scrape_encheres_immobilieres_aquitaine_result
 from src.sources.encheres_publiques import scrape_encheres_publiques_aquitaine_result
-from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.info_encheres import scrape_info_encheres_aquitaine_result
 from src.sources.licitor import scrape_licitor_aquitaine_result
 from src.sources.notaires import scrape_notaires_aquitaine_result
 from src.sources.petites_affiches import scrape_petites_affiches_aquitaine_result
 from src.sources.vench import scrape_vench_aquitaine_result
-from src.storage.supabase_client import upsert_sales_to_supabase
-from src.storage.supabase_client import upsert_observations_to_supabase
-from src.storage.supabase_client import mark_past_sales_in_supabase
-from src.storage.supabase_client import delete_vench_sales_without_surface_in_supabase
-from src.storage.supabase_client import create_run_in_supabase, finish_run_in_supabase
 from src.storage.supabase_client import (
+    create_run_in_supabase,
+    delete_vench_sales_without_surface_in_supabase,
     fetch_enriched_content_hashes,
     fetch_known_sale_details,
+    finish_run_in_supabase,
+    mark_past_sales_in_supabase,
     touch_last_seen_for_content_hashes,
     touch_last_seen_for_source_urls,
+    upsert_observations_to_supabase,
+    upsert_sales_to_supabase,
 )
-from src.models import AuctionSale
 from src.tribunal import fill_tribunal
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -363,13 +363,13 @@ def _enabled_scrapers(
     known: dict[str, str],
     known_details: dict[str, dict[str, object]],
     fetch_detail_heavy: bool = True,
-) -> dict[str, "Callable[[], ScrapeResult]"]:
+) -> dict[str, Callable[[], ScrapeResult]]:
     """Map of enabled source name → zero-arg scraper callable, honouring the
     requested source and the per-source benchmark toggles. `known` (source_url →
     change-signature) lets list-based scrapers skip detail pages of unchanged
     listings; licitor exposes price/date only on detail pages, so it always
     fetches."""
-    candidates: list[tuple[str, bool, "Callable[[], ScrapeResult]"]] = [
+    candidates: list[tuple[str, bool, Callable[[], ScrapeResult]]] = [
         ("avoventes", True, lambda: scrape_avoventes_aquitaine_result(known=known)),
         (
             "licitor",
@@ -432,14 +432,14 @@ def _enabled_scrapers(
             lambda: scrape_notaires_aquitaine_result(max_pages=int(settings["notaires_max_pages"])),
         ),
     ]
-    enabled: dict[str, "Callable[[], ScrapeResult]"] = {}
+    enabled: dict[str, Callable[[], ScrapeResult]] = {}
     for name, benchmark_on, fn in candidates:
         if source == name or (source == "all" and benchmark_on):
             enabled[name] = fn
     return enabled
 
 
-def _timed_scrape(name: str, fn: "Callable[[], ScrapeResult]") -> tuple[ScrapeResult, float]:
+def _timed_scrape(name: str, fn: Callable[[], ScrapeResult]) -> tuple[ScrapeResult, float]:
     started = time.perf_counter()
     result = fn()
     return result, round(time.perf_counter() - started, 2)

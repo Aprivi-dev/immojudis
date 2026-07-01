@@ -32,7 +32,7 @@ class RawAuctionSale(BaseModel):
         return value if isinstance(value, list) else []
 
     @model_validator(mode="after")
-    def require_content_signal(self) -> "RawAuctionSale":
+    def require_content_signal(self) -> RawAuctionSale:
         if not any(_has_text(value) for value in (self.title, self.description, self.raw_text)):
             raise ValueError("missing title, description or raw_text")
         return self

@@ -8,7 +8,6 @@ from src.normalize import normalize_sale
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.licitor import scrape_licitor_aquitaine_result
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",

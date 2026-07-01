@@ -27,7 +27,7 @@ La source prioritaire est Avoventes. Licitor est disponible comme source optionn
 cd services/data-pipeline
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 Pour l'extraction PDF de meilleure qualite, installer aussi Docling :
@@ -51,7 +51,8 @@ Vérifier l'installation :
 
 ```bash
 source .venv/bin/activate
-pytest
+python -m pytest -q
+python -m ruff check .
 ```
 
 Lancer un run :

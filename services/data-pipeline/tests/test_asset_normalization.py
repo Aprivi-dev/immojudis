@@ -1,5 +1,5 @@
-from decimal import Decimal
 import json
+from decimal import Decimal
 from pathlib import Path
 
 from src.asset_normalization import (
