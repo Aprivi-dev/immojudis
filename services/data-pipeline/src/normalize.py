@@ -446,10 +446,11 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         source_name=clean_text(raw_sale.get("source_name")) or "avoventes",
         source_url=source_url,
         primary_source=clean_text(raw_sale.get("source_name")) or "avoventes",
-        source_urls=[source_url],
+        source_urls=normalize_source_urls(raw_sale.get("source_urls"), source_url),
         dedupe_confidence=clean_text(raw_sale.get("dedupe_confidence")),
         external_id=clean_text(raw_sale.get("external_id")),
         tribunal=clean_text(raw_sale.get("tribunal")),
+        tribunal_code=clean_text(raw_sale.get("tribunal_code")),
         department=clean_text(raw_sale.get("department")) or extract_department(postal_code),
         city=city,
         address=address,
@@ -463,6 +464,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         carrez_surface_m2=parse_surface(raw_sale.get("carrez_surface_m2")),
         app_surface_m2=parse_surface(raw_sale.get("app_surface_m2")),
         app_surface_kind=clean_text(raw_sale.get("app_surface_kind")),
+        surface_scope=clean_text(raw_sale.get("surface_scope")),
         surface_source=clean_text(raw_sale.get("surface_source")),
         surface_confidence=parse_confidence(raw_sale.get("surface_confidence")),
         surface_evidence=clean_text(raw_sale.get("surface_evidence")),
@@ -492,11 +494,36 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         risk_notes=clean_text(raw_sale.get("risk_notes")),
         investment_score=parse_price(raw_sale.get("investment_score")),
         investment_summary=clean_text(raw_sale.get("investment_summary")),
+        score_version=clean_text(raw_sale.get("score_version")),
+        score_confidence=parse_confidence(raw_sale.get("score_confidence")),
+        score_factors=raw_sale.get("score_factors") if isinstance(raw_sale.get("score_factors"), list) else [],
         quality_flags=raw_sale.get("quality_flags") if isinstance(raw_sale.get("quality_flags"), list) else [],
         raw_text=clean_text(raw_sale.get("raw_text")),
         raw_payload=raw_sale,
         observations=raw_sale.get("observations") if isinstance(raw_sale.get("observations"), list) else [],
     )
+
+
+def normalize_source_urls(value: object | None, source_url: str) -> list[str]:
+    urls: list[str] = []
+    if isinstance(value, list):
+        urls.extend(cleaned for item in value if (cleaned := clean_text(item)))
+    elif isinstance(value, dict):
+        urls.extend(cleaned for item in value.values() if (cleaned := clean_text(item)))
+    elif value:
+        cleaned = clean_text(value)
+        if cleaned:
+            urls.append(cleaned)
+    if source_url:
+        urls = [source_url, *[url for url in urls if url != source_url]]
+    seen: set[str] = set()
+    unique: list[str] = []
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        unique.append(url)
+    return unique
 
 
 def _parse_bool(value: object | None) -> bool | None:

@@ -1,6 +1,13 @@
 from decimal import Decimal
 
-from src.normalize import normalize_sale, parse_confidence, parse_french_datetime, parse_price, parse_surface
+from src.normalize import (
+    normalize_sale,
+    normalize_source_urls,
+    parse_confidence,
+    parse_french_datetime,
+    parse_price,
+    parse_surface,
+)
 
 
 def test_parse_price_handles_french_money() -> None:
@@ -56,6 +63,35 @@ def test_normalize_sale_extracts_department_and_property_type() -> None:
     assert sale.city == "Bordeaux"
     assert sale.property_type == "house"
     assert sale.status == "upcoming"
+
+
+def test_normalize_sale_preserves_collected_app_ready_metadata() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://example.test/primary",
+            "source_urls": ["https://example.test/secondary", "https://example.test/primary"],
+            "tribunal_code": "bordeaux",
+            "surface_scope": "total",
+            "score_version": "score-v1",
+            "score_confidence": "87",
+            "score_factors": [{"factor_key": "surface"}],
+        }
+    )
+
+    assert sale.source_urls == ["https://example.test/primary", "https://example.test/secondary"]
+    assert sale.tribunal_code == "bordeaux"
+    assert sale.surface_scope == "total"
+    assert sale.score_version == "score-v1"
+    assert sale.score_confidence == Decimal("0.87")
+    assert sale.score_factors == [{"factor_key": "surface"}]
+
+
+def test_normalize_source_urls_handles_mapping_and_dedupes_primary_first() -> None:
+    assert normalize_source_urls(
+        {"licitor": "https://example.test/secondary", "main": "https://example.test/primary"},
+        "https://example.test/primary",
+    ) == ["https://example.test/primary", "https://example.test/secondary"]
 
 
 def test_normalize_sale_extracts_overseas_department() -> None:

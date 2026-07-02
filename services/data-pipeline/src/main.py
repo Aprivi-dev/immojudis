@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import Any
 
 from src.asset_normalization import normalize_asset_features
 from src.config import load_settings
@@ -38,8 +39,6 @@ from src.storage.supabase_client import (
     fetch_known_sale_details,
     finish_run_in_supabase,
     mark_past_sales_in_supabase,
-    touch_last_seen_for_content_hashes,
-    touch_last_seen_for_source_urls,
     upsert_observations_to_supabase,
     upsert_sales_to_supabase,
 )
@@ -61,6 +60,56 @@ SOURCE_NAMES = (
     "agrasc",
     "encheres_immobilieres",
     "notaires",
+)
+
+KNOWN_UNCHANGED_BACKFILL_FIELDS = (
+    "source_urls",
+    "tribunal",
+    "tribunal_code",
+    "department",
+    "city",
+    "address",
+    "postal_code",
+    "property_type",
+    "title",
+    "description",
+    "surface_m2",
+    "habitable_surface_m2",
+    "land_surface_m2",
+    "carrez_surface_m2",
+    "app_surface_m2",
+    "app_surface_kind",
+    "surface_scope",
+    "surface_source",
+    "surface_confidence",
+    "surface_evidence",
+    "rooms_count",
+    "bedrooms_count",
+    "bathrooms_count",
+    "parking_count",
+    "has_garden",
+    "has_terrace",
+    "has_garage",
+    "has_pool",
+    "has_air_conditioning",
+    "has_double_glazing",
+    "visit_dates",
+    "lawyer_name",
+    "lawyer_contact",
+    "status",
+    "adjudication_price_eur",
+    "documents",
+    "latitude",
+    "longitude",
+    "occupancy_status",
+    "risk_notes",
+    "investment_score",
+    "investment_summary",
+    "score_version",
+    "score_confidence",
+    "score_factors",
+    "quality_flags",
+    "raw_text",
 )
 
 
@@ -124,17 +173,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             raw_sales.extend(result.sales)
     timings["scrape_total_seconds"] = round(time.perf_counter() - scrape_overall_started, 2)
 
-    # Annonces dont la page détail a été sautée (connues et inchangées) : on ne
-    # les normalise/enrichit pas, on rafraîchit juste leur last_seen_at.
-    skipped_detail_urls = [
-        str(s.get("source_url"))
-        for s in raw_sales
-        if s.get("_known_unchanged") and s.get("source_url")
-    ]
-    skipped_detail = len(skipped_detail_urls)
-    if skipped_detail_urls:
-        touch_last_seen_for_source_urls(skipped_detail_urls)
-    raw_sales = [s for s in raw_sales if not s.get("_known_unchanged")]
+    # Les scrapers peuvent sauter une fiche détail inchangée. On garde quand
+    # même l'annonce dans le flux pour republier les champs app-ready, en
+    # l'hydratant avec la dernière version riche connue afin de ne pas écraser
+    # Supabase avec les seules données clairsemées de listing.
+    skipped_detail = _hydrate_known_unchanged_sales(raw_sales, known_details)
 
     if options.limit is not None:
         raw_sales = raw_sales[: options.limit]
@@ -153,26 +196,19 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
     canonical_sales = merge_duplicate_sales(normalized_observations)
 
-    # ── Incrémental : sauter les annonces déjà enrichies et inchangées ────────
-    # content_hash = adresse|ville|date|prix : il change quand l'annonce change.
-    # Une annonce déjà scorée avec le même hash n'a pas besoin d'être
-    # re-téléchargée / ré-OCR / renvoyée au LLM.
-    skipped_unchanged = 0
-    to_enrich = canonical_sales
+    # ── Incrémental : éviter seulement le lourd déjà fait ─────────────────────
+    # Les annonces continuent de passer dans la finalisation + upsert pour que
+    # les champs récemment collectés (avocat, visites, images, source_blocks,
+    # corrections de géocodage) arrivent jusqu'au read model.
+    enriched_hashes: set[str] = set()
     if settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment:
-        existing_hashes = fetch_enriched_content_hashes(
+        enriched_hashes = fetch_enriched_content_hashes(
             [sale.content_hash for sale in canonical_sales if sale.content_hash]
         )
-        if existing_hashes:
-            to_enrich = [sale for sale in canonical_sales if sale.content_hash not in existing_hashes]
-            skipped = [sale for sale in canonical_sales if sale.content_hash in existing_hashes]
-            skipped_unchanged = len(skipped)
-            touched = touch_last_seen_for_content_hashes([sale.content_hash for sale in skipped])
+        if enriched_hashes:
             LOGGER.info(
-                "Incrémental : %s annonces déjà enrichies sautées (last_seen rafraîchi: %s), %s à enrichir",
-                skipped_unchanged,
-                touched,
-                len(to_enrich),
+                "Incrémental : %s content_hash déjà enrichis; OCR/LLM seront sautés mais les lignes seront republiées",
+                len(enriched_hashes),
             )
 
     pdf_stats = PdfEnrichmentStats()
@@ -190,7 +226,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     enrich_started = time.perf_counter()
     failed_urls: set[str] = set()
 
-    for sale in to_enrich:
+    for sale in canonical_sales:
         sale.last_run_id = run_id
 
     # Les ventes doivent être visibles même si PDF/OCR/LLM prend trop longtemps
@@ -200,7 +236,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     early_observations_upserted = 0
     app_ready: list[AuctionSale] = []
     started = time.perf_counter()
-    for sale in to_enrich:
+    for sale in canonical_sales:
         try:
             _finalize_sale_for_app(sale, geocode=False)
             app_ready.append(sale)
@@ -221,7 +257,12 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             errors.setdefault("supabase", []).append(str(exc))
 
     heavy_targets = (
-        [sale for sale in app_ready if _needs_heavy_enrichment(sale, use_llm=options.use_llm)]
+        [
+            sale
+            for sale in app_ready
+            if _needs_heavy_enrichment(sale, use_llm=options.use_llm)
+            and sale.content_hash not in enriched_hashes
+        ]
         if options.heavy_enrichment
         else []
     )
@@ -266,7 +307,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
     # ── Phase 3 : finition (géocode réseau léger, tribunal, scoring) ─────────
     started = time.perf_counter()
-    for sale in heavy_targets:
+    for sale in app_ready:
         try:
             _finalize_sale_for_app(sale)
         except Exception as exc:
@@ -277,7 +318,8 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     timings["enrich_pdf_workers"] = pdf_workers
     timings["enrich_llm_workers"] = llm_workers
     timings["heavy_enrich_targets"] = len(heavy_targets)
-    timings["heavy_enrich_skipped"] = len(app_ready) - len(heavy_targets)
+    heavy_enrich_skipped = len(app_ready) - len(heavy_targets)
+    timings["heavy_enrich_skipped"] = heavy_enrich_skipped
 
     enriched = app_ready
     lifecycle_stats.marked_past += mark_past_sales(enriched).marked_past
@@ -296,7 +338,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         "normalized": len(normalized_observations),
         "deduplicated": len(canonical_sales),
         "skipped_detail": skipped_detail,
-        "skipped_unchanged": skipped_unchanged,
+        "skipped_unchanged": heavy_enrich_skipped,
         "enriched": len(enriched),
         "quality_report": quality_report,
         "timings": timings,
@@ -305,9 +347,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     if options.upsert:
         try:
             started = time.perf_counter()
-            if heavy_targets:
-                final_upserted = upsert_sales_to_supabase(heavy_targets)
-                final_observations_upserted = upsert_observations_to_supabase(heavy_targets)
+            if app_ready:
+                final_upserted = upsert_sales_to_supabase(app_ready)
+                final_observations_upserted = upsert_observations_to_supabase(app_ready)
             upserted = max(early_upserted, final_upserted)
             observations_upserted = max(early_observations_upserted, final_observations_upserted)
             supabase_cleaned_past = mark_past_sales_in_supabase()
@@ -338,7 +380,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print(f"- normalized: {len(normalized_observations)}")
     print(f"- deduplicated: {len(canonical_sales)}")
     print(f"- skipped_detail: {skipped_detail}")
-    print(f"- skipped_unchanged: {skipped_unchanged}")
+    print(f"- skipped_unchanged: {heavy_enrich_skipped}")
     print(f"- enriched: {len(enriched)}")
     print(f"- upserted: {upserted}")
     print(f"- observations_upserted: {observations_upserted}")
@@ -355,6 +397,52 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
     return 0
+
+
+def _hydrate_known_unchanged_sales(
+    raw_sales: list[dict[str, object]],
+    known_details: dict[str, dict[str, object]],
+) -> int:
+    skipped = 0
+    for sale in raw_sales:
+        if not sale.get("_known_unchanged"):
+            continue
+        skipped += 1
+        source_url = str(sale.get("source_url") or "")
+        known = known_details.get(source_url)
+        if not known:
+            continue
+        _backfill_raw_sale_from_known_detail(sale, known)
+    return skipped
+
+
+def _backfill_raw_sale_from_known_detail(
+    sale: dict[str, object],
+    known: dict[str, object],
+) -> None:
+    for key in KNOWN_UNCHANGED_BACKFILL_FIELDS:
+        if _is_missing_raw_value(sale.get(key)) and not _is_missing_raw_value(known.get(key)):
+            sale[key] = known[key]
+
+    known_payload = known.get("raw_payload")
+    if not isinstance(known_payload, dict):
+        return
+    for key in (
+        "source_blocks",
+        "source_images",
+        "raw_image_url",
+        "source_description",
+        "llm_display_description",
+        "document_analysis",
+        "investment_analysis",
+        "llm_due_diligence",
+    ):
+        if _is_missing_raw_value(sale.get(key)) and not _is_missing_raw_value(known_payload.get(key)):
+            sale[key] = known_payload[key]
+
+
+def _is_missing_raw_value(value: Any) -> bool:
+    return value is None or value == "" or value == [] or value == {}
 
 
 def _enabled_scrapers(

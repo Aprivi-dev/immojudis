@@ -384,7 +384,8 @@ function LawyerPreparationCard({
   sale: AuctionSale;
 }) {
   const sourceHref = cleanHref(sale.source_url);
-  const contact = cleanContactValue(sale.lawyer_contact);
+  const lawyerName = saleLawyerName(sale);
+  const contact = cleanContactValue(saleLawyerContact(sale));
   const contactHref = lawyerContactHref(contact);
 
   return (
@@ -396,7 +397,7 @@ function LawyerPreparationCard({
             Avocat
           </div>
           <div className="mt-2 text-sm font-semibold text-foreground">
-            {sale.lawyer_name ?? "Avocat à confirmer"}
+            {lawyerName ?? "Avocat à confirmer"}
           </div>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             {contact ?? "Coordonnées à vérifier dans l'annonce ou auprès du greffe."}
@@ -434,7 +435,8 @@ function LawyerPreparationCard({
 }
 
 function LawyerContactPanel({ sale }: { sale: AuctionSale }) {
-  const contact = cleanContactValue(sale.lawyer_contact);
+  const lawyerName = saleLawyerName(sale);
+  const contact = cleanContactValue(saleLawyerContact(sale));
   const contactHref = lawyerContactHref(contact);
   const sourceHref = cleanHref(sale.source_url);
   const questions = lawyerQuestions(sale);
@@ -449,7 +451,7 @@ function LawyerContactPanel({ sale }: { sale: AuctionSale }) {
             prioritaires.
           </p>
           <dl className="mt-4 grid gap-2 text-sm">
-            <CostRow label="Avocat identifié" value={sale.lawyer_name ?? "À confirmer"} />
+            <CostRow label="Avocat identifié" value={lawyerName ?? "À confirmer"} />
             <CostRow label="Contact" value={contact ?? "À récupérer"} />
             <CostRow
               label="Tribunal"
@@ -1744,13 +1746,13 @@ function ReviewedByBlock({
 
 function OpenHousesBlock({ sale }: { sale: AuctionSale }) {
   const location = sale.tribunal ?? sale.tribunal_name ?? "Tribunal à confirmer";
+  const lawyerName = cleanContactValue(saleLawyerName(sale));
+  const lawyerContact = cleanContactValue(saleLawyerContact(sale));
   const rows = [
     ["Audience", formatDate(sale.sale_date), location],
     [
       "Avocat",
-      cleanContactValue(sale.lawyer_name) ??
-        cleanContactValue(sale.lawyer_contact) ??
-        "À identifier",
+      lawyerName ?? lawyerContact ?? "À identifier",
       "Identifier le contact avant audience",
     ],
     [
@@ -3734,12 +3736,14 @@ function SaleAndTaxHistoryBlock({
 
 function PublicRecordBlock({ sale }: { sale: AuctionSale }) {
   const surface = getDisplaySurface(sale);
+  const visitDates = saleVisitDates(sale);
   const facts = [
     ["Type", propertyTypeLabel(sale.property_type)],
     ["Surface", surface.value ? surface.label : "Non précisée"],
     ["Pièces", sale.rooms_count != null ? String(sale.rooms_count) : "Non précisé"],
     ["Chambres", sale.bedrooms_count != null ? String(sale.bedrooms_count) : "Non précisé"],
     ["Tribunal", sale.tribunal ?? sale.tribunal_name ?? "À confirmer"],
+    ["Visites", visitDates.length ? visitDates.slice(0, 2).join(" · ") : "À vérifier"],
     ["Consignation", sourceBlockMoney(sale, "consignation") ?? "À vérifier"],
     ["Occupation", occupancyLabel(sale.occupancy_status)],
     ["Documents", `${countDocuments(sale)} pièce${countDocuments(sale) > 1 ? "s" : ""}`],
@@ -4513,17 +4517,61 @@ function normalizeLocation(value: string | null | undefined): string {
     .trim();
 }
 
-function sourceBlockText(sale: AuctionSale, key: string): string | null {
-  const value = sale.source_blocks?.[key];
-  if (typeof value === "string" && value.trim()) return value;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+function sourceBlockText(sale: AuctionSale, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = sourceBlockValue(sale, key);
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
   return null;
 }
 
 function sourceBlockMoney(sale: AuctionSale, key: string): string | null {
-  const value = sale.source_blocks?.[key];
+  const value = sourceBlockValue(sale, key);
   const amount = typeof value === "number" ? value : Number(value);
   return Number.isFinite(amount) && amount > 0 ? formatPrice(amount) : null;
+}
+
+function sourceBlockValue(sale: AuctionSale, key: string): unknown {
+  const direct = sale.source_blocks?.[key];
+  if (direct != null && direct !== "") return direct;
+  for (const blocks of Object.values(sale.source_blocks_by_source ?? {})) {
+    if (!blocks || typeof blocks !== "object") continue;
+    const value = blocks[key];
+    if (value != null && value !== "") return value;
+  }
+  return null;
+}
+
+function saleLawyerName(sale: AuctionSale): string | null {
+  return (
+    sale.lawyer_name ?? sourceBlockText(sale, "avocat", "lawyer_name", "notary_name", "organizer")
+  );
+}
+
+function saleLawyerContact(sale: AuctionSale): string | null {
+  return (
+    sale.lawyer_contact ??
+    sourceBlockText(sale, "contact_avocat", "lawyer_contact", "contact", "telephone", "phone")
+  );
+}
+
+function saleVisitDates(sale: AuctionSale): string[] {
+  const raw = Array.isArray(sale.visit_dates) ? sale.visit_dates : [];
+  const collected = raw.filter(
+    (item): item is string => typeof item === "string" && item.trim().length > 0,
+  );
+  const blockVisit = sourceBlockText(
+    sale,
+    "visites",
+    "visite",
+    "date_de_visite",
+    "detail_date_de_visite",
+    "visit_dates",
+  );
+  return [...collected, ...(blockVisit ? [blockVisit] : [])].filter(
+    (value, index, values) => values.indexOf(value) === index,
+  );
 }
 
 type SaleSourceLink = { label: string; href: string };

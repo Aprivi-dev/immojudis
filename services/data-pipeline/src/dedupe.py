@@ -137,7 +137,7 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
         incoming = getattr(source, field)
         if _is_empty(current) and not _is_empty(incoming):
             setattr(target, field, incoming)
-        elif field in {"documents", "quality_flags"} and isinstance(current, list) and isinstance(incoming, list):
+        elif field in {"documents", "quality_flags", "score_factors"} and isinstance(current, list) and isinstance(incoming, list):
             setattr(target, field, _merge_lists(current, incoming))
         elif field == "raw_payload" and isinstance(current, dict) and isinstance(incoming, dict):
             current.setdefault("merged_sources", [])
@@ -264,6 +264,7 @@ def _mergeable_fields() -> tuple[str, ...]:
     return (
         "external_id",
         "tribunal",
+        "tribunal_code",
         "department",
         "city",
         "address",
@@ -277,6 +278,7 @@ def _mergeable_fields() -> tuple[str, ...]:
         "carrez_surface_m2",
         "app_surface_m2",
         "app_surface_kind",
+        "surface_scope",
         "surface_source",
         "surface_confidence",
         "surface_evidence",
@@ -304,6 +306,9 @@ def _mergeable_fields() -> tuple[str, ...]:
         "risk_notes",
         "investment_score",
         "investment_summary",
+        "score_version",
+        "score_confidence",
+        "score_factors",
         "quality_flags",
         "raw_payload",
     )

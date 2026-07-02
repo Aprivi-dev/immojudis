@@ -426,8 +426,17 @@ KNOWN_SALE_DETAIL_SELECT = ",".join(
         "source_urls",
         "sale_date",
         "starting_price_eur",
+        "visit_dates",
+        "lawyer_name",
+        "lawyer_contact",
+        "status",
+        "adjudication_price_eur",
         "score_version",
+        "score_confidence",
+        "score_factors",
+        "quality_flags",
         "tribunal",
+        "tribunal_code",
         "department",
         "city",
         "address",
@@ -441,6 +450,7 @@ KNOWN_SALE_DETAIL_SELECT = ",".join(
         "carrez_surface_m2",
         "app_surface_m2",
         "app_surface_kind",
+        "surface_scope",
         "surface_source",
         "surface_confidence",
         "surface_evidence",
@@ -457,6 +467,7 @@ KNOWN_SALE_DETAIL_SELECT = ",".join(
         "occupancy_status",
         "documents",
         "raw_text",
+        "raw_payload",
     )
 )
 
@@ -514,6 +525,8 @@ def _known_source_urls(row: dict[str, Any]) -> list[str]:
     urls = [row.get("source_url")]
     if isinstance(row.get("source_urls"), list):
         urls.extend(row["source_urls"])
+    elif isinstance(row.get("source_urls"), dict):
+        urls.extend(row["source_urls"].values())
     return [str(url) for url in urls if url]
 
 
