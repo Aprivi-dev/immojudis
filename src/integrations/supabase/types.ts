@@ -440,6 +440,7 @@ export type Database = {
       v_auction_sales_app: {
         Row: {
           address: string | null;
+          adjudication_price_eur: number | null;
           about_description: string | null;
           app_surface_kind: string | null;
           app_surface_m2: number | null;
@@ -467,6 +468,8 @@ export type Database = {
           investment_summary: string | null;
           land_surface_m2: number | null;
           latitude: number | null;
+          lawyer_contact: string | null;
+          lawyer_name: string | null;
           llm_display_description: string | null;
           longitude: number | null;
           media: Json | null;
@@ -483,6 +486,7 @@ export type Database = {
           score_version: string | null;
           source_name: string | null;
           source_blocks: Json | null;
+          source_blocks_by_source: Json | null;
           source_description: string | null;
           source_url: string | null;
           source_urls: Json | null;
@@ -498,6 +502,7 @@ export type Database = {
           tribunal_code: string | null;
           tribunal_name: string | null;
           updated_at: string | null;
+          visit_dates: Json | null;
         };
         Relationships: [];
       };

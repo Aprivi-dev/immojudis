@@ -132,6 +132,12 @@ export function buildSaleProductSources({
   const documentCount = (sale.documents_rich?.length ?? 0) || parseDocs(sale.documents).length;
   const addressLabel = [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
   const cityLabel = sale.city ?? "le secteur";
+  const lawyerName =
+    sale.lawyer_name ?? textBlock(sale, "avocat", "lawyer_name", "notary_name", "organizer");
+  const lawyerContact =
+    sale.lawyer_contact ??
+    textBlock(sale, "contact_avocat", "lawyer_contact", "contact", "telephone", "phone");
+  const visitDates = saleVisitDates(sale);
   const environmentalSourceLabel = environmentalContext
     ? `Open-Meteo ${environmentalContext.period.startYear}-${environmentalContext.period.endYear}`
     : environmentalLoading
@@ -230,9 +236,15 @@ export function buildSaleProductSources({
         detail: sale.tribunal ?? sale.tribunal_name ?? "Tribunal à confirmer",
       },
       {
+        label: "Visites",
+        value: visitDates.length ? visitDates.slice(0, 2).join(" · ") : "À vérifier",
+        detail:
+          visitDates.length > 2 ? `${visitDates.length} créneaux collectés` : "Source annonce",
+      },
+      {
         label: "Avocat",
-        value: sale.lawyer_name ?? "À confirmer",
-        detail: sale.lawyer_contact ? "Coordonnées disponibles" : "Contact à récupérer",
+        value: lawyerName ?? "À confirmer",
+        detail: lawyerContact ? "Coordonnées disponibles" : "Contact à récupérer",
       },
       {
         label: "Consignation",
@@ -313,7 +325,11 @@ export function buildSaleProductSources({
           { label: "Paiement", value: textBlock(sale, "seance_paiement") ?? "À vérifier" },
           {
             label: "Avocat / Notaire",
-            value: textBlock(sale, "notary_name") ?? sale.lawyer_name ?? "À confirmer",
+            value: textBlock(sale, "notary_name") ?? lawyerName ?? "À confirmer",
+          },
+          {
+            label: "Visites",
+            value: visitDates.length ? visitDates.join(" · ") : "À vérifier",
           },
         ],
       },
@@ -450,11 +466,11 @@ export function buildSaleProductSources({
       },
     ],
     agentFacts: [
-      { label: "Contact", value: sale.lawyer_name ?? "Avocat à confirmer" },
+      { label: "Contact", value: lawyerName ?? "Avocat à confirmer" },
       {
         label: "Réponse",
-        value: sale.lawyer_contact ? "Coordonnées disponibles" : "À compléter",
-        detail: sale.lawyer_contact ?? undefined,
+        value: lawyerContact ? "Coordonnées disponibles" : "À compléter",
+        detail: lawyerContact ?? undefined,
       },
       { label: "Préparation", value: action, detail: primaryCheck },
     ],
@@ -626,17 +642,48 @@ function buildRiskCards(sale: AuctionSale): ProductRisk[] {
   ];
 }
 
-function textBlock(sale: AuctionSale, key: string): string | null {
-  const value = sale.source_blocks?.[key];
-  if (typeof value === "string" && value.trim()) return value;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+function textBlock(sale: AuctionSale, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = sourceBlockValue(sale, key);
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
   return null;
 }
 
 function moneyBlock(sale: AuctionSale, key: string): string | null {
-  const value = sale.source_blocks?.[key];
+  const value = sourceBlockValue(sale, key);
   const amount = typeof value === "number" ? value : Number(value);
   return Number.isFinite(amount) && amount > 0 ? formatPrice(amount) : null;
+}
+
+function sourceBlockValue(sale: AuctionSale, key: string): unknown {
+  const direct = sale.source_blocks?.[key];
+  if (direct != null && direct !== "") return direct;
+  for (const blocks of Object.values(sale.source_blocks_by_source ?? {})) {
+    if (!blocks || typeof blocks !== "object") continue;
+    const value = blocks[key];
+    if (value != null && value !== "") return value;
+  }
+  return null;
+}
+
+function saleVisitDates(sale: AuctionSale): string[] {
+  const raw = Array.isArray(sale.visit_dates) ? sale.visit_dates : [];
+  const collected = raw.filter(
+    (item): item is string => typeof item === "string" && item.trim().length > 0,
+  );
+  const blockVisit = textBlock(
+    sale,
+    "visites",
+    "visite",
+    "date_de_visite",
+    "detail_date_de_visite",
+    "visit_dates",
+  );
+  return [...collected, ...(blockVisit ? [blockVisit] : [])].filter(
+    (value, index, values) => values.indexOf(value) === index,
+  );
 }
 
 function relativeDateLabel(value: string | null | undefined): string {
