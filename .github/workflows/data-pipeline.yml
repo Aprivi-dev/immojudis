@@ -53,6 +53,7 @@ jobs:
       REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
       LLM_ENABLED: true
       LLM_PROVIDER: replicate
+      LLM_PROMPT_VERSION: auction_llm_v5
       PDF_EXTRACTOR: auto
       PDF_DOCLING_ENABLED: true
       PDF_OCR_ENABLED: true

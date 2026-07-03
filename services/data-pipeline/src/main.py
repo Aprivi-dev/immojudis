@@ -203,7 +203,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     enriched_hashes: set[str] = set()
     if settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment:
         enriched_hashes = fetch_enriched_content_hashes(
-            [sale.content_hash for sale in canonical_sales if sale.content_hash]
+            [sale.content_hash for sale in canonical_sales if sale.content_hash],
+            require_llm_description=options.use_llm,
+            prompt_version=str(settings["llm_prompt_version"]),
         )
         if enriched_hashes:
             LOGGER.info(
@@ -261,7 +263,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             sale
             for sale in app_ready
             if _needs_heavy_enrichment(sale, use_llm=options.use_llm)
-            and sale.content_hash not in enriched_hashes
+            and not _heavy_enrichment_already_current(sale, enriched_hashes, use_llm=options.use_llm)
         ]
         if options.heavy_enrichment
         else []
@@ -433,6 +435,8 @@ def _backfill_raw_sale_from_known_detail(
         "raw_image_url",
         "source_description",
         "llm_display_description",
+        "llm_display_description_word_count",
+        "llm_prompt_version",
         "document_analysis",
         "investment_analysis",
         "llm_due_diligence",
@@ -544,11 +548,7 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
 
 
 def _needs_heavy_enrichment(sale: AuctionSale, *, use_llm: bool = True) -> bool:
-    source_description = extract_source_description(sale)
-    needs_display_description = bool(
-        source_description and not clean_payload_text(sale.raw_payload.get("llm_display_description"))
-    )
-    if use_llm and needs_display_description:
+    if use_llm and _needs_llm_display_description_refresh(sale):
         return True
     if not sale.documents and not sale.raw_text:
         return False
@@ -565,6 +565,56 @@ def _needs_heavy_enrichment(sale: AuctionSale, *, use_llm: bool = True) -> bool:
     has_occupancy = bool(sale.occupancy_status and sale.occupancy_status != "unknown")
     needs_rooms = sale.property_type not in {"land", "parking"} and sale.rooms_count is None
     return not (has_surface and has_type and has_occupancy and not needs_rooms)
+
+
+def _heavy_enrichment_already_current(
+    sale: AuctionSale,
+    enriched_hashes: set[str],
+    *,
+    use_llm: bool = True,
+) -> bool:
+    if not sale.content_hash or sale.content_hash not in enriched_hashes:
+        return False
+    if use_llm and _needs_llm_display_description_refresh(sale):
+        return False
+    return True
+
+
+def _needs_llm_display_description_refresh(sale: AuctionSale) -> bool:
+    if not _sale_has_llm_context(sale):
+        return False
+    display_description = clean_payload_text(sale.raw_payload.get("llm_display_description"))
+    if not display_description:
+        return True
+    current_prompt_version = clean_payload_text(load_settings().get("llm_prompt_version"))
+    if not current_prompt_version:
+        return False
+    return clean_payload_text(sale.raw_payload.get("llm_prompt_version")) != current_prompt_version
+
+
+def _sale_has_llm_context(sale: AuctionSale) -> bool:
+    if extract_source_description(sale):
+        return True
+    if sale.documents:
+        return True
+    if any(
+        clean_payload_text(value)
+        for value in (
+            sale.raw_text,
+            sale.description,
+            sale.title,
+            sale.city,
+            sale.address,
+            sale.property_type,
+            sale.occupancy_status,
+            sale.risk_notes,
+        )
+    ):
+        return True
+    if any((sale.surface_m2, sale.app_surface_m2, sale.rooms_count, sale.bedrooms_count)):
+        return True
+    blocks = sale.raw_payload.get("source_blocks") if isinstance(sale.raw_payload, dict) else None
+    return isinstance(blocks, dict) and any(clean_payload_text(value) for value in blocks.values())
 
 
 def clean_payload_text(value: object | None) -> str | None:

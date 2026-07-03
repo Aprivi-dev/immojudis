@@ -128,6 +128,9 @@ UNUSABLE_SOURCE_DESCRIPTION_RE = re.compile(
     r"pour\s+consulter\s+l['’]int[ée]gralit[ée]|vous\s+devez\s+[êe]tre\s+abonn[ée]",
     re.I,
 )
+DISPLAY_DESCRIPTION_MAX_WORDS = 115
+DISPLAY_DESCRIPTION_MAX_CHARS = 850
+DISPLAY_DESCRIPTION_MIN_CONFIDENCE = 0.55
 
 PropertyType = Literal[
     "apartment",
@@ -309,12 +312,10 @@ def enrich_sale_with_llm(
     prompt_version = str(settings["llm_prompt_version"])
     cache_key = _llm_cache_key(llm_context, model_name, prompt_version=prompt_version)
     cached = _load_cached_extraction(sale, cache_key, output_dir) if settings["incremental_enrichment"] else None
-    if cached is None and settings["incremental_enrichment"]:
-        cached = _load_cached_extraction(sale, _legacy_llm_cache_key(llm_context, model_name), output_dir)
     if cached is not None:
         extraction = cached
         stats.valid_json += 1
-        _apply_extraction_to_sale(sale, extraction, stats, llm_context)
+        _apply_extraction_to_sale(sale, extraction, stats, llm_context, prompt_version=prompt_version)
         sale.raw_payload["llm_extraction"] = extraction.model_dump()
         sale.raw_payload["llm_cache_hit"] = True
         return stats
@@ -330,7 +331,7 @@ def enrich_sale_with_llm(
 
     stats.valid_json += 1
     _save_extraction(sale, extraction, output_dir, cache_key=cache_key, model=model_name, prompt_version=prompt_version)
-    _apply_extraction_to_sale(sale, extraction, stats, llm_context)
+    _apply_extraction_to_sale(sale, extraction, stats, llm_context, prompt_version=prompt_version)
     sale.raw_payload["llm_extraction"] = extraction.model_dump()
     sale.raw_payload["llm_cache_hit"] = False
     return stats
@@ -374,6 +375,10 @@ def build_source_page_context(sale: AuctionSale, max_chars: int = 5000) -> str |
     metadata = _source_metadata_section(sale)
     if metadata:
         sections.append(metadata)
+
+    structured_metadata = _structured_sale_context(sale)
+    if structured_metadata:
+        sections.append(structured_metadata)
 
     for index, payload in enumerate(payloads):
         sections.extend(_source_payload_sections(payload, sale, include_raw_text=not (index == 0 and primary_raw_text)))
@@ -513,9 +518,62 @@ def _source_metadata_section(sale: AuctionSale) -> str | None:
     return f"[ANNONCE SOURCE]\n{text}" if text else None
 
 
+def _structured_sale_context(sale: AuctionSale) -> str | None:
+    llm_payload = sale.raw_payload.get("llm_extraction") if isinstance(sale.raw_payload, dict) else None
+    previous_llm = llm_payload if isinstance(llm_payload, dict) else {}
+    surface_m2 = None if sale.surface_source == "llm" else sale.surface_m2
+    rooms_count = None if _same_int(previous_llm.get("rooms_count"), sale.rooms_count) else sale.rooms_count
+    bedrooms_count = None if _same_int(previous_llm.get("bedrooms_count"), sale.bedrooms_count) else sale.bedrooms_count
+    occupancy_status = (
+        None
+        if clean_text(previous_llm.get("occupancy_status")) == clean_text(sale.occupancy_status)
+        else sale.occupancy_status
+    )
+    parts = [
+        _metadata_line("Type normalisé", sale.property_type),
+        _metadata_line("Surface principale", _decimal_text(surface_m2, "m2")),
+        _metadata_line("Surface habitable", _decimal_text(sale.habitable_surface_m2, "m2")),
+        _metadata_line("Surface Carrez", _decimal_text(sale.carrez_surface_m2, "m2")),
+        _metadata_line("Surface terrain", _decimal_text(sale.land_surface_m2, "m2")),
+        _metadata_line("Surface applicative", _decimal_text(sale.app_surface_m2, "m2")),
+        _metadata_line("Pièces", rooms_count),
+        _metadata_line("Chambres", bedrooms_count),
+        _metadata_line("Salles de bain", sale.bathrooms_count),
+        _metadata_line("Stationnements", sale.parking_count),
+        _metadata_line("Jardin", _bool_text(sale.has_garden)),
+        _metadata_line("Terrasse", _bool_text(sale.has_terrace)),
+        _metadata_line("Garage", _bool_text(sale.has_garage)),
+        _metadata_line("Piscine", _bool_text(sale.has_pool)),
+        _metadata_line("Occupation extraite", occupancy_status),
+    ]
+    text = "\n".join(part for part in parts if part)
+    return f"[DONNEES STRUCTUREES EXTRAITES]\n{text}" if text else None
+
+
 def _metadata_line(label: str, value: Any) -> str | None:
     text = clean_text(value)
     return f"{label}: {text}" if text else None
+
+
+def _decimal_text(value: Decimal | None, suffix: str) -> str | None:
+    if value is None:
+        return None
+    return f"{value} {suffix}"
+
+
+def _bool_text(value: bool | None) -> str | None:
+    if value is None:
+        return None
+    return "oui" if value else "non"
+
+
+def _same_int(left: Any, right: int | None) -> bool:
+    if right is None:
+        return False
+    try:
+        return int(left) == right
+    except (TypeError, ValueError):
+        return False
 
 
 def _source_payloads_for_sale(sale: AuctionSale) -> list[dict[str, Any]]:
@@ -636,21 +694,16 @@ def _llm_error_message(sale: AuctionSale, exc: Exception) -> str:
     return f"LLM extraction failed [{source}] {sale.source_url} — {title}: {detail[:500]}"
 
 
-def _legacy_llm_cache_key(context: str, model: str) -> str:
-    digest = hashlib.sha256()
-    digest.update(model.encode("utf-8"))
-    digest.update(b"\0")
-    digest.update(context.encode("utf-8"))
-    return digest.hexdigest()
-
-
 def _apply_extraction_to_sale(
     sale: AuctionSale,
     extraction: LLMExtraction,
     stats: LLMEnrichmentStats,
     context: str = "",
+    prompt_version: str | None = None,
 ) -> None:
     confidence = extraction.confidence
+    if prompt_version:
+        sale.raw_payload["llm_prompt_version"] = prompt_version
     if extraction.surface_m2 is not None:
         stats.surface_detected += 1
     if extraction.rooms_count is not None:
@@ -698,9 +751,10 @@ def _apply_extraction_to_sale(
         if confidence.get("property_type", 0) >= 0.7:
             sale.property_type = extraction.property_type
 
-    display_description = clean_text(extraction.display_description)
-    if display_description and sale.raw_payload.get("source_description"):
+    display_description = _normalize_display_description(extraction.display_description)
+    if display_description and confidence.get("display_description", 1.0) >= DISPLAY_DESCRIPTION_MIN_CONFIDENCE:
         sale.raw_payload["llm_display_description"] = display_description
+        sale.raw_payload["llm_display_description_word_count"] = len(display_description.split())
 
     risk_notes = _format_risk_notes(extraction)
     if risk_notes:
@@ -728,6 +782,24 @@ def _format_risk_notes(extraction: LLMExtraction) -> str | None:
     if extraction.investor_notes:
         parts.append("Notes investisseur: " + extraction.investor_notes)
     return " | ".join(parts) if parts else None
+
+
+def _normalize_display_description(value: str | None) -> str | None:
+    text = clean_text(value)
+    if not text:
+        return None
+    text = re.sub(r"^(?:description|synthèse|synthese)\s*:\s*", "", text, flags=re.I).strip()
+    words = text.split()
+    if len(words) > DISPLAY_DESCRIPTION_MAX_WORDS:
+        text = " ".join(words[:DISPLAY_DESCRIPTION_MAX_WORDS]).rstrip(" ,;:")
+        if not re.search(r"[.!?]$", text):
+            text += "."
+    if len(text) > DISPLAY_DESCRIPTION_MAX_CHARS:
+        truncated = text[:DISPLAY_DESCRIPTION_MAX_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:")
+        text = truncated if truncated else text[:DISPLAY_DESCRIPTION_MAX_CHARS].rstrip(" ,;:")
+        if not re.search(r"[.!?]$", text):
+            text += "."
+    return clean_text(text)
 
 
 def _due_diligence_payload(extraction: LLMExtraction) -> dict[str, Any]:

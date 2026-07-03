@@ -18,7 +18,8 @@ except ModuleNotFoundError as exc:
     del sys.modules["src.export"]
 
 
-def test_needs_heavy_enrichment_skips_complete_sale() -> None:
+def test_needs_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
+    monkeypatch.setattr(main, "load_settings", lambda: {**_settings(), "llm_prompt_version": "auction_llm_v5"})
     sale = AuctionSale(
         source_name="avoventes",
         source_url="https://example.test/vente",
@@ -32,7 +33,33 @@ def test_needs_heavy_enrichment_skips_complete_sale() -> None:
     assert main._needs_heavy_enrichment(sale, use_llm=False) is False
     assert main._needs_heavy_enrichment(sale, use_llm=True) is True
     sale.raw_payload["llm_display_description"] = "Appartement libre de 42 m2."
+    assert main._needs_heavy_enrichment(sale, use_llm=True) is True
+    sale.raw_payload["llm_prompt_version"] = "auction_llm_v5"
     assert main._needs_heavy_enrichment(sale, use_llm=True) is False
+
+
+def test_heavy_enrichment_does_not_skip_stale_llm_description(monkeypatch) -> None:
+    monkeypatch.setattr(main, "load_settings", lambda: {**_settings(), "llm_prompt_version": "auction_llm_v5"})
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/vente-stale",
+        property_type="apartment",
+        app_surface_m2=Decimal("42"),
+        occupancy_status="vacant",
+        rooms_count=2,
+        raw_text="Appartement libre de 42 m2.",
+        content_hash="same-content",
+        raw_payload={
+            "llm_display_description": "Ancienne synthèse.",
+            "llm_prompt_version": "auction_llm_v4",
+        },
+    )
+
+    assert main._needs_heavy_enrichment(sale, use_llm=True) is True
+    assert main._heavy_enrichment_already_current(sale, {"same-content"}, use_llm=True) is False
+
+    sale.raw_payload["llm_prompt_version"] = "auction_llm_v5"
+    assert main._heavy_enrichment_already_current(sale, {"same-content"}, use_llm=True) is True
 
 
 def test_needs_heavy_enrichment_keeps_incomplete_sale() -> None:
@@ -52,7 +79,7 @@ def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> N
     monkeypatch.setattr(main, "load_settings", lambda: _settings())
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
     monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
-    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes: set())
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
     _fake_geocode.calls = calls
@@ -91,7 +118,7 @@ def test_light_pipeline_geocodes_and_reupserts_when_heavy_enrichment_disabled(mo
     monkeypatch.setattr(main, "load_settings", lambda: _settings())
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
     monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
-    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes: set())
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
     _fake_geocode.calls = calls
@@ -134,7 +161,7 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatc
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
     monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
-    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes: set(hashes))
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set(hashes))
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
     _fake_geocode.calls = calls
     monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
@@ -153,6 +180,43 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatc
     assert "pdf" not in calls
     assert "geocode" in calls
     assert calls.count("upsert") == 2
+
+
+def test_pipeline_requires_current_llm_description_for_incremental_skip(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    settings = _settings()
+    settings["incremental_enrichment"] = True
+
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: None)
+    monkeypatch.setattr(main, "enrich_sale_with_llm", lambda *args, **kwargs: main.LLMEnrichmentStats())
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: len(sales))
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: len(sales))
+
+    def fake_fetch(hashes, **kwargs):
+        captured["hashes"] = hashes
+        captured["kwargs"] = kwargs
+        return set(hashes)
+
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", fake_fetch)
+
+    assert main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=True, upsert=True)) == 0
+    assert captured["kwargs"] == {
+        "require_llm_description": True,
+        "prompt_version": "auction_llm_v5",
+    }
 
 
 def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
@@ -206,6 +270,7 @@ def _settings() -> dict[str, object]:
         "cessions_etat_max_pages": 1,
         "encheres_immobilieres_max_pages": 1,
         "notaires_max_pages": 1,
+        "llm_prompt_version": "auction_llm_v5",
     }
 
 
