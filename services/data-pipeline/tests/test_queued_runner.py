@@ -42,3 +42,26 @@ def test_queued_runner_defaults_missing_llm_flag_to_automatic(monkeypatch, capsy
     assert queued_runner.main() == 0
     assert captured == {"use_llm": True, "heavy_enrichment": True}
     assert "llm=True" in capsys.readouterr().out
+
+
+def test_queued_runner_forces_llm_for_legacy_disabled_scroll(monkeypatch, capsys) -> None:
+    captured = {}
+
+    monkeypatch.setattr(queued_runner, "fail_stale_running_runs_in_supabase", lambda: 0)
+    monkeypatch.setattr(
+        queued_runner,
+        "fetch_next_queued_run_from_supabase",
+        lambda: {"id": "run-legacy", "source": "all", "use_llm": False},
+    )
+    monkeypatch.setattr(queued_runner, "mark_past_sales_in_supabase", lambda: 0)
+
+    def fake_run_pipeline(options):
+        captured["use_llm"] = options.use_llm
+        captured["heavy_enrichment"] = options.heavy_enrichment
+        return 0
+
+    monkeypatch.setattr(queued_runner, "run_pipeline", fake_run_pipeline)
+
+    assert queued_runner.main() == 0
+    assert captured == {"use_llm": True, "heavy_enrichment": True}
+    assert "llm=True" in capsys.readouterr().out

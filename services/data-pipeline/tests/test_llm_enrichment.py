@@ -47,6 +47,7 @@ class FakeReplicateClient:
                 "occupancy_status": 0.8,
                 "legal_risks": 0.7,
                 "physical_risks": 0.7,
+                "display_description": 0.9,
                 "summary": 0.7,
             },
         }
@@ -88,6 +89,23 @@ class CorroboratedLowConfidenceCountsClient(FakeReplicateClient):
 class FailingReplicateClient(FakeReplicateClient):
     def generate_json(self, system_prompt: str, user_prompt: str):
         raise ValueError("Replicate returned invalid JSON after retry")
+
+
+class LongDisplayDescriptionClient(FakeReplicateClient):
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        payload = super().generate_json(system_prompt, user_prompt)
+        payload["display_description"] = "Synthèse : " + " ".join(
+            f"information{i}" for i in range(140)
+        )
+        payload["confidence"]["display_description"] = 0.95
+        return payload
+
+
+class LowConfidenceDisplayDescriptionClient(FakeReplicateClient):
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        payload = super().generate_json(system_prompt, user_prompt)
+        payload["confidence"]["display_description"] = 0.4
+        return payload
 
 
 def test_parse_json_response_handles_markdown_fence() -> None:
@@ -242,6 +260,86 @@ def test_enrich_sale_with_llm_uses_cached_pdf_text_and_preserves_reliable_fields
     second_stats = enrich_sale_with_llm(sale, client=(stats_client := FakeReplicateClient()), output_dir=out_dir)
     assert second_stats.valid_json == 1
     assert stats_client.calls == 0
+
+
+def test_enrich_sale_with_llm_writes_display_description_without_source_description(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm-display-from-pdf",
+            "title": "Maison à Bordeaux",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("LLM_PROMPT_VERSION", "auction_llm_v5_test")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps(
+            [
+                {
+                    "label": "PV descriptif",
+                    "document_type": "pv_descriptif",
+                    "text": "Maison de 91,4 m2 comprenant séjour, cuisine et trois chambres. Bien loué.",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    stats = enrich_sale_with_llm(sale, client=FakeReplicateClient(), output_dir=tmp_path / "out")
+
+    assert stats.valid_json == 1
+    assert "source_description" not in sale.raw_payload
+    assert sale.raw_payload["llm_display_description"].startswith("Maison de 91,4 m²")
+    assert sale.raw_payload["llm_prompt_version"] == "auction_llm_v5_test"
+
+
+def test_enrich_sale_with_llm_normalizes_display_description_length(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm-display-length",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV", "text": "Texte suffisant avec surface, occupation et composition."}]),
+        encoding="utf-8",
+    )
+
+    enrich_sale_with_llm(sale, client=LongDisplayDescriptionClient(), output_dir=tmp_path / "out")
+
+    display_description = sale.raw_payload["llm_display_description"]
+    assert display_description.startswith("information0")
+    assert len(display_description.split()) <= 115
+    assert "\n" not in display_description
+    assert display_description.endswith(".")
+
+
+def test_enrich_sale_with_llm_rejects_low_confidence_display_description(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm-display-low-confidence",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV", "text": "Texte suffisant pour déclencher le LLM."}]),
+        encoding="utf-8",
+    )
+
+    enrich_sale_with_llm(sale, client=LowConfidenceDisplayDescriptionClient(), output_dir=tmp_path / "out")
+
+    assert "llm_display_description" not in sale.raw_payload
 
 
 def test_enrich_sale_with_llm_can_replace_unreliable_other_property_type(tmp_path, monkeypatch) -> None:
@@ -451,6 +549,31 @@ def test_load_llm_context_keeps_source_page_when_pdf_cache_exists(tmp_path, monk
     assert "Description page source" in context
     assert "Texte complet page source" in context
     assert "PV : toiture à réviser" in context
+
+
+def test_load_llm_context_includes_structured_extracted_fields(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/structured-context",
+            "property_type": "Maison",
+            "title": "Maison à Bordeaux",
+        }
+    )
+    sale.surface_m2 = Decimal("91.4")
+    sale.rooms_count = 4
+    sale.bedrooms_count = 3
+    sale.occupancy_status = "rented"
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", tmp_path)
+
+    context = load_llm_context_for_sale(sale, max_chars=2500)
+
+    assert context is not None
+    assert "[DONNEES STRUCTUREES EXTRAITES]" in context
+    assert "Surface principale: 91.4 m2" in context
+    assert "Pièces: 4" in context
+    assert "Chambres: 3" in context
+    assert "Occupation extraite: rented" in context
 
 
 def test_load_llm_context_includes_merged_source_pages(tmp_path, monkeypatch) -> None:

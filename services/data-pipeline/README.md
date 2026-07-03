@@ -253,7 +253,7 @@ REPLICATE_RETRY_MAX_SLEEP_SECONDS=180
 REPLICATE_MIN_INTERVAL_SECONDS=10
 REPLICATE_THINKING_BUDGET=0
 REPLICATE_DYNAMIC_THINKING=false
-LLM_PROMPT_VERSION=auction_llm_v4
+LLM_PROMPT_VERSION=auction_llm_v5
 LLM_PDF_MAX_CHARS=12000
 INCREMENTAL_ENRICHMENT=true
 PDF_DOCLING_FAST_TIMEOUT_SECONDS=60
@@ -265,9 +265,9 @@ Pour Gemini via Replicate, le client envoie le prompt système dans `system_inst
 Les erreurs temporaires Replicate, dont `429 Too Many Requests`, sont retentées avec backoff exponentiel et un délai minimal entre appels pour éviter les rafales en fin de run.
 Les textes PDF et les extractions LLM sont mis en cache par empreinte de document/contexte. Le run suivant réutilise les résultats inchangés, limite les documents transmis aux plus utiles et applique un timeout Docling plus court sur les PDF signés ou très lourds avant fallback.
 
-Le pipeline tente systématiquement l'enrichissement LLM pour chaque nouvelle annonce canonique disposant d'un texte exploitable. Il conserve le descriptif source dans `raw_payload.source_description`, puis demande au LLM une version d'affichage uniforme `display_description` stockée en `raw_payload.llm_display_description`. Il utilise d'abord le contexte PDF réduit pour l'analyse structurée, puis retombe sur `raw_text` si aucun texte PDF n'est disponible. Il continue sans LLM si le provider configuré n'est pas disponible. Les réponses doivent être du JSON valide, validé par Pydantic, puis sauvegardé dans `data/processed/llm_extractions/{sale_id}.json`.
+Le pipeline tente systématiquement l'enrichissement LLM pour chaque nouvelle annonce canonique disposant d'un texte exploitable. Il conserve le descriptif source dans `raw_payload.source_description`, puis demande au LLM une version d'affichage uniforme `display_description` stockée en `raw_payload.llm_display_description`. Cette synthèse est désormais construite depuis l'ensemble des faits fiables disponibles : annonce source, champs structurés déjà extraits, PV descriptif, cahier des conditions, diagnostics et autres documents réduits. Elle est normalisée en un seul paragraphe factuel d'environ 90 à 110 mots lorsque les données le permettent. Le pipeline utilise d'abord le contexte PDF réduit pour l'analyse structurée, puis retombe sur `raw_text` si aucun texte PDF n'est disponible. Il continue sans LLM si le provider configuré n'est pas disponible. Les réponses doivent être du JSON valide, validé par Pydantic, puis sauvegardé dans `data/processed/llm_extractions/{sale_id}.json`.
 
-Un cache évite de rappeler Replicate quand le couple `modèle + contexte réduit` n'a pas changé. Cela limite le coût, accélère les relances et stabilise les extractions.
+Un cache évite de rappeler Replicate quand le triplet `modèle + version de prompt + contexte réduit` n'a pas changé. Cela limite le coût, accélère les relances et stabilise les extractions. Une annonce déjà publiée avec une ancienne version de prompt est réenrichie afin de régénérer la description d'affichage. À chaque scroll avec LLM actif, le skip incrémental exige désormais `raw_payload.llm_display_description` et `raw_payload.llm_prompt_version = LLM_PROMPT_VERSION` : une annonce scorée mais sans synthèse IA publique repasse donc automatiquement dans l'enrichissement.
 
 Avant l'appel LLM, le contexte PDF est réduit à environ 8 000-12 000 caractères : premières sections des PV descriptifs et cahiers des conditions, puis fenêtres autour des mots-clés utiles comme surface, pièces, chambres, occupation, bail, servitude, diagnostics, amiante, plomb, DPE, travaux, désignation, lots et mise à prix.
 

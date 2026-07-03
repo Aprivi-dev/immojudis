@@ -538,12 +538,7 @@ select
   s.description,
   nullif(s.raw_payload->>'source_description', '') as source_description,
   nullif(s.raw_payload->>'llm_display_description', '') as llm_display_description,
-  coalesce(
-    nullif(s.raw_payload->>'llm_display_description', ''),
-    nullif(s.raw_payload->>'source_description', ''),
-    nullif(s.raw_payload->'source_blocks'->>'description', ''),
-    nullif(s.description, '')
-  ) as about_description,
+  nullif(s.raw_payload->>'llm_display_description', '') as about_description,
   s.visit_dates,
   s.lawyer_name,
   s.lawyer_contact,

@@ -70,6 +70,7 @@ import {
   type ProductWeatherMonth,
   type SaleProductSources,
 } from "@/lib/sale-detail-sources";
+import { getSaleDisplayDescription, hasSaleAiDescription } from "@/lib/sale-description";
 import type { AuctionSale, SaleDocumentRich, SaleMedia, SaleRiskOccurrence } from "@/lib/types";
 
 const SECTION_NAV = [
@@ -1617,24 +1618,10 @@ function AboutThisSale({
   decision: DecisionSummary;
   acquisitionCost: AcquisitionCost;
 }) {
-  const [showSource, setShowSource] = useState(false);
-  const aiDescription = sale.llm_display_description?.trim() || null;
-  const displayDescription =
-    aiDescription ||
-    sale.about_description?.trim() ||
-    sale.source_description?.trim() ||
-    sale.description?.trim() ||
-    sale.investment_summary?.trim() ||
-    sale.risk_notes?.trim() ||
-    `${propertyTypeLabel(sale.property_type)} proposé à ${sale.city ?? "adresse à confirmer"}. Les informations détaillées seront complétées depuis les pièces disponibles.`;
-  const originalDescription =
-    sale.source_description?.trim() ||
-    sale.description?.trim() ||
-    sale.about_description?.trim() ||
-    sale.llm_display_description?.trim() ||
-    sale.investment_summary?.trim() ||
-    "Description source non renseignée.";
-  const descriptionLabel = aiDescription ? "Synthèse rédigée par IA" : "Description source";
+  const displayDescription = getSaleDisplayDescription(sale);
+  const descriptionLabel = hasSaleAiDescription(sale)
+    ? "Synthèse rédigée par IA"
+    : "Synthèse IA en cours";
   const detailRows = [
     { label: "Type", value: propertyTypeLabel(sale.property_type) },
     { label: "Mise à prix", value: formatPrice(sale.starting_price_eur) },
@@ -1659,22 +1646,6 @@ function AboutThisSale({
       <p className="mt-4 text-sm leading-relaxed text-foreground" aria-live="polite">
         {displayDescription}
       </p>
-
-      <button
-        type="button"
-        onClick={() => setShowSource((current) => !current)}
-        className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-gold-soft transition-colors hover:text-gold"
-      >
-        {showSource ? "Masquer la description source" : "Voir la description source"}
-        <ChevronRight
-          className={`h-3.5 w-3.5 transition-transform ${showSource ? "rotate-90" : ""}`}
-        />
-      </button>
-      {showSource && (
-        <p className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-sm leading-relaxed text-muted-foreground">
-          {originalDescription}
-        </p>
-      )}
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4">
         {detailRows.map((row) => (

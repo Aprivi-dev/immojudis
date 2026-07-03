@@ -376,13 +376,20 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
     return len(payload)
 
 
-def fetch_enriched_content_hashes(content_hashes: list[str]) -> set[str]:
+def fetch_enriched_content_hashes(
+    content_hashes: list[str],
+    *,
+    require_llm_description: bool = False,
+    prompt_version: str | None = None,
+) -> set[str]:
     """Return the subset of content_hashes already present and enriched in DB.
 
     Used for incremental runs: an unchanged listing (same content_hash) that was
     already scored does not need to be re-downloaded / re-OCR'd / re-sent to the
     LLM. We require score_version IS NOT NULL so partially-failed rows are
-    re-processed.
+    re-processed. When LLM descriptions are required, a row is only considered
+    current if the public display summary exists and was produced with the
+    current prompt version.
     """
     settings = load_settings()
     url = settings["supabase_url"]
@@ -399,7 +406,7 @@ def fetch_enriched_content_hashes(content_hashes: list[str]) -> set[str]:
             response = httpx.get(
                 endpoint,
                 params={
-                    "select": "content_hash",
+                    "select": "content_hash,raw_payload",
                     "content_hash": _postgrest_in_filter(batch),
                     "score_version": "not.is.null",
                 },
@@ -413,11 +420,25 @@ def fetch_enriched_content_hashes(content_hashes: list[str]) -> set[str]:
                 continue
             for row in response.json():
                 value = row.get("content_hash")
-                if value:
+                if value and (
+                    not require_llm_description
+                    or _has_current_llm_description(row.get("raw_payload"), prompt_version)
+                ):
                     found.add(str(value))
         except httpx.HTTPError as exc:
             LOGGER.warning("Enriched-hash lookup failed: %s", exc)
     return found
+
+
+def _has_current_llm_description(raw_payload: Any, prompt_version: str | None) -> bool:
+    if not isinstance(raw_payload, dict):
+        return False
+    display_description = raw_payload.get("llm_display_description")
+    if not isinstance(display_description, str) or not display_description.strip():
+        return False
+    if not prompt_version:
+        return True
+    return raw_payload.get("llm_prompt_version") == prompt_version
 
 
 KNOWN_SALE_DETAIL_SELECT = ",".join(

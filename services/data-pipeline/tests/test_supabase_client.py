@@ -65,6 +65,79 @@ def test_known_signatures_only_include_scored_rows(monkeypatch) -> None:
     }
 
 
+def test_enriched_hashes_require_current_llm_description_when_requested(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        is_error = False
+
+        def json(self):
+            return [
+                {
+                    "content_hash": "hash-current",
+                    "raw_payload": {
+                        "llm_display_description": "Synthèse IA prête.",
+                        "llm_prompt_version": "auction_llm_v5",
+                    },
+                },
+                {
+                    "content_hash": "hash-missing",
+                    "raw_payload": {
+                        "source_description": "Description brute.",
+                    },
+                },
+                {
+                    "content_hash": "hash-stale",
+                    "raw_payload": {
+                        "llm_display_description": "Ancienne synthèse.",
+                        "llm_prompt_version": "auction_llm_v4",
+                    },
+                },
+            ]
+
+    def fake_get(endpoint, params, headers, timeout):
+        assert endpoint == "https://supabase.test/rest/v1/auction_sales"
+        assert params["select"] == "content_hash,raw_payload"
+        assert params["score_version"] == "not.is.null"
+        return Response()
+
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+
+    assert supabase_client.fetch_enriched_content_hashes(
+        ["hash-current", "hash-missing", "hash-stale"],
+        require_llm_description=True,
+        prompt_version="auction_llm_v5",
+    ) == {"hash-current"}
+
+
+def test_enriched_hashes_keep_legacy_score_only_mode(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        is_error = False
+
+        def json(self):
+            return [
+                {"content_hash": "hash-current", "raw_payload": {}},
+                {"content_hash": "hash-missing", "raw_payload": {}},
+            ]
+
+    monkeypatch.setattr(supabase_client.httpx, "get", lambda *args, **kwargs: Response())
+
+    assert supabase_client.fetch_enriched_content_hashes(
+        ["hash-current", "hash-missing"],
+        require_llm_description=False,
+    ) == {"hash-current", "hash-missing"}
+
+
 def test_delete_vench_sales_without_surface_removes_observations_then_sales(monkeypatch) -> None:
     monkeypatch.setattr(
         supabase_client,

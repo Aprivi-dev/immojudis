@@ -28,9 +28,10 @@ def main() -> int:
 
     run_id = str(run.get("id") or "")
     source = str(run.get("source") or "all")
-    use_llm = run.get("use_llm")
-    if not isinstance(use_llm, bool):
-        use_llm = True
+    # Every queued scroll must produce the public AI display description. Older
+    # queued rows may still carry use_llm=false, so the worker treats the flag as
+    # legacy metadata and enforces the current product rule here.
+    use_llm = True
 
     if not run_id:
         print("Queued run has no id; skipping.")
