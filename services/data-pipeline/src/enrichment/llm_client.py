@@ -317,13 +317,48 @@ def _parse_escaped_json_response(text: str) -> dict[str, Any] | None:
 def _display_description_payload_from_text(system_prompt: str, raw_response: str) -> dict[str, Any] | None:
     if "MODE SYNTHESE STRICTE" not in system_prompt.upper():
         return None
-    text = _plain_display_description_text(raw_response)
+    text = _display_description_text_from_jsonish(raw_response) or _plain_display_description_text(raw_response)
     if not text:
         return None
     return {
         "display_description": text,
         "confidence": {"display_description": 0.58},
     }
+
+
+def _display_description_text_from_jsonish(raw_response: str) -> str | None:
+    candidates = [raw_response.strip()]
+    if candidates[0].startswith('"') and candidates[0].endswith('"'):
+        try:
+            decoded = json.loads(candidates[0])
+        except json.JSONDecodeError:
+            decoded = None
+        if isinstance(decoded, str):
+            candidates.append(decoded)
+    if '\\"' in candidates[0]:
+        candidates.append(candidates[0].replace('\\"', '"'))
+
+    for candidate in candidates:
+        match = re.search(
+            r'"display_description"\s*:\s*"(?P<value>.*?)(?:"\s*(?:[,}]|$))',
+            candidate,
+            re.S,
+        ) or re.search(r'"display_description"\s*:\s*"(?P<value>.+)', candidate, re.S)
+        if not match:
+            continue
+        value = _decode_json_string_fragment(match.group("value"))
+        text = _clean_display_description_candidate(value)
+        if text:
+            return text
+    return None
+
+
+def _decode_json_string_fragment(value: str) -> str:
+    try:
+        decoded = json.loads(f'"{value}"')
+    except json.JSONDecodeError:
+        return value.replace('\\"', '"')
+    return decoded if isinstance(decoded, str) else value
 
 
 def _plain_display_description_text(raw_response: str) -> str | None:
@@ -335,6 +370,10 @@ def _plain_display_description_text(raw_response: str) -> str | None:
     if text.startswith("```"):
         text = re.sub(r"^```(?:text|markdown)?", "", text, flags=re.I).strip()
         text = re.sub(r"```$", "", text).strip()
+    return _clean_display_description_candidate(text)
+
+
+def _clean_display_description_candidate(text: str) -> str | None:
     text = re.sub(r"^\s*(?:display_description|synth[eè]se|description)\s*:\s*", "", text, flags=re.I)
     text = re.sub(r"\s+", " ", text).strip(" \t\r\n\"'")
     lowered = text.lower()
