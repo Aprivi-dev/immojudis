@@ -85,6 +85,9 @@ class ReplicateClient:
             try:
                 return parse_json_response(raw_response)
             except ValueError as exc:
+                fallback = _display_description_payload_from_text(system_prompt, raw_response)
+                if fallback is not None:
+                    return fallback
                 last_error = exc
                 prompt = _user_prompt_for_model(
                     str(self.model),
@@ -266,6 +269,37 @@ def parse_json_response(raw_response: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("LLM response must be a JSON object")
     return value
+
+
+def _display_description_payload_from_text(system_prompt: str, raw_response: str) -> dict[str, Any] | None:
+    if "MODE SYNTHESE STRICTE" not in system_prompt.upper():
+        return None
+    text = _plain_display_description_text(raw_response)
+    if not text:
+        return None
+    return {
+        "display_description": text,
+        "confidence": {"display_description": 0.58},
+    }
+
+
+def _plain_display_description_text(raw_response: str) -> str | None:
+    text = raw_response.strip()
+    if not text:
+        return None
+    if "{" in text or "}" in text:
+        return None
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:text|markdown)?", "", text, flags=re.I).strip()
+        text = re.sub(r"```$", "", text).strip()
+    text = re.sub(r"^\s*(?:display_description|synth[eè]se|description)\s*:\s*", "", text, flags=re.I)
+    text = re.sub(r"\s+", " ", text).strip(" \t\r\n\"'")
+    lowered = text.lower()
+    if any(marker in lowered for marker in ("objet json", "json valide", "je ne peux", "désolé", "desole")):
+        return None
+    if len(text.split()) < 8:
+        return None
+    return text
 
 
 def _split_replicate_model(model: str) -> tuple[str, str]:
