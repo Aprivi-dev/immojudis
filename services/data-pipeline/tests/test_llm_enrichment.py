@@ -255,6 +255,28 @@ def test_replicate_client_accepts_jsonish_display_description(monkeypatch) -> No
     }
 
 
+def test_replicate_client_does_not_retry_unrecoverable_display_description(monkeypatch) -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="moonshotai/kimi-k2.5",
+        min_interval_seconds=0,
+    )
+    calls = 0
+
+    def fake_create_prediction(prompt: str, system_prompt: str | None = None):
+        nonlocal calls
+        calls += 1
+        return {"id": "prediction-test"}
+
+    monkeypatch.setattr(client, "_create_prediction", fake_create_prediction)
+    monkeypatch.setattr(client, "_wait_for_output", lambda prediction: "{")
+
+    with pytest.raises(ValueError, match="Replicate returned invalid JSON without retry"):
+        client.generate_json("MODE SYNTHESE STRICTE. Réponds en JSON.", "Texte fourni")
+
+    assert calls == 1
+
+
 def test_replicate_client_rejects_plain_text_for_full_extraction(monkeypatch) -> None:
     client = ReplicateClient(
         api_token="replicate-token-test",
