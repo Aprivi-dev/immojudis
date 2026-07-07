@@ -547,7 +547,7 @@ def test_enrich_sale_with_llm_builds_fallback_display_description(tmp_path, monk
     assert sale.raw_payload["llm_prompt_version"] == "auction_llm_v5_test"
 
 
-def test_enrich_sale_with_llm_rejects_low_confidence_display_description(tmp_path, monkeypatch) -> None:
+def test_enrich_sale_with_llm_falls_back_from_low_confidence_display_description(tmp_path, monkeypatch) -> None:
     sale = normalize_sale(
         {
             "source_name": "avoventes",
@@ -565,7 +565,11 @@ def test_enrich_sale_with_llm_rejects_low_confidence_display_description(tmp_pat
 
     enrich_sale_with_llm(sale, client=LowConfidenceDisplayDescriptionClient(), output_dir=tmp_path / "out")
 
-    assert "llm_display_description" not in sale.raw_payload
+    display_description = sale.raw_payload["llm_display_description"]
+    assert not display_description.startswith("Maison de 91,4 m² décrite par la source")
+    assert display_description.startswith("Maison.")
+    assert "surface de 91,4 m²" in display_description
+    assert sale.raw_payload["llm_display_description_word_count"] == len(display_description.split())
 
 
 def test_enrich_sale_with_llm_can_replace_unreliable_other_property_type(tmp_path, monkeypatch) -> None:
