@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import { osmTileMarkerPct, osmTileUrl } from "@/lib/tiles";
-import { googleStaticMapUrl } from "@/lib/google-maps";
+import { OSM_ATTRIBUTION, OSM_COPYRIGHT_URL, osmTileMarkerPct, osmTileUrl } from "@/lib/tiles";
 
 type Props = {
   lat: number | null | undefined;
@@ -12,17 +11,12 @@ type Props = {
 };
 
 export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
-  const googleUrl =
-    lat != null && lng != null
-      ? googleStaticMapUrl({ lat, lng, zoom, width: 640, height: 420, maptype: "roadmap" })
-      : "";
-  const [provider, setProvider] = useState<"google" | "osm" | "fallback">(
-    googleUrl ? "google" : "osm",
-  );
+  const tileUrl = lat != null && lng != null ? osmTileUrl(lat, lng, zoom) : "";
+  const [provider, setProvider] = useState<"osm" | "fallback">("osm");
 
   useEffect(() => {
-    setProvider(googleUrl ? "google" : "osm");
-  }, [googleUrl]);
+    setProvider("osm");
+  }, [tileUrl]);
 
   if (lat == null || lng == null) {
     return (
@@ -64,26 +58,31 @@ export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
     );
   }
 
-  const url = provider === "google" ? googleUrl : osmTileUrl(lat, lng, zoom);
   const pos = osmTileMarkerPct(lat, lng, zoom);
   return (
     <div className={`relative overflow-hidden bg-muted ${className ?? ""}`}>
       <img
-        src={url}
+        src={tileUrl}
         alt={alt ?? "Carte"}
         loading="lazy"
         decoding="async"
         referrerPolicy="strict-origin-when-cross-origin"
-        onError={() => setProvider(provider === "google" ? "osm" : "fallback")}
+        onError={() => setProvider("fallback")}
         className="h-full w-full object-cover"
       />
-      {provider === "osm" && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-red-500 shadow-md"
-          style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
-        />
-      )}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-red-500 shadow-md"
+        style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
+      />
+      <a
+        href={OSM_COPYRIGHT_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="absolute bottom-1 right-1 rounded bg-white/85 px-1.5 py-0.5 text-[9px] font-semibold text-[#1f2937] shadow-sm"
+      >
+        {OSM_ATTRIBUTION}
+      </a>
     </div>
   );
 }

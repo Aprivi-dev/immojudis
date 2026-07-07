@@ -128,6 +128,33 @@ export type UserAlert = {
   min_surface_m2: number | null;
   occupancy_status: string | null;
   min_investment_score: number | null;
+  max_price_per_m2: number | null;
+  min_yield_pct: number | null;
+  min_market_discount_pct: number | null;
+  dpe_classes: string[];
+  require_house_with_land: boolean;
+  alert_frequency: "instant" | "daily" | "weekly";
+  last_evaluated_at: string | null;
+  last_match_count: number;
+  advanced_criteria: Record<string, unknown>;
+  is_active: boolean;
+  watched_zone_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserWatchedZone = {
+  id: string;
+  user_id: string;
+  name: string;
+  zone_kind: "department" | "city" | "postal_code" | "radius" | "custom";
+  department: string | null;
+  city: string | null;
+  postal_code_prefix: string | null;
+  center_lat: number | null;
+  center_lng: number | null;
+  radius_km: number | null;
+  alert_defaults: Record<string, unknown>;
   is_active: boolean;
   created_at: string;
   updated_at: string;

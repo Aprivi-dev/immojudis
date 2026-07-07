@@ -6,8 +6,15 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
 
 function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const SUPABASE_URL = firstFilledEnv(
+    process.env.SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.VITE_SUPABASE_URL,
+  );
+  const SUPABASE_SERVICE_ROLE_KEY = firstFilledEnv(
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SECRET_KEY,
+  );
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     const missing = [
@@ -26,6 +33,10 @@ function createSupabaseAdminClient() {
       autoRefreshToken: false,
     },
   });
+}
+
+function firstFilledEnv(...values: Array<string | undefined>) {
+  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
 }
 
 let _supabaseAdmin: ReturnType<typeof createSupabaseAdminClient> | undefined;

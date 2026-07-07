@@ -52,14 +52,6 @@ export type ProductHistoryRow = {
   source: string;
 };
 
-export type ProductComparable = {
-  title: string;
-  facts: string;
-  price: string;
-  badge?: string;
-  detail?: string;
-};
-
 export type ProductWeatherMonth = EnvironmentMonthlyPoint;
 
 export type SaleProductSources = {
@@ -83,9 +75,6 @@ export type SaleProductSources = {
   sunMonthly: ProductWeatherMonth[];
   insightFacts: ProductFact[];
   estimateFacts: ProductFact[];
-  comparables: ProductComparable[];
-  nearbyHomes: ProductComparable[];
-  newListings: ProductComparable[];
   resourceLinks: ProductAction[];
   agentFacts: ProductFact[];
   sourceFacts: ProductFact[];
@@ -151,21 +140,6 @@ export function buildSaleProductSources({
   const sunMonthly = environmentalContext?.sun.monthly ?? weatherMonthly;
   const warmestMonth = environmentalContext?.weather.warmestMonth;
   const coldestMonth = environmentalContext?.weather.coldestMonth;
-  const comparables = (marketEstimate?.recentTransactions ?? [])
-    .slice(0, 6)
-    .map((transaction, index) => ({
-      title: `Comparable DVF ${index + 1}`,
-      facts: `${formatDate(transaction.date)} · ${
-        transaction.surface ? `${Math.round(transaction.surface)} m²` : "surface inconnue"
-      }`,
-      price: `${formatPrice(transaction.totalPrice)} · ${formatPricePerM2(transaction.pricePerM2)}`,
-      badge:
-        transaction.distanceM == null ? "Vendu" : `Vendu · ${Math.round(transaction.distanceM)} m`,
-      detail: transaction.type || "Transaction proche",
-    }));
-  const expandedNearby: ProductComparable[] = [];
-  const newListings: ProductComparable[] = [];
-
   return {
     priceLabel: formatPrice(sale.starting_price_eur),
     addressLabel,
@@ -435,14 +409,11 @@ export function buildSaleProductSources({
             : marketLabel,
       },
       {
-        label: "Comparables",
+        label: "Transactions DVF",
         value: marketEstimate ? String(marketEstimate.sampleSize) : "À compléter",
       },
       { label: "Coût complet/m²", value: formatPricePerM2(allInPerM2) },
     ],
-    comparables,
-    nearbyHomes: expandedNearby,
-    newListings,
     resourceLinks: [
       {
         label: `${cityLabel} ventes judiciaires`,
@@ -456,7 +427,7 @@ export function buildSaleProductSources({
       },
       {
         label: "Données marché",
-        detail: "DVF et comparables",
+        detail: "Transactions DVF",
         href: "#estimate",
       },
       {

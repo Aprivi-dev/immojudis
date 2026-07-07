@@ -1,14 +1,27 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { PropertyPage } from "@/components/property/PropertyPage";
 import { formatCurrency } from "@/lib/format";
 import { getPropertyByIdOrSlug, propertySeoDescription } from "@/lib/property-service";
+
+const PROPERTY_DEMO_ENABLED = process.env.ENABLE_PROPERTY_DEMO === "true";
 
 type PageProps = {
   params: Promise<{ id: string }>;
 };
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  if (!PROPERTY_DEMO_ENABLED) {
+    return {
+      title: "Annonce exemple",
+      description: "Exemple de fiche immobiliere Immojudis.",
+      alternates: {
+        canonical: "/annonce-exemple",
+      },
+      robots: { index: false, follow: false },
+    };
+  }
+
   const { id } = await params;
   const property = await getPropertyByIdOrSlug(id);
 
@@ -43,6 +56,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function Page({ params }: PageProps) {
+  if (!PROPERTY_DEMO_ENABLED) {
+    redirect("/annonce-exemple");
+  }
+
   const { id } = await params;
   const property = await getPropertyByIdOrSlug(id);
   if (!property) notFound();

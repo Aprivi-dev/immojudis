@@ -4,6 +4,7 @@ const GEOCODING_BASE = "https://data.geopf.fr/geocodage/search";
 const OPEN_METEO_ARCHIVE_BASE = "https://archive-api.open-meteo.com/v1/archive";
 const ENVIRONMENT_USER_AGENT = "immojudis/1.0 (+https://immojudis-dezt.vercel.app/contact)";
 const COMPLETE_YEARS_BACK = 5;
+const ENVIRONMENT_FETCH_TIMEOUT_MS = 8_000;
 
 const inputSchema = z.object({
   address: z.string().trim().min(3).nullable().optional(),
@@ -212,7 +213,7 @@ async function resolveAddress({
   url.searchParams.set("q", address.trim());
   url.searchParams.set("limit", "1");
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       accept: "application/json",
       "user-agent": ENVIRONMENT_USER_AGENT,
@@ -275,7 +276,7 @@ async function fetchOpenMeteoArchive({
   );
   url.searchParams.set("timezone", "auto");
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       accept: "application/json",
       "user-agent": ENVIRONMENT_USER_AGENT,
@@ -291,6 +292,19 @@ async function fetchOpenMeteoArchive({
     throw new Error("Open-Meteo n'a renvoyé aucune série quotidienne.");
   }
   return payload;
+}
+
+async function fetchWithTimeout(input: URL, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ENVIRONMENT_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function aggregateMonthly(

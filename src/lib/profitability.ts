@@ -1,5 +1,6 @@
 // Calcul d'un seuil d'enchère basé sur le marché local DVF.
 // Toutes les valeurs sont en euros sauf indication.
+import { defaultRentPerM2 } from "@/lib/geo";
 
 // ─── Barème officiel des émoluments d'avocat poursuivant ─────────────────
 // Article A444-191 du Code de commerce (tarif dégressif, HT).
@@ -149,6 +150,66 @@ export type MarketCeilingResult = {
   p75PricePerM2: number | null;
 };
 
+export type RentabilityScoreFactor = {
+  key: string;
+  label: string;
+  delta: number;
+  detail: string;
+  tone: "positive" | "neutral" | "negative";
+};
+
+export type RentabilityScoreInputs = {
+  surface: number | null;
+  price: number;
+  works?: number;
+  fpt?: number;
+  department?: string | null;
+  monthlyRent?: number | null;
+  vacancyPct?: number;
+  annualNonRecoverableCharges?: number | null;
+  annualPropertyTax?: number | null;
+  annualInsurance?: number | null;
+  downPaymentPct?: number;
+  annualInterestRatePct?: number;
+  loanDurationYears?: number;
+  loanInsuranceRatePct?: number;
+  targetGrossYieldPct?: number;
+  targetNetYieldPct?: number;
+  marketMarginPerM2?: number | null;
+};
+
+export type RentabilityScoreResult = {
+  available: boolean;
+  reason: string | null;
+  score: number | null;
+  label: string;
+  confidencePct: number;
+  rentSource: "manual" | "department_estimate";
+  monthlyRent: number | null;
+  annualGrossRent: number | null;
+  annualNetOperatingIncome: number | null;
+  grossYieldPct: number | null;
+  netYieldPct: number | null;
+  annualDebtService: number | null;
+  cashflowMonthly: number | null;
+  cashOnCashPct: number | null;
+  breakEvenOccupancyPct: number | null;
+  totalCost: number;
+  assumptions: {
+    vacancyPct: number;
+    annualNonRecoverableCharges: number;
+    annualPropertyTax: number;
+    annualInsurance: number;
+    downPaymentPct: number;
+    annualInterestRatePct: number;
+    loanDurationYears: number;
+    loanInsuranceRatePct: number;
+    targetGrossYieldPct: number;
+    targetNetYieldPct: number;
+  };
+  factors: RentabilityScoreFactor[];
+};
+
 export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeilingResult {
   const surface = Math.max(0, inputs.surface || 0);
   const simulated = computeAcquisitionCosts({
@@ -224,6 +285,114 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
   };
 }
 
+export function computeRentabilityScore(inputs: RentabilityScoreInputs): RentabilityScoreResult {
+  const surface = Math.max(0, inputs.surface || 0);
+  const acquisition = computeAcquisitionCosts({
+    price: inputs.price,
+    works: inputs.works,
+    fpt: inputs.fpt,
+  });
+  const assumptions = rentabilityAssumptions(inputs);
+  const manualRent = cleanPositive(inputs.monthlyRent);
+  const estimatedRent = surface > 0 ? surface * defaultRentPerM2(inputs.department) : null;
+  const monthlyRent = manualRent ?? estimatedRent;
+  const rentSource = manualRent ? "manual" : "department_estimate";
+
+  if (surface <= 0) {
+    return unavailableRentabilityResult("Surface manquante", acquisition.totalCost, assumptions);
+  }
+  if (acquisition.totalCost <= 0 || !monthlyRent) {
+    return unavailableRentabilityResult(
+      "Prix ou loyer manquant",
+      acquisition.totalCost,
+      assumptions,
+    );
+  }
+
+  const annualGrossRent = monthlyRent * 12;
+  const vacancyLoss = annualGrossRent * (assumptions.vacancyPct / 100);
+  const annualNetOperatingIncome =
+    annualGrossRent -
+    vacancyLoss -
+    assumptions.annualNonRecoverableCharges -
+    assumptions.annualPropertyTax -
+    assumptions.annualInsurance;
+  const grossYieldPct = (annualGrossRent / acquisition.totalCost) * 100;
+  const netYieldPct = (annualNetOperatingIncome / acquisition.totalCost) * 100;
+  const debt = computeDebtService(acquisition.totalCost, assumptions);
+  const cashflowAnnual = annualNetOperatingIncome - debt.annualDebtService;
+  const cashflowMonthly = cashflowAnnual / 12;
+  const cashOnCashPct = debt.downPayment > 0 ? (cashflowAnnual / debt.downPayment) * 100 : null;
+  const breakEvenOccupancyPct =
+    annualGrossRent > 0
+      ? ((assumptions.annualNonRecoverableCharges +
+          assumptions.annualPropertyTax +
+          assumptions.annualInsurance +
+          debt.annualDebtService) /
+          annualGrossRent) *
+        100
+      : null;
+
+  const factors: RentabilityScoreFactor[] = [];
+  let score = 50;
+  score += addYieldFactor({
+    factors,
+    key: "gross_yield",
+    label: "Rendement brut",
+    valuePct: grossYieldPct,
+    targetPct: assumptions.targetGrossYieldPct,
+  });
+  score += addYieldFactor({
+    factors,
+    key: "net_yield",
+    label: "Rendement net estimé",
+    valuePct: netYieldPct,
+    targetPct: assumptions.targetNetYieldPct,
+  });
+  score += addCashflowFactor(factors, cashflowMonthly);
+  score += addBreakEvenFactor(factors, breakEvenOccupancyPct);
+  score += addMarketMarginFactor(factors, inputs.marketMarginPerM2);
+
+  if (rentSource === "department_estimate") {
+    factors.push({
+      key: "rent_source",
+      label: "Loyer estimé",
+      delta: -4,
+      detail: "Loyer par défaut issu du département : à remplacer par un loyer de marché vérifié.",
+      tone: "negative",
+    });
+    score -= 4;
+  }
+
+  const finalScore = clampScore(Math.round(score));
+
+  return {
+    available: true,
+    reason: null,
+    score: finalScore,
+    label: rentabilityLabel(finalScore),
+    confidencePct: rentabilityConfidencePct({
+      manualRent: Boolean(manualRent),
+      marketMarginAvailable: inputs.marketMarginPerM2 != null,
+      surface,
+      totalCost: acquisition.totalCost,
+    }),
+    rentSource,
+    monthlyRent: Math.round(monthlyRent),
+    annualGrossRent: Math.round(annualGrossRent),
+    annualNetOperatingIncome: Math.round(annualNetOperatingIncome),
+    grossYieldPct: roundPct(grossYieldPct),
+    netYieldPct: roundPct(netYieldPct),
+    annualDebtService: Math.round(debt.annualDebtService),
+    cashflowMonthly: Math.round(cashflowMonthly),
+    cashOnCashPct: cashOnCashPct == null ? null : roundPct(cashOnCashPct),
+    breakEvenOccupancyPct: breakEvenOccupancyPct == null ? null : roundPct(breakEvenOccupancyPct),
+    totalCost: Math.round(acquisition.totalCost),
+    assumptions,
+    factors,
+  };
+}
+
 export function marketCeilingVerdict(result: MarketCeilingResult): {
   label: string;
   detail: string;
@@ -287,6 +456,191 @@ function solveMaxBid(targetTotalCost: number, works: number, fpt: number): numbe
   return Math.max(0, Math.floor(low / 100) * 100);
 }
 
+function rentabilityAssumptions(inputs: RentabilityScoreInputs) {
+  const surface = Math.max(0, inputs.surface || 0);
+  const estimatedMonthlyRent = surface > 0 ? surface * defaultRentPerM2(inputs.department) : 0;
+  const annualGrossRent = (cleanPositive(inputs.monthlyRent) ?? estimatedMonthlyRent) * 12;
+
+  return {
+    vacancyPct: clamp(inputs.vacancyPct ?? 5, 0, 35),
+    annualNonRecoverableCharges: Math.max(
+      0,
+      inputs.annualNonRecoverableCharges ?? annualGrossRent * 0.07,
+    ),
+    annualPropertyTax: Math.max(0, inputs.annualPropertyTax ?? annualGrossRent * 0.08),
+    annualInsurance: Math.max(0, inputs.annualInsurance ?? annualGrossRent * 0.015),
+    downPaymentPct: clamp(inputs.downPaymentPct ?? 20, 0, 100),
+    annualInterestRatePct: clamp(inputs.annualInterestRatePct ?? 4.2, 0, 20),
+    loanDurationYears: Math.max(1, Math.min(35, Math.round(inputs.loanDurationYears ?? 20))),
+    loanInsuranceRatePct: clamp(inputs.loanInsuranceRatePct ?? 0.25, 0, 5),
+    targetGrossYieldPct: clamp(inputs.targetGrossYieldPct ?? 6.5, 0, 30),
+    targetNetYieldPct: clamp(inputs.targetNetYieldPct ?? 4.5, 0, 25),
+  };
+}
+
+function computeDebtService(
+  totalCost: number,
+  assumptions: ReturnType<typeof rentabilityAssumptions>,
+) {
+  const downPayment = totalCost * (assumptions.downPaymentPct / 100);
+  const principal = Math.max(0, totalCost - downPayment);
+  const monthlyRate = assumptions.annualInterestRatePct / 100 / 12;
+  const months = assumptions.loanDurationYears * 12;
+  const monthlyLoanPayment =
+    principal <= 0
+      ? 0
+      : monthlyRate <= 0
+        ? principal / months
+        : (principal * monthlyRate) / (1 - (1 + monthlyRate) ** -months);
+  const monthlyInsurance = (principal * (assumptions.loanInsuranceRatePct / 100)) / 12;
+
+  return {
+    downPayment,
+    principal,
+    annualDebtService: (monthlyLoanPayment + monthlyInsurance) * 12,
+  };
+}
+
+function addYieldFactor({
+  factors,
+  key,
+  label,
+  valuePct,
+  targetPct,
+}: {
+  factors: RentabilityScoreFactor[];
+  key: string;
+  label: string;
+  valuePct: number;
+  targetPct: number;
+}) {
+  const spread = valuePct - targetPct;
+  let delta = -12;
+  if (spread >= 2) delta = 16;
+  else if (spread >= 0) delta = 10;
+  else if (spread >= -1) delta = 4;
+
+  factors.push({
+    key,
+    label,
+    delta,
+    detail: `${formatPct(valuePct)} vs objectif ${formatPct(targetPct)}.`,
+    tone: delta > 0 ? "positive" : delta === 4 ? "neutral" : "negative",
+  });
+  return delta;
+}
+
+function addCashflowFactor(factors: RentabilityScoreFactor[], cashflowMonthly: number) {
+  let delta = -14;
+  if (cashflowMonthly >= 300) delta = 14;
+  else if (cashflowMonthly >= 0) delta = 8;
+  else if (cashflowMonthly >= -150) delta = -6;
+
+  factors.push({
+    key: "cashflow",
+    label: "Cashflow mensuel",
+    delta,
+    detail: `${Math.round(cashflowMonthly).toLocaleString("fr-FR")} €/mois après dette estimée.`,
+    tone: delta > 0 ? "positive" : delta > -10 ? "neutral" : "negative",
+  });
+  return delta;
+}
+
+function addBreakEvenFactor(
+  factors: RentabilityScoreFactor[],
+  breakEvenOccupancyPct: number | null,
+) {
+  if (breakEvenOccupancyPct == null) return 0;
+
+  let delta = -12;
+  if (breakEvenOccupancyPct <= 80) delta = 8;
+  else if (breakEvenOccupancyPct <= 92) delta = 2;
+  else if (breakEvenOccupancyPct <= 100) delta = -4;
+
+  factors.push({
+    key: "break_even",
+    label: "Occupation d'équilibre",
+    delta,
+    detail: `${formatPct(breakEvenOccupancyPct)} d'occupation nécessaire pour couvrir charges et dette.`,
+    tone: delta > 0 ? "positive" : delta >= 0 ? "neutral" : "negative",
+  });
+  return delta;
+}
+
+function addMarketMarginFactor(
+  factors: RentabilityScoreFactor[],
+  marketMarginPerM2: number | null | undefined,
+) {
+  if (marketMarginPerM2 == null || !Number.isFinite(marketMarginPerM2)) return 0;
+
+  let delta = -10;
+  if (marketMarginPerM2 >= 250) delta = 10;
+  else if (marketMarginPerM2 >= 0) delta = 5;
+  else if (marketMarginPerM2 >= -150) delta = -4;
+
+  factors.push({
+    key: "market_margin",
+    label: "Marge vs marché cible",
+    delta,
+    detail: `${formatSigned(marketMarginPerM2)} €/m² par rapport au seuil tout compris.`,
+    tone: delta > 0 ? "positive" : delta >= 0 ? "neutral" : "negative",
+  });
+  return delta;
+}
+
+function rentabilityLabel(score: number): string {
+  if (score >= 80) return "Très rentable à confirmer";
+  if (score >= 65) return "Rendement attractif";
+  if (score >= 50) return "Équilibre à travailler";
+  return "Rentabilité fragile";
+}
+
+function rentabilityConfidencePct({
+  manualRent,
+  marketMarginAvailable,
+  surface,
+  totalCost,
+}: {
+  manualRent: boolean;
+  marketMarginAvailable: boolean;
+  surface: number;
+  totalCost: number;
+}) {
+  let confidence = 45;
+  if (surface > 0) confidence += 15;
+  if (totalCost > 0) confidence += 15;
+  if (manualRent) confidence += 15;
+  if (marketMarginAvailable) confidence += 10;
+  return clamp(Math.round(confidence), 0, 95);
+}
+
+function unavailableRentabilityResult(
+  reason: string,
+  totalCost: number,
+  assumptions: ReturnType<typeof rentabilityAssumptions>,
+): RentabilityScoreResult {
+  return {
+    available: false,
+    reason,
+    score: null,
+    label: "Rentabilité à compléter",
+    confidencePct: 0,
+    rentSource: "department_estimate",
+    monthlyRent: null,
+    annualGrossRent: null,
+    annualNetOperatingIncome: null,
+    grossYieldPct: null,
+    netYieldPct: null,
+    annualDebtService: null,
+    cashflowMonthly: null,
+    cashOnCashPct: null,
+    breakEvenOccupancyPct: null,
+    totalCost: Math.round(totalCost),
+    assumptions,
+    factors: [],
+  };
+}
+
 function unavailableResult(
   reason: string,
   surface: number,
@@ -324,6 +678,14 @@ function cleanPositive(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
 }
 
+function roundPct(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function clampScore(value: number): number {
+  return clamp(value, 0, 100);
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -331,4 +693,8 @@ function clamp(value: number, min: number, max: number): number {
 function formatSigned(value: number): string {
   if (Math.abs(value) < 1) return "0";
   return `${value > 0 ? "+" : ""}${Math.round(value)}`;
+}
+
+function formatPct(value: number): string {
+  return `${roundPct(value).toLocaleString("fr-FR")} %`;
 }

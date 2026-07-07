@@ -2,5 +2,19 @@
   "framework": "nextjs",
   "installCommand": "npm install",
   "buildCommand": "npm run build",
-  "regions": ["cdg1"]
+  "regions": ["cdg1"],
+  "crons": [
+    {
+      "path": "/api/cron/smart-alerts",
+      "schedule": "15 6 * * *"
+    },
+    {
+      "path": "/api/cron/alert-notifications",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/sale-change-monitor",
+      "schedule": "45 6 * * *"
+    }
+  ]
 }

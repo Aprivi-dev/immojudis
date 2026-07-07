@@ -6,6 +6,7 @@ import LogOut from "lucide-react/dist/esm/icons/log-out.js";
 import Menu from "lucide-react/dist/esm/icons/menu.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import { AlertNotificationCenter } from "@/components/AlertNotificationCenter";
 import { BrandMark } from "@/components/BrandLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,7 +19,7 @@ const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin" } as const;
 const HOME_NAV_ITEMS = [
   { to: "/sales", label: "Rechercher un bien" },
   { to: "/annonce-exemple", label: "Annonce exemple" },
-  { to: "/accompagnement", label: "Accompagnement" },
+  { to: "/accompagnement", label: "Offre Pro" },
   { to: "/ressources", label: "Ressources" },
   { to: "/a-propos", label: "À propos" },
 ] as const;
@@ -104,14 +105,17 @@ export function Navbar() {
 
             <div className="ml-auto hidden shrink-0 items-center gap-2 md:flex">
               {!loading && user ? (
-                <button
-                  type="button"
-                  onClick={() => supabase.auth.signOut()}
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-gold/50 hover:text-gold-soft"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  Déconnexion
-                </button>
+                <>
+                  <AlertNotificationCenter />
+                  <button
+                    type="button"
+                    onClick={() => supabase.auth.signOut()}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-gold/50 hover:text-gold-soft"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    Déconnexion
+                  </button>
+                </>
               ) : (
                 <>
                   <Link
@@ -186,6 +190,11 @@ export function Navbar() {
                       </MobileNavLink>
                     ))}
                   </nav>
+                  {!loading && user ? (
+                    <div className="mb-3">
+                      <AlertNotificationCenter mobile />
+                    </div>
+                  ) : null}
                 </div>
               </aside>
             </div>
@@ -297,10 +306,13 @@ export function Navbar() {
 
           <div className="ij-home-actions">
             {!loading && user ? (
-              <button onClick={() => supabase.auth.signOut()} className="ij-login-button gap-2">
-                <LogOut className="h-3.5 w-3.5" />
-                <span>Déconnexion</span>
-              </button>
+              <>
+                <AlertNotificationCenter />
+                <button onClick={() => supabase.auth.signOut()} className="ij-login-button gap-2">
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span>Déconnexion</span>
+                </button>
+              </>
             ) : (
               <>
                 <Link to="/login" search={{ redirect: undefined }} className="ij-login-button">
@@ -352,16 +364,19 @@ export function Navbar() {
 
                 <div className="ij-mobile-actions">
                   {!loading && user ? (
-                    <button
-                      onClick={() => {
-                        closeMobileMenu();
-                        void supabase.auth.signOut();
-                      }}
-                      className="ij-login-button w-full gap-2"
-                    >
-                      <LogOut className="h-4 w-4" />
-                      Déconnexion
-                    </button>
+                    <>
+                      <AlertNotificationCenter mobile />
+                      <button
+                        onClick={() => {
+                          closeMobileMenu();
+                          void supabase.auth.signOut();
+                        }}
+                        className="ij-login-button w-full gap-2"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Déconnexion
+                      </button>
+                    </>
                   ) : (
                     <>
                       <Link

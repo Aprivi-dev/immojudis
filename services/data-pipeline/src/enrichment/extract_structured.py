@@ -13,7 +13,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
 from src.enrichment.llm_client import ReplicateClient, create_llm_client
-from src.enrichment.prompts import SYSTEM_PROMPT, build_user_prompt
+from src.enrichment.prompts import (
+    DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    build_display_description_prompt,
+    build_user_prompt,
+)
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.pdf_enrichment import sale_storage_id
@@ -131,6 +136,25 @@ UNUSABLE_SOURCE_DESCRIPTION_RE = re.compile(
 DISPLAY_DESCRIPTION_MAX_WORDS = 115
 DISPLAY_DESCRIPTION_MAX_CHARS = 850
 DISPLAY_DESCRIPTION_MIN_CONFIDENCE = 0.55
+PROPERTY_TYPE_DISPLAY_LABELS = {
+    "apartment": "Appartement",
+    "house": "Maison",
+    "building": "Immeuble",
+    "land": "Terrain",
+    "commercial": "Local commercial",
+    "parking": "Stationnement",
+    "mixed": "Bien mixte",
+    "other": "Bien immobilier",
+    "unknown": "Bien immobilier",
+}
+OCCUPANCY_DISPLAY_LABELS = {
+    "vacant": "libre",
+    "occupied": "occupé",
+    "rented": "loué",
+    "owner_occupied": "occupé par le propriétaire",
+    "squatted": "squatté",
+    "unknown": "à vérifier",
+}
 
 PropertyType = Literal[
     "apartment",
@@ -320,8 +344,16 @@ def enrich_sale_with_llm(
         sale.raw_payload["llm_cache_hit"] = True
         return stats
 
+    extraction_mode = str(settings.get("llm_extraction_mode") or "full")
+    if extraction_mode == "display_description":
+        system_prompt = DISPLAY_DESCRIPTION_SYSTEM_PROMPT
+        user_prompt = build_display_description_prompt(llm_context)
+    else:
+        system_prompt = SYSTEM_PROMPT
+        user_prompt = build_user_prompt(llm_context)
+
     try:
-        raw = client.generate_json(SYSTEM_PROMPT, build_user_prompt(llm_context))
+        raw = client.generate_json(system_prompt, user_prompt)
         extraction = LLMExtraction.model_validate(raw)
     except Exception as exc:
         LOGGER.warning("LLM extraction failed for %s: %s", sale.source_url, exc)
@@ -335,6 +367,28 @@ def enrich_sale_with_llm(
     sale.raw_payload["llm_extraction"] = extraction.model_dump()
     sale.raw_payload["llm_cache_hit"] = False
     return stats
+
+
+def apply_cached_llm_extraction_to_sale(sale: AuctionSale, *, prompt_version: str | None = None) -> bool:
+    """Re-apply an LLM payload already stored in raw_payload.
+
+    This is intentionally network-free. It lets a pipeline version that adds a
+    new public display field populate it from a previously validated extraction
+    without re-downloading PDFs or calling Replicate again.
+    """
+    payload = sale.raw_payload.get("llm_extraction") if isinstance(sale.raw_payload, dict) else None
+    if not isinstance(payload, dict):
+        return False
+    try:
+        extraction = LLMExtraction.model_validate(payload)
+    except Exception:
+        return False
+
+    before = clean_text(sale.raw_payload.get("llm_display_description"))
+    stats = LLMEnrichmentStats()
+    _apply_extraction_to_sale(sale, extraction, stats, context="", prompt_version=prompt_version)
+    after = clean_text(sale.raw_payload.get("llm_display_description"))
+    return bool(after and after != before)
 
 
 def load_pdf_text_for_sale(sale: AuctionSale, max_chars: int = 12000) -> str | None:
@@ -752,9 +806,15 @@ def _apply_extraction_to_sale(
             sale.property_type = extraction.property_type
 
     display_description = _normalize_display_description(extraction.display_description)
-    if display_description and confidence.get("display_description", 1.0) >= DISPLAY_DESCRIPTION_MIN_CONFIDENCE:
-        sale.raw_payload["llm_display_description"] = display_description
-        sale.raw_payload["llm_display_description_word_count"] = len(display_description.split())
+    if display_description:
+        if confidence.get("display_description", 1.0) >= DISPLAY_DESCRIPTION_MIN_CONFIDENCE:
+            sale.raw_payload["llm_display_description"] = display_description
+            sale.raw_payload["llm_display_description_word_count"] = len(display_description.split())
+    else:
+        fallback_display_description = _fallback_display_description(sale, extraction)
+        if fallback_display_description:
+            sale.raw_payload["llm_display_description"] = fallback_display_description
+            sale.raw_payload["llm_display_description_word_count"] = len(fallback_display_description.split())
 
     risk_notes = _format_risk_notes(extraction)
     if risk_notes:
@@ -800,6 +860,137 @@ def _normalize_display_description(value: str | None) -> str | None:
         if not re.search(r"[.!?]$", text):
             text += "."
     return clean_text(text)
+
+
+def _fallback_display_description(sale: AuctionSale, extraction: LLMExtraction) -> str | None:
+    sentences: list[str] = []
+    opening = _fallback_opening(sale, extraction)
+    if opening:
+        sentences.append(_ensure_sentence(opening))
+
+    details = _fallback_asset_details(sale, extraction)
+    if details:
+        sentences.append(_ensure_sentence("Les éléments disponibles mentionnent " + ", ".join(details)))
+
+    occupation = _fallback_occupation(sale, extraction)
+    if occupation:
+        sentences.append(_ensure_sentence(occupation))
+
+    attention_points = _fallback_attention_points(extraction)
+    if attention_points:
+        sentences.append(_ensure_sentence("Points à vérifier : " + "; ".join(attention_points)))
+
+    if len(" ".join(sentences).split()) < 18:
+        source_description = extract_source_description(sale)
+        if source_description:
+            sentences.append(_ensure_sentence(source_description))
+
+    return _normalize_display_description(" ".join(sentences))
+
+
+def _fallback_opening(sale: AuctionSale, extraction: LLMExtraction) -> str | None:
+    property_type = extraction.property_type or sale.property_type or "unknown"
+    label = PROPERTY_TYPE_DISPLAY_LABELS.get(property_type, "Bien immobilier")
+    location = _fallback_location(sale)
+    if location:
+        return f"{label} {location}"
+    title = clean_text(sale.title)
+    if title:
+        return title
+    return label
+
+
+def _fallback_location(sale: AuctionSale) -> str | None:
+    city = clean_text(sale.city)
+    department = clean_text(sale.department)
+    if city and department:
+        return f"à {city} ({department})"
+    if city:
+        return f"à {city}"
+    if department:
+        return f"dans le département {department}"
+    return None
+
+
+def _fallback_asset_details(sale: AuctionSale, extraction: LLMExtraction) -> list[str]:
+    details: list[str] = []
+    surface = _fallback_surface(sale, extraction)
+    if surface:
+        details.append(f"une surface de {surface} m²")
+    if extraction.rooms_count or sale.rooms_count:
+        rooms = extraction.rooms_count or sale.rooms_count
+        details.append(f"{rooms} pièce{'s' if rooms and rooms > 1 else ''}")
+    if extraction.bedrooms_count or sale.bedrooms_count:
+        bedrooms = extraction.bedrooms_count or sale.bedrooms_count
+        details.append(f"{bedrooms} chambre{'s' if bedrooms and bedrooms > 1 else ''}")
+    amenities = _fallback_amenities(sale)
+    if amenities:
+        details.append("des annexes ou équipements : " + ", ".join(amenities))
+    return details
+
+
+def _fallback_surface(sale: AuctionSale, extraction: LLMExtraction) -> str | None:
+    value = extraction.surface_m2 or sale.app_surface_m2 or sale.habitable_surface_m2 or sale.carrez_surface_m2 or sale.surface_m2
+    if value is None and (extraction.property_type or sale.property_type) == "land":
+        value = sale.land_surface_m2
+    return _format_surface_value(value)
+
+
+def _format_surface_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        number = Decimal(str(value))
+    except InvalidOperation:
+        return None
+    normalized = number.quantize(Decimal("0.01")).normalize()
+    return str(normalized).replace(".", ",")
+
+
+def _fallback_amenities(sale: AuctionSale) -> list[str]:
+    amenities = []
+    if sale.has_garden:
+        amenities.append("jardin")
+    if sale.has_terrace:
+        amenities.append("terrasse")
+    if sale.has_garage:
+        amenities.append("garage")
+    if sale.has_pool:
+        amenities.append("piscine")
+    if sale.parking_count:
+        amenities.append(f"{sale.parking_count} stationnement{'s' if sale.parking_count > 1 else ''}")
+    return amenities
+
+
+def _fallback_occupation(sale: AuctionSale, extraction: LLMExtraction) -> str | None:
+    status = extraction.occupancy_status or sale.occupancy_status
+    label = OCCUPANCY_DISPLAY_LABELS.get(status or "")
+    details = clean_text(extraction.occupancy_details)
+    if label and details:
+        return f"L'occupation est indiquée comme {label}, avec la précision suivante : {details}"
+    if label and status != "unknown":
+        return f"L'occupation est indiquée comme {label}"
+    return None
+
+
+def _fallback_attention_points(extraction: LLMExtraction) -> list[str]:
+    points: list[str] = []
+    if extraction.works_needed:
+        points.append(f"travaux ou état signalé ({extraction.works_needed})")
+    if extraction.legal_risks:
+        points.append("risques juridiques mentionnés")
+    if extraction.physical_risks:
+        points.append("risques techniques mentionnés")
+    if extraction.servitudes:
+        points.append("servitudes mentionnées")
+    return points
+
+
+def _ensure_sentence(value: str) -> str:
+    text = clean_text(value) or ""
+    if not text:
+        return text
+    return text if re.search(r"[.!?]$", text) else f"{text}."
 
 
 def _due_diligence_payload(extraction: LLMExtraction) -> dict[str, Any]:

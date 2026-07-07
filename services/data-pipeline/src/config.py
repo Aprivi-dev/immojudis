@@ -57,45 +57,68 @@ def load_settings() -> dict[str, str | float | None]:
         "supabase_url": os.getenv("SUPABASE_URL"),
         "supabase_service_role_key": os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
         "supabase_db_url": os.getenv("SUPABASE_DB_URL"),
+        "dvf_import_batch_size": int(os.getenv("DVF_IMPORT_BATCH_SIZE", "1000")),
         "user_agent": os.getenv("AUCTION_USER_AGENT", "immojudis-data-pipeline/1.0 (+https://example.com/contact)"),
         "request_delay_seconds": float(os.getenv("REQUEST_DELAY_SECONDS", "1.5")),
         "request_timeout_seconds": float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
         "geocode_enabled": os.getenv("GEOCODE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
-        "geocode_api_url": os.getenv("GEOCODE_API_URL", "https://api-adresse.data.gouv.fr/search/"),
+        "geocode_api_url": os.getenv("GEOCODE_API_URL", "https://data.geopf.fr/geocodage/search/"),
         "geocode_min_score": float(os.getenv("GEOCODE_MIN_SCORE", "0.45")),
+        "cadastre_enrich_enabled": os.getenv("CADASTRE_ENRICH_ENABLED", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "cadastre_api_url": os.getenv("CADASTRE_API_URL", "https://apicarto.ign.fr/api/cadastre/parcelle"),
+        "cadastre_source_ign": os.getenv("CADASTRE_SOURCE_IGN", "PCI"),
+        "cadastre_max_parcels": max(1, int(os.getenv("CADASTRE_MAX_PARCELS", "4"))),
+        "cadastre_timeout_seconds": float(os.getenv("CADASTRE_TIMEOUT_SECONDS", "10")),
+        "dpe_enrich_enabled": os.getenv("DPE_ENRICH_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+        "dpe_api_url": os.getenv(
+            "DPE_API_URL",
+            "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines",
+        ),
+        "dpe_geo_radius_m": max(10, int(os.getenv("DPE_GEO_RADIUS_M", "120"))),
+        "dpe_max_results": max(1, int(os.getenv("DPE_MAX_RESULTS", "5"))),
+        "dpe_timeout_seconds": float(os.getenv("DPE_TIMEOUT_SECONDS", "12")),
         "llm_enabled": os.getenv("LLM_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
         "llm_provider": os.getenv("LLM_PROVIDER", "replicate").lower(),
         "replicate_api_token": os.getenv("REPLICATE_API_TOKEN"),
         "replicate_model": os.getenv("REPLICATE_MODEL", "google/gemini-2.5-flash"),
         "replicate_temperature": float(os.getenv("REPLICATE_TEMPERATURE", "0")),
-        "replicate_max_tokens": int(os.getenv("REPLICATE_MAX_TOKENS", "8192")),
+        "replicate_max_tokens": int(os.getenv("REPLICATE_MAX_TOKENS", "1024")),
         "replicate_timeout_seconds": float(os.getenv("REPLICATE_TIMEOUT_SECONDS", "180")),
         "replicate_wait_seconds": int(os.getenv("REPLICATE_WAIT_SECONDS", "60")),
         "replicate_cancel_after": os.getenv("REPLICATE_CANCEL_AFTER", "5m"),
-        "replicate_max_retries": int(os.getenv("REPLICATE_MAX_RETRIES", "5")),
-        "replicate_retry_backoff_seconds": float(os.getenv("REPLICATE_RETRY_BACKOFF_SECONDS", "20")),
-        "replicate_retry_max_sleep_seconds": float(os.getenv("REPLICATE_RETRY_MAX_SLEEP_SECONDS", "180")),
-        # 0 par défaut : l'enrichissement est désormais parallélisé (voir
-        # pipeline_enrich_workers) et la limite de débit Replicate est gérée par
-        # le retry sur 429. Une valeur > 0 sérialiserait les appels.
-        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "0")),
-        # Appels LLM en parallèle (réseau, donc concurrence élevée sûre).
-        "pipeline_enrich_workers": max(1, int(os.getenv("PIPELINE_ENRICH_WORKERS", "6"))),
+        "replicate_max_retries": int(os.getenv("REPLICATE_MAX_RETRIES", "4")),
+        "replicate_retry_backoff_seconds": float(os.getenv("REPLICATE_RETRY_BACKOFF_SECONDS", "30")),
+        "replicate_retry_max_sleep_seconds": float(os.getenv("REPLICATE_RETRY_MAX_SLEEP_SECONDS", "60")),
+        # Les appels LLM restent parallélisés, mais espacés globalement pour
+        # éviter les rafales Replicate qui transforment les runs en longues
+        # boucles de retry 429.
+        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "5")),
+        "pipeline_enrich_workers": max(1, int(os.getenv("PIPELINE_ENRICH_WORKERS", "2"))),
         # Extractions PDF/OCR en parallèle (CPU + RAM : on reste prudent pour ne
         # pas saturer la mémoire du runner avec plusieurs Docling/OCR simultanés).
         "pipeline_pdf_workers": max(1, int(os.getenv("PIPELINE_PDF_WORKERS", "2"))),
+        "pipeline_pdf_max_targets": max(0, int(os.getenv("PIPELINE_PDF_MAX_TARGETS", "10"))),
+        "pipeline_llm_max_targets": max(0, int(os.getenv("PIPELINE_LLM_MAX_TARGETS", "10"))),
+        "pipeline_llm_backfill_max_targets": max(
+            1,
+            int(os.getenv("PIPELINE_LLM_BACKFILL_MAX_TARGETS", os.getenv("PIPELINE_LLM_MAX_TARGETS", "20"))),
+        ),
+        "pipeline_idle_llm_backfill_enabled": os.getenv("PIPELINE_IDLE_LLM_BACKFILL_ENABLED", "false").lower()
+        in {"1", "true", "yes", "on"},
         "replicate_thinking_budget": int(os.getenv("REPLICATE_THINKING_BUDGET", "0")),
         "replicate_dynamic_thinking": os.getenv("REPLICATE_DYNAMIC_THINKING", "false").lower()
         in {"1", "true", "yes", "on"},
-        "llm_prompt_version": os.getenv("LLM_PROMPT_VERSION", "auction_llm_v5"),
-        "llm_pdf_max_chars": int(os.getenv("LLM_PDF_MAX_CHARS", "18000")),
+        "llm_prompt_version": os.getenv("LLM_PROMPT_VERSION", "auction_llm_v6_display"),
+        "llm_extraction_mode": os.getenv("LLM_EXTRACTION_MODE", "display_description").lower(),
+        "llm_pdf_max_chars": int(os.getenv("LLM_PDF_MAX_CHARS", "6000")),
         "incremental_enrichment": os.getenv("INCREMENTAL_ENRICHMENT", "true").lower()
         in {"1", "true", "yes", "on"},
-        "pdf_ocr_enabled": os.getenv("PDF_OCR_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+        "pdf_ocr_enabled": os.getenv("PDF_OCR_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
         "pdf_ocr_language": os.getenv("PDF_OCR_LANGUAGE", "fra+eng"),
         "pdf_ocr_tessdata": os.getenv("TESSDATA_PREFIX") or os.getenv("PDF_OCR_TESSDATA"),
         "pdf_extractor": os.getenv("PDF_EXTRACTOR", "auto").lower(),
-        "pdf_docling_enabled": os.getenv("PDF_DOCLING_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+        "pdf_docling_enabled": os.getenv("PDF_DOCLING_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
         "pdf_docling_threshold_chars": int(os.getenv("PDF_DOCLING_THRESHOLD_CHARS", "1200")),
         "pdf_docling_timeout_seconds": float(os.getenv("PDF_DOCLING_TIMEOUT_SECONDS", "180")),
         "pdf_docling_fast_timeout_seconds": float(os.getenv("PDF_DOCLING_FAST_TIMEOUT_SECONDS", "60")),
@@ -104,7 +127,7 @@ def load_settings() -> dict[str, str | float | None]:
         "pdf_docling_ocr_max_size_mb": float(os.getenv("PDF_DOCLING_OCR_MAX_SIZE_MB", "15")),
         "pdf_docling_chunk_pages": int(os.getenv("PDF_DOCLING_CHUNK_PAGES", "10")),
         "pdf_docling_ocr_chunk_pages": int(os.getenv("PDF_DOCLING_OCR_CHUNK_PAGES", "2")),
-        "pdf_max_documents_per_sale": int(os.getenv("PDF_MAX_DOCUMENTS_PER_SALE", "6")),
+        "pdf_max_documents_per_sale": int(os.getenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")),
         "enable_licitor_benchmark": os.getenv("ENABLE_LICITOR_BENCHMARK", "true").lower()
         in {"1", "true", "yes", "on"},
         "licitor_max_pages": int(os.getenv("LICITOR_MAX_PAGES", "5")),

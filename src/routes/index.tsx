@@ -2,11 +2,18 @@ import { createFileRoute, Link } from "@/lib/router-compat";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
+import Calculator from "lucide-react/dist/esm/icons/calculator.js";
+import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
+import Database from "lucide-react/dist/esm/icons/database.js";
+import FileChartColumnIncreasing from "lucide-react/dist/esm/icons/file-chart-column-increasing.js";
+import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
+import Gauge from "lucide-react/dist/esm/icons/gauge.js";
 import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
+import Radar from "lucide-react/dist/esm/icons/radar.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
-import UserRound from "lucide-react/dist/esm/icons/user-round.js";
+import UsersRound from "lucide-react/dist/esm/icons/users-round.js";
 import { useEffect, useState, type ComponentType } from "react";
 import { BrandMark } from "@/components/BrandLogo";
 
@@ -17,7 +24,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "ImmoJudis rassemble les ventes judiciaires immobilières en France dans une expérience claire, premium et accessible.",
+          "ImmoJudis transforme les ventes judiciaires immobilières en rapports d'opportunité : comparables DVF, décote, risques, frais, alertes et mise maximale avant audience.",
       },
     ],
   }),
@@ -33,27 +40,33 @@ type CandleArrowGeometry = {
 };
 
 const benefits = [
-  { icon: Scale, title: "100% des ventes", text: "en France" },
-  { icon: Bell, title: "Alertes personnalisées", text: "par email" },
-  { icon: UserRound, title: "Appui expert", text: "sur demande" },
+  { icon: FileSearch, title: "Rapports d'opportunité", text: "mise à prix, DVF, risques" },
+  { icon: Calculator, title: "Mise plafond", text: "budget, frais, travaux, marge" },
+  { icon: Bell, title: "Alertes data-driven", text: "décote, rendement, zone" },
 ] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
 
 const auctionCards = [
   {
     image: "/media/landing/auction-bordeaux.jpg",
-    badge: "Audience le 9 juillet",
+    badge: "Décote apparente -31%",
     city: "Bordeaux",
     tribunal: "Tribunal judiciaire de Bordeaux",
     title: "Appartement de caractère, quartier Jardin Public",
     price: "Mise à prix 92 000 €",
+    signal: "9 comparables DVF",
+    score: "78/100",
+    confidence: "Confiance moyenne",
   },
   {
     image: "/media/landing/auction-nantes.jpg",
-    badge: "Nouveau",
+    badge: "Maison + terrain",
     city: "Nantes",
     tribunal: "Tribunal judiciaire de Nantes",
     title: "Maison de ville en pierre avec dépendance",
     price: "Mise à prix 138 500 €",
+    signal: "Frais à simuler",
+    score: "71/100",
+    confidence: "Dossier à compléter",
   },
   {
     image: "/media/landing/auction-lyon.jpg",
@@ -62,14 +75,20 @@ const auctionCards = [
     tribunal: "Tribunal judiciaire de Lyon",
     title: "Appartement familial avec balcon et stationnement",
     price: "Mise à prix 176 000 €",
+    signal: "Prix/m² local suivi",
+    score: "64/100",
+    confidence: "Confiance prudente",
   },
   {
     image: "/media/landing/auction-toulouse.jpg",
-    badge: "Baisse de prix",
+    badge: "Alerte investisseur",
     city: "Toulouse",
     tribunal: "Tribunal judiciaire de Toulouse",
     title: "Maison ancienne avec jardin arboré",
     price: "Mise à prix 121 000 €",
+    signal: "Travaux à provisionner",
+    score: "69/100",
+    confidence: "Risque à lire",
   },
 ] as const;
 
@@ -77,19 +96,86 @@ const workflowSteps = [
   {
     icon: Search,
     title: "1. Repérez",
-    text: "Filtrez les ventes par ville, budget et type de bien.",
+    text: "Filtrez les ventes par zone, tribunal, budget, type de bien et date d'audience.",
+  },
+  {
+    icon: ChartNoAxesCombined,
+    title: "2. Chiffrez",
+    text: "Comparez la mise à prix au marché local, aux frais et à vos hypothèses de travaux.",
   },
   {
     icon: Scale,
-    title: "2. Comprenez",
-    text: "Lisez les points clés du dossier avant l'audience.",
-  },
-  {
-    icon: Bell,
-    title: "3. Suivez",
-    text: "Créez une alerte et préparez votre mise plafond.",
+    title: "3. Décidez",
+    text: "Fixez une mise maximale avant l'audience et gardez la trace des points à valider.",
   },
 ] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
+
+const reportPillars = [
+  {
+    icon: FileChartColumnIncreasing,
+    title: "Rapport d'opportunité judiciaire",
+    text: "Une fiche lisible qui rassemble mise à prix, estimation de marché, fourchette de valeur, comparables DVF, prix moyen local, décote apparente et niveau de confiance.",
+  },
+  {
+    icon: Calculator,
+    title: "Score d'enchère maximum",
+    text: "L'utilisateur renseigne budget, frais, travaux et rendement ou marge cible. ImmoJudis calcule la mise maximale conseillée avant l'audience.",
+  },
+  {
+    icon: Radar,
+    title: "Alertes intelligentes",
+    text: "Alertes quand une vente correspond à une zone, une décote minimale, un DPE, une maison avec terrain ou un rendement potentiel défini.",
+  },
+  {
+    icon: Database,
+    title: "Donnée judiciaire enrichie",
+    text: "Le différenciateur reste vertical : tribunal, audience, documents, occupation connue, risques, parcelle cadastrale et sources horodatées.",
+  },
+  {
+    icon: UsersRound,
+    title: "Avocats référencés",
+    text: "Une brique de mise en relation oriente l'acheteur vers des avocats référencés par barreau, tribunal et zone d'intervention.",
+  },
+] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
+
+const reportMetrics = [
+  { label: "Mise à prix", value: "92 000 €", tone: "neutral" },
+  { label: "Valeur estimée", value: "145-162 k€", tone: "opportunity" },
+  { label: "Décote apparente", value: "-31 %", tone: "opportunity" },
+  { label: "Score", value: "78/100", tone: "watch" },
+] as const;
+
+const reportRows = [
+  ["DVF comparables", "9 ventes retenues", "300 m - 24 mois"],
+  ["Frais estimés", "14 800 €", "à confirmer avec l'avocat"],
+  ["Risque principal", "Occupation à vérifier", "impact prix plafond"],
+  ["Confiance", "Moyenne", "surface et DPE à recouper"],
+] as const;
+
+const planPreviews = [
+  {
+    name: "ImmoJudis Pro",
+    price: "29 à 79 €/mois",
+    audience: "Acheteurs actifs, investisseurs particuliers, avocats partenaires",
+    features: [
+      "Rapports complets et comparables DVF détaillés",
+      "Calcul de mise maximale et frais d'adjudication estimés",
+      "Mise en relation avec avocats référencés",
+      "Alertes avancées, favoris, notes privées et export PDF",
+    ],
+  },
+  {
+    name: "ImmoJudis Investisseur",
+    price: "99 à 199 €/mois",
+    audience: "Marchands de biens, foncières locales, chasseurs et équipes multi-biens",
+    features: [
+      "Scoring de rentabilité, exports CSV et zones surveillées",
+      "Historique des ventes passées et analyse multi-biens",
+      "Pilotage des demandes avocat multi-dossiers",
+      "Accès API léger, documents centralisés et annotations collaboratives",
+    ],
+  },
+] as const;
 
 const searchGhostCities = ["Bordeaux", "Paris", "Lyon", "Nantes", "Toulouse", "Lille"] as const;
 
@@ -97,7 +183,9 @@ function HomePage() {
   return (
     <main className="ij-page">
       <HeroSection />
+      <OpportunityReportSection />
       <AuctionCardsSection />
+      <OfferPlansSection />
       <HomeProcessSection />
       <HomeFooter />
     </main>
@@ -110,7 +198,7 @@ function HeroSection() {
       <div className="ij-sky" aria-hidden />
       <div className="ij-hero-inner">
         <div className="ij-hero-copy">
-          <p className="ij-badge ij-reveal">Plateforme n°1 des ventes judiciaires en France</p>
+          <p className="ij-badge ij-reveal">Plateforme d'analyse des ventes judiciaires</p>
 
           <h1 id="home-title" className="ij-title ij-reveal ij-reveal-2">
             L'immobilier judiciaire,
@@ -118,8 +206,8 @@ function HeroSection() {
           </h1>
 
           <p className="ij-lead ij-reveal ij-reveal-3">
-            Accédez à toutes les ventes aux enchères immobilières, comprenez chaque étape et
-            saisissez les meilleures opportunités.
+            ImmoJudis transforme chaque annonce en dossier de décision : valeur de marché,
+            comparables DVF, risques, frais, rentabilité et mise maximale avant audience.
           </p>
 
           <SearchBar />
@@ -142,13 +230,13 @@ function HeroSection() {
         <div className="ij-candle-scene ij-reveal ij-reveal-6">
           <CandleAnimation />
           <article className="ij-candle-note">
-            <h2>Vente à la bougie</h2>
+            <h2>Décider avant l'audience</h2>
             <p>
-              Symbole des ventes judiciaires en France : la lumière de la transparence et de
-              l'équité.
+              Une mise à prix basse ne suffit jamais : le rapport relie marché local, frais et
+              risques pour cadrer l'enchère.
             </p>
             <Link to="/ressources">
-              Découvrir son histoire <ArrowRight aria-hidden className="h-4 w-4" />
+              Comprendre la méthode <ArrowRight aria-hidden className="h-4 w-4" />
             </Link>
           </article>
         </div>
@@ -365,11 +453,71 @@ function CandleAnimation() {
   );
 }
 
+function OpportunityReportSection() {
+  return (
+    <section className="ij-report" aria-labelledby="report-title">
+      <div className="ij-report-head">
+        <p className="ij-proof-kicker">Nouvelle offre ImmoJudis</p>
+        <h2 id="report-title">Un rapport d'opportunité judiciaire sur chaque annonce.</h2>
+        <p>
+          Plutôt qu'une estimation générique, ImmoJudis assemble les signaux utiles au moment où la
+          décision se prend : avant de mandater l'avocat, de bloquer le budget et de lever la main.
+        </p>
+      </div>
+
+      <div className="ij-report-layout">
+        <div className="ij-report-pillars" aria-label="Briques produit">
+          {reportPillars.map(({ icon: Icon, title, text }) => (
+            <article key={title} className="ij-report-pillar">
+              <span>
+                <Icon aria-hidden className="h-5 w-5" />
+              </span>
+              <h3>{title}</h3>
+              <p>{text}</p>
+            </article>
+          ))}
+        </div>
+
+        <aside className="ij-report-card" aria-label="Aperçu de rapport">
+          <div className="ij-report-card-head">
+            <span>Rapport exemple</span>
+            <strong>Appartement · Bordeaux</strong>
+            <small>Tribunal judiciaire · audience J-12</small>
+          </div>
+
+          <div className="ij-report-metrics">
+            {reportMetrics.map((metric) => (
+              <div key={metric.label} data-tone={metric.tone}>
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
+              </div>
+            ))}
+          </div>
+
+          <div className="ij-report-table">
+            {reportRows.map(([label, value, detail]) => (
+              <div key={label}>
+                <span>{label}</span>
+                <strong>{value}</strong>
+                <small>{detail}</small>
+              </div>
+            ))}
+          </div>
+
+          <Link to="/annonce-exemple" className="ij-report-link">
+            Voir une annonce enrichie <ArrowRight aria-hidden className="h-4 w-4" />
+          </Link>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 function AuctionCardsSection() {
   return (
     <section className="ij-auctions" aria-labelledby="auctions-title">
       <div className="ij-auctions-head">
-        <h2 id="auctions-title">Découvrez les ventes en cours</h2>
+        <h2 id="auctions-title">Découvrez les ventes en cours avec leurs signaux.</h2>
         <Link to="/sales" className="ij-all-sales">
           Voir toutes les ventes <ArrowRight aria-hidden className="h-4 w-4" />
         </Link>
@@ -396,9 +544,59 @@ function AuctionCardsSection() {
                 <CalendarDays aria-hidden className="h-4 w-4" />
                 {card.price}
               </span>
+              <span className="ij-card-analysis">
+                <span>{card.signal}</span>
+                <strong>{card.score}</strong>
+              </span>
+              <span className="ij-card-confidence">{card.confidence}</span>
             </span>
           </Link>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function OfferPlansSection() {
+  return (
+    <section className="ij-plans" aria-labelledby="plans-title">
+      <div className="ij-plans-intro">
+        <p className="ij-proof-kicker">MVP payant recommandé</p>
+        <h2 id="plans-title">Deux offres verticales, pensées pour l'enchère judiciaire.</h2>
+        <p>
+          L'offre se vend sur l'aide à la décision : rapports complets, calcul de mise maximale,
+          alertes avancées, suivi d'audience et données exploitables.
+        </p>
+      </div>
+
+      <div className="ij-plan-grid">
+        {planPreviews.map((plan) => (
+          <article key={plan.name} className="ij-plan-card">
+            <div>
+              <span>{plan.name}</span>
+              <strong>{plan.price}</strong>
+              <p>{plan.audience}</p>
+            </div>
+            <ul>
+              {plan.features.map((feature) => (
+                <li key={feature}>
+                  <Gauge aria-hidden className="h-4 w-4" />
+                  <span>{feature}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
+
+      <div className="ij-plans-cta">
+        <span>
+          La version gratuite peut rester utile, mais le payant doit donner accès aux preuves, aux
+          exports et aux workflows de décision.
+        </span>
+        <Link to="/accompagnement" className="ij-signup-button">
+          Voir l'offre Pro <ArrowRight aria-hidden className="h-4 w-4" />
+        </Link>
       </div>
     </section>
   );
@@ -409,12 +607,12 @@ function HomeProcessSection() {
     <section className="ij-process" aria-labelledby="process-title">
       <div className="ij-process-head">
         <div>
-          <p className="ij-proof-kicker">Parcours acheteur</p>
-          <h2 id="process-title">Comment ça marche</h2>
+          <p className="ij-proof-kicker">Parcours de décision</p>
+          <h2 id="process-title">Du signal à l'enchère maximale</h2>
         </div>
         <p>
-          Une lecture rapide des opportunités, avec juste assez de repères pour passer de la
-          découverte à la décision.
+          Une lecture rapide, mais défendable : chaque donnée doit aider à acheter moins cher, à
+          éviter un risque ou à respecter une limite fixée avant l'audience.
         </p>
       </div>
 
@@ -438,10 +636,10 @@ function HomeProcessSection() {
         <div className="ij-freshness">
           <CalendarDays aria-hidden className="h-5 w-5" />
           <span>
-            <strong>Collecte planifiée toutes les 10 min</strong>
+            <strong>Pipeline data et limites affichées</strong>
             <small>
-              Le pipeline ImmoJudis surveille les ventes publiques et met à jour les dossiers dès
-              qu'une collecte aboutit.
+              DVF garde un délai de publication et certaines données doivent être recoupées :
+              ImmoJudis affiche donc les sources, la fraîcheur et le niveau de confiance.
             </small>
           </span>
         </div>

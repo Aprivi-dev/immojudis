@@ -173,6 +173,339 @@ set tribunal = t.canonical_name
 from tribunals t
 where s.tribunal_code = t.code;
 
+create table if not exists properties (
+  id uuid primary key default gen_random_uuid(),
+  source_url text not null unique references auction_sales(source_url) on delete cascade,
+  source_name text not null,
+  primary_source text,
+  source_urls jsonb not null default '[]'::jsonb,
+  external_id text,
+  department text,
+  city text,
+  postal_code text,
+  address text,
+  property_type text,
+  title text,
+  description text,
+  surface_m2 numeric check (surface_m2 is null or surface_m2 >= 0),
+  habitable_surface_m2 numeric check (habitable_surface_m2 is null or habitable_surface_m2 >= 0),
+  land_surface_m2 numeric check (land_surface_m2 is null or land_surface_m2 >= 0),
+  carrez_surface_m2 numeric check (carrez_surface_m2 is null or carrez_surface_m2 >= 0),
+  app_surface_m2 numeric check (app_surface_m2 is null or app_surface_m2 >= 0),
+  app_surface_kind text,
+  surface_scope text,
+  surface_source text,
+  surface_confidence numeric check (surface_confidence is null or (surface_confidence >= 0 and surface_confidence <= 1)),
+  surface_evidence text,
+  rooms_count integer check (rooms_count is null or rooms_count >= 0),
+  bedrooms_count integer check (bedrooms_count is null or bedrooms_count >= 0),
+  bathrooms_count integer check (bathrooms_count is null or bathrooms_count >= 0),
+  parking_count integer check (parking_count is null or parking_count >= 0),
+  has_garden boolean,
+  has_terrace boolean,
+  has_garage boolean,
+  has_pool boolean,
+  has_air_conditioning boolean,
+  has_double_glazing boolean,
+  occupancy_status text,
+  latitude double precision check (latitude is null or latitude between -90 and 90),
+  longitude double precision check (longitude is null or longitude between -180 and 180),
+  location geography(Point, 4326) generated always as (
+    case
+      when latitude is not null and longitude is not null
+      then st_setsrid(st_makepoint(longitude, latitude), 4326)::geography
+      else null
+    end
+  ) stored,
+  raw_payload jsonb not null default '{}'::jsonb,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists judicial_sales (
+  id uuid primary key default gen_random_uuid(),
+  source_url text not null unique references auction_sales(source_url) on delete cascade,
+  property_source_url text not null references properties(source_url) on delete cascade,
+  source_name text not null,
+  primary_source text,
+  source_urls jsonb not null default '[]'::jsonb,
+  external_id text,
+  tribunal text,
+  tribunal_code text references tribunals(code),
+  starting_price_eur numeric check (starting_price_eur is null or starting_price_eur >= 0),
+  sale_date timestamptz,
+  visit_dates jsonb not null default '[]'::jsonb,
+  status text not null default 'upcoming',
+  adjudication_price_eur numeric check (adjudication_price_eur is null or adjudication_price_eur >= 0),
+  source_lawyer_name text,
+  source_lawyer_contact text,
+  documents_count integer not null default 0 check (documents_count >= 0),
+  investment_score numeric check (investment_score is null or (investment_score >= 0 and investment_score <= 100)),
+  investment_summary text,
+  score_version text,
+  score_confidence numeric check (score_confidence is null or (score_confidence >= 0 and score_confidence <= 1)),
+  score_factors jsonb not null default '[]'::jsonb,
+  quality_flags jsonb not null default '[]'::jsonb,
+  content_hash text,
+  last_run_id uuid,
+  raw_payload jsonb not null default '{}'::jsonb,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_properties_department_city on properties(department, city);
+create index if not exists idx_properties_type on properties(property_type);
+create index if not exists idx_properties_location on properties using gist(location);
+create index if not exists idx_properties_source_urls on properties using gin(source_urls);
+
+create index if not exists idx_judicial_sales_property_source_url on judicial_sales(property_source_url);
+create index if not exists idx_judicial_sales_date on judicial_sales(sale_date);
+create index if not exists idx_judicial_sales_status_date on judicial_sales(status, sale_date);
+create index if not exists idx_judicial_sales_tribunal on judicial_sales(tribunal_code);
+create index if not exists idx_judicial_sales_source_urls on judicial_sales using gin(source_urls);
+
+insert into properties (
+  source_url, source_name, primary_source, source_urls, external_id,
+  department, city, postal_code, address, property_type, title, description,
+  surface_m2, habitable_surface_m2, land_surface_m2, carrez_surface_m2,
+  app_surface_m2, app_surface_kind, surface_scope, surface_source,
+  surface_confidence, surface_evidence, rooms_count, bedrooms_count,
+  bathrooms_count, parking_count, has_garden, has_terrace, has_garage,
+  has_pool, has_air_conditioning, has_double_glazing, occupancy_status,
+  latitude, longitude, raw_payload, first_seen_at, last_seen_at, updated_at
+)
+select
+  s.source_url, s.source_name, s.primary_source, coalesce(s.source_urls, '[]'::jsonb), s.external_id,
+  s.department, s.city, s.postal_code, s.address, s.property_type, s.title, s.description,
+  s.surface_m2, s.habitable_surface_m2, s.land_surface_m2, s.carrez_surface_m2,
+  s.app_surface_m2, s.app_surface_kind, s.surface_scope, s.surface_source,
+  s.surface_confidence, s.surface_evidence, s.rooms_count, s.bedrooms_count,
+  s.bathrooms_count, s.parking_count, s.has_garden, s.has_terrace, s.has_garage,
+  s.has_pool, s.has_air_conditioning, s.has_double_glazing, s.occupancy_status,
+  s.latitude::double precision, s.longitude::double precision, coalesce(s.raw_payload, '{}'::jsonb),
+  coalesce(s.first_seen_at, now()), coalesce(s.last_seen_at, now()), now()
+from auction_sales s
+on conflict (source_url) do update set
+  source_name = excluded.source_name,
+  primary_source = excluded.primary_source,
+  source_urls = excluded.source_urls,
+  external_id = excluded.external_id,
+  department = excluded.department,
+  city = excluded.city,
+  postal_code = excluded.postal_code,
+  address = excluded.address,
+  property_type = excluded.property_type,
+  title = excluded.title,
+  description = excluded.description,
+  surface_m2 = excluded.surface_m2,
+  habitable_surface_m2 = excluded.habitable_surface_m2,
+  land_surface_m2 = excluded.land_surface_m2,
+  carrez_surface_m2 = excluded.carrez_surface_m2,
+  app_surface_m2 = excluded.app_surface_m2,
+  app_surface_kind = excluded.app_surface_kind,
+  surface_scope = excluded.surface_scope,
+  surface_source = excluded.surface_source,
+  surface_confidence = excluded.surface_confidence,
+  surface_evidence = excluded.surface_evidence,
+  rooms_count = excluded.rooms_count,
+  bedrooms_count = excluded.bedrooms_count,
+  bathrooms_count = excluded.bathrooms_count,
+  parking_count = excluded.parking_count,
+  has_garden = excluded.has_garden,
+  has_terrace = excluded.has_terrace,
+  has_garage = excluded.has_garage,
+  has_pool = excluded.has_pool,
+  has_air_conditioning = excluded.has_air_conditioning,
+  has_double_glazing = excluded.has_double_glazing,
+  occupancy_status = excluded.occupancy_status,
+  latitude = excluded.latitude,
+  longitude = excluded.longitude,
+  raw_payload = excluded.raw_payload,
+  last_seen_at = excluded.last_seen_at,
+  updated_at = excluded.updated_at;
+
+insert into judicial_sales (
+  source_url, property_source_url, source_name, primary_source, source_urls,
+  external_id, tribunal, tribunal_code, starting_price_eur, sale_date,
+  visit_dates, status, adjudication_price_eur, source_lawyer_name,
+  source_lawyer_contact, documents_count, investment_score, investment_summary,
+  score_version, score_confidence, score_factors, quality_flags, content_hash,
+  last_run_id, raw_payload, first_seen_at, last_seen_at, updated_at
+)
+select
+  s.source_url, p.source_url, s.source_name, s.primary_source, coalesce(s.source_urls, '[]'::jsonb),
+  s.external_id, s.tribunal, s.tribunal_code, s.starting_price_eur, s.sale_date,
+  coalesce(s.visit_dates, '[]'::jsonb), coalesce(s.status, 'upcoming'), s.adjudication_price_eur,
+  s.lawyer_name,
+  s.lawyer_contact,
+  case when jsonb_typeof(s.documents) = 'array' then jsonb_array_length(s.documents) else 0 end,
+  s.investment_score, s.investment_summary, s.score_version, s.score_confidence,
+  coalesce(s.score_factors, '[]'::jsonb), coalesce(s.quality_flags, '[]'::jsonb),
+  s.content_hash, s.last_run_id, coalesce(s.raw_payload, '{}'::jsonb),
+  coalesce(s.first_seen_at, now()), coalesce(s.last_seen_at, now()), now()
+from auction_sales s
+join properties p on p.source_url = s.source_url
+on conflict (source_url) do update set
+  property_source_url = excluded.property_source_url,
+  source_name = excluded.source_name,
+  primary_source = excluded.primary_source,
+  source_urls = excluded.source_urls,
+  external_id = excluded.external_id,
+  tribunal = excluded.tribunal,
+  tribunal_code = excluded.tribunal_code,
+  starting_price_eur = excluded.starting_price_eur,
+  sale_date = excluded.sale_date,
+  visit_dates = excluded.visit_dates,
+  status = excluded.status,
+  adjudication_price_eur = excluded.adjudication_price_eur,
+  source_lawyer_name = excluded.source_lawyer_name,
+  source_lawyer_contact = excluded.source_lawyer_contact,
+  documents_count = excluded.documents_count,
+  investment_score = excluded.investment_score,
+  investment_summary = excluded.investment_summary,
+  score_version = excluded.score_version,
+  score_confidence = excluded.score_confidence,
+  score_factors = excluded.score_factors,
+  quality_flags = excluded.quality_flags,
+  content_hash = excluded.content_hash,
+  last_run_id = excluded.last_run_id,
+  raw_payload = excluded.raw_payload,
+  last_seen_at = excluded.last_seen_at,
+  updated_at = excluded.updated_at;
+
+create table if not exists dvf_import_batches (
+  id uuid primary key default gen_random_uuid(),
+  source text not null default 'DVF',
+  source_url text,
+  file_name text,
+  period_start date,
+  period_end date,
+  status text not null default 'pending' check (
+    status in ('pending', 'running', 'completed', 'failed')
+  ),
+  imported_rows integer not null default 0 check (imported_rows >= 0),
+  error_message text,
+  metadata jsonb not null default '{}'::jsonb,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists dvf_transactions (
+  id uuid primary key default gen_random_uuid(),
+  import_batch_id uuid references dvf_import_batches(id) on delete set null,
+  source text not null default 'DVF',
+  source_mutation_id text not null,
+  source_url text,
+  sale_date date not null,
+  mutation_nature text,
+  total_price_eur numeric not null check (total_price_eur > 0),
+  built_surface_m2 numeric check (built_surface_m2 is null or built_surface_m2 > 0),
+  land_surface_m2 numeric check (land_surface_m2 is null or land_surface_m2 >= 0),
+  price_per_m2 numeric generated always as (
+    case
+      when total_price_eur > 0 and built_surface_m2 > 0
+      then round(total_price_eur / built_surface_m2)
+      else null
+    end
+  ) stored,
+  property_type text,
+  dvf_property_type_code text,
+  rooms_count integer check (rooms_count is null or rooms_count >= 0),
+  lots_count integer check (lots_count is null or lots_count >= 0),
+  address text,
+  city text,
+  postal_code text,
+  insee_code text,
+  department text,
+  parcel_id text,
+  latitude double precision check (latitude is null or latitude between -90 and 90),
+  longitude double precision check (longitude is null or longitude between -180 and 180),
+  location geography(Point, 4326) generated always as (
+    case
+      when latitude is not null and longitude is not null
+      then st_setsrid(st_makepoint(longitude, latitude), 4326)::geography
+      else null
+    end
+  ) stored,
+  raw_payload jsonb not null default '{}'::jsonb,
+  source_last_seen_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists auction_cadastre_parcels (
+  id uuid primary key default gen_random_uuid(),
+  source_url text not null references auction_sales(source_url) on delete cascade,
+  parcel_key text not null,
+  parcel_id text,
+  code_insee text,
+  department text,
+  city text,
+  section text,
+  parcel_number text,
+  surface_m2 numeric check (surface_m2 is null or surface_m2 >= 0),
+  centroid_lat double precision check (centroid_lat is null or centroid_lat between -90 and 90),
+  centroid_lng double precision check (centroid_lng is null or centroid_lng between -180 and 180),
+  geometry_geojson jsonb not null default '{}'::jsonb,
+  match_kind text not null default 'point_intersection' check (
+    match_kind in ('point_intersection', 'reference_lookup', 'manual')
+  ),
+  confidence numeric not null default 0.8 check (confidence >= 0 and confidence <= 1),
+  source_api text not null default 'API Carto Cadastre',
+  source_api_url text,
+  raw_payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists auction_dpe_diagnostics (
+  id uuid primary key default gen_random_uuid(),
+  source_url text not null references auction_sales(source_url) on delete cascade,
+  diagnostic_number text not null,
+  dpe_class text check (dpe_class is null or dpe_class in ('A', 'B', 'C', 'D', 'E', 'F', 'G')),
+  ges_class text check (ges_class is null or ges_class in ('A', 'B', 'C', 'D', 'E', 'F', 'G')),
+  established_at date,
+  valid_until date,
+  last_modified_at date,
+  property_type text,
+  address text,
+  city text,
+  postal_code text,
+  insee_code text,
+  department text,
+  surface_m2 numeric check (surface_m2 is null or surface_m2 > 0),
+  energy_consumption_kwh_m2_year numeric check (
+    energy_consumption_kwh_m2_year is null or energy_consumption_kwh_m2_year >= 0
+  ),
+  emissions_kg_co2_m2_year numeric check (
+    emissions_kg_co2_m2_year is null or emissions_kg_co2_m2_year >= 0
+  ),
+  ban_score numeric check (ban_score is null or (ban_score >= 0 and ban_score <= 1)),
+  latitude double precision check (latitude is null or latitude between -90 and 90),
+  longitude double precision check (longitude is null or longitude between -180 and 180),
+  location geography(Point, 4326) generated always as (
+    case
+      when latitude is not null and longitude is not null
+      then st_setsrid(st_makepoint(longitude, latitude), 4326)::geography
+      else null
+    end
+  ) stored,
+  match_kind text not null default 'geo_distance' check (
+    match_kind in ('geo_distance', 'address_query', 'source_number', 'manual')
+  ),
+  confidence numeric not null default 0.65 check (confidence >= 0 and confidence <= 1),
+  source_api text not null default 'ADEME DPE Open Data',
+  source_api_url text,
+  raw_payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists auction_observations (
   source_url text primary key,
   source_name text not null,
@@ -307,6 +640,34 @@ create table if not exists auction_risk_occurrences (
   updated_at timestamptz default now()
 );
 
+create table if not exists auction_urban_planning_signals (
+  id uuid primary key default gen_random_uuid(),
+  source_url text not null references auction_sales(source_url) on delete cascade,
+  signal_key text not null,
+  signal_kind text not null check (
+    signal_kind in ('zoning', 'permit', 'servitude', 'coownership', 'usage', 'public_record')
+  ),
+  label text not null,
+  status text not null default 'to_verify' check (status in ('documented', 'to_verify')),
+  priority text not null default 'medium' check (priority in ('high', 'medium', 'low')),
+  source_name text,
+  source_kind text not null default 'sale_text' check (
+    source_kind in ('sale_text', 'source_payload', 'document', 'pdf', 'risk', 'score_factor', 'llm', 'manual')
+  ),
+  document_url text,
+  document_label text,
+  document_type text,
+  page_number integer,
+  excerpt text,
+  action text,
+  confidence numeric not null default 0.65 check (confidence >= 0 and confidence <= 1),
+  detector text not null default 'urban_planning_regex',
+  detector_version text not null default 'urban_planning_v1',
+  raw_payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 create table if not exists auction_score_factors (
   id uuid primary key default gen_random_uuid(),
   source_url text not null references auction_sales(source_url) on delete cascade,
@@ -375,6 +736,47 @@ create index if not exists idx_auction_sales_starting_price on auction_sales(sta
 create index if not exists idx_auction_sales_latlng on auction_sales(latitude, longitude);
 create index if not exists idx_auction_sales_location on auction_sales using gist(location);
 create index if not exists idx_auction_sales_tribunal_code on auction_sales(tribunal_code);
+create unique index if not exists idx_dvf_transactions_source_mutation_parcel
+  on dvf_transactions (source, source_mutation_id, coalesce(parcel_id, ''));
+create index if not exists idx_dvf_import_batches_source_created
+  on dvf_import_batches(source, created_at desc);
+create index if not exists idx_dvf_transactions_import_batch
+  on dvf_transactions(import_batch_id);
+create index if not exists idx_dvf_transactions_sale_date
+  on dvf_transactions(sale_date desc);
+create index if not exists idx_dvf_transactions_department_city_type
+  on dvf_transactions(department, city, property_type);
+create index if not exists idx_dvf_transactions_price_per_m2
+  on dvf_transactions(price_per_m2)
+  where price_per_m2 is not null;
+create index if not exists idx_dvf_transactions_lat_lng
+  on dvf_transactions(latitude, longitude)
+  where latitude is not null and longitude is not null;
+create index if not exists idx_dvf_transactions_location
+  on dvf_transactions using gist(location)
+  where location is not null;
+create unique index if not exists idx_auction_cadastre_parcels_source_key
+  on auction_cadastre_parcels(source_url, parcel_key);
+create index if not exists idx_auction_cadastre_parcels_source_url
+  on auction_cadastre_parcels(source_url);
+create index if not exists idx_auction_cadastre_parcels_insee_section
+  on auction_cadastre_parcels(code_insee, section, parcel_number);
+create index if not exists idx_auction_cadastre_parcels_centroid
+  on auction_cadastre_parcels(centroid_lat, centroid_lng)
+  where centroid_lat is not null and centroid_lng is not null;
+create unique index if not exists idx_auction_dpe_diagnostics_source_number
+  on auction_dpe_diagnostics(source_url, diagnostic_number);
+create index if not exists idx_auction_dpe_diagnostics_source_url
+  on auction_dpe_diagnostics(source_url);
+create index if not exists idx_auction_dpe_diagnostics_classes
+  on auction_dpe_diagnostics(dpe_class, ges_class);
+create index if not exists idx_auction_dpe_diagnostics_department_city
+  on auction_dpe_diagnostics(department, city);
+create index if not exists idx_auction_dpe_diagnostics_established
+  on auction_dpe_diagnostics(established_at desc nulls last);
+create index if not exists idx_auction_dpe_diagnostics_location
+  on auction_dpe_diagnostics using gist(location)
+  where location is not null;
 create index if not exists idx_auction_observations_source_name on auction_observations(source_name);
 create index if not exists idx_auction_observations_content_hash on auction_observations(content_hash);
 create index if not exists idx_auction_features_investment_score on auction_features(investment_score);
@@ -390,6 +792,15 @@ create index if not exists idx_auction_score_factors_source_url on auction_score
 create index if not exists idx_auction_risk_occurrences_source_url on auction_risk_occurrences(source_url);
 create index if not exists idx_auction_risk_occurrences_label on auction_risk_occurrences(risk_label);
 create index if not exists idx_auction_risk_occurrences_document_url on auction_risk_occurrences(document_url);
+create unique index if not exists idx_auction_urban_planning_signals_source_key
+  on auction_urban_planning_signals(source_url, signal_key);
+create index if not exists idx_auction_urban_planning_signals_source_url
+  on auction_urban_planning_signals(source_url);
+create index if not exists idx_auction_urban_planning_signals_kind_status
+  on auction_urban_planning_signals(signal_kind, status, priority);
+create index if not exists idx_auction_urban_planning_signals_document_url
+  on auction_urban_planning_signals(document_url)
+  where document_url is not null;
 create index if not exists idx_auction_runs_started_at on auction_runs(started_at);
 create index if not exists idx_auction_sale_history_source_url on auction_sale_history(source_url);
 
@@ -796,6 +1207,12 @@ where id is not null
 
 alter table auction_sales enable row level security;
 alter table tribunals enable row level security;
+alter table properties enable row level security;
+alter table judicial_sales enable row level security;
+alter table dvf_import_batches enable row level security;
+alter table dvf_transactions enable row level security;
+alter table auction_cadastre_parcels enable row level security;
+alter table auction_dpe_diagnostics enable row level security;
 alter table auction_observations enable row level security;
 alter table auction_features enable row level security;
 alter table auction_surfaces enable row level security;
@@ -804,6 +1221,7 @@ alter table auction_runs enable row level security;
 alter table auction_documents enable row level security;
 alter table auction_extractions enable row level security;
 alter table auction_risk_occurrences enable row level security;
+alter table auction_urban_planning_signals enable row level security;
 alter table auction_score_factors enable row level security;
 alter table auction_scoring_versions enable row level security;
 alter table auction_sale_history enable row level security;
@@ -824,6 +1242,12 @@ end $$;
 
 grant usage on schema public to service_role;
 grant select, insert, update, delete on table auction_sales to service_role;
+grant select, insert, update, delete on table properties to service_role;
+grant select, insert, update, delete on table judicial_sales to service_role;
+grant select, insert, update, delete on table dvf_import_batches to service_role;
+grant select, insert, update, delete on table dvf_transactions to service_role;
+grant select, insert, update, delete on table auction_cadastre_parcels to service_role;
+grant select, insert, update, delete on table auction_dpe_diagnostics to service_role;
 grant select, insert, update, delete on table auction_observations to service_role;
 grant select, insert, update, delete on table auction_features to service_role;
 grant select, insert, update, delete on table auction_surfaces to service_role;
@@ -833,12 +1257,19 @@ grant select, insert, update, delete on table auction_runs to service_role;
 grant select, insert, update, delete on table auction_documents to service_role;
 grant select, insert, update, delete on table auction_extractions to service_role;
 grant select, insert, update, delete on table auction_risk_occurrences to service_role;
+grant select, insert, update, delete on table auction_urban_planning_signals to service_role;
 grant select, insert, update, delete on table auction_score_factors to service_role;
 grant select, insert, update, delete on table auction_scoring_versions to service_role;
 grant select, insert, update, delete on table auction_sale_history to service_role;
 grant select, insert, update, delete on table auction_sales_app_read to service_role;
 
 revoke all on table auction_sales from anon, authenticated;
+revoke all on table properties from anon, authenticated;
+revoke all on table judicial_sales from anon, authenticated;
+revoke all on table dvf_import_batches from anon, authenticated;
+revoke all on table dvf_transactions from anon, authenticated;
+revoke all on table auction_cadastre_parcels from anon, authenticated;
+revoke all on table auction_dpe_diagnostics from anon, authenticated;
 revoke all on table auction_observations from anon, authenticated;
 revoke all on table auction_features from anon, authenticated;
 revoke all on table auction_surfaces from anon, authenticated;
@@ -847,6 +1278,7 @@ revoke all on table auction_runs from anon, authenticated;
 revoke all on table auction_documents from anon, authenticated;
 revoke all on table auction_extractions from anon, authenticated;
 revoke all on table auction_risk_occurrences from anon, authenticated;
+revoke all on table auction_urban_planning_signals from anon, authenticated;
 revoke all on table auction_score_factors from anon, authenticated;
 revoke all on table auction_scoring_versions from anon, authenticated;
 revoke all on table auction_sale_history from anon, authenticated;
@@ -869,6 +1301,8 @@ grant select (id, starting_price_eur) on auction_sales to anon;
 grant select on v_auction_sales_app_preview to anon, authenticated;
 
 grant select on auction_sales to authenticated;
+grant select on properties to authenticated;
+grant select on judicial_sales to authenticated;
 grant select on auction_features to authenticated;
 grant select on auction_surfaces to authenticated;
 grant select on auction_risks to authenticated;
@@ -900,6 +1334,10 @@ create policy auction_sales_public_preview_read on auction_sales for select to a
   and longitude is not null
 );
 create policy auction_sales_authenticated_read on auction_sales for select to authenticated using (true);
+drop policy if exists properties_authenticated_read on properties;
+create policy properties_authenticated_read on properties for select to authenticated using (true);
+drop policy if exists judicial_sales_authenticated_read on judicial_sales;
+create policy judicial_sales_authenticated_read on judicial_sales for select to authenticated using (true);
 drop policy if exists auction_features_public_read on auction_features;
 drop policy if exists auction_features_authenticated_read on auction_features;
 create policy auction_features_authenticated_read on auction_features for select to authenticated using (true);

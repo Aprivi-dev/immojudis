@@ -12,7 +12,7 @@ import {
   useSearchParams,
 } from "next/navigation";
 import type * as React from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
 
 type SearchRecord = Record<string, unknown>;
 type ParamsRecord = Record<string, string | string[] | undefined>;
@@ -58,7 +58,11 @@ export function RouteCompatProvider({
   return <RouteCompatContext.Provider value={value}>{children}</RouteCompatContext.Provider>;
 }
 
-function searchParamsToObject(searchParams: ReturnType<typeof useSearchParams>): SearchRecord {
+type SearchParamsLike = {
+  forEach(callback: (value: string, key: string) => void): void;
+};
+
+function searchParamsToObject(searchParams: SearchParamsLike): SearchRecord {
   const next: SearchRecord = {};
   searchParams.forEach((value, key) => {
     const numeric = Number(value);
@@ -74,8 +78,11 @@ function createCompatRoute(path: string, options: RouteOptions): CompatRoute {
     options,
     useSearch() {
       const searchParams = useSearchParams();
-      const raw = searchParamsToObject(searchParams);
-      return options.validateSearch ? options.validateSearch(raw) : raw;
+      const searchParamsKey = searchParams.toString();
+      return useMemo(() => {
+        const raw = searchParamsToObject(new URLSearchParams(searchParamsKey));
+        return options.validateSearch ? options.validateSearch(raw) : raw;
+      }, [searchParamsKey]);
     },
     useParams() {
       const context = useContext(RouteCompatContext);
@@ -181,6 +188,12 @@ export function useNavigate(_options?: unknown) {
   const router = useNextRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
+  const searchParamsKeyRef = useRef(searchParamsKey);
+
+  useEffect(() => {
+    searchParamsKeyRef.current = searchParamsKey;
+  }, [searchParamsKey]);
 
   return useCallback(
     (options: string | NavigateOptions) => {
@@ -189,7 +202,7 @@ export function useNavigate(_options?: unknown) {
         return;
       }
 
-      const previous = searchParamsToObject(searchParams);
+      const previous = searchParamsToObject(new URLSearchParams(searchParamsKeyRef.current));
       const nextSearch =
         typeof options.search === "function" ? options.search(previous) : options.search;
       const href = buildHref({
@@ -204,7 +217,7 @@ export function useNavigate(_options?: unknown) {
         router.push(href);
       }
     },
-    [pathname, router, searchParams],
+    [pathname, router],
   );
 }
 
@@ -220,7 +233,12 @@ export function useLocation() {
 }
 
 export function useSearch(_options?: unknown) {
-  return searchParamsToObject(useSearchParams());
+  const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
+  return useMemo(
+    () => searchParamsToObject(new URLSearchParams(searchParamsKey)),
+    [searchParamsKey],
+  );
 }
 
 export function useRouter() {

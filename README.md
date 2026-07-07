@@ -6,24 +6,24 @@ Plateforme d'exploration des **ventes immobilières aux enchères judiciaires** 
 France. L'application aide l'investisseur à décider **jusqu'à combien
 enchérir** : pour chaque bien, un assistant calcule une mise plafond à partir du
 marché local (DVF), des frais, des travaux et d'une marge de sécurité, avec la
-localisation (vue aérienne 3D + Street View) et les documents officiels.
+localisation OpenStreetMap et les documents officiels.
 
 Le dépôt réunit deux briques :
 
-| Brique                  | Dossier                                                       | Stack                              | Rôle                                                |
-| ----------------------- | ------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------- |
-| **Application web**     | racine (`src/`)                                               | TanStack Start · React 19 · Vite 7 | Front + API serveur consommés par l'investisseur    |
-| **Pipeline de données** | [`services/data-pipeline/`](services/data-pipeline/README.md) | Python 3.11                        | Scraping → normalisation → déduplication → Supabase |
+| Brique                  | Dossier                                                       | Stack                         | Rôle                                                |
+| ----------------------- | ------------------------------------------------------------- | ----------------------------- | --------------------------------------------------- |
+| **Application web**     | racine (`src/`)                                               | Next.js App Router · React 19 | Front + API serveur consommés par l'investisseur    |
+| **Pipeline de données** | [`services/data-pipeline/`](services/data-pipeline/README.md) | Python 3.11                   | Scraping → normalisation → déduplication → Supabase |
 
 ---
 
 ## Stack technique (web)
 
-- **Framework** : [TanStack Start](https://tanstack.com/start) (SSR + serveur Nitro) sur **Vite 7**
+- **Framework** : [Next.js App Router](https://nextjs.org/docs/app) (SSR, routes serveur et API routes)
 - **UI** : React 19, **Tailwind CSS v4**, composants [shadcn/ui](https://ui.shadcn.com) (Radix UI)
-- **Routing / data** : TanStack Router (file-based) + TanStack Query
+- **Routing / data** : App Router Next.js + adaptateur de compatibilité pour les anciennes routes + TanStack Query
 - **Backend** : [Supabase](https://supabase.com) (Postgres, Auth, RLS)
-- **Cartographie** : Google Maps (Static, JavaScript, Photorealistic 3D Tiles)
+- **Cartographie** : OpenStreetMap (tuiles raster configurables + attribution)
 - **Formulaires / validation** : formulaires natifs + Zod
 - **Langage** : TypeScript strict
 - **Hébergement** : Vercel
@@ -33,17 +33,16 @@ Le dépôt réunit deux briques :
 - **Node ≥ 20.19** (recommandé : 24, voir [`.nvmrc`](.nvmrc) — `nvm use`)
 - **npm 10**
 - Un projet **Supabase** (URL + clé publishable)
-- une **clé Google Maps** restreinte par domaine
 
 ## Démarrage rapide
 
 ```bash
 npm install
 cp .env.example .env.local      # puis renseigner les variables (voir ci-dessous)
-npm run dev                     # http://localhost:5173
+npm run dev                     # http://localhost:3000
 ```
 
-`npm run dev:ready` est une alternative qui attend que Vite **et** les routes SSR
+`npm run dev:ready` est une alternative qui attend que Next.js **et** les routes SSR
 répondent réellement avant d'afficher l'URL. Pour préchauffer une annonce :
 
 ```bash
@@ -52,56 +51,62 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 
 ## Variables d'environnement
 
-| Variable                        | Requis | Description                                                                                                                        |
-| ------------------------------- | :----: | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `VITE_SUPABASE_URL`             |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                                                 |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` |   ✅   | Clé `anon` / publishable (publique, côté client)                                                                                   |
-| `VITE_GOOGLE_MAPS_API_KEY` / `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` |   ➖   | Clé navigateur Google Maps restreinte par domaine. Active vignettes, carte interactive, vue aérienne 3D et Street View ; sinon repli OSM/placeholder. |
-| `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` |   ➖   | Map ID JavaScript Google Maps. Active les Advanced Markers sur la carte détail et supprime le warning de marker déprécié. |
-| `GITHUB_SCROLL_TOKEN`           |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                                           |
+| Variable                        | Requis | Description                                                                                                 |
+| ------------------------------- | :----: | ----------------------------------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`             |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                          |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` |   ✅   | Clé `anon` / publishable (publique, côté client)                                                            |
+| `SUPABASE_SECRET_KEY`           |   ✅   | Clé serveur Supabase pour les API routes, ou `SUPABASE_SERVICE_ROLE_KEY` sur les projets legacy             |
+| `SUPABASE_DB_URL`               |   ✅   | URL Postgres directe pour les migrations. Replis acceptés : `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL`      |
+| `CRON_SECRET`                   |   ✅   | Secret utilisé par les routes Vercel Cron                                                                   |
+| `RESEND_API_KEY`                |   ✅   | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés           |
+| `ALERT_EMAIL_FROM`              |   ✅   | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`                                   |
+| `NEXT_PUBLIC_OSM_TILE_URL`      |   ➖   | Template de tuiles OSM compatible `{z}/{x}/{y}`. Défaut : `https://tile.openstreetmap.org/{z}/{x}/{y}.png`. |
+| `GITHUB_SCROLL_TOKEN`           |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                    |
 
 > Les variables `VITE_*` sont **inlinées au moment du build**. En production
 > (Vercel) elles doivent être présentes dans _Project Settings → Environment
 > Variables_ **et** suivies d'un redéploiement. Voir [`docs/vercel_setup.md`](docs/vercel_setup.md)
 > pour la configuration complète (Auth, secrets CI, runner admin).
 >
-> ⚠️ Ne jamais exposer `SUPABASE_SERVICE_ROLE_KEY` côté front : elle contourne la RLS.
+> `npm run env:check:prod` vérifie les groupes de variables nécessaires aux API
+> serveur et aux migrations avant un déploiement complet.
+> Si Vercel marque des variables comme sensibles, leurs valeurs peuvent rester
+> illisibles localement : le check valide alors leur présence déclarée, mais
+> `npm run db:migrate` exige toujours une URL Postgres réellement disponible.
+>
+> ⚠️ Ne jamais exposer `SUPABASE_SECRET_KEY` ou `SUPABASE_SERVICE_ROLE_KEY` côté
+> front : elles contournent la RLS.
 
-### Cartographie Google — APIs à activer
+### Cartographie OpenStreetMap
 
-Si elle est configurée, la clé Google Maps doit avoir ces APIs **activées** dans Google
-Cloud :
-
-| API Google Cloud        | Alimente                                      |
-| ----------------------- | --------------------------------------------- |
-| **Maps Static API**     | Vignettes des annonces                        |
-| **Maps JavaScript API** | Carte interactive + Street View (page détail) |
-| **Map Tiles API**       | Vue aérienne photoréaliste 3D (page détail)   |
-
-La clé doit aussi autoriser les **référents HTTP** `http://localhost:3000/*` (dev)
-et le domaine de production.
+Par défaut, l'application utilise les tuiles publiques
+`https://tile.openstreetmap.org/{z}/{x}/{y}.png` avec attribution visible.
+Pour un trafic soutenu ou des garanties de disponibilité, configurez
+`NEXT_PUBLIC_OSM_TILE_URL` avec un fournisseur de tuiles compatible.
 
 ## Scripts
 
-| Script               | Effet                                                           |
-| -------------------- | --------------------------------------------------------------- |
-| `npm run dev`        | Serveur de dev Vite (HMR)                                       |
-| `npm run dev:ready`  | Dev + attente que le client et le SSR répondent                 |
-| `npm run build`      | Build de production                                             |
-| `npm run preview`    | Smoke-test du build                                             |
-| `npm run test`       | Tests unitaires Vitest                                          |
-| `npm run lint`       | ESLint (flat config)                                            |
-| `npm run db:migrate` | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`) |
-| `npm run format`     | Prettier (écriture)                                             |
+| Script                   | Effet                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`            | Serveur de dev Next.js (HMR)                                                                                  |
+| `npm run dev:ready`      | Dev + attente que le client et le SSR répondent                                                               |
+| `npm run build`          | Build de production                                                                                           |
+| `npm run preview`        | Smoke-test du build                                                                                           |
+| `npm run test`           | Tests unitaires Vitest                                                                                        |
+| `npm run lint`           | ESLint (flat config)                                                                                          |
+| `npm run env:check:prod` | Vérifie les variables nécessaires aux API prod + migrations                                                   |
+| `npm run db:migrate`     | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`) |
+| `npm run format`         | Prettier (écriture)                                                                                           |
 
 ## Structure du dépôt
 
 ```
 immojudis/
-├─ src/                       # Application web (TanStack Start)
-│  ├─ routes/                 # Routes file-based (/, /sales, /sales/$id, /publish, /admin…)
+├─ src/                       # Application web (Next.js App Router)
+│  ├─ app/                    # Routes Next.js (/, /sales, /sales/[id], /publish, /admin…)
+│  ├─ routes/                 # Anciennes routes client conservées via compatibilité
 │  ├─ components/             # Composants UI + localisation (SaleLocationHero, MapThumbnail…)
-│  ├─ lib/                    # Métier : queries Supabase, format, géo, surface, google-maps, tiles
+│  ├─ lib/                    # Métier : queries Supabase, format, géo, surface, tiles
 │  ├─ hooks/                  # Hooks React
 │  ├─ integrations/           # Client Supabase et intégrations
 │  └─ types/                  # Types partagés
@@ -134,7 +139,7 @@ installation : [`services/data-pipeline/README.md`](services/data-pipeline/READM
 
 ## Déploiement
 
-Cible : **Vercel** (preset TanStack Start). Renseigner les variables
+Cible : **Vercel** (preset Next.js). Renseigner les variables
 d'environnement dans le projet Vercel puis déployer. Procédure complète (Auth
 Supabase, secrets CI, runner de scroll admin) : [`docs/vercel_setup.md`](docs/vercel_setup.md).
 

@@ -86,6 +86,17 @@ export function googleMapsAerial3dUrl(lat: number, lng: number) {
   return `https://www.google.com/maps/@${lat},${lng},120a,35y,0h,60t/data=!3m1!1e3`;
 }
 
+export function googleMapsAerial3dEmbedUrl(lat: number, lng: number) {
+  const params = new URLSearchParams({
+    hl: "fr",
+    output: "embed",
+    q: `${lat},${lng}`,
+    t: "k",
+    z: "19",
+  });
+  return `https://maps.google.com/maps?${params.toString()}`;
+}
+
 export function googleMapsStreetViewUrl(lat: number, lng: number) {
   const params = new URLSearchParams({
     api: "1",
@@ -95,38 +106,12 @@ export function googleMapsStreetViewUrl(lat: number, lng: number) {
   return `https://www.google.com/maps/@?${params.toString()}`;
 }
 
-// NB: `roadmap` (et non `satellite`/`hybrid`) par défaut. L'API Static Maps de
-// Google refuse l'imagerie satellite/hybride pour les comptes de l'EEE (réponse
-// HTTP 403 "satellite and hybrid map types are not available for your account
-// and region"), ce qui faisait échouer le chargement des vignettes → repli OSM.
-// Le type `roadmap` est servi normalement (200) ; ne pas revenir à `hybrid` ici.
-export function googleStaticMapUrl({
-  lat,
-  lng,
-  zoom = 16,
-  width = 640,
-  height = 360,
-  maptype = "roadmap",
-}: {
-  lat: number;
-  lng: number;
-  zoom?: number;
-  width?: number;
-  height?: number;
-  maptype?: "roadmap" | "satellite" | "terrain" | "hybrid";
-}) {
-  const apiKey = getGoogleMapsApiKey();
-  if (!apiKey) return "";
-
+export function googleMapsStreetViewEmbedUrl(lat: number, lng: number) {
   const params = new URLSearchParams({
-    center: `${lat},${lng}`,
-    key: apiKey,
-    maptype,
-    scale: "2",
-    size: `${Math.round(width)}x${Math.round(height)}`,
-    zoom: String(zoom),
+    cbll: `${lat},${lng}`,
+    cbp: "12,0,0,0,0",
+    layer: "c",
+    output: "svembed",
   });
-
-  params.append("markers", `color:0xf2c487|${lat},${lng}`);
-  return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+  return `https://www.google.com/maps?${params.toString()}`;
 }

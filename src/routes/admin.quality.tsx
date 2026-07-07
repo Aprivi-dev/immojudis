@@ -5,6 +5,7 @@ import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import Database from "lucide-react/dist/esm/icons/database.js";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import type { ReactElement } from "react";
 import { getSales } from "@/lib/queries";
 import type { AuctionSale } from "@/lib/types";
@@ -34,6 +35,7 @@ function AdminQualityPage() {
     .filter(
       (sale) =>
         (sale.score_confidence ?? 0) < 0.55 ||
+        !hasAiDescription(sale) ||
         richDocumentCount(sale) === 0 ||
         sale.app_surface_m2 == null ||
         !sale.occupancy_status ||
@@ -70,7 +72,7 @@ function AdminQualityPage() {
           </div>
         )}
 
-        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <QualityMetric
             icon={<Database />}
             label="Ventes"
@@ -80,6 +82,11 @@ function AdminQualityPage() {
             icon={<FileText />}
             label="Avec documents"
             value={isLoading ? "…" : pct(metrics.withDocs, metrics.total)}
+          />
+          <QualityMetric
+            icon={<Sparkles />}
+            label="Synthèse IA"
+            value={isLoading ? "…" : pct(metrics.withAiDescription, metrics.total)}
           />
           <QualityMetric
             icon={<Activity />}
@@ -100,6 +107,10 @@ function AdminQualityPage() {
               Points à surveiller
             </div>
             <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
+              <QualityLine
+                label="Synthèse IA publique"
+                value={pct(metrics.withAiDescription, metrics.total)}
+              />
               <QualityLine
                 label="Surface exploitable"
                 value={pct(metrics.withSurface, metrics.total)}
@@ -150,13 +161,14 @@ function AdminQualityPage() {
               </p>
             </div>
             <span className="text-xs text-muted-foreground">
-              GPS, surface, documents, occupation et confiance score
+              IA, GPS, surface, documents, occupation et confiance score
             </span>
           </div>
           <div className="mt-4 overflow-x-auto rounded-lg border border-white/10">
-            <div className="grid min-w-[760px] grid-cols-[1.2fr_repeat(6,0.7fr)] gap-3 border-b border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="grid min-w-[860px] grid-cols-[1.2fr_repeat(7,0.7fr)] gap-3 border-b border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               <span>Source</span>
               <span>Annonces</span>
+              <span>IA</span>
               <span>Surface</span>
               <span>GPS</span>
               <span>Docs</span>
@@ -207,6 +219,7 @@ function QualityLine({ label, value }: { label: string; value: string }) {
 function WeakSaleLine({ sale }: { sale: AuctionSale }) {
   const flags = [];
   if ((sale.score_confidence ?? 0) < 0.55) flags.push("confiance faible");
+  if (!hasAiDescription(sale)) flags.push("synthèse IA absente");
   if (richDocumentCount(sale) === 0) flags.push("documents manquants");
   if (sale.app_surface_m2 == null) flags.push("surface absente");
   if (!sale.occupancy_status || sale.occupancy_status === "unknown") flags.push("occupation");
@@ -232,6 +245,7 @@ function WeakSaleLine({ sale }: { sale: AuctionSale }) {
 type SourceQuality = {
   name: string;
   total: number;
+  withAiDescription: number;
   withSurface: number;
   withGps: number;
   withDocs: number;
@@ -242,7 +256,7 @@ type SourceQuality = {
 
 function SourceQualityLine({ source }: { source: SourceQuality }) {
   return (
-    <div className="grid min-w-[760px] grid-cols-[1.2fr_repeat(6,0.7fr)] gap-3 px-3 py-3 text-sm">
+    <div className="grid min-w-[860px] grid-cols-[1.2fr_repeat(7,0.7fr)] gap-3 px-3 py-3 text-sm">
       <span className="min-w-0">
         <span className="block truncate font-medium text-foreground">{source.name}</span>
         <span className="text-xs text-muted-foreground">
@@ -250,6 +264,7 @@ function SourceQualityLine({ source }: { source: SourceQuality }) {
         </span>
       </span>
       <span className="tabular-nums text-muted-foreground">{source.total}</span>
+      <QualityPill value={pct(source.withAiDescription, source.total)} />
       <QualityPill value={pct(source.withSurface, source.total)} />
       <QualityPill value={pct(source.withGps, source.total)} />
       <QualityPill value={pct(source.withDocs, source.total)} />
@@ -286,6 +301,7 @@ function buildQualityMetrics(sales: AuctionSale[]) {
       : "—";
   return {
     total,
+    withAiDescription: sales.filter(hasAiDescription).length,
     withDocs: sales.filter((sale) => documentCount(sale) > 0 || richDocumentCount(sale) > 0).length,
     withRichDocs: sales.filter((sale) => richDocumentCount(sale) > 0).length,
     withSurface: sales.filter((sale) => sale.app_surface_m2 != null).length,
@@ -320,6 +336,7 @@ function buildSourceQuality(sales: AuctionSale[]): SourceQuality[] {
       return {
         name,
         total: items.length,
+        withAiDescription: items.filter(hasAiDescription).length,
         withSurface: items.filter((sale) => sale.app_surface_m2 != null).length,
         withGps: items.filter((sale) => sale.latitude != null && sale.longitude != null).length,
         withDocs: items.filter((sale) => documentCount(sale) > 0 || richDocumentCount(sale) > 0)
@@ -331,6 +348,7 @@ function buildSourceQuality(sales: AuctionSale[]): SourceQuality[] {
         weakCount: items.filter(
           (sale) =>
             (sale.score_confidence ?? 0) < 0.55 ||
+            !hasAiDescription(sale) ||
             sale.app_surface_m2 == null ||
             richDocumentCount(sale) === 0 ||
             !sale.occupancy_status ||
@@ -352,4 +370,8 @@ function documentCount(sale: AuctionSale): number {
 
 function richDocumentCount(sale: AuctionSale): number {
   return sale.documents_rich?.length ?? 0;
+}
+
+function hasAiDescription(sale: AuctionSale): boolean {
+  return Boolean(sale.llm_display_description?.trim());
 }
