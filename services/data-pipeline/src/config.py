@@ -98,6 +98,9 @@ def load_settings() -> dict[str, str | float | None]:
         # Extractions PDF/OCR en parallèle (CPU + RAM : on reste prudent pour ne
         # pas saturer la mémoire du runner avec plusieurs Docling/OCR simultanés).
         "pipeline_pdf_workers": max(1, int(os.getenv("PIPELINE_PDF_WORKERS", "2"))),
+        # Replicate rate-limit les prédictions concurrentes sur notre usage.
+        # On sépare donc le LLM des workers PDF pour éviter les boucles de 429.
+        "pipeline_llm_workers": max(1, int(os.getenv("PIPELINE_LLM_WORKERS", "1"))),
         "pipeline_pdf_max_targets": max(0, int(os.getenv("PIPELINE_PDF_MAX_TARGETS", "10"))),
         "pipeline_llm_max_targets": max(0, int(os.getenv("PIPELINE_LLM_MAX_TARGETS", "10"))),
         "pipeline_llm_backfill_max_targets": max(

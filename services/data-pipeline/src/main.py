@@ -262,7 +262,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             llm_stats.unavailable = True
 
     pdf_workers = max(1, int(settings["pipeline_pdf_workers"]))
-    llm_workers = max(1, int(settings["pipeline_enrich_workers"]))
+    llm_workers = max(1, int(settings["pipeline_llm_workers"]))
     enrich_started = time.perf_counter()
     failed_urls: set[str] = set()
 
@@ -571,7 +571,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         print(f"LLM description backfill failed: {exc}")
         return 1
 
-    workers = max(1, int(settings["pipeline_enrich_workers"]))
+    workers = max(1, int(settings["pipeline_llm_workers"]))
     llm_stats = LLMEnrichmentStats()
     started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=workers) as executor:

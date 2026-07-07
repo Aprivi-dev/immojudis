@@ -522,6 +522,7 @@ def _settings() -> dict[str, object]:
         "incremental_enrichment": False,
         "pipeline_pdf_workers": 1,
         "pipeline_enrich_workers": 1,
+        "pipeline_llm_workers": 1,
         "pipeline_pdf_max_targets": 0,
         "pipeline_llm_max_targets": 0,
         "enable_licitor_benchmark": False,
