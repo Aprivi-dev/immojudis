@@ -1,6 +1,8 @@
 import json
 from decimal import Decimal
 
+import pytest
+
 from src.enrichment.extract_structured import (
     LLMExtraction,
     build_reduced_pdf_context,
@@ -163,6 +165,59 @@ def test_replicate_client_formats_output_list_and_payload() -> None:
     assert payload["frequency_penalty"] == 0
     assert parse_json_response(''.join(['{"surface_m2":', "80}"])) == {"surface_m2": 80}
     assert _stringify_output(["", "", "{", '"surface_m2"', ":80}"]) == '{"surface_m2":80}'
+
+
+def test_replicate_client_accepts_plain_text_for_display_description_mode(monkeypatch) -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="moonshotai/kimi-k2.5",
+        min_interval_seconds=0,
+    )
+    calls = 0
+
+    def fake_create_prediction(prompt: str, system_prompt: str | None = None):
+        nonlocal calls
+        calls += 1
+        return {"id": "prediction-test"}
+
+    monkeypatch.setattr(client, "_create_prediction", fake_create_prediction)
+    monkeypatch.setattr(
+        client,
+        "_wait_for_output",
+        lambda prediction: (
+            "Maison de ville comprenant plusieurs niveaux, jardin et garage, avec travaux "
+            "à prévoir selon les informations disponibles dans l'annonce."
+        ),
+    )
+
+    payload = client.generate_json("MODE SYNTHESE STRICTE. Réponds en JSON.", "Texte fourni")
+
+    assert calls == 1
+    assert payload == {
+        "display_description": (
+            "Maison de ville comprenant plusieurs niveaux, jardin et garage, avec travaux "
+            "à prévoir selon les informations disponibles dans l'annonce."
+        ),
+        "confidence": {"display_description": 0.58},
+    }
+
+
+def test_replicate_client_rejects_plain_text_for_full_extraction(monkeypatch) -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="moonshotai/kimi-k2.5",
+        min_interval_seconds=0,
+    )
+    outputs = [
+        "Maison de ville comprenant plusieurs niveaux et un jardin.",
+        "Toujours pas un objet JSON valide.",
+    ]
+
+    monkeypatch.setattr(client, "_create_prediction", lambda prompt, system_prompt=None: {"id": "prediction-test"})
+    monkeypatch.setattr(client, "_wait_for_output", lambda prediction: outputs.pop(0))
+
+    with pytest.raises(ValueError, match="Replicate returned invalid JSON after retry"):
+        client.generate_json("MODE EXTRACTION STRICTE.", "Texte fourni")
 
 
 def test_replicate_client_formats_gemini_payload() -> None:
