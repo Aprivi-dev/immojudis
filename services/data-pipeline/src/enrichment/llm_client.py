@@ -259,20 +259,59 @@ def parse_json_response(raw_response: str) -> dict[str, Any]:
     try:
         value = json.loads(text)
     except json.JSONDecodeError as exc:
-        match = re.search(r"\{.*\}", text, re.S)
-        if not match:
-            raise ValueError(
-                f"No JSON object found in LLM response; response_excerpt={_response_excerpt(text)!r}"
-            ) from exc
-        try:
-            value = json.loads(match.group(0))
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"Invalid JSON from LLM: {exc}; response_excerpt={_response_excerpt(text)!r}"
-            ) from exc
+        escaped_value = _parse_escaped_json_response(text)
+        if escaped_value is not None:
+            value = escaped_value
+        else:
+            value = _parse_json_object_from_response_text(text, exc)
     if not isinstance(value, dict):
         raise ValueError("LLM response must be a JSON object")
     return value
+
+
+def _parse_json_object_from_response_text(text: str, original_exc: json.JSONDecodeError) -> dict[str, Any]:
+    match = re.search(r"\{.*\}", text, re.S)
+    if not match:
+        raise ValueError(
+            f"No JSON object found in LLM response; response_excerpt={_response_excerpt(text)!r}"
+        ) from original_exc
+    try:
+        value = json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid JSON from LLM: {exc}; response_excerpt={_response_excerpt(text)!r}"
+        ) from exc
+    if not isinstance(value, dict):
+        raise ValueError("LLM response must be a JSON object")
+    return value
+
+
+def _parse_escaped_json_response(text: str) -> dict[str, Any] | None:
+    candidates: list[str] = []
+    if text.startswith('"') and text.endswith('"'):
+        try:
+            decoded = json.loads(text)
+        except json.JSONDecodeError:
+            decoded = None
+        if isinstance(decoded, str):
+            candidates.append(decoded)
+    if '\\"' in text:
+        candidates.append(text.replace('\\"', '"'))
+
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", candidate, re.S)
+            if not match:
+                continue
+            try:
+                value = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                continue
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 def _display_description_payload_from_text(system_prompt: str, raw_response: str) -> dict[str, Any] | None:
