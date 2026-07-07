@@ -156,6 +156,21 @@ def test_parse_json_response_reports_invalid_json_excerpt() -> None:
         parse_json_response('avant {"surface_m2": } après')
 
 
+def test_parse_json_response_handles_escaped_json_object() -> None:
+    parsed = parse_json_response(r'{\"display_description\": \"Terrain de 716 m² en centre-ville.\"}')
+    assert parsed == {"display_description": "Terrain de 716 m² en centre-ville."}
+
+
+def test_parse_json_response_handles_escaped_json_object_inside_text() -> None:
+    parsed = parse_json_response(
+        r'avant {\"display_description\": \"Maison avec jardin.\", \"confidence\": {\"display_description\": 0.7}} après'
+    )
+    assert parsed == {
+        "display_description": "Maison avec jardin.",
+        "confidence": {"display_description": 0.7},
+    }
+
+
 def test_replicate_client_formats_output_list_and_payload() -> None:
     client = ReplicateClient(
         api_token="replicate-token-test",
