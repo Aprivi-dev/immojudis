@@ -90,9 +90,10 @@ def load_settings() -> dict[str, str | float | None]:
         "replicate_max_retries": int(os.getenv("REPLICATE_MAX_RETRIES", "4")),
         "replicate_retry_backoff_seconds": float(os.getenv("REPLICATE_RETRY_BACKOFF_SECONDS", "30")),
         "replicate_retry_max_sleep_seconds": float(os.getenv("REPLICATE_RETRY_MAX_SLEEP_SECONDS", "60")),
-        # Les appels LLM sont espacés globalement pour éviter les rafales
-        # Replicate qui transforment les runs en longues boucles de retry 429.
-        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "30")),
+        # Les appels LLM restent espacés globalement pour éviter les rafales
+        # Replicate, mais l'intervalle doit rester assez court pour que les
+        # backfills bornés ne passent pas l'essentiel du temps à dormir.
+        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "15")),
         "pipeline_enrich_workers": max(1, int(os.getenv("PIPELINE_ENRICH_WORKERS", "2"))),
         # Extractions PDF/OCR en parallèle (CPU + RAM : on reste prudent pour ne
         # pas saturer la mémoire du runner avec plusieurs Docling/OCR simultanés).
