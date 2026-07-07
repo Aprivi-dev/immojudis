@@ -51,7 +51,7 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["replicate_max_retries"] == 4
     assert settings["replicate_retry_backoff_seconds"] == 30
     assert settings["replicate_retry_max_sleep_seconds"] == 60
-    assert settings["replicate_min_interval_seconds"] == 30
+    assert settings["replicate_min_interval_seconds"] == 15
     assert settings["pipeline_enrich_workers"] == 2
     assert settings["pipeline_llm_workers"] == 1
     assert settings["pipeline_pdf_max_targets"] == 10

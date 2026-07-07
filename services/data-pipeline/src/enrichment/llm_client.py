@@ -78,7 +78,8 @@ class ReplicateClient:
             raise LLMClientUnavailable("REPLICATE_API_TOKEN is missing")
         last_error: Exception | None = None
         prompt = _user_prompt_for_model(str(self.model), system_prompt, user_prompt)
-        for _attempt in range(2):
+        attempts = 1 if _is_display_description_prompt(system_prompt) else 2
+        for attempt in range(attempts):
             prediction = self._create_prediction(prompt, system_prompt=system_prompt)
             output = self._wait_for_output(prediction)
             raw_response = _stringify_output(output)
@@ -89,6 +90,8 @@ class ReplicateClient:
                 if fallback is not None:
                     return fallback
                 last_error = exc
+                if attempt + 1 >= attempts:
+                    break
                 prompt = _user_prompt_for_model(
                     str(self.model),
                     system_prompt,
@@ -96,7 +99,8 @@ class ReplicateClient:
                     "Réponds uniquement avec un objet JSON valide. Le premier caractère doit être { "
                     "et le dernier caractère doit être }. Aucun markdown, aucun commentaire.",
                 )
-        raise ValueError(f"Replicate returned invalid JSON after retry: {last_error}")
+        retry_label = "after retry" if attempts > 1 else "without retry"
+        raise ValueError(f"Replicate returned invalid JSON {retry_label}: {last_error}")
 
     def _create_prediction(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
         owner, model_name = _split_replicate_model(str(self.model))
@@ -315,7 +319,7 @@ def _parse_escaped_json_response(text: str) -> dict[str, Any] | None:
 
 
 def _display_description_payload_from_text(system_prompt: str, raw_response: str) -> dict[str, Any] | None:
-    if "MODE SYNTHESE STRICTE" not in system_prompt.upper():
+    if not _is_display_description_prompt(system_prompt):
         return None
     text = _display_description_text_from_jsonish(raw_response) or _plain_display_description_text(raw_response)
     if not text:
@@ -324,6 +328,10 @@ def _display_description_payload_from_text(system_prompt: str, raw_response: str
         "display_description": text,
         "confidence": {"display_description": 0.58},
     }
+
+
+def _is_display_description_prompt(system_prompt: str) -> bool:
+    return "MODE SYNTHESE STRICTE" in system_prompt.upper()
 
 
 def _display_description_text_from_jsonish(raw_response: str) -> str | None:
