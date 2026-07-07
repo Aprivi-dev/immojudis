@@ -515,6 +515,32 @@ def finish_run_in_supabase(
         LOGGER.warning("Supabase run finish failed: %s", response.text)
 
 
+def update_run_progress_in_supabase(
+    run_id: str | None,
+    summary: dict[str, Any],
+    errors: dict[str, list[str]] | None = None,
+) -> None:
+    if not run_id:
+        return
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return
+    payload: dict[str, Any] = {"summary": summary}
+    if errors is not None:
+        payload["errors"] = errors
+    response = httpx.patch(
+        f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        params={"id": f"eq.{run_id}", "status": "eq.running"},
+        headers=_rest_headers(str(key), prefer="return=minimal"),
+        json=_sanitize_postgrest_payload(payload),
+        timeout=30,
+    )
+    if response.is_error:
+        LOGGER.warning("Supabase run progress update failed: %s", response.text)
+
+
 def upsert_documents_to_supabase(sales: list[AuctionSale]) -> int:
     settings = load_settings()
     url = settings["supabase_url"]

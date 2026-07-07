@@ -464,6 +464,11 @@ def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
     monkeypatch.setattr(main, "load_settings", lambda: settings)
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-backfill")
     monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: calls.append("finish"))
+    monkeypatch.setattr(
+        main,
+        "update_run_progress_in_supabase",
+        lambda run_id, summary, errors=None: calls.append(f"progress:{summary['completed']}"),
+    )
     monkeypatch.setattr(main, "fetch_sales_needing_llm_descriptions", lambda **kwargs: [stale, failed])
     monkeypatch.setattr(main, "create_llm_client", lambda: object())
 
@@ -493,7 +498,15 @@ def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
     monkeypatch.setattr(main, "upsert_sales_to_supabase", fake_upsert)
 
     assert main.run_llm_description_backfill(main.PipelineOptions(llm_backfill=True, upsert=True)) == 0
-    assert calls == ["llm:stale", "llm:failed", "upsert:2", "finish"]
+    assert calls == [
+        "progress:0",
+        "llm:stale",
+        "progress:1",
+        "llm:failed",
+        "progress:2",
+        "upsert:2",
+        "finish",
+    ]
 
 
 def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
