@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from src.asset_normalization import normalize_asset_features
@@ -71,6 +72,12 @@ SOURCE_NAMES = (
     "agrasc",
     "encheres_immobilieres",
     "notaires",
+)
+LLM_DISPLAY_FAILURE_KEYS = (
+    "llm_display_error_at",
+    "llm_display_error_prompt_version",
+    "llm_display_error_message",
+    "llm_display_error_count",
 )
 
 KNOWN_UNCHANGED_BACKFILL_FIELDS = (
@@ -393,6 +400,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                 if sale_llm_stats.error_messages:
                     source_name = str(sale.source_name or sale.primary_source or "unknown")
                     errors.setdefault(source_name, []).extend(sale_llm_stats.error_messages)
+                    _mark_llm_description_failure(sale, sale_llm_stats, prompt_version=prompt_version)
+                elif not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
+                    _clear_llm_description_failure(sale)
     timings["llm_seconds"] = round(time.perf_counter() - started, 2)
 
     # ── Phase 3 : finition (géocode réseau léger, tribunal, scoring) ─────────
@@ -573,6 +583,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
 
     workers = max(1, int(settings["pipeline_llm_workers"]))
     llm_stats = LLMEnrichmentStats()
+    failed_sales: list[AuctionSale] = []
     started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(enrich_sale_with_llm, sale, client=llm_client): sale for sale in sales}
@@ -589,15 +600,20 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
                 errors.setdefault(str(sale.source_name or sale.primary_source or "unknown"), []).extend(
                     sale_stats.error_messages
                 )
+                if _mark_llm_description_failure(sale, sale_stats, prompt_version=prompt_version):
+                    failed_sales.append(sale)
+            elif not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
+                _clear_llm_description_failure(sale)
     timings["llm_seconds"] = round(time.perf_counter() - started, 2)
 
     updated_sales = [
         sale for sale in sales if not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
     ]
     upserted = 0
-    if options.upsert and updated_sales:
+    upsert_candidates = _unique_sales_by_source_url([*updated_sales, *failed_sales])
+    if options.upsert and upsert_candidates:
         started = time.perf_counter()
-        upserted = upsert_sales_to_supabase(updated_sales)
+        upserted = upsert_sales_to_supabase(upsert_candidates)
         timings["supabase_seconds"] = round(time.perf_counter() - started, 2)
 
     summary = {
@@ -606,6 +622,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         "processed": llm_stats.analyzed,
         "valid_json": llm_stats.valid_json,
         "updated": len(updated_sales),
+        "failed_marked": len(failed_sales),
         "upserted": upserted,
         "prompt_version": prompt_version,
         "statuses": list(options.llm_backfill_statuses),
@@ -622,11 +639,52 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
     print(f"- processed: {llm_stats.analyzed}")
     print(f"- valid_json: {llm_stats.valid_json}")
     print(f"- updated: {len(updated_sales)}")
+    print(f"- failed_marked: {len(failed_sales)}")
     print(f"- upserted: {upserted}")
     for key, value in timings.items():
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
     return 0 if not llm_stats.unavailable else 1
+
+
+def _mark_llm_description_failure(
+    sale: AuctionSale,
+    stats: LLMEnrichmentStats,
+    *,
+    prompt_version: str,
+) -> bool:
+    if not stats.error_messages:
+        return False
+    if not isinstance(sale.raw_payload, dict):
+        sale.raw_payload = {}
+    previous_count = sale.raw_payload.get("llm_display_error_count")
+    try:
+        count = int(previous_count or 0)
+    except (TypeError, ValueError):
+        count = 0
+    sale.raw_payload["llm_display_error_at"] = datetime.now(UTC).isoformat()
+    sale.raw_payload["llm_display_error_prompt_version"] = prompt_version
+    sale.raw_payload["llm_display_error_message"] = stats.error_messages[-1][:500]
+    sale.raw_payload["llm_display_error_count"] = count + 1
+    return True
+
+
+def _clear_llm_description_failure(sale: AuctionSale) -> None:
+    if not isinstance(sale.raw_payload, dict):
+        return
+    for key in LLM_DISPLAY_FAILURE_KEYS:
+        sale.raw_payload.pop(key, None)
+
+
+def _unique_sales_by_source_url(sales: list[AuctionSale]) -> list[AuctionSale]:
+    seen: set[str] = set()
+    unique: list[AuctionSale] = []
+    for sale in sales:
+        if sale.source_url in seen:
+            continue
+        seen.add(sale.source_url)
+        unique.append(sale)
+    return unique
 
 
 def _hydrate_known_unchanged_sales(

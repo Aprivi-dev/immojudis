@@ -171,7 +171,11 @@ class ReplicateClient:
             _LAST_REPLICATE_REQUEST_AT = now
 
     def _mark_request_finished(self) -> None:
-        return
+        global _LAST_REPLICATE_REQUEST_AT
+        if float(self.min_interval_seconds or 0) <= 0:
+            return
+        with _REPLICATE_REQUEST_LOCK:
+            _LAST_REPLICATE_REQUEST_AT = time.monotonic()
 
     def _input_payload(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
         if _is_gemini_model(str(self.model)):
