@@ -132,11 +132,13 @@ export function SaleFilters() {
       toast.error("Connectez-vous pour créer une alerte");
       return;
     }
-    if (!hasMainFilter) {
+    if (!hasMainFilter && !hasAdvancedFilter) {
       toast.error("Définissez au moins un filtre");
       return;
     }
-    setAlertName(`Alerte ${local.department || local.city || local.type || ""}`.trim());
+    setAlertName(
+      `Alerte ${local.department || local.city || local.type || local.around_address || "analyse"}`,
+    );
     setAlertDialogOpen(true);
   }
 
@@ -158,6 +160,13 @@ export function SaleFilters() {
         min_surface_m2: local.min_surface ? Number(local.min_surface) : null,
         occupancy_status: local.occupancy || null,
         min_investment_score: local.min_score ? Number(local.min_score) : null,
+        max_price_per_m2: local.max_price_per_m2 ? Number(local.max_price_per_m2) : null,
+        min_yield_pct: local.min_yield ? Number(local.min_yield) : null,
+        advanced_criteria: {
+          source: "legacy_sale_filters",
+          around_address: local.around_address || null,
+          around_radius_km: local.around_radius ? Number(local.around_radius) : null,
+        },
       });
       toast.success("Alerte créée");
       setAlertDialogOpen(false);
@@ -359,7 +368,7 @@ export function SaleFilters() {
           <DialogHeader>
             <DialogTitle>Créer une alerte</DialogTitle>
             <DialogDescription>
-              L'alerte enregistrera les critères principaux actuellement appliqués.
+              L'alerte enregistrera les critères actuellement appliqués.
             </DialogDescription>
           </DialogHeader>
 
@@ -379,16 +388,14 @@ export function SaleFilters() {
                   `Prix max : ${Number(local.max_price).toLocaleString("fr-FR")} €`,
                 local.min_surface && `Surface min : ${local.min_surface} m²`,
                 local.occupancy && `Occupation : ${local.occupancy}`,
+                local.max_price_per_m2 &&
+                  `Prix/m² max : ${Number(local.max_price_per_m2).toLocaleString("fr-FR")} €`,
+                local.min_yield && `Rendement min : ${local.min_yield} %`,
+                local.around_address && `Autour de : ${local.around_address}`,
               ]
                 .filter(Boolean)
                 .join(" · ")}
             </div>
-            {hasAdvancedFilter && (
-              <p className="text-xs text-muted-foreground">
-                Les filtres avancés d'analyse locale ne sont pas enregistrés dans les alertes pour
-                le moment.
-              </p>
-            )}
           </div>
 
           <DialogFooter>

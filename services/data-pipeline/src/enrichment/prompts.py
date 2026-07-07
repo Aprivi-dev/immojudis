@@ -13,6 +13,14 @@ SYSTEM_PROMPT = (
     "avant ou après."
 )
 
+DISPLAY_DESCRIPTION_SYSTEM_PROMPT = (
+    "MODE SYNTHESE STRICTE. Réponds uniquement avec un objet JSON valide. "
+    "Tu rédiges une description courte, neutre et factuelle pour une fiche "
+    "ImmoJudis à partir de faits explicitement présents dans le contexte fourni. "
+    "N'invente jamais une surface, une occupation, un état, un risque ou une "
+    "annexe. Si les données fiables sont rares, reste court."
+)
+
 
 def build_user_prompt(context_text: str) -> str:
     return (
@@ -130,6 +138,27 @@ def build_user_prompt(context_text: str) -> str:
         '  "scoring_guidance": [\n'
         '    {"axis": "financial_attractiveness|asset_quality|legal_security|liquidity_resale|analysis_confidence", "impact": "positive|negative|neutral|uncertain", "reasoning": null, "quote": null, "document_label": null, "page_number": null}\n'
         "  ]\n"
+        "}\n\n"
+        "Texte fourni :\n"
+        f"{context_text}"
+    )
+
+
+def build_display_description_prompt(context_text: str) -> str:
+    return (
+        "Voici le contexte extrait d'une vente immobilière judiciaire. "
+        "Produis uniquement une synthèse d'affichage publique, sans extraction de due diligence complète.\n\n"
+        "Règles obligatoires :\n"
+        "- Utilise uniquement les faits explicitement présents dans le contexte.\n"
+        "- Un seul paragraphe en français naturel, sans titre, sans markdown, sans retour à la ligne.\n"
+        "- Ton neutre, factuel et homogène, sans promesse de rentabilité ni conseil juridique.\n"
+        "- Priorise type de bien, localisation, surface, composition, annexes, stationnement, extérieur, occupation, état/travaux ou contraintes uniquement si confirmés.\n"
+        "- En cas de contradiction ou d'information peu fiable, omets le point ou mentionne sobrement qu'il est à vérifier.\n"
+        "- Vise 70 à 105 mots. Si le contexte est pauvre, reste plus court.\n\n"
+        "Schéma JSON attendu, sans markdown et sans commentaire :\n"
+        "{\n"
+        '  "display_description": "paragraphe public ou null",\n'
+        '  "confidence": {"display_description": 0.0}\n'
         "}\n\n"
         "Texte fourni :\n"
         f"{context_text}"

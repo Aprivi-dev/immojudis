@@ -108,6 +108,37 @@ class LowConfidenceDisplayDescriptionClient(FakeReplicateClient):
         return payload
 
 
+class MissingDisplayDescriptionClient(FakeReplicateClient):
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        payload = super().generate_json(system_prompt, user_prompt)
+        payload["display_description"] = None
+        payload["confidence"].pop("display_description", None)
+        return payload
+
+
+class DisplayOnlyClient:
+    calls = 0
+
+    def __init__(self) -> None:
+        self.system_prompt = ""
+        self.user_prompt = ""
+
+    def is_available(self) -> bool:
+        return True
+
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        self.calls += 1
+        self.system_prompt = system_prompt
+        self.user_prompt = user_prompt
+        return {
+            "display_description": (
+                "Maison à Bordeaux décrite dans le contexte fourni, avec surface et occupation "
+                "à vérifier selon les documents disponibles."
+            ),
+            "confidence": {"display_description": 0.86},
+        }
+
+
 def test_parse_json_response_handles_markdown_fence() -> None:
     parsed = parse_json_response('```json\n{"surface_m2": 80}\n```')
     assert parsed == {"surface_m2": 80}
@@ -115,7 +146,7 @@ def test_parse_json_response_handles_markdown_fence() -> None:
 
 def test_replicate_client_formats_output_list_and_payload() -> None:
     client = ReplicateClient(
-        api_token="r8_test",
+        api_token="replicate-token-test",
         model="moonshotai/kimi-k2.5",
         max_tokens=123,
         temperature=0.6,
@@ -136,7 +167,7 @@ def test_replicate_client_formats_output_list_and_payload() -> None:
 
 def test_replicate_client_formats_gemini_payload() -> None:
     client = ReplicateClient(
-        api_token="r8_test",
+        api_token="replicate-token-test",
         model="google/gemini-2.5-flash",
         max_tokens=8192,
         temperature=0,
@@ -296,6 +327,38 @@ def test_enrich_sale_with_llm_writes_display_description_without_source_descript
     assert sale.raw_payload["llm_prompt_version"] == "auction_llm_v5_test"
 
 
+def test_enrich_sale_with_llm_can_use_display_description_mode(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm-display-only",
+            "title": "Maison à Bordeaux",
+            "source_blocks": {"description": "Maison de 91,4 m2 indiquée comme louée."},
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("LLM_EXTRACTION_MODE", "display_description")
+    monkeypatch.setenv("LLM_PROMPT_VERSION", "auction_llm_v6_display_test")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV", "text": "Maison de 91,4 m2. Bien loué."}]),
+        encoding="utf-8",
+    )
+    client = DisplayOnlyClient()
+
+    stats = enrich_sale_with_llm(sale, client=client, output_dir=tmp_path / "out")
+
+    assert stats.valid_json == 1
+    assert client.calls == 1
+    assert "MODE SYNTHESE STRICTE" in client.system_prompt
+    assert "investment_facts" not in client.user_prompt
+    assert "display_description" in client.user_prompt
+    assert sale.raw_payload["llm_display_description"].startswith("Maison à Bordeaux")
+    assert sale.raw_payload["llm_prompt_version"] == "auction_llm_v6_display_test"
+
+
 def test_enrich_sale_with_llm_normalizes_display_description_length(tmp_path, monkeypatch) -> None:
     sale = normalize_sale(
         {
@@ -319,6 +382,39 @@ def test_enrich_sale_with_llm_normalizes_display_description_length(tmp_path, mo
     assert len(display_description.split()) <= 115
     assert "\n" not in display_description
     assert display_description.endswith(".")
+
+
+def test_enrich_sale_with_llm_builds_fallback_display_description(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/llm-display-fallback",
+            "city": "Bordeaux",
+            "department": "33",
+            "has_garden": True,
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("LLM_PROMPT_VERSION", "auction_llm_v5_test")
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{"label": "PV", "text": "Maison de 91,4 m2 avec trois chambres. Bien loué."}]),
+        encoding="utf-8",
+    )
+
+    enrich_sale_with_llm(sale, client=MissingDisplayDescriptionClient(), output_dir=tmp_path / "out")
+
+    display_description = sale.raw_payload["llm_display_description"]
+    assert display_description.startswith("Maison à Bordeaux (33).")
+    assert "surface de 91,4 m²" in display_description
+    assert "4 pièces" in display_description
+    assert "3 chambres" in display_description
+    assert "jardin" in display_description
+    assert "loué" in display_description
+    assert sale.raw_payload["llm_display_description_word_count"] == len(display_description.split())
+    assert sale.raw_payload["llm_prompt_version"] == "auction_llm_v5_test"
 
 
 def test_enrich_sale_with_llm_rejects_low_confidence_display_description(tmp_path, monkeypatch) -> None:

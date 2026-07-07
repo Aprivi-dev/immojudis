@@ -40,7 +40,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const isPublic =
     PUBLIC_PATHS.has(pathname) ||
     pathname.startsWith("/sales/") ||
-    pathname.startsWith("/properties/");
+    pathname.startsWith("/properties/") ||
+    pathname.startsWith("/reports/shared/");
   const requiresProfessionalAccount = PROFESSIONAL_PATHS.has(pathname);
   const requiresAdminAccount = pathname === ADMIN_PREFIX || pathname.startsWith(`${ADMIN_PREFIX}/`);
   const isAdmin = isAdminAccount(user);

@@ -1,7 +1,8 @@
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
 
-const DETAIL_VIEW = "v_auction_sales_app";
+export const DETAIL_VIEW = "v_auction_sales_app";
 const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
 const CONFIGURATION_ERROR =
   "La configuration Supabase est absente. Ajoutez les variables d'environnement Supabase pour afficher les données.";
@@ -12,7 +13,9 @@ type SupabaseQueryError = {
   details?: string;
 };
 
-const SALE_LIST_COLUMNS = [
+type SupabaseReader = Pick<typeof supabase, "from">;
+
+export const SALE_LIST_COLUMNS = [
   "id",
   "title",
   "description",
@@ -60,6 +63,7 @@ const SALE_LIST_COLUMNS = [
   "surface_evidence",
   "risks",
   "documents",
+  "documents_rich",
   "media",
   "source_name",
   "source_url",
@@ -97,6 +101,8 @@ const SALE_MAP_COLUMNS = [
   "bedrooms_count",
   "bathrooms_count",
   "status",
+  "source_blocks",
+  "documents_rich",
 ].join(",");
 
 function assertCloudConfigured() {
@@ -226,12 +232,13 @@ export async function getSales(
   limit = 100,
   sort: SortKey = "date_asc",
   offset = 0,
-  options: { preview?: boolean } = {},
+  options: { preview?: boolean; client?: SupabaseReader } = {},
 ): Promise<AuctionSale[]> {
-  if (!assertCloudConfigured()) return [];
+  if (!options.client && !assertCloudConfigured()) return [];
+  const db = options.client ?? supabase;
 
   if (options.preview) {
-    let q = supabase
+    let q = db
       .from(PUBLIC_PREVIEW_VIEW)
       .select(SALE_PREVIEW_COLUMNS)
       .order("starting_price_eur", { ascending: previewSortDirection(sort), nullsFirst: false })
@@ -249,7 +256,7 @@ export async function getSales(
   }
 
   const s = SORT_MAP[sort];
-  let q = supabase
+  let q = db
     .from(DETAIL_VIEW)
     .select(SALE_LIST_COLUMNS)
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
@@ -461,6 +468,14 @@ export async function removeFavorite(userId: string, saleId: string) {
 }
 
 // Alerts
+type UserAlertInsert = Database["public"]["Tables"]["user_alerts"]["Insert"];
+export type CreateAlertPayload = Omit<
+  UserAlertInsert,
+  "id" | "user_id" | "created_at" | "updated_at" | "last_evaluated_at" | "last_match_count"
+> & {
+  is_active?: boolean;
+};
+
 export async function getAlerts(userId: string): Promise<UserAlert[]> {
   if (!assertCloudConfigured()) return [];
   const { data, error } = await supabase
@@ -472,18 +487,18 @@ export async function getAlerts(userId: string): Promise<UserAlert[]> {
   return (data ?? []) as UserAlert[];
 }
 
-export async function createAlert(
-  userId: string,
-  payload: Omit<UserAlert, "id" | "user_id" | "created_at" | "updated_at" | "is_active"> & {
-    is_active?: boolean;
-  },
-) {
+export async function createAlert(userId: string, payload: CreateAlertPayload) {
   assertCloudConfigured();
-  const { error } = await supabase.from("user_alerts").insert({
+  const insertPayload: UserAlertInsert = {
     user_id: userId,
-    is_active: true,
     ...payload,
-  });
+    is_active: payload.is_active ?? true,
+    dpe_classes: payload.dpe_classes ?? [],
+    require_house_with_land: payload.require_house_with_land ?? false,
+    alert_frequency: payload.alert_frequency ?? "daily",
+    advanced_criteria: payload.advanced_criteria ?? {},
+  };
+  const { error } = await supabase.from("user_alerts").insert(insertPayload);
   if (error) throw error;
 }
 

@@ -38,20 +38,8 @@ declare global {
         mapId?: string;
         mapTypeControl?: boolean;
         mapTypeId?: string;
-        minZoom?: number;
-        restriction?: {
-          latLngBounds: {
-            north: number;
-            south: number;
-            east: number;
-            west: number;
-          };
-          strictBounds?: boolean;
-        };
         rotateControl?: boolean;
-        scaleControl?: boolean;
         streetViewControl?: boolean;
-        styles?: Array<Record<string, unknown>>;
         tilt?: number;
         zoom?: number;
         zoomControl?: boolean;
@@ -59,97 +47,19 @@ declare global {
 
       class Map {
         constructor(mapDiv: HTMLElement, opts?: MapOptions);
-        addListener(eventName: string, handler: () => void): MapsEventListener;
-        fitBounds(bounds: LatLngBounds): void;
-        getBounds(): LatLngBounds | undefined;
         getHeading(): number | undefined;
-        getZoom(): number | undefined;
-        panTo(latLng: LatLngLiteral): void;
-        setCenter(latLng: LatLngLiteral): void;
         setHeading(heading: number): void;
-        setMapTypeId(mapTypeId: string): void;
-        setTilt(tilt: number): void;
-        setZoom(zoom: number): void;
-      }
-
-      interface Icon {
-        anchor?: Point;
-        labelOrigin?: Point;
-        scaledSize?: Size;
-        url: string;
-      }
-
-      interface MarkerLabel {
-        color?: string;
-        fontSize?: string;
-        fontWeight?: string;
-        text: string;
       }
 
       interface MarkerOptions {
-        icon?: Icon | string;
-        label?: MarkerLabel | string;
         map?: Map | null;
-        optimized?: boolean;
         position?: LatLngLiteral;
         title?: string;
-        zIndex?: number;
       }
 
       class Marker {
         constructor(opts?: MarkerOptions);
-        addListener(eventName: string, handler: () => void): MapsEventListener;
-        setIcon(icon: Icon | string): void;
         setMap(map: Map | null): void;
-        setZIndex(zIndex: number): void;
-      }
-
-      class MapsEventListener {
-        remove(): void;
-      }
-
-      class LatLngBounds {
-        constructor();
-        extend(point: LatLngLiteral): LatLngBounds;
-        getNorthEast(): LatLng;
-        getSouthWest(): LatLng;
-      }
-
-      interface InfoWindowOptions {
-        content?: string | Node;
-        maxWidth?: number;
-      }
-
-      class InfoWindow {
-        constructor(opts?: InfoWindowOptions);
-        close(): void;
-        open(opts?: { anchor?: Marker; map?: Map | null; shouldFocus?: boolean }): void;
-        setContent(content: string | Node): void;
-      }
-
-      interface CircleOptions {
-        center?: LatLngLiteral;
-        clickable?: boolean;
-        fillColor?: string;
-        fillOpacity?: number;
-        map?: Map | null;
-        radius?: number;
-        strokeColor?: string;
-        strokeOpacity?: number;
-        strokeWeight?: number;
-      }
-
-      class Circle {
-        constructor(opts?: CircleOptions);
-        setMap(map: Map | null): void;
-      }
-
-      class Point {
-        constructor(x: number, y: number);
-      }
-
-      class Size {
-        constructor(width: number, height: number);
       }
 
       interface StreetViewLocationRequest {
@@ -161,7 +71,6 @@ declare global {
 
       interface StreetViewPanoramaData {
         location?: {
-          description?: string;
           latLng?: LatLng;
         };
       }
@@ -191,7 +100,6 @@ declare global {
 
       class StreetViewPanorama {
         constructor(container: HTMLElement, opts?: StreetViewPanoramaOptions);
-        setPov(pov: StreetViewPov): void;
         setVisible(visible: boolean): void;
       }
 
@@ -236,46 +144,6 @@ declare global {
         ): Promise<LocationElevationResponse>;
       }
 
-      namespace geometry {
-        namespace spherical {
-          function computeHeading(from: LatLngLike, to: LatLngLike): number;
-        }
-      }
-
-      namespace marker {
-        interface AdvancedMarkerElementOptions {
-          map?: Map | null;
-          position?: LatLngLiteral | LatLngAltitudeLiteral;
-          title?: string;
-          zIndex?: number;
-        }
-
-        class AdvancedMarkerElement extends HTMLElement {
-          constructor(options?: AdvancedMarkerElementOptions);
-          map: Map | null;
-          position?: LatLngLiteral | LatLngAltitudeLiteral;
-          title: string;
-          zIndex?: number;
-        }
-
-        interface PinElementOptions {
-          background?: string;
-          borderColor?: string;
-          glyph?: string | Element | URL;
-          glyphColor?: string;
-          scale?: number;
-        }
-
-        class PinElement extends HTMLElement {
-          constructor(options?: PinElementOptions);
-          element: HTMLElement;
-        }
-      }
-
-      function importLibrary(libraryName: "marker"): Promise<{
-        AdvancedMarkerElement: typeof marker.AdvancedMarkerElement;
-        PinElement: typeof marker.PinElement;
-      }>;
       function importLibrary(libraryName: "maps3d"): Promise<typeof maps3d>;
       function importLibrary(
         libraryName: "elevation",
@@ -285,6 +153,13 @@ declare global {
         enum MapMode {
           HYBRID = "HYBRID",
           SATELLITE = "SATELLITE",
+        }
+
+        enum AltitudeMode {
+          ABSOLUTE = "ABSOLUTE",
+          CLAMP_TO_GROUND = "CLAMP_TO_GROUND",
+          RELATIVE_TO_GROUND = "RELATIVE_TO_GROUND",
+          RELATIVE_TO_MESH = "RELATIVE_TO_MESH",
         }
 
         interface Camera {
@@ -315,21 +190,9 @@ declare global {
 
         class Map3DElement extends HTMLElement {
           constructor(options?: Map3DElementOptions);
-          center: LatLngAltitudeLiteral | null;
           defaultUIHidden: boolean | null;
-          heading: number | null;
-          mode: MapMode | null;
-          range: number | null;
-          tilt: number | null;
           flyCameraAround(options: FlyAroundAnimationOptions): void;
           stopCameraAnimation(): void;
-        }
-
-        enum AltitudeMode {
-          ABSOLUTE = "ABSOLUTE",
-          CLAMP_TO_GROUND = "CLAMP_TO_GROUND",
-          RELATIVE_TO_GROUND = "RELATIVE_TO_GROUND",
-          RELATIVE_TO_MESH = "RELATIVE_TO_MESH",
         }
 
         interface Marker3DElementOptions {

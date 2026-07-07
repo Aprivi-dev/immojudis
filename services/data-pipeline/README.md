@@ -30,13 +30,15 @@ source .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
 
-Pour l'extraction PDF de meilleure qualite, installer aussi Docling :
+Pour les audits documentaires ponctuels les plus lourds, installer aussi Docling :
 
 ```bash
 pip install -r requirements-docling.txt
 ```
 
-Le pipeline est configure en mode Docling-first par defaut (`PDF_EXTRACTOR=docling`). Si Docling n'est pas installe ou echoue sur un fichier, l'extraction retombe sur PyMuPDF/Tesseract pour ne pas bloquer une collecte.
+Le pipeline de production privilégie un mode rapide par défaut : PyMuPDF, cache,
+Docling désactivé et OCR désactivé. Docling/OCR restent disponibles en opt-in
+quand un run d'audit documentaire complet est nécessaire.
 
 ## Hygiène de dépôt
 
@@ -98,12 +100,36 @@ Quand `SUPABASE_DB_URL` est présent, l'upsert principal des ventes passe par
 Postgres direct, puis les tables dérivées (`auction_risks`, documents, score
 factors, surfaces, etc.) sont synchronisées via l'API REST service-role.
 
-Les enrichissements peuvent être parallélisés :
+Le pipeline conserve `auction_sales` comme table de compatibilité historique,
+mais alimente aussi le modèle produit normalisé demandé pour l'offre Pro :
+`properties` décrit le bien immobilier et `judicial_sales` décrit le contexte
+de vente judiciaire rattaché. Les contacts avocats trouvés dans les annonces
+sont stockés comme `source_lawyer_*` dans `judicial_sales`; ils restent distincts
+du futur référencement payant des avocats ImmoJudis.
+
+Les enrichissements peuvent être parallélisés et plafonnés par run :
 
 ```bash
-PIPELINE_ENRICH_WORKERS=6
+PIPELINE_ENRICH_WORKERS=2
 PIPELINE_PDF_WORKERS=2
+PIPELINE_PDF_MAX_TARGETS=10
+PIPELINE_LLM_MAX_TARGETS=10
+PIPELINE_LLM_BACKFILL_MAX_TARGETS=20
+PIPELINE_IDLE_LLM_BACKFILL_ENABLED=false
 ```
+
+Pour résorber progressivement les annonces déjà en base sans synthèse IA
+publique, lancer un backfill borné. Il ne relance pas le scraping et cible par
+défaut les ventes `active` et `upcoming` :
+
+```bash
+python -m src.main --backfill-llm-descriptions
+python -m src.main --backfill-llm-descriptions --limit 20 --backfill-statuses active,upcoming
+```
+
+Le backfill doit rester un run dédié depuis l'admin ou `workflow_dispatch` :
+cela évite que les runs planifiés idle ajoutent des appels Replicate longs à
+chaque passage.
 
 Activer Licitor uniquement pour un benchmark :
 
@@ -149,6 +175,99 @@ Ou manuellement dans le SQL Editor avec :
 ```
 
 Le fichier active `pgcrypto`, crée `auction_sales`, les index demandés, active RLS et donne les droits nécessaires au rôle `service_role`.
+
+## Import DVF semestriel
+
+Les comparables DVF détaillés s'appuient sur les fichiers officiels
+`Demandes de valeurs foncières` publiés sur data.gouv.fr. L'import accepte les
+fichiers `.txt`/`.csv` bruts et les archives `.zip`, avec séparateur `|`, `;`,
+`,` ou tabulation.
+
+Le workflow GitHub Actions `Immojudis DVF Import` est planifié le 10 avril et
+le 10 octobre. Il lit l'API officielle data.gouv.fr, récupère les ressources
+principales DVF disponibles, vérifie les checksums SHA-1 quand ils sont fournis,
+puis appelle `python -m src.dvf_import`. Le workflow peut aussi être lancé
+manuellement avec `dry_run=true`, une `resource_url` précise ou une limite de
+lignes pour tester un millésime avant import complet.
+
+Valider un fichier sans écrire en base :
+
+```bash
+python -m src.dvf_import data/raw/dvf/valeursfoncieres-2024.txt --dry-run --limit 10000
+```
+
+Importer dans Supabase/Postgres :
+
+```bash
+python -m src.dvf_import data/raw/dvf/valeursfoncieres-2024.txt \
+  --source-url "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres"
+```
+
+Cette commande requiert `SUPABASE_DB_URL` et écrit dans `dvf_import_batches` et
+`dvf_transactions`. Les données brutes restent derrière les API ImmoJudis
+plan-gatées ; elles ne doivent pas être ré-exposées directement ni indexées par
+des moteurs externes.
+
+## Enrichissement cadastre
+
+Après le géocodage final, le pipeline peut rattacher chaque vente géocodée à
+une ou plusieurs parcelles via API Carto Cadastre (`geom` GeoJSON en WGS84).
+Les résultats normalisés sont écrits dans `auction_cadastre_parcels` avec
+section, numéro, code INSEE, contenance, centroïde et payload source. Cette
+table reste privée côté client ; les rapports d'opportunité la consomment côté
+serveur pour renforcer l'analyse cadastrale.
+
+Variables utiles :
+
+```bash
+CADASTRE_ENRICH_ENABLED=true
+CADASTRE_API_URL=https://apicarto.ign.fr/api/cadastre/parcelle
+CADASTRE_SOURCE_IGN=PCI
+CADASTRE_MAX_PARCELS=4
+CADASTRE_TIMEOUT_SECONDS=10
+```
+
+## Enrichissement DPE ADEME
+
+Après le géocodage final, le pipeline peut interroger l'open data ADEME DPE
+logements existants par distance géographique (`geo_distance`) ou, à défaut de
+coordonnées, par recherche d'adresse. Les diagnostics normalisés sont écrits
+dans `auction_dpe_diagnostics` avec numéro DPE, classes DPE/GES, dates,
+surface, consommation, émissions, score BAN et payload ADEME. Cette table reste
+privée côté client ; l'explorateur DPE et les rapports y accèdent côté serveur
+via les API ImmoJudis plan-gatées.
+
+Variables utiles :
+
+```bash
+DPE_ENRICH_ENABLED=true
+DPE_API_URL=https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines
+DPE_GEO_RADIUS_M=120
+DPE_MAX_RESULTS=5
+DPE_TIMEOUT_SECONDS=12
+```
+
+L'API publique ADEME/Data Fair impose des limites d'appels ; gardez un rayon et
+un nombre de résultats raisonnables, et évitez les rafraîchissements massifs non
+nécessaires.
+
+## Refresh DPE/cadastre à la demande
+
+L'application peut créer une demande utilisateur dans `data_refresh_requests`
+via l'API `/api/data-refresh`. Le worker `python -m src.queued_runner` traite
+d'abord les runs complets `auction_runs`, puis consomme une demande de refresh
+ciblée s'il n'y a pas de run global en attente.
+
+Scopes supportés :
+
+- `cadastre` : relance uniquement la jointure parcellaire de la vente.
+- `dpe` : relance uniquement la recherche ADEME DPE de la vente.
+- `full` : relance cadastre puis DPE.
+
+Chaque demande est verrouillée en `running`, puis terminée en `completed` ou
+`failed` avec un `result_summary` indiquant les lignes enrichies et upsertées.
+Les demandes sont possédées par l'utilisateur côté app ; le pipeline les traite
+avec le rôle service Supabase.
 
 ## Lancement
 
@@ -207,9 +326,10 @@ Le module [pdf_enrichment.py](src/pdf_enrichment.py) :
 
 - télécharge les PDF listés dans `documents` sans retélécharger ceux déjà présents ;
 - stocke les fichiers dans `data/documents/{sale_id}/` ;
-- extrait le texte avec Docling en priorite ;
+- extrait le texte avec PyMuPDF par défaut pour garder les runs rapides ;
+- peut utiliser Docling en opt-in pour les audits documentaires complets ;
 - met en cache le texte Docling dans `data/raw/docling_texts/` pour eviter de reconvertir les memes fichiers ;
-- retombe sur PyMuPDF/Tesseract si Docling n'est pas disponible ou ne retourne pas de texte ;
+- retombe sur PyMuPDF/Tesseract si Docling est actif mais ne retourne pas de texte ;
 - stocke les textes dans `data/raw/pdf_texts/{sale_id}.json` ;
 - classe les documents prioritaires : PV descriptif, cahier des conditions, diagnostics, avis simplifié ;
 - enrichit `surface_m2`, `rooms_count`, `bedrooms_count`, `occupancy_status`, `property_type`, `description`, `risk_notes` et `raw_text`.
@@ -217,8 +337,8 @@ Le module [pdf_enrichment.py](src/pdf_enrichment.py) :
 Configuration utile :
 
 ```bash
-PDF_EXTRACTOR=docling
-PDF_DOCLING_ENABLED=true
+PDF_EXTRACTOR=auto
+PDF_DOCLING_ENABLED=false
 PDF_DOCLING_THRESHOLD_CHARS=1200
 PDF_DOCLING_TIMEOUT_SECONDS=180
 PDF_DOCLING_OCR_MODE=auto
@@ -226,7 +346,7 @@ PDF_DOCLING_OCR_MAX_PAGES=25
 PDF_DOCLING_OCR_MAX_SIZE_MB=15
 PDF_DOCLING_CHUNK_PAGES=10
 PDF_DOCLING_OCR_CHUNK_PAGES=2
-PDF_OCR_ENABLED=true
+PDF_OCR_ENABLED=false
 PDF_OCR_LANGUAGE=fra+eng
 ```
 
@@ -240,24 +360,29 @@ Configuration :
 ```bash
 LLM_ENABLED=true
 LLM_PROVIDER=replicate
-REPLICATE_API_TOKEN=r8_...
+REPLICATE_API_TOKEN=your-replicate-token
 REPLICATE_MODEL=google/gemini-2.5-flash
 REPLICATE_TEMPERATURE=0
-REPLICATE_MAX_TOKENS=8192
+REPLICATE_MAX_TOKENS=1024
 REPLICATE_TIMEOUT_SECONDS=180
 REPLICATE_WAIT_SECONDS=60
 REPLICATE_CANCEL_AFTER=5m
-REPLICATE_MAX_RETRIES=5
-REPLICATE_RETRY_BACKOFF_SECONDS=20
-REPLICATE_RETRY_MAX_SLEEP_SECONDS=180
-REPLICATE_MIN_INTERVAL_SECONDS=10
+REPLICATE_MAX_RETRIES=4
+REPLICATE_RETRY_BACKOFF_SECONDS=30
+REPLICATE_RETRY_MAX_SLEEP_SECONDS=60
+REPLICATE_MIN_INTERVAL_SECONDS=5
 REPLICATE_THINKING_BUDGET=0
 REPLICATE_DYNAMIC_THINKING=false
-LLM_PROMPT_VERSION=auction_llm_v5
-LLM_PDF_MAX_CHARS=12000
+LLM_PROMPT_VERSION=auction_llm_v6_display
+LLM_EXTRACTION_MODE=display_description
+LLM_PDF_MAX_CHARS=6000
 INCREMENTAL_ENRICHMENT=true
 PDF_DOCLING_FAST_TIMEOUT_SECONDS=60
-PDF_MAX_DOCUMENTS_PER_SALE=4
+PDF_MAX_DOCUMENTS_PER_SALE=2
+PIPELINE_PDF_MAX_TARGETS=10
+PIPELINE_LLM_MAX_TARGETS=10
+PIPELINE_LLM_BACKFILL_MAX_TARGETS=20
+PIPELINE_IDLE_LLM_BACKFILL_ENABLED=false
 ```
 
 Le provider Replicate appelle l'API HTTP officielle avec `Authorization: Bearer $REPLICATE_API_TOKEN` et l'endpoint `/v1/models/{owner}/{model}/predictions`.
@@ -265,11 +390,30 @@ Pour Gemini via Replicate, le client envoie le prompt système dans `system_inst
 Les erreurs temporaires Replicate, dont `429 Too Many Requests`, sont retentées avec backoff exponentiel et un délai minimal entre appels pour éviter les rafales en fin de run.
 Les textes PDF et les extractions LLM sont mis en cache par empreinte de document/contexte. Le run suivant réutilise les résultats inchangés, limite les documents transmis aux plus utiles et applique un timeout Docling plus court sur les PDF signés ou très lourds avant fallback.
 
-Le pipeline tente systématiquement l'enrichissement LLM pour chaque nouvelle annonce canonique disposant d'un texte exploitable. Il conserve le descriptif source dans `raw_payload.source_description`, puis demande au LLM une version d'affichage uniforme `display_description` stockée en `raw_payload.llm_display_description`. Cette synthèse est désormais construite depuis l'ensemble des faits fiables disponibles : annonce source, champs structurés déjà extraits, PV descriptif, cahier des conditions, diagnostics et autres documents réduits. Elle est normalisée en un seul paragraphe factuel d'environ 90 à 110 mots lorsque les données le permettent. Le pipeline utilise d'abord le contexte PDF réduit pour l'analyse structurée, puis retombe sur `raw_text` si aucun texte PDF n'est disponible. Il continue sans LLM si le provider configuré n'est pas disponible. Les réponses doivent être du JSON valide, validé par Pydantic, puis sauvegardé dans `data/processed/llm_extractions/{sale_id}.json`.
+Le pipeline tente l'enrichissement LLM sur les annonces sélectionnées par les
+garde-fous `PIPELINE_LLM_MAX_TARGETS` et le cache incrémental. Il conserve le
+descriptif source dans `raw_payload.source_description`, puis demande au LLM une
+version d'affichage uniforme `display_description` stockée en
+`raw_payload.llm_display_description`. En mode courant
+`LLM_EXTRACTION_MODE=display_description`, le prompt est volontairement plus
+court et centré sur cette synthèse publique. Il continue sans LLM si le provider
+configuré n'est pas disponible. Les réponses doivent être du JSON valide,
+validé par Pydantic, puis sauvegardé dans
+`data/processed/llm_extractions/{sale_id}.json`.
+
+Le mode `--backfill-llm-descriptions` traite les annonces déjà présentes dans
+Supabase qui n'ont pas encore de synthèse publique courante. Il est séparé du
+scrape principal pour éviter d'allonger les runs planifiés ; son volume est
+borné par `PIPELINE_LLM_BACKFILL_MAX_TARGETS` ou `--limit`. En CI, il doit être
+déclenché explicitement afin de garder les schedules courts et prévisibles.
 
 Un cache évite de rappeler Replicate quand le triplet `modèle + version de prompt + contexte réduit` n'a pas changé. Cela limite le coût, accélère les relances et stabilise les extractions. Une annonce déjà publiée avec une ancienne version de prompt est réenrichie afin de régénérer la description d'affichage. À chaque scroll avec LLM actif, le skip incrémental exige désormais `raw_payload.llm_display_description` et `raw_payload.llm_prompt_version = LLM_PROMPT_VERSION` : une annonce scorée mais sans synthèse IA publique repasse donc automatiquement dans l'enrichissement.
 
-Avant l'appel LLM, le contexte PDF est réduit à environ 8 000-12 000 caractères : premières sections des PV descriptifs et cahiers des conditions, puis fenêtres autour des mots-clés utiles comme surface, pièces, chambres, occupation, bail, servitude, diagnostics, amiante, plomb, DPE, travaux, désignation, lots et mise à prix.
+Avant l'appel LLM, le contexte PDF est réduit à environ 6 000 caractères par
+défaut : premières sections des PV descriptifs et cahiers des conditions, puis
+fenêtres autour des mots-clés utiles comme surface, pièces, chambres,
+occupation, bail, servitude, diagnostics, amiante, plomb, DPE, travaux,
+désignation, lots et mise à prix.
 
 Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiable. Il complète surtout les champs absents : `surface_m2`, `rooms_count`, `bedrooms_count`, `occupancy_status`, certains risques, `summary` et `raw_payload.llm_extraction`.
 
@@ -357,13 +501,23 @@ AUCTION_USER_AGENT=immojudis-data-pipeline/1.0 (+contact@example.com)
 REQUEST_DELAY_SECONDS=1.5
 REQUEST_TIMEOUT_SECONDS=20
 GEOCODE_ENABLED=true
-GEOCODE_API_URL=https://api-adresse.data.gouv.fr/search/
+GEOCODE_API_URL=https://data.geopf.fr/geocodage/search/
 GEOCODE_MIN_SCORE=0.45
+CADASTRE_ENRICH_ENABLED=true
+CADASTRE_API_URL=https://apicarto.ign.fr/api/cadastre/parcelle
+DPE_ENRICH_ENABLED=true
+DPE_API_URL=https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines
 ENABLE_LICITOR_BENCHMARK=false
 LICITOR_MAX_PAGES=5
 ```
 
-Le géocodage n'est pas appelé si `latitude` et `longitude` sont déjà présents.
+Le géocodage n'est pas appelé si `latitude` et `longitude` sont déjà présents
+et plausibles pour le département de la vente. Les résultats BAN/Géoplateforme
+acceptés ou rejetés sont conservés dans `raw_payload.geocode` avec le score,
+le libellé retourné, le type de résultat, le code commune et la décision
+`accepted`. L'enrichissement cadastre est ensuite sauté si la vente n'a pas de
+coordonnées. L'enrichissement DPE utilise les coordonnées quand elles existent,
+sinon une recherche textuelle d'adresse.
 
 ## Rapport Qualité
 

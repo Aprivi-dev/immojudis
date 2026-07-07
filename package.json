@@ -1,6 +1,6 @@
 {
   "name": "immojudis",
-  "description": "Plateforme d'exploration des ventes immobilières aux enchères judiciaires (Nouvelle-Aquitaine) : assistant de mise plafond, cartographie Google Maps / OpenStreetMap et pipeline de données.",
+  "description": "Plateforme d'exploration des ventes immobilières aux enchères judiciaires (Nouvelle-Aquitaine) : assistant de mise plafond, cartographie OpenStreetMap et pipeline de données.",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -8,12 +8,14 @@
   "scripts": {
     "dev": "next dev",
     "dev:ready": "node scripts/dev-ready.mjs",
-    "build": "node scripts/verify-required-env.mjs && next build",
+    "build": "node scripts/verify-required-env.mjs && node scripts/apply-supabase-migrations.mjs --if-enabled && next build",
     "build:dev": "next build",
     "start": "next start",
     "preview": "next start",
     "test": "vitest run",
     "lint": "eslint .",
+    "audit:ai-descriptions": "node scripts/audit-ai-descriptions.mjs",
+    "env:check:prod": "node scripts/verify-production-env.mjs",
     "db:migrate": "node scripts/apply-supabase-migrations.mjs",
     "format": "prettier --write ."
   },
@@ -30,16 +32,19 @@
     "framer-motion": "^12.42.2",
     "lucide-react": "^0.575.0",
     "next": "^16.2.9",
+    "postgres": "^3.4.9",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "sonner": "^2.0.7",
+    "stripe": "^22.3.0",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1",
     "tw-animate-css": "^1.3.4",
     "zod": "^3.24.2"
   },
   "overrides": {
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.1",
+    "postcss": "8.5.15"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

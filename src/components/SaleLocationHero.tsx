@@ -1,351 +1,85 @@
-import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
+import type { ReactNode } from "react";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import Pause from "lucide-react/dist/esm/icons/pause.js";
-import Play from "lucide-react/dist/esm/icons/play.js";
+import Navigation from "lucide-react/dist/esm/icons/navigation.js";
 import type { AuctionSale } from "@/lib/types";
-import { getGoogleMapsApiKey, googleMapsUrl, loadGoogleMaps } from "@/lib/google-maps";
 import { propertyTypeLabel } from "@/lib/format";
-
-const STREET_VIEW_RADIUS_M = 90;
-const ORBIT_DEG_PER_S = 4.5;
-const AERIAL_RANGE_M = 350;
-const AERIAL_TILT_DEG = 60;
-const ORBIT_DURATION_MS = 60000;
-const MARKER_ALTITUDE_M = 45;
-
-type StreetState = "idle" | "loading" | "ready" | "missing" | "error";
+import { openStreetMapQueryUrl, openStreetMapUrl } from "@/lib/tiles";
+import { MapThumbnail } from "@/components/MapThumbnail";
 
 function saleAddress(sale: AuctionSale): string {
   return [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
 }
 
-function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduced(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-  return reduced;
-}
-
-/**
- * Hero localisation : deux tuiles Google Maps en tête de la page détail —
- * vue aérienne 3D (satellite incliné + orbite douce) et vue de rue. Remplace les
- * visuels extraits, sans aucune dépendance aux photos source : si la clé Maps ou
- * les coordonnées manquent, on affiche un état de repli de marque ; si la vue de rue
- * est absent à l'adresse (fréquent en zone rurale), la tuile droite bascule sur un
- * message dédié. L'orbite respecte prefers-reduced-motion et se met en pause
- * lorsque le bloc sort de l'écran.
- */
 export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
-  const apiKey = getGoogleMapsApiKey();
   const lat = sale.latitude;
   const lng = sale.longitude;
   const address = saleAddress(sale);
   const title = sale.title ?? propertyTypeLabel(sale.property_type);
-  const reducedMotion = useReducedMotion();
-  const hasMaps = Boolean(apiKey) && lat != null && lng != null;
+  const hasLocation = lat != null && lng != null;
+  const mapUrl = hasLocation
+    ? openStreetMapUrl(lat, lng, 17)
+    : openStreetMapQueryUrl(address || sale.city || sale.department || "France");
 
-  const [mapReady, setMapReady] = useState(false);
-  const [mapError, setMapError] = useState(false);
-  const [streetState, setStreetState] = useState<StreetState>("idle");
-  const [isRotating, setIsRotating] = useState(!reducedMotion);
-  const [isVisible, setIsVisible] = useState(true);
-  const [mode3d, setMode3d] = useState(false);
-  const [showStreetView, setShowStreetView] = useState(false);
-
-  const aerialRef = useRef<HTMLDivElement>(null);
-  const streetRef = useRef<HTMLDivElement>(null);
-  const mapObjRef = useRef<google.maps.Map | null>(null);
-  const map3dRef = useRef<google.maps.maps3d.Map3DElement | null>(null);
-  const markerRef = useRef<google.maps.Marker | null>(null);
-  const panoRef = useRef<google.maps.StreetViewPanorama | null>(null);
-  const altitudeModeRef = useRef<typeof google.maps.maps3d.AltitudeMode | null>(null);
-
-  useEffect(() => {
-    if (reducedMotion) setIsRotating(false);
-  }, [reducedMotion]);
-
-  // Vue aérienne : Photorealistic 3D (Map3DElement) si disponible, sinon repli
-  // sur le satellite incliné. Aucune dépendance aux photos source.
-  useEffect(() => {
-    if (!hasMaps || lat == null || lng == null || !aerialRef.current) return;
-    let cancelled = false;
-    const container = aerialRef.current;
-
-    void (async () => {
-      try {
-        const g = await loadGoogleMaps(apiKey);
-        if (cancelled || !container) return;
-        const { Map3DElement, Marker3DElement, MapMode, AltitudeMode } =
-          await g.maps.importLibrary("maps3d");
-        if (cancelled || !container || map3dRef.current || mapObjRef.current) return;
-
-        // L'altitude du centre doit suivre le terrain : avec altitude 0 (niveau de
-        // la mer) la caméra vise un point sous le sol et ne montre que le ciel.
-        let altitude = 0;
-        try {
-          const { ElevationService } = await g.maps.importLibrary("elevation");
-          const { results } = await new ElevationService().getElevationForLocations({
-            locations: [{ lat, lng }],
-          });
-          if (results?.[0]) altitude = results[0].elevation;
-        } catch {
-          // élévation indisponible → 0
-        }
-        if (cancelled || !container || map3dRef.current || mapObjRef.current) return;
-        altitudeModeRef.current = AltitudeMode;
-
-        const map3d = new Map3DElement({
-          center: { lat, lng, altitude },
-          defaultUIHidden: true,
-          range: AERIAL_RANGE_M,
-          tilt: AERIAL_TILT_DEG,
-          heading: 0,
-          mode: MapMode.HYBRID,
-        });
-        map3d.defaultUIHidden = true;
-        map3d.setAttribute("default-ui-hidden", "true");
-        map3d.style.width = "100%";
-        map3d.style.height = "100%";
-        container.appendChild(map3d);
-        map3dRef.current = map3d;
-
-        // Pin 3D extrudé (poteau jusqu'au sol) pour repérer le bien pendant l'orbite.
-        const marker = new Marker3DElement({
-          position: { lat, lng, altitude: MARKER_ALTITUDE_M },
-          altitudeMode: AltitudeMode.RELATIVE_TO_GROUND,
-          extruded: true,
-          label: title,
-        });
-        map3d.append(marker);
-
-        setMode3d(true);
-        setMapReady(true);
-        setMapError(false);
-      } catch {
-        // Map Tiles API non activée / 3D indisponible → repli satellite incliné.
-        try {
-          const g = await loadGoogleMaps(apiKey);
-          if (cancelled || !container || mapObjRef.current) return;
-          const center = { lat, lng };
-          mapObjRef.current = new g.maps.Map(container, {
-            backgroundColor: "#09090b",
-            center,
-            clickableIcons: false,
-            disableDefaultUI: true,
-            fullscreenControl: false,
-            gestureHandling: "greedy",
-            heading: 34,
-            keyboardShortcuts: false,
-            mapTypeId: "satellite",
-            tilt: 45,
-            zoom: 18,
-            zoomControl: false,
-          });
-          markerRef.current = new g.maps.Marker({
-            map: mapObjRef.current,
-            position: center,
-            title,
-          });
-          setMode3d(false);
-          setMapReady(true);
-          setMapError(false);
-        } catch {
-          if (!cancelled) setMapError(true);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      map3dRef.current?.stopCameraAnimation();
-      map3dRef.current?.remove();
-      map3dRef.current = null;
-      mapObjRef.current = null;
-    };
-  }, [apiKey, hasMaps, lat, lng, title]);
-
-  // Orbite 3D (flyCameraAround) : boucle douce autour de l'adresse.
-  useEffect(() => {
-    const map3d = map3dRef.current;
-    if (!mode3d || !map3d || lat == null || lng == null) return;
-    if (!isRotating || reducedMotion || !isVisible) {
-      map3d.stopCameraAnimation();
-      return;
-    }
-    const orbit = () =>
-      map3d.flyCameraAround({
-        camera: {
-          center: { lat, lng, altitude: 0 },
-          altitudeMode: altitudeModeRef.current?.RELATIVE_TO_GROUND,
-          tilt: AERIAL_TILT_DEG,
-          range: AERIAL_RANGE_M,
-          heading: 0,
-        },
-        durationMillis: ORBIT_DURATION_MS,
-        repeatCount: 1,
-      });
-    orbit();
-    map3d.addEventListener("gmp-animationend", orbit);
-    return () => {
-      map3d.removeEventListener("gmp-animationend", orbit);
-      map3d.stopCameraAnimation();
-    };
-  }, [isRotating, isVisible, lat, lng, mode3d, reducedMotion]);
-
-  // Orbite de repli (satellite incliné) : rotation du heading via rAF.
-  useEffect(() => {
-    if (mode3d || !mapReady || !mapObjRef.current || !isRotating || reducedMotion || !isVisible)
-      return;
-    let frame = 0;
-    let previous = performance.now();
-    const animate = (now: number) => {
-      const delta = Math.min((now - previous) / 1000, 0.08);
-      previous = now;
-      const heading = mapObjRef.current?.getHeading() ?? 0;
-      mapObjRef.current?.setHeading((heading + delta * ORBIT_DEG_PER_S) % 360);
-      frame = window.requestAnimationFrame(animate);
-    };
-    frame = window.requestAnimationFrame(animate);
-    return () => window.cancelAnimationFrame(frame);
-  }, [isRotating, isVisible, mapReady, mode3d, reducedMotion]);
-
-  // Pause de l'orbite quand le hero sort du viewport (coût API + perf).
-  useEffect(() => {
-    const el = aerialRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([entry]) => setIsVisible(entry.isIntersecting), {
-      threshold: 0.1,
-    });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [hasMaps]);
-
-  // Vue de rue : recherche du panorama le plus proche, sinon état "missing".
-  useEffect(() => {
-    if (!showStreetView || !hasMaps || lat == null || lng == null || !streetRef.current) return;
-    let cancelled = false;
-    setStreetState("loading");
-
-    loadGoogleMaps(apiKey)
-      .then((g) => {
-        if (cancelled || !streetRef.current) return;
-        const center = { lat, lng };
-        const service = new g.maps.StreetViewService();
-        service.getPanorama(
-          {
-            location: center,
-            preference: g.maps.StreetViewPreference.NEAREST,
-            radius: STREET_VIEW_RADIUS_M,
-            source: g.maps.StreetViewSource.OUTDOOR,
-          },
-          (data, status) => {
-            if (cancelled || !streetRef.current) return;
-            if (status !== g.maps.StreetViewStatus.OK || !data?.location?.latLng) {
-              setStreetState("missing");
-              return;
-            }
-            const heading = g.maps.geometry.spherical.computeHeading(data.location.latLng, center);
-            panoRef.current = new g.maps.StreetViewPanorama(streetRef.current, {
-              addressControl: false,
-              disableDefaultUI: false,
-              fullscreenControl: true,
-              motionTracking: false,
-              motionTrackingControl: false,
-              panControl: false,
-              position: data.location.latLng,
-              pov: { heading, pitch: 0 },
-              scrollwheel: false,
-              showRoadLabels: false,
-              visible: true,
-              zoomControl: true,
-            });
-            setStreetState("ready");
-          },
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setStreetState("error");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, hasMaps, lat, lng, showStreetView]);
-
-  if (!hasMaps) {
+  if (!hasLocation) {
     return (
       <div className="liquid-panel flex min-h-[220px] flex-col items-center justify-center rounded-lg p-8 text-center">
         <MapPin className="h-6 w-6 text-gold" />
         <p className="mt-3 text-sm font-medium text-foreground">Localisation non cartographiée</p>
         <p className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
-          La vue aérienne et la vue de rue ne sont pas disponibles pour ce bien.
+          Les coordonnées précises ne sont pas encore disponibles pour ce bien.
         </p>
+        <a
+          href={mapUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-soft hover:text-gold"
+        >
+          Rechercher sur OpenStreetMap <ExternalLink className="h-3 w-3" />
+        </a>
       </div>
     );
   }
 
-  const mapsLink = lat != null && lng != null ? googleMapsUrl(lat, lng, address) : undefined;
-
   return (
     <div className="grid gap-3 lg:grid-cols-[1.7fr_1fr]">
-      {/* Tuile 1 — vue aérienne 3D */}
       <div className="liquid-media relative min-h-[300px] overflow-hidden rounded-lg lg:min-h-[440px]">
-        <div ref={aerialRef} className="absolute inset-0" />
-        <TileBadge>Vue aérienne 3D</TileBadge>
-        {!reducedMotion && !mapError && (
-          <button
-            type="button"
-            onClick={() => setIsRotating((v) => !v)}
-            aria-label={isRotating ? "Mettre la rotation en pause" : "Reprendre la rotation"}
-            className="absolute bottom-3 right-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-background/70 text-gold-soft backdrop-blur transition-colors hover:border-gold/40"
-          >
-            {isRotating ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-          </button>
-        )}
-        {mapError && (
-          <FallbackOverlay text="La vue aérienne n'a pas pu être chargée." link={mapsLink} />
-        )}
+        <MapThumbnail lat={lat} lng={lng} zoom={16} alt={`Carte de ${title}`} className="h-full" />
+        <TileBadge>Carte OpenStreetMap</TileBadge>
       </div>
 
-      {/* Tuile 2 — vue de rue */}
-      <div className="liquid-media relative min-h-[260px] overflow-hidden rounded-lg lg:min-h-[440px]">
-        {showStreetView ? <div ref={streetRef} className="absolute inset-0" /> : null}
-        <TileBadge>Vue de rue</TileBadge>
-        {!showStreetView && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 px-6 text-center backdrop-blur-sm">
-            <MapPin className="h-5 w-5 text-gold" />
-            <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
-              Chargez la vue de rue uniquement si vous souhaitez inspecter la rue.
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowStreetView(true)}
-              className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-soft transition-colors hover:border-gold/60 hover:bg-gold/15 hover:text-gold"
-            >
-              Afficher la vue de rue
-            </button>
-          </div>
-        )}
-        {showStreetView && streetState === "loading" && (
-          <FallbackOverlay text="Chargement de la vue de rue..." link={mapsLink} />
-        )}
-        {(streetState === "missing" || streetState === "error") && (
-          <FallbackOverlay
-            text={
-              streetState === "missing"
-                ? "Pas de vue de rue à cette adresse."
-                : "Vue de rue indisponible."
-            }
-            link={mapsLink}
-          />
-        )}
+      <div className="liquid-panel flex min-h-[260px] flex-col justify-between rounded-lg p-6 lg:min-h-[440px]">
+        <div>
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gold/30 bg-gold/10 text-gold-soft">
+            <Navigation className="h-5 w-5" />
+          </span>
+          <h2 className="mt-4 font-display text-2xl text-foreground">Localisation</h2>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            {address || "Adresse à confirmer dans les pièces du dossier."}
+          </p>
+          <dl className="mt-5 grid gap-3 text-sm">
+            <div className="rounded-md border border-white/10 bg-white/5 p-3">
+              <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
+                Latitude
+              </dt>
+              <dd className="mt-1 font-medium text-foreground">{lat.toFixed(5)}</dd>
+            </div>
+            <div className="rounded-md border border-white/10 bg-white/5 p-3">
+              <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
+                Longitude
+              </dt>
+              <dd className="mt-1 font-medium text-foreground">{lng.toFixed(5)}</dd>
+            </div>
+          </dl>
+        </div>
+        <a
+          href={mapUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-gold/30 bg-gold/10 px-4 text-sm font-semibold text-gold-soft transition-colors hover:border-gold/60 hover:bg-gold/15 hover:text-gold"
+        >
+          Ouvrir dans OpenStreetMap <ExternalLink className="h-4 w-4" />
+        </a>
       </div>
     </div>
   );
@@ -356,24 +90,5 @@ function TileBadge({ children }: { children: ReactNode }) {
     <span className="absolute left-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-background/70 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-soft backdrop-blur">
       {children}
     </span>
-  );
-}
-
-function FallbackOverlay({ text, link }: { text: string; link?: string }) {
-  return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/85 px-6 text-center backdrop-blur-sm">
-      <MapPin className="h-5 w-5 text-gold" />
-      <p className="text-xs text-muted-foreground">{text}</p>
-      {link && (
-        <a
-          href={link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-soft hover:text-gold"
-        >
-          Voir sur Google Maps <ExternalLink className="h-3 w-3" />
-        </a>
-      )}
-    </div>
   );
 }

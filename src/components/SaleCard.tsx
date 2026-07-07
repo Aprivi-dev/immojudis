@@ -5,6 +5,7 @@ import Eye from "lucide-react/dist/esm/icons/eye.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import { isNew } from "@/lib/dates";
+import { dpeColor, extractDpe } from "@/lib/dpe";
 import type { AuctionSale } from "@/lib/types";
 import { formatPrice, formatDate, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
@@ -34,6 +35,8 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
   const title = locked ? "Détail réservé aux membres" : (sale.title ?? propertyLabel);
   const fallbackImage = "/media/landing/auction-bordeaux.jpg";
   const imageUrl = locked ? fallbackImage : firstPropertyImage(sale.media);
+  const dpe = locked ? null : extractDpe(sale);
+  const dpeTheme = dpeColor(dpe?.class);
 
   return (
     <Link
@@ -94,6 +97,18 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
               <Eye className="h-3 w-3" /> Vu
             </span>
           )}
+          {dpe?.class ? (
+            <span
+              className="absolute bottom-3 left-3 inline-flex min-h-7 items-center rounded-md border px-2 text-[11px] font-extrabold shadow-sm"
+              style={{
+                backgroundColor: dpeTheme?.background,
+                borderColor: dpeTheme?.border,
+                color: dpeTheme?.foreground,
+              }}
+            >
+              DPE {dpe.class}
+            </span>
+          ) : null}
         </div>
 
         <div className="flex flex-1 flex-col gap-3 p-3.5">

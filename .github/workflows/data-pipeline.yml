@@ -28,8 +28,13 @@ on:
         description: "Optional raw listing limit"
         required: false
         type: string
+      llm_backfill:
+        description: "Backfill missing AI display descriptions from existing Supabase rows"
+        required: false
+        default: false
+        type: boolean
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/30 * * * *"
 
 permissions:
   contents: read
@@ -42,7 +47,7 @@ jobs:
   run:
     name: Run data pipeline
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: services/data-pipeline
@@ -51,12 +56,25 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      PIPELINE_ENRICH_WORKERS: 2
+      PIPELINE_PDF_MAX_TARGETS: 10
+      PIPELINE_LLM_MAX_TARGETS: 10
+      PIPELINE_LLM_BACKFILL_MAX_TARGETS: 20
+      PIPELINE_IDLE_LLM_BACKFILL_ENABLED: false
+      REPLICATE_MIN_INTERVAL_SECONDS: 5
+      REPLICATE_MAX_RETRIES: 4
+      REPLICATE_RETRY_BACKOFF_SECONDS: 30
+      REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
+      REPLICATE_MAX_TOKENS: 1024
+      LLM_EXTRACTION_MODE: display_description
+      LLM_PDF_MAX_CHARS: 6000
       LLM_ENABLED: true
       LLM_PROVIDER: replicate
-      LLM_PROMPT_VERSION: auction_llm_v5
+      LLM_PROMPT_VERSION: auction_llm_v6_display
       PDF_EXTRACTOR: auto
-      PDF_DOCLING_ENABLED: true
-      PDF_OCR_ENABLED: true
+      PDF_DOCLING_ENABLED: false
+      PDF_OCR_ENABLED: false
+      PDF_MAX_DOCUMENTS_PER_SALE: 2
       ENABLE_LICITOR_BENCHMARK: true
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
@@ -90,6 +108,7 @@ jobs:
             immojudis-data-pipeline-${{ runner.os }}-
 
       - name: Install OCR system packages
+        if: env.PDF_OCR_ENABLED == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
@@ -102,11 +121,15 @@ jobs:
           REQUESTED_RUN_ID: ${{ github.event.inputs.run_id }}
           REQUESTED_SOURCE: ${{ github.event.inputs.source }}
           REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
+          REQUESTED_LLM_BACKFILL: ${{ github.event.inputs.llm_backfill }}
         run: |
           set -euo pipefail
 
           if [ -n "$REQUESTED_RUN_ID" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
             args=(--source "${REQUESTED_SOURCE:-all}")
+            if [ "${REQUESTED_LLM_BACKFILL:-false}" = "true" ]; then
+              args+=(--backfill-llm-descriptions)
+            fi
             if [ -n "$REQUESTED_RUN_ID" ]; then
               args+=(--run-id "$REQUESTED_RUN_ID")
             fi

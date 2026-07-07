@@ -6,12 +6,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
+import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
 import Bath from "lucide-react/dist/esm/icons/bath.js";
 import BedDouble from "lucide-react/dist/esm/icons/bed-double.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
+import Download from "lucide-react/dist/esm/icons/download.js";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
 import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import LayoutPanelLeft from "lucide-react/dist/esm/icons/layout-panel-left.js";
@@ -34,14 +36,33 @@ import { useAuth } from "@/hooks/use-auth";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { supabase } from "@/integrations/supabase/client";
 import { Link, useNavigate } from "@/lib/router-compat";
-import { addFavorite, createAlert, removeFavorite } from "@/lib/queries";
-import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import {
+  createWatchedZone as createWatchedZoneRequest,
+  addFavoriteSale as addFavoriteSaleRequest,
+  fetchDpeExplorer,
+  exportSalesCsv,
+  fetchFeatureEntitlements,
+  fetchSalesStatistics,
+  removeFavoriteSale as removeFavoriteSaleRequest,
+} from "@/lib/client-api";
+import { createAlert } from "@/lib/queries";
+import { DPE_CLASSES, dpeColor, extractDpe, type DpeClass } from "@/lib/dpe";
+import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
+import {
+  formatDate,
+  formatPrice,
+  formatPricePerM2,
+  occupancyLabel,
+  propertyTypeLabel,
+} from "@/lib/format";
 import { geocodeAddress, pricePerM2, type GeoPoint } from "@/lib/geo";
-import { googleStaticMapUrl } from "@/lib/google-maps";
+import { osmTileUrl } from "@/lib/tiles";
 import { firstPropertyImage, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { isNew } from "@/lib/dates";
 import type { AuctionSale } from "@/lib/types";
+import type { WatchedZoneInput } from "@/lib/watched-zones";
+import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
 import {
   DEFAULT_SEARCH_LIMIT,
   HOME_TYPE_OPTIONS,
@@ -88,9 +109,12 @@ type SearchDraft = {
   status: string[];
   keywords: string;
   occupancy: string;
+  dpeClasses: string[];
   minScore: string;
   maxPricePerM2: string;
   minYield: string;
+  minMarketDiscount: string;
+  houseWithLand: boolean;
   aroundAddress: string;
   aroundRadius: string;
   yearBuilt: string;
@@ -111,7 +135,11 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mobileMapOpen, setMobileMapOpen] = useState(Boolean(search.map));
   const [savingAlert, setSavingAlert] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [dpeExplorerOpen, setDpeExplorerOpen] = useState(false);
   const [draft, setDraft] = useState<SearchDraft>(() => searchToDraft(search));
+  const latestSearchDraftRef = useRef<SearchDraft>(searchToDraft(search));
+  const firstSearchDraftSync = useRef(true);
   const firstDraftSync = useRef(true);
   const [center, setCenter] = useState<GeoPoint | null>(null);
   const [geocoding, setGeocoding] = useState(false);
@@ -131,8 +159,17 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const searchDraftSignature = useMemo(() => JSON.stringify(searchToDraft(search)), [search]);
 
   useEffect(() => {
-    setDraft(searchToDraft(search));
-  }, [searchDraftSignature, search]);
+    latestSearchDraftRef.current = searchToDraft(search);
+  }, [search]);
+
+  useEffect(() => {
+    if (firstSearchDraftSync.current) {
+      firstSearchDraftSync.current = false;
+      return;
+    }
+
+    setDraft(latestSearchDraftRef.current);
+  }, [searchDraftSignature]);
 
   useEffect(() => {
     if (firstDraftSync.current) {
@@ -178,6 +215,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   );
 
   const searchKey = useMemo(() => salesSearchToUrlRecord(search), [search]);
+  const searchKeySignature = useMemo(() => stableUrlRecord(searchKey), [searchKey]);
 
   const {
     data: rawSales = [],
@@ -185,24 +223,31 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     isFetching,
     isLoading,
   } = useQuery({
-    queryKey: ["sales-search", searchKey, isPreview],
+    queryKey: ["sales-search", searchKeySignature, isPreview],
     queryFn: () => fetchSearchResults({ search, preview: isPreview }),
     enabled: !authLoading,
     staleTime: 60_000,
   });
 
   const { data: totalCount, isLoading: isCountLoading } = useQuery({
-    queryKey: ["sales-search-count", searchKey, isPreview],
+    queryKey: ["sales-search-count", searchKeySignature, isPreview],
     queryFn: () => fetchSearchCount({ search, preview: isPreview }),
     enabled: !authLoading,
     staleTime: 60_000,
   });
 
   const { data: rawMapSales = [], isLoading: isMapLoading } = useQuery({
-    queryKey: ["sales-search-map", searchKey],
+    queryKey: ["sales-search-map", searchKeySignature],
     queryFn: () => fetchSearchMapResults(search),
     enabled: !authLoading && !isPreview,
     staleTime: 60_000,
+  });
+
+  const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
+    queryKey: ["feature-entitlements"],
+    queryFn: fetchFeatureEntitlements,
+    enabled: Boolean(user) && !authLoading,
+    staleTime: 5 * 60_000,
   });
 
   const filteredSales = useMemo(
@@ -237,6 +282,53 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const splitClass = wideMap
     ? "lg:grid-cols-[minmax(380px,35vw)_1fr]"
     : "lg:grid-cols-[minmax(540px,58vw)_1fr]";
+  const localSearchStatistics = useMemo(
+    () => buildSearchStatistics(filteredSales),
+    [filteredSales],
+  );
+  const statisticsLocked =
+    isPreview || entitlementsData?.plan.features.salesStatistics !== "included";
+  const dpeLocked = isPreview || entitlementsData?.plan.features.dpeExplorer !== "included";
+  const csvExportLocked =
+    isPreview || entitlementsData?.plan.features.salesCsvExport !== "included";
+  const watchedZonesLocked =
+    isPreview || entitlementsData?.plan.features.watchedZones !== "included";
+  const { data: salesStatisticsData, isFetching: salesStatisticsLoading } = useQuery({
+    queryKey: ["sales-statistics", searchKeySignature],
+    queryFn: () => fetchSalesStatistics({ search }),
+    enabled: !statisticsLocked && !authLoading && Boolean(user),
+    retry: false,
+    staleTime: 2 * 60_000,
+  });
+  const searchStatistics = useMemo(
+    () =>
+      salesStatisticsData
+        ? searchStatisticsFromServer(salesStatisticsData.summary)
+        : localSearchStatistics,
+    [localSearchStatistics, salesStatisticsData],
+  );
+  const statisticsLoading =
+    isInitialLoading || (!statisticsLocked && salesStatisticsLoading && !salesStatisticsData);
+  const {
+    data: dpeExplorerData,
+    error: dpeExplorerError,
+    isFetching: dpeExplorerLoading,
+    refetch: refetchDpeExplorer,
+  } = useQuery({
+    queryKey: ["dpe-explorer", searchKeySignature],
+    queryFn: () =>
+      fetchDpeExplorer({
+        department: search.department,
+        city: search.city,
+        propertyType: search.homeTypes?.length === 1 ? search.homeTypes[0] : undefined,
+        dpeClasses: search.dpeClasses,
+        includeMap: true,
+        limit: 80,
+      }),
+    enabled: dpeExplorerOpen && !dpeLocked,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
 
   const updateSearch = useCallback(
     (patch: Partial<SalesSearchParams>) => {
@@ -307,6 +399,13 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
     setSavingAlert(true);
     try {
+      const watchedZoneInput = watchedZonesLocked
+        ? null
+        : await watchedZoneInputFromSearch(search, center);
+      const watchedZoneResponse = watchedZoneInput
+        ? await createWatchedZoneRequest({ data: watchedZoneInput })
+        : null;
+
       await createAlert(user.id, {
         name: buildAlertName(search),
         department: search.department || null,
@@ -316,12 +415,49 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         min_surface_m2: search.minSqft ?? null,
         occupancy_status: search.occupancy || null,
         min_investment_score: search.minScore ?? null,
+        max_price_per_m2: search.maxPricePerM2 ?? null,
+        min_yield_pct: search.minYield ?? null,
+        min_market_discount_pct: search.minMarketDiscount ?? null,
+        dpe_classes: search.dpeClasses ?? [],
+        require_house_with_land: Boolean(search.houseWithLand),
+        watched_zone_id: watchedZoneResponse?.zone.id ?? null,
+        advanced_criteria: {
+          source: "sales_search",
+          query: search.query ?? null,
+          around_address: search.aroundAddress ?? null,
+          around_radius_km: search.aroundRadius ?? null,
+          watched_zone_id: watchedZoneResponse?.zone.id ?? null,
+        },
       });
-      toast.success("Recherche enregistrée");
+      toast.success(
+        watchedZoneResponse ? "Zone surveillée et alerte créées" : "Recherche enregistrée",
+      );
     } catch (saveError) {
       toast.error(saveError instanceof Error ? saveError.message : "Erreur");
     } finally {
       setSavingAlert(false);
+    }
+  }
+
+  async function exportCsv() {
+    if (!user) {
+      toast.error("Connectez-vous pour exporter les ventes");
+      return;
+    }
+    if (csvExportLocked) {
+      toast.error("Export CSV réservé au plan Analyse");
+      return;
+    }
+
+    setExportingCsv(true);
+    try {
+      const { blob, filename } = await exportSalesCsv({ search });
+      downloadBlob(blob, filename);
+      toast.success("Export CSV prêt");
+    } catch (exportError) {
+      toast.error(exportError instanceof Error ? exportError.message : "Export impossible");
+    } finally {
+      setExportingCsv(false);
     }
   }
 
@@ -348,10 +484,13 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         geocoding={geocoding}
         filtersOpen={filtersOpen}
         savingAlert={savingAlert}
+        exportingCsv={exportingCsv}
+        csvExportLocked={csvExportLocked}
         wideMap={wideMap}
         onFiltersOpenChange={setFiltersOpen}
         onReset={resetFilters}
         onSaveSearch={saveSearch}
+        onExportCsv={exportCsv}
         onSortChange={(sort) => updateSearch({ sort: sort === "relevance" ? undefined : sort })}
         onToggleLayout={() => setWideMap((value) => !value)}
       />
@@ -370,6 +509,21 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
             hasLocalFilters={hasLocalFilters}
             isLoading={isInitialLoading || isCountLoading}
             geocoding={geocoding}
+          />
+
+          <SearchStatisticsPanel
+            statistics={searchStatistics}
+            locked={statisticsLocked}
+            dpeLocked={dpeLocked}
+            loading={entitlementsLoading || statisticsLoading}
+            dpeExplorer={dpeExplorerData}
+            dpeExplorerLoading={dpeExplorerLoading}
+            dpeExplorerError={dpeExplorerError instanceof Error ? dpeExplorerError.message : null}
+            dpeExplorerRequested={dpeExplorerOpen}
+            onLoadDpeExplorer={() => {
+              setDpeExplorerOpen(true);
+              if (dpeExplorerOpen) void refetchDpeExplorer();
+            }}
           />
 
           <SearchResultsList
@@ -486,10 +640,13 @@ function SearchHeader({
   geocoding,
   filtersOpen,
   savingAlert,
+  exportingCsv,
+  csvExportLocked,
   wideMap,
   onFiltersOpenChange,
   onReset,
   onSaveSearch,
+  onExportCsv,
   onSortChange,
   onToggleLayout,
 }: {
@@ -506,10 +663,13 @@ function SearchHeader({
   geocoding: boolean;
   filtersOpen: boolean;
   savingAlert: boolean;
+  exportingCsv: boolean;
+  csvExportLocked: boolean;
   wideMap: boolean;
   onFiltersOpenChange: (open: boolean) => void;
   onReset: () => void;
   onSaveSearch: () => void;
+  onExportCsv: () => void;
   onSortChange: (sort: SearchSortKey) => void;
   onToggleLayout: () => void;
 }) {
@@ -534,6 +694,11 @@ function SearchHeader({
           <div className="flex shrink-0 items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
             <SortDropdown sort={search.sort ?? "relevance"} onChange={onSortChange} />
             <SaveSearchButton saving={savingAlert} onClick={onSaveSearch} />
+            <CsvExportButton
+              exporting={exportingCsv}
+              locked={csvExportLocked}
+              onClick={onExportCsv}
+            />
             <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
           </div>
         </div>
@@ -817,6 +982,37 @@ function SaveSearchButton({ saving, onClick }: { saving: boolean; onClick: () =>
   );
 }
 
+function CsvExportButton({
+  exporting,
+  locked,
+  onClick,
+}: {
+  exporting: boolean;
+  locked: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={exporting}
+      title={locked ? "Export CSV réservé au plan Analyse" : "Exporter les résultats en CSV"}
+      className={`inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm font-extrabold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60 ${
+        locked
+          ? "border-[#d6e0dc] bg-white text-[#667482]"
+          : "border-[#0f766e] bg-white text-[#0f766e] hover:bg-[#eefaf3]"
+      }`}
+    >
+      {exporting ? (
+        <LoaderCircle className="h-4 w-4 animate-spin" />
+      ) : (
+        <Download className="h-4 w-4" />
+      )}
+      CSV
+    </button>
+  );
+}
+
 function LayoutToggle({ wideMap, onToggle }: { wideMap: boolean; onToggle: () => void }) {
   return (
     <button
@@ -894,6 +1090,180 @@ function ResultsSummary({
             ) : null}
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+type SearchStatistics = {
+  medianPrice: number | null;
+  medianPricePerM2: number | null;
+  averageScore: number | null;
+  upcomingSales: number;
+  dpeCounts: Record<DpeClass, number>;
+  dpeKnownCount: number;
+};
+
+function SearchStatisticsPanel({
+  statistics,
+  locked,
+  dpeLocked,
+  loading,
+  dpeExplorer,
+  dpeExplorerLoading,
+  dpeExplorerError,
+  dpeExplorerRequested,
+  onLoadDpeExplorer,
+}: {
+  statistics: SearchStatistics;
+  locked: boolean;
+  dpeLocked: boolean;
+  loading: boolean;
+  dpeExplorer?: DpeExplorerResponse;
+  dpeExplorerLoading: boolean;
+  dpeExplorerError: string | null;
+  dpeExplorerRequested: boolean;
+  onLoadDpeExplorer: () => void;
+}) {
+  const items = [
+    {
+      label: "Prix médian",
+      value: formatPrice(statistics.medianPrice),
+      icon: <Building2 className="h-4 w-4" />,
+    },
+    {
+      label: "Prix médian / m²",
+      value: formatPricePerM2(statistics.medianPricePerM2),
+      icon: <Ruler className="h-4 w-4" />,
+    },
+    {
+      label: "Score moyen",
+      value: statistics.averageScore == null ? "—" : `${Math.round(statistics.averageScore)}/100`,
+      icon: <ShieldCheck className="h-4 w-4" />,
+    },
+    {
+      label: "DPE repérés",
+      value: statistics.dpeKnownCount.toLocaleString("fr-FR"),
+      icon: <CalendarDays className="h-4 w-4" />,
+      locked: dpeLocked,
+    },
+  ];
+
+  return (
+    <div className="border-b border-[#132238]/10 bg-[#f8fbfd] px-4 py-3 sm:px-5">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#0f766e]">
+          <BarChart3 className="h-4 w-4" />
+          Statistiques
+        </div>
+        {locked ? (
+          <span className="inline-flex items-center gap-1 rounded-md border border-[#d6e0dc] bg-white px-2 py-1 text-[10px] font-bold text-[#667482]">
+            <LockKeyhole className="h-3 w-3" />
+            Analyse
+          </span>
+        ) : null}
+      </div>
+      <dl className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+        {items.map((item) => (
+          <div key={item.label} className="rounded-md border border-[#dce7ee] bg-white p-3">
+            <dt className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#667482]">
+              <span className="text-[#0f766e]">{item.icon}</span>
+              {item.label}
+            </dt>
+            <dd className="mt-1 text-sm font-extrabold tabular-nums text-[#132238]">
+              {loading ? "…" : locked || item.locked ? "—" : item.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {!dpeLocked && !loading ? (
+        <>
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            {DPE_CLASSES.map((dpeClass) => {
+              const color = dpeColor(dpeClass);
+              return (
+                <span
+                  key={dpeClass}
+                  className="inline-flex min-h-7 items-center gap-1 rounded-md border px-2 text-xs font-bold"
+                  style={{
+                    backgroundColor: color?.background,
+                    borderColor: color?.border,
+                    color: color?.foreground,
+                  }}
+                >
+                  {dpeClass}
+                  <span className="tabular-nums">{statistics.dpeCounts[dpeClass]}</span>
+                </span>
+              );
+            })}
+            <button
+              type="button"
+              onClick={onLoadDpeExplorer}
+              disabled={dpeExplorerLoading}
+              className="ml-auto inline-flex min-h-7 items-center rounded-md border border-[#cbded8] bg-white px-2.5 text-xs font-extrabold text-[#0f766e] hover:border-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {dpeExplorerLoading
+                ? "Chargement DPE..."
+                : dpeExplorerRequested
+                  ? "Actualiser DPE"
+                  : "Explorer DPE"}
+            </button>
+          </div>
+          {dpeExplorer ? (
+            <div className="mt-3 rounded-md border border-[#dce7ee] bg-white p-3">
+              <div className="grid gap-2 text-xs sm:grid-cols-3">
+                <DpeExplorerMetric label="DPE trouvés" value={dpeExplorer.summary.total} />
+                <DpeExplorerMetric
+                  label="Classes connues"
+                  value={dpeExplorer.summary.knownClassCount}
+                />
+                <DpeExplorerMetric label="Points carte" value={dpeExplorer.summary.mapPointCount} />
+              </div>
+              {dpeExplorer.items.length ? (
+                <div className="mt-3 divide-y divide-[#132238]/10 border-t border-[#132238]/10">
+                  {dpeExplorer.items.slice(0, 3).map((item) => (
+                    <div key={item.id} className="grid gap-1 py-2 text-xs sm:grid-cols-[1fr_auto]">
+                      <div className="min-w-0">
+                        <Link
+                          className="font-bold text-[#132238] hover:text-[#0f766e]"
+                          to={`/sales/${item.id}`}
+                        >
+                          {item.title ?? "Vente judiciaire"}
+                        </Link>
+                        <div className="mt-0.5 text-[#667482]">
+                          {[item.city, item.department, propertyTypeLabel(item.propertyType)]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                      </div>
+                      <span className="font-extrabold text-[#0f766e]">
+                        {item.dpeLabel ?? "DPE repéré"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 border-t border-[#132238]/10 pt-3 text-xs text-[#667482]">
+                  Aucun DPE repéré avec ces filtres.
+                </p>
+              )}
+            </div>
+          ) : null}
+          {dpeExplorerError ? (
+            <p className="mt-2 text-xs font-bold text-red-700">{dpeExplorerError}</p>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function DpeExplorerMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#667482]">{label}</div>
+      <div className="mt-1 text-sm font-extrabold tabular-nums text-[#132238]">
+        {value.toLocaleString("fr-FR")}
       </div>
     </div>
   );
@@ -1117,14 +1487,7 @@ function ListingImage({
   const imageUrl = locked ? fallback : firstPropertyImage(sale.media);
   const mapUrl =
     !imageUrl && !locked && sale.latitude != null && sale.longitude != null
-      ? googleStaticMapUrl({
-          lat: sale.latitude,
-          lng: sale.longitude,
-          zoom: 15,
-          width: 760,
-          height: 560,
-          maptype: "roadmap",
-        })
+      ? osmTileUrl(sale.latitude, sale.longitude, 15)
       : "";
   const src = imageUrl || mapUrl || fallback;
 
@@ -1272,10 +1635,10 @@ function CompactFavoriteButton({ saleId }: { saleId: string }) {
     setBusy(true);
     try {
       if (isFavorite) {
-        await removeFavorite(user.id, saleId);
+        await removeFavoriteSaleRequest({ saleId });
         setIsFavorite(false);
       } else {
-        await addFavorite(user.id, saleId);
+        await addFavoriteSaleRequest({ data: { saleId } });
         setIsFavorite(true);
       }
       queryClient.invalidateQueries({ queryKey: ["favorites", user.id] });
@@ -1501,6 +1864,48 @@ function MobileFilterDrawer({
                 className="h-10 bg-white"
               />
             </FilterField>
+            <FilterField label="Décote min">
+              <Input
+                inputMode="numeric"
+                value={draft.minMarketDiscount}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, minMarketDiscount: event.target.value }))
+                }
+                placeholder="30"
+                className="h-10 bg-white"
+              />
+            </FilterField>
+            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-[#d6e0dc] bg-[#f8fbfd] px-3 py-2 text-sm font-bold text-[#132238]">
+              <input
+                type="checkbox"
+                checked={draft.houseWithLand}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, houseWithLand: event.target.checked }))
+                }
+                className="h-4 w-4 accent-[#0f766e]"
+              />
+              Maison avec terrain
+            </label>
+            <div>
+              <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-[#667482]">
+                DPE
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {DPE_CLASSES.map((dpeClass) => (
+                  <DpeChipToggle
+                    key={dpeClass}
+                    dpeClass={dpeClass}
+                    active={draft.dpeClasses.includes(dpeClass)}
+                    onClick={() =>
+                      setDraft((current) => ({
+                        ...current,
+                        dpeClasses: toggleValue(current.dpeClasses, dpeClass),
+                      }))
+                    }
+                  />
+                ))}
+              </div>
+            </div>
           </AdvancedGroup>
 
           <AdvancedGroup title="Mots-clés et statut">
@@ -1648,6 +2053,34 @@ function ChipToggle({
       }`}
     >
       {children}
+    </button>
+  );
+}
+
+function DpeChipToggle({
+  active,
+  dpeClass,
+  onClick,
+}: {
+  active: boolean;
+  dpeClass: DpeClass;
+  onClick: () => void;
+}) {
+  const color = dpeColor(dpeClass);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className="inline-flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-extrabold transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
+      style={{
+        backgroundColor: active ? color?.background : "#ffffff",
+        borderColor: color?.border,
+        color: active ? color?.foreground : "#132238",
+      }}
+    >
+      {dpeClass}
     </button>
   );
 }
@@ -1807,9 +2240,12 @@ function searchToDraft(search: SalesSearchParams): SearchDraft {
     status: search.status ?? [],
     keywords: search.keywords ?? "",
     occupancy: search.occupancy ?? "",
+    dpeClasses: search.dpeClasses ?? [],
     minScore: stringifyNumber(search.minScore),
     maxPricePerM2: stringifyNumber(search.maxPricePerM2),
     minYield: stringifyNumber(search.minYield),
+    minMarketDiscount: stringifyNumber(search.minMarketDiscount),
+    houseWithLand: Boolean(search.houseWithLand),
     aroundAddress: search.aroundAddress ?? "",
     aroundRadius: stringifyNumber(search.aroundRadius),
     yearBuilt: stringifyNumber(search.yearBuilt),
@@ -1833,9 +2269,12 @@ function emptySearchDraft(): SearchDraft {
     status: [],
     keywords: "",
     occupancy: "",
+    dpeClasses: [],
     minScore: "",
     maxPricePerM2: "",
     minYield: "",
+    minMarketDiscount: "",
+    houseWithLand: false,
     aroundAddress: "",
     aroundRadius: "",
     yearBuilt: "",
@@ -1864,9 +2303,12 @@ function draftToSearch(draft: SearchDraft, current: SalesSearchParams): SalesSea
     status: draft.status.length ? draft.status : undefined,
     keywords: cleanString(draft.keywords),
     occupancy: cleanString(draft.occupancy),
+    dpeClasses: draft.dpeClasses.length ? draft.dpeClasses : undefined,
     minScore: draftNumber(draft.minScore),
     maxPricePerM2: draftNumber(draft.maxPricePerM2),
     minYield: draftNumber(draft.minYield),
+    minMarketDiscount: draftNumber(draft.minMarketDiscount),
+    houseWithLand: draft.houseWithLand || undefined,
     aroundAddress: cleanString(draft.aroundAddress),
     aroundRadius: draftNumber(draft.aroundRadius),
     yearBuilt: draftNumber(draft.yearBuilt),
@@ -1900,6 +2342,77 @@ function stableUrlRecord(record: SalesSearchUrlRecord) {
   );
 }
 
+function downloadBlob(blob: Blob, filename: string) {
+  if (typeof document === "undefined") return;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function buildSearchStatistics(sales: AuctionSale[]): SearchStatistics {
+  const prices = sales
+    .map((sale) => sale.starting_price_eur)
+    .filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
+  const pricePerM2Values = sales
+    .map((sale) => pricePerM2(sale.starting_price_eur, getSaleSurface(sale).value))
+    .filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
+  const scores = sales
+    .map((sale) => sale.investment_score)
+    .filter((value): value is number => value != null && Number.isFinite(value));
+  const dpeCounts = DPE_CLASSES.reduce(
+    (acc, dpeClass) => {
+      acc[dpeClass] = 0;
+      return acc;
+    },
+    {} as Record<DpeClass, number>,
+  );
+  let dpeKnownCount = 0;
+  sales.forEach((sale) => {
+    const dpe = extractDpe(sale).class;
+    if (!dpe) return;
+    dpeCounts[dpe] += 1;
+    dpeKnownCount += 1;
+  });
+  const now = Date.now();
+
+  return {
+    medianPrice: median(prices),
+    medianPricePerM2: median(pricePerM2Values),
+    averageScore: scores.length
+      ? scores.reduce((total, value) => total + value, 0) / scores.length
+      : null,
+    upcomingSales: sales.filter(
+      (sale) => sale.sale_date && new Date(sale.sale_date).getTime() >= now,
+    ).length,
+    dpeCounts,
+    dpeKnownCount,
+  };
+}
+
+function searchStatisticsFromServer(summary: SalesStatisticsResponse["summary"]): SearchStatistics {
+  return {
+    medianPrice: summary.medianPriceEur,
+    medianPricePerM2: summary.medianPricePerM2,
+    averageScore: summary.averageInvestmentScore,
+    upcomingSales: summary.upcomingSales,
+    dpeCounts: summary.dpeCounts,
+    dpeKnownCount: summary.dpeKnownCount,
+  };
+}
+
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return Math.round(sorted[middle]);
+  return Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+}
+
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(false);
 
@@ -1922,9 +2435,79 @@ function buildAlertName(search: SalesSearchParams) {
     search.department ? `Dép. ${search.department}` : null,
     search.homeTypes?.length === 1 ? propertyTypeLabel(search.homeTypes[0]) : null,
     search.maxPrice ? `≤ ${compactPrice(search.maxPrice)}` : null,
+    search.minYield ? `rendement ≥ ${search.minYield}%` : null,
+    search.dpeClasses?.length ? `DPE ${search.dpeClasses.join("/")}` : null,
   ].filter(Boolean);
 
   return segments.length > 0 ? `Recherche ${segments.join(" · ")}` : "Recherche Immojudis";
+}
+
+async function watchedZoneInputFromSearch(
+  search: SalesSearchParams,
+  center: GeoPoint | null,
+): Promise<WatchedZoneInput | null> {
+  const alertDefaults = alertDefaultsFromSearch(search);
+
+  if (search.aroundAddress) {
+    const point = center ?? (await geocodeAddress(search.aroundAddress));
+    if (point) {
+      return {
+        name: clampZoneName(`Rayon ${point.label ?? search.aroundAddress}`),
+        zoneKind: "radius",
+        department: search.department ?? null,
+        city: search.city ?? null,
+        centerLat: point.lat,
+        centerLng: point.lng,
+        radiusKm: search.aroundRadius ?? 10,
+        alertDefaults,
+        isActive: true,
+      };
+    }
+  }
+
+  if (search.city) {
+    return {
+      name: clampZoneName(
+        search.department ? `${search.city} (${search.department})` : search.city,
+      ),
+      zoneKind: "city",
+      department: search.department ?? null,
+      city: search.city,
+      alertDefaults,
+      isActive: true,
+    };
+  }
+
+  if (search.department) {
+    return {
+      name: `Département ${search.department}`,
+      zoneKind: "department",
+      department: search.department,
+      alertDefaults,
+      isActive: true,
+    };
+  }
+
+  return null;
+}
+
+function alertDefaultsFromSearch(search: SalesSearchParams): WatchedZoneInput["alertDefaults"] {
+  return {
+    maxPriceEur: search.maxPrice ?? null,
+    minSurfaceM2: search.minSqft ?? null,
+    minInvestmentScore: search.minScore ?? null,
+    maxPricePerM2: search.maxPricePerM2 ?? null,
+    minYieldPct: search.minYield ?? null,
+    minMarketDiscountPct: search.minMarketDiscount ?? null,
+    dpeClasses: (search.dpeClasses ?? []).filter((value): value is DpeClass =>
+      DPE_CLASSES.includes(value as DpeClass),
+    ),
+    requireHouseWithLand: Boolean(search.houseWithLand),
+  };
+}
+
+function clampZoneName(value: string): string {
+  return value.trim().slice(0, 120) || "Zone surveillée";
 }
 
 function fallbackImageForSale(id: string) {

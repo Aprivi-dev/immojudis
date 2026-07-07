@@ -138,6 +138,68 @@ def test_enriched_hashes_keep_legacy_score_only_mode(monkeypatch) -> None:
     ) == {"hash-current", "hash-missing"}
 
 
+def test_fetch_sales_needing_llm_descriptions_filters_current_rows(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    captured: dict[str, object] = {}
+
+    class Response:
+        is_error = False
+
+        def json(self):
+            return [
+                {
+                    "source_name": "avoventes",
+                    "source_url": "https://example.test/current",
+                    "status": "upcoming",
+                    "raw_payload": {
+                        "llm_display_description": "Synthèse courante.",
+                        "llm_prompt_version": "auction_llm_v6_display",
+                    },
+                },
+                {
+                    "source_name": "notaires",
+                    "source_url": "https://example.test/missing",
+                    "status": "upcoming",
+                    "title": "Maison 85 m²",
+                    "raw_payload": {"source_blocks": {"description": "Maison avec jardin."}},
+                },
+                {
+                    "source_name": "encheres_publiques",
+                    "source_url": "https://example.test/stale",
+                    "status": "active",
+                    "title": "Appartement",
+                    "raw_payload": {
+                        "llm_display_description": "Ancienne synthèse.",
+                        "llm_prompt_version": "auction_llm_v5",
+                    },
+                },
+            ]
+
+    def fake_get(endpoint, params, headers, timeout):
+        captured["endpoint"] = endpoint
+        captured["params"] = params
+        return Response()
+
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+
+    sales = supabase_client.fetch_sales_needing_llm_descriptions(
+        limit=10,
+        prompt_version="auction_llm_v6_display",
+        statuses=("active", "upcoming"),
+    )
+
+    assert captured["endpoint"] == "https://supabase.test/rest/v1/auction_sales"
+    assert captured["params"]["status"] == 'in.("active","upcoming")'
+    assert [sale.source_url for sale in sales] == [
+        "https://example.test/missing",
+        "https://example.test/stale",
+    ]
+
+
 def test_delete_vench_sales_without_surface_removes_observations_then_sales(monkeypatch) -> None:
     monkeypatch.setattr(
         supabase_client,
@@ -230,6 +292,11 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     )
     monkeypatch.setattr(
         supabase_client,
+        "_sync_normalized_sale_tables_with_rest",
+        lambda supabase_url, api_key, sales, now: calls.append((supabase_url, "normalized_tables", len(sales))),
+    )
+    monkeypatch.setattr(
+        supabase_client,
         "_upsert_with_rest",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("REST upsert should not run")),
     )
@@ -243,7 +310,87 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     assert calls == [
         ("postgresql://example", "auction_sales", 1),
         ("postgresql://example", "delete_secondary", 1),
+        ("https://supabase.test", "normalized_tables", 1),
         ("https://supabase.test", "asset_tables", 1),
+    ]
+
+
+def test_normalized_sale_rows_split_property_and_judicial_context() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/sale",
+            "source_urls": ["https://example.test/sale", "https://licitor.test/sale"],
+            "primary_source": "avoventes",
+            "department": "33",
+            "city": "Bordeaux",
+            "address": "12 rue Sainte-Catherine",
+            "property_type": "apartment",
+            "surface_m2": 42,
+            "rooms_count": 2,
+            "latitude": 44.84,
+            "longitude": -0.57,
+            "tribunal": "TJ Bordeaux",
+            "tribunal_code": "bordeaux",
+            "starting_price_eur": 120000,
+            "lawyer_name": "Me Source",
+            "lawyer_contact": "source@example.test",
+            "documents": [{"label": "Cahier des conditions", "url": "https://example.test/cdc.pdf"}],
+            "raw_payload": {"source": "fixture"},
+        }
+    )
+
+    properties = supabase_client._property_rows_for_sales([sale], "2026-07-06T10:00:00+00:00")
+    judicial_sales = supabase_client._judicial_sale_rows_for_sales([sale], "2026-07-06T10:00:00+00:00")
+
+    assert len(properties) == 1
+    assert properties[0]["source_url"] == "https://example.test/sale"
+    assert properties[0]["source_urls"] == ["https://example.test/sale", "https://licitor.test/sale"]
+    assert properties[0]["address"] == "12 rue Sainte-Catherine"
+    assert properties[0]["property_type"] == "apartment"
+    assert properties[0]["surface_m2"] == 42.0
+    assert properties[0]["rooms_count"] == 2
+    assert properties[0]["latitude"] == 44.84
+    assert properties[0]["longitude"] == -0.57
+    assert isinstance(properties[0]["raw_payload"], dict)
+    assert properties[0]["last_seen_at"] == "2026-07-06T10:00:00+00:00"
+    assert judicial_sales[0]["property_source_url"] == "https://example.test/sale"
+    assert judicial_sales[0]["tribunal_code"] == "bordeaux"
+    assert judicial_sales[0]["starting_price_eur"] == 120000.0
+    assert judicial_sales[0]["source_lawyer_name"] == "Me Source"
+    assert judicial_sales[0]["source_lawyer_contact"] == "source@example.test"
+    assert judicial_sales[0]["documents_count"] == 1
+    assert "referenced_lawyer_id" not in judicial_sales[0]
+
+
+def test_sync_normalized_sale_tables_upserts_properties_before_judicial_sales(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://example.test/sale",
+            "city": "Pau",
+        }
+    )
+    calls: list[tuple[str, str, str, int]] = []
+
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda supabase_url, api_key, table, payload, on_conflict: calls.append(
+            (supabase_url, table, on_conflict, len(payload))
+        ),
+    )
+
+    supabase_client._sync_normalized_sale_tables_with_rest(
+        "https://supabase.test",
+        "secret",
+        [sale],
+        "2026-07-06T10:00:00+00:00",
+    )
+
+    assert calls == [
+        ("https://supabase.test", "properties", "source_url", 1),
+        ("https://supabase.test", "judicial_sales", "source_url", 1),
     ]
 
 
@@ -279,6 +426,77 @@ def test_upsert_observations_prefers_direct_postgres_when_db_url_is_configured(m
 
     assert supabase_client.upsert_observations_to_supabase([sale]) == 1
     assert calls == [("postgresql://example", "auction_observations", 1)]
+
+
+def test_upsert_cadastre_parcels_uses_service_role_rest_upsert(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda supabase_url, api_key, table, payload, on_conflict: calls.append(
+            (supabase_url, api_key, table, payload, on_conflict)
+        ),
+    )
+
+    count = supabase_client.upsert_cadastre_parcels_to_supabase(
+        [
+            {
+                "source_url": "https://example.test/sale",
+                "parcel_key": "33063-AB-0123",
+                "section": "AB",
+                "parcel_number": "0123",
+            },
+            {"source_url": "https://example.test/ignored"},
+        ]
+    )
+
+    assert count == 1
+    assert calls[0][0] == "https://supabase.test"
+    assert calls[0][1] == "secret"
+    assert calls[0][2] == "auction_cadastre_parcels"
+    assert calls[0][3][0]["parcel_key"] == "33063-AB-0123"
+    assert calls[0][3][0]["updated_at"]
+    assert calls[0][4] == "source_url,parcel_key"
+
+
+def test_upsert_dpe_diagnostics_uses_service_role_rest_upsert(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda supabase_url, api_key, table, payload, on_conflict: calls.append(
+            (supabase_url, api_key, table, payload, on_conflict)
+        ),
+    )
+
+    count = supabase_client.upsert_dpe_diagnostics_to_supabase(
+        [
+            {
+                "source_url": "https://example.test/sale",
+                "diagnostic_number": "2133E0178774F",
+                "dpe_class": "E",
+            },
+            {"source_url": "https://example.test/ignored"},
+        ]
+    )
+
+    assert count == 1
+    assert calls[0][0] == "https://supabase.test"
+    assert calls[0][1] == "secret"
+    assert calls[0][2] == "auction_dpe_diagnostics"
+    assert calls[0][3][0]["diagnostic_number"] == "2133E0178774F"
+    assert calls[0][3][0]["updated_at"]
+    assert calls[0][4] == "source_url,diagnostic_number"
 
 
 def test_postgres_connect_disables_prepared_statements_for_pooler(monkeypatch) -> None:
@@ -335,6 +553,8 @@ def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
         "auction_risks",
         "auction_risk_occurrences",
         "auction_risk_occurrences",
+        "auction_urban_planning_signals",
+        "auction_urban_planning_signals",
         "auction_score_factors",
         "auction_score_factors",
     ]
@@ -381,3 +601,94 @@ def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
     assert finished[0][1] == "failed"
     assert "stale_cleanup" in finished[0][2]
     assert finished[0][3]["runner"]
+
+
+def test_fetch_next_data_refresh_request_locks_queued_row(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        is_error = False
+        text = ""
+
+        def __init__(self, rows):
+            self._rows = rows
+
+        def json(self):
+            return self._rows
+
+    def fake_get(endpoint, params, headers, timeout):
+        assert endpoint == "https://supabase.test/rest/v1/data_refresh_requests"
+        assert params["status"] == "eq.queued"
+        assert params["order"] == "priority.desc,created_at.asc"
+        return Response(
+            [
+                {
+                    "id": "refresh-1",
+                    "source_url": "https://example.test/sale",
+                    "request_kind": "dpe",
+                    "status": "queued",
+                }
+            ]
+        )
+
+    def fake_patch(endpoint, params, headers, json, timeout):
+        assert endpoint == "https://supabase.test/rest/v1/data_refresh_requests"
+        assert params == {"id": "eq.refresh-1", "status": "eq.queued"}
+        assert json["status"] == "running"
+        assert json["started_at"]
+        return Response([{**json, "id": "refresh-1", "request_kind": "dpe"}])
+
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    monkeypatch.setattr(supabase_client.httpx, "patch", fake_patch)
+
+    request = supabase_client.fetch_next_data_refresh_request_from_supabase()
+
+    assert request is not None
+    assert request["id"] == "refresh-1"
+    assert request["status"] == "running"
+    assert request["request_kind"] == "dpe"
+
+
+def test_fetch_sale_for_data_refresh_returns_auction_sale(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        is_error = False
+        text = ""
+
+        def json(self):
+            return [
+                {
+                    "source_name": "avoventes",
+                    "source_url": "https://example.test/sale",
+                    "city": "Bordeaux",
+                    "latitude": 44.84,
+                    "longitude": -0.57,
+                    "source_urls": ["https://example.test/sale"],
+                    "documents": [],
+                    "raw_payload": {},
+                }
+            ]
+
+    def fake_get(endpoint, params, headers, timeout):
+        assert endpoint == "https://supabase.test/rest/v1/auction_sales"
+        assert params["source_url"] == "eq.https://example.test/sale"
+        assert "source_name" in params["select"]
+        return Response()
+
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+
+    sale = supabase_client.fetch_sale_for_data_refresh("https://example.test/sale")
+
+    assert sale is not None
+    assert sale.source_name == "avoventes"
+    assert sale.source_url == "https://example.test/sale"
+    assert float(sale.latitude or 0) == 44.84

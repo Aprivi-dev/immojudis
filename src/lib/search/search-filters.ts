@@ -1,6 +1,8 @@
 import type { AuctionSale, SaleFilters, SortKey } from "@/lib/types";
+import { isHouseWithLand } from "@/lib/alerts";
+import { dpeMatches, extractDpe } from "@/lib/dpe";
 import { getSaleSurface } from "@/lib/surface";
-import { haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
+import { estimateGrossYieldPct, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
 import type { SalesSearchParams, SearchSortKey, ViewportBounds } from "./search-url-state";
 
 export const DEFAULT_SEARCH_LIMIT = 24;
@@ -101,9 +103,12 @@ export function countActiveSearchFilters(search: SalesSearchParams): number {
     search.keywords,
     search.transactionType && search.transactionType !== "for_sale",
     search.occupancy,
+    search.dpeClasses?.length,
     search.minScore,
     search.maxPricePerM2,
     search.minYield,
+    search.minMarketDiscount,
+    search.houseWithLand,
     search.aroundAddress,
     search.yearBuilt,
     search.openHouse,
@@ -114,9 +119,11 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
   return Boolean(
     search.maxPricePerM2 ||
     search.minYield ||
+    search.houseWithLand ||
     search.aroundAddress ||
     search.aroundRadius ||
     search.viewport ||
+    search.dpeClasses?.length ||
     search.openHouse ||
     search.yearBuilt ||
     search.transactionType === "for_rent" ||
@@ -151,6 +158,7 @@ export function applyClientSearchFilters(
       return false;
     }
     if (search.status?.length && !matchesStatus(sale.status, search.status)) return false;
+    if (!dpeMatches(extractDpe(sale).class, search.dpeClasses)) return false;
     if (
       (search.keywords || search.query) &&
       !matchesKeywords(sale, search.keywords || search.query)
@@ -161,6 +169,11 @@ export function applyClientSearchFilters(
       const ppm = pricePerM2(sale.starting_price_eur, surface);
       if (ppm == null || ppm > search.maxPricePerM2) return false;
     }
+    if (search.minYield != null) {
+      const yieldPct = estimateGrossYieldPct(sale.starting_price_eur, surface, sale.department);
+      if (yieldPct == null || yieldPct < search.minYield) return false;
+    }
+    if (search.houseWithLand && !isHouseWithLand(sale)) return false;
     if (search.aroundRadius != null && center) {
       if (sale.latitude == null || sale.longitude == null) return false;
       const distance = haversineKm(center, { lat: sale.latitude, lng: sale.longitude });
