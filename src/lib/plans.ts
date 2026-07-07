@@ -1,0 +1,254 @@
+export type PlanCode = "decouverte" | "analyse" | "investisseur";
+
+export type PlanStatus = "trialing" | "active" | "past_due" | "paused" | "cancelled" | "expired";
+
+export type FeatureKey =
+  | "sales.filters"
+  | "sales.statistics"
+  | "sales.favorites"
+  | "sales.csvExport"
+  | "sales.apiAccess"
+  | "sales.multiPropertyAnalysis"
+  | "alerts.advanced"
+  | "alerts.realtimeChanges"
+  | "alerts.watchedZones"
+  | "dpe.latest"
+  | "dpe.filters"
+  | "dpe.map"
+  | "market.neighborhood"
+  | "market.demographics"
+  | "market.priceEvolution"
+  | "market.priceDistribution"
+  | "market.volumeEvolution"
+  | "market.rotationRate"
+  | "market.saleDelayEvolution"
+  | "market.neighborhoodComparison"
+  | "market.nearbyCommuneComparison"
+  | "property.valueEstimate"
+  | "property.bidCeiling"
+  | "property.advancedBidScenarios"
+  | "property.cadastralAnalysis"
+  | "property.nearbyServices"
+  | "property.savedReports"
+  | "property.pdfExport"
+  | "property.reportEditing"
+  | "property.urbanPlanning"
+  | "property.streetFacade"
+  | "property.saleHistory"
+  | "property.soldComparables"
+  | "property.activeComparables"
+  | "property.neighborhoodAnalysis"
+  | "data.onDemandRefresh"
+  | "lawyers.directory"
+  | "lawyers.referrals"
+  | "workspace.audienceTracking"
+  | "workspace.collaboration";
+
+export type FeatureAccess = "included" | "limited" | "locked";
+
+export type PlanFeatureMatrix = Record<FeatureKey, FeatureAccess>;
+
+export type PlanLimits = {
+  propertyReportsPerMonth: number | null;
+  pdfExportsPerMonth: number | null;
+  savedReports: number | null;
+  reportEditing: "limited" | "full";
+  favoriteSales: number | null;
+  watchedZones: number | null;
+  saleAnalysisSets: number | null;
+  saleAnalysisItems: number | null;
+  apiKeys: number | null;
+  workspaceCollaborators: number | null;
+};
+
+export const PLAN_LABELS: Record<PlanCode, string> = {
+  decouverte: "Découverte",
+  analyse: "Analyse",
+  investisseur: "Investisseur / Marchand",
+};
+
+export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
+  decouverte: {
+    "sales.filters": "included",
+    "sales.statistics": "locked",
+    "sales.favorites": "locked",
+    "sales.csvExport": "locked",
+    "sales.apiAccess": "locked",
+    "sales.multiPropertyAnalysis": "locked",
+    "alerts.advanced": "locked",
+    "alerts.realtimeChanges": "locked",
+    "alerts.watchedZones": "locked",
+    "dpe.latest": "locked",
+    "dpe.filters": "locked",
+    "dpe.map": "locked",
+    "market.neighborhood": "included",
+    "market.demographics": "included",
+    "market.priceEvolution": "included",
+    "market.priceDistribution": "locked",
+    "market.volumeEvolution": "locked",
+    "market.rotationRate": "locked",
+    "market.saleDelayEvolution": "locked",
+    "market.neighborhoodComparison": "locked",
+    "market.nearbyCommuneComparison": "locked",
+    "property.valueEstimate": "included",
+    "property.bidCeiling": "limited",
+    "property.advancedBidScenarios": "locked",
+    "property.cadastralAnalysis": "included",
+    "property.nearbyServices": "included",
+    "property.savedReports": "included",
+    "property.pdfExport": "limited",
+    "property.reportEditing": "limited",
+    "property.urbanPlanning": "locked",
+    "property.streetFacade": "locked",
+    "property.saleHistory": "locked",
+    "property.soldComparables": "locked",
+    "property.activeComparables": "locked",
+    "property.neighborhoodAnalysis": "locked",
+    "data.onDemandRefresh": "locked",
+    "lawyers.directory": "limited",
+    "lawyers.referrals": "locked",
+    "workspace.audienceTracking": "locked",
+    "workspace.collaboration": "locked",
+  },
+  analyse: {
+    "sales.filters": "included",
+    "sales.statistics": "included",
+    "sales.favorites": "included",
+    "sales.csvExport": "included",
+    "sales.apiAccess": "included",
+    "sales.multiPropertyAnalysis": "included",
+    "alerts.advanced": "included",
+    "alerts.realtimeChanges": "locked",
+    "alerts.watchedZones": "included",
+    "dpe.latest": "included",
+    "dpe.filters": "included",
+    "dpe.map": "included",
+    "market.neighborhood": "included",
+    "market.demographics": "included",
+    "market.priceEvolution": "included",
+    "market.priceDistribution": "included",
+    "market.volumeEvolution": "included",
+    "market.rotationRate": "included",
+    "market.saleDelayEvolution": "included",
+    "market.neighborhoodComparison": "included",
+    "market.nearbyCommuneComparison": "included",
+    "property.valueEstimate": "included",
+    "property.bidCeiling": "included",
+    "property.advancedBidScenarios": "included",
+    "property.cadastralAnalysis": "included",
+    "property.nearbyServices": "included",
+    "property.savedReports": "included",
+    "property.pdfExport": "included",
+    "property.reportEditing": "included",
+    "property.urbanPlanning": "included",
+    "property.streetFacade": "included",
+    "property.saleHistory": "included",
+    "property.soldComparables": "included",
+    "property.activeComparables": "included",
+    "property.neighborhoodAnalysis": "included",
+    "data.onDemandRefresh": "included",
+    "lawyers.directory": "included",
+    "lawyers.referrals": "included",
+    "workspace.audienceTracking": "included",
+    "workspace.collaboration": "locked",
+  },
+  investisseur: {
+    "sales.filters": "included",
+    "sales.statistics": "included",
+    "sales.favorites": "included",
+    "sales.csvExport": "included",
+    "sales.apiAccess": "included",
+    "sales.multiPropertyAnalysis": "included",
+    "alerts.advanced": "included",
+    "alerts.realtimeChanges": "included",
+    "alerts.watchedZones": "included",
+    "dpe.latest": "included",
+    "dpe.filters": "included",
+    "dpe.map": "included",
+    "market.neighborhood": "included",
+    "market.demographics": "included",
+    "market.priceEvolution": "included",
+    "market.priceDistribution": "included",
+    "market.volumeEvolution": "included",
+    "market.rotationRate": "included",
+    "market.saleDelayEvolution": "included",
+    "market.neighborhoodComparison": "included",
+    "market.nearbyCommuneComparison": "included",
+    "property.valueEstimate": "included",
+    "property.bidCeiling": "included",
+    "property.advancedBidScenarios": "included",
+    "property.cadastralAnalysis": "included",
+    "property.nearbyServices": "included",
+    "property.savedReports": "included",
+    "property.pdfExport": "included",
+    "property.reportEditing": "included",
+    "property.urbanPlanning": "included",
+    "property.streetFacade": "included",
+    "property.saleHistory": "included",
+    "property.soldComparables": "included",
+    "property.activeComparables": "included",
+    "property.neighborhoodAnalysis": "included",
+    "data.onDemandRefresh": "included",
+    "lawyers.directory": "included",
+    "lawyers.referrals": "included",
+    "workspace.audienceTracking": "included",
+    "workspace.collaboration": "included",
+  },
+};
+
+export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
+  decouverte: {
+    propertyReportsPerMonth: 5,
+    pdfExportsPerMonth: 3,
+    savedReports: null,
+    reportEditing: "limited",
+    favoriteSales: 0,
+    watchedZones: 0,
+    saleAnalysisSets: 0,
+    saleAnalysisItems: 0,
+    apiKeys: 0,
+    workspaceCollaborators: 0,
+  },
+  analyse: {
+    propertyReportsPerMonth: null,
+    pdfExportsPerMonth: null,
+    savedReports: null,
+    reportEditing: "full",
+    favoriteSales: null,
+    watchedZones: 25,
+    saleAnalysisSets: 20,
+    saleAnalysisItems: 12,
+    apiKeys: 2,
+    workspaceCollaborators: 0,
+  },
+  investisseur: {
+    propertyReportsPerMonth: null,
+    pdfExportsPerMonth: null,
+    savedReports: null,
+    reportEditing: "full",
+    favoriteSales: null,
+    watchedZones: 100,
+    saleAnalysisSets: 100,
+    saleAnalysisItems: 50,
+    apiKeys: 10,
+    workspaceCollaborators: 25,
+  },
+};
+
+export function normalizePlanCode(value: unknown): PlanCode {
+  if (value === "investisseur") return "investisseur";
+  if (value === "analyse") return "analyse";
+  return "decouverte";
+}
+
+export function isActivePlanStatus(status: unknown): boolean {
+  return status === "trialing" || status === "active";
+}
+
+export function featureAccess(plan: PlanCode, feature: FeatureKey): FeatureAccess {
+  return PLAN_FEATURES[plan][feature];
+}
+
+export function featureIncluded(plan: PlanCode, feature: FeatureKey): boolean {
+  return featureAccess(plan, feature) !== "locked";
+}

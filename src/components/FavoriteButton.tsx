@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "@/lib/router-compat";
 import { useQueryClient } from "@tanstack/react-query";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
-import { addFavorite, removeFavorite } from "@/lib/queries";
+import {
+  addFavoriteSale as addFavoriteSaleRequest,
+  removeFavoriteSale as removeFavoriteSaleRequest,
+} from "@/lib/client-api";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -38,10 +41,10 @@ export function FavoriteButton({ saleId, className = "" }: { saleId: string; cla
     setBusy(true);
     try {
       if (isFav) {
-        await removeFavorite(user.id, saleId);
+        await removeFavoriteSaleRequest({ saleId });
         setIsFav(false);
       } else {
-        await addFavorite(user.id, saleId);
+        await addFavoriteSaleRequest({ data: { saleId } });
         setIsFav(true);
       }
       qc.invalidateQueries({ queryKey: ["favorites", user.id] });

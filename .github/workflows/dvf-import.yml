@@ -1,0 +1,145 @@
+name: Immojudis DVF Import
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_url:
+        description: "Optional DVF .txt/.csv/.zip URL. Leave empty to import all main resources from data.gouv.fr."
+        required: false
+        type: string
+      limit:
+        description: "Optional row limit per resource, mostly for dry-runs."
+        required: false
+        type: string
+      dry_run:
+        description: "Parse files without writing to Supabase."
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    # DGFiP/data.gouv publish DVF updates semestrially around April and October.
+    - cron: "15 3 10 4,10 *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-dvf-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: Import official DVF resources
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      DVF_DATASET_API_URL: https://www.data.gouv.fr/api/1/datasets/demandes-de-valeurs-foncieres/
+      REQUESTED_RESOURCE_URL: ${{ github.event.inputs.resource_url }}
+      REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
+      REQUESTED_DRY_RUN: ${{ github.event.inputs.dry_run }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.txt
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Download and import DVF resources
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          import subprocess
+          import sys
+          import urllib.request
+          from pathlib import Path
+          from urllib.parse import urlparse
+
+          dataset_api_url = os.environ["DVF_DATASET_API_URL"]
+          requested_url = (os.environ.get("REQUESTED_RESOURCE_URL") or "").strip()
+          requested_limit = (os.environ.get("REQUESTED_LIMIT") or "").strip()
+          dry_run = (os.environ.get("REQUESTED_DRY_RUN") or "").lower() == "true"
+
+          if not dry_run and not os.environ.get("SUPABASE_DB_URL"):
+            raise RuntimeError("SUPABASE_DB_URL is required unless dry_run=true.")
+
+          def read_json(url: str) -> dict:
+            with urllib.request.urlopen(url, timeout=60) as response:
+              return json.loads(response.read().decode("utf-8"))
+
+          def resource_checksum(resource: dict) -> str | None:
+            checksum = resource.get("checksum")
+            if isinstance(checksum, dict) and isinstance(checksum.get("value"), str):
+              return checksum["value"]
+            return None
+
+          if requested_url:
+            resources = [
+              {
+                "title": Path(urlparse(requested_url).path).name or "DVF manual resource",
+                "url": requested_url,
+                "checksum": None,
+              }
+            ]
+          else:
+            dataset = read_json(dataset_api_url)
+            resources = [
+              {
+                "title": resource.get("title") or Path(urlparse(resource["url"]).path).name,
+                "url": resource["url"],
+                "checksum": resource_checksum(resource),
+              }
+              for resource in dataset.get("resources", [])
+              if resource.get("type") == "main"
+              and str(resource.get("format") or "").lower() in {"txt.zip", "zip", "txt", "csv"}
+              and resource.get("url")
+            ]
+
+          if not resources:
+            raise RuntimeError("No DVF main resources found to import.")
+
+          raw_dir = Path("data/raw/dvf")
+          raw_dir.mkdir(parents=True, exist_ok=True)
+          print(f"Resolved {len(resources)} DVF resource(s).")
+
+          for resource in resources:
+            url = resource["url"]
+            filename = Path(urlparse(url).path).name or "dvf-resource"
+            target = raw_dir / filename
+            print(f"Downloading {resource['title']} -> {target}")
+            urllib.request.urlretrieve(url, target)
+
+            expected_sha1 = resource.get("checksum")
+            if expected_sha1:
+              digest = hashlib.sha1(target.read_bytes()).hexdigest()
+              if digest != expected_sha1:
+                raise RuntimeError(
+                  f"Checksum mismatch for {target}: expected {expected_sha1}, got {digest}"
+                )
+
+            command = ["python", "-m", "src.dvf_import", str(target), "--source-url", url]
+            if dry_run:
+              command.append("--dry-run")
+            if requested_limit:
+              command.extend(["--limit", requested_limit])
+
+            print("+", " ".join(command))
+            subprocess.run(command, check=True)
+
+          sys.exit(0)
+          PY

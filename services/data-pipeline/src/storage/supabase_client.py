@@ -30,6 +30,7 @@ from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
 from src.models import AuctionSale
 from src.normalize import make_sale_signature
 from src.pdf_enrichment import classify_document_type, sale_storage_id
+from src.urban_planning import build_urban_planning_signal_rows
 
 LOGGER = logging.getLogger(__name__)
 POSTGREST_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
@@ -106,6 +107,81 @@ UPSERT_COLUMNS = (
     "content_hash",
     "last_run_id",
 )
+PROPERTY_COLUMNS = (
+    "source_url",
+    "source_name",
+    "primary_source",
+    "source_urls",
+    "external_id",
+    "department",
+    "city",
+    "postal_code",
+    "address",
+    "property_type",
+    "title",
+    "description",
+    "surface_m2",
+    "habitable_surface_m2",
+    "land_surface_m2",
+    "carrez_surface_m2",
+    "app_surface_m2",
+    "app_surface_kind",
+    "surface_scope",
+    "surface_source",
+    "surface_confidence",
+    "surface_evidence",
+    "rooms_count",
+    "bedrooms_count",
+    "bathrooms_count",
+    "parking_count",
+    "has_garden",
+    "has_terrace",
+    "has_garage",
+    "has_pool",
+    "has_air_conditioning",
+    "has_double_glazing",
+    "occupancy_status",
+    "latitude",
+    "longitude",
+    "raw_payload",
+)
+JUDICIAL_SALE_COLUMNS = (
+    "source_url",
+    "property_source_url",
+    "source_name",
+    "primary_source",
+    "source_urls",
+    "external_id",
+    "tribunal",
+    "tribunal_code",
+    "starting_price_eur",
+    "sale_date",
+    "visit_dates",
+    "status",
+    "adjudication_price_eur",
+    "source_lawyer_name",
+    "source_lawyer_contact",
+    "documents_count",
+    "investment_score",
+    "investment_summary",
+    "score_version",
+    "score_confidence",
+    "score_factors",
+    "quality_flags",
+    "content_hash",
+    "last_run_id",
+    "raw_payload",
+)
+LLM_BACKFILL_SALE_SELECT = ",".join(
+    (
+        "id",
+        *UPSERT_COLUMNS,
+        "first_seen_at",
+        "last_seen_at",
+        "created_at",
+        "updated_at",
+    )
+)
 
 
 def get_supabase_client() -> Client | None:
@@ -139,13 +215,69 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
         try:
             _postgres_upsert(str(db_url), "auction_sales", payload, on_conflict="source_url")
             _delete_secondary_sale_rows_with_postgres(str(db_url), sales)
+            _sync_normalized_sale_tables_with_rest(str(url), str(key), sales, now)
             _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
             return len(payload)
         except Exception as exc:
             LOGGER.warning("Direct Postgres auction_sales sync failed; falling back to REST: %s", exc)
     _upsert_with_rest(str(url), str(key), payload)
     _delete_secondary_sale_rows(str(url), str(key), sales)
+    _sync_normalized_sale_tables_with_rest(str(url), str(key), sales, now)
     _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
+    return len(payload)
+
+
+def upsert_cadastre_parcels_to_supabase(rows: list[dict[str, object]]) -> int:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        LOGGER.info("Supabase variables are missing; skipping cadastre upsert")
+        return 0
+
+    now = datetime.now(UTC).isoformat()
+    payload = [
+        _timestamped(dict(row), now)
+        for row in rows
+        if row.get("source_url") and row.get("parcel_key")
+    ]
+    if not payload:
+        return 0
+
+    _postgrest_upsert(
+        str(url),
+        str(key),
+        "auction_cadastre_parcels",
+        payload,
+        on_conflict="source_url,parcel_key",
+    )
+    return len(payload)
+
+
+def upsert_dpe_diagnostics_to_supabase(rows: list[dict[str, object]]) -> int:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        LOGGER.info("Supabase variables are missing; skipping DPE upsert")
+        return 0
+
+    now = datetime.now(UTC).isoformat()
+    payload = [
+        _timestamped(dict(row), now)
+        for row in rows
+        if row.get("source_url") and row.get("diagnostic_number")
+    ]
+    if not payload:
+        return 0
+
+    _postgrest_upsert(
+        str(url),
+        str(key),
+        "auction_dpe_diagnostics",
+        payload,
+        on_conflict="source_url,diagnostic_number",
+    )
     return len(payload)
 
 
@@ -227,6 +359,84 @@ def fetch_next_queued_run_from_supabase() -> dict[str, Any] | None:
     if not rows:
         return None
     return rows[0]
+
+
+def fetch_next_data_refresh_request_from_supabase() -> dict[str, Any] | None:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        LOGGER.info("Supabase variables are missing; no data refresh request can be fetched")
+        return None
+    endpoint = f"{str(url).rstrip('/')}/rest/v1/data_refresh_requests"
+    response = httpx.get(
+        endpoint,
+        params={
+            "select": "id,user_id,sale_id,source_url,request_kind,status,priority,requested_payload,created_at",
+            "status": "eq.queued",
+            "order": "priority.desc,created_at.asc",
+            "limit": "1",
+        },
+        headers=_rest_headers(str(key), prefer="return=representation"),
+        timeout=30,
+    )
+    if response.is_error:
+        LOGGER.warning("Supabase data refresh request fetch failed: %s", response.text)
+        return None
+    rows = response.json()
+    if not rows:
+        return None
+
+    request = rows[0]
+    started_at = datetime.now(UTC).isoformat()
+    patch = httpx.patch(
+        endpoint,
+        params={"id": f"eq.{request['id']}", "status": "eq.queued"},
+        headers=_rest_headers(str(key), prefer="return=representation"),
+        json={
+            "status": "running",
+            "started_at": started_at,
+            "updated_at": started_at,
+        },
+        timeout=30,
+    )
+    if patch.is_error:
+        LOGGER.warning("Supabase data refresh request lock failed: %s", patch.text)
+        return None
+    locked_rows = patch.json()
+    return locked_rows[0] if locked_rows else {**request, "status": "running", "started_at": started_at}
+
+
+def finish_data_refresh_request_in_supabase(
+    request_id: str | None,
+    status: str,
+    result_summary: dict[str, Any] | None = None,
+    error_message: str | None = None,
+) -> None:
+    if not request_id:
+        return
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return
+    now = datetime.now(UTC).isoformat()
+    payload = {
+        "status": status,
+        "result_summary": result_summary or {},
+        "error_message": error_message,
+        "completed_at": now if status in {"completed", "failed", "cancelled"} else None,
+        "updated_at": now,
+    }
+    response = httpx.patch(
+        f"{str(url).rstrip('/')}/rest/v1/data_refresh_requests",
+        params={"id": f"eq.{request_id}"},
+        headers=_rest_headers(str(key), prefer="return=minimal"),
+        json=_sanitize_postgrest_payload(payload),
+        timeout=30,
+    )
+    if response.is_error:
+        LOGGER.warning("Supabase data refresh request finish failed: %s", response.text)
 
 
 def fail_stale_running_runs_in_supabase(max_age_minutes: int = 190) -> int:
@@ -430,6 +640,79 @@ def fetch_enriched_content_hashes(
     return found
 
 
+def fetch_sales_needing_llm_descriptions(
+    *,
+    limit: int,
+    prompt_version: str,
+    statuses: tuple[str, ...] = ("active", "upcoming"),
+) -> list[AuctionSale]:
+    """Fetch existing DB rows whose public LLM description needs backfill.
+
+    Regular scrape runs only see listings collected during that run. This helper
+    lets a bounded worker gradually cover older active/upcoming rows without
+    making the main scrape run longer.
+    """
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key or limit <= 0:
+        return []
+
+    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
+    page_size = max(50, min(250, limit * 4))
+    selected: list[AuctionSale] = []
+    offset = 0
+
+    while len(selected) < limit:
+        params: dict[str, str] = {
+            "select": LLM_BACKFILL_SALE_SELECT,
+            "order": "sale_date.asc.nullslast,updated_at.desc.nullslast",
+            "limit": str(page_size),
+            "offset": str(offset),
+        }
+        if statuses:
+            params["status"] = _postgrest_in_filter(list(statuses))
+
+        try:
+            response = httpx.get(
+                endpoint,
+                params=params,
+                headers=_rest_headers(str(key), prefer="count=none"),
+                timeout=POSTGREST_TIMEOUT,
+            )
+        except httpx.HTTPError as exc:
+            LOGGER.warning("LLM backfill sale fetch failed: %s", exc)
+            break
+        if response.is_error:
+            LOGGER.warning("LLM backfill sale fetch failed (%s): %s", response.status_code, response.text[:300])
+            break
+
+        rows = response.json()
+        if not rows:
+            break
+        for row in rows:
+            if _has_current_llm_description(row.get("raw_payload"), prompt_version):
+                continue
+            sale = _auction_sale_from_row(row)
+            if sale is not None:
+                selected.append(sale)
+            if len(selected) >= limit:
+                break
+        if len(rows) < page_size:
+            break
+        offset += page_size
+
+    return selected[:limit]
+
+
+def _auction_sale_from_row(row: dict[str, Any]) -> AuctionSale | None:
+    try:
+        return AuctionSale.model_validate(row)
+    except Exception as exc:
+        LOGGER.warning("Could not hydrate auction sale %s for LLM backfill: %s", row.get("source_url"), exc)
+        return None
+
+
 def _has_current_llm_description(raw_payload: Any, prompt_version: str | None) -> bool:
     if not isinstance(raw_payload, dict):
         return False
@@ -491,6 +774,70 @@ KNOWN_SALE_DETAIL_SELECT = ",".join(
         "raw_payload",
     )
 )
+DATA_REFRESH_SALE_SELECT = ",".join(
+    (
+        "source_name",
+        "source_url",
+        "primary_source",
+        "source_urls",
+        "external_id",
+        "tribunal",
+        "tribunal_code",
+        "department",
+        "city",
+        "address",
+        "postal_code",
+        "property_type",
+        "title",
+        "description",
+        "surface_m2",
+        "habitable_surface_m2",
+        "land_surface_m2",
+        "carrez_surface_m2",
+        "app_surface_m2",
+        "app_surface_kind",
+        "surface_scope",
+        "surface_source",
+        "surface_confidence",
+        "surface_evidence",
+        "rooms_count",
+        "latitude",
+        "longitude",
+        "occupancy_status",
+        "documents",
+        "raw_text",
+        "raw_payload",
+    )
+)
+
+
+def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key or not source_url:
+        return None
+
+    response = httpx.get(
+        f"{str(url).rstrip('/')}/rest/v1/auction_sales",
+        params={
+            "select": DATA_REFRESH_SALE_SELECT,
+            "source_url": f"eq.{source_url}",
+            "limit": "1",
+        },
+        headers=_rest_headers(str(key), prefer="count=none"),
+        timeout=30,
+    )
+    if response.is_error:
+        LOGGER.warning("Supabase data refresh sale lookup failed: %s", response.text[:200])
+        return None
+    rows = response.json()
+    if not rows:
+        return None
+    row = rows[0]
+    if not row.get("source_name") or not row.get("source_url"):
+        return None
+    return AuctionSale(**row)
 
 
 def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
@@ -766,6 +1113,69 @@ def _secondary_source_urls(sales: list[AuctionSale]) -> list[str]:
     return urls
 
 
+def _sync_normalized_sale_tables_with_rest(
+    supabase_url: str,
+    api_key: str,
+    sales: list[AuctionSale],
+    now: str,
+) -> None:
+    properties = [_timestamped(row, now) for row in _property_rows_for_sales(sales, now)]
+    judicial_sales = [_timestamped(row, now) for row in _judicial_sale_rows_for_sales(sales, now)]
+    if properties:
+        _postgrest_upsert(supabase_url, api_key, "properties", properties, on_conflict="source_url")
+    if judicial_sales:
+        _postgrest_upsert(supabase_url, api_key, "judicial_sales", judicial_sales, on_conflict="source_url")
+
+
+def _property_rows_for_sales(sales: list[AuctionSale], now: str) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for sale in sales:
+        data = sale.to_storage_dict(exclude_none=False)
+        row = {column: data.get(column) for column in PROPERTY_COLUMNS}
+        row["primary_source"] = row.get("primary_source") or row.get("source_name")
+        row["source_urls"] = _normalized_source_urls(sale, data)
+        row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
+        row["last_seen_at"] = now
+        rows.append(row)
+    return rows
+
+
+def _judicial_sale_rows_for_sales(sales: list[AuctionSale], now: str) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for sale in sales:
+        data = sale.to_storage_dict(exclude_none=False)
+        row = {column: data.get(column) for column in JUDICIAL_SALE_COLUMNS}
+        row["property_source_url"] = data.get("source_url")
+        row["primary_source"] = row.get("primary_source") or row.get("source_name")
+        row["source_urls"] = _normalized_source_urls(sale, data)
+        row["visit_dates"] = data.get("visit_dates") if isinstance(data.get("visit_dates"), list) else []
+        row["status"] = data.get("status") or "upcoming"
+        row["source_lawyer_name"] = data.get("lawyer_name")
+        row["source_lawyer_contact"] = data.get("lawyer_contact")
+        documents = data.get("documents")
+        row["documents_count"] = len(documents) if isinstance(documents, list) else 0
+        row["score_factors"] = data.get("score_factors") if isinstance(data.get("score_factors"), list) else []
+        row["quality_flags"] = data.get("quality_flags") if isinstance(data.get("quality_flags"), list) else []
+        row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
+        row["last_seen_at"] = now
+        rows.append(row)
+    return rows
+
+
+def _normalized_source_urls(sale: AuctionSale, data: dict[str, Any]) -> list[str]:
+    values = data.get("source_urls")
+    source_urls = values if isinstance(values, list) else []
+    urls = [data.get("source_url"), *source_urls, *sale.source_urls]
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for url in urls:
+        if not isinstance(url, str) or not url or url in seen:
+            continue
+        normalized.append(url)
+        seen.add(url)
+    return normalized
+
+
 def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[AuctionSale], now: str) -> None:
     features = [_timestamped(build_auction_features_row(sale), now) for sale in sales]
     surfaces = [_timestamped(build_auction_surfaces_row(sale), now) for sale in sales]
@@ -777,6 +1187,7 @@ def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[
     if source_urls:
         _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_risks", source_urls)
         _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_risk_occurrences", source_urls)
+        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_urban_planning_signals", source_urls)
         _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_score_factors", source_urls)
     risk_occurrences_by_source = {sale.source_url: _risk_occurrence_rows_for_sale(sale) for sale in sales}
     risk_rows = [
@@ -792,6 +1203,18 @@ def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[
     risk_occurrences = [_timestamped(row, now) for rows in risk_occurrences_by_source.values() for row in rows]
     if risk_occurrences:
         _postgrest_insert(supabase_url, api_key, "auction_risk_occurrences", risk_occurrences)
+    urban_planning_signals = [
+        _timestamped(row, now)
+        for sale in sales
+        for row in build_urban_planning_signal_rows(sale, pdf_texts=_load_pdf_texts(sale))
+    ]
+    if urban_planning_signals:
+        _postgrest_insert(
+            supabase_url,
+            api_key,
+            "auction_urban_planning_signals",
+            urban_planning_signals,
+        )
     score_factors = [
         _timestamped(row, now)
         for sale in sales

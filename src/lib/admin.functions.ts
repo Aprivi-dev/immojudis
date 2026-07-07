@@ -19,14 +19,19 @@ const SCROLL_SOURCES = [
 
 const startScrollSchema = z.object({
   source: z.enum(SCROLL_SOURCES).default("all"),
+  mode: z.enum(["collect", "llm_backfill"]).default("collect"),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 const AUTOMATIC_LLM_ENRICHMENT = true;
+const LLM_BACKFILL_SOURCE = "llm-description-backfill";
+const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v6_display";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
 type RunnerMode = "github_actions" | "webhook" | "queue_worker";
 
 export type AdminScrollSource = (typeof SCROLL_SOURCES)[number];
+export type AdminScrollMode = "collect" | "llm_backfill";
 
 export type AuctionRun = {
   id: string;
@@ -39,6 +44,16 @@ export type AuctionRun = {
   updatedAt: string | null;
   summary: JsonObject;
   errors: JsonObject;
+};
+
+export type AiDescriptionDashboardStats = {
+  expectedPromptVersion: string;
+  total: number;
+  activeOrUpcoming: number;
+  ready: number;
+  missing: number;
+  promptVersionMismatch: number;
+  backfillRemaining: number;
 };
 
 export type AdminDashboardData = {
@@ -58,6 +73,7 @@ export type AdminDashboardData = {
     queuedRuns: number;
     runningRuns: number;
     failedRuns: number;
+    aiDescriptions: AiDescriptionDashboardStats;
   };
   runs: AuctionRun[];
 };
@@ -86,6 +102,7 @@ type QueryBuilder<T> = PromiseLike<QueryResult<T>> & {
     options?: { ascending?: boolean; nullsFirst?: boolean },
   ) => QueryBuilder<T>;
   limit: (count: number) => QueryBuilder<T>;
+  range: (from: number, to: number) => QueryBuilder<T>;
   eq: (column: string, value: unknown) => QueryBuilder<T>;
 };
 
@@ -129,8 +146,15 @@ type AuctionRunRow = {
   errors?: unknown;
 };
 
+type AuctionSaleAiDescriptionRow = {
+  status?: string | null;
+  raw_payload?: unknown;
+};
+
 const RUN_COLUMNS =
   "id,status,source,use_llm,started_at,finished_at,summary,errors,created_at,updated_at";
+const AI_DESCRIPTION_COLUMNS = "status,raw_payload";
+const AI_DESCRIPTION_PAGE_SIZE = 1000;
 
 function getAdminClient(): AdminClient {
   return supabaseAdmin as unknown as AdminClient;
@@ -201,6 +225,82 @@ function statusCount(runs: AuctionRun[], status: string): number {
   return runs.filter((run) => run.status === status).length;
 }
 
+function cleanPayloadText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function rawPayloadObject(value: unknown): JsonObject {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as JsonObject)
+    : {};
+}
+
+function isActiveOrUpcomingStatus(status: unknown): boolean {
+  return status === "active" || status === "upcoming";
+}
+
+export function buildAiDescriptionDashboardStats(
+  rows: AuctionSaleAiDescriptionRow[],
+  expectedPromptVersion = EXPECTED_LLM_PROMPT_VERSION,
+): AiDescriptionDashboardStats {
+  let activeOrUpcoming = 0;
+  let ready = 0;
+  let missing = 0;
+  let promptVersionMismatch = 0;
+
+  for (const row of rows) {
+    if (!isActiveOrUpcomingStatus(row.status)) continue;
+    activeOrUpcoming += 1;
+    const payload = rawPayloadObject(row.raw_payload);
+    const displayDescription = cleanPayloadText(payload.llm_display_description);
+    const promptVersion = cleanPayloadText(payload.llm_prompt_version);
+    if (!displayDescription) {
+      missing += 1;
+    }
+    if (promptVersion !== expectedPromptVersion) {
+      promptVersionMismatch += 1;
+    }
+    if (displayDescription && promptVersion === expectedPromptVersion) {
+      ready += 1;
+    }
+  }
+
+  return {
+    expectedPromptVersion,
+    total: rows.length,
+    activeOrUpcoming,
+    ready,
+    missing,
+    promptVersionMismatch,
+    backfillRemaining: activeOrUpcoming - ready,
+  };
+}
+
+export async function readAiDescriptionStats(
+  admin: AdminClient,
+): Promise<AiDescriptionDashboardStats> {
+  const rows: AuctionSaleAiDescriptionRow[] = [];
+
+  for (let from = 0; ; from += AI_DESCRIPTION_PAGE_SIZE) {
+    const to = from + AI_DESCRIPTION_PAGE_SIZE - 1;
+    const result = await admin
+      .from<AuctionSaleAiDescriptionRow>("auction_sales")
+      .select(AI_DESCRIPTION_COLUMNS)
+      .range(from, to);
+
+    if (result.error) {
+      throw new Error(result.error.message ?? "Impossible de lire les synthèses IA.");
+    }
+
+    const page = result.data ?? [];
+    rows.push(...page);
+
+    if (page.length < AI_DESCRIPTION_PAGE_SIZE) {
+      return buildAiDescriptionDashboardStats(rows);
+    }
+  }
+}
+
 function scrollWebhookUrl(): string | null {
   return process.env.SCROLL_WEBHOOK_URL ?? process.env.IMMOJUDIS_SCROLL_WEBHOOK_URL ?? null;
 }
@@ -247,7 +347,7 @@ async function updateRunSummary(runId: string, summary: JsonObject, errors: Json
 
 async function dispatchGitHubActionsRun(
   run: AuctionRun,
-  source: AdminScrollSource,
+  input: { source: AdminScrollSource; mode: AdminScrollMode; limit?: number },
 ): Promise<Response> {
   const token = githubActionsToken();
   if (!token) throw new Error("GitHub Actions token missing.");
@@ -268,7 +368,9 @@ async function dispatchGitHubActionsRun(
       ref: githubActionsRef(),
       inputs: {
         run_id: run.id,
-        source,
+        source: input.source,
+        llm_backfill: String(input.mode === "llm_backfill"),
+        ...(input.limit ? { limit: String(input.limit) } : {}),
       },
     }),
     signal: AbortSignal.timeout(12_000),
@@ -286,16 +388,25 @@ export async function getAdminDashboard(authToken: string): Promise<AdminDashboa
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(25);
 
-  const [runsResult, sales, documents, extractions, riskOccurrences, scoreFactors, runsCount] =
-    await Promise.all([
-      runsQuery,
-      countRows("auction_sales"),
-      countRows("auction_documents"),
-      countRows("auction_extractions"),
-      countRows("auction_risk_occurrences"),
-      countRows("auction_score_factors"),
-      countRows("auction_runs"),
-    ]);
+  const [
+    runsResult,
+    sales,
+    documents,
+    extractions,
+    riskOccurrences,
+    scoreFactors,
+    runsCount,
+    aiDescriptions,
+  ] = await Promise.all([
+    runsQuery,
+    countRows("auction_sales"),
+    countRows("auction_documents"),
+    countRows("auction_extractions"),
+    countRows("auction_risk_occurrences"),
+    countRows("auction_score_factors"),
+    countRows("auction_runs"),
+    readAiDescriptionStats(admin),
+  ]);
 
   if (runsResult.error) {
     throw new Error(runsResult.error.message ?? "Impossible de lire les runs.");
@@ -320,6 +431,7 @@ export async function getAdminDashboard(authToken: string): Promise<AdminDashboa
       queuedRuns: statusCount(runs, "queued"),
       runningRuns: statusCount(runs, "running"),
       failedRuns: statusCount(runs, "failed"),
+      aiDescriptions,
     },
     runs,
   };
@@ -340,6 +452,8 @@ export async function startAdminScroll(
     requested_by: adminUser.email,
     requested_at: requestedAt,
     trigger: "admin_dashboard",
+    mode: data.mode,
+    ...(data.limit ? { limit: data.limit } : {}),
     runner_mode: mode,
     runner_expectation:
       mode === "github_actions"
@@ -353,7 +467,7 @@ export async function startAdminScroll(
     .from<AuctionRunRow>("auction_runs")
     .insert({
       status: "queued",
-      source: data.source,
+      source: data.mode === "llm_backfill" ? LLM_BACKFILL_SOURCE : data.source,
       use_llm: AUTOMATIC_LLM_ENRICHMENT,
       summary: initialSummary,
       errors: {},
@@ -370,7 +484,11 @@ export async function startAdminScroll(
 
   if (mode === "github_actions") {
     try {
-      const response = await dispatchGitHubActionsRun(run, data.source);
+      const response = await dispatchGitHubActionsRun(run, {
+        source: data.source,
+        mode: data.mode,
+        limit: data.limit,
+      });
       const githubSummary = {
         ...run.summary,
         github_actions: {
@@ -448,6 +566,8 @@ export async function startAdminScroll(
       body: JSON.stringify({
         runId: run.id,
         source: data.source,
+        mode: data.mode,
+        limit: data.limit,
         useLlm: AUTOMATIC_LLM_ENRICHMENT,
         requestedBy: adminUser.email,
         requestedAt,

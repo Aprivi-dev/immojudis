@@ -21,20 +21,20 @@ const ibmPlexSans = IBM_Plex_Sans({
 export const metadata: Metadata = {
   metadataBase: new URL("https://immojudis-dezt.vercel.app"),
   title: {
-    default: "Immojudis - Ventes immobilieres judiciaires",
+    default: "Immojudis - Rapports d'opportunite pour ventes judiciaires",
     template: "%s - Immojudis",
   },
   description:
-    "Explorez les ventes aux encheres immobilieres judiciaires avec annonces analysees, alertes et mise plafond.",
+    "Rapports d'opportunite, annonces analysees, alertes et mise maximale pour encheres immobilieres judiciaires.",
   authors: [{ name: "Immojudis" }],
   icons: {
     icon: "/brand/immojudis-justice-temple.svg",
     apple: "/brand/immojudis-justice-temple.svg",
   },
   openGraph: {
-    title: "Immojudis - Ventes immobilieres judiciaires",
+    title: "Immojudis - Rapports d'opportunite pour ventes judiciaires",
     description:
-      "Annonces analysees, alertes et mise plafond pour les encheres immobilieres judiciaires.",
+      "Annonces analysees, comparables DVF, alertes et mise maximale pour les encheres immobilieres judiciaires.",
     type: "website",
     url: "https://immojudis-dezt.vercel.app",
   },

@@ -152,6 +152,161 @@ def test_light_pipeline_geocodes_and_reupserts_when_heavy_enrichment_disabled(mo
     assert calls == ["upsert", "observations", "geocode", "upsert", "observations"]
 
 
+def test_pipeline_skips_redundant_final_sale_upsert_when_unchanged(monkeypatch) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(main, "load_settings", lambda: _settings())
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "geocode_sale", lambda sale: calls.append("geocode") or sale)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append(f"upsert:{len(sales)}") or len(sales))
+    monkeypatch.setattr(
+        main,
+        "upsert_observations_to_supabase",
+        lambda sales: calls.append(f"observations:{len(sales)}") or len(sales),
+    )
+
+    assert (
+        main.run_pipeline(
+            main.PipelineOptions(source="avoventes", use_llm=False, heavy_enrichment=False, upsert=True)
+        )
+        == 0
+    )
+    assert calls == ["upsert:1", "observations:1", "geocode"]
+
+
+def test_pipeline_enriches_cadastre_after_final_geocode(monkeypatch) -> None:
+    calls: list[str] = []
+    settings = _settings()
+    settings.update(
+        {
+            "cadastre_enrich_enabled": True,
+            "cadastre_api_url": "https://apicarto.test/cadastre/parcelle",
+            "cadastre_source_ign": "PCI",
+            "cadastre_max_parcels": 4,
+            "cadastre_timeout_seconds": 10,
+        }
+    )
+
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    _fake_geocode.calls = calls
+    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales))
+
+    def enrich_cadastre(sales, settings):
+        calls.append("cadastre_enrich")
+        assert sales[0].latitude == Decimal("44.84")
+        assert settings["cadastre_enrich_enabled"] is True
+        return [{"source_url": sales[0].source_url, "parcel_key": "33063-AB-0123"}]
+
+    monkeypatch.setattr(main, "enrich_cadastre_sales", enrich_cadastre)
+    monkeypatch.setattr(
+        main,
+        "upsert_cadastre_parcels_to_supabase",
+        lambda rows: calls.append(f"cadastre_upsert:{len(rows)}") or len(rows),
+    )
+
+    assert (
+        main.run_pipeline(
+            main.PipelineOptions(source="avoventes", use_llm=False, heavy_enrichment=False, upsert=True)
+        )
+        == 0
+    )
+    assert calls == [
+        "upsert",
+        "observations",
+        "geocode",
+        "cadastre_enrich",
+        "upsert",
+        "observations",
+        "cadastre_upsert:1",
+    ]
+
+
+def test_pipeline_enriches_dpe_after_final_geocode(monkeypatch) -> None:
+    calls: list[str] = []
+    settings = _settings()
+    settings.update(
+        {
+            "dpe_enrich_enabled": True,
+            "dpe_api_url": "https://data.ademe.test/lines",
+            "dpe_geo_radius_m": 120,
+            "dpe_max_results": 5,
+            "dpe_timeout_seconds": 12,
+        }
+    )
+
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    _fake_geocode.calls = calls
+    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales))
+
+    def enrich_dpe(sales, settings):
+        calls.append("dpe_enrich")
+        assert sales[0].latitude == Decimal("44.84")
+        assert settings["dpe_enrich_enabled"] is True
+        return [{"source_url": sales[0].source_url, "diagnostic_number": "2133E0178774F"}]
+
+    monkeypatch.setattr(main, "enrich_dpe_sales", enrich_dpe)
+    monkeypatch.setattr(
+        main,
+        "upsert_dpe_diagnostics_to_supabase",
+        lambda rows: calls.append(f"dpe_upsert:{len(rows)}") or len(rows),
+    )
+
+    assert (
+        main.run_pipeline(
+            main.PipelineOptions(source="avoventes", use_llm=False, heavy_enrichment=False, upsert=True)
+        )
+        == 0
+    )
+    assert calls == [
+        "upsert",
+        "observations",
+        "geocode",
+        "dpe_enrich",
+        "upsert",
+        "observations",
+        "dpe_upsert:1",
+    ]
+
+
 def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatch) -> None:
     calls: list[str] = []
     settings = _settings()
@@ -180,6 +335,53 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatc
     assert "pdf" not in calls
     assert "geocode" in calls
     assert calls.count("upsert") == 2
+
+
+def test_pipeline_skips_pdf_when_only_llm_description_is_missing(monkeypatch) -> None:
+    calls: list[str] = []
+    settings = _settings()
+    settings["incremental_enrichment"] = True
+
+    raw = {
+        **_raw_sale(),
+        "surface_m2": "42",
+        "rooms_count": 2,
+        "occupancy_status": "vacant",
+        "source_blocks": {"description": "Appartement libre de 42 m2."},
+    }
+
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([raw], []))
+
+    def fake_fetch(hashes, **kwargs):
+        if kwargs.get("require_llm_description"):
+            return set()
+        return set(hashes)
+
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", fake_fetch)
+    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: calls.append("pdf") or (_raise_pdf()))
+    monkeypatch.setattr(
+        main,
+        "enrich_sale_with_llm",
+        lambda *args, **kwargs: calls.append("llm") or main.LLMEnrichmentStats(analyzed=1, valid_json=1),
+    )
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: len(sales))
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: len(sales))
+
+    assert main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=True, upsert=True)) == 0
+    assert "pdf" not in calls
+    assert calls == ["llm"]
 
 
 def test_pipeline_requires_current_llm_description_for_incremental_skip(monkeypatch) -> None:
@@ -219,6 +421,72 @@ def test_pipeline_requires_current_llm_description_for_incremental_skip(monkeypa
     }
 
 
+def test_parse_args_can_select_llm_description_backfill() -> None:
+    options = main.parse_args(
+        [
+            "--backfill-llm-descriptions",
+            "--limit",
+            "7",
+            "--backfill-statuses",
+            "active,upcoming,unknown",
+        ]
+    )
+
+    assert options.llm_backfill is True
+    assert options.limit == 7
+    assert options.llm_backfill_statuses == ("active", "upcoming", "unknown")
+
+
+def test_run_llm_description_backfill_updates_only_completed_sales(monkeypatch) -> None:
+    settings = _settings()
+    settings.update(
+        {
+            "pipeline_llm_backfill_max_targets": 2,
+            "pipeline_enrich_workers": 1,
+            "llm_prompt_version": "auction_llm_v6_display",
+        }
+    )
+    stale = AuctionSale(
+        source_name="notaires",
+        source_url="https://example.test/stale",
+        title="Maison 85 m²",
+        raw_payload={"source_blocks": {"description": "Maison avec jardin."}},
+    )
+    failed = AuctionSale(
+        source_name="notaires",
+        source_url="https://example.test/failed",
+        title="Appartement",
+        raw_payload={"source_blocks": {"description": "Appartement."}},
+    )
+    calls: list[str] = []
+
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-backfill")
+    monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: calls.append("finish"))
+    monkeypatch.setattr(main, "fetch_sales_needing_llm_descriptions", lambda **kwargs: [stale, failed])
+    monkeypatch.setattr(main, "create_llm_client", lambda: object())
+
+    def fake_enrich(sale, client=None):
+        calls.append(f"llm:{sale.source_url.rsplit('/', 1)[-1]}")
+        stats = main.LLMEnrichmentStats(analyzed=1, valid_json=1)
+        if sale is stale:
+            sale.raw_payload["llm_display_description"] = "Maison avec jardin proche du centre."
+            sale.raw_payload["llm_prompt_version"] = "auction_llm_v6_display"
+        return stats
+
+    monkeypatch.setattr(main, "enrich_sale_with_llm", fake_enrich)
+
+    def fake_upsert(sales: list[AuctionSale]) -> int:
+        calls.append(f"upsert:{len(sales)}")
+        assert sales == [stale]
+        return len(sales)
+
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", fake_upsert)
+
+    assert main.run_llm_description_backfill(main.PipelineOptions(llm_backfill=True, upsert=True)) == 0
+    assert calls == ["llm:stale", "llm:failed", "upsert:1", "finish"]
+
+
 def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
     raw = {
         "_known_unchanged": True,
@@ -254,6 +522,8 @@ def _settings() -> dict[str, object]:
         "incremental_enrichment": False,
         "pipeline_pdf_workers": 1,
         "pipeline_enrich_workers": 1,
+        "pipeline_pdf_max_targets": 0,
+        "pipeline_llm_max_targets": 0,
         "enable_licitor_benchmark": False,
         "enable_vench_benchmark": False,
         "enable_info_encheres_benchmark": False,

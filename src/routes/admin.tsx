@@ -15,6 +15,10 @@ import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import type * as React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { AdminReadinessPanel } from "@/components/admin/AdminReadinessPanel";
+import { AdminLawyerReferralRequestsPanel } from "@/components/admin/AdminLawyerReferralRequestsPanel";
+import { AdminReferencedLawyersPanel } from "@/components/admin/AdminReferencedLawyersPanel";
+import { AdminSubscriptionsPanel } from "@/components/admin/AdminSubscriptionsPanel";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json, Tables } from "@/integrations/supabase/types";
@@ -71,6 +75,7 @@ function AdminDashboardPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [source, setSource] = useState<AdminScrollSource>("all");
+  const [backfillLimit, setBackfillLimit] = useState(20);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["admin-dashboard"],
@@ -98,13 +103,30 @@ function AdminDashboardPage() {
   });
 
   const startMutation = useMutation({
-    mutationFn: () => startAdminScrollRequest({ data: { source } }),
+    mutationFn: () => startAdminScrollRequest({ data: { source, mode: "collect" } }),
     onSuccess: async (result) => {
       toast.success(result.message);
       await queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : "Impossible de lancer le scroll");
+    },
+  });
+  const backfillMutation = useMutation({
+    mutationFn: () =>
+      startAdminScrollRequest({
+        data: {
+          source: "all",
+          mode: "llm_backfill",
+          limit: backfillLimit,
+        },
+      }),
+    onSuccess: async (result) => {
+      toast.success(result.message);
+      await queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Impossible de lancer le backfill IA");
     },
   });
 
@@ -137,6 +159,11 @@ function AdminDashboardPage() {
   });
 
   const latestRun = data?.runs[0] ?? null;
+  const aiDescriptions = data?.stats.aiDescriptions ?? null;
+  const aiReadyLabel = aiDescriptions
+    ? `${aiDescriptions.ready}/${aiDescriptions.activeOrUpcoming}`
+    : "...";
+  const aiBackfillRemaining = aiDescriptions?.backfillRemaining ?? null;
 
   return (
     <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-10">
@@ -181,7 +208,7 @@ function AdminDashboardPage() {
           </div>
         ) : null}
 
-        <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <DashboardMetric
             icon={<Database />}
             label="Annonces"
@@ -201,6 +228,12 @@ function AdminDashboardPage() {
             icon={<Activity />}
             label="Extractions"
             value={isLoading ? "..." : String(data?.stats.extractions ?? 0)}
+          />
+          <DashboardMetric
+            icon={<Bot />}
+            label="Synthèses IA"
+            value={isLoading ? "..." : aiReadyLabel}
+            detail={aiBackfillRemaining == null ? undefined : `${aiBackfillRemaining} à traiter`}
           />
         </section>
 
@@ -276,6 +309,55 @@ function AdminDashboardPage() {
                 production. Le cron GitHub Actions reste actif en secours.
               </div>
             ) : null}
+
+            <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.03] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gold">
+                    Synthèses IA manquantes
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    {aiBackfillRemaining == null
+                      ? "Traite les annonces actives déjà en base sans relancer le scraping."
+                      : `${aiBackfillRemaining} annonce${aiBackfillRemaining > 1 ? "s" : ""} active${aiBackfillRemaining > 1 ? "s" : ""} restent à aligner sur ${aiDescriptions?.expectedPromptVersion}.`}
+                  </p>
+                </div>
+                <Bot className="h-5 w-5 shrink-0 text-gold" />
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Lot
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={backfillLimit}
+                    onChange={(event) =>
+                      setBackfillLimit(Math.max(1, Math.min(100, Number(event.target.value) || 20)))
+                    }
+                    className="rounded-lg border border-white/10 bg-background/45 px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={backfillMutation.isPending || aiBackfillRemaining === 0}
+                  onClick={() => backfillMutation.mutate()}
+                  className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-xs font-bold uppercase tracking-[0.16em] text-gold transition hover:border-gold disabled:cursor-not-allowed disabled:opacity-60 sm:self-end"
+                >
+                  {backfillMutation.isPending ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      En file
+                    </>
+                  ) : (
+                    <>
+                      <Bot className="h-4 w-4" />
+                      Lancer
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="liquid-panel rounded-lg p-5">
@@ -286,6 +368,8 @@ function AdminDashboardPage() {
             {latestRun ? <LatestRun run={latestRun} /> : <EmptyState label="Aucun run trouvé" />}
           </div>
         </section>
+
+        <AdminReadinessPanel />
 
         <section className="liquid-panel mt-6 rounded-lg p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -332,6 +416,12 @@ function AdminDashboardPage() {
           </div>
         </section>
 
+        <AdminSubscriptionsPanel />
+
+        <AdminReferencedLawyersPanel />
+
+        <AdminLawyerReferralRequestsPanel />
+
         <section className="mt-6 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
           <div className="liquid-panel rounded-lg p-5">
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-gold">
@@ -357,6 +447,13 @@ function AdminDashboardPage() {
                 label="Risques sourcés"
                 value={String(data?.stats.riskOccurrences ?? 0)}
                 tone="neutral"
+              />
+              <HealthLine
+                label="Synthèses IA à backfiller"
+                value={String(aiBackfillRemaining ?? 0)}
+                tone={
+                  aiBackfillRemaining == null ? "neutral" : aiBackfillRemaining > 0 ? "warn" : "ok"
+                }
               />
               <HealthLine
                 label="Facteurs de score"
@@ -512,10 +609,12 @@ function DashboardMetric({
   icon,
   label,
   value,
+  detail,
 }: {
   icon: React.ReactElement;
   label: string;
   value: string;
+  detail?: string;
 }) {
   return (
     <div className="liquid-panel-soft rounded-lg p-4">
@@ -524,6 +623,7 @@ function DashboardMetric({
         {label}
       </div>
       <div className="mt-3 font-display text-3xl tabular-nums text-foreground">{value}</div>
+      {detail ? <div className="mt-1 text-xs text-muted-foreground">{detail}</div> : null}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter } from "@/lib/router-compat";
 import { toast } from "sonner";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
@@ -13,29 +13,40 @@ import Download from "lucide-react/dist/esm/icons/download.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import FileCheck2 from "lucide-react/dist/esm/icons/file-check-2.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
+import MessageSquare from "lucide-react/dist/esm/icons/message-square.js";
+import Rotate3D from "lucide-react/dist/esm/icons/rotate-3d.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
+import Send from "lucide-react/dist/esm/icons/send.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import Target from "lucide-react/dist/esm/icons/target.js";
 import TriangleAlert from "lucide-react/dist/esm/icons/triangle-alert.js";
+import Users from "lucide-react/dist/esm/icons/users.js";
 import {
   formatPrice,
   formatDate,
   formatDateTime,
+  formatNumber,
   documentTypeLabel,
   formatPricePerM2,
   occupancyLabel,
   propertyTypeLabel,
+  saleStatusLabel,
 } from "@/lib/format";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { parseDocs } from "@/lib/documents";
+import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { FeaturedLawyerPlacement } from "@/components/FeaturedLawyerPlacement";
+import { PropertyReportActions } from "@/components/PropertyReportActions";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleLocationHero } from "@/components/SaleLocationHero";
 import { MapThumbnail } from "@/components/MapThumbnail";
 import { BrandMark } from "@/components/BrandLogo";
 import { EvidenceTrail } from "@/components/EvidenceTrail";
+import { GoogleMapsPreviewButton } from "@/components/GoogleMapsPreviewButton";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Dialog,
   DialogContent,
@@ -44,14 +55,35 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { fetchEnvironmentalContext, fetchMarketEstimate } from "@/lib/client-api";
+import {
+  createSaleAnalysisSet,
+  createSaleWorkspaceAnnotationClient,
+  fetchEnvironmentalContext,
+  fetchMarketEstimate,
+  fetchMarketAnalytics,
+  fetchSaleHistory,
+  fetchSaleWorkspace,
+  fetchSaleWorkspaceCollaboration,
+  fetchValuationBacktest,
+  inviteSaleWorkspaceCollaboratorClient,
+  saveSaleWorkspace,
+  updateSaleWorkspaceAnnotationClient,
+} from "@/lib/client-api";
 import type { EnvironmentalContext } from "@/lib/environment.functions";
 import type { MarketEstimate } from "@/lib/market.functions";
 import {
-  googleMapsAerial3dUrl,
-  googleMapsQueryUrl,
-  googleMapsStreetViewUrl,
-} from "@/lib/google-maps";
+  DEFAULT_DOCUMENT_REVIEW,
+  DEFAULT_SALE_CHECKLIST,
+  DOCUMENT_REVIEW_STATUS_LABELS,
+  SALE_WORKSPACE_STATUS_LABELS,
+  isUuid,
+  type SaleWorkspaceDocumentReview,
+  type SaleWorkspaceDocumentReviewStatus,
+  type SaleWorkspaceDocumentReviews,
+  type SaleWorkspaceStatus,
+} from "@/lib/sale-workspace-shared";
+import { openStreetMapQueryUrl, openStreetMapUrl } from "@/lib/tiles";
+import { cn } from "@/lib/utils";
 import { propertyImages } from "@/lib/sale-media";
 import {
   computeAcquisitionCosts,
@@ -62,7 +94,6 @@ import {
 } from "@/lib/profitability";
 import {
   buildSaleProductSources,
-  type ProductComparable,
   type ProductFact,
   type ProductGroup,
   type ProductHistoryRow,
@@ -76,13 +107,14 @@ import type { AuctionSale, SaleDocumentRich, SaleMedia, SaleRiskOccurrence } fro
 const SECTION_NAV = [
   { id: "overview", label: "Aperçu" },
   { id: "lawyer", label: "Avocat" },
-  { id: "details", label: "Détails" },
-  { id: "history", label: "Historique" },
-  { id: "public-record", label: "Public" },
   { id: "documents", label: "Pièces" },
   { id: "risks", label: "Risques" },
-  { id: "offer-insights", label: "Offre" },
+  { id: "offer-insights", label: "Plafond" },
   { id: "estimate", label: "Estimation" },
+  { id: "market", label: "Marché" },
+  { id: "report", label: "Rapport" },
+  { id: "details", label: "Détails" },
+  { id: "context", label: "Contexte" },
 ] as const;
 
 /**
@@ -132,6 +164,9 @@ export function SaleDetailView({
   const marketError =
     marketEstimateOverride == null &&
     Boolean(marketQuery.isError || marketQuery.data?.ok === false);
+  const [environmentRequested, setEnvironmentRequested] = useState(
+    () => typeof window !== "undefined" && window.location.hash === "#context",
+  );
   const environmentalQuery = useQuery({
     queryKey: ["environmental-context", sale.id, location, sale.latitude, sale.longitude],
     queryFn: () =>
@@ -142,7 +177,9 @@ export function SaleDetailView({
           lng: sale.longitude,
         },
       }),
-    enabled: Boolean(location || (sale.latitude != null && sale.longitude != null)),
+    enabled:
+      environmentRequested &&
+      Boolean(location || (sale.latitude != null && sale.longitude != null)),
     staleTime: 7 * 24 * 60 * 60_000,
   });
   const environmentalContext: EnvironmentalContext | null =
@@ -180,7 +217,6 @@ export function SaleDetailView({
         sale={sale}
         title={referenceLabel}
         decision={decision}
-        acquisitionCost={acquisitionCost}
         location={location}
       />
 
@@ -197,13 +233,16 @@ export function SaleDetailView({
       </section>
 
       <section className="mx-auto grid max-w-[1074px] gap-4 px-4 pt-4 sm:px-6 lg:grid-cols-[minmax(0,728px)_328px] lg:items-start lg:px-0">
-        <ReferenceListingCard
-          sale={sale}
-          product={product}
-          title={referenceLabel}
-          decision={decision}
-          acquisitionCost={acquisitionCost}
-        />
+        <div className="space-y-3">
+          <ReferenceListingCard
+            sale={sale}
+            product={product}
+            title={referenceLabel}
+            decision={decision}
+            acquisitionCost={acquisitionCost}
+          />
+          <PriorityDecisionCard sale={sale} decision={decision} acquisitionCost={acquisitionCost} />
+        </div>
         <RedfinTourCard sale={sale} decision={decision} acquisitionCost={acquisitionCost} />
       </section>
 
@@ -214,7 +253,49 @@ export function SaleDetailView({
           </Section>
 
           <Section id="lawyer" eyebrow="Avocat" title="Trouver et contacter un avocat">
-            <LawyerPreparationCard product={product} sale={sale} />
+            <div className="space-y-3">
+              <LawyerPreparationCard product={product} sale={sale} />
+              <FeaturedLawyerPlacement
+                saleId={sale.id}
+                className="lg:hidden"
+                placementSlot="sale_detail_mobile_lawyer"
+              />
+              <LawyerContactPanel sale={sale} />
+            </div>
+          </Section>
+
+          <Section id="documents" eyebrow="Sources" title="Pièces et sources">
+            <SourcesAndDocumentsBlock sale={sale} product={product} />
+          </Section>
+
+          <Section id="risks" eyebrow="Risques" title="Risques et points de dossier">
+            <RedfinRiskGrid risks={product.riskCards} />
+          </Section>
+
+          <Section id="offer-insights" eyebrow="Plafond" title="Préparer la mise maximum">
+            <BidCeilingAssistant sale={sale} marketEstimateOverride={marketEstimate} />
+            <div className="mt-3">
+              <RedfinInsightsBlock product={product} />
+            </div>
+          </Section>
+
+          <Section
+            id="estimate"
+            eyebrow="Estimation"
+            title={`Estimation Immojudis pour ${referenceLabel}`}
+          >
+            <RedfinFactGrid facts={product.estimateFacts} />
+            <div className="mt-3">
+              <ValuationBacktestBlock sale={sale} />
+            </div>
+          </Section>
+
+          <Section id="market" eyebrow="Marché" title="Analyse de marché judiciaire">
+            <MarketAnalyticsBlock sale={sale} />
+          </Section>
+
+          <Section id="report" eyebrow="Rapport" title="Rapport d'opportunité">
+            <PropertyReportActions saleId={sale.id} />
           </Section>
 
           <Section id="details" eyebrow="Détails" title="Détails du bien">
@@ -233,54 +314,18 @@ export function SaleDetailView({
             <RedfinPublicRecordSection product={product} sale={sale} />
           </Section>
 
-          <Section id="documents" eyebrow="Sources" title="Pièces et sources">
-            <SourcesAndDocumentsBlock sale={sale} product={product} />
-          </Section>
-
-          <Section id="risks" eyebrow="Risques" title="Risques et points de dossier">
-            <RedfinRiskGrid risks={product.riskCards} />
-          </Section>
-
-          <Section id="weather" eyebrow="Météo" title="Météo historique">
-            <RedfinWeatherBlock product={product} />
-          </Section>
-
-          <Section id="sun" eyebrow="Exposition" title="Exposition au soleil">
-            <RedfinSunBlock product={product} />
-          </Section>
-
-          <Section id="offer-insights" eyebrow="Offre" title="Analyse de l'offre">
-            <RedfinInsightsBlock product={product} />
-          </Section>
-
-          <Section id="ask" eyebrow="Avocat" title="Préparer le contact avocat">
-            <LawyerContactPanel sale={sale} />
-          </Section>
-
-          <Section
-            id="estimate"
-            eyebrow="Estimation"
-            title={`Estimation Immojudis pour ${referenceLabel}`}
+          <FoldableSection
+            id="context"
+            eyebrow="Contexte secondaire"
+            title="Météo, exposition et environnement"
+            summary="Ces données peuvent aider à qualifier le bien, mais elles ne doivent pas retarder la validation du dossier judiciaire."
+            onOpen={() => setEnvironmentRequested(true)}
           >
-            <RedfinFactGrid facts={product.estimateFacts} />
-            <div className="mt-3">
-              <RedfinComparableHomesBlock
-                title="Biens comparables à proximité"
-                items={product.comparables}
-                media={media}
-              />
+            <div className="grid gap-3">
+              <RedfinWeatherBlock product={product} />
+              <RedfinSunBlock product={product} />
             </div>
-          </Section>
-
-          {product.nearbyHomes.length > 0 && (
-            <Section wide id="nearby-homes" eyebrow="À proximité" title="Autres repères DVF">
-              <RedfinComparableHomesBlock
-                title="Repères DVF"
-                items={product.nearbyHomes}
-                media={media}
-              />
-            </Section>
-          )}
+          </FoldableSection>
         </div>
       </div>
 
@@ -304,6 +349,10 @@ function ReferenceListingCard({
 }) {
   const displaySurface = getDisplaySurface(sale);
   const mapTitle = product.addressLabel || title;
+  const lat = sale.latitude;
+  const lng = sale.longitude;
+  const hasLocation = lat != null && lng != null;
+  const mapHref = hasLocation ? openStreetMapUrl(lat, lng, 16) : "#details";
   const headlineStats = [
     sale.rooms_count != null ? `${sale.rooms_count} pièces` : null,
     sale.bedrooms_count != null ? `${sale.bedrooms_count} ch.` : null,
@@ -311,8 +360,8 @@ function ReferenceListingCard({
   ].filter(Boolean);
   const judicialMeta = [
     `Consignation ${sourceBlockMoney(sale, "consignation") ?? "à vérifier"}`,
-    `Coût complet ${formatPrice(acquisitionCost.totalCost)}`,
-    `Audience ${formatDate(sale.sale_date)}`,
+    `Coût complet estimé ${formatPrice(acquisitionCost.totalCost)}`,
+    `Audience ${formatDateTime(sale.sale_date)}`,
   ];
 
   return (
@@ -324,12 +373,17 @@ function ReferenceListingCard({
             Vente judiciaire
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <h1 className="text-[28px] font-bold leading-none tracking-normal text-foreground">
-              {product.priceLabel}
-            </h1>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Mise à prix
+              </div>
+              <h1 className="mt-1 text-[28px] font-bold leading-none tracking-normal text-foreground">
+                {product.priceLabel}
+              </h1>
+            </div>
             <span className="rounded-md bg-emerald-50 px-2 py-1 text-sm font-semibold text-emerald-700">
               {decision.ceiling.available
-                ? `Plafond ${formatPrice(decision.ceiling.maxBid)}`
+                ? `Plafond estimé ${formatPrice(decision.ceiling.maxBid)}`
                 : "Plafond à compléter"}
             </span>
           </div>
@@ -353,17 +407,7 @@ function ReferenceListingCard({
             ))}
           </p>
         </div>
-        <a
-          href={
-            sale.latitude != null && sale.longitude != null
-              ? `https://www.google.com/maps?q=${sale.latitude},${sale.longitude}`
-              : "#details"
-          }
-          target={sale.latitude != null && sale.longitude != null ? "_blank" : undefined}
-          rel={sale.latitude != null && sale.longitude != null ? "noopener noreferrer" : undefined}
-          className="hidden overflow-hidden rounded-md border border-border bg-muted transition-colors hover:border-gold/50 sm:block"
-          aria-label={`Voir la carte pour ${mapTitle}`}
-        >
+        <div className="relative hidden overflow-hidden rounded-md border border-border bg-muted sm:block">
           <MapThumbnail
             lat={sale.latitude}
             lng={sale.longitude}
@@ -371,8 +415,106 @@ function ReferenceListingCard({
             className="h-full min-h-[122px]"
             alt={mapTitle}
           />
+          {hasLocation && (
+            <a
+              href={mapHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="absolute left-2 top-2 z-10 inline-flex min-h-9 items-center rounded-md border border-white/70 bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
+              aria-label={`Voir la carte pour ${mapTitle}`}
+            >
+              Carte
+            </a>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function PriorityDecisionCard({
+  sale,
+  decision,
+  acquisitionCost,
+}: {
+  sale: AuctionSale;
+  decision: DecisionSummary;
+  acquisitionCost: AcquisitionCost;
+}) {
+  const documentCount = countDocuments(sale);
+  const priorityOccurrence = findOccurrence(
+    sale,
+    /occupation|occupe|occupant|bail|locataire|travaux|renov|etat|état/,
+  );
+  const actionHref = primaryActionHref(decision.action);
+  const actionLabel = primaryActionLabel(decision.action);
+  const facts = [
+    {
+      label: "Point bloquant",
+      value: decision.primaryCheck,
+      detail: decision.primaryDocument,
+    },
+    {
+      label: "Plafond à valider",
+      value: decision.ceiling.available ? formatPrice(decision.ceiling.maxBid) : "À compléter",
+      detail: "Avant consigne à l'avocat",
+    },
+    {
+      label: "Coût complet estimé",
+      value: formatPrice(acquisitionCost.totalCost),
+      detail: "Frais et hypothèses inclus",
+    },
+    {
+      label: "Pièces disponibles",
+      value: String(documentCount),
+      detail: "À relire avant audience",
+    },
+  ];
+
+  return (
+    <article className="rounded-lg border border-amber-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <div className="inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-800">
+            <TriangleAlert className="h-3.5 w-3.5" />
+            Décision à sécuriser
+          </div>
+          <h2 className="mt-3 text-lg font-semibold leading-tight text-foreground">
+            {decision.primaryCheck}
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Ce point peut modifier le plafond, le calendrier de possession ou les frais. Il doit
+            être confirmé avant de transmettre une consigne d'enchère.
+          </p>
+        </div>
+        <a
+          href={actionHref}
+          className="inline-flex min-h-11 items-center justify-center rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
+        >
+          {actionLabel}
         </a>
       </div>
+
+      <dl className="mt-4 grid gap-2 sm:grid-cols-2">
+        {facts.map((fact) => (
+          <div key={fact.label} className="rounded-md border border-border bg-muted/30 p-3">
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              {fact.label}
+            </dt>
+            <dd className="mt-1 text-sm font-semibold text-foreground">{fact.value}</dd>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{fact.detail}</p>
+          </div>
+        ))}
+      </dl>
+
+      {priorityOccurrence?.excerpt && (
+        <blockquote className="mt-4 border-l-2 border-amber-300 bg-amber-50/60 py-2 pl-3 text-xs leading-relaxed text-muted-foreground">
+          <span className="font-semibold text-foreground">
+            {priorityOccurrence.document_label ?? decision.primaryDocument} :{" "}
+          </span>
+          {priorityOccurrence.excerpt}
+        </blockquote>
+      )}
     </article>
   );
 }
@@ -395,7 +537,7 @@ function LawyerPreparationCard({
         <RedfinFactList facts={product.openHouseRows} />
         <div className="rounded-md border border-border bg-muted/30 p-3">
           <div className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-            Avocat
+            Contact source
           </div>
           <div className="mt-2 text-sm font-semibold text-foreground">
             {lawyerName ?? "Avocat à confirmer"}
@@ -409,7 +551,7 @@ function LawyerPreparationCard({
                 href={contactHref}
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-gold-soft px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-gold"
               >
-                Contacter l'avocat <ExternalLink className="h-3.5 w-3.5" />
+                Contacter le contact source <ExternalLink className="h-3.5 w-3.5" />
               </a>
             ) : (
               <span className="inline-flex items-center justify-center rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-muted-foreground">
@@ -428,8 +570,8 @@ function LawyerPreparationCard({
         </div>
       </div>
       <p className="mt-3 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
-        Cette fiche met en avant les coordonnées disponibles, la source officielle et les pièces à
-        transmettre avant l'audience.
+        Cette fiche met en avant les coordonnées disponibles dans les sources officielles. La mise
+        en relation ImmoJudis utilise un annuaire séparé d'avocats référencés.
       </p>
     </div>
   );
@@ -462,15 +604,15 @@ function LawyerContactPanel({ sale }: { sale: AuctionSale }) {
         </div>
         <div className="rounded-md border border-border bg-muted/30 p-3">
           <div className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-            Action
+            Actions
           </div>
           <div className="mt-3 grid gap-2">
             {contactHref ? (
               <a
                 href={contactHref}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-gold-soft px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-gold"
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
               >
-                Contacter l'avocat <ExternalLink className="h-3.5 w-3.5" />
+                Contacter le contact source <ExternalLink className="h-3.5 w-3.5" />
               </a>
             ) : (
               <span className="inline-flex items-center justify-center rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-muted-foreground">
@@ -487,8 +629,8 @@ function LawyerContactPanel({ sale }: { sale: AuctionSale }) {
             </a>
           </div>
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            Vérifiez toujours les coordonnées dans l'annonce officielle ou auprès du greffe avant
-            tout envoi de pièces.
+            Les contacts source proviennent des annonces collectées. Les avocats référencés
+            ImmoJudis seront gérés dans un annuaire séparé.
           </p>
         </div>
       </div>
@@ -611,20 +753,14 @@ function ListingNeighborhoodCard({
   sale: AuctionSale;
   product: SaleProductSources;
 }) {
-  const hasLocation = sale.latitude != null && sale.longitude != null;
+  const lat = sale.latitude;
+  const lng = sale.longitude;
+  const hasLocation = lat != null && lng != null;
+  const mapHref = hasLocation ? openStreetMapUrl(lat, lng, 15) : "#details";
 
   return (
     <aside className="hidden overflow-hidden rounded-lg border border-border bg-white shadow-sm xl:block">
-      <a
-        href={
-          hasLocation
-            ? `https://www.google.com/maps?q=${sale.latitude},${sale.longitude}`
-            : "#details"
-        }
-        target={hasLocation ? "_blank" : undefined}
-        rel={hasLocation ? "noopener noreferrer" : undefined}
-        className="group block"
-      >
+      <div className="group block">
         <MapThumbnail
           lat={sale.latitude}
           lng={sale.longitude}
@@ -640,11 +776,25 @@ function ListingNeighborhoodCard({
           <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
             {product.addressLabel || product.subtitle}
           </p>
-          <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-gold-soft group-hover:text-gold">
-            Voir la carte <ChevronRight className="h-3 w-3" />
-          </span>
+          {hasLocation ? (
+            <a
+              href={mapHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex min-h-9 items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-gold-soft hover:text-gold"
+            >
+              Voir la carte <ChevronRight className="h-3 w-3" />
+            </a>
+          ) : (
+            <a
+              href="#details"
+              className="mt-2 inline-flex min-h-9 items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-gold-soft hover:text-gold"
+            >
+              Voir les détails <ChevronRight className="h-3 w-3" />
+            </a>
+          )}
         </div>
-      </a>
+      </div>
     </aside>
   );
 }
@@ -658,33 +808,44 @@ function RedfinTourCard({
   decision: DecisionSummary;
   acquisitionCost: AcquisitionCost;
 }) {
+  const actionHref = primaryActionHref(decision.action);
+  const actionLabel = primaryActionLabel(decision.action);
+
   return (
     <aside className="hidden rounded-lg border border-border bg-white p-4 shadow-sm lg:sticky lg:top-[7.25rem] lg:block">
-      <a
-        href="#lawyer"
-        className="flex w-full items-center justify-center rounded-full bg-gold-soft px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-gold"
-      >
-        Trouver un avocat
-      </a>
-      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-        Préparez l'audience avec un avocat et des consignes vérifiables.
+      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
+        Action prioritaire
+      </div>
+      <h2 className="mt-2 text-base font-semibold leading-tight text-foreground">
+        {decision.action}
+      </h2>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+        {decision.primaryCheck}. Validez ce point avant de fixer ou transmettre votre plafond.
       </p>
+      <a
+        href={actionHref}
+        className="mt-4 flex min-h-11 w-full items-center justify-center rounded-md bg-foreground px-4 py-3 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
+      >
+        {actionLabel}
+      </a>
       <a
         href="#offer-insights"
-        className="mt-4 flex w-full items-center justify-center rounded-full border border-foreground bg-white px-4 py-3 text-base font-semibold text-foreground transition-colors hover:border-gold hover:text-gold"
+        className="mt-2 flex min-h-11 w-full items-center justify-center rounded-md border border-border bg-white px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
       >
-        Préparer les consignes
+        Ajuster le plafond
       </a>
-      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-        Simuler l'enchère avant de transmettre un plafond.
-      </p>
+      <PropertyReportActions saleId={sale.id} compact />
+      <FeaturedLawyerPlacement saleId={sale.id} placementSlot="sale_detail_sticky_lawyer" />
+      <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
+        <SaleCountdown date={sale.sale_date} variant="block" />
+      </div>
       <Dialog>
         <DialogTrigger asChild>
           <button
             type="button"
-            className="mt-4 w-full cursor-pointer border-t border-border pt-4 text-left text-base font-semibold text-gold-soft transition-colors hover:text-gold"
+            className="mt-4 w-full cursor-pointer border-t border-border pt-4 text-left text-sm font-semibold text-gold-soft transition-colors hover:text-gold"
           >
-            Questions à poser
+            Questions à poser à l'avocat
           </button>
         </DialogTrigger>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
@@ -1200,62 +1361,6 @@ function averageKnownProductMetric(values: Array<number | null>): number | null 
   return Math.round(known.reduce((sum, value) => sum + value, 0) / known.length);
 }
 
-function RedfinComparableHomesBlock({
-  title,
-  items,
-  media = [],
-}: {
-  title: string;
-  items: ProductComparable[];
-  media?: SaleMedia[];
-}) {
-  if (items.length === 0) {
-    return (
-      <div className="rounded-lg border border-border bg-white p-5 text-sm text-muted-foreground shadow-sm">
-        Aucun comparable disponible pour {title.toLowerCase()}.
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map((item, index) => (
-        <article
-          key={`${item.title}-${index}`}
-          className="overflow-hidden rounded-lg border border-border bg-white shadow-sm"
-        >
-          <div className="relative aspect-[4/3] overflow-hidden bg-muted/50">
-            {media.length > 0 ? (
-              <img
-                src={media[index % media.length].url}
-                alt=""
-                className="h-full w-full object-cover"
-                loading="lazy"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="h-full w-full bg-muted/70" />
-            )}
-            <span className="absolute left-2 top-2 rounded bg-gold-soft px-2 py-1 text-[10px] font-semibold uppercase text-white">
-              {item.badge ?? "À proximité"}
-            </span>
-          </div>
-          <div className="p-3">
-            <div className="text-base font-semibold tabular-nums text-foreground">{item.price}</div>
-            <h3 className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
-              {item.title}
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground">{item.facts}</p>
-            {item.detail && (
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{item.detail}</p>
-            )}
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
 function RedfinPendingBlock({ sale, product }: { sale: AuctionSale; product: SaleProductSources }) {
   return (
     <div className="mb-5 rounded-lg border border-border bg-white p-5 shadow-sm">
@@ -1366,25 +1471,23 @@ function ListingActionBar({
   sale,
   title,
   decision,
-  acquisitionCost,
   location,
 }: {
   sale: AuctionSale;
   title: string;
   decision: DecisionSummary;
-  acquisitionCost: AcquisitionCost;
   location: string;
 }) {
-  const actionClass =
-    "inline-flex cursor-pointer items-center justify-center gap-1.5 px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-gold-soft";
+  const actionHref = primaryActionHref(decision.action);
+  const actionLabel = primaryActionLabel(decision.action);
 
   return (
     <nav className="sticky top-16 z-40 border-b border-border bg-white/95 backdrop-blur">
-      <div className="flex h-9 w-full items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+      <div className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-1.5 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
           <Link
             to="/sales"
-            className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-gold-soft hover:text-gold"
+            className="inline-flex min-h-11 shrink-0 items-center gap-1 text-[11px] font-semibold text-gold-soft hover:text-gold"
           >
             <ChevronRight className="h-3 w-3 rotate-180" />
             Retour
@@ -1400,46 +1503,17 @@ function ListingActionBar({
             {location || title}
           </span>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="hidden shrink-0 items-center gap-2 sm:flex">
+          <a
+            href={actionHref}
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-foreground px-3 py-1.5 text-xs font-semibold text-background transition-colors hover:bg-foreground/90"
+          >
+            {actionLabel}
+          </a>
           <FavoriteButton
             saleId={sale.id}
-            className="border-0 bg-transparent px-2 py-1 text-[11px] shadow-none"
+            className="min-h-11 border border-border bg-white px-3 py-1.5 text-xs shadow-none"
           />
-          <Dialog>
-            <DialogTrigger asChild>
-              <button type="button" aria-label="Comparer cette vente" className={actionClass}>
-                <Scale className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Comparer</span>
-              </button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Comparer cette vente</DialogTitle>
-                <DialogDescription>
-                  Les repères essentiels de cette fiche pour la comparaison.
-                </DialogDescription>
-              </DialogHeader>
-              <ComparisonBlock sale={sale} ceiling={decision.ceiling} cost={acquisitionCost} />
-            </DialogContent>
-          </Dialog>
-          <button
-            type="button"
-            aria-label="Imprimer ou enregistrer l'analyse"
-            onClick={printAnalysis}
-            className={actionClass}
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Imprimer</span>
-          </button>
-          <button
-            type="button"
-            aria-label="Partager cette vente"
-            onClick={() => void shareCurrentPage(title)}
-            className={actionClass}
-          >
-            <Share2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Partager</span>
-          </button>
         </div>
       </div>
     </nav>
@@ -1793,37 +1867,51 @@ function SaleMediaGallery({
   const featured = media[0];
   const thumbnails = media.slice(1, 7);
   const source = featured.source ?? media.find((item) => item.source)?.source;
-  const mapLinks = saleGoogleMapLinks(sale, location);
+  const mapLocation = saleGoogleMapsLocation(sale);
+  const mapDescription =
+    location || [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
+  const thumbnailGridClass =
+    thumbnails.length <= 1
+      ? "hidden h-full grid-cols-1 gap-1 md:grid"
+      : thumbnails.length === 2
+        ? "hidden h-full grid-cols-2 gap-1 md:grid"
+        : thumbnails.length === 3
+          ? "hidden h-full grid-cols-3 gap-1 md:grid"
+          : "hidden h-full grid-cols-3 grid-rows-2 gap-1 md:grid";
 
   return (
     <section className="relative mt-3 overflow-hidden rounded-md border border-border bg-muted shadow-sm md:h-[clamp(360px,29vw,548px)]">
-      <div className="absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-7.5rem)] flex-wrap gap-2 sm:max-w-none">
-        <a
-          href={mapLinks.aerial3d}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Ouvrir la vue 3D aérienne dans Google Maps"
-          className="inline-flex min-h-9 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
-        >
-          <Camera className="h-3.5 w-3.5" />
-          Vue 3D
-        </a>
-        <a
-          href={mapLinks.streetView}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Ouvrir Street View dans Google Maps"
-          className="inline-flex min-h-9 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
-        >
-          <MapPin className="h-3.5 w-3.5" />
-          Street View
-        </a>
-      </div>
+      {mapLocation && (
+        <div className="absolute left-3 top-3 z-20 flex max-w-[calc(100%-7.5rem)] flex-col items-start gap-2 sm:max-w-none md:bottom-3 md:top-auto md:flex-row md:flex-wrap">
+          <GoogleMapsPreviewButton
+            mode="aerial3d"
+            lat={mapLocation.lat}
+            lng={mapLocation.lng}
+            label="Vue 3D"
+            title="Vue 3D Google Maps"
+            description={mapDescription || "Adresse de l'annonce"}
+            ariaLabel="Afficher la vue 3D Google Maps de l'annonce"
+            icon={Rotate3D}
+            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          />
+          <GoogleMapsPreviewButton
+            mode="streetView"
+            lat={mapLocation.lat}
+            lng={mapLocation.lng}
+            label="Street View"
+            title="Street View Google Maps"
+            description={mapDescription || "Adresse de l'annonce"}
+            ariaLabel="Afficher Street View Google Maps pour l'annonce"
+            icon={MapPin}
+            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          />
+        </div>
+      )}
       <a
         href={featured.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-2 rounded-md border border-white/70 bg-white px-3 py-2 text-xs font-semibold text-foreground shadow-sm transition-colors hover:bg-white/90"
+        className="absolute bottom-3 right-3 z-10 inline-flex min-h-11 items-center gap-2 rounded-md border border-white/70 bg-white px-3 py-2 text-xs font-semibold text-foreground shadow-sm transition-colors hover:bg-white/90"
       >
         {media.length} photo{media.length > 1 ? "s" : ""} <Camera className="h-3.5 w-3.5" />
       </a>
@@ -1832,18 +1920,33 @@ function SaleMediaGallery({
           Source · {source}
         </span>
       )}
+      <div className="flex h-[22rem] snap-x snap-mandatory overflow-x-auto bg-white [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
+        {media.map((item, index) => (
+          <SaleMediaImage
+            key={`${item.url}-${index}`}
+            media={item}
+            featured={index === 0}
+            alt={index === 0 ? "Photo principale du bien" : `Photo ${index + 1} du bien`}
+            className="h-full min-w-full shrink-0 snap-center"
+          />
+        ))}
+      </div>
       <div
         className={
           thumbnails.length > 0
-            ? "grid h-full gap-1 bg-white md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
-            : "h-full bg-white"
+            ? "hidden h-full gap-1 bg-white md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+            : "hidden h-full bg-white md:block"
         }
       >
-        <SaleMediaImage media={featured} featured />
+        <SaleMediaImage media={featured} featured alt="Photo principale du bien" />
         {thumbnails.length > 0 && (
-          <div className="hidden h-full grid-cols-3 grid-rows-2 gap-1 md:grid">
+          <div className={thumbnailGridClass}>
             {thumbnails.map((item, index) => (
-              <SaleMediaImage key={`${item.url}-${index}`} media={item} />
+              <SaleMediaImage
+                key={`${item.url}-${index}`}
+                media={item}
+                alt={`Photo ${index + 2} du bien`}
+              />
             ))}
           </div>
         )}
@@ -1852,41 +1955,37 @@ function SaleMediaGallery({
   );
 }
 
-function saleGoogleMapLinks(
-  sale: AuctionSale,
-  location: string,
-): { aerial3d: string; streetView: string } {
+function saleGoogleMapsLocation(sale: AuctionSale): { lat: number; lng: number } | null {
   if (sale.latitude != null && sale.longitude != null) {
-    return {
-      aerial3d: googleMapsAerial3dUrl(sale.latitude, sale.longitude),
-      streetView: googleMapsStreetViewUrl(sale.latitude, sale.longitude),
-    };
+    return { lat: sale.latitude, lng: sale.longitude };
   }
-
-  const query =
-    location ||
-    [sale.address, sale.postal_code, sale.city, sale.department].filter(Boolean).join(", ") ||
-    sale.title ||
-    "France";
-  const fallback = googleMapsQueryUrl(query);
-  return { aerial3d: fallback, streetView: fallback };
+  return null;
 }
 
-function SaleMediaImage({ media, featured = false }: { media: SaleMedia; featured?: boolean }) {
+function SaleMediaImage({
+  media,
+  featured = false,
+  alt,
+  className,
+}: {
+  media: SaleMedia;
+  featured?: boolean;
+  alt: string;
+  className?: string;
+}) {
   return (
     <a
       href={media.url}
       target="_blank"
       rel="noopener noreferrer"
-      className={
-        featured
-          ? "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted md:h-full md:aspect-auto"
-          : "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted md:h-full md:aspect-auto"
-      }
+      className={cn(
+        "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted md:h-full md:aspect-auto",
+        className,
+      )}
     >
       <img
         src={media.url}
-        alt="Photo du bien"
+        alt={alt}
         loading={featured ? "eager" : "lazy"}
         decoding="async"
         referrerPolicy="no-referrer"
@@ -2266,16 +2365,96 @@ function VerificationPoints({
 }
 
 function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
+  const { user, loading } = useAuth();
+  const queryClient = useQueryClient();
+  const canSyncWorkspace = Boolean(user) && isUuid(sale.id);
   const richDocs = sale.documents_rich ?? [];
-  const [state, setState] = useLocalState<{
-    notes: Record<string, string>;
-    readPages: Record<string, boolean>;
-    highlighted: string | null;
-  }>(saleStorageKey(sale.id, "documents-workspace"), {
-    notes: {},
-    readPages: {},
-    highlighted: null,
+  const [state, setState] = useLocalState<DocumentWorkspaceState>(
+    saleStorageKey(sale.id, "documents-workspace"),
+    {
+      notes: {},
+      readPages: {},
+      highlighted: null,
+      reviews: {},
+    },
+  );
+  const [remoteHydrated, setRemoteHydrated] = useState(false);
+  const [savingWorkspace, setSavingWorkspace] = useState(false);
+  const workspaceQuery = useQuery({
+    queryKey: ["sale-workspace", sale.id],
+    queryFn: () => fetchSaleWorkspace({ saleId: sale.id }),
+    enabled: canSyncWorkspace,
+    staleTime: 30_000,
   });
+
+  useEffect(() => {
+    const remoteReviews = workspaceQuery.data?.workspace?.document_reviews;
+    if (remoteHydrated || !remoteReviews) return;
+    setState((current) =>
+      hasDocumentWorkspaceState(current)
+        ? current
+        : hydrateDocumentReviewState(current, remoteReviews),
+    );
+    setRemoteHydrated(true);
+  }, [remoteHydrated, setState, workspaceQuery.data?.workspace?.document_reviews]);
+
+  async function syncDocumentReviews() {
+    if (loading) return;
+    if (!user) {
+      toast.error("Connectez-vous pour synchroniser les annotations");
+      return;
+    }
+    if (!isUuid(sale.id)) {
+      toast.error("Ce dossier d'exemple ne peut pas être synchronisé");
+      return;
+    }
+
+    setSavingWorkspace(true);
+    try {
+      await saveSaleWorkspace({
+        data: {
+          saleId: sale.id,
+          documentReviews: buildSaleDocumentReviews(sale, state),
+        },
+      });
+      await queryClient.invalidateQueries({ queryKey: ["sale-workspace", sale.id] });
+      toast.success("Annotations synchronisées");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Synchronisation impossible");
+    } finally {
+      setSavingWorkspace(false);
+    }
+  }
+
+  function updateReview(
+    key: string,
+    metadata: DocumentReviewMetadata,
+    patch: Partial<SaleWorkspaceDocumentReview>,
+  ) {
+    setState((current) => updateDocumentWorkspaceReview(current, key, metadata, patch));
+  }
+
+  const reviewedCount = countReviewedDocuments(state.reviews);
+  const reviewCount = Object.keys(state.reviews).length;
+  const actionClass =
+    "inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft";
+  const syncFooter = (
+    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+      <span className="text-xs text-muted-foreground">
+        {reviewedCount}/{Math.max(reviewCount, countDocuments(sale))} pièce
+        {Math.max(reviewCount, countDocuments(sale)) > 1 ? "s" : ""} relue
+        {reviewedCount > 1 ? "s" : ""}
+      </span>
+      <button
+        type="button"
+        onClick={() => void syncDocumentReviews()}
+        disabled={savingWorkspace || loading}
+        className="inline-flex items-center gap-2 rounded-md bg-foreground px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-background hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {savingWorkspace ? "Synchronisation..." : "Synchroniser les annotations"}
+      </button>
+    </div>
+  );
 
   if (richDocs.length === 0) {
     const basicDocs = parseDocs(sale.documents);
@@ -2287,15 +2466,18 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
       );
     }
 
-    const actionClass =
-      "inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft";
-
     return (
       <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
         <ul className="divide-y divide-border/60">
           {basicDocs.map((document, index) => {
             const key = `${document.type ?? "document"}:${document.name ?? document.url}`;
             const name = document.name ?? document.url.split("/").pop() ?? `Pièce ${index + 1}`;
+            const metadata = {
+              documentLabel: name,
+              documentType: document.type ?? null,
+              documentUrl: document.url,
+            };
+            const review = enrichDocumentReview(state.reviews[key], metadata);
             return (
               <li
                 key={`${document.url}-${index}`}
@@ -2307,7 +2489,9 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                       <FileCheck2 className="h-4 w-4" />
                       {documentTypeLabel(document.type)}
                     </div>
-                    <span className="text-xs text-muted-foreground">Disponible</span>
+                    <span className="text-xs text-muted-foreground">
+                      {DOCUMENT_REVIEW_STATUS_LABELS[review.status]}
+                    </span>
                   </div>
                   <h3 className="mt-2 truncate text-base font-semibold text-foreground">{name}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -2326,12 +2510,7 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                     </a>
                     <DialogTrigger asChild>
                       <button type="button" className={actionClass}>
-                        Résumé
-                      </button>
-                    </DialogTrigger>
-                    <DialogTrigger asChild>
-                      <button type="button" className={actionClass}>
-                        Note
+                        Résumer et annoter
                       </button>
                     </DialogTrigger>
                   </div>
@@ -2351,21 +2530,65 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                         particuliers.
                       </p>
                     </div>
+                    <div className="grid gap-3 rounded-md border border-border bg-white p-3 sm:grid-cols-[1fr_auto]">
+                      <label className="block">
+                        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          État
+                        </span>
+                        <select
+                          value={review.status}
+                          onChange={(event) =>
+                            updateReview(key, metadata, {
+                              status: event.target.value as SaleWorkspaceDocumentReviewStatus,
+                            })
+                          }
+                          className="form-input mt-1 h-10 w-full bg-white text-sm"
+                        >
+                          {Object.entries(DOCUMENT_REVIEW_STATUS_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="inline-flex items-center gap-2 self-end text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={review.priority}
+                          onChange={(event) =>
+                            updateReview(key, metadata, { priority: event.target.checked })
+                          }
+                          className="h-4 w-4 accent-[var(--gold)]"
+                        />
+                        Prioritaire
+                      </label>
+                    </div>
                     <label className="block rounded-md border border-border bg-white p-3">
                       <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                         Note personnelle
                       </span>
                       <textarea
                         rows={4}
-                        value={state.notes[key] ?? ""}
+                        value={review.note || state.notes[key] || ""}
                         onChange={(event) =>
-                          setState((current) => ({
-                            ...current,
-                            notes: { ...current.notes, [key]: event.target.value },
-                          }))
+                          updateReview(key, metadata, { note: event.target.value })
                         }
                         className="mt-2 w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                         placeholder="Point à demander à l'avocat..."
+                      />
+                    </label>
+                    <label className="block rounded-md border border-border bg-white p-3">
+                      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Question à lever
+                      </span>
+                      <textarea
+                        rows={3}
+                        value={review.question}
+                        onChange={(event) =>
+                          updateReview(key, metadata, { question: event.target.value })
+                        }
+                        className="mt-2 w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                        placeholder="Question pour l'avocat ou le greffe..."
                       />
                     </label>
                   </DialogContent>
@@ -2374,6 +2597,7 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
             );
           })}
         </ul>
+        {syncFooter}
       </div>
     );
   }
@@ -2385,13 +2609,17 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
           const pages = documentPagesToReview(sale, document);
           const key = documentKey(document);
           const occurrences = documentOccurrences(sale, document);
+          const name = document.label ?? document.url.split("/").pop() ?? `Pièce ${index + 1}`;
+          const metadata = {
+            documentLabel: name,
+            documentType: document.document_type ?? document.type ?? null,
+            documentUrl: document.url,
+          };
+          const review = enrichDocumentReview(state.reviews[key], metadata);
           const readCount = Object.keys(state.readPages).filter((pageKey) =>
             pageKey.startsWith(`${key}:`),
           ).length;
-          const name = document.label ?? document.url.split("/").pop() ?? `Pièce ${index + 1}`;
           const canEmbedDocument = isEmbeddableDocumentUrl(document.url);
-          const actionClass =
-            "inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft";
 
           return (
             <li
@@ -2404,7 +2632,9 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                     <FileCheck2 className="h-4 w-4" />
                     {documentTypeLabel(document.document_type ?? document.type)}
                   </div>
-                  <span className="text-xs text-muted-foreground">Disponible</span>
+                  <span className="text-xs text-muted-foreground">
+                    {DOCUMENT_REVIEW_STATUS_LABELS[review.status]}
+                  </span>
                 </div>
                 <h3 className="mt-2 truncate text-base font-semibold text-foreground">{name}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -2420,18 +2650,8 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                 <div className="flex flex-wrap gap-2 lg:justify-end">
                   <DialogTrigger asChild>
                     <button type="button" className={actionClass}>
-                      {canEmbedDocument ? "Ouvrir" : "Analyser"}{" "}
+                      {canEmbedDocument ? "Lire et annoter" : "Analyser la source"}{" "}
                       <ExternalLink className="h-3.5 w-3.5" />
-                    </button>
-                  </DialogTrigger>
-                  <DialogTrigger asChild>
-                    <button type="button" className={actionClass}>
-                      Résumé
-                    </button>
-                  </DialogTrigger>
-                  <DialogTrigger asChild>
-                    <button type="button" className={actionClass}>
-                      Note
                     </button>
                   </DialogTrigger>
                 </div>
@@ -2490,21 +2710,65 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                           </p>
                         )}
                       </div>
+                      <div className="grid gap-3 rounded-md border border-border bg-white p-3 sm:grid-cols-[1fr_auto]">
+                        <label className="block">
+                          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                            État
+                          </span>
+                          <select
+                            value={review.status}
+                            onChange={(event) =>
+                              updateReview(key, metadata, {
+                                status: event.target.value as SaleWorkspaceDocumentReviewStatus,
+                              })
+                            }
+                            className="form-input mt-1 h-10 w-full bg-white text-sm"
+                          >
+                            {Object.entries(DOCUMENT_REVIEW_STATUS_LABELS).map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="inline-flex items-center gap-2 self-end text-xs text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={review.priority}
+                            onChange={(event) =>
+                              updateReview(key, metadata, { priority: event.target.checked })
+                            }
+                            className="h-4 w-4 accent-[var(--gold)]"
+                          />
+                          Prioritaire
+                        </label>
+                      </div>
                       <label className="block rounded-md border border-border bg-white p-3">
                         <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                           Note personnelle
                         </span>
                         <textarea
                           rows={4}
-                          value={state.notes[key] ?? ""}
+                          value={review.note || state.notes[key] || ""}
                           onChange={(event) =>
-                            setState((current) => ({
-                              ...current,
-                              notes: { ...current.notes, [key]: event.target.value },
-                            }))
+                            updateReview(key, metadata, { note: event.target.value })
                           }
                           className="mt-2 w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                           placeholder="Point à demander à l'avocat..."
+                        />
+                      </label>
+                      <label className="block rounded-md border border-border bg-white p-3">
+                        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          Question à lever
+                        </span>
+                        <textarea
+                          rows={3}
+                          value={review.question}
+                          onChange={(event) =>
+                            updateReview(key, metadata, { question: event.target.value })
+                          }
+                          className="mt-2 w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                          placeholder="Question pour l'avocat ou le greffe..."
                         />
                       </label>
                       <div className="space-y-3">
@@ -2530,13 +2794,16 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                                       type="checkbox"
                                       checked={Boolean(state.readPages[pageKey])}
                                       onChange={(event) =>
-                                        setState((current) => ({
-                                          ...current,
+                                        updateReview(key, metadata, {
+                                          status:
+                                            event.target.checked && review.status === "todo"
+                                              ? "reviewing"
+                                              : review.status,
                                           readPages: {
-                                            ...current.readPages,
+                                            ...review.readPages,
                                             [pageKey]: event.target.checked,
                                           },
-                                        }))
+                                        })
                                       }
                                       className="h-4 w-4 accent-[var(--gold)]"
                                     />
@@ -2548,15 +2815,17 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                                 </p>
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setState((current) => ({
-                                      ...current,
-                                      highlighted:
+                                  onClick={() => {
+                                    setState((current) => {
+                                      const highlightedExcerpt =
                                         current.highlighted === occurrence.excerpt
                                           ? null
-                                          : occurrence.excerpt,
-                                    }))
-                                  }
+                                          : (occurrence.excerpt ?? null);
+                                      return updateDocumentWorkspaceReview(current, key, metadata, {
+                                        highlightedExcerpt,
+                                      });
+                                    });
+                                  }}
                                   className="mt-3 cursor-pointer text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft hover:text-gold"
                                 >
                                   Surligner l'élément sensible
@@ -2578,6 +2847,7 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
           );
         })}
       </ul>
+      {syncFooter}
     </div>
   );
 }
@@ -2628,82 +2898,12 @@ function PreparationBeforeHearing({ sale }: { sale: AuctionSale }) {
           <DialogHeader>
             <DialogTitle>Checklist avant audience</DialogTitle>
             <DialogDescription>
-              Statuts de préparation enregistrés sur ce navigateur.
+              Checklist, statut et rappels synchronisables dans votre dossier.
             </DialogDescription>
           </DialogHeader>
-          <HearingChecklist sale={sale} />
+          <SaleAlertsBlock sale={sale} />
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function HearingChecklist({ sale }: { sale: AuctionSale }) {
-  const hasDocuments = countDocuments(sale) > 0;
-  const unknownOccupation = isUnknownOccupation(sale.occupancy_status);
-  const [statuses, setStatuses] = useLocalState<Record<string, string>>(
-    saleStorageKey(sale.id, "hearing-checklist"),
-    {},
-  );
-  const items = [
-    ["Mandater un avocat", "À faire"],
-    ["Valider le financement", "À faire"],
-    ["Préparer la consignation", "À faire"],
-    [
-      "Relire le cahier des conditions de vente",
-      hasDocumentType(sale, /cahier|conditions/) ? "En cours" : "À faire",
-    ],
-    [
-      "Relire le PV descriptif",
-      hasDocumentType(sale, /pv|descriptif|huissier/) ? "En cours" : "À faire",
-    ],
-    ["Vérifier l'occupation", unknownOccupation ? "À faire confirmer" : "En cours"],
-    ["Estimer les travaux", hasWorksRisk(sale) ? "À faire" : "En cours"],
-    ["Définir son plafond d'enchère", "En cours"],
-    ["Transmettre les consignes à l'avocat", "À faire"],
-    ["Prévoir les frais annexes", "En cours"],
-    ["Vérifier le délai de surenchère", hasDocuments ? "À faire relire" : "À faire"],
-    ["Préparer le scénario post-adjudication", "À faire"],
-  ] as const;
-
-  return (
-    <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-      <ul className="grid gap-3 md:grid-cols-2">
-        {items.map(([label, status]) => (
-          <li
-            key={label}
-            className="grid gap-3 rounded-md border border-border bg-muted/30 p-3 sm:grid-cols-[1fr_auto] sm:items-center"
-          >
-            <div className="flex items-start gap-3">
-              <ClipboardCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" />
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-foreground">{label}</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Statut recommandé : {status}
-                </div>
-              </div>
-            </div>
-            <label className="block">
-              <span className="sr-only">Statut de {label}</span>
-              <select
-                value={statuses[label] ?? status}
-                onChange={(event) =>
-                  setStatuses((current) => ({ ...current, [label]: event.target.value }))
-                }
-                className="w-full rounded-md border border-border bg-white px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-ring sm:w-36"
-              >
-                {["À faire", "En cours", "À faire confirmer", "À faire relire", "Terminé"].map(
-                  (item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ),
-                )}
-              </select>
-            </label>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
@@ -2761,6 +2961,18 @@ type StoredNotes = {
   privateMode: boolean;
 };
 
+type DocumentWorkspaceState = {
+  notes: Record<string, string>;
+  readPages: Record<string, boolean>;
+  highlighted: string | null;
+  reviews: SaleWorkspaceDocumentReviews;
+};
+
+type DocumentReviewMetadata = Pick<
+  SaleWorkspaceDocumentReview,
+  "documentLabel" | "documentType" | "documentUrl"
+>;
+
 type LocalStateSetter<T> = (next: T | ((current: T) => T)) => void;
 
 function useLocalState<T>(key: string, initialValue: T): [T, LocalStateSetter<T>] {
@@ -2811,6 +3023,167 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function saleStorageKey(saleId: string, scope: string): string {
   return `immojudis:sale:${saleId}:${scope}`;
+}
+
+function hasStoredNotes(notes: StoredNotes): boolean {
+  return Boolean(
+    notes.general.trim() || notes.occupation.trim() || notes.works.trim() || notes.market.trim(),
+  );
+}
+
+function hasSelectedRecord(values: Record<string, boolean>): boolean {
+  return Object.values(values).some(Boolean);
+}
+
+function hasDocumentWorkspaceState(state: DocumentWorkspaceState): boolean {
+  return Boolean(
+    Object.keys(state.reviews).length ||
+    Object.values(state.notes).some((note) => note.trim()) ||
+    Object.values(state.readPages).some(Boolean) ||
+    state.highlighted,
+  );
+}
+
+function hydrateDocumentReviewState(
+  current: DocumentWorkspaceState,
+  reviews: SaleWorkspaceDocumentReviews,
+): DocumentWorkspaceState {
+  const notes = { ...current.notes };
+  const readPages = { ...current.readPages };
+  let highlighted = current.highlighted;
+
+  Object.entries(reviews).forEach(([key, review]) => {
+    if (review.note && !notes[key]) notes[key] = review.note;
+    Object.assign(readPages, review.readPages);
+    if (!highlighted && review.highlightedExcerpt) highlighted = review.highlightedExcerpt;
+  });
+
+  return {
+    ...current,
+    notes,
+    readPages,
+    highlighted,
+    reviews,
+  };
+}
+
+function enrichDocumentReview(
+  review: SaleWorkspaceDocumentReview | undefined,
+  metadata: DocumentReviewMetadata,
+): SaleWorkspaceDocumentReview {
+  return {
+    ...DEFAULT_DOCUMENT_REVIEW,
+    ...review,
+    ...metadata,
+    readPages: {
+      ...DEFAULT_DOCUMENT_REVIEW.readPages,
+      ...(review?.readPages ?? {}),
+    },
+  };
+}
+
+function updateDocumentWorkspaceReview(
+  current: DocumentWorkspaceState,
+  key: string,
+  metadata: DocumentReviewMetadata,
+  patch: Partial<SaleWorkspaceDocumentReview>,
+): DocumentWorkspaceState {
+  const previous = enrichDocumentReview(current.reviews[key], metadata);
+  const status = patch.status ?? previous.status;
+  const reviewedAt =
+    patch.reviewedAt !== undefined
+      ? patch.reviewedAt
+      : status === "reviewed"
+        ? (previous.reviewedAt ?? new Date().toISOString())
+        : previous.reviewedAt;
+  const nextReview: SaleWorkspaceDocumentReview = {
+    ...previous,
+    ...patch,
+    ...metadata,
+    status,
+    reviewedAt,
+    readPages: {
+      ...previous.readPages,
+      ...(patch.readPages ?? {}),
+    },
+  };
+
+  return {
+    notes:
+      patch.note !== undefined
+        ? {
+            ...current.notes,
+            [key]: patch.note,
+          }
+        : current.notes,
+    readPages: patch.readPages ? { ...current.readPages, ...patch.readPages } : current.readPages,
+    highlighted:
+      patch.highlightedExcerpt !== undefined ? patch.highlightedExcerpt : current.highlighted,
+    reviews: {
+      ...current.reviews,
+      [key]: nextReview,
+    },
+  };
+}
+
+function buildSaleDocumentReviews(
+  sale: AuctionSale,
+  state: DocumentWorkspaceState,
+): SaleWorkspaceDocumentReviews {
+  const reviews: SaleWorkspaceDocumentReviews = { ...state.reviews };
+  const mergeReview = (key: string, metadata: DocumentReviewMetadata) => {
+    const existing = enrichDocumentReview(reviews[key], metadata);
+    reviews[key] = {
+      ...existing,
+      note: state.notes[key] ?? existing.note,
+      readPages: {
+        ...existing.readPages,
+        ...documentReadPagesForKey(state.readPages, key),
+      },
+    };
+  };
+
+  const richDocs = sale.documents_rich ?? [];
+  if (richDocs.length) {
+    richDocs.forEach((document, index) => {
+      const name = document.label ?? document.url.split("/").pop() ?? `Pièce ${index + 1}`;
+      mergeReview(documentKey(document), {
+        documentLabel: name,
+        documentType: document.document_type ?? document.type ?? null,
+        documentUrl: document.url,
+      });
+    });
+    return reviews;
+  }
+
+  parseDocs(sale.documents).forEach((document, index) => {
+    const name = document.name ?? document.url.split("/").pop() ?? `Pièce ${index + 1}`;
+    mergeReview(`${document.type ?? "document"}:${document.name ?? document.url}`, {
+      documentLabel: name,
+      documentType: document.type ?? null,
+      documentUrl: document.url,
+    });
+  });
+
+  return reviews;
+}
+
+function documentReadPagesForKey(
+  readPages: Record<string, boolean>,
+  documentKeyValue: string,
+): Record<string, boolean> {
+  return Object.fromEntries(
+    Object.entries(readPages).filter(([pageKey]) => pageKey.startsWith(`${documentKeyValue}:`)),
+  );
+}
+
+function countReviewedDocuments(reviews: SaleWorkspaceDocumentReviews): number {
+  return Object.values(reviews).filter((review) => review.status === "reviewed").length;
+}
+
+function parsePositiveNumber(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function signedAmount(value: number): string {
@@ -3131,6 +3504,10 @@ function MarketLocalSection({
     surface: "surface proche",
   });
   const transactions = marketEstimate?.recentTransactions ?? [];
+  const lat = sale.latitude;
+  const lng = sale.longitude;
+  const hasLocation = lat != null && lng != null;
+  const mapHref = hasLocation ? openStreetMapUrl(lat, lng, 16) : null;
   const excluded = marketEstimate
     ? Math.max(0, marketEstimate.totalNearbySampleSize - marketEstimate.sampleSize)
     : 0;
@@ -3168,7 +3545,7 @@ function MarketLocalSection({
       <dl className="grid gap-3 text-sm md:grid-cols-2">
         <CostRow label="Référence retenue" value={referenceValue} strong />
         <CostRow label="Fourchette observée" value={range} />
-        <CostRow label="Comparables retenus" value={sampleValue} />
+        <CostRow label="Transactions DVF retenues" value={sampleValue} />
         <CostRow
           label="Méthode"
           value="Ventes proches, surfaces similaires, biens atypiques exclus"
@@ -3180,12 +3557,12 @@ function MarketLocalSection({
             type="button"
             className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
           >
-            Voir les comparables <ChevronRight className="h-3.5 w-3.5" />
+            Voir les transactions DVF <ChevronRight className="h-3.5 w-3.5" />
           </button>
         </DialogTrigger>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
           <DialogHeader>
-            <DialogTitle>Comparables du marché local</DialogTitle>
+            <DialogTitle>Transactions DVF du marché local</DialogTitle>
             <DialogDescription>{dialogDescription}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-3">
@@ -3216,16 +3593,16 @@ function MarketLocalSection({
           <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
             <div className="rounded-lg border border-border bg-muted/30 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                Carte des comparables
+                Carte du secteur
               </div>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                {sale.latitude != null && sale.longitude != null
+                {hasLocation
                   ? "Ouvrir la carte pour inspecter le secteur autour de l'adresse."
                   : "Coordonnées manquantes : carte indisponible pour ce dossier."}
               </p>
-              {sale.latitude != null && sale.longitude != null && (
+              {mapHref && (
                 <a
-                  href={`https://www.google.com/maps?q=${sale.latitude},${sale.longitude}`}
+                  href={mapHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft hover:text-gold"
@@ -3269,7 +3646,7 @@ function MarketLocalSection({
                           ? "Lecture des transactions DVF en cours."
                           : marketError
                             ? "Estimation DVF temporairement indisponible."
-                            : "Les comparables détaillés apparaîtront quand l'estimation DVF sera disponible."}
+                            : "Les transactions DVF détaillées apparaîtront quand l'estimation DVF sera disponible."}
                       </td>
                     </tr>
                   )}
@@ -3382,6 +3759,9 @@ function DossierAssistant({
 }
 
 function NotesAndSharingBlock({ sale }: { sale: AuctionSale }) {
+  const { user, loading } = useAuth();
+  const queryClient = useQueryClient();
+  const canSyncWorkspace = Boolean(user) && isUuid(sale.id);
   const [notes, setNotes] = useLocalState<StoredNotes>(saleStorageKey(sale.id, "notes"), {
     general: "",
     occupation: "",
@@ -3389,7 +3769,68 @@ function NotesAndSharingBlock({ sale }: { sale: AuctionSale }) {
     market: "",
     privateMode: true,
   });
+  const [remoteHydrated, setRemoteHydrated] = useState(false);
+  const [savingWorkspace, setSavingWorkspace] = useState(false);
+  const workspaceQuery = useQuery({
+    queryKey: ["sale-workspace", sale.id],
+    queryFn: () => fetchSaleWorkspace({ saleId: sale.id }),
+    enabled: canSyncWorkspace,
+    staleTime: 30_000,
+  });
   const inviteText = `Peux-tu vérifier ce dossier Immojudis ? ${sale.title ?? "Vente judiciaire"} - ${typeof window !== "undefined" ? window.location.href : ""}`;
+
+  useEffect(() => {
+    const remoteNotes = workspaceQuery.data?.workspace?.private_notes;
+    if (remoteHydrated || !remoteNotes) return;
+    setNotes((current) =>
+      hasStoredNotes(current)
+        ? current
+        : {
+            ...current,
+            general: remoteNotes.general,
+            occupation: remoteNotes.occupation,
+            works: remoteNotes.works,
+            market: remoteNotes.market,
+            privateMode: remoteNotes.privateMode,
+          },
+    );
+    setRemoteHydrated(true);
+  }, [remoteHydrated, setNotes, workspaceQuery.data?.workspace?.private_notes]);
+
+  async function syncNotes() {
+    if (loading) return;
+    if (!user) {
+      toast.error("Connectez-vous pour synchroniser ce dossier");
+      return;
+    }
+    if (!isUuid(sale.id)) {
+      toast.error("Ce dossier d'exemple ne peut pas être synchronisé");
+      return;
+    }
+
+    setSavingWorkspace(true);
+    try {
+      await saveSaleWorkspace({
+        data: {
+          saleId: sale.id,
+          trackingStatus: "reviewing",
+          privateNotes: {
+            general: notes.general,
+            occupation: notes.occupation,
+            works: notes.works,
+            market: notes.market,
+            privateMode: notes.privateMode,
+          },
+        },
+      });
+      await queryClient.invalidateQueries({ queryKey: ["sale-workspace", sale.id] });
+      toast.success("Notes synchronisées");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Synchronisation impossible");
+    } finally {
+      setSavingWorkspace(false);
+    }
+  }
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
@@ -3439,14 +3880,21 @@ function NotesAndSharingBlock({ sale }: { sale: AuctionSale }) {
         >
           Exporter les notes <Download className="h-3.5 w-3.5" />
         </button>
+        <button
+          type="button"
+          onClick={() => void syncNotes()}
+          disabled={savingWorkspace || loading}
+          className="ml-2 mt-4 inline-flex items-center gap-2 rounded-md bg-foreground px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-background hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {savingWorkspace ? "Synchronisation..." : "Synchroniser"}
+        </button>
       </div>
       <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
           Partage privé
         </div>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Préparez un message à transmettre à un avocat, associé, artisan ou courtier. Les notes
-          restent stockées dans ce navigateur.
+          Préparez un message à transmettre à un avocat, associé, artisan ou courtier.
         </p>
         <div className="mt-4 grid gap-2">
           {[
@@ -3500,6 +3948,9 @@ function NoteField({
 }
 
 function SaleAlertsBlock({ sale }: { sale: AuctionSale }) {
+  const { user, loading } = useAuth();
+  const queryClient = useQueryClient();
+  const canSyncWorkspace = Boolean(user) && isUuid(sale.id);
   const alertOptions = [
     "Rappel avant audience",
     "Rappel contact avocat",
@@ -3515,10 +3966,158 @@ function SaleAlertsBlock({ sale }: { sale: AuctionSale }) {
     saleStorageKey(sale.id, "sale-alerts"),
     {},
   );
+  const [checklist, setChecklist] = useLocalState<Record<string, boolean>>(
+    saleStorageKey(sale.id, "sale-checklist"),
+    {},
+  );
+  const [trackingStatus, setTrackingStatus] = useLocalState<SaleWorkspaceStatus>(
+    saleStorageKey(sale.id, "tracking-status"),
+    "watching",
+  );
+  const [userMaxBid, setUserMaxBid] = useLocalState<string>(
+    saleStorageKey(sale.id, "user-max-bid"),
+    "",
+  );
+  const [nextAction, setNextAction] = useLocalState<string>(
+    saleStorageKey(sale.id, "next-action"),
+    "",
+  );
+  const [remoteHydrated, setRemoteHydrated] = useState(false);
+  const [savingWorkspace, setSavingWorkspace] = useState(false);
+  const workspaceQuery = useQuery({
+    queryKey: ["sale-workspace", sale.id],
+    queryFn: () => fetchSaleWorkspace({ saleId: sale.id }),
+    enabled: canSyncWorkspace,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    const workspace = workspaceQuery.data?.workspace;
+    if (remoteHydrated || !workspace) return;
+    setAlerts((current) =>
+      hasSelectedRecord(current) ? current : { ...current, ...workspace.alert_preferences },
+    );
+    setChecklist((current) =>
+      hasSelectedRecord(current) ? current : { ...current, ...workspace.checklist },
+    );
+    setTrackingStatus(workspace.tracking_status);
+    setUserMaxBid(
+      workspace.user_max_bid_eur == null ? "" : String(Math.round(workspace.user_max_bid_eur)),
+    );
+    setNextAction(workspace.next_action ?? "");
+    setRemoteHydrated(true);
+  }, [
+    remoteHydrated,
+    setAlerts,
+    setChecklist,
+    setNextAction,
+    setTrackingStatus,
+    setUserMaxBid,
+    workspaceQuery.data?.workspace,
+  ]);
+
+  const selectedChecklistCount = DEFAULT_SALE_CHECKLIST.filter((item) => checklist[item]).length;
+
+  async function syncWorkspace() {
+    if (loading) return;
+    if (!user) {
+      toast.error("Connectez-vous pour synchroniser ce dossier");
+      return;
+    }
+    if (!isUuid(sale.id)) {
+      toast.error("Ce dossier d'exemple ne peut pas être synchronisé");
+      return;
+    }
+
+    setSavingWorkspace(true);
+    try {
+      await saveSaleWorkspace({
+        data: {
+          saleId: sale.id,
+          trackingStatus,
+          userMaxBidEur: parsePositiveNumber(userMaxBid),
+          checklist,
+          alertPreferences: alerts,
+          nextAction: nextAction.trim() || null,
+        },
+      });
+      await queryClient.invalidateQueries({ queryKey: ["sale-workspace", sale.id] });
+      toast.success("Suivi du dossier synchronisé");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Synchronisation impossible");
+    } finally {
+      setSavingWorkspace(false);
+    }
+  }
 
   return (
     <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 rounded-md border border-border bg-muted/30 p-3 md:grid-cols-3">
+        <label className="block">
+          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Statut
+          </span>
+          <select
+            value={trackingStatus}
+            onChange={(event) => setTrackingStatus(event.target.value as SaleWorkspaceStatus)}
+            className="form-input mt-1 h-10 w-full bg-white text-sm"
+          >
+            {Object.entries(SALE_WORKSPACE_STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <MoneyField
+          label="Plafond personnel"
+          value={Number(userMaxBid) || 0}
+          onChange={(value) => setUserMaxBid(value ? String(Math.round(value)) : "")}
+        />
+        <label className="block">
+          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Prochaine action
+          </span>
+          <input
+            value={nextAction}
+            onChange={(event) => setNextAction(event.target.value)}
+            className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+            placeholder="Appeler l'avocat"
+          />
+        </label>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+          Checklist avant audience
+        </div>
+        <span className="text-xs font-medium text-muted-foreground">
+          {selectedChecklistCount}/{DEFAULT_SALE_CHECKLIST.length} validé
+        </span>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {DEFAULT_SALE_CHECKLIST.map((label) => (
+          <label
+            key={label}
+            className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/30 p-3 text-sm"
+          >
+            <span className="font-medium text-foreground">{label}</span>
+            <input
+              type="checkbox"
+              checked={Boolean(checklist[label])}
+              onChange={(event) =>
+                setChecklist((current) => ({ ...current, [label]: event.target.checked }))
+              }
+              className="h-4 w-4 accent-[var(--gold)]"
+            />
+          </label>
+        ))}
+      </div>
+
+      <div className="mt-5 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+        Rappels et changements
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
         {alertOptions.map((label) => (
           <label
             key={label}
@@ -3536,10 +4135,244 @@ function SaleAlertsBlock({ sale }: { sale: AuctionSale }) {
           </label>
         ))}
       </div>
-      <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-        Ces alertes sont enregistrées sur ce navigateur. La synchronisation compte/Supabase peut
-        reprendre les mêmes libellés.
-      </p>
+      <button
+        type="button"
+        onClick={() => void syncWorkspace()}
+        disabled={savingWorkspace || loading}
+        className="mt-4 inline-flex items-center gap-2 rounded-md bg-foreground px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-background hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {savingWorkspace ? "Synchronisation..." : "Synchroniser le suivi"}
+      </button>
+
+      <WorkspaceCollaborationPanel sale={sale} />
+    </div>
+  );
+}
+
+function WorkspaceCollaborationPanel({ sale }: { sale: AuctionSale }) {
+  const { user, loading } = useAuth();
+  const queryClient = useQueryClient();
+  const canUseRemote = Boolean(user) && isUuid(sale.id);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"viewer" | "commenter" | "editor">("commenter");
+  const [annotationBody, setAnnotationBody] = useState("");
+  const [savingInvite, setSavingInvite] = useState(false);
+  const [savingAnnotation, setSavingAnnotation] = useState(false);
+
+  const collaborationQuery = useQuery({
+    queryKey: ["sale-workspace-collaboration", sale.id],
+    queryFn: () => fetchSaleWorkspaceCollaboration({ saleId: sale.id }),
+    enabled: canUseRemote,
+    staleTime: 30_000,
+  });
+
+  const collaboration = collaborationQuery.data;
+  const collaborationLocked =
+    collaboration?.plan.features.workspaceCollaboration === "locked" ||
+    collaboration?.plan.limits.workspaceCollaborators === 0;
+  const annotations = collaboration?.annotations ?? [];
+  const collaborators = collaboration?.collaborators ?? [];
+
+  async function refreshCollaboration() {
+    await queryClient.invalidateQueries({ queryKey: ["sale-workspace-collaboration", sale.id] });
+    await queryClient.invalidateQueries({ queryKey: ["sale-workspace", sale.id] });
+  }
+
+  async function inviteCollaborator(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (loading) return;
+    if (!user) {
+      toast.error("Connectez-vous pour inviter un collaborateur");
+      return;
+    }
+    if (!isUuid(sale.id)) {
+      toast.error("Ce dossier d'exemple ne peut pas être partagé");
+      return;
+    }
+
+    setSavingInvite(true);
+    try {
+      await inviteSaleWorkspaceCollaboratorClient({
+        data: {
+          saleId: sale.id,
+          invitedEmail: inviteEmail,
+          role: inviteRole,
+        },
+      });
+      setInviteEmail("");
+      await refreshCollaboration();
+      toast.success("Invitation ajoutée");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Invitation impossible");
+    } finally {
+      setSavingInvite(false);
+    }
+  }
+
+  async function createAnnotation(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (loading) return;
+    if (!user) {
+      toast.error("Connectez-vous pour annoter ce dossier");
+      return;
+    }
+    if (!isUuid(sale.id)) {
+      toast.error("Ce dossier d'exemple ne peut pas être annoté");
+      return;
+    }
+
+    setSavingAnnotation(true);
+    try {
+      await createSaleWorkspaceAnnotationClient({
+        data: {
+          saleId: sale.id,
+          targetKind: "general",
+          body: annotationBody,
+        },
+      });
+      setAnnotationBody("");
+      await refreshCollaboration();
+      toast.success("Annotation ajoutée");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Annotation impossible");
+    } finally {
+      setSavingAnnotation(false);
+    }
+  }
+
+  async function resolveAnnotation(annotationId: string) {
+    try {
+      await updateSaleWorkspaceAnnotationClient({
+        data: {
+          annotationId,
+          status: "resolved",
+        },
+      });
+      await refreshCollaboration();
+      toast.success("Annotation résolue");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Mise à jour impossible");
+    }
+  }
+
+  return (
+    <div className="mt-5 border-t border-border/70 pt-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+            <Users className="h-4 w-4" />
+            Collaboration
+          </div>
+          <div className="mt-1 text-sm font-medium text-foreground">
+            {collaboration?.role === "owner"
+              ? "Dossier propriétaire"
+              : collaboration?.role
+                ? `Accès ${collaboration.role}`
+                : "Dossier non partagé"}
+          </div>
+        </div>
+        <span className="rounded-full border border-border bg-white px-2 py-1 text-xs font-medium text-muted-foreground">
+          {collaborators.length} membre{collaborators.length > 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {collaborationLocked ? (
+        <div className="mt-4 text-sm text-muted-foreground">
+          Collaboration disponible avec le plan Investisseur / Marchand.
+        </div>
+      ) : null}
+
+      <form
+        onSubmit={(event) => void inviteCollaborator(event)}
+        className="mt-4 grid gap-3 md:grid-cols-[1fr_150px_auto]"
+      >
+        <input
+          type="email"
+          value={inviteEmail}
+          onChange={(event) => setInviteEmail(event.target.value)}
+          className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+          placeholder="email@exemple.fr"
+          disabled={savingInvite || loading || collaborationLocked}
+        />
+        <select
+          value={inviteRole}
+          onChange={(event) => setInviteRole(event.target.value as typeof inviteRole)}
+          className="form-input h-10 bg-white text-sm"
+          disabled={savingInvite || loading || collaborationLocked}
+        >
+          <option value="viewer">Lecture</option>
+          <option value="commenter">Commentaire</option>
+          <option value="editor">Édition</option>
+        </select>
+        <button
+          type="submit"
+          disabled={savingInvite || loading || collaborationLocked || !inviteEmail.trim()}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold uppercase tracking-[0.12em] text-background hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Send className="h-3.5 w-3.5" />
+          Inviter
+        </button>
+      </form>
+
+      {collaborators.length ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {collaborators.slice(0, 8).map((collaborator) => (
+            <span
+              key={collaborator.id}
+              className="rounded-full border border-border bg-white px-2 py-1 text-xs text-muted-foreground"
+            >
+              {collaborator.invited_email} · {collaborator.role} · {collaborator.status}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <form onSubmit={(event) => void createAnnotation(event)} className="mt-4">
+        <label className="block">
+          <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            <MessageSquare className="h-3.5 w-3.5" />
+            Annotation partagée
+          </span>
+          <textarea
+            value={annotationBody}
+            onChange={(event) => setAnnotationBody(event.target.value)}
+            className="mt-2 min-h-24 w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+            placeholder="Point à vérifier avant audience..."
+            disabled={savingAnnotation || loading || collaborationLocked}
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={savingAnnotation || loading || collaborationLocked || !annotationBody.trim()}
+          className="mt-2 inline-flex items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground hover:border-gold/50 hover:text-gold-soft disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Ajouter l'annotation
+        </button>
+      </form>
+
+      {annotations.length ? (
+        <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
+          {annotations.slice(0, 5).map((annotation) => (
+            <li key={annotation.id} className="p-3">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm leading-relaxed text-foreground">{annotation.body}</p>
+                <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                  {annotation.status}
+                </span>
+              </div>
+              {annotation.status === "open" ? (
+                <button
+                  type="button"
+                  onClick={() => void resolveAnnotation(annotation.id)}
+                  className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft hover:text-gold"
+                >
+                  Marquer résolu
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -3553,8 +4386,13 @@ function ComparisonBlock({
   ceiling: MarketCeilingResult;
   cost: AcquisitionCost;
 }) {
+  const { user, loading } = useAuth();
   const [comparison, setComparison] = useLocalState<string[]>("immojudis:comparison-list", []);
+  const [savingAnalysis, setSavingAnalysis] = useState(false);
   const included = comparison.includes(sale.id);
+  const comparisonSaleIds = (included ? comparison : [...comparison, sale.id])
+    .filter(isUuid)
+    .slice(-6);
   const toggle = () => {
     setComparison((current) =>
       current.includes(sale.id)
@@ -3563,16 +4401,71 @@ function ComparisonBlock({
     );
     toast.success(included ? "Vente retirée" : "Vente ajoutée à la comparaison");
   };
+  const syncAnalysis = async () => {
+    if (loading) return;
+    if (!user) {
+      toast.error("Connectez-vous pour synchroniser l'analyse multi-biens");
+      return;
+    }
+    if (!isUuid(sale.id) || comparisonSaleIds.length === 0) {
+      toast.error("Aucune vente synchronisable dans cette comparaison");
+      return;
+    }
+
+    setSavingAnalysis(true);
+    try {
+      await createSaleAnalysisSet({
+        data: {
+          name: "Analyse multi-biens",
+          analysisKind: "comparison",
+          notes: "Comparaison créée depuis une fiche de vente ImmoJudis.",
+          assumptions: {
+            source: "sale_detail_comparison",
+            primarySaleId: sale.id,
+            primaryCheck: primaryCheckLabel(sale),
+            recommendedCeilingEur: ceiling.available ? Math.round(ceiling.maxBid) : null,
+            estimatedTotalCostEur: Math.round(cost.totalCost),
+          },
+          summarySnapshot: {
+            savedAt: new Date().toISOString(),
+            localComparisonCount: comparisonSaleIds.length,
+          },
+          items: comparisonSaleIds.map((saleId) => ({
+            saleId,
+            decisionStatus: saleId === sale.id ? "shortlisted" : "watching",
+            userMaxBidEur:
+              saleId === sale.id && ceiling.available ? Math.round(ceiling.maxBid) : null,
+            notes: saleId === sale.id ? primaryCheckLabel(sale) : null,
+          })),
+        },
+      });
+      toast.success("Analyse multi-biens synchronisée");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Synchronisation impossible");
+    } finally {
+      setSavingAnalysis(false);
+    }
+  };
 
   return (
     <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-      <button
-        type="button"
-        onClick={toggle}
-        className="inline-flex items-center gap-2 rounded-md bg-foreground px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-background hover:bg-foreground/90"
-      >
-        {included ? "Retirer de la comparaison" : "Comparer cette vente"}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={toggle}
+          className="inline-flex items-center gap-2 rounded-md bg-foreground px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-background hover:bg-foreground/90"
+        >
+          {included ? "Retirer de la comparaison" : "Comparer cette vente"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void syncAnalysis()}
+          disabled={savingAnalysis || loading}
+          className="inline-flex items-center gap-2 rounded-md border border-border bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground hover:border-gold/50 hover:text-gold-soft disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {savingAnalysis ? "Synchronisation..." : "Synchroniser l'analyse"}
+        </button>
+      </div>
       <div className="mt-5 overflow-hidden rounded-lg border border-border">
         <table className="w-full text-left text-sm">
           <tbody className="divide-y divide-border">
@@ -3601,8 +4494,8 @@ function ComparisonBlock({
         </table>
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        Dossiers dans la comparaison locale : {comparison.length}. Cette liste reste enregistrée
-        dans ce navigateur pour comparer rapidement vos ventes suivies.
+        Dossiers dans la comparaison : {comparisonSaleIds.length}. La synchronisation crée ou met à
+        jour une analyse multi-biens dans votre espace investisseur.
       </p>
     </div>
   );
@@ -3637,10 +4530,389 @@ function SimilarPropertiesBlock({
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Les biens similaires seront affichés quand des comparables de ventes ou d'annonces seront
-          disponibles pour {sale.city ?? "ce secteur"}.
+          Les transactions DVF similaires seront affichées quand elles seront disponibles pour{" "}
+          {sale.city ?? "ce secteur"}.
         </p>
       )}
+    </div>
+  );
+}
+
+function ValuationBacktestBlock({ sale }: { sale: AuctionSale }) {
+  const [requested, setRequested] = useState(false);
+  const canFetchBacktest = isUuid(sale.id) && sale.latitude != null && sale.longitude != null;
+  const backtestQuery = useQuery({
+    queryKey: ["valuation-backtest", sale.id],
+    queryFn: () =>
+      fetchValuationBacktest({
+        saleId: sale.id,
+        radiusM: 1_000,
+        months: 48,
+        maxTests: 30,
+      }),
+    enabled: requested && canFetchBacktest,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const backtest = backtestQuery.data?.backtest ?? null;
+  const summary = backtest?.summary ?? null;
+  const points = backtest?.points.slice(0, 5) ?? [];
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Target className="h-4 w-4 text-gold-soft" />
+            Backtest DVF
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {backtest
+              ? `${backtest.scope.radiusM} m · ${backtest.scope.months} mois · ${backtest.scope.maxTests} tests max`
+              : "Erreur historique observée sur les ventes DVF comparables"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setRequested(true);
+            if (requested) void backtestQuery.refetch();
+          }}
+          disabled={!canFetchBacktest || backtestQuery.isFetching}
+          className="inline-flex items-center rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground hover:border-gold/50 hover:text-gold-soft disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {backtestQuery.isFetching
+            ? "Chargement..."
+            : requested
+              ? "Actualiser"
+              : "Lancer le backtest"}
+        </button>
+      </div>
+
+      {summary ? (
+        <>
+          <div className="grid gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4">
+            <HistoryMetric label="Statut" value={summary.confidenceLabel} />
+            <HistoryMetric
+              label="Erreur médiane"
+              value={formatPercentValue(summary.medianAbsoluteErrorPct)}
+            />
+            <HistoryMetric label="Tests" value={formatNumber(summary.usableTests)} />
+            <HistoryMetric label="À moins de 20%" value={formatPercentValue(summary.within20Pct)} />
+          </div>
+          <p className="border-b border-border px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+            {summary.interpretation}
+          </p>
+          <div className="overflow-x-auto px-4 py-4">
+            <table className="w-full min-w-[640px] text-left text-xs">
+              <thead className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                <tr>
+                  <th className="border-b border-border px-3 py-2">Vente testée</th>
+                  <th className="border-b border-border px-3 py-2 text-right">Réel</th>
+                  <th className="border-b border-border px-3 py-2 text-right">Prédit</th>
+                  <th className="border-b border-border px-3 py-2 text-right">Écart</th>
+                  <th className="border-b border-border px-3 py-2 text-right">Échantillon</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {points.map((point) => (
+                  <tr key={point.transactionId}>
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-foreground">
+                        {formatDate(point.saleDate)}
+                      </div>
+                      <div className="text-muted-foreground">
+                        {point.city ?? "Secteur"} · {formatNumber(point.surfaceM2)} m²
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      <div className="font-medium text-foreground">
+                        {formatPrice(point.actualPriceEur)}
+                      </div>
+                      <div className="text-muted-foreground">
+                        {formatPricePerM2(point.actualPricePerM2)}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      <div className="font-medium text-foreground">
+                        {formatPrice(point.predictedPriceEur)}
+                      </div>
+                      <div className="text-muted-foreground">
+                        {formatPricePerM2(point.predictedPricePerM2)}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-foreground">
+                      {formatPercentValue(point.absoluteErrorPct)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                      {formatNumber(point.comparableSampleSize)}
+                    </td>
+                  </tr>
+                ))}
+                {points.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-3 text-muted-foreground" colSpan={5}>
+                      Pas assez de transactions passées comparables pour tester le moteur.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
+
+      {!canFetchBacktest ? (
+        <p className="px-4 py-3 text-sm text-muted-foreground">
+          Backtest indisponible tant que la vente n'est pas géocodée.
+        </p>
+      ) : null}
+      {backtestQuery.isError ? (
+        <p className="border-t border-border px-4 py-3 text-sm text-destructive">
+          {backtestQuery.error instanceof Error
+            ? backtestQuery.error.message
+            : "Backtest de valorisation indisponible"}
+        </p>
+      ) : null}
+      {requested && !backtestQuery.isFetching && !backtestQuery.isError && !summary ? (
+        <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
+          Aucun backtest exploitable sur ce périmètre.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function MarketAnalyticsBlock({ sale }: { sale: AuctionSale }) {
+  const [requested, setRequested] = useState(false);
+  const canFetchAnalytics = isUuid(sale.id);
+  const analyticsQuery = useQuery({
+    queryKey: ["market-analytics", sale.id],
+    queryFn: () =>
+      fetchMarketAnalytics({ saleId: sale.id, months: 36, futureMonths: 6, limit: 500 }),
+    enabled: requested && canFetchAnalytics,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const analytics = analyticsQuery.data;
+  const summary = analytics?.summary;
+  const rotation = analytics?.rotationRate;
+  const recentPeriods = analytics?.volumeEvolution.slice(-6) ?? [];
+  const recentDelayPeriods = analytics?.saleDelayEvolution.slice(-6) ?? [];
+  const communeSegments = analytics?.communeComparison.slice(0, 5) ?? [];
+  const marketTrends = analytics?.marketTrends ?? [];
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Analyse locale</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {analytics?.scope.label ?? "Distribution, volumes, prix/m² et délais d'audience"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setRequested(true);
+            if (requested) void analyticsQuery.refetch();
+          }}
+          disabled={!canFetchAnalytics || analyticsQuery.isFetching}
+          className="inline-flex items-center rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground hover:border-gold/50 hover:text-gold-soft disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {analyticsQuery.isFetching
+            ? "Chargement..."
+            : requested
+              ? "Actualiser"
+              : "Charger l'analyse"}
+        </button>
+      </div>
+
+      {summary ? (
+        <>
+          <div className="grid gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4">
+            <HistoryMetric label="Échantillon" value={formatNumber(summary.sampleSize)} />
+            <HistoryMetric
+              label="Mise à prix médiane"
+              value={formatPrice(summary.medianStartingPriceEur)}
+            />
+            <HistoryMetric label="Prix médian" value={formatPricePerM2(summary.medianPricePerM2)} />
+            <HistoryMetric label="Délai moyen" value={formatDays(summary.averageDaysToSale)} />
+            <HistoryMetric label="Rotation" value={rotation?.label ?? "À qualifier"} />
+            <HistoryMetric label="Liquidité" value={rotation?.liquidityLabel ?? "À qualifier"} />
+            <HistoryMetric
+              label="Pipeline"
+              value={formatPercentValue(rotation?.pipelineRatioPct)}
+            />
+            <HistoryMetric
+              label="Cadence"
+              value={
+                rotation?.monthlyVolume != null
+                  ? `${formatNumber(rotation.monthlyVolume)} / mois`
+                  : "—"
+              }
+            />
+          </div>
+          <div className="grid gap-4 px-4 py-4 lg:grid-cols-2">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Répartition des mises à prix
+              </div>
+              <div className="mt-3 space-y-2">
+                {analytics.priceDistribution.map((bucket) => (
+                  <div
+                    key={bucket.label}
+                    className="grid grid-cols-[84px_1fr_48px] items-center gap-2"
+                  >
+                    <span className="text-xs text-muted-foreground">{bucket.label}</span>
+                    <span className="h-2 overflow-hidden rounded-full bg-muted">
+                      <span
+                        className="block h-full rounded-full bg-foreground"
+                        style={{ width: `${Math.min(100, bucket.sharePct)}%` }}
+                      />
+                    </span>
+                    <span className="text-right text-xs tabular-nums text-foreground">
+                      {bucket.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Volumes et prix récents
+              </div>
+              <div className="mt-3 overflow-hidden rounded-md border border-border">
+                <table className="w-full text-left text-xs">
+                  <tbody className="divide-y divide-border">
+                    {recentPeriods.map((period) => (
+                      <tr key={period.period}>
+                        <td className="px-3 py-2 font-medium text-foreground">{period.period}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {formatNumber(period.count)} vente{period.count > 1 ? "s" : ""}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatPrice(period.medianStartingPriceEur)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatPricePerM2(period.medianPricePerM2)}
+                        </td>
+                      </tr>
+                    ))}
+                    {recentPeriods.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-3 text-muted-foreground" colSpan={4}>
+                          Pas assez de données mensuelles sur ce périmètre.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Délais d'audience
+              </div>
+              <div className="mt-3 overflow-hidden rounded-md border border-border">
+                <table className="w-full text-left text-xs">
+                  <tbody className="divide-y divide-border">
+                    {recentDelayPeriods.map((period) => (
+                      <tr key={period.period}>
+                        <td className="px-3 py-2 font-medium text-foreground">{period.period}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {formatNumber(period.count)} dossier{period.count > 1 ? "s" : ""}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatDays(period.averageDaysToSale)}
+                        </td>
+                      </tr>
+                    ))}
+                    {recentDelayPeriods.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-3 text-muted-foreground" colSpan={3}>
+                          Délais insuffisamment renseignés sur ce périmètre.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Comparaison communes
+              </div>
+              <div className="mt-3 overflow-hidden rounded-md border border-border">
+                <table className="w-full text-left text-xs">
+                  <tbody className="divide-y divide-border">
+                    {communeSegments.map((segment) => (
+                      <tr key={segment.label}>
+                        <td className="px-3 py-2 font-medium text-foreground">{segment.label}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {formatNumber(segment.count)} vente{segment.count > 1 ? "s" : ""}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatPricePerM2(segment.medianPricePerM2)}
+                        </td>
+                      </tr>
+                    ))}
+                    {communeSegments.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-3 text-muted-foreground" colSpan={3}>
+                          Comparaison commune à enrichir sur un périmètre plus large.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="lg:col-span-2">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Synthèse des tendances
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {marketTrends.map((trend) => (
+                  <div
+                    key={trend.metric}
+                    className="rounded-md border border-border bg-muted/20 p-3"
+                  >
+                    <div className="text-xs font-semibold text-foreground">{trend.label}</div>
+                    <div className="mt-1 text-sm font-semibold text-foreground">
+                      {trendDirectionLabel(trend.direction)} · {formatPercentValue(trend.changePct)}
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      {trend.interpretation}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          {rotation?.interpretation ? (
+            <p className="border-t border-border px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+              {rotation.interpretation}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+
+      {analyticsQuery.isError ? (
+        <p className="border-t border-border px-4 py-3 text-sm text-destructive">
+          {analyticsQuery.error instanceof Error
+            ? analyticsQuery.error.message
+            : "Analyse de marché indisponible"}
+        </p>
+      ) : null}
+      {requested &&
+      !analyticsQuery.isFetching &&
+      !analyticsQuery.isError &&
+      summary?.sampleSize === 0 ? (
+        <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
+          Pas encore assez de ventes comparables sur ce périmètre.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -3652,6 +4924,15 @@ function SaleAndTaxHistoryBlock({
   sale: AuctionSale;
   marketEstimate?: MarketEstimate | null;
 }) {
+  const [historyRequested, setHistoryRequested] = useState(false);
+  const canFetchHistory = isUuid(sale.id);
+  const judicialHistoryQuery = useQuery({
+    queryKey: ["sale-history", sale.id],
+    queryFn: () => fetchSaleHistory({ saleId: sale.id, months: 60, limit: 8 }),
+    enabled: historyRequested && canFetchHistory,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
   const rows = [
     [
       "Publication dossier",
@@ -3668,9 +4949,48 @@ function SaleAndTaxHistoryBlock({
     ],
   ];
   const history = marketEstimate?.addressHistory ?? [];
+  const judicialHistory = judicialHistoryQuery.data?.items ?? [];
+  const summary = judicialHistoryQuery.data?.summary ?? null;
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Historique judiciaire</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {judicialHistoryQuery.data?.scope.label ?? "Ventes passées du secteur"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setHistoryRequested(true);
+            if (historyRequested) void judicialHistoryQuery.refetch();
+          }}
+          disabled={!canFetchHistory || judicialHistoryQuery.isFetching}
+          className="inline-flex items-center rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground hover:border-gold/50 hover:text-gold-soft disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {judicialHistoryQuery.isFetching
+            ? "Chargement..."
+            : historyRequested
+              ? "Actualiser"
+              : "Charger l'historique"}
+        </button>
+      </div>
+      {summary ? (
+        <div className="grid gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:grid-cols-4">
+          <HistoryMetric label="Ventes" value={formatNumber(summary.itemCount)} />
+          <HistoryMetric
+            label="Mise à prix médiane"
+            value={formatPrice(summary.medianStartingPriceEur)}
+          />
+          <HistoryMetric
+            label="Adjudication moyenne"
+            value={formatPrice(summary.averageAdjudicationPriceEur)}
+          />
+          <HistoryMetric label="Prix moyen" value={formatPricePerM2(summary.averagePricePerM2)} />
+        </div>
+      ) : null}
       <table className="w-full text-left text-sm">
         <thead className="bg-muted/50 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
           <tr>
@@ -3699,10 +5019,79 @@ function SaleAndTaxHistoryBlock({
               </td>
             </tr>
           ))}
+          {judicialHistory.map((item) => (
+            <tr key={item.id}>
+              <td className="px-4 py-3 font-medium text-foreground">
+                <Link className="hover:text-gold-soft" to={`/sales/${item.id}`}>
+                  Vente passée · {propertyTypeLabel(item.propertyType)}
+                </Link>
+                <div className="mt-1 text-xs font-normal text-muted-foreground">
+                  {[item.city, saleStatusLabel(item.status)].filter(Boolean).join(" · ")}
+                </div>
+              </td>
+              <td className="px-4 py-3 text-muted-foreground">{formatDate(item.saleDate)}</td>
+              <td className="px-4 py-3 tabular-nums">
+                {item.adjudicationPriceEur
+                  ? formatPrice(item.adjudicationPriceEur)
+                  : formatPrice(item.startingPriceEur)}
+              </td>
+              <td className="px-4 py-3 text-muted-foreground">
+                {item.pricePerM2
+                  ? formatPricePerM2(item.pricePerM2)
+                  : (item.sourceName ?? "Source")}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
+      {judicialHistoryQuery.isError ? (
+        <p className="border-t border-border px-4 py-3 text-sm text-destructive">
+          {judicialHistoryQuery.error instanceof Error
+            ? judicialHistoryQuery.error.message
+            : "Historique indisponible"}
+        </p>
+      ) : null}
+      {historyRequested &&
+      !judicialHistoryQuery.isFetching &&
+      !judicialHistoryQuery.isError &&
+      judicialHistory.length === 0 ? (
+        <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
+          Aucune vente passée comparable trouvée sur ce périmètre.
+        </p>
+      ) : null}
     </div>
   );
+}
+
+function HistoryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function formatDays(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${Math.round(value)} j`;
+}
+
+function formatPercentValue(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${formatNumber(value)} %`;
+}
+
+function trendDirectionLabel(value: string): string {
+  const labels: Record<string, string> = {
+    up: "Hausse",
+    down: "Baisse",
+    stable: "Stable",
+    missing: "À enrichir",
+  };
+  return labels[value] ?? "À qualifier";
 }
 
 function PublicRecordBlock({ sale }: { sale: AuctionSale }) {
@@ -3964,14 +5353,16 @@ function DecisionRail({
                   type="button"
                   className="group flex w-full cursor-pointer items-center justify-between rounded-lg border border-border bg-white px-3 py-2 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
                 >
-                  <span>Alerte</span>
+                  <span>Suivi</span>
                   <Clock3 className="h-3.5 w-3.5" />
                 </button>
               </DialogTrigger>
               <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
                 <DialogHeader>
-                  <DialogTitle>Créer une alerte</DialogTitle>
-                  <DialogDescription>Rappels et changements à surveiller.</DialogDescription>
+                  <DialogTitle>Suivi et rappels</DialogTitle>
+                  <DialogDescription>
+                    Checklist, rappels et statut avant audience.
+                  </DialogDescription>
                 </DialogHeader>
                 <SaleAlertsBlock sale={sale} />
               </DialogContent>
@@ -4037,34 +5428,22 @@ function RailMeta({ label, value }: { label: string; value: string }) {
 }
 
 function MobileActionBar({ sale, decision }: { sale: AuctionSale; decision: DecisionSummary }) {
+  const actionHref = primaryActionHref(decision.action);
+  const actionLabel = primaryActionLabel(decision.action);
+
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-white/95 px-3 py-2 shadow-[0_-8px_24px_rgb(19_34_56/10%)] backdrop-blur lg:hidden">
-      <div className="mx-auto grid max-w-7xl grid-cols-[1fr_1fr_auto_auto] items-center gap-2">
-        <a href="#offer-insights" className="min-w-0 rounded-md px-2 py-1.5 text-xs">
-          <span className="block text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-            Plafond
-          </span>
-          <span className="block truncate font-semibold text-foreground">
-            {decision.ceiling.available ? formatPrice(decision.ceiling.maxBid) : "À compléter"}
-          </span>
-        </a>
-        <div className="min-w-0 rounded-md px-2 py-1.5 text-xs">
-          <span className="block text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-            Audience
-          </span>
-          <span className="block truncate font-semibold text-foreground">
-            {timeRemainingLabel(sale.sale_date)}
-          </span>
-        </div>
-        <FavoriteButton saleId={sale.id} className="h-10 justify-center px-2 text-[10px]" />
-        <button
-          type="button"
-          onClick={printAnalysis}
-          className="grid h-10 w-10 place-items-center rounded-md border border-border text-foreground"
-          aria-label="Imprimer ou enregistrer l'analyse"
+      <div className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <a
+          href={actionHref}
+          className="min-h-12 min-w-0 rounded-md bg-foreground px-3 py-2 text-xs text-background"
         >
-          <Download className="h-4 w-4" />
-        </button>
+          <span className="block text-[10px] uppercase tracking-[0.12em] text-background/70">
+            Action prioritaire
+          </span>
+          <span className="block truncate font-semibold">{actionLabel}</span>
+        </a>
+        <FavoriteButton saleId={sale.id} className="min-h-12 justify-center px-3 text-xs" />
       </div>
     </div>
   );
@@ -4120,6 +5499,23 @@ function recommendedAction(sale: AuctionSale, ceiling: MarketCeilingResult): str
   if (hasWorksRisk(sale)) return "Chiffrer les travaux";
   if (!hasDocumentType(sale, /cahier|conditions/)) return "Obtenir le cahier des conditions";
   return "Faire relire les conditions de vente";
+}
+
+function primaryActionHref(action: string): string {
+  const normalized = normalizeLocation(action);
+  if (/occupation|avocat|conditions/.test(normalized)) return "#lawyer";
+  if (/document|cahier|diagnostic|piece/.test(normalized)) return "#documents";
+  if (/marche|plafond|travaux|renseigner|chiffrer/.test(normalized)) return "#offer-insights";
+  return "#lawyer";
+}
+
+function primaryActionLabel(action: string): string {
+  const normalized = normalizeLocation(action);
+  if (/occupation/.test(normalized)) return "Confirmer l'occupation";
+  if (/travaux|chiffrer/.test(normalized)) return "Chiffrer les travaux";
+  if (/cahier|document|piece/.test(normalized)) return "Relire les pièces";
+  if (/marche|plafond|renseigner/.test(normalized)) return "Ajuster le plafond";
+  return action;
 }
 
 function buildVerificationPoints(sale: AuctionSale): Array<{
@@ -4668,17 +6064,24 @@ function FoldableSection({
   eyebrow,
   title,
   summary,
+  onOpen,
   children,
 }: {
   id?: string;
   eyebrow: string;
   title: string;
   summary: string;
+  onOpen?: () => void;
   children: React.ReactNode;
 }) {
   return (
     <section id={id} className="scroll-mt-24">
-      <details className="group rounded-lg border border-border bg-white p-5 shadow-sm">
+      <details
+        className="group rounded-lg border border-border bg-white p-5 shadow-sm"
+        onToggle={(event) => {
+          if (event.currentTarget.open) onOpen?.();
+        }}
+      >
         <summary className="flex cursor-pointer list-none items-start justify-between gap-4">
           <div>
             <div className="text-[10px] uppercase tracking-[0.16em] text-gold-soft">{eyebrow}</div>

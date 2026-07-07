@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,7 @@ from src.config import load_settings
 LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 _LAST_REPLICATE_REQUEST_AT = 0.0
+_REPLICATE_REQUEST_LOCK = threading.Lock()
 
 
 class LLMClientUnavailable(RuntimeError):
@@ -160,14 +162,16 @@ class ReplicateClient:
         min_interval = float(self.min_interval_seconds or 0)
         if min_interval <= 0:
             return
-        now = time.monotonic()
-        wait_for = _LAST_REPLICATE_REQUEST_AT + min_interval - now
-        if wait_for > 0:
-            time.sleep(wait_for)
+        with _REPLICATE_REQUEST_LOCK:
+            now = time.monotonic()
+            wait_for = _LAST_REPLICATE_REQUEST_AT + min_interval - now
+            if wait_for > 0:
+                time.sleep(wait_for)
+                now = time.monotonic()
+            _LAST_REPLICATE_REQUEST_AT = now
 
     def _mark_request_finished(self) -> None:
-        global _LAST_REPLICATE_REQUEST_AT
-        _LAST_REPLICATE_REQUEST_AT = time.monotonic()
+        return
 
     def _input_payload(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
         if _is_gemini_model(str(self.model)):

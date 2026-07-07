@@ -42,9 +42,12 @@ export type SalesSearchParams = {
   keywords?: string;
   transactionType?: TransactionType;
   occupancy?: string;
+  dpeClasses?: string[];
   minScore?: number;
   maxPricePerM2?: number;
   minYield?: number;
+  minMarketDiscount?: number;
+  houseWithLand?: boolean;
   aroundAddress?: string;
   aroundRadius?: number;
   yearBuilt?: number;
@@ -146,9 +149,12 @@ export function validateSalesSearch(search: Record<string, unknown>): SalesSearc
     keywords: asSearchString(search.keywords),
     transactionType: parseTransactionType(search.transactionType),
     occupancy: asSearchString(search.occupancy),
+    dpeClasses: listValue(search.dpe ?? search.dpeClasses),
     minScore: numberValue(search.minScore ?? search.min_score),
     maxPricePerM2: numberValue(search.maxPricePerM2 ?? search.max_price_per_m2),
     minYield: numberValue(search.minYield ?? search.min_yield),
+    minMarketDiscount: numberValue(search.minMarketDiscount ?? search.min_market_discount),
+    houseWithLand: booleanValue(search.houseWithLand ?? search.house_with_land),
     aroundAddress: asSearchString(search.aroundAddress ?? search.around_address),
     aroundRadius: numberValue(search.aroundRadius ?? search.around_radius),
     yearBuilt: positiveInteger(search.yearBuilt),
@@ -182,9 +188,12 @@ export function salesSearchToUrlRecord(search: SalesSearchParams): SalesSearchUr
         ? search.transactionType
         : undefined,
     occupancy: search.occupancy,
+    dpe: search.dpeClasses?.length ? search.dpeClasses.join(",") : undefined,
     minScore: search.minScore,
     maxPricePerM2: search.maxPricePerM2,
     minYield: search.minYield,
+    minMarketDiscount: search.minMarketDiscount,
+    houseWithLand: search.houseWithLand ? true : undefined,
     aroundAddress: search.aroundAddress,
     aroundRadius: search.aroundRadius,
     yearBuilt: search.yearBuilt,
