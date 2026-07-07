@@ -550,6 +550,7 @@ def upsert_documents_to_supabase(sales: list[AuctionSale]) -> int:
     rows = [row for sale in sales for row in _document_rows_for_sale(sale)]
     if not rows:
         return 0
+    rows = _unique_rows_by_key(rows, "document_url")
     _postgrest_upsert(str(url), str(key), "auction_documents", rows, on_conflict="document_url")
     return len(rows)
 
@@ -1601,6 +1602,16 @@ def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
             }
         )
     return rows
+
+
+def _unique_rows_by_key(rows: list[dict[str, object]], key: str) -> list[dict[str, object]]:
+    unique: dict[str, dict[str, object]] = {}
+    for row in rows:
+        value = row.get(key)
+        if value is None:
+            continue
+        unique[str(value)] = row
+    return list(unique.values())
 
 
 def _extraction_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
