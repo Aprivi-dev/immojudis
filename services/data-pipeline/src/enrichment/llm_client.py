@@ -261,11 +261,15 @@ def parse_json_response(raw_response: str) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         match = re.search(r"\{.*\}", text, re.S)
         if not match:
-            raise ValueError("No JSON object found in LLM response") from exc
+            raise ValueError(
+                f"No JSON object found in LLM response; response_excerpt={_response_excerpt(text)!r}"
+            ) from exc
         try:
             value = json.loads(match.group(0))
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid JSON from LLM: {exc}") from exc
+            raise ValueError(
+                f"Invalid JSON from LLM: {exc}; response_excerpt={_response_excerpt(text)!r}"
+            ) from exc
     if not isinstance(value, dict):
         raise ValueError("LLM response must be a JSON object")
     return value
@@ -300,6 +304,13 @@ def _plain_display_description_text(raw_response: str) -> str | None:
     if len(text.split()) < 8:
         return None
     return text
+
+
+def _response_excerpt(text: str, max_chars: int = 180) -> str:
+    excerpt = re.sub(r"\s+", " ", text).strip()
+    if len(excerpt) <= max_chars:
+        return excerpt
+    return f"{excerpt[: max_chars - 1]}…"
 
 
 def _split_replicate_model(model: str) -> tuple[str, str]:
