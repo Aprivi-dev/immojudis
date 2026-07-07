@@ -227,6 +227,34 @@ def test_replicate_client_accepts_plain_text_for_display_description_mode(monkey
     }
 
 
+def test_replicate_client_accepts_jsonish_display_description(monkeypatch) -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="moonshotai/kimi-k2.5",
+        min_interval_seconds=0,
+    )
+
+    monkeypatch.setattr(client, "_create_prediction", lambda prompt, system_prompt=None: {"id": "prediction-test"})
+    monkeypatch.setattr(
+        client,
+        "_wait_for_output",
+        lambda prediction: (
+            r'{\"display_description\": \"Ce terrain à bâtir de 716 m² est situé en centre-ville '
+            r'de Paimpol, rue de Goas Plat. Le bien est clos de murs'
+        ),
+    )
+
+    payload = client.generate_json("MODE SYNTHESE STRICTE. Réponds en JSON.", "Texte fourni")
+
+    assert payload == {
+        "display_description": (
+            "Ce terrain à bâtir de 716 m² est situé en centre-ville de Paimpol, "
+            "rue de Goas Plat. Le bien est clos de murs"
+        ),
+        "confidence": {"display_description": 0.58},
+    }
+
+
 def test_replicate_client_rejects_plain_text_for_full_extraction(monkeypatch) -> None:
     client = ReplicateClient(
         api_token="replicate-token-test",
