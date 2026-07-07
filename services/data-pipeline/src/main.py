@@ -49,6 +49,7 @@ from src.storage.supabase_client import (
     fetch_sales_needing_llm_descriptions,
     finish_run_in_supabase,
     mark_past_sales_in_supabase,
+    update_run_progress_in_supabase,
     upsert_cadastre_parcels_to_supabase,
     upsert_dpe_diagnostics_to_supabase,
     upsert_observations_to_supabase,
@@ -571,6 +572,19 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         return 0
 
     run_id = create_run_in_supabase("llm-description-backfill", True, run_id=options.run_id) if options.upsert else None
+    completed = 0
+    progress_summary = _llm_backfill_progress_summary(
+        selected=len(sales),
+        completed=completed,
+        llm_stats=LLMEnrichmentStats(),
+        failed_sales=[],
+        prompt_version=prompt_version,
+        statuses=options.llm_backfill_statuses,
+        timings=timings,
+        phase="starting",
+    )
+    if options.upsert:
+        update_run_progress_in_supabase(run_id, progress_summary, errors)
 
     try:
         llm_client = create_llm_client()
@@ -589,11 +603,27 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         futures = {executor.submit(enrich_sale_with_llm, sale, client=llm_client): sale for sale in sales}
         for future in as_completed(futures):
             sale = futures[future]
+            completed += 1
             try:
                 sale_stats = future.result()
             except Exception as exc:
                 LOGGER.exception("LLM description backfill failed for %s: %s", sale.source_url, exc)
                 errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
+                if options.upsert:
+                    update_run_progress_in_supabase(
+                        run_id,
+                        _llm_backfill_progress_summary(
+                            selected=len(sales),
+                            completed=completed,
+                            llm_stats=llm_stats,
+                            failed_sales=failed_sales,
+                            prompt_version=prompt_version,
+                            statuses=options.llm_backfill_statuses,
+                            timings=timings,
+                            phase="llm",
+                        ),
+                        errors,
+                    )
                 continue
             _add_llm_stats(llm_stats, sale_stats)
             if sale_stats.error_messages:
@@ -604,6 +634,21 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
                     failed_sales.append(sale)
             elif not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
                 _clear_llm_description_failure(sale)
+            if options.upsert:
+                update_run_progress_in_supabase(
+                    run_id,
+                    _llm_backfill_progress_summary(
+                        selected=len(sales),
+                        completed=completed,
+                        llm_stats=llm_stats,
+                        failed_sales=failed_sales,
+                        prompt_version=prompt_version,
+                        statuses=options.llm_backfill_statuses,
+                        timings=timings,
+                        phase="llm",
+                    ),
+                    errors,
+                )
     timings["llm_seconds"] = round(time.perf_counter() - started, 2)
 
     updated_sales = [
@@ -619,6 +664,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
     summary = {
         "mode": "llm_description_backfill",
         "selected": len(sales),
+        "completed": completed,
         "processed": llm_stats.analyzed,
         "valid_json": llm_stats.valid_json,
         "updated": len(updated_sales),
@@ -645,6 +691,34 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
     return 0 if not llm_stats.unavailable else 1
+
+
+def _llm_backfill_progress_summary(
+    *,
+    selected: int,
+    completed: int,
+    llm_stats: LLMEnrichmentStats,
+    failed_sales: list[AuctionSale],
+    prompt_version: str,
+    statuses: tuple[str, ...],
+    timings: dict[str, float],
+    phase: str,
+) -> dict[str, object]:
+    return {
+        "mode": "llm_description_backfill",
+        "phase": phase,
+        "selected": selected,
+        "completed": completed,
+        "processed": llm_stats.analyzed,
+        "valid_json": llm_stats.valid_json,
+        "failed_marked": len(failed_sales),
+        "prompt_version": prompt_version,
+        "statuses": list(statuses),
+        "timings": timings,
+        "llm_errors": llm_stats.errors,
+        "llm_unavailable": llm_stats.unavailable,
+        "last_progress_at": datetime.now(UTC).isoformat(),
+    }
 
 
 def _mark_llm_description_failure(
