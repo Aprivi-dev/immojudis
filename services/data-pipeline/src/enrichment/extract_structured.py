@@ -806,10 +806,9 @@ def _apply_extraction_to_sale(
             sale.property_type = extraction.property_type
 
     display_description = _normalize_display_description(extraction.display_description)
-    if display_description:
-        if confidence.get("display_description", 1.0) >= DISPLAY_DESCRIPTION_MIN_CONFIDENCE:
-            sale.raw_payload["llm_display_description"] = display_description
-            sale.raw_payload["llm_display_description_word_count"] = len(display_description.split())
+    if display_description and confidence.get("display_description", 1.0) >= DISPLAY_DESCRIPTION_MIN_CONFIDENCE:
+        sale.raw_payload["llm_display_description"] = display_description
+        sale.raw_payload["llm_display_description_word_count"] = len(display_description.split())
     else:
         fallback_display_description = _fallback_display_description(sale, extraction)
         if fallback_display_description:
