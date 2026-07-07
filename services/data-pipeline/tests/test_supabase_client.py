@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 from src.normalize import normalize_sale
 from src.storage import supabase_client
 from src.storage.supabase_client import _sanitize_postgrest_payload, _secondary_source_urls
@@ -177,6 +179,28 @@ def test_fetch_sales_needing_llm_descriptions_filters_current_rows(monkeypatch) 
                         "llm_prompt_version": "auction_llm_v5",
                     },
                 },
+                {
+                    "source_name": "notaires",
+                    "source_url": "https://example.test/recent-failure",
+                    "status": "upcoming",
+                    "title": "Maison en échec récent",
+                    "raw_payload": {
+                        "source_blocks": {"description": "Maison."},
+                        "llm_display_error_at": datetime.now(UTC).isoformat(),
+                        "llm_display_error_prompt_version": "auction_llm_v6_display",
+                    },
+                },
+                {
+                    "source_name": "notaires",
+                    "source_url": "https://example.test/old-failure",
+                    "status": "upcoming",
+                    "title": "Maison en ancien échec",
+                    "raw_payload": {
+                        "source_blocks": {"description": "Maison."},
+                        "llm_display_error_at": (datetime.now(UTC) - timedelta(hours=25)).isoformat(),
+                        "llm_display_error_prompt_version": "auction_llm_v6_display",
+                    },
+                },
             ]
 
     def fake_get(endpoint, params, headers, timeout):
@@ -197,6 +221,7 @@ def test_fetch_sales_needing_llm_descriptions_filters_current_rows(monkeypatch) 
     assert [sale.source_url for sale in sales] == [
         "https://example.test/missing",
         "https://example.test/stale",
+        "https://example.test/old-failure",
     ]
 
 

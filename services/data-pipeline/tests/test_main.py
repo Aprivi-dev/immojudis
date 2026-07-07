@@ -437,12 +437,13 @@ def test_parse_args_can_select_llm_description_backfill() -> None:
     assert options.llm_backfill_statuses == ("active", "upcoming", "unknown")
 
 
-def test_run_llm_description_backfill_updates_only_completed_sales(monkeypatch) -> None:
+def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
     settings = _settings()
     settings.update(
         {
             "pipeline_llm_backfill_max_targets": 2,
             "pipeline_enrich_workers": 1,
+            "pipeline_llm_workers": 1,
             "llm_prompt_version": "auction_llm_v6_display",
         }
     )
@@ -468,23 +469,31 @@ def test_run_llm_description_backfill_updates_only_completed_sales(monkeypatch) 
 
     def fake_enrich(sale, client=None):
         calls.append(f"llm:{sale.source_url.rsplit('/', 1)[-1]}")
-        stats = main.LLMEnrichmentStats(analyzed=1, valid_json=1)
         if sale is stale:
+            stats = main.LLMEnrichmentStats(analyzed=1, valid_json=1)
             sale.raw_payload["llm_display_description"] = "Maison avec jardin proche du centre."
             sale.raw_payload["llm_prompt_version"] = "auction_llm_v6_display"
+        else:
+            stats = main.LLMEnrichmentStats(
+                analyzed=1,
+                errors=1,
+                error_messages=["LLM extraction failed [notaires] https://example.test/failed"],
+            )
         return stats
 
     monkeypatch.setattr(main, "enrich_sale_with_llm", fake_enrich)
 
     def fake_upsert(sales: list[AuctionSale]) -> int:
         calls.append(f"upsert:{len(sales)}")
-        assert sales == [stale]
+        assert sales == [stale, failed]
+        assert failed.raw_payload["llm_display_error_prompt_version"] == "auction_llm_v6_display"
+        assert failed.raw_payload["llm_display_error_count"] == 1
         return len(sales)
 
     monkeypatch.setattr(main, "upsert_sales_to_supabase", fake_upsert)
 
     assert main.run_llm_description_backfill(main.PipelineOptions(llm_backfill=True, upsert=True)) == 0
-    assert calls == ["llm:stale", "llm:failed", "upsert:1", "finish"]
+    assert calls == ["llm:stale", "llm:failed", "upsert:2", "finish"]
 
 
 def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
@@ -523,6 +532,7 @@ def _settings() -> dict[str, object]:
         "pipeline_pdf_workers": 1,
         "pipeline_enrich_workers": 1,
         "pipeline_llm_workers": 1,
+        "pipeline_llm_failure_cooldown_hours": 24,
         "pipeline_pdf_max_targets": 0,
         "pipeline_llm_max_targets": 0,
         "enable_licitor_benchmark": False,
