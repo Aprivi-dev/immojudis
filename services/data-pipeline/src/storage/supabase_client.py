@@ -662,6 +662,7 @@ def fetch_sales_needing_llm_descriptions(
     page_size = max(50, min(250, limit * 4))
     selected: list[AuctionSale] = []
     offset = 0
+    failure_cooldown_hours = float(settings.get("pipeline_llm_failure_cooldown_hours") or 24)
 
     while len(selected) < limit:
         params: dict[str, str] = {
@@ -693,6 +694,12 @@ def fetch_sales_needing_llm_descriptions(
         for row in rows:
             if _has_current_llm_description(row.get("raw_payload"), prompt_version):
                 continue
+            if _has_recent_llm_description_failure(
+                row.get("raw_payload"),
+                prompt_version=prompt_version,
+                cooldown_hours=failure_cooldown_hours,
+            ):
+                continue
             sale = _auction_sale_from_row(row)
             if sale is not None:
                 selected.append(sale)
@@ -722,6 +729,28 @@ def _has_current_llm_description(raw_payload: Any, prompt_version: str | None) -
     if not prompt_version:
         return True
     return raw_payload.get("llm_prompt_version") == prompt_version
+
+
+def _has_recent_llm_description_failure(
+    raw_payload: Any,
+    *,
+    prompt_version: str,
+    cooldown_hours: float,
+) -> bool:
+    if cooldown_hours <= 0 or not isinstance(raw_payload, dict):
+        return False
+    if raw_payload.get("llm_display_error_prompt_version") != prompt_version:
+        return False
+    error_at = raw_payload.get("llm_display_error_at")
+    if not isinstance(error_at, str) or not error_at.strip():
+        return False
+    try:
+        parsed = datetime.fromisoformat(error_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return datetime.now(UTC) - parsed.astimezone(UTC) < timedelta(hours=cooldown_hours)
 
 
 KNOWN_SALE_DETAIL_SELECT = ",".join(

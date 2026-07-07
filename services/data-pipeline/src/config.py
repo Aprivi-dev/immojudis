@@ -90,10 +90,9 @@ def load_settings() -> dict[str, str | float | None]:
         "replicate_max_retries": int(os.getenv("REPLICATE_MAX_RETRIES", "4")),
         "replicate_retry_backoff_seconds": float(os.getenv("REPLICATE_RETRY_BACKOFF_SECONDS", "30")),
         "replicate_retry_max_sleep_seconds": float(os.getenv("REPLICATE_RETRY_MAX_SLEEP_SECONDS", "60")),
-        # Les appels LLM restent parallélisés, mais espacés globalement pour
-        # éviter les rafales Replicate qui transforment les runs en longues
-        # boucles de retry 429.
-        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "5")),
+        # Les appels LLM sont espacés globalement pour éviter les rafales
+        # Replicate qui transforment les runs en longues boucles de retry 429.
+        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "30")),
         "pipeline_enrich_workers": max(1, int(os.getenv("PIPELINE_ENRICH_WORKERS", "2"))),
         # Extractions PDF/OCR en parallèle (CPU + RAM : on reste prudent pour ne
         # pas saturer la mémoire du runner avec plusieurs Docling/OCR simultanés).
@@ -106,6 +105,10 @@ def load_settings() -> dict[str, str | float | None]:
         "pipeline_llm_backfill_max_targets": max(
             1,
             int(os.getenv("PIPELINE_LLM_BACKFILL_MAX_TARGETS", os.getenv("PIPELINE_LLM_MAX_TARGETS", "20"))),
+        ),
+        "pipeline_llm_failure_cooldown_hours": max(
+            0,
+            float(os.getenv("PIPELINE_LLM_FAILURE_COOLDOWN_HOURS", "24")),
         ),
         "pipeline_idle_llm_backfill_enabled": os.getenv("PIPELINE_IDLE_LLM_BACKFILL_ENABLED", "false").lower()
         in {"1", "true", "yes", "on"},

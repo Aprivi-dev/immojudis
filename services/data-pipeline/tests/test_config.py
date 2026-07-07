@@ -34,6 +34,7 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
         "PIPELINE_LLM_MAX_TARGETS",
         "PIPELINE_LLM_BACKFILL_MAX_TARGETS",
         "PIPELINE_LLM_WORKERS",
+        "PIPELINE_LLM_FAILURE_COOLDOWN_HOURS",
         "PIPELINE_IDLE_LLM_BACKFILL_ENABLED",
         "LLM_PROMPT_VERSION",
         "LLM_EXTRACTION_MODE",
@@ -50,12 +51,13 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["replicate_max_retries"] == 4
     assert settings["replicate_retry_backoff_seconds"] == 30
     assert settings["replicate_retry_max_sleep_seconds"] == 60
-    assert settings["replicate_min_interval_seconds"] == 5
+    assert settings["replicate_min_interval_seconds"] == 30
     assert settings["pipeline_enrich_workers"] == 2
     assert settings["pipeline_llm_workers"] == 1
     assert settings["pipeline_pdf_max_targets"] == 10
     assert settings["pipeline_llm_max_targets"] == 10
     assert settings["pipeline_llm_backfill_max_targets"] == 20
+    assert settings["pipeline_llm_failure_cooldown_hours"] == 24
     assert settings["pipeline_idle_llm_backfill_enabled"] is False
     assert settings["llm_prompt_version"] == "auction_llm_v6_display"
     assert settings["llm_extraction_mode"] == "display_description"
