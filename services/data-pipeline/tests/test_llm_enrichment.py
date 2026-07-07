@@ -146,6 +146,16 @@ def test_parse_json_response_handles_markdown_fence() -> None:
     assert parsed == {"surface_m2": 80}
 
 
+def test_parse_json_response_reports_plain_text_excerpt() -> None:
+    with pytest.raises(ValueError, match="response_excerpt='Je suis une réponse sans objet JSON'"):
+        parse_json_response("Je suis une réponse sans objet JSON")
+
+
+def test_parse_json_response_reports_invalid_json_excerpt() -> None:
+    with pytest.raises(ValueError, match="response_excerpt='avant \\{\"surface_m2\": \\} après'"):
+        parse_json_response('avant {"surface_m2": } après')
+
+
 def test_replicate_client_formats_output_list_and_payload() -> None:
     client = ReplicateClient(
         api_token="replicate-token-test",
