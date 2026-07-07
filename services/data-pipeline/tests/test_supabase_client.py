@@ -628,6 +628,40 @@ def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
     assert finished[0][3]["runner"]
 
 
+def test_update_run_progress_in_supabase_patches_running_row(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    captured: dict[str, object] = {}
+
+    class Response:
+        is_error = False
+        text = ""
+
+    def fake_patch(endpoint, params, headers, json, timeout):
+        captured["endpoint"] = endpoint
+        captured["params"] = params
+        captured["json"] = json
+        return Response()
+
+    monkeypatch.setattr(supabase_client.httpx, "patch", fake_patch)
+
+    supabase_client.update_run_progress_in_supabase(
+        "run-progress",
+        {"mode": "llm_description_backfill", "completed": 1},
+        {"llm_backfill": []},
+    )
+
+    assert captured["endpoint"] == "https://supabase.test/rest/v1/auction_runs"
+    assert captured["params"] == {"id": "eq.run-progress", "status": "eq.running"}
+    assert captured["json"] == {
+        "summary": {"mode": "llm_description_backfill", "completed": 1},
+        "errors": {"llm_backfill": []},
+    }
+
+
 def test_fetch_next_data_refresh_request_locks_queued_row(monkeypatch) -> None:
     monkeypatch.setattr(
         supabase_client,
