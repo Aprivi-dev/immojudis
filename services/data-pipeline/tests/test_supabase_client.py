@@ -453,6 +453,43 @@ def test_upsert_observations_prefers_direct_postgres_when_db_url_is_configured(m
     assert calls == [("postgresql://example", "auction_observations", 1)]
 
 
+def test_upsert_documents_deduplicates_document_urls(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/sale",
+            "documents": [
+                {"url": "https://example.test/pv.pdf", "label": "PV descriptif"},
+                {"url": "https://example.test/pv.pdf", "label": "PV descriptif duplicate"},
+                {"url": "https://example.test/ccv.pdf", "label": "CCV"},
+            ],
+        }
+    )
+    calls: list[tuple[str, list[dict[str, object]], str]] = []
+
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda supabase_url, api_key, table, payload, on_conflict: calls.append(
+            (table, payload, on_conflict)
+        ),
+    )
+
+    assert supabase_client.upsert_documents_to_supabase([sale]) == 2
+    assert calls[0][0] == "auction_documents"
+    assert calls[0][2] == "document_url"
+    assert [row["document_url"] for row in calls[0][1]] == [
+        "https://example.test/pv.pdf",
+        "https://example.test/ccv.pdf",
+    ]
+    assert calls[0][1][0]["label"] == "PV descriptif duplicate"
+
+
 def test_upsert_cadastre_parcels_uses_service_role_rest_upsert(monkeypatch) -> None:
     calls = []
     monkeypatch.setattr(
