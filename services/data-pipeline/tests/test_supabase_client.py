@@ -665,6 +665,33 @@ def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
     assert finished[0][3]["runner"]
 
 
+def test_has_active_running_run_checks_recent_running_rows(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        is_error = False
+        text = ""
+
+        def json(self):
+            return [{"id": "run-active"}]
+
+    def fake_get(endpoint, params, headers, timeout):
+        assert endpoint == "https://supabase.test/rest/v1/auction_runs"
+        assert params["select"] == "id"
+        assert params["status"] == "eq.running"
+        assert params["started_at"].startswith("gte.")
+        assert params["limit"] == "1"
+        return Response()
+
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+
+    assert supabase_client.has_active_running_run_in_supabase(max_age_minutes=190) is True
+
+
 def test_update_run_progress_in_supabase_patches_running_row(monkeypatch) -> None:
     monkeypatch.setattr(
         supabase_client,

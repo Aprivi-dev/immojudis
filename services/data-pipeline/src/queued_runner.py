@@ -14,6 +14,7 @@ from src.storage.supabase_client import (
     fetch_sale_for_data_refresh,
     finish_data_refresh_request_in_supabase,
     finish_run_in_supabase,
+    has_active_running_run_in_supabase,
     mark_past_sales_in_supabase,
     upsert_cadastre_parcels_to_supabase,
     upsert_dpe_diagnostics_to_supabase,
@@ -26,6 +27,13 @@ LLM_BACKFILL_SOURCE = "llm-description-backfill"
 
 def main() -> int:
     stale_failed = fail_stale_running_runs_in_supabase()
+    if has_active_running_run_in_supabase():
+        print(
+            "Another Immojudis data run is already active. "
+            f"Marked stale runs failed: {stale_failed}. Skipping this worker."
+        )
+        return 0
+
     run = fetch_next_queued_run_from_supabase()
     if not run:
         refresh_request = fetch_next_data_refresh_request_from_supabase()

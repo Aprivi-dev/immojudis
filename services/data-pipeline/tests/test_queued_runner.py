@@ -1,6 +1,8 @@
 import sys
 import types
 
+import pytest
+
 from src.models import AuctionSale
 
 try:
@@ -14,6 +16,21 @@ except ModuleNotFoundError as exc:
     sys.modules["src.export"] = export_stub
     from src import queued_runner
     del sys.modules["src.export"]
+
+
+@pytest.fixture(autouse=True)
+def no_active_running_run(monkeypatch) -> None:
+    monkeypatch.setattr(queued_runner, "has_active_running_run_in_supabase", lambda: False)
+
+
+def test_queued_runner_skips_when_another_run_is_active(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(queued_runner, "fail_stale_running_runs_in_supabase", lambda: 1)
+    monkeypatch.setattr(queued_runner, "has_active_running_run_in_supabase", lambda: True)
+
+    assert queued_runner.main() == 0
+    output = capsys.readouterr().out
+    assert "already active" in output
+    assert "Marked stale runs failed: 1" in output
 
 
 def test_queued_runner_cleans_past_sales_without_queued_run(monkeypatch, capsys) -> None:

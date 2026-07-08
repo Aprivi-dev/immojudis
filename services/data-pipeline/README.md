@@ -114,7 +114,7 @@ PIPELINE_ENRICH_WORKERS=2
 PIPELINE_PDF_WORKERS=2
 PIPELINE_PDF_MAX_TARGETS=10
 PIPELINE_LLM_MAX_TARGETS=10
-PIPELINE_LLM_BACKFILL_MAX_TARGETS=20
+PIPELINE_LLM_BACKFILL_MAX_TARGETS=10
 PIPELINE_IDLE_LLM_BACKFILL_ENABLED=false
 ```
 
@@ -130,6 +130,12 @@ python -m src.main --backfill-llm-descriptions --limit 20 --backfill-statuses ac
 Le backfill doit rester un run dédié depuis l'admin ou `workflow_dispatch` :
 cela évite que les runs planifiés idle ajoutent des appels Replicate longs à
 chaque passage.
+
+En CI, les backfills IA sont volontairement bornés par petits lots et les
+prédictions Replicate démarrent avec `REPLICATE_WAIT_SECONDS=1` pour éviter
+d'ajouter le temps de génération à l'intervalle minimal entre deux requêtes.
+Les runs planifiés font aussi un preflight léger : ils sautent le worker si un
+run manuel ou un autre run Supabase récent est déjà actif.
 
 Activer Licitor uniquement pour un benchmark :
 
