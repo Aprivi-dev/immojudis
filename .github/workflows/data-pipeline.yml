@@ -61,6 +61,7 @@ jobs:
       PIPELINE_PDF_MAX_TARGETS: 10
       PIPELINE_LLM_MAX_TARGETS: 10
       PIPELINE_LLM_BACKFILL_MAX_TARGETS: 20
+      PIPELINE_LLM_BACKFILL_PROGRESS_EVERY: 5
       PIPELINE_IDLE_LLM_BACKFILL_ENABLED: false
       REPLICATE_MIN_INTERVAL_SECONDS: 15
       REPLICATE_MAX_RETRIES: 4
@@ -86,10 +87,95 @@ jobs:
       ENABLE_ENCHERES_IMMOBILIERES_BENCHMARK: true
       ENABLE_NOTAIRES_BENCHMARK: true
     steps:
+      - name: Preflight scheduled work
+        id: preflight
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME:-}" != "schedule" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=manual_or_dispatch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=missing_supabase_env" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          rest_url="${SUPABASE_URL%/}/rest/v1"
+          auth_headers=(
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}"
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}"
+            -H "Accept: application/json"
+          )
+
+          has_rows() {
+            local table="$1"
+            shift
+            local response
+            if ! response="$(curl -fsS --get "${auth_headers[@]}" "$rest_url/$table" "$@")"; then
+              echo "Preflight query failed for $table; running full worker."
+              echo "should_run=true" >> "$GITHUB_OUTPUT"
+              echo "reason=preflight_query_failed" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            [ "$(jq 'length' <<< "$response")" -gt 0 ]
+          }
+
+          cutoff="$(date -u -d '190 minutes ago' +'%Y-%m-%dT%H:%M:%SZ')"
+          now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          if has_rows auction_runs \
+            --data-urlencode "select=id" \
+            --data-urlencode "status=eq.queued" \
+            --data-urlencode "limit=1"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=queued_auction_run" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if has_rows data_refresh_requests \
+            --data-urlencode "select=id" \
+            --data-urlencode "status=eq.queued" \
+            --data-urlencode "limit=1"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=queued_data_refresh" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if has_rows auction_runs \
+            --data-urlencode "select=id" \
+            --data-urlencode "status=eq.running" \
+            --data-urlencode "started_at=lt.$cutoff" \
+            --data-urlencode "limit=1"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=stale_running_run" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if has_rows auction_sales \
+            --data-urlencode "select=source_url" \
+            --data-urlencode "sale_date=lt.$now" \
+            --data-urlencode "or=(status.eq.active,status.eq.upcoming)" \
+            --data-urlencode "limit=1"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=past_sales_maintenance" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "No queued data work found; skipping dependency setup."
+          echo "should_run=false" >> "$GITHUB_OUTPUT"
+          echo "reason=no_scheduled_work" >> "$GITHUB_OUTPUT"
+
       - name: Check out repository
+        if: steps.preflight.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: steps.preflight.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -97,6 +183,7 @@ jobs:
           cache-dependency-path: services/data-pipeline/requirements.txt
 
       - name: Restore pipeline extraction cache
+        if: steps.preflight.outputs.should_run == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -109,15 +196,17 @@ jobs:
             immojudis-data-pipeline-${{ runner.os }}-
 
       - name: Install OCR system packages
-        if: env.PDF_OCR_ENABLED == 'true'
+        if: steps.preflight.outputs.should_run == 'true' && env.PDF_OCR_ENABLED == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
 
       - name: Install Python dependencies
+        if: steps.preflight.outputs.should_run == 'true'
         run: python -m pip install -r requirements.txt
 
       - name: Run requested or queued pipeline
+        if: steps.preflight.outputs.should_run == 'true'
         env:
           REQUESTED_RUN_ID: ${{ github.event.inputs.run_id }}
           REQUESTED_SOURCE: ${{ github.event.inputs.source }}
