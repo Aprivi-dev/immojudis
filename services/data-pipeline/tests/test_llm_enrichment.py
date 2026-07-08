@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from src.enrichment import llm_client as llm_client_module
 from src.enrichment.extract_structured import (
     LLMExtraction,
     build_reduced_pdf_context,
@@ -315,6 +316,33 @@ def test_replicate_client_formats_gemini_payload() -> None:
     assert payload["dynamic_thinking"] is False
     assert "max_tokens" not in payload
     assert "presence_penalty" not in payload
+
+
+def test_replicate_rate_limit_tracks_prediction_starts(monkeypatch) -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="google/gemini-2.5-flash",
+        min_interval_seconds=10,
+    )
+    now = {"value": 100.0}
+    sleeps: list[float] = []
+
+    monkeypatch.setattr(llm_client_module, "_LAST_REPLICATE_REQUEST_AT", 0.0)
+    monkeypatch.setattr(llm_client_module.time, "monotonic", lambda: now["value"])
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        now["value"] += seconds
+
+    monkeypatch.setattr(llm_client_module.time, "sleep", fake_sleep)
+
+    client._respect_min_interval()
+    now["value"] += 5
+    client._mark_request_finished()
+    client._respect_min_interval()
+
+    assert sleeps == [5]
+    assert llm_client_module._LAST_REPLICATE_REQUEST_AT == 110.0
 
 
 def test_replicate_retry_sleep_uses_retry_after_header() -> None:
