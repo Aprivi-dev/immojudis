@@ -23,15 +23,28 @@ export type MigrationReadiness = {
   detail: string;
 };
 
+export type AiDescriptionReadiness = {
+  status: ReadinessStatus;
+  promptVersion: string;
+  activeUpcomingCount: number | null;
+  coveredCurrentCount: number | null;
+  missingCurrentCount: number | null;
+  missingSourceCount: number | null;
+  recentFailureCount: number | null;
+  detail: string;
+};
+
 export type AdminOperationalReadinessResponse = {
   checkedAt: string;
   status: ReadinessStatus;
   items: ReadinessItem[];
   migrations: MigrationReadiness;
+  aiDescriptions: AiDescriptionReadiness;
   webhookUrl: string | null;
 };
 
 export const EXPECTED_LATEST_MIGRATION_VERSION = "20260707083431";
+export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v6_display";
 
 const EXPECTED_CRONS = [
   "/api/cron/smart-alerts",
@@ -44,8 +57,11 @@ export async function getAdminOperationalReadiness(
 ): Promise<AdminOperationalReadinessResponse> {
   await assertAdminAuth(authToken);
   const envItems = buildEnvironmentReadiness(process.env);
-  const migrations = await readMigrationReadiness(process.env);
-  const items = [...envItems, migrationItem(migrations)];
+  const [migrations, aiDescriptions] = await Promise.all([
+    readMigrationReadiness(process.env),
+    readAiDescriptionReadiness(process.env),
+  ]);
+  const items = [...envItems, migrationItem(migrations), aiDescriptionItem(aiDescriptions)];
   const origin = appOrigin(process.env);
 
   return {
@@ -53,6 +69,7 @@ export async function getAdminOperationalReadiness(
     status: overallStatus(items),
     items,
     migrations,
+    aiDescriptions,
     webhookUrl: origin ? `${origin}/api/stripe/webhook` : null,
   };
 }
@@ -180,7 +197,7 @@ async function assertAdminAuth(authToken: string) {
 async function readMigrationReadiness(
   env: Pick<NodeJS.ProcessEnv, string>,
 ): Promise<MigrationReadiness> {
-  const dbUrl = firstFilledEnv(env.SUPABASE_DB_URL, env.POSTGRES_URL_NON_POOLING, env.POSTGRES_URL);
+  const dbUrl = databaseUrl(env);
 
   if (!dbUrl) {
     return {
@@ -236,6 +253,111 @@ async function readMigrationReadiness(
   }
 }
 
+async function readAiDescriptionReadiness(
+  env: Pick<NodeJS.ProcessEnv, string>,
+): Promise<AiDescriptionReadiness> {
+  const dbUrl = databaseUrl(env);
+  const promptVersion = firstFilledEnv(env.LLM_PROMPT_VERSION) ?? EXPECTED_LLM_PROMPT_VERSION;
+
+  if (!dbUrl) {
+    return {
+      status: "warning",
+      promptVersion,
+      activeUpcomingCount: null,
+      coveredCurrentCount: null,
+      missingCurrentCount: null,
+      missingSourceCount: null,
+      recentFailureCount: null,
+      detail: "Impossible de vérifier la couverture IA sans URL Postgres lisible au runtime.",
+    };
+  }
+
+  const sql = postgres(dbUrl, {
+    max: 1,
+    ssl: env.POSTGRES_SSL === "disable" ? false : "require",
+  });
+
+  try {
+    const [coverage] = await sql<AiCoverageRow[]>`
+      with scoped as (
+        select
+          description,
+          raw_text,
+          raw_payload,
+          nullif(raw_payload->>'llm_display_description', '') as display_description,
+          raw_payload->>'llm_prompt_version' as prompt_version,
+          nullif(raw_payload->>'llm_display_error_at', '') as error_at,
+          raw_payload->>'llm_display_error_prompt_version' as error_prompt_version
+        from public.auction_sales
+        where status in ('active', 'upcoming')
+      ),
+      classified as (
+        select
+          *,
+          display_description is not null
+            and prompt_version = ${promptVersion} as covered_current,
+          nullif(description, '') is null
+            and nullif(raw_text, '') is null
+            and nullif(raw_payload->>'source_description', '') is null as missing_source,
+          error_prompt_version = ${promptVersion}
+            and error_at is not null
+            and error_at::timestamptz > now() - interval '24 hours' as recent_failure
+        from scoped
+      )
+      select
+        count(*)::int as active_upcoming_count,
+        count(*) filter (where covered_current)::int as covered_current_count,
+        count(*) filter (where not covered_current)::int as missing_current_count,
+        count(*) filter (where missing_source)::int as missing_source_count,
+        count(*) filter (where recent_failure)::int as recent_failure_count
+      from classified
+    `;
+
+    const activeUpcomingCount = coverage?.active_upcoming_count ?? 0;
+    const coveredCurrentCount = coverage?.covered_current_count ?? 0;
+    const missingCurrentCount = coverage?.missing_current_count ?? 0;
+    const missingSourceCount = coverage?.missing_source_count ?? 0;
+    const recentFailureCount = coverage?.recent_failure_count ?? 0;
+    const status: ReadinessStatus =
+      activeUpcomingCount === 0 ? "warning" : missingCurrentCount === 0 ? "ready" : "blocked";
+
+    return {
+      status,
+      promptVersion,
+      activeUpcomingCount,
+      coveredCurrentCount,
+      missingCurrentCount,
+      missingSourceCount,
+      recentFailureCount,
+      detail: aiDescriptionDetail({
+        status,
+        activeUpcomingCount,
+        coveredCurrentCount,
+        missingCurrentCount,
+        missingSourceCount,
+        recentFailureCount,
+        promptVersion,
+      }),
+    };
+  } catch (error) {
+    return {
+      status: "warning",
+      promptVersion,
+      activeUpcomingCount: null,
+      coveredCurrentCount: null,
+      missingCurrentCount: null,
+      missingSourceCount: null,
+      recentFailureCount: null,
+      detail:
+        error instanceof Error
+          ? `Vérification synthèses IA impossible: ${error.message}`
+          : "Vérification synthèses IA impossible.",
+    };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 function migrationItem(migrations: MigrationReadiness): ReadinessItem {
   return {
     key: "database.migrations",
@@ -248,6 +370,69 @@ function migrationItem(migrations: MigrationReadiness): ReadinessItem {
         ? null
         : `Vérifier que ${EXPECTED_LATEST_MIGRATION_VERSION} est appliquée.`,
   };
+}
+
+export function aiDescriptionItem(readiness: AiDescriptionReadiness): ReadinessItem {
+  return {
+    key: "pipeline.ai_description_coverage",
+    area: "pipeline",
+    label: "Couverture synthèses IA",
+    status: readiness.status,
+    detail: readiness.detail,
+    action:
+      readiness.status === "ready"
+        ? null
+        : readiness.activeUpcomingCount == null
+          ? "Configurer SUPABASE_DB_URL ou POSTGRES_URL_NON_POOLING pour auditer la couverture."
+          : readiness.missingCurrentCount && readiness.missingCurrentCount > 0
+            ? "Lancer un backfill IA depuis l'admin ou GitHub Actions, puis vérifier les erreurs récentes."
+            : "Vérifier qu'il existe des annonces actives ou à venir à auditer.",
+  };
+}
+
+type AiCoverageRow = {
+  active_upcoming_count: number;
+  covered_current_count: number;
+  missing_current_count: number;
+  missing_source_count: number;
+  recent_failure_count: number;
+};
+
+function aiDescriptionDetail({
+  status,
+  activeUpcomingCount,
+  coveredCurrentCount,
+  missingCurrentCount,
+  missingSourceCount,
+  recentFailureCount,
+  promptVersion,
+}: {
+  status: ReadinessStatus;
+  activeUpcomingCount: number;
+  coveredCurrentCount: number;
+  missingCurrentCount: number;
+  missingSourceCount: number;
+  recentFailureCount: number;
+  promptVersion: string;
+}): string {
+  if (activeUpcomingCount === 0) {
+    return `Aucune annonce active ou à venir à auditer pour ${promptVersion}.`;
+  }
+  if (status === "ready") {
+    return `${coveredCurrentCount}/${activeUpcomingCount} annonces actives ou à venir ont une synthèse IA au prompt ${promptVersion}.`;
+  }
+  const details = [
+    `${missingCurrentCount}/${activeUpcomingCount} annonces n'ont pas de synthèse IA courante`,
+    missingSourceCount ? `${missingSourceCount} sans description source exploitable` : null,
+    recentFailureCount ? `${recentFailureCount} en quarantaine après échec récent` : null,
+  ].filter(Boolean);
+  return `${details.join(" ; ")}.`;
+}
+
+function databaseUrl(env: Pick<NodeJS.ProcessEnv, string>): string | null {
+  return (
+    firstFilledEnv(env.SUPABASE_DB_URL, env.POSTGRES_URL_NON_POOLING, env.POSTGRES_URL) ?? null
+  );
 }
 
 function overallStatus(items: ReadinessItem[]): ReadinessStatus {
