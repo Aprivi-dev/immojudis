@@ -75,6 +75,14 @@ export function AdminReadinessPanel() {
                   : String(readiness.migrations.appliedCount)
               }
             />
+            <DiagnosticLine
+              label="Synthèses IA"
+              value={
+                readiness?.aiDescriptions
+                  ? formatAiCoverage(readiness.aiDescriptions)
+                  : "Chargement"
+              }
+            />
           </div>
 
           {webhookUrl ? (
@@ -192,4 +200,13 @@ function formatDateTime(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatAiCoverage(
+  aiDescriptions: NonNullable<Awaited<ReturnType<typeof fetchAdminReadiness>>>["aiDescriptions"],
+): string {
+  if (aiDescriptions.activeUpcomingCount == null || aiDescriptions.coveredCurrentCount == null) {
+    return "Non vérifié";
+  }
+  return `${aiDescriptions.coveredCurrentCount}/${aiDescriptions.activeUpcomingCount}`;
 }

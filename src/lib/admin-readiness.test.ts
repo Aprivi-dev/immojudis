@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEnvironmentReadiness } from "@/lib/admin-readiness";
+import { aiDescriptionItem, buildEnvironmentReadiness } from "@/lib/admin-readiness";
 
 describe("admin readiness", () => {
   it("marks commercial launch blockers when Stripe envs are missing", () => {
@@ -46,5 +46,44 @@ describe("admin readiness", () => {
     });
 
     expect(items.every((item) => item.status === "ready")).toBe(true);
+  });
+
+  it("blocks launch readiness when active sales miss current AI descriptions", () => {
+    expect(
+      aiDescriptionItem({
+        status: "blocked",
+        promptVersion: "auction_llm_v6_display",
+        activeUpcomingCount: 149,
+        coveredCurrentCount: 145,
+        missingCurrentCount: 4,
+        missingSourceCount: 1,
+        recentFailureCount: 2,
+        detail:
+          "4/149 annonces n'ont pas de synthèse IA courante ; 1 sans description source exploitable ; 2 en quarantaine après échec récent.",
+      }),
+    ).toMatchObject({
+      key: "pipeline.ai_description_coverage",
+      area: "pipeline",
+      status: "blocked",
+      action: expect.stringContaining("backfill IA"),
+    });
+  });
+
+  it("does not require an action when every active sale has a current AI description", () => {
+    expect(
+      aiDescriptionItem({
+        status: "ready",
+        promptVersion: "auction_llm_v6_display",
+        activeUpcomingCount: 149,
+        coveredCurrentCount: 149,
+        missingCurrentCount: 0,
+        missingSourceCount: 0,
+        recentFailureCount: 0,
+        detail: "149/149 annonces actives ou à venir ont une synthèse IA.",
+      }),
+    ).toMatchObject({
+      status: "ready",
+      action: null,
+    });
   });
 });
