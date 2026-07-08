@@ -107,6 +107,10 @@ def load_settings() -> dict[str, str | float | None]:
             1,
             int(os.getenv("PIPELINE_LLM_BACKFILL_MAX_TARGETS", os.getenv("PIPELINE_LLM_MAX_TARGETS", "20"))),
         ),
+        "pipeline_llm_backfill_progress_every": max(
+            1,
+            int(os.getenv("PIPELINE_LLM_BACKFILL_PROGRESS_EVERY", "5")),
+        ),
         "pipeline_llm_failure_cooldown_hours": max(
             0,
             float(os.getenv("PIPELINE_LLM_FAILURE_COOLDOWN_HOURS", "24")),
