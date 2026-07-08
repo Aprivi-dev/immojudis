@@ -485,6 +485,31 @@ def fail_stale_running_runs_in_supabase(max_age_minutes: int = 190) -> int:
     return len(rows)
 
 
+def has_active_running_run_in_supabase(max_age_minutes: int = 190) -> bool:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return False
+
+    cutoff = datetime.now(UTC) - timedelta(minutes=max_age_minutes)
+    response = httpx.get(
+        f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        params={
+            "select": "id",
+            "status": "eq.running",
+            "started_at": f"gte.{cutoff.isoformat()}",
+            "limit": "1",
+        },
+        headers=_rest_headers(str(key), prefer="count=none"),
+        timeout=30,
+    )
+    if response.is_error:
+        LOGGER.warning("Supabase active run fetch failed: %s", response.text)
+        return False
+    return bool(response.json())
+
+
 def finish_run_in_supabase(
     run_id: str | None,
     status: str,

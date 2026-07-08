@@ -38,9 +38,10 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: immojudis-data-pipeline
+  group: immojudis-data-pipeline-${{ github.event_name == 'schedule' && 'schedule' || 'worker' }}
   cancel-in-progress: false
 
 jobs:
@@ -60,10 +61,11 @@ jobs:
       PIPELINE_LLM_WORKERS: 1
       PIPELINE_PDF_MAX_TARGETS: 10
       PIPELINE_LLM_MAX_TARGETS: 10
-      PIPELINE_LLM_BACKFILL_MAX_TARGETS: 20
+      PIPELINE_LLM_BACKFILL_MAX_TARGETS: 10
       PIPELINE_LLM_BACKFILL_PROGRESS_EVERY: 5
       PIPELINE_IDLE_LLM_BACKFILL_ENABLED: false
       REPLICATE_MIN_INTERVAL_SECONDS: 15
+      REPLICATE_WAIT_SECONDS: 1
       REPLICATE_MAX_RETRIES: 4
       REPLICATE_RETRY_BACKOFF_SECONDS: 30
       REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
@@ -86,6 +88,7 @@ jobs:
       ENABLE_AGRASC_BENCHMARK: true
       ENABLE_ENCHERES_IMMOBILIERES_BENCHMARK: true
       ENABLE_NOTAIRES_BENCHMARK: true
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Preflight scheduled work
         id: preflight
@@ -111,6 +114,11 @@ jobs:
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}"
             -H "Accept: application/json"
           )
+          github_headers=(
+            -H "Authorization: Bearer ${GITHUB_TOKEN:-}"
+            -H "Accept: application/vnd.github+json"
+            -H "X-GitHub-Api-Version: 2022-11-28"
+          )
 
           has_rows() {
             local table="$1"
@@ -128,6 +136,48 @@ jobs:
           cutoff="$(date -u -d '190 minutes ago' +'%Y-%m-%dT%H:%M:%SZ')"
           now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
+          if [ -n "${GITHUB_TOKEN:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+            workflow_url="${GITHUB_API_URL:-https://api.github.com}/repos/${GITHUB_REPOSITORY}/actions/workflows/data-pipeline.yml/runs"
+            for workflow_status in in_progress queued; do
+              if ! response="$(curl -fsS --get "${github_headers[@]}" "$workflow_url" \
+                --data-urlencode "branch=${GITHUB_REF_NAME:-main}" \
+                --data-urlencode "status=${workflow_status}" \
+                --data-urlencode "per_page=20")"; then
+                echo "GitHub workflow lookup failed; continuing with Supabase preflight."
+                continue
+              fi
+              if jq -e --arg current "${GITHUB_RUN_ID}" \
+                '[.workflow_runs[] | select((.id | tostring) != $current and .event != "schedule")] | length > 0' \
+                <<< "$response" >/dev/null; then
+                echo "Another manual data pipeline run is already active; skipping scheduled preflight."
+                echo "should_run=false" >> "$GITHUB_OUTPUT"
+                echo "reason=manual_pipeline_active" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            done
+          fi
+
+          if has_rows auction_runs \
+            --data-urlencode "select=id" \
+            --data-urlencode "status=eq.running" \
+            --data-urlencode "started_at=lt.$cutoff" \
+            --data-urlencode "limit=1"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=stale_running_run" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if has_rows auction_runs \
+            --data-urlencode "select=id" \
+            --data-urlencode "status=eq.running" \
+            --data-urlencode "started_at=gte.$cutoff" \
+            --data-urlencode "limit=1"; then
+            echo "Active data pipeline run found; skipping scheduled worker."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=active_running_run" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if has_rows auction_runs \
             --data-urlencode "select=id" \
             --data-urlencode "status=eq.queued" \
@@ -143,16 +193,6 @@ jobs:
             --data-urlencode "limit=1"; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             echo "reason=queued_data_refresh" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if has_rows auction_runs \
-            --data-urlencode "select=id" \
-            --data-urlencode "status=eq.running" \
-            --data-urlencode "started_at=lt.$cutoff" \
-            --data-urlencode "limit=1"; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=stale_running_run" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
