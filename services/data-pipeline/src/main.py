@@ -596,6 +596,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         return 1
 
     workers = max(1, int(settings["pipeline_llm_workers"]))
+    progress_every = max(1, int(settings.get("pipeline_llm_backfill_progress_every") or 5))
     llm_stats = LLMEnrichmentStats()
     failed_sales: list[AuctionSale] = []
     started = time.perf_counter()
@@ -609,7 +610,11 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
             except Exception as exc:
                 LOGGER.exception("LLM description backfill failed for %s: %s", sale.source_url, exc)
                 errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
-                if options.upsert:
+                if options.upsert and _should_update_llm_backfill_progress(
+                    completed,
+                    total=len(sales),
+                    every=progress_every,
+                ):
                     update_run_progress_in_supabase(
                         run_id,
                         _llm_backfill_progress_summary(
@@ -634,7 +639,11 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
                     failed_sales.append(sale)
             elif not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
                 _clear_llm_description_failure(sale)
-            if options.upsert:
+            if options.upsert and _should_update_llm_backfill_progress(
+                completed,
+                total=len(sales),
+                every=progress_every,
+            ):
                 update_run_progress_in_supabase(
                     run_id,
                     _llm_backfill_progress_summary(
@@ -691,6 +700,14 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
     return 0 if not llm_stats.unavailable else 1
+
+
+def _should_update_llm_backfill_progress(completed: int, *, total: int, every: int) -> bool:
+    if completed <= 0:
+        return False
+    if completed >= total:
+        return True
+    return completed % max(1, every) == 0
 
 
 def _llm_backfill_progress_summary(

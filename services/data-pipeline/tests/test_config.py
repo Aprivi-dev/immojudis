@@ -33,6 +33,7 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
         "PIPELINE_PDF_MAX_TARGETS",
         "PIPELINE_LLM_MAX_TARGETS",
         "PIPELINE_LLM_BACKFILL_MAX_TARGETS",
+        "PIPELINE_LLM_BACKFILL_PROGRESS_EVERY",
         "PIPELINE_LLM_WORKERS",
         "PIPELINE_LLM_FAILURE_COOLDOWN_HOURS",
         "PIPELINE_IDLE_LLM_BACKFILL_ENABLED",
@@ -57,6 +58,7 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["pipeline_pdf_max_targets"] == 10
     assert settings["pipeline_llm_max_targets"] == 10
     assert settings["pipeline_llm_backfill_max_targets"] == 20
+    assert settings["pipeline_llm_backfill_progress_every"] == 5
     assert settings["pipeline_llm_failure_cooldown_hours"] == 24
     assert settings["pipeline_idle_llm_backfill_enabled"] is False
     assert settings["llm_prompt_version"] == "auction_llm_v6_display"

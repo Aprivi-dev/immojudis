@@ -444,6 +444,7 @@ def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
             "pipeline_llm_backfill_max_targets": 2,
             "pipeline_enrich_workers": 1,
             "pipeline_llm_workers": 1,
+            "pipeline_llm_backfill_progress_every": 5,
             "llm_prompt_version": "auction_llm_v6_display",
         }
     )
@@ -501,12 +502,19 @@ def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
     assert calls == [
         "progress:0",
         "llm:stale",
-        "progress:1",
         "llm:failed",
         "progress:2",
         "upsert:2",
         "finish",
     ]
+
+
+def test_llm_backfill_progress_is_batched() -> None:
+    assert main._should_update_llm_backfill_progress(0, total=20, every=5) is False
+    assert main._should_update_llm_backfill_progress(4, total=20, every=5) is False
+    assert main._should_update_llm_backfill_progress(5, total=20, every=5) is True
+    assert main._should_update_llm_backfill_progress(19, total=20, every=5) is False
+    assert main._should_update_llm_backfill_progress(20, total=20, every=5) is True
 
 
 def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
@@ -545,6 +553,7 @@ def _settings() -> dict[str, object]:
         "pipeline_pdf_workers": 1,
         "pipeline_enrich_workers": 1,
         "pipeline_llm_workers": 1,
+        "pipeline_llm_backfill_progress_every": 5,
         "pipeline_llm_failure_cooldown_hours": 24,
         "pipeline_pdf_max_targets": 0,
         "pipeline_llm_max_targets": 0,
