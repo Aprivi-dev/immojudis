@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
+import { MAPBOX_ATTRIBUTION, MAPBOX_COPYRIGHT_URL, mapboxStaticImageUrl } from "@/lib/mapbox";
 import { OSM_ATTRIBUTION, OSM_COPYRIGHT_URL, osmTileMarkerPct, osmTileUrl } from "@/lib/tiles";
 
 type Props = {
@@ -11,12 +12,18 @@ type Props = {
 };
 
 export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
-  const tileUrl = lat != null && lng != null ? osmTileUrl(lat, lng, zoom) : "";
-  const [provider, setProvider] = useState<"osm" | "fallback">("osm");
+  const mapboxUrl =
+    lat != null && lng != null
+      ? mapboxStaticImageUrl({ lat, lng, zoom, width: 720, height: 420 })
+      : "";
+  const osmUrl = lat != null && lng != null ? osmTileUrl(lat, lng, zoom) : "";
+  const [provider, setProvider] = useState<"mapbox" | "osm" | "fallback">(
+    mapboxUrl ? "mapbox" : "osm",
+  );
 
   useEffect(() => {
-    setProvider("osm");
-  }, [tileUrl]);
+    setProvider(mapboxUrl ? "mapbox" : "osm");
+  }, [mapboxUrl, osmUrl]);
 
   if (lat == null || lng == null) {
     return (
@@ -58,30 +65,39 @@ export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
     );
   }
 
+  const usingMapbox = provider === "mapbox" && Boolean(mapboxUrl);
+  const src = usingMapbox ? mapboxUrl : osmUrl;
   const pos = osmTileMarkerPct(lat, lng, zoom);
+  const attributionHref = usingMapbox ? MAPBOX_COPYRIGHT_URL : OSM_COPYRIGHT_URL;
+  const attributionLabel = usingMapbox ? MAPBOX_ATTRIBUTION : OSM_ATTRIBUTION;
+
   return (
     <div className={`relative overflow-hidden bg-muted ${className ?? ""}`}>
       <img
-        src={tileUrl}
+        src={src}
         alt={alt ?? "Carte"}
         loading="lazy"
         decoding="async"
         referrerPolicy="strict-origin-when-cross-origin"
-        onError={() => setProvider("fallback")}
+        onError={() =>
+          setProvider((current) => (current === "mapbox" && osmUrl ? "osm" : "fallback"))
+        }
         className="h-full w-full object-cover"
       />
-      <span
-        aria-hidden
-        className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-red-500 shadow-md"
-        style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
-      />
+      {!usingMapbox ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-red-500 shadow-md"
+          style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
+        />
+      ) : null}
       <a
-        href={OSM_COPYRIGHT_URL}
+        href={attributionHref}
         target="_blank"
         rel="noreferrer"
         className="absolute bottom-1 right-1 rounded bg-white/85 px-1.5 py-0.5 text-[9px] font-semibold text-[#1f2937] shadow-sm"
       >
-        {OSM_ATTRIBUTION}
+        {attributionLabel}
       </a>
     </div>
   );

@@ -18,10 +18,13 @@ const nextConfig: NextConfig = {
       process.env.NEXT_PUBLIC_OSM_TILE_TEMPLATE ??
       process.env.VITE_OSM_TILE_URL ??
       process.env.VITE_OSM_TILE_TEMPLATE,
-    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:
-      process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? process.env.VITE_GOOGLE_MAPS_API_KEY,
-    NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID:
-      process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? process.env.VITE_GOOGLE_MAPS_MAP_ID,
+    NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN:
+      process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? process.env.VITE_MAPBOX_ACCESS_TOKEN,
+    NEXT_PUBLIC_MAPBOX_STYLE:
+      process.env.NEXT_PUBLIC_MAPBOX_STYLE ??
+      process.env.NEXT_PUBLIC_MAPBOX_STYLE_ID ??
+      process.env.VITE_MAPBOX_STYLE ??
+      process.env.VITE_MAPBOX_STYLE_ID,
   },
   async redirects() {
     if (propertyDemoEnabled) {

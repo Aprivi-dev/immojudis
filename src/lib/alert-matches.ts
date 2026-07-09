@@ -9,6 +9,7 @@ import { getMarketEstimate } from "@/lib/market.functions";
 import { featureIncluded, isActivePlanStatus } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
+import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale, UserAlert, UserWatchedZone } from "@/lib/types";
 import { normalizeWatchedZone } from "@/lib/watched-zones";
@@ -304,7 +305,7 @@ export function buildAlertMatchSummary({
     alertId: alert.id,
     alertName: alert.name,
     saleId: sale.id,
-    saleTitle: sale.title,
+    saleTitle: cleanSaleTitle(sale.title),
     city: sale.city,
     department: sale.department,
     startingPriceEur: sale.starting_price_eur,
@@ -383,7 +384,7 @@ export function buildAlertMatchSnapshot({
     },
     sale: {
       id: sale.id,
-      title: sale.title,
+      title: cleanSaleTitle(sale.title),
       city: sale.city,
       department: sale.department,
       propertyType: sale.property_type,
@@ -420,7 +421,7 @@ function alertMatchRowToSummary(row: AlertMatchRow): AlertMatchSummary {
     alertId: row.alert_id,
     alertName: stringValue(asRecord(alert).name) || "Alerte",
     saleId: row.sale_id,
-    saleTitle: stringValue(sale.title),
+    saleTitle: cleanSaleTitle(stringValue(sale.title)),
     city: stringValue(sale.city),
     department: stringValue(sale.department),
     startingPriceEur: numberValue(sale.startingPriceEur),

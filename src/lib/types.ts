@@ -82,6 +82,12 @@ export type SaleFilters = {
   tribunal_code?: string;
   status_in?: string[];
   keywords?: string;
+  viewport?: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  };
   // Client-side advanced filters
   max_price_per_m2?: number;
   min_yield_pct?: number;

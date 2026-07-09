@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+from src.normalize import normalize_sale
 from src.sources.avoventes import parse_avoventes_detail_html, parse_avoventes_html
 
 
@@ -23,8 +26,36 @@ def test_parse_avoventes_html_extracts_public_sale_fields() -> None:
     assert sales[0]["city"] == "Bordeaux"
     assert sales[0]["starting_price_eur"] == "120 000 €"
     assert sales[0]["lawyer_name"] == "Me Test"
+    assert sales[0]["source_blocks"]["mise_a_prix"] == "120 000 €"
+    assert sales[0]["source_blocks"]["date_vente"] == "jeudi 10 janvier 2027 à 09h00"
+    assert sales[0]["source_blocks"]["cabinet"] == "Me Test"
     assert sales[0]["documents"][0]["url"] == "https://avoventes.fr/docs/vente.pdf"
     assert sales[0]["documents"][0]["type"] == "pdf"
+
+
+def test_parse_avoventes_html_extracts_adjudication_without_polluting_title() -> None:
+    html = """
+    <article>
+      <h2>Vente aux enchères Autres</h2>
+      <h3>UN BATIMENT D'EXPLOITATION AGRICOLE A HAUT-VALROMEY</h3>
+      <a href="/enchere/batiment-agricole">Voir la vente</a>
+      <p>01260 Haut-Valromey, France</p>
+      <p>Mise à prix initiale : 35 000,00 €</p>
+      <p>Adjugé :</p><p>36 000,00 €</p>
+      <p>Surenchère possible jusqu'au 10 juillet 2026</p>
+      <p>Date de la vente : mardi 30 juin 2026 à 14h00</p>
+    </article>
+    """
+
+    raw = parse_avoventes_html(html, page_url="https://avoventes.fr/recherche", fallback_department="01")[0]
+    sale = normalize_sale(raw)
+
+    assert raw["title"] == "UN BATIMENT D'EXPLOITATION AGRICOLE A HAUT-VALROMEY"
+    assert raw["adjudication_price_eur"] == "36 000,00 €"
+    assert raw["source_blocks"]["prix_adjudication"] == "36 000,00 €"
+    assert sale.starting_price_eur == Decimal("35000.00")
+    assert sale.adjudication_price_eur == Decimal("36000.00")
+    assert sale.status == "adjudicated"
 
 
 def test_parse_avoventes_detail_html_extracts_pdf_documents() -> None:
@@ -46,6 +77,30 @@ def test_parse_avoventes_detail_html_extracts_pdf_documents() -> None:
             "type": "pdf",
         }
     ]
+    assert details["source_blocks"]["documents"] == "Affiche greffe"
+
+
+def test_parse_avoventes_detail_html_extracts_lot_superficie() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Appartement Lot 5, 2 pièces</h1>
+        <section>
+          <h2>À propos du bien</h2>
+          <p>Cadastré section AC n°164 pour 07a 02ca</p>
+          <p>Superficie Lots 5 et 8 : 48,80 m² - DPE : non réalisable</p>
+        </section>
+      </body>
+    </html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/test")
+
+    assert details["title"] == "Appartement Lot 5, 2 pièces"
+    assert details["surface_m2"] == "48,80"
+    assert details["source_blocks"]["titre_detail"] == "Appartement Lot 5, 2 pièces"
+    assert details["source_blocks"]["surface"] == "48,80"
+    assert "Superficie Lots 5 et 8" in details["source_blocks"]["page_text"]
 
 
 def test_parse_avoventes_detail_html_extracts_source_images() -> None:

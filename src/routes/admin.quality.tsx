@@ -8,6 +8,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import type { ReactElement } from "react";
 import { getSales } from "@/lib/queries";
+import { saleDisplayTitle } from "@/lib/sale-title";
 import type { AuctionSale } from "@/lib/types";
 
 export const Route = createFileRoute("/admin/quality")({
@@ -231,7 +232,7 @@ function WeakSaleLine({ sale }: { sale: AuctionSale }) {
     >
       <span className="min-w-0">
         <span className="block truncate font-medium text-foreground">
-          {sale.title ?? sale.city ?? sale.id}
+          {saleDisplayTitle(sale, sale.city ?? sale.id)}
         </span>
         <span className="text-xs text-muted-foreground">{flags.join(" · ")}</span>
       </span>

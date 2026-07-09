@@ -8,6 +8,7 @@ import {
   sendResendEmail,
   type ResendEmailMessage,
 } from "@/lib/email-alerts";
+import { cleanSaleTitle } from "@/lib/sale-title";
 
 type LawyerReferralRow = Database["public"]["Tables"]["lawyer_referral_requests"]["Row"];
 type LawyerReferralUpdate = Database["public"]["Tables"]["lawyer_referral_requests"]["Update"];
@@ -431,7 +432,7 @@ export function buildLawyerReferralEmailMessage({
   appUrl: string;
 }): ResendEmailMessage {
   const sale = jsonObject(request.sale_snapshot);
-  const title = stringOrNull(sale.title) ?? "Vente judiciaire";
+  const title = cleanSaleTitle(stringOrNull(sale.title)) ?? "Vente judiciaire";
   const city = stringOrNull(sale.city);
   const department = stringOrNull(sale.department);
   const location = [city, department].filter(Boolean).join(" · ");
@@ -495,7 +496,7 @@ function referralRequestToSummary(
     saleId: request.sale_id,
     sale: {
       id: stringOrNull(sale.id),
-      title: stringOrNull(sale.title),
+      title: cleanSaleTitle(stringOrNull(sale.title)),
       city: stringOrNull(sale.city),
       department: stringOrNull(sale.department),
       tribunal: stringOrNull(sale.tribunal),

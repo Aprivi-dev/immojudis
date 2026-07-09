@@ -285,6 +285,78 @@ def test_delete_vench_sales_without_surface_is_best_effort_on_lookup_error(monke
     assert supabase_client.delete_vench_sales_without_surface_in_supabase() == 0
 
 
+def test_delete_expired_sales_removes_related_rows_then_sales(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        def __init__(self, rows):
+            self._rows = rows
+
+        is_error = False
+
+        def json(self):
+            return self._rows
+
+    responses = [
+        [
+            {"source_url": "https://example.test/expired"},
+            {"source_url": "https://example.test/expired"},
+        ],
+        [],
+    ]
+    get_params: list[dict[str, str]] = []
+
+    def fake_get(endpoint, params, headers, timeout):
+        assert endpoint == "https://supabase.test/rest/v1/auction_sales"
+        get_params.append(dict(params))
+        return Response(responses.pop(0))
+
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_delete",
+        lambda supabase_url, api_key, table, params: calls.append((table, params["source_url"])),
+    )
+
+    deleted = supabase_client.delete_expired_sales_in_supabase(
+        now=datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
+    )
+
+    assert deleted == 1
+    assert get_params[0] == {
+        "select": "source_url",
+        "sale_date": "lt.2026-07-09T12:00:00+00:00",
+        "order": "sale_date.asc.nullslast",
+        "limit": "1000",
+    }
+    assert calls == [
+        (table, 'in.("https://example.test/expired")')
+        for table in supabase_client.EXPIRED_SALE_DELETE_TABLES
+    ]
+
+
+def test_delete_expired_sales_is_best_effort_on_lookup_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        is_error = True
+        status_code = 522
+        text = "connection timed out"
+
+    monkeypatch.setattr(supabase_client.httpx, "get", lambda *args, **kwargs: Response())
+
+    assert supabase_client.delete_expired_sales_in_supabase() == 0
+
+
 def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypatch) -> None:
     sale = normalize_sale(
         {

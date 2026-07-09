@@ -8,7 +8,14 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup, Tag
 
 from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
-from src.normalize import clean_text, extract_department
+from src.normalize import (
+    SURFACE_VALUE_PATTERN,
+    clean_text,
+    extract_department,
+    has_rented_occupancy_signal,
+    no_lease_occupancy_status,
+    parse_surface,
+)
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
@@ -27,6 +34,8 @@ DETAIL_OVERRIDE_FIELDS = {
     "tribunal",
     "occupancy_status",
     "raw_text",
+    "raw_image_url",
+    "source_images",
 }
 
 
@@ -146,6 +155,10 @@ def _backfill_from_known_detail(
             sale[key] = known[key]
     if not sale.get("documents") and known.get("documents"):
         sale["documents"] = known["documents"]
+    if not sale.get("raw_image_url") and known.get("raw_image_url"):
+        sale["raw_image_url"] = known["raw_image_url"]
+    if not sale.get("source_images") and known.get("source_images"):
+        sale["source_images"] = known["source_images"]
 
 
 def _is_paywalled_or_sparse(sale: dict[str, Any]) -> bool:
@@ -219,12 +232,13 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
     description = _extract_description(soup)
     source_blocks = _extract_source_blocks(soup, page_text, title, description, documents)
     curated_raw_text = _build_detail_raw_text(source_blocks)
+    source_images = _extract_images(soup, source_url)
 
     return {
         "source_name": "vench",
         "source_url": source_url,
         "external_id": _extract_external_id(source_url),
-        "tribunal": _extract_after(page_text, r"Tribunal judiciaire de\s+([A-ZÀ-Ÿ' -]+)"),
+        "tribunal": _extract_after(page_text, r"(Tribunal judiciaire de\s+[A-ZÀ-Ÿ' -]+)"),
         "department": extract_department(postal_code),
         "city": city,
         "address": address or _join_address(postal_code, city),
@@ -243,7 +257,8 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "documents": documents,
         "raw_text": curated_raw_text or page_text,
         "source_blocks": source_blocks,
-        "source_images": _extract_images(soup, source_url),
+        "raw_image_url": source_images[0] if source_images else None,
+        "source_images": source_images,
     }
 
 
@@ -272,6 +287,7 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
         "documents": [],
         "raw_text": raw_text,
         "raw_image_url": image_url,
+        "source_images": [image_url] if image_url else [],
     }
 
 
@@ -298,6 +314,13 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
             continue
         if key == "documents":
             sale[key] = _merge_documents(sale.get(key), value)
+        elif key == "source_images":
+            sale[key] = _merge_text_values(sale.get(key), value)
+            if not sale.get("raw_image_url") and sale[key]:
+                sale["raw_image_url"] = sale[key][0]
+        elif key == "raw_image_url":
+            if not sale.get("raw_image_url"):
+                sale[key] = value
         elif key == "raw_text" and sale.get("raw_text"):
             sale[key] = f"{sale['raw_text']}\n{value}"
         elif key in {"has_garden", "has_terrace", "has_garage"}:
@@ -315,7 +338,7 @@ def _extract_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, s
         href = str(link.get("href") or "")
         label = _text(link.get_text(" ", strip=True)) or href.rstrip("/").split("/")[-1] or "document"
         absolute = urljoin(source_url, href)
-        if ".pdf" not in f"{href} {label}".lower():
+        if not _looks_like_document_link(href, label):
             continue
         if urlparse(absolute).path.startswith("/upload/"):
             continue
@@ -323,8 +346,20 @@ def _extract_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, s
     return _merge_documents([], documents)
 
 
+def _looks_like_document_link(href: str, label: str | None) -> bool:
+    text = _normalize_document_text(f"{href} {label or ''}")
+    return bool(
+        ".pdf" in text
+        or re.search(
+            r"\b(?:documents?|dossiers?|cahiers?|conditions?|diagnostics?|annexes?|"
+            r"pv|pvd|proces\s+verbal|proces-verbal|descriptif|telecharg\w*|download\w*)\b",
+            text,
+        )
+    )
+
+
 def _document_type(label: str, href: str) -> str:
-    searchable = f"{label} {href}".lower()
+    searchable = _normalize_document_text(f"{label} {href}")
     if "cahier" in searchable:
         return "cahier_conditions"
     if "diagnostic" in searchable:
@@ -332,6 +367,24 @@ def _document_type(label: str, href: str) -> str:
     if "proces" in searchable or "procès" in searchable or "pv" in searchable:
         return "pv_descriptif"
     return "pdf"
+
+
+def _normalize_document_text(value: str | None) -> str:
+    text = clean_text(value) or ""
+    return (
+        text.lower()
+        .replace("é", "e")
+        .replace("è", "e")
+        .replace("ê", "e")
+        .replace("à", "a")
+        .replace("â", "a")
+        .replace("î", "i")
+        .replace("ï", "i")
+        .replace("ô", "o")
+        .replace("û", "u")
+        .replace("ù", "u")
+        .replace("ç", "c")
+    )
 
 
 def _merge_documents(existing: object, incoming: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -345,6 +398,22 @@ def _merge_documents(existing: object, incoming: list[dict[str, str]]) -> list[d
                 "type": str(document.get("type") or "pdf"),
             }
     return list(by_url.values())
+
+
+def _merge_text_values(existing: object, incoming: object) -> list[str]:
+    values: list[str] = []
+    for item in [*_as_text_list(existing), *_as_text_list(incoming)]:
+        if item not in values:
+            values.append(item)
+    return values
+
+
+def _as_text_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value] if _text(value) else []
+    if not isinstance(value, list):
+        return []
+    return [text for item in value if (text := _text(item))]
 
 
 def _extract_title_from_detail(soup: BeautifulSoup) -> str | None:
@@ -436,7 +505,8 @@ def _extract_address_block(page_text: str) -> str | None:
             candidates.append(following)
             if len(candidates) >= 3:
                 break
-        match = re.search(r"\b(\d{5}\s+[A-ZÀ-ŸA-Za-z' -]+)\b", " ".join(candidates))
+        candidate_text = re.sub(r"\bVoir\s+la\s+carte\b", "", " ".join(candidates), flags=re.I)
+        match = re.search(r"\b(\d{5}\s+[A-ZÀ-ŸA-Za-z' -]+)\b", candidate_text)
         if match:
             return _text(match.group(1))
     return None
@@ -463,20 +533,37 @@ def _build_detail_raw_text(source_blocks: dict[str, str]) -> str | None:
 
 def _extract_images(soup: BeautifulSoup, source_url: str) -> list[str]:
     urls: list[str] = []
+    for meta in soup.find_all("meta"):
+        property_name = _text(meta.get("property") or meta.get("name"))
+        if property_name and property_name.lower() in {"og:image", "twitter:image"}:
+            _append_image_url(urls, meta.get("content"), source_url)
     for image in soup.find_all("img"):
-        src = _text(image.get("data-src") or image.get("src"))
-        if not src:
-            continue
-        absolute = urljoin(source_url, src)
-        if absolute not in urls:
-            urls.append(absolute)
+        _append_image_url(urls, image.get("data-src") or image.get("src"), source_url)
     return urls
+
+
+def _append_image_url(urls: list[str], value: object, source_url: str) -> None:
+    src = _text(value)
+    if not src:
+        return
+    absolute = urljoin(source_url, src)
+    if not _looks_like_property_image(absolute) or absolute in urls:
+        return
+    urls.append(absolute)
+
+
+def _looks_like_property_image(url: str) -> bool:
+    text = _normalize_document_text(url)
+    if not re.search(r"\.(?:jpe?g|png|webp)(?:\?|$)", text):
+        return False
+    return not re.search(r"\b(?:logo|favicon|sprite|icon|picto|placeholder|avatar|loader)\b", text)
 
 
 def _extract_surface(*values: object) -> str | None:
     text = " ".join(str(value) for value in values if value)
-    match = re.search(r"([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b", text, re.I)
-    return match.group(1).replace(",", ".") if match else None
+    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
+    surface = parse_surface(match.group(1)) if match else None
+    return str(surface) if surface is not None else None
 
 
 def _extract_occupancy_status(raw_text: str) -> str | None:
@@ -487,7 +574,9 @@ def _extract_occupancy_status(raw_text: str) -> str | None:
         return "owner_occupied"
     if re.search(r"libre\s+de\s+toute\s+occupation|bien\s+libre|inoccup[ée]|vacant", lowered):
         return "vacant"
-    if re.search(r"bail|locataire|lou[ée]|loyer", lowered):
+    if no_lease_status := no_lease_occupancy_status(lowered):
+        return no_lease_status
+    if has_rented_occupancy_signal(lowered):
         return "rented"
     if re.search(r"occup[ée]", lowered):
         return "occupied"
@@ -496,8 +585,17 @@ def _extract_occupancy_status(raw_text: str) -> str | None:
 
 def _extract_visit_dates(raw_text: str) -> list[str]:
     dates: list[str] = []
-    for match in re.finditer(r"Prochaine visite\s*:?\s*([0-9/]{8,10})", raw_text, re.I):
-        dates.append(match.group(1))
+    text = clean_text(raw_text) or ""
+    time_pattern = r"\d{1,2}(?:(?::|h)\d{2}|h)?"
+    visit_pattern = (
+        rf"Prochaine visite\s*:?\s*((?:le\s+)?[0-9]{{1,2}}/[0-9]{{1,2}}/[0-9]{{2,4}}"
+        rf"(?:\s*(?:à|a|de|-)\s*{time_pattern})?"
+        rf"(?:\s*(?:à|a|-)\s*{time_pattern})?)"
+    )
+    for match in re.finditer(visit_pattern, text, re.I):
+        value = clean_text(match.group(1))
+        if value and value not in dates:
+            dates.append(value)
     return dates
 
 

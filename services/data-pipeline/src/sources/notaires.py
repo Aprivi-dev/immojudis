@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
-from src.normalize import clean_text
+from src.normalize import SURFACE_VALUE_PATTERN, clean_text, parse_surface
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
 
@@ -162,17 +162,24 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
     source_images = _multimedia_images(transaction.get("multimedias"))
     address = _address(property_block, postal_code, city, description_text)
     text_surface, text_surface_evidence = _built_surface_from_text(description_text, description.get("short"))
-    habitable_surface = _usable_habitable_surface(property_block.get("surfaceHabitable"), description_text)
-    if habitable_surface is None and text_surface is not None:
+    api_habitable_surface = _usable_habitable_surface(property_block.get("surfaceHabitable"), description_text)
+    if _is_more_precise_text_surface(api_habitable_surface, text_surface):
+        habitable_surface = text_surface
+        habitable_surface_source = "notaires.description.surface_batie"
+        habitable_surface_confidence = 0.9
+        habitable_surface_evidence = text_surface_evidence
+    elif api_habitable_surface is None and text_surface is not None:
         habitable_surface = text_surface
         habitable_surface_source = "notaires.description.surface_batie"
         habitable_surface_confidence = 0.86
         habitable_surface_evidence = text_surface_evidence
-    elif habitable_surface is not None:
+    elif api_habitable_surface is not None:
+        habitable_surface = api_habitable_surface
         habitable_surface_source = "notaires.surfaceHabitable"
         habitable_surface_confidence = 0.95
         habitable_surface_evidence = text_surface_evidence or f"surfaceHabitable: {habitable_surface} m²"
     else:
+        habitable_surface = None
         habitable_surface_source = None
         habitable_surface_confidence = None
         habitable_surface_evidence = None
@@ -455,15 +462,10 @@ def _coordinates(property_block: dict[str, Any]) -> tuple[Any, Any]:
 
 
 def _surface_value(value: object | None) -> int | float | None:
-    if value in (None, ""):
+    surface = parse_surface(value)
+    if surface is None or surface <= 0:
         return None
-    try:
-        number = float(str(value).replace(",", "."))
-    except (TypeError, ValueError):
-        return None
-    if number <= 0:
-        return None
-    return int(number) if number.is_integer() else number
+    return int(surface) if surface == surface.to_integral_value() else float(surface)
 
 
 def _usable_habitable_surface(value: object | None, description_text: str | None) -> int | float | None:
@@ -476,6 +478,19 @@ def _usable_habitable_surface(value: object | None, description_text: str | None
     if re.search(r"\b(?:surface\s+habitable|m(?:2|²)\s+habitables?|habitables?)\b", text, re.I):
         return surface
     return None
+
+
+def _is_more_precise_text_surface(api_surface: object | None, text_surface: object | None) -> bool:
+    if api_surface is None or text_surface is None:
+        return False
+    try:
+        api_value = float(api_surface)
+        text_value = float(text_surface)
+    except (TypeError, ValueError):
+        return False
+    if api_value == text_value or text_value.is_integer():
+        return False
+    return int(api_value) == int(text_value)
 
 
 def _usable_generic_surface(value: object | None, land_surface: object | None) -> int | float | None:
@@ -492,16 +507,16 @@ def _built_surface_from_text(*values: str | None) -> tuple[int | float | None, s
     if not text:
         return None, None
     patterns = (
-        r"\b(?:surface|superficie)\s+habitable\s*:?\s*(?:de\s+)?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b",
+        rf"\b(?:surface|superficie)\s+habitable\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
         (
             r"\b(?:un|une|l['’]|le|la)?\s*"
             r"(?:immeuble|maison|appartement|local|commerce|ensemble\s+immobilier|bien\s+immobilier)\b"
             r".{0,140}?\b(?:de|d['’]une\s+superficie\s+de|d['’]une\s+surface\s+de)\s+"
-            r"([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b"
+            rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b"
         ),
         (
             r"\b(?:maison|immeuble|appartement|local|commerce)\b"
-            r"[^.;\n]{0,90}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\s*(?:environ|env\.?)?\b"
+            rf"[^.;\n]{{0,90}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s*(?:environ|env\.?)?\b"
         ),
     )
     for pattern in patterns:
@@ -526,8 +541,8 @@ def _cadastral_surface_from_text(value: str | None) -> tuple[int | float | None,
     if not text:
         return None, None
     patterns = (
-        r"\bcadastr[ée]e?.{0,140}?\b(?:total|superficie|contenance)\b.{0,30}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b",
-        r"\bsection\s+[A-Z]{1,4}\s*(?:n[°o]\s*)?[0-9A-Z]+.{0,100}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b",
+        rf"\bcadastr[ée]e?.{{0,140}}?\b(?:total|superficie|contenance)\b.{{0,30}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+        rf"\bsection\s+[A-Z]{{1,4}}\s*(?:n[°o]\s*)?[0-9A-Z]+.{{0,100}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
     )
     for pattern in patterns:
         match = re.search(pattern, text, re.I | re.S)
@@ -564,7 +579,28 @@ def _multimedia_images(value: object | None) -> list[str]:
 
 
 def _visit_dates(visit: dict[str, Any]) -> list[str]:
-    return _unique_texts([clean_text(visit.get("visiteLibre")), clean_text(visit.get("visiteFixe"))])
+    return _unique_texts([*_visit_texts(visit.get("visiteLibre")), *_visit_texts(visit.get("visiteFixe"))])
+
+
+def _visit_texts(value: object | None) -> list[str | None]:
+    if isinstance(value, list):
+        texts: list[str | None] = []
+        for item in value:
+            texts.extend(_visit_texts(item))
+        return texts
+    if isinstance(value, dict):
+        return []
+    text = clean_text(value)
+    if not text or _is_visit_ui_state(text):
+        return []
+    return [text]
+
+
+def _is_visit_ui_state(value: str) -> bool:
+    text = value.strip()
+    if not (text.startswith("[") or text.startswith("{")):
+        return False
+    return bool(re.search(r"['\"]?opened['\"]?\s*:\s*(?:true|false)", text, re.I))
 
 
 def _contact_text(contact: dict[str, Any]) -> str | None:

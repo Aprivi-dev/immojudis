@@ -10,6 +10,7 @@ from src.asset_normalization import (
     extract_risk_occurrences_from_text,
     normalize_asset_features,
 )
+from src.models import AuctionSale
 from src.normalize import normalize_sale
 
 
@@ -53,6 +54,23 @@ def test_normalize_asset_features_extracts_surfaces_features_and_score() -> None
     assert any(item["key"] == "surface" for item in analysis["questions"])
 
 
+def test_normalize_asset_features_reads_thousands_surfaces_directly() -> None:
+    sale = AuctionSale(
+        source_name="unit",
+        source_url="https://example.test/asset-thousands",
+        property_type="house",
+        raw_text="Maison. Surface habitable : 2 464,70 m². Terrain d'environ 3 587,40 m².",
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("2464.70")
+    assert sale.habitable_surface_m2 == Decimal("2464.70")
+    assert sale.land_surface_m2 == Decimal("3587.40")
+    assert sale.app_surface_m2 == Decimal("2464.70")
+    assert "2 464,70 m²" in (sale.surface_evidence or "")
+
+
 def test_notaires_short_house_code_promotes_surface_to_app_surface() -> None:
     sale = normalize_sale(
         {
@@ -94,6 +112,27 @@ def test_notaires_cadastral_surface_does_not_become_habitable_area() -> None:
     assert sale.app_surface_m2 is None
     assert sale.surface_scope == "land"
     assert "ambiguous_surface" not in sale.quality_flags
+
+
+def test_normalize_asset_features_prefers_explicit_land_surface_over_tiny_ui_ratio() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/une-maison-dhabitation-a-valserhone",
+            "property_type": "Maison",
+            "raw_text": (
+                "Une maison a usage d'habitation avec terrain attenant, cadastrée Section AM "
+                "numéro 23, pour 02 ares 20 centiares. Surface habitable de 89,58 m². "
+                "Terrain : 0.22 m². Informations complémentaires : Surface terrain d'environ "
+                "220 m²."
+            ),
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("89.58")
+    assert sale.land_surface_m2 == Decimal("220")
 
 
 def test_asset_rows_are_storage_ready() -> None:
@@ -269,7 +308,7 @@ def test_risk_detection_accepts_property_specific_copropriete() -> None:
     assert [row["risk_label"] for row in rows] == ["copropriété"]
 
 
-def test_asset_normalization_flags_missing_gps_and_ambiguous_surface() -> None:
+def test_asset_normalization_drops_apartment_land_surface_without_ambiguous_flag() -> None:
     sale = normalize_sale(
         {
             "source_name": "avoventes",
@@ -283,8 +322,31 @@ def test_asset_normalization_flags_missing_gps_and_ambiguous_surface() -> None:
 
     normalize_asset_features(sale)
 
+    assert sale.land_surface_m2 is None
     assert "missing_gps" in sale.quality_flags
-    assert "ambiguous_surface" in sale.quality_flags
+    assert "ambiguous_surface" not in sale.quality_flags
+
+
+def test_asset_normalization_ignores_apartment_cadastral_surface_for_ambiguity() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/un-appartement-et-cave-a-chenove",
+            "property_type": "Appartement",
+            "raw_text": (
+                "1 pièces 34.52 m² superficie À propos du bien CHENOVE (21300), "
+                "54 Boulevard Edouard Branly, Cadastré section AI, numéro 125 pour "
+                "11a 92ca Lots 7 et 103. Un appartement comprenant : entrée, cuisine, séjour."
+            ),
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.rooms_count == 1
+    assert sale.app_surface_m2 == Decimal("34.52")
+    assert sale.land_surface_m2 is None
+    assert "ambiguous_surface" not in sale.quality_flags
 
 
 def test_asset_normalization_infers_rooms_from_composition_summary() -> None:
@@ -385,6 +447,38 @@ def test_asset_normalization_uses_built_surface_for_commercial_assets() -> None:
     assert sale.app_surface_kind == "built"
     assert sale.surface_scope == "total"
     assert sale.surface_evidence is not None
+
+
+def test_asset_normalization_keeps_supported_large_mixed_surface_and_specific_title() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/batiment-agricole-haut-valromey",
+            "title": "Autres",
+            "property_type": "Autres",
+            "address": "01260 Haut-Valromey, France",
+            "starting_price_eur": "35 000,00 €",
+            "sale_date": "mardi 30 juin 2026 à 14h00",
+            "raw_text": (
+                "Vente aux enchères Autres UN BATIMENT D'EXPLOITATION AGRICOLE ET DIVERSES "
+                "PARCELLES DE TERRAIN AGRICOLE EN NATURE DE PRE A HAUT-VALROMEY "
+                "01260 Haut-Valromey, France Mise à prix : 35 000 euros. "
+                "Surface totale : 2.464,70 m². Stabulation libre : 811 m². "
+                "Salle de traite : 45,30 m². Stockage : 1183 m². Hangar : 25 m². "
+                "Le bâtiment agricole est libre de toute occupation."
+            ),
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.title.startswith("UN BATIMENT D'EXPLOITATION AGRICOLE")
+    assert sale.property_type == "mixed"
+    assert sale.surface_m2 == Decimal("2464.70")
+    assert sale.app_surface_m2 == Decimal("2464.70")
+    assert sale.app_surface_kind == "built"
+    assert sale.surface_scope == "total"
+    assert "ambiguous_surface" not in sale.quality_flags
 
 
 def test_asset_normalization_prefers_source_description_surface() -> None:

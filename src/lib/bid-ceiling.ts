@@ -15,6 +15,7 @@ import {
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
 import { getMarketEstimate, type MarketEstimate } from "@/lib/market.functions";
+import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { AuctionSale } from "@/lib/types";
@@ -219,7 +220,7 @@ export function buildBidCeilingAnalysis({
     ok: true,
     sale: {
       id: sale.id,
-      title: sale.title,
+      title: cleanSaleTitle(sale.title),
       city: sale.city,
       department: sale.department,
       startingPriceEur: sale.starting_price_eur,

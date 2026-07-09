@@ -29,7 +29,12 @@ from src.lifecycle import mark_past_sales
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.pdf_enrichment import PdfEnrichmentStats, enrich_sale_from_pdfs
-from src.quality import build_quality_report, format_quality_report
+from src.quality import (
+    build_extraction_gap_report,
+    build_quality_report,
+    format_extraction_gap_report,
+    format_quality_report,
+)
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.cessions_etat import scrape_cessions_etat_aquitaine_result
@@ -43,6 +48,7 @@ from src.sources.petites_affiches import scrape_petites_affiches_aquitaine_resul
 from src.sources.vench import scrape_vench_aquitaine_result
 from src.storage.supabase_client import (
     create_run_in_supabase,
+    delete_expired_sales_in_supabase,
     delete_vench_sales_without_surface_in_supabase,
     fetch_enriched_content_hashes,
     fetch_known_sale_details,
@@ -439,6 +445,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     enriched = app_ready
     lifecycle_stats.marked_past += mark_past_sales(enriched).marked_past
     quality_report = build_quality_report(enriched, pdf_stats=pdf_stats, llm_stats=llm_stats)
+    extraction_gap_report = build_extraction_gap_report(enriched)
     json_path, csv_path = export_sales(enriched)
 
     upserted = 0
@@ -448,6 +455,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     cadastre_upserted = 0
     dpe_upserted = 0
     supabase_cleaned_past = 0
+    supabase_deleted_expired = 0
     supabase_deleted_vench_without_surface = 0
     summary = {
         "collected": len(raw_sales),
@@ -458,6 +466,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         "skipped_unchanged": heavy_enrich_skipped,
         "enriched": len(enriched),
         "quality_report": quality_report,
+        "extraction_gap_report": extraction_gap_report,
         "timings": timings,
         "heavy_enrichment_enabled": options.heavy_enrichment,
     }
@@ -485,6 +494,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             upserted = max(early_upserted, final_upserted)
             observations_upserted = max(early_observations_upserted, final_observations_upserted)
             supabase_cleaned_past = mark_past_sales_in_supabase()
+            supabase_deleted_expired = delete_expired_sales_in_supabase()
             supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()
             timings["supabase_seconds"] = round(time.perf_counter() - started, 2)
             summary.update(
@@ -499,6 +509,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                     "dpe_upserted": dpe_upserted,
                     "marked_past_in_run": lifecycle_stats.marked_past,
                     "marked_past_in_supabase": supabase_cleaned_past,
+                    "deleted_expired_sales": supabase_deleted_expired,
                     "deleted_vench_without_surface": supabase_deleted_vench_without_surface,
                 }
             )
@@ -524,10 +535,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print(f"- dpe_upserted: {dpe_upserted}")
     print(f"- marked_past_in_run: {lifecycle_stats.marked_past}")
     print(f"- marked_past_in_supabase: {supabase_cleaned_past}")
+    print(f"- deleted_expired_sales: {supabase_deleted_expired}")
     print(f"- deleted_vench_without_surface: {supabase_deleted_vench_without_surface}")
     print(f"- json: {json_path}")
     print(f"- csv: {csv_path}")
     for line in format_quality_report(quality_report):
+        print(line)
+    for line in format_extraction_gap_report(extraction_gap_report):
         print(line)
     for key, value in timings.items():
         print(f"- timing_{key}: {value}")
@@ -911,7 +925,8 @@ def _enabled_scrapers(
             "encheres_immobilieres",
             bool(settings["enable_encheres_immobilieres_benchmark"]),
             lambda: scrape_encheres_immobilieres_aquitaine_result(
-                max_pages=int(settings["encheres_immobilieres_max_pages"])
+                max_pages=int(settings["encheres_immobilieres_max_pages"]),
+                known=known,
             ),
         ),
         (

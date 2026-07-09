@@ -5,7 +5,7 @@ import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
 import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 
 describe("neighborhood analysis", () => {
-  it("profiles a neighborhood from market, services, street view and source signals", () => {
+  it("profiles a neighborhood from market, services, street-level map and source signals", () => {
     const nearbyServices = buildNearbyServicesAnalysis(EXAMPLE_SALE);
     const streetFacade = buildStreetFacadeAnalysis(EXAMPLE_SALE);
     const analysis = buildNeighborhoodAnalysis({

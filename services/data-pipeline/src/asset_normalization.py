@@ -8,7 +8,7 @@ from typing import Any
 
 from src.config import ROOT_DIR
 from src.models import AuctionSale
-from src.normalize import clean_text
+from src.normalize import SURFACE_VALUE_PATTERN, clean_text, parse_surface
 
 
 @dataclass
@@ -76,22 +76,24 @@ FACTOR_AXIS = {
 
 SURFACE_PATTERNS = {
     "habitable_surface_m2": (
-        r"surface\s*habitable\s*:?\s*(?:de\s+)?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
-        r"superficie\s+(?:de\s+|d['’]environ\s+)?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
-        r"([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\s+superficie\b",
-        r"\bappartement\s+de\s+([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\b",
-        r"([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)\s+habitables?",
+        rf"surface\s*habitable\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"superficie\s+(?:de\s+|d['’]environ\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+superficie\b",
+        rf"\bappartement\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+        rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+habitables?",
     ),
     "carrez_surface_m2": (
-        r"(?:surface\s+)?carrez.{0,40}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
-        r"loi\s+carrez.{0,40}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
-        r"([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²|\*)\s+loi\s+carrez",
-        r"superficie\s*approximative\s*habitable\s*totale\s*:?\s*([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²|\?)",
+        rf"(?:surface\s+)?carrez.{{0,40}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"loi\s+carrez.{{0,40}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)\s+loi\s+carrez",
+        rf"superficie\s*approximative\s*habitable\s*totale\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\?)",
     ),
     "land_surface_m2": (
-        r"\bcadastr[ée]e?.{0,140}?\b(?:total|superficie|contenance)\b.{0,30}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
-        r"\bsection\s+[A-Z]{1,4}\s*(?:n[°o]\s*)?[0-9A-Z]+.{0,100}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
-        r"(?:terrain|parcelle|jardin).{0,60}?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
+        rf"\bcadastr[ée]e?.{{0,140}}?\b(?:total|superficie|contenance)\b.{{0,30}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"\bsection\s+[A-Z]{{1,4}}\s*(?:n[°o]\s*)?[0-9A-Z]+.{{0,100}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"\b(?:surface\s+(?:du\s+)?terrain|terrain\s+d['’]environ)\s+(?:d['’]environ\s+|environ\s+|de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        r"\b(?:cadastr[ée]e?.{0,120}?\bpour\s+)?([0-9]+)\s*ares?\s+([0-9]+)\s*centiares?\b",
+        rf"(?:terrain|parcelle|jardin).{{0,60}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         r"contenance\s+(?:totale\s+)?(?:de\s+)?([0-9]+)\s*a\s*([0-9]+)\s*ca",
         r"([0-9]+)\s*a\s*([0-9]+)\s*ca",
     ),
@@ -163,14 +165,49 @@ def build_display_title(sale: AuctionSale) -> str:
     """Generic, consistent title built from the extracted data: property type +
     surface (when available). Replaces heterogeneous scraped titles. The original
     title stays available in raw_payload/raw_text for context and the LLM."""
+    source_title = _specific_source_title(sale)
+    if sale.property_type in {"commercial", "mixed"} and source_title:
+        return source_title
     label = _PROPERTY_TYPE_LABELS.get(sale.property_type or "", "Bien immobilier")
     if sale.property_type == "land":
         surface = _format_surface_m2(sale.land_surface_m2)
     else:
         surface = _format_surface_m2(
             sale.app_surface_m2 or sale.habitable_surface_m2 or sale.carrez_surface_m2
-        )
+    )
     return f"{label} {surface}" if surface else label
+
+
+def _specific_source_title(sale: AuctionSale) -> str | None:
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    candidates: list[object | None] = [raw_payload.get("title")]
+    source_blocks = raw_payload.get("source_blocks")
+    if isinstance(source_blocks, dict):
+        candidates.extend((source_blocks.get("titre"), source_blocks.get("title")))
+    candidates.append(sale.title)
+
+    for candidate in candidates:
+        title = clean_text(candidate)
+        if _is_specific_display_title(title):
+            return title
+    return None
+
+
+def _is_specific_display_title(title: str | None) -> bool:
+    if not title or len(title) < 12:
+        return False
+    lowered = title.lower()
+    generic_labels = {label.lower() for label in _PROPERTY_TYPE_LABELS.values()}
+    generic_labels.update({"autre", "autres", "bien immobilier"})
+    if lowered in generic_labels:
+        return False
+    return not bool(
+        re.fullmatch(
+            r"(?:vente aux enchères\s+)?(?:autres?|local commercial|commerce|terrain|immeuble|maison|appartement|bien mixte)"
+            r"(?:\s+[0-9]+(?:[,.][0-9]+)?\s*m(?:2|²))?",
+            lowered,
+        )
+    )
 
 
 def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
@@ -423,11 +460,11 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         sale.carrez_surface_m2 = sale.surface_m2
         if sale.surface_m2 is not None:
             _set_surface_evidence(sale, "surface_m2_fallback", None)
+    if sale.land_surface_m2 is not None and sale.property_type not in {"land", "house", "building"}:
+        sale.land_surface_m2 = None
     _set_app_surface(sale)
     _validate_app_surface_scope(sale)
     _flag_ambiguous_surface(sale)
-    if sale.land_surface_m2 is not None and sale.property_type not in {"land", "house", "building"}:
-        sale.land_surface_m2 = None
     if (
         sale.surface_scope is None
         and sale.app_surface_m2 is None
@@ -640,6 +677,7 @@ def _extract_surface_kind(text: str, kind: str, sale: AuctionSale | None = None)
         if (
             value
             and not _surface_false_positive(text, match.start(), match.end())
+            and not _land_surface_false_positive(text, match, kind)
             and not _living_surface_false_positive(text, match.start(), match.end(), kind)
         ):
             if sale is not None:
@@ -1910,7 +1948,11 @@ def _validate_app_surface_scope(sale: AuctionSale) -> None:
         sale.app_surface_m2 = None
         sale.app_surface_kind = None
         _add_quality_flag(sale, "ambiguous_surface")
-    elif sale.property_type in {"commercial", "mixed", "other", "unknown"} and sale.app_surface_m2 > Decimal("1000"):
+    elif (
+        sale.property_type in {"commercial", "mixed", "other", "unknown"}
+        and sale.app_surface_m2 > Decimal("1000")
+        and not _large_non_residential_surface_is_supported(sale)
+    ):
         sale.surface_scope = "unknown"
         sale.app_surface_m2 = None
         sale.app_surface_kind = None
@@ -1919,13 +1961,34 @@ def _validate_app_surface_scope(sale: AuctionSale) -> None:
         sale.surface_scope = "land"
 
 
+def _large_non_residential_surface_is_supported(sale: AuctionSale) -> bool:
+    context = clean_text(" ".join(filter(None, (sale.surface_evidence, sale.description, sale.raw_text)))) or ""
+    if not context:
+        return False
+    if re.search(r"\b(?:cadastr|parcelle|terrain|contenance)\b", context, re.I) and not re.search(
+        r"\b(?:surface\s+totale|b[âa]timent|stabulation|hangar|stockage|salle\s+de\s+traite|"
+        r"local\s+(?:commercial|industriel)|entrep[oô]t|atelier)\b",
+        context,
+        re.I,
+    ):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:surface\s+totale|b[âa]timent|stabulation|hangar|stockage|salle\s+de\s+traite|"
+            r"local\s+(?:commercial|industriel)|entrep[oô]t|atelier)\b",
+            context,
+            re.I,
+        )
+    )
+
+
 def _flag_ambiguous_surface(sale: AuctionSale) -> None:
-    candidates = [
-        sale.habitable_surface_m2 is not None,
-        sale.carrez_surface_m2 is not None,
-        sale.land_surface_m2 is not None,
-    ]
-    if sum(candidates) > 1 and sale.property_type not in {"house", "building"}:
+    surface_values = {
+        value
+        for value in (sale.habitable_surface_m2, sale.carrez_surface_m2, sale.land_surface_m2)
+        if value is not None
+    }
+    if len(surface_values) > 1 and sale.property_type not in {"house", "building"}:
         _add_quality_flag(sale, "ambiguous_surface")
     if sale.app_surface_m2 is None and sale.surface_m2 is not None:
         _add_quality_flag(sale, "ambiguous_surface")
@@ -1942,11 +2005,11 @@ def _extract_count(text: str, patterns: tuple[str, ...]) -> int | None:
 
 def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decimal | None:
     patterns = (
-        r"superficie\s+au\s+sol\s+(?:de\s+)?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
-        r"d['’]une\s+superficie\s+au\s+sol\s+de\s+([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
-        r"d['’]une\s+superficie\s+d['’]environ\s+([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
-        r"surface\s+au\s+sol\s+(?:de\s+)?([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)",
-        r"\btotal\s*:?\s*([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²|\*)",
+        rf"superficie\s+au\s+sol\s+(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"d['’]une\s+superficie\s+au\s+sol\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"d['’]une\s+superficie\s+d['’]environ\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"surface\s+au\s+sol\s+(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"\btotal\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)",
     )
     for pattern in patterns:
         match = re.search(pattern, text, re.I | re.S)
@@ -2063,6 +2126,23 @@ def _surface_false_positive(text: str, start: int, end: int) -> bool:
     return bool(re.search(r"\bkwh\b|kg\s*co2|\bges\b|dpe\b", context, re.I))
 
 
+def _land_surface_false_positive(text: str, match: re.Match[str], kind: str) -> bool:
+    if kind != "land_surface_m2":
+        return False
+    value_start = match.start(1)
+    value_end = match.end(1)
+    before_value = text[max(match.start(), value_start - 45) : value_start]
+    after_value = text[value_end : min(len(text), value_end + 25)]
+    return bool(
+        re.search(
+            r"\b(?:surface|superficie)\s+(?:habitable|carrez)\b|\bloi\s+carrez\b",
+            before_value,
+            re.I,
+        )
+        or re.search(r"\bhabitables?\b", after_value, re.I)
+    )
+
+
 def _living_surface_false_positive(text: str, start: int, end: int, kind: str) -> bool:
     if kind == "land_surface_m2":
         return False
@@ -2071,14 +2151,7 @@ def _living_surface_false_positive(text: str, start: int, end: int, kind: str) -
 
 
 def _parse_surface_decimal(value: str) -> Decimal | None:
-    normalized = clean_text(value)
-    if not normalized:
-        return None
-    normalized = normalized.replace(" ", "").replace(",", ".")
-    try:
-        return Decimal(normalized)
-    except Exception:
-        return None
+    return parse_surface(value)
 
 
 def _set_surface_evidence(sale: AuctionSale, source: str, evidence: str | None) -> None:

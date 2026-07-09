@@ -10,6 +10,7 @@ import type { AuctionSale } from "@/lib/types";
 import { formatPrice, formatDate, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
 import { firstPropertyImage, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
+import { saleDisplayTitle } from "@/lib/sale-title";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { SaleCountdown } from "./SaleCountdown";
 import { MapThumbnail } from "./MapThumbnail";
@@ -32,7 +33,7 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
         ? "chip-watch"
         : "chip-neutral";
   const propertyLabel = locked ? "Annonce réservée" : propertyTypeLabel(sale.property_type);
-  const title = locked ? "Détail réservé aux membres" : (sale.title ?? propertyLabel);
+  const title = locked ? "Détail réservé aux membres" : saleDisplayTitle(sale, propertyLabel);
   const fallbackImage = "/media/landing/auction-bordeaux.jpg";
   const imageUrl = locked ? fallbackImage : firstPropertyImage(sale.media);
   const dpe = locked ? null : extractDpe(sale);

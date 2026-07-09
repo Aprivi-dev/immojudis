@@ -3,7 +3,7 @@ import Camera from "lucide-react/dist/esm/icons/camera.js";
 import ImageOff from "lucide-react/dist/esm/icons/image-off.js";
 import Navigation2 from "lucide-react/dist/esm/icons/navigation-2.js";
 import Rotate3D from "lucide-react/dist/esm/icons/rotate-3d.js";
-import { GoogleMapsPreviewButton } from "@/components/GoogleMapsPreviewButton";
+import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import type { PropertyPhoto } from "@/lib/property-types";
 import { cn } from "@/lib/utils";
 import { PhotoModal } from "./PhotoModal";
@@ -28,17 +28,17 @@ export function PhotoGallery({
         {
           mode: "aerial3d" as const,
           label: "Vue 3D",
-          title: "Vue 3D Google Maps",
+          title: "Vue 3D Mapbox",
           description: address,
-          ariaLabel: `Afficher la vue 3D Google Maps de ${address}`,
+          ariaLabel: `Afficher la vue 3D Mapbox de ${address}`,
           icon: Rotate3D,
         },
         {
-          mode: "streetView" as const,
-          label: "Street View",
-          title: "Street View Google Maps",
+          mode: "streetLevel" as const,
+          label: "Vue rue",
+          title: "Vue rue Mapbox",
           description: address,
-          ariaLabel: `Afficher Street View Google Maps pour ${address}`,
+          ariaLabel: `Afficher la vue rue Mapbox pour ${address}`,
           icon: Navigation2,
         },
       ]
@@ -108,7 +108,7 @@ export function PhotoGallery({
       {mapLinks.length > 0 && (
         <div className="absolute left-4 top-4 z-20 flex flex-wrap gap-2 md:bottom-4 md:top-auto">
           {mapLinks.map(({ mode, label, title, description, ariaLabel, icon }) => (
-            <GoogleMapsPreviewButton
+            <MapboxPreviewButton
               key={label}
               mode={mode}
               lat={location?.lat}

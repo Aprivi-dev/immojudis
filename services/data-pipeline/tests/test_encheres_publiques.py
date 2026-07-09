@@ -1,7 +1,11 @@
 from decimal import Decimal
 
 from src.normalize import normalize_sale
-from src.sources.encheres_publiques import parse_encheres_publiques_detail_html, parse_encheres_publiques_html
+from src.sources.encheres_publiques import (
+    _enrich_sale_from_detail,
+    parse_encheres_publiques_detail_html,
+    parse_encheres_publiques_html,
+)
 
 
 def test_parse_encheres_publiques_html_reads_next_apollo_state() -> None:
@@ -64,6 +68,12 @@ def test_parse_encheres_publiques_html_reads_next_apollo_state() -> None:
     assert sale.surface_m2 == Decimal("23.56")
     assert sale.starting_price_eur == 20000
     assert sale.tribunal == "Tribunal Judiciaire de BORDEAUX"
+    assert raw_sales[0]["status"] == "adjudicated"
+    assert sale.status == "adjudicated"
+    assert sale.adjudication_price_eur == Decimal("40000")
+    assert raw_sales[0]["source_blocks"]["surface"] == "23.56"
+    assert raw_sales[0]["source_blocks"]["mise_a_prix"] == "20000"
+    assert raw_sales[0]["source_blocks"]["tribunal"] == "Tribunal Judiciaire de BORDEAUX"
 
 
 def test_parse_encheres_publiques_html_keeps_national_listing() -> None:
@@ -109,6 +119,97 @@ def test_parse_encheres_publiques_html_keeps_national_listing() -> None:
 
     assert len(raw_sales) == 1
     assert raw_sales[0]["department"] == "75"
+
+
+def test_parse_encheres_publiques_html_keeps_finished_adjudicated_lot() -> None:
+    html = """
+    <html>
+      <body>
+        <a href="/encheres/immobilier/maisons/bordeaux-33/maison-bordeaux_129555">Voir</a>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "apolloState": {
+                "data": {
+                  "Adresse:1": {"__typename": "Adresse", "id": "1", "ville": "Bordeaux", "ville_slug": "bordeaux-33"},
+                  "Profil:1": {"__typename": "Profil", "id": "1", "nom": "Tribunal Judiciaire de BORDEAUX", "categorie": "tribunal"},
+                  "Evenement:1": {"__typename": "Evenement", "id": "1", "ouverture_date": 1781005200},
+                  "Lot:129555": {
+                    "__typename": "Lot",
+                    "id": "129555",
+                    "nom": "Maison de 84 m² à Bordeaux",
+                    "categorie": "immobilier",
+                    "sous_categorie": "maisons",
+                    "adresse_defaut": {"__ref": "Adresse:1"},
+                    "evenement": {"__ref": "Evenement:1"},
+                    "criteres_resume": "Bordeaux · 84 m²",
+                    "mise_a_prix": 120000,
+                    "prix_adjuge": 156000,
+                    "organisateur": {"__ref": "Profil:1"},
+                    "termine": true
+                  }
+                }
+              }
+            }
+          }
+        }
+        </script>
+      </body>
+    </html>
+    """
+
+    raw_sales = parse_encheres_publiques_html(html, "https://www.encheres-publiques.com/ventes/immobilier")
+    sale = normalize_sale(raw_sales[0])
+
+    assert len(raw_sales) == 1
+    assert raw_sales[0]["adjudication_price_eur"] == 156000
+    assert raw_sales[0]["status"] == "adjudicated"
+    assert sale.status == "adjudicated"
+    assert sale.adjudication_price_eur == Decimal("156000")
+
+
+def test_parse_encheres_publiques_html_keeps_thousands_surface_fallback() -> None:
+    html = """
+    <html>
+      <body>
+        <a href="/encheres/immobilier/maisons/bordeaux-33/propriete_129999">Voir</a>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "apolloState": {
+                "data": {
+                  "Adresse:1": {"__typename": "Adresse", "id": "1", "ville": "Bordeaux", "ville_slug": "bordeaux-33"},
+                  "Evenement:1": {"__typename": "Evenement", "id": "1", "ouverture_date": 1781005200},
+                  "Lot:129999": {
+                    "__typename": "Lot",
+                    "id": "129999",
+                    "nom": "Propriété 2 464,70 m²",
+                    "categorie": "immobilier",
+                    "sous_categorie": "maisons",
+                    "adresse_defaut": {"__ref": "Adresse:1"},
+                    "evenement": {"__ref": "Evenement:1"},
+                    "criteres_resume": "Bordeaux · 2 464,70 m²",
+                    "mise_a_prix": 100000,
+                    "termine": false
+                  }
+                }
+              }
+            }
+          }
+        }
+        </script>
+      </body>
+    </html>
+    """
+
+    raw_sales = parse_encheres_publiques_html(html, "https://www.encheres-publiques.com/ventes/immobilier")
+    sale = normalize_sale(raw_sales[0])
+
+    assert raw_sales[0]["surface_m2"] == "2464.70"
+    assert raw_sales[0]["source_blocks"]["surface"] == "2464.70"
+    assert sale.surface_m2 == Decimal("2464.70")
 
 
 def test_parse_encheres_publiques_detail_html_extracts_rich_lot_context() -> None:
@@ -216,6 +317,10 @@ def test_parse_encheres_publiques_detail_html_extracts_rich_lot_context() -> Non
     assert sale.lawyer_name == "OFFICE NOTARIAL DU JEU DE PAUME"
     assert sale.lawyer_contact == "05 56 42 41 85"
     assert sale.occupancy_status == "vacant"
+    diagnostics = sale.raw_payload["source_energy_diagnostics"]
+    assert diagnostics["dpe_class"] == "C"
+    assert diagnostics["ges_class"] == "C"
+    assert diagnostics["diagnostic_date"] == "2026-04-27"
     assert sale.visit_dates
     assert "Vente notariale interactive" in (sale.raw_text or "")
     assert "Comptant le jour de l'acte authentique" in (sale.raw_text or "")
@@ -223,3 +328,93 @@ def test_parse_encheres_publiques_detail_html_extracts_rich_lot_context() -> Non
     assert "autorisation" not in (sale.raw_text or "")
     assert raw_sale["source_blocks"]["renseignements_de_vente"].startswith("Texte générique")
     assert raw_sale["source_images"] == ["https://www.encheres-publiques.com/static/lot/photo/bordeaux.jpg"]
+
+
+def test_enrich_encheres_publiques_detail_merges_source_blocks() -> None:
+    html = """
+    <html>
+      <body>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "apolloState": {
+                "data": {
+                  "Adresse:1": {
+                    "__typename": "Adresse",
+                    "id": "1",
+                    "text": "7 Rue du Palais Gallien, 33000 Bordeaux, France",
+                    "ville": "Bordeaux",
+                    "ville_slug": "bordeaux-33",
+                    "coords": [-0.5812147, 44.8416492]
+                  },
+                  "Profil:1": {
+                    "__typename": "Profil",
+                    "id": "1",
+                    "nom": "OFFICE NOTARIAL DU JEU DE PAUME",
+                    "categorie": "notaire",
+                    "telephone": "05 56 42 41 85"
+                  },
+                  "Evenement:1": {
+                    "__typename": "Evenement",
+                    "id": "1",
+                    "titre": "Vente notariale interactive à Bordeaux",
+                    "ouverture_date": 1781005200
+                  },
+                  "Lot:129346": {
+                    "__typename": "Lot",
+                    "id": "129346",
+                    "nom": "Appartement T4 103,16 m² avec terrasse",
+                    "categorie": "immobilier",
+                    "sous_categorie": "appartements",
+                    "adresse_physique": {"__ref": "Adresse:1"},
+                    "organisateur": {"__ref": "Profil:1"},
+                    "evenement": {"__ref": "Evenement:1"},
+                    "criteres_resume": "Bordeaux · 103.16 m² · 4 pièces",
+                    "critere_surface_habitable": 103.16,
+                    "critere_diagnostic_date": "2026-04-27",
+                    "critere_consommation_energetique": "C",
+                    "critere_emissions_de_gaz": "C",
+                    "critere_occupation_du_bien": "Libre de toute occupation",
+                    "description": "Appartement avec terrasse.",
+                    "infos_conditions_de_vente": "Vente notariale interactive (VNI)",
+                    "infos_renseignements_de_vente": "Renseignements publics spécifiques.",
+                    "mise_a_prix": 340000,
+                    "termine": false
+                  }
+                }
+              }
+            }
+          }
+        }
+        </script>
+      </body>
+    </html>
+    """
+    sale = {
+        "source_name": "encheres_publiques",
+        "source_url": (
+            "https://www.encheres-publiques.com/encheres/immobilier/appartements/"
+            "bordeaux-33/appartement_129346"
+        ),
+        "source_blocks": {
+            "titre": "Appartement T4 103,16 m² avec terrasse",
+            "surface": "103.16",
+        },
+        "raw_text": "Appartement T4 103,16 m² avec terrasse",
+    }
+
+    class Client:
+        def get(self, url: str) -> str:
+            assert url == sale["source_url"]
+            return html
+
+    errors: list[str] = []
+    _enrich_sale_from_detail(Client(), sale, errors)
+
+    assert errors == []
+    assert sale["source_blocks"]["surface"] == "103.16"
+    assert sale["source_blocks"]["conditions_de_vente"] == "Vente notariale interactive (VNI)"
+    assert sale["source_blocks"]["diagnostic_date"] == "2026-04-27"
+    assert sale["source_blocks"]["occupation"] == "Libre de toute occupation"
+    assert sale["source_blocks"]["renseignements_de_vente"] == "Renseignements publics spécifiques."

@@ -2,12 +2,11 @@
 
 import dynamic from "next/dynamic";
 import type * as React from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
 import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
-import Bath from "lucide-react/dist/esm/icons/bath.js";
 import BedDouble from "lucide-react/dist/esm/icons/bed-double.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
@@ -56,8 +55,9 @@ import {
   propertyTypeLabel,
 } from "@/lib/format";
 import { geocodeAddress, pricePerM2, type GeoPoint } from "@/lib/geo";
-import { osmTileUrl } from "@/lib/tiles";
+import { mapboxStaticImageUrl } from "@/lib/mapbox";
 import { firstPropertyImage, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
+import { cleanSaleTitle, saleDisplayTitle } from "@/lib/sale-title";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { isNew } from "@/lib/dates";
 import type { AuctionSale } from "@/lib/types";
@@ -76,18 +76,23 @@ import {
   sortClientSearchResults,
 } from "@/lib/search/search-filters";
 import {
+  areMapViewportsClose,
+  shouldMapListFollowViewport,
+  visibleSalesForMapViewport,
+} from "@/lib/search/map-viewport-results";
+import {
   mergeSalesSearch,
   salesSearchToUrlRecord,
   type SalesSearchParams,
   type SalesSearchUrlRecord,
   type SearchSortKey,
-  type ViewportBounds,
 } from "@/lib/search/search-url-state";
 import {
   fetchSearchCount,
   fetchSearchMapResults,
   fetchSearchResults,
 } from "@/lib/search/search-service";
+import type { MapViewportChange } from "./MapPanel";
 
 const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPanel), {
   ssr: false,
@@ -131,6 +136,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const [hoveredSaleId, setHoveredSaleId] = useState<string | null>(null);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [mapViewport, setMapViewport] = useState<MapViewportChange | null>(null);
+  const deferredMapViewport = useDeferredValue(mapViewport);
   const [wideMap, setWideMap] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mobileMapOpen, setMobileMapOpen] = useState(Boolean(search.map));
@@ -268,23 +275,39 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     [center, rawMapSales, rawSales, search],
   );
 
+  const mapViewportResults = useMemo(
+    () => visibleSalesForMapViewport(mapSales, deferredMapViewport),
+    [deferredMapViewport, mapSales],
+  );
+
+  const mapListFollowsViewport = shouldMapListFollowViewport({
+    isDesktop,
+    mobileMapOpen,
+    viewport: deferredMapViewport,
+    mapSalesCount: mapSales.length,
+  });
+  const displayedSales = mapListFollowsViewport ? mapViewportResults.sales : filteredSales;
   const hasLocalFilters = hasClientOnlyFilters(search);
   const isInitialLoading = authLoading || isLoading;
   const activeFiltersCount = countActiveSearchFilters(search);
-  const displayCount = hasLocalFilters
+  const searchDisplayCount = hasLocalFilters
     ? filteredSales.length
     : (totalCount ?? filteredSales.length);
+  const displayCount = mapListFollowsViewport ? mapViewportResults.total : searchDisplayCount;
+  const loadedCount = mapListFollowsViewport ? mapSales.length : rawSales.length;
+  const filteredCount = displayedSales.length;
   const hasMore =
+    !mapListFollowsViewport &&
     !hasLocalFilters &&
     totalCount != null &&
     rawSales.length < totalCount &&
     rawSales.length >= page * pageSize;
   const splitClass = wideMap
-    ? "lg:grid-cols-[minmax(380px,35vw)_1fr]"
-    : "lg:grid-cols-[minmax(540px,58vw)_1fr]";
+    ? "lg:grid-cols-[minmax(0,1.7fr)_minmax(390px,30vw)]"
+    : "lg:grid-cols-[minmax(0,1.25fr)_minmax(430px,36vw)]";
   const localSearchStatistics = useMemo(
-    () => buildSearchStatistics(filteredSales),
-    [filteredSales],
+    () => buildSearchStatistics(displayedSales),
+    [displayedSales],
   );
   const statisticsLocked =
     isPreview || entitlementsData?.plan.features.salesStatistics !== "included";
@@ -302,10 +325,10 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   });
   const searchStatistics = useMemo(
     () =>
-      salesStatisticsData
+      salesStatisticsData && !mapListFollowsViewport
         ? searchStatisticsFromServer(salesStatisticsData.summary)
         : localSearchStatistics,
-    [localSearchStatistics, salesStatisticsData],
+    [localSearchStatistics, mapListFollowsViewport, salesStatisticsData],
   );
   const statisticsLoading =
     isInitialLoading || (!statisticsLocked && salesStatisticsLoading && !salesStatisticsData);
@@ -377,11 +400,15 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   }, []);
 
   const handleViewportChange = useCallback(
-    (bounds: ViewportBounds) => {
+    (viewport: MapViewportChange) => {
+      setMapViewport((current) =>
+        current && areMapViewportsClose(current, viewport) ? current : viewport,
+      );
+
       if (!searchRef.current.searchAsMove) return;
       if (viewportTimerRef.current != null) window.clearTimeout(viewportTimerRef.current);
       viewportTimerRef.current = window.setTimeout(() => {
-        updateSearch({ viewport: bounds });
+        updateSearch({ viewport: viewport.bounds });
       }, 520);
     },
     [updateSearch],
@@ -462,7 +489,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   }
 
   return (
-    <main className="min-h-screen bg-[#eef7ff] text-[#132238]">
+    <main className="min-h-screen bg-[#edf3f7] text-[#132238] [--sales-header-height:11rem] lg:[--sales-header-height:8.375rem]">
       <a
         href="#sales-results"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-[#132238] focus:shadow-lg"
@@ -475,9 +502,10 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         draft={draft}
         setDraft={setDraft}
         displayCount={displayCount}
-        loadedCount={rawSales.length}
-        filteredCount={filteredSales.length}
+        loadedCount={loadedCount}
+        filteredCount={filteredCount}
         activeFiltersCount={activeFiltersCount}
+        mapListFollowsViewport={mapListFollowsViewport}
         isLoading={isInitialLoading}
         isCountLoading={isCountLoading}
         isFetching={isFetching}
@@ -495,18 +523,24 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         onToggleLayout={() => setWideMap((value) => !value)}
       />
 
-      <div className={`grid min-h-[calc(100vh-145px)] ${isDesktop ? splitClass : "grid-cols-1"}`}>
+      <div
+        className={`grid min-h-[calc(100svh_-_var(--sales-header-height))] ${
+          isDesktop ? splitClass : "grid-cols-1"
+        }`}
+      >
         <section
           id="sales-results"
-          className="min-w-0 border-r border-[#132238]/10 bg-white"
+          className="min-w-0 border-t border-[#132238]/10 bg-[#f8fbfd] lg:order-2 lg:border-l"
           aria-label="Résultats de recherche"
         >
           <ResultsSummary
             search={search}
             displayCount={displayCount}
-            loadedCount={rawSales.length}
-            filteredCount={filteredSales.length}
+            loadedCount={loadedCount}
+            filteredCount={filteredCount}
             hasLocalFilters={hasLocalFilters}
+            mapListFollowsViewport={mapListFollowsViewport}
+            mapViewport={deferredMapViewport}
             isLoading={isInitialLoading || isCountLoading}
             geocoding={geocoding}
           />
@@ -527,7 +561,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           />
 
           <SearchResultsList
-            sales={filteredSales}
+            sales={displayedSales}
             locked={isPreview}
             isLoading={isInitialLoading}
             error={error}
@@ -543,8 +577,9 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           <PaginationControls
             hasMore={hasMore}
             isFetching={isFetching}
-            loadedCount={rawSales.length}
-            totalCount={totalCount}
+            loadedCount={filteredCount}
+            totalCount={mapListFollowsViewport ? displayCount : totalCount}
+            mapListFollowsViewport={mapListFollowsViewport}
             onLoadMore={loadMore}
           />
 
@@ -552,8 +587,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         </section>
 
         {isDesktop ? (
-          <aside className="relative min-h-[calc(100vh-145px)] bg-[#e7f4ef]">
-            <div className="sticky top-0 h-screen">
+          <aside className="relative min-h-[calc(100svh_-_var(--sales-header-height))] bg-[#dfe7eb] lg:order-1">
+            <div className="sticky top-[var(--sales-header-height)] h-[calc(100svh_-_var(--sales-header-height))]">
               <LazyMapPanel
                 sales={mapSales}
                 hoveredSaleId={hoveredSaleId}
@@ -563,7 +598,12 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
                 onHover={setHoveredSaleId}
                 onSelect={handleMapSelect}
                 onViewportChange={handleViewportChange}
-                onSearchAsMoveChange={(enabled) => updateSearch({ searchAsMove: enabled })}
+                onSearchAsMoveChange={(enabled) =>
+                  updateSearch({
+                    searchAsMove: enabled,
+                    viewport: enabled ? mapViewport?.bounds : undefined,
+                  })
+                }
               />
             </div>
           </aside>
@@ -616,7 +656,12 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
                 onHover={setHoveredSaleId}
                 onSelect={handleMapSelect}
                 onViewportChange={handleViewportChange}
-                onSearchAsMoveChange={(enabled) => updateSearch({ searchAsMove: enabled })}
+                onSearchAsMoveChange={(enabled) =>
+                  updateSearch({
+                    searchAsMove: enabled,
+                    viewport: enabled ? mapViewport?.bounds : undefined,
+                  })
+                }
               />
             </div>
           </motion.div>
@@ -634,6 +679,7 @@ function SearchHeader({
   loadedCount,
   filteredCount,
   activeFiltersCount,
+  mapListFollowsViewport,
   isLoading,
   isCountLoading,
   isFetching,
@@ -657,6 +703,7 @@ function SearchHeader({
   loadedCount: number;
   filteredCount: number;
   activeFiltersCount: number;
+  mapListFollowsViewport: boolean;
   isLoading: boolean;
   isCountLoading: boolean;
   isFetching: boolean;
@@ -674,72 +721,105 @@ function SearchHeader({
   onToggleLayout: () => void;
 }) {
   return (
-    <header className="sticky top-0 z-40 border-b border-[#132238]/10 bg-white/95 shadow-sm backdrop-blur-xl">
-      <div className="flex flex-col gap-3 px-3 py-3 sm:px-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="min-w-0 lg:w-[19rem]">
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[#0f766e]">
-              Immojudis
-            </p>
-            <h1 className="font-display text-2xl font-bold leading-none text-[#132238] sm:text-3xl">
-              Recherche immobilière
-            </h1>
-          </div>
+    <header className="top-0 z-40 border-b border-[#132238]/10 bg-[#fbfdff] shadow-[0_10px_30px_rgba(19,34,56,0.12)] lg:sticky">
+      <div className="bg-[#071a31] text-white">
+        <div className="px-3 py-3 sm:px-5 lg:px-6">
+          <div className="grid gap-3 lg:grid-cols-[max-content_minmax(20rem,1fr)_auto] lg:items-center">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="font-display text-[2rem] font-semibold leading-none tracking-normal text-white sm:text-[2.25rem]">
+                Immo<span className="text-[#c98d45]">judis</span>
+              </div>
+              <div className="hidden h-8 w-px bg-white/20 sm:block" aria-hidden />
+              <div className="min-w-0">
+                <h1 className="truncate text-base font-semibold text-white">Ventes judiciaires</h1>
+                <p className="mt-0.5 hidden text-xs font-medium text-white/62 sm:block">
+                  Carte, audiences et dossiers vérifiés
+                </p>
+              </div>
+            </div>
 
-          <SearchInput
-            value={draft.query}
-            onChange={(value) => setDraft((current) => ({ ...current, query: value }))}
-          />
-
-          <div className="flex shrink-0 items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
-            <SortDropdown sort={search.sort ?? "relevance"} onChange={onSortChange} />
-            <SaveSearchButton saving={savingAlert} onClick={onSaveSearch} />
-            <CsvExportButton
-              exporting={exportingCsv}
-              locked={csvExportLocked}
-              onClick={onExportCsv}
+            <SearchInput
+              value={draft.query}
+              onChange={(value) => setDraft((current) => ({ ...current, query: value }))}
             />
-            <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
+
+            <div className="flex shrink-0 items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] lg:pb-0 [&::-webkit-scrollbar]:hidden">
+              <SaveSearchButton saving={savingAlert} onClick={onSaveSearch} />
+              <CsvExportButton
+                exporting={exportingCsv}
+                locked={csvExportLocked}
+                onClick={onExportCsv}
+              />
+              <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
+            </div>
           </div>
         </div>
+      </div>
 
-        <FilterBar
-          draft={draft}
-          setDraft={setDraft}
-          activeFiltersCount={activeFiltersCount}
-          filtersOpen={filtersOpen}
-          onFiltersOpenChange={onFiltersOpenChange}
-          onReset={onReset}
-        />
+      <div className="border-t border-[#132238]/10 bg-white/96 px-3 py-2.5 backdrop-blur-xl sm:px-5 lg:px-6">
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+          <FilterBar
+            draft={draft}
+            setDraft={setDraft}
+            activeFiltersCount={activeFiltersCount}
+            filtersOpen={filtersOpen}
+            onFiltersOpenChange={onFiltersOpenChange}
+            onReset={onReset}
+          />
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-[#55626f]">
-          <span>
-            {isLoading || isCountLoading ? "Chargement" : displayCount.toLocaleString("fr-FR")}{" "}
-            dossiers
-          </span>
-          <span aria-hidden>·</span>
-          <span>{loadedCount.toLocaleString("fr-FR")} cartes chargées</span>
-          {filteredCount !== loadedCount ? (
-            <>
-              <span aria-hidden>·</span>
-              <span>{filteredCount.toLocaleString("fr-FR")} visibles après filtres locaux</span>
-            </>
-          ) : null}
-          {isFetching && !isLoading ? (
-            <span className="inline-flex items-center gap-1 text-[#0f766e]">
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-              mise à jour
-            </span>
-          ) : null}
-          {geocoding ? (
-            <span className="inline-flex items-center gap-1 text-[#0f766e]">
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-              géocodage
-            </span>
-          ) : null}
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <SortDropdown sort={search.sort ?? "relevance"} onChange={onSortChange} />
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-[#55626f]">
+              <HeaderStatusPill>
+                {isLoading || isCountLoading ? "Chargement" : displayCount.toLocaleString("fr-FR")}{" "}
+                {mapListFollowsViewport ? "dans la carte" : "ventes"}
+              </HeaderStatusPill>
+              <HeaderStatusPill>
+                {loadedCount.toLocaleString("fr-FR")}{" "}
+                {mapListFollowsViewport ? "points carte" : "chargées"}
+              </HeaderStatusPill>
+              {filteredCount !== loadedCount ? (
+                <HeaderStatusPill>
+                  {filteredCount.toLocaleString("fr-FR")} affichées
+                </HeaderStatusPill>
+              ) : null}
+              {isFetching && !isLoading ? (
+                <HeaderStatusPill tone="teal">
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  Mise à jour
+                </HeaderStatusPill>
+              ) : null}
+              {geocoding ? (
+                <HeaderStatusPill tone="teal">
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  Géocodage
+                </HeaderStatusPill>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
     </header>
+  );
+}
+
+function HeaderStatusPill({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "teal";
+}) {
+  return (
+    <span
+      className={`inline-flex min-h-7 items-center gap-1.5 rounded-md border px-2.5 ${
+        tone === "teal"
+          ? "border-[#b8ddd5] bg-[#eefaf3] text-[#0f766e]"
+          : "border-[#d9e4ec] bg-white text-[#55626f]"
+      }`}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -752,8 +832,8 @@ function SearchInput({ value, onChange }: { value: string; onChange: (value: str
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Adresse, mot-clé, référence, source..."
-        className="h-11 rounded-md border-[#cbd5df] bg-[#f8fbfd] pl-10 pr-3 text-sm font-semibold shadow-inner focus-visible:ring-[#0f766e]"
+        placeholder="Ville, adresse, tribunal..."
+        className="h-11 rounded-md border-white/25 bg-white pl-10 pr-3 text-[15px] font-semibold text-[#132238] shadow-[0_10px_24px_rgba(0,0,0,0.18)] focus-visible:ring-[#c98d45]"
       />
     </label>
   );
@@ -775,7 +855,10 @@ function FilterBar({
   onReset: () => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2 pb-1" aria-label="Filtres de recherche">
+    <div
+      className="flex min-w-0 gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      aria-label="Filtres de recherche"
+    >
       <InlineTextFilter
         label="Ville"
         icon={MapPin}
@@ -796,7 +879,9 @@ function FilterBar({
       <button
         type="button"
         onClick={() => onFiltersOpenChange(!filtersOpen)}
+        aria-label="Filtres avancés"
         aria-expanded={filtersOpen}
+        title="Filtres avancés"
         className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-[#cbd5df] bg-white px-3 text-sm font-bold text-[#132238] shadow-sm transition-colors hover:border-[#0f766e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
       >
         <SlidersHorizontal className="h-4 w-4" />
@@ -835,7 +920,7 @@ function InlineTextFilter({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="relative inline-flex h-10 min-w-[12rem] shrink-0 items-center rounded-md border border-[#cbd5df] bg-white shadow-sm focus-within:ring-2 focus-within:ring-[#0f766e]">
+    <label className="relative inline-flex h-10 min-w-[10.5rem] shrink-0 items-center rounded-md border border-[#cbd5df] bg-white shadow-sm focus-within:ring-2 focus-within:ring-[#0f766e]">
       <Icon className="ml-3 h-4 w-4 text-[#667482]" />
       <span className="sr-only">{label}</span>
       <input
@@ -1034,6 +1119,8 @@ function ResultsSummary({
   loadedCount,
   filteredCount,
   hasLocalFilters,
+  mapListFollowsViewport,
+  mapViewport,
   isLoading,
   geocoding,
 }: {
@@ -1042,6 +1129,8 @@ function ResultsSummary({
   loadedCount: number;
   filteredCount: number;
   hasLocalFilters: boolean;
+  mapListFollowsViewport: boolean;
+  mapViewport: MapViewportChange | null;
   isLoading: boolean;
   geocoding: boolean;
 }) {
@@ -1051,35 +1140,55 @@ function ResultsSummary({
     "Pertinence";
 
   return (
-    <div className="border-b border-[#132238]/10 bg-white/95 px-4 py-4 backdrop-blur sm:px-5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+    <div className="border-b border-[#132238]/10 bg-[#fbfdff] px-4 py-3 backdrop-blur sm:px-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-xl font-extrabold leading-tight text-[#132238]">
-            {location} · ventes immobilières
+          <h2 className="text-lg font-extrabold leading-tight text-[#132238]">
+            {isLoading
+              ? "Recherche des dossiers"
+              : `${displayCount.toLocaleString("fr-FR")} ventes trouvées`}
           </h2>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-[#55626f]">
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-[#667482]">
             <span>
-              {isLoading ? "Chargement" : displayCount.toLocaleString("fr-FR")}{" "}
-              {hasLocalFilters ? "résultats visibles" : "résultats"}
+              {mapListFollowsViewport
+                ? "zone visible sur la carte"
+                : hasLocalFilters
+                  ? `${location} · filtres locaux actifs`
+                  : `${location} · ventes immobilières judiciaires`}
             </span>
             <span aria-hidden>·</span>
             <span>tri {sortLabel.toLowerCase()}</span>
             <span aria-hidden>·</span>
-            <span>{loadedCount.toLocaleString("fr-FR")} chargés</span>
+            <span>
+              {loadedCount.toLocaleString("fr-FR")}{" "}
+              {mapListFollowsViewport ? "points carte" : "chargés"}
+            </span>
             {filteredCount !== loadedCount ? (
               <>
                 <span aria-hidden>·</span>
-                <span>{filteredCount.toLocaleString("fr-FR")} après viewport/filtres</span>
+                <span>{filteredCount.toLocaleString("fr-FR")} affichés</span>
+              </>
+            ) : null}
+            {mapListFollowsViewport && mapViewport ? (
+              <>
+                <span aria-hidden>·</span>
+                <span>zoom {mapViewport.zoom}</span>
               </>
             ) : null}
           </div>
         </div>
-        {search.viewport || geocoding ? (
+        {search.viewport || mapListFollowsViewport || geocoding ? (
           <div className="flex flex-wrap gap-2 text-xs font-bold">
+            {mapListFollowsViewport ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-[#cbded8] bg-[#eefaf3] px-2.5 py-1 text-[#0f766e]">
+                <Map className="h-3.5 w-3.5" />
+                liste liée à la carte
+              </span>
+            ) : null}
             {search.viewport ? (
               <span className="inline-flex items-center gap-1.5 rounded-md border border-[#cbded8] bg-[#eefaf3] px-2.5 py-1 text-[#0f766e]">
                 <Map className="h-3.5 w-3.5" />
-                viewport actif
+                URL bbox active
               </span>
             ) : null}
             {geocoding ? (
@@ -1150,27 +1259,30 @@ function SearchStatisticsPanel({
   ];
 
   return (
-    <div className="border-b border-[#132238]/10 bg-[#f8fbfd] px-4 py-3 sm:px-5">
+    <div className="border-b border-[#132238]/10 bg-white px-4 py-3 sm:px-5">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#0f766e]">
+        <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#132238]">
           <BarChart3 className="h-4 w-4" />
-          Statistiques
+          Workbench
         </div>
         {locked ? (
-          <span className="inline-flex items-center gap-1 rounded-md border border-[#d6e0dc] bg-white px-2 py-1 text-[10px] font-bold text-[#667482]">
+          <span className="inline-flex items-center gap-1 rounded-md border border-[#ead8c5] bg-[#fffaf2] px-2 py-1 text-[10px] font-bold text-[#8a5b24]">
             <LockKeyhole className="h-3 w-3" />
             Analyse
           </span>
         ) : null}
       </div>
-      <dl className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-2">
         {items.map((item) => (
-          <div key={item.label} className="rounded-md border border-[#dce7ee] bg-white p-3">
+          <div
+            key={item.label}
+            className="min-w-0 rounded-md border border-[#dce7ee] bg-[#f8fbfd] px-3 py-2"
+          >
             <dt className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#667482]">
               <span className="text-[#0f766e]">{item.icon}</span>
               {item.label}
             </dt>
-            <dd className="mt-1 text-sm font-extrabold tabular-nums text-[#132238]">
+            <dd className="mt-0.5 text-sm font-extrabold tabular-nums text-[#132238]">
               {loading ? "…" : locked || item.locked ? "—" : item.value}
             </dd>
           </div>
@@ -1228,7 +1340,7 @@ function SearchStatisticsPanel({
                           className="font-bold text-[#132238] hover:text-[#0f766e]"
                           to={`/sales/${item.id}`}
                         >
-                          {item.title ?? "Vente judiciaire"}
+                          {cleanSaleTitle(item.title) ?? "Vente judiciaire"}
                         </Link>
                         <div className="mt-0.5 text-[#667482]">
                           {[item.city, item.department, propertyTypeLabel(item.propertyType)]
@@ -1291,12 +1403,12 @@ function SearchResultsList({
   onSelect: (saleId: string | null) => void;
 }) {
   return (
-    <div className="px-4 pb-6 pt-4 sm:px-5">
+    <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
       {error ? <ErrorState error={error} /> : null}
 
       {!isLoading && sales.length === 0 && !error ? <NoResultsState /> : null}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3">
         {isLoading
           ? Array.from({ length: 8 }).map((_, index) => <ListingCardSkeleton key={index} />)
           : sales.map((sale, index) => (
@@ -1338,9 +1450,7 @@ function ListingCard({
   const { isViewed } = useViewedSales();
   const viewed = !locked && isViewed(sale.id);
   const fresh = !locked && isNew(sale.created_at);
-  const title = locked
-    ? "Détail réservé aux membres"
-    : (sale.title ?? propertyTypeLabel(sale.property_type));
+  const title = locked ? "Détail réservé aux membres" : saleDisplayTitle(sale);
   const location = locked
     ? "Localisation réservée"
     : [sale.address, sale.city, sale.department ? `(${sale.department})` : null]
@@ -1350,6 +1460,28 @@ function ListingCard({
   const baths = sale.bathrooms_count;
   const riskCount = locked ? 0 : (sale.risks?.length ?? 0);
   const ppm = locked ? null : pricePerM2(sale.starting_price_eur, surface);
+  const dpe = locked ? null : extractDpe(sale);
+  const dpeTheme = dpeColor(dpe?.class);
+  const tribunalLabel = locked
+    ? "Tribunal réservé"
+    : sale.tribunal_city
+      ? `TJ ${sale.tribunal_city}`
+      : (sale.tribunal_name ?? sale.tribunal ?? "Tribunal à confirmer");
+  const score = locked ? null : sale.investment_score;
+  const scoreLabel = score == null ? "À auditer" : `${Math.round(score)}`;
+  const riskLabel = locked
+    ? "Réservé"
+    : riskCount > 1
+      ? `${riskCount} alertes`
+      : riskCount === 1
+        ? "1 alerte"
+        : "Faible";
+  const riskTone =
+    locked || riskCount > 1
+      ? "text-[#8a5b00]"
+      : riskCount === 1
+        ? "text-[#9c642b]"
+        : "text-[#0f766e]";
 
   return (
     <Link
@@ -1370,13 +1502,13 @@ function ListingCard({
         initial={reduceMotion ? false : { opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.22, delay: Math.min(index * 0.025, 0.18) }}
-        className={`flex h-full flex-col overflow-hidden rounded-md border bg-white shadow-sm transition-colors duration-200 ${
+        className={`grid h-full overflow-hidden rounded-md border bg-white shadow-[0_2px_8px_rgba(19,34,56,0.08)] transition duration-200 sm:grid-cols-[9.5rem_1fr] xl:grid-cols-[10.5rem_1fr] ${
           active
-            ? "border-[#132238] ring-2 ring-[#132238]"
-            : "border-[#d8dee4] hover:border-[#0f766e]"
+            ? "border-[#c98d45] shadow-[0_0_0_2px_rgba(201,141,69,0.22),0_14px_36px_rgba(19,34,56,0.14)]"
+            : "border-[#d8e0e7] hover:border-[#c98d45] hover:shadow-md"
         }`}
       >
-        <div className="relative aspect-[1.36] overflow-hidden bg-[#edf2f5]">
+        <div className="relative aspect-[1.35] overflow-hidden bg-[#edf2f5] sm:aspect-auto sm:min-h-[12.25rem]">
           <ListingImage sale={sale} locked={locked} title={title} />
           <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
             {locked ? (
@@ -1399,19 +1531,18 @@ function ListingCard({
           ) : null}
         </div>
 
-        <div className="flex flex-1 flex-col p-4">
+        <div className="flex min-w-0 flex-1 flex-col p-3.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-[22px] font-extrabold leading-tight text-[#132238]">
+              <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#667482]">
+                Mise à prix
+              </div>
+              <div className="mt-0.5 text-[22px] font-extrabold leading-tight text-[#132238]">
                 {formatPrice(sale.starting_price_eur)}
               </div>
-              <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold text-[#3d4b57]">
-                <Metric icon={BedDouble} label={beds != null ? `${beds} ch.` : "Ch. n.c."} />
-                <Metric icon={Bath} label={baths != null ? `${baths} sdb` : "Sdb n.c."} />
-                <Metric
-                  icon={Ruler}
-                  label={displaySurface.value != null ? displaySurface.label : "Surface n.c."}
-                />
+              <div className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#132238]">
+                <MapPin className="h-4 w-4 shrink-0 text-[#0f766e]" />
+                <span className="truncate">{location || "Adresse à confirmer"}</span>
               </div>
             </div>
             <div className="flex shrink-0 gap-1">
@@ -1420,30 +1551,68 @@ function ListingCard({
             </div>
           </div>
 
-          <div className="mt-3 min-w-0 text-sm font-semibold leading-snug text-[#132238]">
-            <span className="line-clamp-1">{location || "Adresse à confirmer"}</span>
-            <span className="mt-0.5 block line-clamp-1 text-[#55626f]">{title}</span>
+          <div className="mt-2 min-w-0">
+            <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-[#3d4b57]">
+              {title}
+            </h3>
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold text-[#667482]">
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-[#3d4b57]">
+            <Metric icon={Landmark} label={tribunalLabel} />
+            <Metric
+              icon={CalendarDays}
+              label={locked ? "Audience réservée" : `Audience ${formatDate(sale.sale_date)}`}
+            />
+            <Metric
+              icon={Ruler}
+              label={displaySurface.value != null ? displaySurface.label : "Surface n.c."}
+            />
+            <Metric icon={BedDouble} label={beds != null ? `${beds} ch.` : "Ch. n.c."} />
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 overflow-hidden rounded-md border border-[#e2e8ee] bg-[#fbfdff] text-xs">
+            <ListingSignal
+              label="Dossier"
+              value={locked ? "Réservé" : "Vérifié"}
+              tone={locked ? "text-[#8a5b24]" : "text-[#0f766e]"}
+            />
+            <ListingSignal label="Score" value={scoreLabel} tone="text-[#0f766e]" />
+            <ListingSignal label="Risque" value={riskLabel} tone={riskTone} />
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[#667482]">
             {locked ? (
               <span>Analyse, pièces et localisation complète après connexion</span>
             ) : (
               <>
-                <span>{propertyTypeLabel(sale.property_type)}</span>
-                <span aria-hidden>·</span>
-                <span>{occupancyLabel(sale.occupancy_status)}</span>
+                <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
+                  {propertyTypeLabel(sale.property_type)}
+                </span>
+                <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
+                  {occupancyLabel(sale.occupancy_status)}
+                </span>
                 {ppm != null ? (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span>{Math.round(ppm).toLocaleString("fr-FR")} €/m²</span>
-                  </>
+                  <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
+                    {Math.round(ppm).toLocaleString("fr-FR")} €/m²
+                  </span>
+                ) : null}
+                {dpe?.class ? (
+                  <span
+                    className="rounded-md border px-2 py-1 font-extrabold"
+                    style={{
+                      backgroundColor: dpeTheme?.background,
+                      borderColor: dpeTheme?.border,
+                      color: dpeTheme?.foreground,
+                    }}
+                  >
+                    DPE {dpe.class}
+                  </span>
                 ) : null}
               </>
             )}
           </div>
 
-          <div className="mt-auto flex items-end justify-between gap-3 pt-4">
+          <div className="mt-auto flex items-end justify-between gap-3 pt-3">
             <span className="line-clamp-1 text-[11px] font-bold text-[#8b949e]">
               {locked
                 ? "Immojudis"
@@ -1451,21 +1620,8 @@ function ListingCard({
                     sale.tribunal_city ? ` · ${sale.tribunal_city}` : ""
                   }`}
             </span>
-            <span
-              className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-extrabold ${
-                locked
-                  ? "bg-[#f4f1ea] text-[#9c642b]"
-                  : riskCount > 0
-                    ? "bg-[#fff6df] text-[#8a5b00]"
-                    : "bg-[#e8f7ef] text-[#0f766e]"
-              }`}
-            >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              {locked
-                ? "Réservé"
-                : riskCount > 0
-                  ? `${riskCount} point${riskCount > 1 ? "s" : ""}`
-                  : "Vérifié"}
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[#f4f7f9] px-2 py-1 text-[11px] font-extrabold text-[#132238]">
+              Voir le détail
             </span>
           </div>
         </div>
@@ -1487,7 +1643,7 @@ function ListingImage({
   const imageUrl = locked ? fallback : firstPropertyImage(sale.media);
   const mapUrl =
     !imageUrl && !locked && sale.latitude != null && sale.longitude != null
-      ? osmTileUrl(sale.latitude, sale.longitude, 15)
+      ? mapboxStaticImageUrl({ lat: sale.latitude, lng: sale.longitude, zoom: 15 })
       : "";
   const src = imageUrl || mapUrl || fallback;
 
@@ -1555,9 +1711,20 @@ function Metric({
   label: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-[#f3f7fa] px-2 py-1">
-      <Icon className="h-3.5 w-3.5 text-[#0f766e]" />
-      {label}
+    <span className="inline-flex min-w-0 items-center gap-1 rounded-md bg-[#f3f7fa] px-2 py-1">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-[#0f766e]" />
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
+function ListingSignal({ label, value, tone }: { label: string; value: string; tone: string }) {
+  return (
+    <span className="min-w-0 border-r border-[#e2e8ee] px-2 py-2 last:border-r-0">
+      <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-[#8b949e]">
+        {label}
+      </span>
+      <span className={`mt-0.5 block truncate font-extrabold ${tone}`}>{value}</span>
     </span>
   );
 }
@@ -1574,7 +1741,7 @@ function ShareButton({ sale }: { sale: AuctionSale }) {
 
     try {
       if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ title: sale.title ?? "Vente Immojudis", url });
+        await navigator.share({ title: saleDisplayTitle(sale, "Vente Immojudis"), url });
       } else if (typeof navigator !== "undefined" && navigator.clipboard) {
         await navigator.clipboard.writeText(url);
         toast.success("Lien copié");
@@ -1939,7 +2106,7 @@ function MobileFilterDrawer({
                 }
                 className="h-4 w-4 accent-[#0f766e]"
               />
-              Open house / visite disponible
+              Visite disponible
             </label>
           </AdvancedGroup>
         </div>
@@ -2095,11 +2262,11 @@ function MobileMapToggle({
   onOpenMap: () => void;
 }) {
   return (
-    <div className="fixed bottom-4 left-1/2 z-30 flex -translate-x-1/2 gap-2 rounded-md border border-[#132238]/10 bg-white/95 p-1 shadow-xl backdrop-blur lg:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-2 gap-2 border-t border-[#132238]/10 bg-white/95 p-2 shadow-[0_-14px_34px_rgba(19,34,56,0.12)] backdrop-blur lg:hidden">
       <button
         type="button"
         onClick={onOpenFilters}
-        className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md px-3 text-sm font-extrabold text-[#132238] transition-colors hover:bg-[#f4f7f9]"
+        className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md px-3 text-sm font-extrabold text-[#132238] transition-colors hover:bg-[#f4f7f9]"
       >
         <ListFilter className="h-4 w-4" />
         Filtres
@@ -2112,10 +2279,10 @@ function MobileMapToggle({
       <button
         type="button"
         onClick={onOpenMap}
-        className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md bg-[#132238] px-4 text-sm font-extrabold text-white transition-colors hover:bg-[#1f3657]"
+        className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-[#132238] px-4 text-sm font-extrabold text-white transition-colors hover:bg-[#1f3657]"
       >
         <Map className="h-4 w-4" />
-        Map
+        Carte
       </button>
     </div>
   );
@@ -2126,12 +2293,14 @@ function PaginationControls({
   isFetching,
   loadedCount,
   totalCount,
+  mapListFollowsViewport,
   onLoadMore,
 }: {
   hasMore: boolean;
   isFetching: boolean;
   loadedCount: number;
   totalCount: number | undefined;
+  mapListFollowsViewport: boolean;
   onLoadMore: () => void;
 }) {
   if (!hasMore && loadedCount === 0) return null;
@@ -2150,11 +2319,15 @@ function PaginationControls({
         </button>
       ) : (
         <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#8b949e]">
-          {totalCount != null
-            ? `${loadedCount.toLocaleString("fr-FR")} / ${totalCount.toLocaleString(
+          {mapListFollowsViewport && totalCount != null && loadedCount < totalCount
+            ? `${loadedCount.toLocaleString("fr-FR")} affichés / ${totalCount.toLocaleString(
                 "fr-FR",
-              )} dossiers`
-            : "Tous les dossiers chargés"}
+              )} dans la carte`
+            : totalCount != null
+              ? `${loadedCount.toLocaleString("fr-FR")} / ${totalCount.toLocaleString(
+                  "fr-FR",
+                )} dossiers`
+              : "Tous les dossiers chargés"}
         </div>
       )}
     </div>
@@ -2183,8 +2356,8 @@ function ErrorState({ error }: { error: Error }) {
 
 function ListingCardSkeleton() {
   return (
-    <div className="overflow-hidden rounded-md border border-[#d8dee4] bg-white shadow-sm">
-      <Skeleton className="aspect-[1.36] w-full rounded-none bg-[#eef2f4]" />
+    <div className="grid overflow-hidden rounded-md border border-[#d8dee4] bg-white shadow-sm sm:grid-cols-[12.5rem_1fr]">
+      <Skeleton className="aspect-[1.5] w-full rounded-none bg-[#eef2f4] sm:aspect-auto sm:min-h-[13rem]" />
       <div className="space-y-3 p-4">
         <div className="flex justify-between gap-3">
           <div className="flex-1 space-y-2">
@@ -2421,8 +2594,15 @@ function useMediaQuery(query: string) {
     setMatches(media.matches);
 
     const onChange = () => setMatches(media.matches);
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    }
+    if (typeof media.addListener === "function") {
+      media.addListener(onChange);
+      return () => media.removeListener(onChange);
+    }
+    return undefined;
   }, [query]);
 
   return matches;

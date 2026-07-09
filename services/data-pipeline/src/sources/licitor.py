@@ -11,7 +11,13 @@ import httpx
 from bs4 import BeautifulSoup
 
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
-from src.normalize import clean_text, extract_department
+from src.normalize import (
+    SURFACE_VALUE_PATTERN,
+    clean_text,
+    extract_department,
+    has_rented_occupancy_signal,
+    no_lease_occupancy_status,
+)
 from src.raw_models import validate_raw_sales
 from src.sources.common import ScrapeResult
 
@@ -205,19 +211,26 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
 
     title = _extract_title(soup, lines, raw_text)
     city = _extract_city(soup, lines, raw_text)
-    department = _extract_department(raw_text)
-    postal_code = _extract_postal_code(raw_text)
+    postal_code = _extract_postal_code(soup, raw_text, city)
+    department = _extract_department(raw_text) or extract_department(postal_code)
     address = _extract_address(soup, lines, city, postal_code)
     lawyer_name, lawyer_contact = _extract_lawyer(lines)
     latitude, longitude = _extract_coordinates(soup)
     description = _extract_description(soup, title)
     images = _extract_images(soup, source_url)
+    tribunal = _extract_after(raw_text, r"(Tribunal\s+Judiciaire[^\n]+)")
+    surface = _extract_surface_m2(raw_text)
+    starting_price = _extract_after(raw_text, r"Mise à prix\s*:?\s*([^\n]+)")
+    sale_date = _extract_sale_date(lines)
+    visit_dates = _extract_visit_dates(lines)
+    occupancy_status = _extract_occupancy_status(raw_text)
+    documents = _extract_documents(soup, source_url)
 
     return {
         "source_name": "licitor",
         "source_url": source_url,
         "external_id": _extract_external_id(source_url, raw_text),
-        "tribunal": _extract_after(raw_text, r"(Tribunal\s+Judiciaire[^\n]+)"),
+        "tribunal": tribunal,
         "department": department or extract_department(postal_code),
         "city": city,
         "address": address,
@@ -225,20 +238,42 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "property_type": title,
         "title": title,
         "description": description or title,
-        "surface_m2": _extract_surface_m2(raw_text),
-        "starting_price_eur": _extract_after(raw_text, r"Mise à prix\s*:?\s*([^\n]+)"),
-        "sale_date": _extract_sale_date(lines),
-        "visit_dates": _extract_visit_dates(lines),
+        "surface_m2": surface,
+        "starting_price_eur": starting_price,
+        "sale_date": sale_date,
+        "visit_dates": visit_dates,
         "lawyer_name": lawyer_name,
         "lawyer_contact": lawyer_contact,
         "status": "unknown",
-        "occupancy_status": _extract_occupancy_status(raw_text),
+        "occupancy_status": occupancy_status,
         "latitude": latitude,
         "longitude": longitude,
-        "documents": _extract_documents(soup, source_url),
+        "documents": documents,
         "source_images": images,
         "raw_image_url": images[0] if images else None,
         "raw_text": raw_text,
+        "source_blocks": {
+            key: value
+            for key, value in {
+                "titre": title,
+                "description": description,
+                "tribunal": tribunal,
+                "adresse": address,
+                "ville": city,
+                "code_postal": postal_code,
+                "surface": surface,
+                "mise_a_prix": starting_price,
+                "date_vente": sale_date,
+                "visites": " | ".join(visit_dates) if visit_dates else None,
+                "avocat": lawyer_name,
+                "contact_avocat": lawyer_contact,
+                "occupation": occupancy_status,
+                "documents": "; ".join(document["label"] for document in documents if document.get("label"))
+                or None,
+                "page_text": raw_text,
+            }.items()
+            if value
+        },
     }
 
 
@@ -335,6 +370,7 @@ def _parse_list_sale(source_url: str, raw_text: str) -> dict[str, Any] | None:
                 break
             description_lines.append(line)
     description = clean_text(" ".join(description_lines)) or title
+    surface = _extract_surface_m2(raw_text)
     return {
         "source_name": "licitor",
         "source_url": source_url,
@@ -344,12 +380,26 @@ def _parse_list_sale(source_url: str, raw_text: str) -> dict[str, Any] | None:
         "property_type": title,
         "title": title,
         "description": description,
-        "surface_m2": _extract_surface_m2(raw_text),
+        "surface_m2": surface,
         "starting_price_eur": price,
         "sale_date": sale_date,
         "status": "unknown",
         "documents": [],
         "raw_text": raw_text,
+        "source_blocks": {
+            key: value
+            for key, value in {
+                "departement": department,
+                "ville": city,
+                "titre": title,
+                "description": description,
+                "surface": surface,
+                "mise_a_prix": price,
+                "date_vente": sale_date,
+                "page_text": raw_text,
+            }.items()
+            if value
+        },
     }
 
 
@@ -431,9 +481,62 @@ def _extract_department(raw_text: str) -> str | None:
     return None
 
 
-def _extract_postal_code(raw_text: str) -> str | None:
+def _extract_postal_code(soup: BeautifulSoup, raw_text: str, city: str | None = None) -> str | None:
+    location = soup.select_one(".AddressBlock .Location")
+    if location:
+        location_text = location.get_text(" ", strip=True)
+        match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b", location_text)
+        if match:
+            return match.group(1)
+    arrondissement_postal_code = _postal_code_from_arrondissement(city)
+    if arrondissement_postal_code:
+        return arrondissement_postal_code
+    h1 = soup.select_one("#legalad-search h1")
+    if h1:
+        arrondissement_postal_code = _postal_code_from_arrondissement(h1.get_text(" ", strip=True))
+        if arrondissement_postal_code:
+            return arrondissement_postal_code
+    match = _postal_code_near_city(raw_text, city)
+    if match:
+        return match
+    if city:
+        return None
     match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b", raw_text)
     return match.group(1) if match else None
+
+
+def _postal_code_near_city(raw_text: str, city: str | None) -> str | None:
+    city_text = clean_text(city)
+    if not city_text:
+        return None
+    city_pattern = re.escape(re.sub(r"\s+\d+(?:er|[eè]me|eme)$", "", city_text, flags=re.I))
+    patterns = (
+        rf"\b({FRENCH_POSTAL_CODE_PATTERN})\s+{city_pattern}\b",
+        rf"\b{city_pattern}\s+\(?({FRENCH_POSTAL_CODE_PATTERN})\)?\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, raw_text, re.I)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _postal_code_from_arrondissement(value: object | None) -> str | None:
+    text = clean_text(value)
+    if not text:
+        return None
+    match = re.search(r"\b(Paris|Lyon|Marseille)\s+(\d{1,2})(?:er|[eè]me|eme)\b", text, re.I)
+    if not match:
+        return None
+    city = match.group(1).lower()
+    arrondissement = int(match.group(2))
+    if city == "paris" and 1 <= arrondissement <= 20:
+        return f"750{arrondissement:02d}"
+    if city == "lyon" and 1 <= arrondissement <= 9:
+        return f"6900{arrondissement}"
+    if city == "marseille" and 1 <= arrondissement <= 16:
+        return f"130{arrondissement:02d}"
+    return None
 
 
 def _extract_address(soup: BeautifulSoup, lines: list[str], city: str | None, postal_code: str | None) -> str | None:
@@ -450,6 +553,8 @@ def _extract_address(soup: BeautifulSoup, lines: list[str], city: str | None, po
             if not re.search(r"Afficher|exactitude|Visite|Maître", candidate, re.I):
                 if postal_code and postal_code not in candidate:
                     return f"{candidate}, {postal_code} {city}"
+                if postal_code is None:
+                    return f"{candidate}, {city}"
                 return candidate
     return None
 
@@ -458,7 +563,9 @@ def _extract_occupancy_status(raw_text: str) -> str | None:
     lowered = raw_text.lower()
     if re.search(r"\boccup[ée]s?\s+sans\s+bail\b", lowered):
         return "occupied"
-    if re.search(r"\blou[ée]?\b|\blocataire\b|\bbail\b", lowered):
+    if no_lease_status := no_lease_occupancy_status(lowered):
+        return no_lease_status
+    if has_rented_occupancy_signal(lowered):
         return "rented"
     if re.search(r"\blibre\b|\binoccup[ée]s?\b", lowered):
         return "vacant"
@@ -482,12 +589,15 @@ def _extract_description(soup: BeautifulSoup, title: str | None) -> str | None:
 
 
 def _extract_coordinates(soup: BeautifulSoup) -> tuple[str | None, str | None]:
-    map_link = soup.select_one("a[href*='maps.google']")
-    href = str(map_link.get("href", "")) if map_link else ""
-    match = re.search(r"[?&]q=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)", href)
-    if not match:
-        return None, None
-    return match.group(1), match.group(2)
+    for link in soup.find_all("a", href=True):
+        href = str(link.get("href", ""))
+        match = re.search(r"[?&](?:q|ll|center)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)", href)
+        if match:
+            return match.group(1), match.group(2)
+        match = re.search(r"@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)", href)
+        if match:
+            return match.group(1), match.group(2)
+    return None, None
 
 
 def _extract_sale_date(lines: list[str]) -> str | None:
@@ -508,10 +618,25 @@ def _extract_lawyer(lines: list[str]) -> tuple[str | None, str | None]:
     for index, line in enumerate(lines):
         if re.search(r"\bMa[îi]tre\b|Avocat", line, re.I):
             lawyer_name = line
-            contact_parts.extend(lines[index + 1 : index + 4])
+            for candidate in lines[index + 1 : index + 6]:
+                if _is_lawyer_contact_boundary(candidate):
+                    break
+                if not candidate.startswith("🔎"):
+                    contact_parts.append(candidate)
             break
     contact = " | ".join(part for part in contact_parts if not part.startswith("🔎"))
     return lawyer_name, clean_text(contact)
+
+
+def _is_lawyer_contact_boundary(line: str) -> bool:
+    text = clean_text(line) or ""
+    return bool(
+        re.search(
+            r"^(?:surface|superficie|mise\s+[àa]\s+prix|visite|tribunal|vente|annonce|date|descriptif|description|lot\b|occupation)\b",
+            text,
+            re.I,
+        )
+    )
 
 
 def _extract_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, str]]:
@@ -519,10 +644,43 @@ def _extract_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, s
     for link in soup.find_all("a", href=True):
         href = str(link.get("href"))
         label = clean_text(link.get_text(" ", strip=True)) or "document"
-        if ".pdf" in href.lower():
-            url = urljoin(source_url, href)
-            documents.append({"label": label, "url": url, "type": "pdf"})
+        if href.startswith(("javascript:", "#")):
+            continue
+        if not _looks_like_document_link(href, label):
+            continue
+        url = urljoin(source_url, href)
+        documents.append({"label": label, "url": url, "type": "pdf"})
     return documents
+
+
+def _looks_like_document_link(href: str, label: str | None) -> bool:
+    text = _normalize_document_text(f"{href} {label or ''}")
+    return bool(
+        ".pdf" in text
+        or re.search(
+            r"\b(?:documents?|dossiers?|cahiers?|conditions?|diagnostics?|annexes?|"
+            r"pv|pvd|proces\s+verbal|proces-verbal|descriptif|telecharg\w*|download\w*)\b",
+            text,
+        )
+    )
+
+
+def _normalize_document_text(value: str | None) -> str:
+    text = clean_text(value) or ""
+    return (
+        text.lower()
+        .replace("é", "e")
+        .replace("è", "e")
+        .replace("ê", "e")
+        .replace("à", "a")
+        .replace("â", "a")
+        .replace("î", "i")
+        .replace("ï", "i")
+        .replace("ô", "o")
+        .replace("û", "u")
+        .replace("ù", "u")
+        .replace("ç", "c")
+    )
 
 
 def _extract_images(soup: BeautifulSoup, source_url: str) -> list[str]:
@@ -557,8 +715,20 @@ def _is_disallowed_document_url(url: str) -> bool:
 
 def _extract_surface_m2(text: str) -> str | None:
     # Première surface bâtie plausible mentionnée dans la page (en m²).
-    match = re.search(r"(\d{1,4}(?:[.,]\d{1,2})?)\s*m(?:²|2)\b", text, re.I)
-    return clean_text(match.group(1)) if match else None
+    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b", text, re.I)
+    return _normalize_surface_number(match.group(1)) if match else None
+
+
+def _normalize_surface_number(value: str) -> str | None:
+    text = clean_text(value)
+    if not text:
+        return None
+    text = text.replace(" ", "")
+    if "," in text:
+        return text.replace(".", "")
+    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
+        return text.replace(".", "")
+    return text
 
 
 def _extract_after(text: str, pattern: str) -> str | None:

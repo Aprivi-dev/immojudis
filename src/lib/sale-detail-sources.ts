@@ -11,6 +11,7 @@ import type { MarketEstimate } from "@/lib/market.functions";
 import type { MarketCeilingResult } from "@/lib/profitability";
 import { parseDocs } from "@/lib/documents";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
+import { saleSourceLinks } from "@/lib/sale-source-links";
 import type { AuctionSale } from "@/lib/types";
 
 type AcquisitionCostLike = {
@@ -140,6 +141,8 @@ export function buildSaleProductSources({
   const sunMonthly = environmentalContext?.sun.monthly ?? weatherMonthly;
   const warmestMonth = environmentalContext?.weather.warmestMonth;
   const coldestMonth = environmentalContext?.weather.coldestMonth;
+  const sourceLinks = saleSourceLinks(sale);
+  const primarySourceLabel = sourceLinks[0]?.label ?? sale.source_name ?? "Source annonce";
   return {
     priceLabel: formatPrice(sale.starting_price_eur),
     addressLabel,
@@ -446,7 +449,11 @@ export function buildSaleProductSources({
       { label: "Préparation", value: action, detail: primaryCheck },
     ],
     sourceFacts: [
-      { label: "Données fiche", value: sale.source_name ?? "Source annonce" },
+      {
+        label: "Données fiche",
+        value: primarySourceLabel,
+        detail: sourceLinks.length > 1 ? `${sourceLinks.length} sources rapprochées` : undefined,
+      },
       { label: "Marché", value: marketEstimate?.source ?? "DVF à connecter" },
       { label: "Documents", value: documentCount ? "Pièces indexées" : "Aucune pièce indexée" },
       {

@@ -15,9 +15,31 @@ PRIMARY_SOURCE_PRIORITY = {
     "avoventes": 0,
     "info_encheres": 1,
     "licitor": 2,
-    "encheres_publiques": 3,
-    "vench": 4,
+    "vench": 3,
+    "petites_affiches": 4,
+    "encheres_immobilieres": 5,
+    "encheres_publiques": 6,
+    "notaires": 7,
+    "agrasc": 8,
+    "cessions_etat": 9,
 }
+
+STREET_TOKEN_REPLACEMENTS = (
+    (r"\b(?:av|aven)\b", "avenue"),
+    (r"\bbd\b", "boulevard"),
+    (r"\b(?:r|ruee)\b", "rue"),
+    (r"\b(?:all|alle)\b", "allee"),
+    (r"\bimp\b", "impasse"),
+    (r"\bch\b", "chemin"),
+    (r"\brte\b", "route"),
+    (r"\bpl\b", "place"),
+    (r"\bsq\b", "square"),
+    (r"\bfg\b", "faubourg"),
+    (r"\bst\b", "saint"),
+    (r"\bste\b", "sainte"),
+)
+
+FRENCH_ADDRESS_PARTICLES_RE = re.compile(r"\b(?:d|de|du|des|la|le|les|l)\b")
 
 RICHNESS_FIELDS = (
     "address",
@@ -192,25 +214,37 @@ def _normalize_street_text(value: str) -> str:
     ascii_text = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii").lower()
     ascii_text = re.sub(r"\bfrance\b", " ", ascii_text)
     ascii_text = re.sub(r"\bcedex\b\s*\d*", " ", ascii_text)
+    ascii_text = re.sub(r"\b(?:n|no|numero)\s+(\d+)\b", r"\1", ascii_text)
     ascii_text = re.sub(r"[^a-z0-9]+", " ", ascii_text)
+    for pattern, replacement in STREET_TOKEN_REPLACEMENTS:
+        ascii_text = re.sub(pattern, replacement, ascii_text)
+    ascii_text = FRENCH_ADDRESS_PARTICLES_RE.sub(" ", ascii_text)
     return re.sub(r"\s+", " ", ascii_text).strip()
 
 
-def _address_dedupe_key(sale: AuctionSale) -> str | None:
+def _address_dedupe_keys(sale: AuctionSale) -> list[str]:
     address = clean_text(sale.address)
     if not address:
-        return None
+        return []
     street = address
     for token in (clean_text(sale.postal_code), clean_text(sale.city)):
         if token:
             street = re.sub(re.escape(token), " ", street, flags=re.IGNORECASE)
+    street = re.sub(r"\b\d{5}\b", " ", street)
     street_key = _normalize_street_text(street)
     # Exiger une adresse précise (numéro de voie) : sans numéro on risquerait de
     # fusionner des biens distincts d'une même commune (ex. « 33000 Bordeaux »).
     if not _STREET_NUMBER_RE.search(street_key) or len(street_key) < 6:
-        return None
-    locality = clean_text(sale.postal_code) or _normalize_street_text(clean_text(sale.city) or "")
-    return f"{street_key}|{(locality or '').lower()}"
+        return []
+
+    localities: list[str] = []
+    postal_code = clean_text(sale.postal_code)
+    city = clean_text(sale.city)
+    if postal_code:
+        localities.append(postal_code.lower())
+    if city:
+        localities.append(_normalize_street_text(city))
+    return [f"{street_key}|{locality}" for locality in _unique_values(localities) if locality]
 
 
 def _prices_close(first: Any, second: Any, tolerance: float = 0.02) -> bool:
@@ -238,26 +272,76 @@ def _same_property(first: AuctionSale, second: AuctionSale) -> bool:
 
 
 def _merge_by_address(sales: list[AuctionSale]) -> list[AuctionSale]:
-    by_address: dict[str, AuctionSale] = {}
+    by_address: dict[str, list[AuctionSale]] = {}
     passthrough: list[AuctionSale] = []
+    survivors: list[AuctionSale] = []
     for sale in sales:
-        key = _address_dedupe_key(sale)
-        if key is None:
+        keys = _address_dedupe_keys(sale)
+        if not keys:
             passthrough.append(sale)
             continue
-        existing = by_address.get(key)
+        existing = _find_address_match(by_address, keys, sale)
         if existing is None:
-            by_address[key] = sale
-            continue
-        if not _same_property(existing, sale):
-            # Même adresse mais lots/ventes distincts : on conserve les deux.
-            passthrough.append(sale)
+            survivors.append(sale)
+            _register_address_candidate(by_address, keys, sale)
             continue
         preferred = _choose_primary(existing, sale)
         secondary = sale if preferred is existing else existing
         _merge_into(preferred, secondary, confidence="address")
-        by_address[key] = preferred
-    return [*by_address.values(), *passthrough]
+        if preferred is sale:
+            _replace_identity(survivors, existing, sale)
+            _replace_address_candidate(by_address, existing, sale)
+        _register_address_candidate(by_address, [*_address_dedupe_keys(preferred), *keys], preferred)
+    return [*survivors, *passthrough]
+
+
+def _find_address_match(
+    by_address: dict[str, list[AuctionSale]],
+    keys: list[str],
+    sale: AuctionSale,
+) -> AuctionSale | None:
+    for key in keys:
+        for existing in by_address.get(key, []):
+            if _same_property(existing, sale):
+                return existing
+    return None
+
+
+def _register_address_candidate(
+    by_address: dict[str, list[AuctionSale]],
+    keys: list[str],
+    sale: AuctionSale,
+) -> None:
+    for key in _unique_values(keys):
+        bucket = by_address.setdefault(key, [])
+        if not any(item is sale for item in bucket):
+            bucket.append(sale)
+
+
+def _replace_address_candidate(
+    by_address: dict[str, list[AuctionSale]],
+    old: AuctionSale,
+    new: AuctionSale,
+) -> None:
+    for bucket in by_address.values():
+        _replace_identity(bucket, old, new)
+
+
+def _replace_identity(items: list[AuctionSale], old: AuctionSale, new: AuctionSale) -> None:
+    for index, item in enumerate(items):
+        if item is old:
+            items[index] = new
+
+
+def _unique_values(values: Iterable[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
 
 
 def _mergeable_fields() -> tuple[str, ...]:

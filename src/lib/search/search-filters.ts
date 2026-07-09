@@ -64,6 +64,7 @@ export function dataFiltersFromSearch(search: SalesSearchParams): SaleFilters {
     department: search.department,
     city: search.city,
     tribunal: search.tribunal,
+    viewport: search.viewport,
     property_type: search.homeTypes?.length === 1 ? search.homeTypes[0] : undefined,
     property_types: search.homeTypes && search.homeTypes.length > 1 ? search.homeTypes : undefined,
     min_price: search.minPrice,
@@ -122,7 +123,6 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
     search.houseWithLand ||
     search.aroundAddress ||
     search.aroundRadius ||
-    search.viewport ||
     search.dpeClasses?.length ||
     search.openHouse ||
     search.yearBuilt ||

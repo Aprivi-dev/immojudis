@@ -13,6 +13,7 @@ import type {
   AdminLawyerReferralSummary,
   AdminLawyerReferralUpdateInput,
 } from "@/lib/admin-lawyer-referrals";
+import { cleanSaleTitle } from "@/lib/sale-title";
 
 type ReferralStatus = AdminLawyerReferralSummary["status"];
 
@@ -145,7 +146,7 @@ function LawyerReferralRequestCard({
             </span>
           </div>
           <h3 className="mt-3 text-lg font-semibold text-foreground">
-            {request.sale.title ?? "Vente sans titre"}
+            {cleanSaleTitle(request.sale.title) ?? "Vente sans titre"}
           </h3>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <span>

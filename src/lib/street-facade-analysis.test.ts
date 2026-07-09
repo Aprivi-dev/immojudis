@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 
 describe("street facade analysis", () => {
-  it("builds Street View and 3D URLs when coordinates are available", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("builds Mapbox street-level and 3D URLs when coordinates are available", () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+
     const analysis = buildStreetFacadeAnalysis(EXAMPLE_SALE);
 
     expect(analysis).toMatchObject({
@@ -16,9 +22,9 @@ describe("street facade analysis", () => {
         lng: EXAMPLE_SALE.longitude,
       },
     });
-    expect(analysis.streetViewUrl).toContain("map_action=pano");
-    expect(analysis.aerial3dUrl).toContain("@44.842748,-0.586227");
-    expect(analysis.mapsUrl).toContain("maps/search");
+    expect(analysis.streetLevelUrl).toContain("/styles/v1/mapbox/standard/static/");
+    expect(analysis.aerial3dUrl).toContain("/styles/v1/mapbox/standard-satellite/static/");
+    expect(analysis.mapUrl).toContain("/styles/v1/mapbox/streets-v12/static/");
   });
 
   it("falls back to an address search when coordinates are missing", () => {
@@ -32,10 +38,10 @@ describe("street facade analysis", () => {
       available: true,
       status: "address_only",
       confidence: "medium",
-      streetViewUrl: null,
+      streetLevelUrl: null,
       aerial3dUrl: null,
     });
-    expect(analysis.mapsUrl).toContain("query=63%20Pl");
+    expect(analysis.mapUrl).toBeNull();
     expect(analysis.nextActions[0]).toContain("Géocoder");
   });
 
@@ -54,7 +60,7 @@ describe("street facade analysis", () => {
       available: false,
       status: "missing",
       confidence: "low",
-      mapsUrl: null,
+      mapUrl: null,
     });
     expect(analysis.limitations[0]).toContain("position exacte");
   });

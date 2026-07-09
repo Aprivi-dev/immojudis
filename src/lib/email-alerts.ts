@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { cleanSaleTitle } from "@/lib/sale-title";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 
@@ -170,7 +171,7 @@ export function buildAlertEmailMessage({
   const alert = asRecord(snapshot.alert);
   const sale = asRecord(snapshot.sale);
   const match = asRecord(snapshot.match);
-  const title = stringValue(sale.title) ?? "Vente judiciaire";
+  const title = cleanSaleTitle(stringValue(sale.title)) ?? "Vente judiciaire";
   const city = stringValue(sale.city);
   const department = stringValue(sale.department);
   const location = [city, department].filter(Boolean).join(" · ");

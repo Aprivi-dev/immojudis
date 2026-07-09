@@ -11,7 +11,14 @@ from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
 
 from src.config import TARGET_DEPARTMENTS, load_settings
-from src.normalize import clean_text, extract_department
+from src.normalize import (
+    SURFACE_VALUE_PATTERN,
+    clean_text,
+    extract_department,
+    has_rented_occupancy_signal,
+    no_lease_occupancy_status,
+    parse_surface,
+)
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
@@ -108,7 +115,8 @@ def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, An
             continue
         if lot.get("categorie") != "immobilier" or not lot.get("nom"):
             continue
-        if lot.get("termine") is True:
+        adjudication_price = lot.get("prix_adjuge")
+        if lot.get("termine") is True and not _has_adjudication_price(adjudication_price):
             continue
         address = _resolve_ref(state, lot.get("adresse_defaut"))
         city_slug = str(address.get("ville_slug") or "")
@@ -120,6 +128,7 @@ def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, An
         lot_id = str(lot.get("id") or key.split(":", 1)[1])
         source_url = links_by_lot_id.get(lot_id) or f"{page_url}#lot-{lot_id}"
         raw_text = _build_raw_text(lot, address, organizer, event)
+        source_blocks = _extract_listing_source_blocks(lot, address, organizer, event)
         sales.append(
             {
                 "source_name": "encheres_publiques",
@@ -132,13 +141,14 @@ def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, An
                 "description": lot.get("criteres_resume") or event.get("titre"),
                 "surface_m2": _extract_surface(lot.get("criteres_resume"), lot.get("nom")),
                 "starting_price_eur": lot.get("mise_a_prix"),
-                "adjudication_price_eur": lot.get("prix_adjuge"),
+                "adjudication_price_eur": adjudication_price,
                 "sale_date": _timestamp_to_iso(lot.get("ouverture_date") or event.get("ouverture_date")),
                 "lawyer_name": _lawyer_name(organizer),
                 "tribunal": _tribunal_name(organizer, event),
-                "status": "past" if lot.get("termine") else "upcoming",
+                "status": _sale_status(adjudication_price, lot.get("termine")),
                 "documents": [],
                 "raw_text": raw_text,
+                "source_blocks": source_blocks,
             }
         )
     return sales
@@ -171,6 +181,7 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
     raw_text = _build_detail_raw_text(lot, address, organizer, event, visit_dates, source_blocks)
     surface = lot.get("critere_surface_habitable") or _extract_surface(lot.get("criteres_resume"), lot.get("nom"))
     title = _plain_text(lot.get("nom"))
+    adjudication_price = lot.get("prix_adjuge")
 
     return {
         "source_name": "encheres_publiques",
@@ -196,13 +207,13 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
         "has_garage": _mentions_feature("garage", title, description),
         "has_pool": _mentions_feature("piscine", title, description),
         "starting_price_eur": lot.get("mise_a_prix") or lot.get("prix_plancher"),
-        "adjudication_price_eur": lot.get("prix_adjuge"),
+        "adjudication_price_eur": adjudication_price,
         "sale_date": _timestamp_to_iso(lot.get("ouverture_date") or lot.get("fermeture_date") or event.get("ouverture_date")),
         "visit_dates": visit_dates,
         "lawyer_name": _lawyer_name(organizer),
         "lawyer_contact": _plain_text(organizer.get("telephone") or organizer.get("phone")),
         "tribunal": _tribunal_name(organizer, event),
-        "status": "past" if lot.get("termine") else "upcoming",
+        "status": _sale_status(adjudication_price, lot.get("termine")),
         "latitude": latitude,
         "longitude": longitude,
         "occupancy_status": _normalize_occupancy_status(lot.get("critere_occupation_du_bien")),
@@ -253,6 +264,10 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
     for key, value in details.items():
         if value in (None, "", []):
             continue
+        if key == "source_blocks" and isinstance(value, dict):
+            existing_blocks = sale.get("source_blocks") if isinstance(sale.get("source_blocks"), dict) else {}
+            sale[key] = {**existing_blocks, **{item_key: item_value for item_key, item_value in value.items() if item_value}}
+            continue
         if key == "raw_text" and sale.get("raw_text"):
             sale[key] = _join_unique_lines(str(sale["raw_text"]), str(value))
         elif key == "visit_dates" and isinstance(value, list):
@@ -301,6 +316,16 @@ def _resolve_profile(state: dict[str, Any], lot: dict[str, Any]) -> dict[str, An
         if profile:
             return profile
     return {}
+
+
+def _sale_status(adjudication_price: object | None, ended: object | None) -> str:
+    if _has_adjudication_price(adjudication_price):
+        return "adjudicated"
+    return "past" if ended else "upcoming"
+
+
+def _has_adjudication_price(value: object | None) -> bool:
+    return value not in (None, "")
 
 
 def _configured_places(value: str) -> tuple[str, ...]:
@@ -374,8 +399,9 @@ def _timestamp_to_display(value: object) -> str | None:
 
 def _extract_surface(*values: object) -> str | None:
     text = " ".join(str(value) for value in values if value)
-    match = re.search(r"([0-9]+(?:[,.][0-9]+)?)\s*m²", text, re.I)
-    return match.group(1).replace(",", ".") if match else None
+    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
+    surface = parse_surface(match.group(1)) if match else None
+    return str(surface) if surface is not None else None
 
 
 def _extract_visit_dates(state: dict[str, Any], lot: dict[str, Any]) -> list[str]:
@@ -415,6 +441,27 @@ def _extract_source_blocks(lot: dict[str, Any]) -> dict[str, str]:
         "dpe": lot.get("critere_consommation_energetique"),
         "ges": lot.get("critere_emissions_de_gaz"),
         "occupation": lot.get("critere_occupation_du_bien"),
+    }
+    return {key: value for key, raw in mapping.items() if (value := _plain_text(raw))}
+
+
+def _extract_listing_source_blocks(
+    lot: dict[str, Any],
+    address: dict[str, Any],
+    organizer: dict[str, Any],
+    event: dict[str, Any],
+) -> dict[str, str]:
+    mapping = {
+        "titre": lot.get("nom"),
+        "resume": lot.get("criteres_resume"),
+        "adresse": _address_text(address),
+        "ville": address.get("ville"),
+        "mise_a_prix": lot.get("mise_a_prix"),
+        "date_vente": _timestamp_to_display(lot.get("ouverture_date") or event.get("ouverture_date")),
+        "tribunal": _tribunal_name(organizer, event),
+        "organisateur": organizer.get("nom"),
+        "surface": _extract_surface(lot.get("criteres_resume"), lot.get("nom")),
+        "page_text": _build_raw_text(lot, address, organizer, event),
     }
     return {key: value for key, raw in mapping.items() if (value := _plain_text(raw))}
 
@@ -478,7 +525,9 @@ def _normalize_occupancy_status(value: object | None) -> str | None:
         return "owner_occupied"
     if re.search(r"libre\s+de\s+toute\s+occupation|bien\s+libre|inoccup[ée]|vacant", lowered):
         return "vacant"
-    if re.search(r"bail|locataire|lou[ée]|loyer", lowered):
+    if no_lease_status := no_lease_occupancy_status(lowered):
+        return no_lease_status
+    if has_rented_occupancy_signal(lowered):
         return "rented"
     if re.search(r"occup[ée]", lowered):
         return "occupied"
