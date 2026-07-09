@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { dispatchQueuedEmailAlertNotifications } from "@/lib/email-alerts";
 import { emailAlertConsentEnabled } from "@/lib/notification-preferences";
+import { cleanSaleTitle } from "@/lib/sale-title";
 import type { UserAlert } from "@/lib/types";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
@@ -402,7 +403,7 @@ function buildNotificationSnapshot({
     },
     sale: {
       id: match.saleId,
-      title: match.saleTitle,
+      title: cleanSaleTitle(match.saleTitle),
       city: match.city,
       department: match.department,
       startingPriceEur: match.startingPriceEur,
@@ -429,7 +430,7 @@ function notificationRowToSummary(row: NotificationRow): AlertNotificationSummar
     matchId: row.match_id,
     saleId: row.sale_id,
     alertName: stringValue(alert.name) || "Alerte",
-    saleTitle: stringValue(sale.title),
+    saleTitle: cleanSaleTitle(stringValue(sale.title)),
     city: stringValue(sale.city),
     department: stringValue(sale.department),
     reasons: arrayOfStrings(match.reasons),

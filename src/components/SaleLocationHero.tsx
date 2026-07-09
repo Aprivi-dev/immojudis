@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Navigation from "lucide-react/dist/esm/icons/navigation.js";
 import type { AuctionSale } from "@/lib/types";
-import { propertyTypeLabel } from "@/lib/format";
+import { saleDisplayTitle } from "@/lib/sale-title";
 import { openStreetMapQueryUrl, openStreetMapUrl } from "@/lib/tiles";
 import { MapThumbnail } from "@/components/MapThumbnail";
 
@@ -15,7 +15,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
   const lat = sale.latitude;
   const lng = sale.longitude;
   const address = saleAddress(sale);
-  const title = sale.title ?? propertyTypeLabel(sale.property_type);
+  const title = saleDisplayTitle(sale);
   const hasLocation = lat != null && lng != null;
   const mapUrl = hasLocation
     ? openStreetMapUrl(lat, lng, 17)
@@ -35,7 +35,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
           rel="noopener noreferrer"
           className="mt-4 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-soft hover:text-gold"
         >
-          Rechercher sur OpenStreetMap <ExternalLink className="h-3 w-3" />
+          Rechercher la localisation <ExternalLink className="h-3 w-3" />
         </a>
       </div>
     );
@@ -45,7 +45,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
     <div className="grid gap-3 lg:grid-cols-[1.7fr_1fr]">
       <div className="liquid-media relative min-h-[300px] overflow-hidden rounded-lg lg:min-h-[440px]">
         <MapThumbnail lat={lat} lng={lng} zoom={16} alt={`Carte de ${title}`} className="h-full" />
-        <TileBadge>Carte OpenStreetMap</TileBadge>
+        <TileBadge>Carte Mapbox</TileBadge>
       </div>
 
       <div className="liquid-panel flex min-h-[260px] flex-col justify-between rounded-lg p-6 lg:min-h-[440px]">
@@ -78,7 +78,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
           rel="noopener noreferrer"
           className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-gold/30 bg-gold/10 px-4 text-sm font-semibold text-gold-soft transition-colors hover:border-gold/60 hover:bg-gold/15 hover:text-gold"
         >
-          Ouvrir dans OpenStreetMap <ExternalLink className="h-4 w-4" />
+          Ouvrir la carte <ExternalLink className="h-4 w-4" />
         </a>
       </div>
     </div>

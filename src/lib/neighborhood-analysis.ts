@@ -366,7 +366,9 @@ function nextActions({
   if (streetFacade.status !== "coordinates_ready") {
     actions.push("Confirmer les coordonnées avant analyse façade/rue.");
   } else {
-    actions.push("Relire Street View et la vue 3D pour repérer nuisances, accès et état de rue.");
+    actions.push(
+      "Relire la vue rue Mapbox et la vue 3D pour repérer nuisances, accès et état de rue.",
+    );
   }
   if (status === "profiled") {
     actions.push("Reporter les points favorables et défavorables dans le calcul de mise maximale.");

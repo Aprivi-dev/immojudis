@@ -3,6 +3,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { cleanSaleTitle } from "@/lib/sale-title";
 
 type AnalysisSetRow = Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
 type AnalysisSetInsert = Database["public"]["Tables"]["user_sale_analysis_sets"]["Insert"];
@@ -333,7 +334,7 @@ async function fetchSaleSummaries(
       sale.id,
       {
         id: sale.id,
-        title: sale.title,
+        title: cleanSaleTitle(sale.title),
         city: sale.city,
         department: sale.department,
         startingPriceEur: sale.starting_price_eur,

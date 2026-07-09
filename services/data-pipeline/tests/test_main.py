@@ -2,6 +2,8 @@ import sys
 import types
 from decimal import Decimal
 
+import pytest
+
 from src.models import AuctionSale
 from src.sources.common import ScrapeResult
 
@@ -16,6 +18,11 @@ except ModuleNotFoundError as exc:
     sys.modules["src.export"] = export_stub
     from src import main
     del sys.modules["src.export"]
+
+
+@pytest.fixture(autouse=True)
+def _disable_real_expired_sale_cleanup(monkeypatch) -> None:
+    monkeypatch.setattr(main, "delete_expired_sales_in_supabase", lambda: 0)
 
 
 def test_needs_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
@@ -150,6 +157,44 @@ def test_light_pipeline_geocodes_and_reupserts_when_heavy_enrichment_disabled(mo
         == 0
     )
     assert calls == ["upsert", "observations", "geocode", "upsert", "observations"]
+
+
+def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch) -> None:
+    summary_capture: dict[str, object] = {}
+    calls: list[str] = []
+
+    monkeypatch.setattr(main, "load_settings", lambda: _settings())
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: summary_capture.update(summary),
+    )
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_expired_sales_in_supabase", lambda: calls.append("delete_expired") or 3)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales))
+
+    assert (
+        main.run_pipeline(
+            main.PipelineOptions(source="avoventes", use_llm=False, heavy_enrichment=False, upsert=True)
+        )
+        == 0
+    )
+    assert calls[-1] == "delete_expired"
+    assert summary_capture["deleted_expired_sales"] == 3
 
 
 def test_pipeline_skips_redundant_final_sale_upsert_when_unchanged(monkeypatch) -> None:

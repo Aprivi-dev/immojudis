@@ -7,6 +7,7 @@ import { featureIncluded } from "@/lib/plans";
 import { computeRentabilityScore } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
+import { cleanSaleTitle } from "@/lib/sale-title";
 import {
   applyClientSearchFilters,
   dataFiltersFromSearch,
@@ -341,7 +342,7 @@ function saleToApiFeedItem(sale: AuctionSale, origin?: string | null): SalesApiF
 
   return {
     id: sale.id,
-    title: sale.title,
+    title: cleanSaleTitle(sale.title),
     status: sale.status,
     pricing: {
       startingPriceEur: sale.starting_price_eur,
@@ -559,7 +560,7 @@ function saleToCsvRow(sale: AuctionSale, origin?: string | null): Array<string |
 
   return [
     sale.id,
-    sale.title,
+    cleanSaleTitle(sale.title),
     sale.city,
     sale.department,
     sale.address,

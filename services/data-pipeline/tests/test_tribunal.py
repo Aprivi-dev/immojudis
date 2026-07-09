@@ -69,6 +69,24 @@ def test_fill_tribunal_keeps_explicit_national_tribunal() -> None:
     assert "tribunal_inconsistent" not in sale.quality_flags
 
 
+def test_fill_tribunal_canonicalizes_generic_tj_de_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "petites_affiches",
+            "source_url": "https://example.test/tribunal-nice",
+            "department": "06",
+            "city": "Nice",
+            "tribunal": "TJ DE NICE",
+        }
+    )
+
+    fill_tribunal(sale)
+
+    assert sale.tribunal == "TJ Nice"
+    assert sale.tribunal_code is None
+    assert "tribunal_inconsistent" not in sale.quality_flags
+
+
 def test_fill_tribunal_canonicalizes_noisy_tribunal_text() -> None:
     sale = normalize_sale(
         {

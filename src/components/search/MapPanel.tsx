@@ -1,7 +1,16 @@
 "use client";
 
-import type * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type * as React from "react";
+import mapboxgl from "mapbox-gl";
+import type {
+  CircleLayerSpecification,
+  GeoJSONSource,
+  LngLatBoundsLike,
+  MapLayerMouseEvent,
+  MapMouseEvent,
+  SymbolLayerSpecification,
+} from "mapbox-gl";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import LocateFixed from "lucide-react/dist/esm/icons/locate-fixed.js";
 import MapIcon from "lucide-react/dist/esm/icons/map.js";
@@ -10,37 +19,47 @@ import Minus from "lucide-react/dist/esm/icons/minus.js";
 import Navigation from "lucide-react/dist/esm/icons/navigation.js";
 import Plus from "lucide-react/dist/esm/icons/plus.js";
 import { DPE_CLASSES, dpeColor, extractDpe } from "@/lib/dpe";
-import { formatDate, formatPrice, propertyTypeLabel } from "@/lib/format";
-import type { AuctionSale } from "@/lib/types";
+import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
+import { pricePerM2 } from "@/lib/geo";
+import {
+  MAPBOX_ATTRIBUTION,
+  MAPBOX_COPYRIGHT_URL,
+  getMapboxAccessToken,
+  getMapboxStyleUrl,
+  mapboxStaticImageUrl,
+} from "@/lib/mapbox";
+import {
+  buildMapboxSaleFeatureCollection,
+  type MapboxSaleFeatureCollection,
+} from "@/lib/mapbox-sales";
+import { firstPropertyImage } from "@/lib/sale-media";
+import { saleDisplayTitle } from "@/lib/sale-title";
+import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { hasCoordinates } from "@/lib/search/search-filters";
 import type { ViewportBounds } from "@/lib/search/search-url-state";
-import {
-  OSM_ATTRIBUTION,
-  OSM_COPYRIGHT_URL,
-  clampOsmZoom,
-  mapBoundsFromCenter,
-  openStreetMapUrl,
-  osmTileUrlFromXYZ,
-  projectLatLngToWorldPixel,
-  unprojectWorldPixelToLatLng,
-  type LatLng,
-  type ViewportSize,
-  type WorldPixel,
-} from "@/lib/tiles";
+import type { AuctionSale } from "@/lib/types";
 
-const TILE_SIZE = 256;
-const DEFAULT_MAP_CENTER = { lat: 46.7111, lng: 1.7191 };
-const DEFAULT_MAP_ZOOM = 6;
-const DEFAULT_MOBILE_MAP_ZOOM = 5;
+const SALES_SOURCE_ID = "immojudis-sales";
+const CLUSTER_LAYER_ID = "immojudis-sales-clusters";
+const CLUSTER_COUNT_LAYER_ID = "immojudis-sales-cluster-count";
+const SALE_POINT_LAYER_ID = "immojudis-sales-points";
+const SALE_ACTIVE_LAYER_ID = "immojudis-sales-active";
+const SALE_PRICE_LAYER_ID = "immojudis-sales-price";
+const SALE_HIT_LAYER_ID = "immojudis-sales-hit";
+
+const DEFAULT_MAP_CENTER: [number, number] = [1.7191, 46.7111];
+const DEFAULT_MAP_ZOOM = 5.7;
+const DEFAULT_MOBILE_MAP_ZOOM = 4.8;
 const MIN_MAP_ZOOM = 4;
 const MAX_MAP_ZOOM = 18;
-const PINCH_ZOOM_STEP = 0.25;
-const POINT_MARKER_SIZE = 22;
-const POINT_MARKER_ACTIVE_SIZE = 30;
-const POINT_MARKER_HIT_SIZE = 40;
-const POINT_MARKER_CLUSTER_BADGE_SIZE = 22;
-const POINT_MARKER_COLLISION_PADDING = 10;
-const POINT_MARKER_FIT_PADDING = { top: 72, right: 64, bottom: 64, left: 64 };
+const MAX_FIT_ZOOM = 13;
+const EMPTY_ACTIVE_FILTER: MapboxFilter = ["==", ["get", "saleId"], "__none__"];
+const FRANCE_BOUNDS: LngLatBoundsLike = [
+  [-5.6, 41.0],
+  [9.7, 51.5],
+];
+const FIT_PADDING = { top: 82, right: 70, bottom: 86, left: 70 };
+const MOBILE_FIT_PADDING = { top: 88, right: 30, bottom: 120, left: 30 };
 
 export type MapPanelProps = {
   sales: AuctionSale[];
@@ -50,33 +69,25 @@ export type MapPanelProps = {
   searchAsMove: boolean;
   onHover: (saleId: string | null) => void;
   onSelect: (saleId: string) => void;
-  onViewportChange: (bounds: ViewportBounds) => void;
+  onViewportChange: (viewport: MapViewportChange) => void;
   onSearchAsMoveChange: (enabled: boolean) => void;
 };
 
-type PointerPoint = {
-  pointerId: number;
-  clientX: number;
-  clientY: number;
+export type MapViewportChange = {
+  bounds: ViewportBounds;
+  zoom: number;
 };
 
-type PanGestureState = {
-  type: "pan";
-  pointerId: number;
-  startX: number;
-  startY: number;
-  startCenterPixel: WorldPixel;
-  startZoom: number;
+type MapboxMap = mapboxgl.Map;
+type GeoJSONData = Parameters<GeoJSONSource["setData"]>[0];
+type MapboxFilter = NonNullable<Parameters<MapboxMap["setFilter"]>[1]>;
+type QueriedMapFeature = {
+  geometry?: {
+    type?: string;
+    coordinates?: unknown;
+  };
+  properties?: Record<string, unknown>;
 };
-
-type PinchGestureState = {
-  type: "pinch";
-  anchor: LatLng;
-  startDistance: number;
-  startZoom: number;
-};
-
-type GestureState = PanGestureState | PinchGestureState;
 
 export function MapPanel({
   sales,
@@ -90,393 +101,245 @@ export function MapPanel({
   onSearchAsMoveChange,
 }: MapPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const searchAsMoveRef = useRef(searchAsMove);
+  const mapRef = useRef<MapboxMap | null>(null);
+  const popupRef = useRef<mapboxgl.Popup | null>(null);
+  const onHoverRef = useRef(onHover);
+  const onSelectRef = useRef(onSelect);
   const onViewportChangeRef = useRef(onViewportChange);
-  const activePointersRef = useRef<Map<number, PointerPoint>>(new Map());
-  const centerRef = useRef<LatLng>(DEFAULT_MAP_CENTER);
-  const gestureRef = useRef<GestureState | null>(null);
-  const viewportRef = useRef<ViewportSize>({ width: 0, height: 0 });
-  const zoomRef = useRef(DEFAULT_MAP_ZOOM);
-  const [viewport, setViewport] = useState<ViewportSize>({ width: 0, height: 0 });
-  const [center, setCenter] = useState<LatLng>(DEFAULT_MAP_CENTER);
-  const [zoom, setZoom] = useState(DEFAULT_MAP_ZOOM);
-  const [selectedPopupSale, setSelectedPopupSale] = useState<AuctionSale | null>(null);
-  const [tileError, setTileError] = useState(false);
+  const salesByIdRef = useRef<Map<string, AuctionSale>>(new Map());
+  const hasUserInteractedRef = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const accessToken = useMemo(() => getMapboxAccessToken(), []);
+  const mapStyle = useMemo(() => getMapboxStyleUrl(), []);
+  const featureCollection = useMemo(() => buildMapboxSaleFeatureCollection(sales), [sales]);
+  const geocodedSales = useMemo(() => sales.filter(hasCoordinates), [sales]);
+  const canToggleSearchAsMove = mapReady && (geocodedSales.length > 0 || searchAsMove);
+  const activeId = hoveredSaleId ?? selectedSaleId;
 
-  const visibleMarkerItems = useMemo(() => buildVisibleMapMarkerItems(sales, zoom), [sales, zoom]);
-
-  const camera = useMemo(() => buildCamera(center, zoom, viewport), [center, viewport, zoom]);
-
-  const markerPositions = useMemo(
-    () =>
-      visibleMarkerItems
-        .filter(({ sale }) => hasCoordinates(sale))
-        .map(({ sale, hiddenCount }) => ({
-          hiddenCount,
-          left: projectLatLngToWorldPixel(sale.latitude, sale.longitude, zoom).x - camera.origin.x,
-          sale,
-          top: projectLatLngToWorldPixel(sale.latitude, sale.longitude, zoom).y - camera.origin.y,
-        })),
-    [camera.origin.x, camera.origin.y, visibleMarkerItems, zoom],
-  );
-
-  const activeId = hoveredSaleId ?? selectedSaleId ?? selectedPopupSale?.id ?? null;
-  const selectedPopupPosition = selectedPopupSale
-    ? markerPositions.find(({ sale }) => sale.id === selectedPopupSale.id)
-    : undefined;
+  function markUserInteracted() {
+    hasUserInteractedRef.current = true;
+  }
 
   useEffect(() => {
-    searchAsMoveRef.current = searchAsMove;
+    onHoverRef.current = onHover;
+  }, [onHover]);
+
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
+
+  useEffect(() => {
     onViewportChangeRef.current = onViewportChange;
-  }, [onViewportChange, searchAsMove]);
+  }, [onViewportChange]);
 
   useEffect(() => {
-    centerRef.current = center;
-  }, [center]);
+    salesByIdRef.current = new Map(sales.map((sale) => [sale.id, sale]));
+  }, [sales]);
 
   useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
+    if (!containerRef.current || !accessToken) return;
 
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node) return;
+    mapboxgl.accessToken = accessToken;
+    const map = new mapboxgl.Map({
+      accessToken,
+      container: containerRef.current,
+      style: mapStyle,
+      center: DEFAULT_MAP_CENTER,
+      zoom: defaultMapZoomForViewport(containerRef.current),
+      minZoom: MIN_MAP_ZOOM,
+      maxZoom: MAX_MAP_ZOOM,
+      attributionControl: true,
+      pitchWithRotate: false,
+      dragRotate: false,
+      cooperativeGestures: false,
+    });
 
-    const update = () => {
-      const nextViewport = {
-        width: node.clientWidth,
-        height: node.clientHeight,
-      };
-      viewportRef.current = nextViewport;
-      setViewport(nextViewport);
+    mapRef.current = map;
+
+    const emitViewport = () => {
+      onViewportChangeRef.current({
+        bounds: boundsFromMap(map),
+        zoom: Number(map.getZoom().toFixed(2)),
+      });
     };
-    update();
 
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node) return;
-
-    const handleTouchStart = (event: TouchEvent) => {
-      syncActiveTouches(event.touches);
-      startGesture(node);
+    const handleMapError = (event: mapboxgl.ErrorEvent) => {
+      if (event.error?.message) setMapError(event.error.message);
     };
-    const handleTouchMove = (event: TouchEvent) => {
-      if (event.touches.length === 0) return;
+
+    map.on("load", () => {
+      addSalesLayers(map, featureCollection);
+      if (!hasUserInteractedRef.current) centerMapOnFrance(map, false, containerRef.current);
+      emitViewport();
+      setMapReady(true);
+    });
+    map.on("moveend", emitViewport);
+    map.on("zoomend", emitViewport);
+    map.on("error", handleMapError);
+
+    const handlePointEnter = (event: MapLayerMouseEvent) => {
+      map.getCanvas().style.cursor = "pointer";
+      const saleId = saleIdFromFeature(event.features?.[0]);
+      if (saleId) onHoverRef.current(saleId);
+    };
+
+    const handlePointLeave = () => {
+      map.getCanvas().style.cursor = "";
+      onHoverRef.current(null);
+    };
+
+    const handlePointClick = (event: MapLayerMouseEvent) => {
+      markUserInteracted();
+      const saleId = saleIdFromFeature(event.features?.[0]);
+      if (!saleId) return;
+      const sale = salesByIdRef.current.get(saleId);
+      if (!sale || !hasCoordinates(sale)) return;
       event.preventDefault();
-      syncActiveTouches(event.touches);
-
-      if (event.touches.length >= 2) {
-        if (gestureRef.current?.type !== "pinch") startGesture(node);
-        applyPinchGesture(node);
-        return;
-      }
-
-      if (gestureRef.current?.type !== "pan") startGesture(node);
-      applyPanGesture();
-    };
-    const handleTouchEnd = (event: TouchEvent) => {
-      syncActiveTouches(event.touches);
-
-      if (event.touches.length > 0) {
-        startGesture(node);
-        return;
-      }
-
-      gestureRef.current = null;
+      onSelectRef.current(saleId);
+      popupRef.current = showSalePopup(map, sale, popupRef.current);
     };
 
-    node.addEventListener("touchstart", handleTouchStart, { passive: false });
-    node.addEventListener("touchmove", handleTouchMove, { passive: false });
-    node.addEventListener("touchend", handleTouchEnd);
-    node.addEventListener("touchcancel", handleTouchEnd);
+    const handleClusterEnter = () => {
+      map.getCanvas().style.cursor = "pointer";
+    };
+
+    const handleClusterLeave = () => {
+      map.getCanvas().style.cursor = "";
+    };
+
+    const handleClusterClick = (event: MapMouseEvent) => {
+      markUserInteracted();
+      const features = map.queryRenderedFeatures(event.point, { layers: [CLUSTER_LAYER_ID] });
+      const feature = features[0] as QueriedMapFeature | undefined;
+      const clusterId = Number(feature?.properties?.cluster_id);
+      if (!Number.isFinite(clusterId)) return;
+      const source = map.getSource(SALES_SOURCE_ID) as GeoJSONSource | undefined;
+      source?.getClusterExpansionZoom(clusterId, (error, zoom) => {
+        if (error || zoom == null) return;
+        const coordinates =
+          feature?.geometry?.type === "Point" && Array.isArray(feature.geometry.coordinates)
+            ? feature.geometry.coordinates
+            : null;
+        if (!coordinates) return;
+        map.easeTo({
+          center: [Number(coordinates[0]), Number(coordinates[1])],
+          zoom: Math.min(zoom + 0.4, MAX_MAP_ZOOM),
+          duration: 420,
+        });
+      });
+    };
+
+    map.on("mouseenter", SALE_HIT_LAYER_ID, handlePointEnter);
+    map.on("mouseleave", SALE_HIT_LAYER_ID, handlePointLeave);
+    map.on("click", SALE_HIT_LAYER_ID, handlePointClick);
+    map.on("mouseenter", CLUSTER_LAYER_ID, handleClusterEnter);
+    map.on("mouseleave", CLUSTER_LAYER_ID, handleClusterLeave);
+    map.on("click", CLUSTER_LAYER_ID, handleClusterClick);
+
+    const canvas = map.getCanvas();
+    const handleDirectMapInteraction = () => markUserInteracted();
+    canvas.addEventListener("pointerdown", handleDirectMapInteraction, { passive: true });
+    canvas.addEventListener("wheel", handleDirectMapInteraction, { passive: true });
+    canvas.addEventListener("touchstart", handleDirectMapInteraction, { passive: true });
+
+    const observer = new ResizeObserver(() => {
+      map.resize();
+      emitViewport();
+    });
+    observer.observe(containerRef.current);
+
     return () => {
-      node.removeEventListener("touchstart", handleTouchStart);
-      node.removeEventListener("touchmove", handleTouchMove);
-      node.removeEventListener("touchend", handleTouchEnd);
-      node.removeEventListener("touchcancel", handleTouchEnd);
+      observer.disconnect();
+      canvas.removeEventListener("pointerdown", handleDirectMapInteraction);
+      canvas.removeEventListener("wheel", handleDirectMapInteraction);
+      canvas.removeEventListener("touchstart", handleDirectMapInteraction);
+      popupRef.current?.remove();
+      popupRef.current = null;
+      map.remove();
+      mapRef.current = null;
+      setMapReady(false);
     };
-    // Native touch listeners must stay passive:false and read current gesture refs.
+    // Mapbox owns the imperative instance; data and callbacks are updated through refs/effects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [accessToken, mapStyle]);
 
   useEffect(() => {
-    if (!searchAsMoveRef.current || viewport.width <= 0 || viewport.height <= 0) return;
-    onViewportChangeRef.current(mapBoundsFromCenter(center, zoom, viewport));
-  }, [center, viewport, zoom]);
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const source = map.getSource(SALES_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(featureCollection as GeoJSONData);
+  }, [featureCollection, mapReady]);
 
   useEffect(() => {
-    if (viewport.width <= 0 || viewport.height <= 0) return;
-    const next = fitSalesToViewport(sales, viewport);
-    setMapCamera(next.center, next.zoom);
-    setSelectedPopupSale(null);
-  }, [sales, viewport]);
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    updateActiveLayer(map, activeId);
+  }, [activeId, mapReady]);
 
-  function changeZoom(delta: number) {
-    const nextZoom = clampOsmZoom(zoomRef.current + delta, MIN_MAP_ZOOM, MAX_MAP_ZOOM);
-    zoomRef.current = nextZoom;
-    setZoom(nextZoom);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !selectedSaleId) return;
+    const sale = salesByIdRef.current.get(selectedSaleId);
+    if (!sale || !hasCoordinates(sale)) return;
+
+    markUserInteracted();
+    const zoom = Math.max(map.getZoom(), 12);
+    map.easeTo({
+      center: [sale.longitude, sale.latitude],
+      zoom,
+      duration: 360,
+    });
+    popupRef.current = showSalePopup(map, sale, popupRef.current);
+  }, [mapReady, selectedSaleId]);
+
+  function zoomIn() {
+    markUserInteracted();
+    mapRef.current?.zoomIn({ duration: 240 });
+  }
+
+  function zoomOut() {
+    markUserInteracted();
+    mapRef.current?.zoomOut({ duration: 240 });
   }
 
   function fitVisibleSales() {
-    if (viewport.width <= 0 || viewport.height <= 0) return;
-    const next = fitSalesToViewport(sales, viewport);
-    setMapCamera(next.center, next.zoom);
+    markUserInteracted();
+    const map = mapRef.current;
+    if (!map) return;
+    fitSalesOnMap(map, geocodedSales, true, containerRef.current);
   }
 
   function centerOnFrance() {
-    setMapCamera(DEFAULT_MAP_CENTER, defaultMapZoomForViewport(viewportRef.current));
-    setSelectedPopupSale(null);
+    markUserInteracted();
+    const map = mapRef.current;
+    if (!map) return;
+    centerMapOnFrance(map, true, containerRef.current);
   }
 
-  function setMapCamera(nextCenter: LatLng, nextZoom = zoomRef.current) {
-    centerRef.current = nextCenter;
-    zoomRef.current = nextZoom;
-    setCenter(nextCenter);
-    setZoom(nextZoom);
-  }
-
-  function setMapCenter(nextCenter: LatLng) {
-    centerRef.current = nextCenter;
-    setCenter(nextCenter);
-  }
-
-  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "touch") return;
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-
-    activePointersRef.current.set(event.pointerId, pointerPointFromEvent(event));
-    startGesture(event.currentTarget);
-
-    safelySetPointerCapture(event.currentTarget, event.pointerId);
-  }
-
-  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "touch") return;
-    if (!activePointersRef.current.has(event.pointerId)) return;
-    activePointersRef.current.set(event.pointerId, pointerPointFromEvent(event));
-    if (event.pointerType !== "mouse") event.preventDefault();
-
-    if (activePointersRef.current.size >= 2) {
-      if (gestureRef.current?.type !== "pinch") startGesture(event.currentTarget);
-      applyPinchGesture(event.currentTarget);
-      return;
-    }
-
-    if (gestureRef.current?.type !== "pan" || gestureRef.current.pointerId !== event.pointerId) {
-      startGesture(event.currentTarget);
-    }
-
-    applyPanGesture();
-  }
-
-  function handlePointerEnd(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "touch") return;
-    activePointersRef.current.delete(event.pointerId);
-
-    safelyReleasePointerCapture(event.currentTarget, event.pointerId);
-
-    if (activePointersRef.current.size > 0) {
-      startGesture(event.currentTarget);
-      return;
-    }
-
-    gestureRef.current = null;
-  }
-
-  function applyPanGesture() {
-    const gesture = gestureRef.current;
-    if (!gesture || gesture.type !== "pan") return;
-
-    const pointer = activePointersRef.current.get(gesture.pointerId);
-    if (!pointer) return;
-
-    const nextCenterPixel = {
-      x: gesture.startCenterPixel.x - (pointer.clientX - gesture.startX),
-      y: gesture.startCenterPixel.y - (pointer.clientY - gesture.startY),
-    };
-    setMapCenter(
-      unprojectWorldPixelToLatLng(nextCenterPixel.x, nextCenterPixel.y, gesture.startZoom),
+  if (!accessToken) {
+    return (
+      <div className="relative h-full min-h-[28rem] overflow-hidden bg-[#dcece5]">
+        <MapFallback message="Token Mapbox manquant. Ajoutez NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN pour charger la carte." />
+      </div>
     );
-  }
-
-  function startGesture(node: HTMLDivElement) {
-    const pointers = Array.from(activePointersRef.current.values());
-
-    if (pointers.length >= 2) {
-      const [first, second] = pointers;
-      const distance = distanceBetween(first, second);
-      if (distance <= 0) return;
-      gestureRef.current = {
-        type: "pinch",
-        anchor: pointToLatLng(midpointBetween(first, second), node),
-        startDistance: distance,
-        startZoom: zoomRef.current,
-      };
-      return;
-    }
-
-    if (pointers.length === 1) {
-      const [pointer] = pointers;
-      gestureRef.current = {
-        type: "pan",
-        pointerId: pointer.pointerId,
-        startX: pointer.clientX,
-        startY: pointer.clientY,
-        startCenterPixel: projectLatLngToWorldPixel(
-          centerRef.current.lat,
-          centerRef.current.lng,
-          zoomRef.current,
-        ),
-        startZoom: zoomRef.current,
-      };
-      return;
-    }
-
-    gestureRef.current = null;
-  }
-
-  function applyPinchGesture(node: HTMLDivElement) {
-    const gesture = gestureRef.current;
-    if (!gesture || gesture.type !== "pinch") return;
-
-    const pointers = Array.from(activePointersRef.current.values());
-    if (pointers.length < 2) return;
-
-    const [first, second] = pointers;
-    const distance = distanceBetween(first, second);
-    if (distance < 8) return;
-
-    const zoomDelta = zoomDeltaFromPinchDistance(distance, gesture.startDistance);
-    const nextZoom = clampOsmZoom(gesture.startZoom + zoomDelta, MIN_MAP_ZOOM, MAX_MAP_ZOOM);
-    const midpoint = midpointBetween(first, second);
-    const midpointOffset = pointOffsetFromViewportCenter(midpoint, node);
-    const anchorPixel = projectLatLngToWorldPixel(gesture.anchor.lat, gesture.anchor.lng, nextZoom);
-    const nextCenterPixel = {
-      x: anchorPixel.x - midpointOffset.x,
-      y: anchorPixel.y - midpointOffset.y,
-    };
-
-    setMapCamera(
-      unprojectWorldPixelToLatLng(nextCenterPixel.x, nextCenterPixel.y, nextZoom),
-      nextZoom,
-    );
-    if (zoomDelta !== 0) {
-      gestureRef.current = {
-        type: "pinch",
-        anchor: pointToLatLng(midpoint, node),
-        startDistance: distance,
-        startZoom: nextZoom,
-      };
-    }
-  }
-
-  function syncActiveTouches(touches: TouchList) {
-    activePointersRef.current.clear();
-    Array.from(touches).forEach((touch) => {
-      activePointersRef.current.set(touch.identifier, touchPointFromTouch(touch));
-    });
-  }
-
-  function pointToLatLng(point: PointerPoint, node: HTMLDivElement) {
-    const offset = pointOffsetFromViewportCenter(point, node);
-    const centerPixel = projectLatLngToWorldPixel(
-      centerRef.current.lat,
-      centerRef.current.lng,
-      zoomRef.current,
-    );
-
-    return unprojectWorldPixelToLatLng(
-      centerPixel.x + offset.x,
-      centerPixel.y + offset.y,
-      zoomRef.current,
-    );
-  }
-
-  function pointOffsetFromViewportCenter(point: PointerPoint, node: HTMLDivElement) {
-    const rect = node.getBoundingClientRect();
-    const width = viewportRef.current.width || node.clientWidth;
-    const height = viewportRef.current.height || node.clientHeight;
-
-    return {
-      x: point.clientX - rect.left - width / 2,
-      y: point.clientY - rect.top - height / 2,
-    };
   }
 
   return (
     <div className="relative h-full min-h-[28rem] overflow-hidden bg-[#dcece5]">
       <div
         ref={containerRef}
-        aria-label="Carte OpenStreetMap des biens"
-        data-testid="osm-map-panel"
-        className="absolute inset-0 touch-none cursor-grab select-none active:cursor-grabbing"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerEnd}
-        onPointerCancel={handlePointerEnd}
-        onLostPointerCapture={handlePointerEnd}
-        style={{ overscrollBehavior: "contain", touchAction: "none" }}
-      >
-        <div className="absolute inset-0">
-          {camera.tiles.map((tile) => (
-            <img
-              key={tile.key}
-              src={tile.url}
-              alt=""
-              aria-hidden
-              draggable={false}
-              loading="eager"
-              decoding="async"
-              referrerPolicy="strict-origin-when-cross-origin"
-              onError={() => setTileError(true)}
-              className="absolute h-64 w-64 max-w-none select-none"
-              style={{
-                left: tile.left,
-                top: tile.top,
-              }}
-            />
-          ))}
-        </div>
+        aria-label="Carte Mapbox des biens Immojudis"
+        data-testid="mapbox-map-panel"
+        className="!absolute !inset-0 !h-full !w-full"
+      />
 
-        <div className="absolute inset-0">
-          {markerPositions.map(({ hiddenCount, left, sale, top }) => (
-            <PointMarker
-              key={sale.id}
-              active={sale.id === activeId}
-              hiddenCount={hiddenCount}
-              left={left}
-              sale={sale}
-              top={top}
-              onHover={onHover}
-              onSelect={() => {
-                onSelect(sale.id);
-                setSelectedPopupSale(sale);
-              }}
-            />
-          ))}
-        </div>
-
-        {selectedPopupSale && selectedPopupPosition ? (
-          <SalePopup
-            left={selectedPopupPosition.left}
-            sale={selectedPopupSale}
-            top={selectedPopupPosition.top}
-            onClose={() => setSelectedPopupSale(null)}
-          />
-        ) : null}
-      </div>
-
-      {tileError ? (
-        <MapFallback message="Certaines tuiles OpenStreetMap n'ont pas pu être chargées." />
+      {mapError ? (
+        <MapFallback message={`Mapbox n'a pas pu charger la carte : ${mapError}`} />
       ) : null}
 
-      {isLoading ? (
-        <div className="absolute inset-x-0 top-16 z-20 grid place-items-center pointer-events-none">
+      {isLoading || !mapReady ? (
+        <div className="pointer-events-none absolute inset-x-0 top-16 z-20 grid place-items-center">
           <div className="inline-flex items-center gap-2 rounded-md border border-[#cbded8] bg-white px-4 py-3 text-sm font-bold text-[#132238] shadow-lg">
             <LoaderCircle className="h-4 w-4 animate-spin text-[#0f766e]" />
             Mise à jour de la carte
@@ -484,45 +347,59 @@ export function MapPanel({
         </div>
       ) : null}
 
-      {!isLoading && sales.length === 0 ? (
-        <div className="absolute left-4 top-4 z-20 max-w-xs rounded-md border border-[#cbded8] bg-white/95 p-3 text-sm font-semibold text-[#3d4b57] shadow-lg backdrop-blur">
+      {!isLoading && mapReady && geocodedSales.length === 0 ? (
+        <div className="absolute left-4 top-16 z-20 max-w-xs rounded-md border border-[#cbded8] bg-white/95 p-3 text-sm font-semibold text-[#3d4b57] shadow-lg backdrop-blur">
           Aucune coordonnée disponible pour les résultats affichés.
         </div>
       ) : null}
 
-      <div className="absolute left-4 top-4 z-30 flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-2">
+      <div className="absolute left-4 top-4 z-30 flex max-w-[calc(100%-6rem)] flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => onSearchAsMoveChange(!searchAsMove)}
+          onClick={() => {
+            if (!canToggleSearchAsMove) return;
+            markUserInteracted();
+            onSearchAsMoveChange(!searchAsMove);
+          }}
+          disabled={!canToggleSearchAsMove}
           aria-pressed={searchAsMove}
-          className={`inline-flex h-10 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm font-bold shadow-lg backdrop-blur transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] ${
+          className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-extrabold shadow-lg backdrop-blur transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98d45] disabled:cursor-not-allowed disabled:opacity-60 ${
             searchAsMove
-              ? "border-[#0f766e] bg-[#0f766e] text-white"
-              : "border-[#d6e0dc] bg-white/95 text-[#132238] hover:border-[#0f766e]"
+              ? "border-[#132238] bg-[#132238] text-white"
+              : "border-[#d6e0dc] bg-white/95 text-[#132238] hover:border-[#c98d45] disabled:hover:border-[#d6e0dc]"
           }`}
         >
           <LocateFixed className="h-4 w-4" />
-          Chercher sur la carte
+          {searchAsMove ? "Carte active" : "Rechercher ici"}
         </button>
+        <div className="hidden h-10 items-center rounded-md border border-[#d6e0dc] bg-white/95 px-3 text-xs font-bold text-[#3d4b57] shadow-lg backdrop-blur sm:inline-flex">
+          {geocodedSales.length.toLocaleString("fr-FR")} géocodés
+        </div>
       </div>
 
       <div className="absolute right-4 top-4 z-30 flex flex-col overflow-hidden rounded-md border border-[#d6e0dc] bg-white shadow-lg">
-        <MapIconButton label="Zoomer" onClick={() => changeZoom(1)}>
+        <MapIconButton label="Zoomer" onClick={zoomIn}>
           <Plus className="h-5 w-5" />
         </MapIconButton>
-        <MapIconButton label="Dézoomer" onClick={() => changeZoom(-1)} separated>
+        <MapIconButton label="Dézoomer" onClick={zoomOut} separated>
           <Minus className="h-5 w-5" />
         </MapIconButton>
       </div>
 
       <div className="absolute right-4 top-32 z-30 flex flex-col gap-2">
-        <MapControlButton icon={Navigation} label="Cadrer" onClick={fitVisibleSales} />
-        <MapControlButton icon={MapIcon} label="France" onClick={centerOnFrance} />
+        <MapControlButton icon={Navigation} label="Cadrer les biens" onClick={fitVisibleSales} />
+        <MapControlButton icon={MapIcon} label="Voir la France" onClick={centerOnFrance} />
       </div>
 
-      <div className="absolute bottom-4 left-4 z-30 rounded-md border border-[#d6e0dc] bg-white/95 px-3 py-2 text-xs font-semibold text-[#3d4b57] shadow-lg backdrop-blur">
-        {visibleMarkerItems.length.toLocaleString("fr-FR")} points visibles ·{" "}
-        {sales.length.toLocaleString("fr-FR")} dossiers géocodés
+      <div className="absolute bottom-20 left-4 z-30 max-w-[calc(100%-2rem)] rounded-md border border-[#d6e0dc] bg-white/95 px-3 py-2 text-xs font-bold text-[#3d4b57] shadow-lg backdrop-blur sm:bottom-4">
+        <span className="sm:hidden">
+          {featureCollection.features.length.toLocaleString("fr-FR")} points ·{" "}
+          {sales.length.toLocaleString("fr-FR")} biens
+        </span>
+        <span className="hidden sm:inline">
+          {featureCollection.features.length.toLocaleString("fr-FR")} points Mapbox ·{" "}
+          {sales.length.toLocaleString("fr-FR")} dossiers chargés
+        </span>
       </div>
 
       <div className="absolute bottom-16 left-4 z-30 hidden rounded-md border border-[#d6e0dc] bg-white/95 px-2 py-2 shadow-lg backdrop-blur sm:block">
@@ -546,82 +423,299 @@ export function MapPanel({
       </div>
 
       <a
-        href={OSM_COPYRIGHT_URL}
+        href={MAPBOX_COPYRIGHT_URL}
         target="_blank"
         rel="noreferrer"
-        className="absolute bottom-4 right-4 z-30 rounded-md border border-[#d6e0dc] bg-white/95 px-2 py-1 text-[10px] font-semibold text-[#3d4b57] shadow-lg backdrop-blur transition-colors hover:text-[#0f766e]"
+        className="absolute bottom-4 right-4 z-30 hidden rounded-md border border-[#d6e0dc] bg-white/95 px-2 py-1 text-[10px] font-semibold text-[#3d4b57] shadow-lg backdrop-blur transition-colors hover:text-[#0f766e] md:inline-flex"
       >
-        {OSM_ATTRIBUTION}
+        {MAPBOX_ATTRIBUTION}
       </a>
     </div>
   );
 }
 
-function pointerPointFromEvent(event: React.PointerEvent<HTMLDivElement>): PointerPoint {
-  return {
-    pointerId: event.pointerId,
-    clientX: event.clientX,
-    clientY: event.clientY,
+function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
+  if (map.getSource(SALES_SOURCE_ID)) return;
+
+  map.addSource(SALES_SOURCE_ID, {
+    type: "geojson",
+    data: data as GeoJSONData,
+    cluster: true,
+    clusterMaxZoom: 13,
+    clusterRadius: 54,
+    generateId: true,
+  });
+
+  const clusterLayer: CircleLayerSpecification = {
+    id: CLUSTER_LAYER_ID,
+    type: "circle",
+    source: SALES_SOURCE_ID,
+    filter: ["has", "point_count"],
+    paint: {
+      "circle-color": ["step", ["get", "point_count"], "#071a31", 10, "#132238", 30, "#c98d45"],
+      "circle-radius": ["step", ["get", "point_count"], 18, 10, 24, 30, 30],
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 3,
+      "circle-opacity": 0.96,
+    },
   };
-}
 
-function touchPointFromTouch(touch: Touch): PointerPoint {
-  return {
-    pointerId: touch.identifier,
-    clientX: touch.clientX,
-    clientY: touch.clientY,
+  const clusterCountLayer: SymbolLayerSpecification = {
+    id: CLUSTER_COUNT_LAYER_ID,
+    type: "symbol",
+    source: SALES_SOURCE_ID,
+    filter: ["has", "point_count"],
+    layout: {
+      "text-field": ["get", "point_count_abbreviated"],
+      "text-size": 12,
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: {
+      "text-color": "#ffffff",
+      "text-halo-color": "rgba(19,34,56,0.22)",
+      "text-halo-width": 1,
+    },
   };
-}
 
-function distanceBetween(first: PointerPoint, second: PointerPoint) {
-  return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
-}
-
-function midpointBetween(first: PointerPoint, second: PointerPoint): PointerPoint {
-  return {
-    pointerId: first.pointerId,
-    clientX: (first.clientX + second.clientX) / 2,
-    clientY: (first.clientY + second.clientY) / 2,
+  const salePointLayer: CircleLayerSpecification = {
+    id: SALE_POINT_LAYER_ID,
+    type: "circle",
+    source: SALES_SOURCE_ID,
+    filter: ["!", ["has", "point_count"]],
+    paint: {
+      "circle-color": ["get", "markerColor"],
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 13, 9, 16, 14, 20],
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 3,
+      "circle-opacity": 0.98,
+    },
   };
+
+  const activeLayer: CircleLayerSpecification = {
+    id: SALE_ACTIVE_LAYER_ID,
+    type: "circle",
+    source: SALES_SOURCE_ID,
+    filter: EMPTY_ACTIVE_FILTER,
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 21, 9, 28, 16, 34],
+      "circle-color": "rgba(201,141,69,0.2)",
+      "circle-stroke-color": "#c98d45",
+      "circle-stroke-width": 2,
+    },
+  };
+
+  const salePriceLayer: SymbolLayerSpecification = {
+    id: SALE_PRICE_LAYER_ID,
+    type: "symbol",
+    source: SALES_SOURCE_ID,
+    filter: ["!", ["has", "point_count"]],
+    layout: {
+      "text-field": ["get", "priceLabel"],
+      "text-size": ["interpolate", ["linear"], ["zoom"], 4, 10, 9, 11, 14, 12],
+      "text-anchor": "top",
+      "text-offset": [0, 1.25],
+      "text-allow-overlap": false,
+      "text-ignore-placement": false,
+      "text-optional": true,
+    },
+    paint: {
+      "text-color": "#132238",
+      "text-halo-color": "#ffffff",
+      "text-halo-width": 1.4,
+      "text-halo-blur": 0.2,
+    },
+  };
+
+  const hitLayer: CircleLayerSpecification = {
+    id: SALE_HIT_LAYER_ID,
+    type: "circle",
+    source: SALES_SOURCE_ID,
+    filter: ["!", ["has", "point_count"]],
+    paint: {
+      "circle-radius": 24,
+      "circle-color": "#132238",
+      "circle-opacity": 0.01,
+    },
+  };
+
+  map.addLayer(clusterLayer);
+  map.addLayer(clusterCountLayer);
+  map.addLayer(activeLayer);
+  map.addLayer(salePointLayer);
+  map.addLayer(salePriceLayer);
+  map.addLayer(hitLayer);
 }
 
-function safelySetPointerCapture(node: HTMLDivElement, pointerId: number) {
-  try {
-    if (!node.hasPointerCapture(pointerId)) node.setPointerCapture(pointerId);
-  } catch {
-    // Synthetic pointer events do not always own a native capture target.
+function updateActiveLayer(map: MapboxMap, activeId: string | null | undefined) {
+  if (!map.getLayer(SALE_ACTIVE_LAYER_ID)) return;
+  const filter: MapboxFilter = activeId ? ["==", ["get", "saleId"], activeId] : EMPTY_ACTIVE_FILTER;
+  map.setFilter(SALE_ACTIVE_LAYER_ID, filter);
+}
+
+function centerMapOnFrance(map: MapboxMap, animate: boolean, container: HTMLDivElement | null) {
+  map.fitBounds(FRANCE_BOUNDS, {
+    duration: animate ? 480 : 0,
+    padding: isMobileMap(container) ? 18 : 28,
+  });
+}
+
+function fitSalesOnMap(
+  map: MapboxMap,
+  sales: AuctionSale[],
+  animate: boolean,
+  container: HTMLDivElement | null,
+) {
+  const points = sales.filter(hasCoordinates);
+  const duration = animate ? 520 : 0;
+  const padding = isMobileMap(container) ? MOBILE_FIT_PADDING : FIT_PADDING;
+
+  if (points.length === 0) {
+    centerMapOnFrance(map, animate, container);
+    return;
   }
-}
 
-function safelyReleasePointerCapture(node: HTMLDivElement, pointerId: number) {
-  try {
-    if (node.hasPointerCapture(pointerId)) node.releasePointerCapture(pointerId);
-  } catch {
-    // The pointer may already be released after cancel/lost-capture paths.
+  if (points.length === 1) {
+    const [sale] = points;
+    map.easeTo({
+      center: [sale.longitude, sale.latitude],
+      zoom: 12,
+      duration,
+    });
+    return;
   }
+
+  const bounds = new mapboxgl.LngLatBounds();
+  points.forEach((sale) => bounds.extend([sale.longitude, sale.latitude]));
+  map.fitBounds(bounds, {
+    duration,
+    maxZoom: MAX_FIT_ZOOM,
+    padding,
+  });
 }
 
-function zoomDeltaFromPinchDistance(distance: number, startDistance: number) {
-  const scale = distance / Math.max(startDistance, 1);
-  const rawDelta = Math.log2(scale) / PINCH_ZOOM_STEP;
-  if (rawDelta >= 1) return 1;
-  if (rawDelta <= -1) return -1;
-  return 0;
+function boundsFromMap(map: MapboxMap): ViewportBounds {
+  const bounds = map.getBounds();
+  if (!bounds) {
+    return { north: 51.5, south: 41, east: 9.7, west: -5.6 };
+  }
+
+  return {
+    north: bounds.getNorth(),
+    south: bounds.getSouth(),
+    east: bounds.getEast(),
+    west: bounds.getWest(),
+  };
 }
 
-function defaultMapZoomForViewport(viewport: ViewportSize) {
-  if (viewport.width > 0 && viewport.width < 640) return DEFAULT_MOBILE_MAP_ZOOM;
+function saleIdFromFeature(feature: unknown) {
+  const raw = (feature as QueriedMapFeature | undefined)?.properties?.saleId;
+  return typeof raw === "string" && raw ? raw : null;
+}
+
+function showSalePopup(
+  map: MapboxMap,
+  sale: AuctionSale & { latitude: number; longitude: number },
+  currentPopup: mapboxgl.Popup | null,
+) {
+  currentPopup?.remove();
+  return new mapboxgl.Popup({
+    closeButton: true,
+    closeOnClick: true,
+    className: "immo-mapbox-popup",
+    maxWidth: "340px",
+    offset: 18,
+  })
+    .setLngLat([sale.longitude, sale.latitude])
+    .setHTML(buildPopupHtml(sale))
+    .addTo(map);
+}
+
+function buildPopupHtml(sale: AuctionSale & { latitude: number; longitude: number }) {
+  const saleTitle = saleDisplayTitle(sale);
+  const dpe = extractDpe(sale);
+  const dpeTheme = dpeColor(dpe.class);
+  const surface = getSaleSurface(sale).value;
+  const displaySurface = getDisplaySurface(sale);
+  const pricePerSquareMeter = pricePerM2(sale.starting_price_eur, surface);
+  const score =
+    sale.investment_score == null ? "À auditer" : `${Math.round(sale.investment_score)}`;
+  const riskCount = sale.risks?.length ?? 0;
+  const riskLabel =
+    riskCount > 1 ? `${riskCount} alertes` : riskCount === 1 ? "1 alerte" : "Faible";
+  const imageUrl =
+    firstPropertyImage(sale.media) ||
+    mapboxStaticImageUrl({
+      lat: sale.latitude,
+      lng: sale.longitude,
+      zoom: 15,
+      width: 420,
+      height: 250,
+    });
+  const detailUrl = `/sales/${encodeURIComponent(sale.id)}`;
+  const location = [sale.city, sale.tribunal_city ?? sale.tribunal_name]
+    .filter(Boolean)
+    .join(" · ");
+
+  return `
+    <article class="immo-mapbox-popup-card">
+      ${
+        imageUrl
+          ? `<img class="immo-mapbox-popup-image" src="${escapeAttribute(
+              imageUrl,
+            )}" alt="" loading="lazy" decoding="async" referrerpolicy="strict-origin-when-cross-origin" />`
+          : ""
+      }
+      <div class="immo-mapbox-popup-body">
+        <strong class="immo-mapbox-popup-price">${escapeHtml(
+          formatPrice(sale.starting_price_eur),
+        )}</strong>
+        <a class="immo-mapbox-popup-title" href="${escapeAttribute(detailUrl)}">${escapeHtml(
+          saleTitle,
+        )}</a>
+        <p class="immo-mapbox-popup-location">${escapeHtml(location)}</p>
+        <div class="immo-mapbox-popup-metrics">
+          <span>${escapeHtml(displaySurface.label)}</span>
+          <span>${escapeHtml(formatPricePerM2(pricePerSquareMeter))}</span>
+          <span>Score ${escapeHtml(score)}</span>
+          <span>Risque ${escapeHtml(riskLabel)}</span>
+        </div>
+        <div class="immo-mapbox-popup-tags">
+          <span>${escapeHtml(propertyTypeLabel(sale.property_type))}</span>
+          ${sale.sale_date ? `<span>${escapeHtml(formatDate(sale.sale_date))}</span>` : ""}
+          ${
+            dpe.class
+              ? `<span style="background:${escapeAttribute(
+                  dpeTheme?.background ?? "#eef3f5",
+                )};border-color:${escapeAttribute(
+                  dpeTheme?.border ?? "transparent",
+                )};color:${escapeAttribute(dpeTheme?.foreground ?? "#132238")}">DPE ${escapeHtml(
+                  dpe.class,
+                )}</span>`
+              : ""
+          }
+        </div>
+        <a class="immo-mapbox-popup-link" href="${escapeAttribute(detailUrl)}">Voir le détail</a>
+      </div>
+    </article>
+  `;
+}
+
+function defaultMapZoomForViewport(node: HTMLDivElement) {
+  if (node.clientWidth > 0 && node.clientWidth < 640) return DEFAULT_MOBILE_MAP_ZOOM;
   return DEFAULT_MAP_ZOOM;
+}
+
+function isMobileMap(node: HTMLDivElement | null) {
+  return node != null && node.clientWidth > 0 && node.clientWidth < 640;
 }
 
 function MapFallback({ message }: { message: string }) {
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#e7f4ef]/70 px-6 text-center">
+    <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#e7f4ef]/80 px-6 text-center">
       <div className="max-w-sm rounded-md border border-[#cbded8] bg-white p-5 shadow-lg">
         <MapPin className="mx-auto h-8 w-8 text-[#0f766e]" />
-        <h2 className="mt-3 text-base font-bold text-[#132238]">
-          Carte partiellement indisponible
-        </h2>
+        <h2 className="mt-3 text-base font-bold text-[#132238]">Carte Mapbox indisponible</h2>
         <p className="mt-2 text-sm leading-relaxed text-[#55626f]">{message}</p>
       </div>
     </div>
@@ -667,314 +761,24 @@ function MapControlButton({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex h-[54px] w-12 cursor-pointer flex-col items-center justify-center rounded-md border border-[#d6e0dc] bg-white text-[10px] font-semibold text-[#132238] shadow-lg transition-colors hover:bg-[#f4f7f9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
+      className="grid h-11 w-11 cursor-pointer place-items-center rounded-md border border-[#d6e0dc] bg-white text-[#132238] shadow-lg transition-colors hover:bg-[#f4f7f9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
       aria-label={label}
       title={label}
     >
-      <Icon className="mb-0.5 h-5 w-5" />
-      {label}
+      <Icon className="h-5 w-5" />
     </button>
   );
 }
 
-function PointMarker({
-  active,
-  hiddenCount,
-  left,
-  sale,
-  top,
-  onHover,
-  onSelect,
-}: {
-  active: boolean;
-  hiddenCount: number;
-  left: number;
-  sale: AuctionSale & { latitude: number; longitude: number };
-  top: number;
-  onHover: (saleId: string | null) => void;
-  onSelect: () => void;
-}) {
-  const markerSize = active ? POINT_MARKER_ACTIVE_SIZE : POINT_MARKER_SIZE;
-  const clusterLabel = hiddenCount > 0 ? `+${Math.min(hiddenCount, 99)}` : null;
-  const dpe = extractDpe(sale);
-  const dpeTheme = dpeColor(dpe.class);
-  const markerColor = active ? "#c2410c" : (dpeTheme?.background ?? "#0f766e");
-
-  return (
-    <button
-      type="button"
-      data-sale-id={sale.id}
-      data-testid="osm-map-marker"
-      aria-label={`${sale.title ?? propertyTypeLabel(sale.property_type)} · ${formatPrice(
-        sale.starting_price_eur,
-      )}`}
-      onMouseEnter={() => onHover(sale.id)}
-      onMouseLeave={() => onHover(null)}
-      onClick={(event) => {
-        event.stopPropagation();
-        onSelect();
-      }}
-      className="absolute grid cursor-pointer place-items-center rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-      style={{
-        height: POINT_MARKER_HIT_SIZE,
-        left,
-        top,
-        transform: "translate(-50%, -50%)",
-        width: POINT_MARKER_HIT_SIZE,
-        zIndex: active ? 20 : 10,
-      }}
-      title={
-        hiddenCount > 0
-          ? `${sale.title ?? propertyTypeLabel(sale.property_type)} · ${hiddenCount} autre${
-              hiddenCount > 1 ? "s" : ""
-            } à proximité`
-          : (sale.title ?? propertyTypeLabel(sale.property_type))
-      }
-    >
-      <span
-        aria-hidden
-        className="grid rounded-full border-[3px] border-white shadow-[0_8px_18px_rgba(19,34,56,0.22)] transition-all"
-        style={{ backgroundColor: markerColor, height: markerSize, width: markerSize }}
-      >
-        <span
-          aria-hidden
-          className={`m-auto rounded-full ${active ? "h-2.5 w-2.5 bg-white" : "h-1.5 w-1.5 bg-white/85"}`}
-        />
-      </span>
-      {clusterLabel ? (
-        <span
-          className="absolute right-0 top-0 z-20 grid rounded-full border-2 border-white bg-[#132238] px-1 text-[10px] font-extrabold leading-none text-white shadow-md"
-          style={{
-            height: POINT_MARKER_CLUSTER_BADGE_SIZE,
-            minWidth: POINT_MARKER_CLUSTER_BADGE_SIZE,
-          }}
-        >
-          {clusterLabel}
-        </span>
-      ) : null}
-    </button>
-  );
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-function SalePopup({
-  left,
-  sale,
-  top,
-  onClose,
-}: {
-  left: number;
-  sale: AuctionSale;
-  top: number;
-  onClose: () => void;
-}) {
-  const hasLocation = hasCoordinates(sale);
-  const dpe = extractDpe(sale);
-  const dpeTheme = dpeColor(dpe.class);
-
-  return (
-    <div
-      className="absolute z-40 w-[min(18rem,calc(100%-2rem))] -translate-x-1/2 rounded-md border border-[#d6e0dc] bg-white p-3 text-left shadow-xl"
-      style={{ left, top: top - POINT_MARKER_ACTIVE_SIZE - 12 }}
-      role="dialog"
-      aria-label={sale.title ?? "Dossier immobilier"}
-    >
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full text-[#55626f] hover:bg-[#f4f7f9]"
-        aria-label="Fermer"
-      >
-        ×
-      </button>
-      <strong className="block pr-8 text-base text-[#132238]">
-        {formatPrice(sale.starting_price_eur)}
-      </strong>
-      <a
-        href={`/sales/${encodeURIComponent(sale.id)}`}
-        className="mt-1 block text-sm font-extrabold text-[#0f766e] hover:underline"
-      >
-        {sale.title ?? propertyTypeLabel(sale.property_type)}
-      </a>
-      <p className="mt-1 text-xs leading-relaxed text-[#55626f]">
-        {[
-          sale.city,
-          sale.tribunal_city ?? sale.tribunal_name,
-          sale.sale_date ? formatDate(sale.sale_date) : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      </p>
-      {dpe.class ? (
-        <span
-          className="mt-3 inline-flex min-h-7 items-center rounded-md border px-2 text-xs font-extrabold"
-          style={{
-            backgroundColor: dpeTheme?.background,
-            borderColor: dpeTheme?.border,
-            color: dpeTheme?.foreground,
-          }}
-        >
-          DPE {dpe.class}
-        </span>
-      ) : null}
-      {hasLocation ? (
-        <a
-          href={openStreetMapUrl(sale.latitude, sale.longitude, 17)}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-3 inline-flex text-xs font-bold uppercase tracking-[0.12em] text-[#0f766e] hover:text-[#134e4a]"
-        >
-          Ouvrir dans OSM
-        </a>
-      ) : null}
-    </div>
-  );
-}
-
-type MapTile = {
-  key: string;
-  left: number;
-  top: number;
-  url: string;
-};
-
-function buildCamera(center: LatLng, zoom: number, viewport: ViewportSize) {
-  if (viewport.width <= 0 || viewport.height <= 0) {
-    return { origin: { x: 0, y: 0 }, tiles: [] as MapTile[] };
-  }
-
-  const centerPixel = projectLatLngToWorldPixel(center.lat, center.lng, zoom);
-  const origin = {
-    x: centerPixel.x - viewport.width / 2,
-    y: centerPixel.y - viewport.height / 2,
-  };
-  const startX = Math.floor(origin.x / TILE_SIZE);
-  const endX = Math.floor((origin.x + viewport.width) / TILE_SIZE);
-  const startY = Math.floor(origin.y / TILE_SIZE);
-  const endY = Math.floor((origin.y + viewport.height) / TILE_SIZE);
-  const maxTile = 2 ** zoom;
-  const tiles: MapTile[] = [];
-
-  for (let tileY = Math.max(0, startY); tileY <= Math.min(maxTile - 1, endY); tileY += 1) {
-    for (let tileX = startX; tileX <= endX; tileX += 1) {
-      tiles.push({
-        key: `${zoom}-${tileX}-${tileY}`,
-        left: tileX * TILE_SIZE - origin.x,
-        top: tileY * TILE_SIZE - origin.y,
-        url: osmTileUrlFromXYZ(zoom, tileX, tileY),
-      });
-    }
-  }
-
-  return { origin, tiles };
-}
-
-type VisibleMapMarkerItem = {
-  sale: AuctionSale & { latitude: number; longitude: number };
-  hiddenCount: number;
-};
-
-type MarkerCollisionBox = {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-};
-
-function buildVisibleMapMarkerItems(sales: AuctionSale[], zoom: number): VisibleMapMarkerItem[] {
-  const candidates = sales.filter(hasCoordinates);
-  if (zoom >= 10) return candidates.map((sale) => ({ sale, hiddenCount: 0 }));
-
-  const accepted: Array<VisibleMapMarkerItem & { box: MarkerCollisionBox }> = [];
-
-  candidates.forEach((sale) => {
-    const projected = projectLatLngToWorldPixel(sale.latitude, sale.longitude, zoom);
-    const box = {
-      left: projected.x - POINT_MARKER_HIT_SIZE / 2 - POINT_MARKER_COLLISION_PADDING,
-      right: projected.x + POINT_MARKER_HIT_SIZE / 2 + POINT_MARKER_COLLISION_PADDING,
-      top: projected.y - POINT_MARKER_HIT_SIZE / 2 - POINT_MARKER_COLLISION_PADDING,
-      bottom: projected.y + POINT_MARKER_HIT_SIZE / 2 + POINT_MARKER_COLLISION_PADDING,
-    };
-    const collided = accepted.find((item) => markerBoxesOverlap(box, item.box));
-
-    if (collided) {
-      collided.hiddenCount += 1;
-      return;
-    }
-
-    accepted.push({ sale, hiddenCount: 0, box });
-  });
-
-  return accepted.map(({ sale, hiddenCount }) => ({ sale, hiddenCount }));
-}
-
-function markerBoxesOverlap(a: MarkerCollisionBox, b: MarkerCollisionBox) {
-  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-}
-
-function fitSalesToViewport(
-  sales: AuctionSale[],
-  viewport: ViewportSize,
-): {
-  center: LatLng;
-  zoom: number;
-} {
-  const points = sales.filter(hasCoordinates);
-
-  if (points.length === 0) {
-    return { center: DEFAULT_MAP_CENTER, zoom: defaultMapZoomForViewport(viewport) };
-  }
-
-  if (points.length === 1) {
-    const [sale] = points;
-    return { center: { lat: sale.latitude, lng: sale.longitude }, zoom: 12 };
-  }
-
-  const availableWidth =
-    viewport.width - POINT_MARKER_FIT_PADDING.left - POINT_MARKER_FIT_PADDING.right;
-  const availableHeight =
-    viewport.height - POINT_MARKER_FIT_PADDING.top - POINT_MARKER_FIT_PADDING.bottom;
-
-  for (let nextZoom = MAX_MAP_ZOOM; nextZoom >= MIN_MAP_ZOOM; nextZoom -= 1) {
-    const bounds = projectedBounds(points, nextZoom);
-    if (
-      bounds.width <= Math.max(120, availableWidth) &&
-      bounds.height <= Math.max(120, availableHeight)
-    ) {
-      return {
-        center: unprojectWorldPixelToLatLng(bounds.centerX, bounds.centerY, nextZoom),
-        zoom: nextZoom,
-      };
-    }
-  }
-
-  const bounds = projectedBounds(points, MIN_MAP_ZOOM);
-  return {
-    center: unprojectWorldPixelToLatLng(bounds.centerX, bounds.centerY, MIN_MAP_ZOOM),
-    zoom: MIN_MAP_ZOOM,
-  };
-}
-
-function projectedBounds(
-  sales: Array<AuctionSale & { latitude: number; longitude: number }>,
-  zoom: number,
-) {
-  let minX = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-
-  sales.forEach((sale) => {
-    const projected = projectLatLngToWorldPixel(sale.latitude, sale.longitude, zoom);
-    minX = Math.min(minX, projected.x);
-    maxX = Math.max(maxX, projected.x);
-    minY = Math.min(minY, projected.y);
-    maxY = Math.max(maxY, projected.y);
-  });
-
-  return {
-    centerX: (minX + maxX) / 2,
-    centerY: (minY + maxY) / 2,
-    height: maxY - minY,
-    width: maxX - minX,
-  };
+function escapeAttribute(value: string) {
+  return escapeHtml(value);
 }

@@ -9,6 +9,7 @@ import {
 } from "@/lib/dvf-comparable-engine";
 import { haversineKm } from "@/lib/geo";
 import { featureIncluded, isActivePlanStatus, normalizePlanCode } from "@/lib/plans";
+import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
@@ -182,7 +183,7 @@ export async function getValuationBacktest({
     ok: true,
     sale: {
       id: sale.id,
-      title: sale.title,
+      title: cleanSaleTitle(sale.title),
       city: sale.city,
       department: sale.department,
       propertyType: sale.property_type,

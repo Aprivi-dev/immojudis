@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, IBM_Plex_Sans } from "next/font/google";
+import "mapbox-gl/dist/mapbox-gl.css";
 import "./../styles.css";
 import { AppProviders } from "./providers";
 

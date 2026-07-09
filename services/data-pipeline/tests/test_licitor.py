@@ -73,6 +73,8 @@ def test_parse_licitor_list_sales_extracts_light_listing() -> None:
     assert sales[0]["city"] == "Paris 2ème"
     assert sales[0]["title"] == "Trois appartements"
     assert sales[0]["starting_price_eur"] == "82 610 €"
+    assert sales[0]["source_blocks"]["mise_a_prix"] == "82 610 €"
+    assert sales[0]["source_blocks"]["ville"] == "Paris 2ème"
 
 
 def test_licitor_uses_aquitaine_listing_page_for_aquitaine_targets(monkeypatch) -> None:
@@ -106,6 +108,40 @@ def test_parse_licitor_detail_html_extracts_national_postal_code() -> None:
     assert raw["postal_code"] == "75001"
 
 
+def test_parse_licitor_detail_html_derives_paris_arrondissement_postal_code_from_location_block() -> None:
+    html = """
+    <section class="AddressBlock">
+      <div class="Lot">
+        <div class="FirstSousLot SousLot">
+          <h2>Un appartement</h2>
+          <p>de 31,60 m², comprenant : entrée, salle d'eau avec wc, pièce principale avec placard.</p>
+        </div>
+        <h3>Mise à prix : 100 000 €</h3>
+      </div>
+      <div class="Location">
+        <p class="City">Paris 19ème</p>
+        <p class="Street">66, rue du Pré Saint Gervais</p>
+        <p class="Map"><a href="https://maps.google.fr/maps?q=48.8787613,2.3979249&amp;z=13">Afficher le plan</a></p>
+      </div>
+    </section>
+    <h3>Maître Philippe Marion, Avocat</h3>
+    <p>29, rue Jean de la Fontaine - 75016 Paris</p>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/87/81/vente-aux-encheres/un-appartement/paris-19eme/paris/108781.html",
+    )
+    sale = normalize_sale(raw)
+
+    assert raw["postal_code"] == "75019"
+    assert raw["department"] == "75"
+    assert sale.address == "66, rue du Pré Saint Gervais, 75019 Paris 19ème"
+    assert sale.rooms_count == 1
+    assert sale.latitude == Decimal("48.8787613")
+    assert sale.longitude == Decimal("2.3979249")
+
+
 def test_parse_licitor_detail_html_accepts_missing_postal_code() -> None:
     html = """
     <h1>Annonce n°108625 : une maison d'habitation à Mérignac (Gironde), mise à prix : 200 000 €</h1>
@@ -119,7 +155,7 @@ def test_parse_licitor_detail_html_accepts_missing_postal_code() -> None:
     <h3>Mise à prix : 200 000 €</h3>
     <p>Mérignac</p>
     <p>2, av. des Azalés</p>
-    <p><a href="https://maps.google.fr/maps?q=44.8401,-0.6512&z=13">Afficher le plan</a></p>
+    <p><a href="https://carto.example.test/plan?q=44.8401,-0.6512&z=13">Afficher le plan</a></p>
     <p>Visite sur place mardi 26 mai 2026 de 10h à 12h</p>
     <h3>Maître Juliette André, de ABR et associés, Avocat</h3>
     <p>4, quai Hubert Prom - 33300 Bordeaux</p>
@@ -135,15 +171,42 @@ def test_parse_licitor_detail_html_accepts_missing_postal_code() -> None:
 
     assert raw["external_id"] == "108625"
     assert raw["surface_m2"] == "90"
+    assert raw["source_blocks"]["mise_a_prix"] == "200 000 €"
+    assert raw["source_blocks"]["visites"] == "Visite sur place mardi 26 mai 2026 de 10h à 12h"
+    assert raw["source_blocks"]["contact_avocat"] == "4, quai Hubert Prom - 33300 Bordeaux | Tél.: 05 35 54 98 12"
     assert sale.source_name == "licitor"
     assert sale.department == "33"
     assert sale.city == "Mérignac"
-    assert sale.address == "2, av. des Azalés, 33300 Mérignac"
+    assert sale.postal_code is None
+    assert sale.address == "2, av. des Azalés, Mérignac"
     assert sale.latitude == Decimal("44.8401")
     assert sale.longitude == Decimal("-0.6512")
     assert sale.starting_price_eur == 200000
     assert sale.property_type == "house"
     assert sale.visit_dates == ["Visite sur place mardi 26 mai 2026 de 10h à 12h"]
+    assert sale.lawyer_contact == "4, quai Hubert Prom - 33300 Bordeaux | Tél.: 05 35 54 98 12"
+
+
+def test_parse_licitor_detail_html_keeps_thousands_surface() -> None:
+    html = """
+    <h1>Annonce n°100001 : une propriété à Bordeaux (Gironde), mise à prix : 100 000 €</h1>
+    <p>Tribunal Judiciaire de Bordeaux (Gironde)</p>
+    <p>Vente aux enchères publiques</p>
+    <p>jeudi 11 juin 2026 à 15h</p>
+    <h2>Une propriété</h2>
+    <h3>Mise à prix : 100 000 €</h3>
+    <p>Bordeaux</p>
+    <p>Surface totale : 2 464,70 m² environ, libre de toute occupation.</p>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/00/01/vente-aux-encheres/une-propriete/bordeaux/gironde/100001.html",
+    )
+    sale = normalize_sale(raw)
+
+    assert raw["surface_m2"] == "2464,70"
+    assert sale.surface_m2 == Decimal("2464.70")
 
 
 def test_parse_licitor_detail_html_keeps_linked_pdf_documents() -> None:
@@ -171,6 +234,37 @@ def test_parse_licitor_detail_html_keeps_linked_pdf_documents() -> None:
             "type": "pdf",
         },
     ]
+
+
+def test_parse_licitor_detail_html_keeps_document_links_without_pdf_extension() -> None:
+    html = """
+    <h1>Annonce n°108763 : appartement à Bordeaux (Gironde), mise à prix : 90 000 €</h1>
+    <p>Tribunal Judiciaire de Bordeaux</p>
+    <p>La superficie exacte est indiquée dans les documents de vente.</p>
+    <a href="/download/document?id=108763&pvd=1">PV descriptif</a>
+    <a href="/download/document?id=108763&piece=cahier">Cahier des conditions de vente</a>
+    <a href="/annuaire/avocats.html">Avocats</a>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/87/63/vente-aux-encheres/appartement/bordeaux/gironde/108763.html",
+    )
+
+    assert raw["surface_m2"] is None
+    assert raw["documents"] == [
+        {
+            "label": "PV descriptif",
+            "url": "https://www.licitor.com/download/document?id=108763&pvd=1",
+            "type": "pdf",
+        },
+        {
+            "label": "Cahier des conditions de vente",
+            "url": "https://www.licitor.com/download/document?id=108763&piece=cahier",
+            "type": "pdf",
+        },
+    ]
+    assert raw["source_blocks"]["documents"] == "PV descriptif; Cahier des conditions de vente"
 
 
 def test_parse_licitor_detail_html_extracts_ad_images_without_site_assets() -> None:

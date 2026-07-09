@@ -239,6 +239,7 @@ def _generic_tribunal_name(text: str) -> str | None:
     if not match:
         return None
     city = clean_text(re.split(r"[,.;:\n(]", match.group(1), maxsplit=1)[0])
+    city = clean_text(re.sub(r"^(?:de|d')\s+", "", city or "", flags=re.I))
     return f"TJ {city.title()}" if city else None
 
 

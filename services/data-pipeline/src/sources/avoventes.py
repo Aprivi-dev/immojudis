@@ -156,6 +156,11 @@ def _parse_text_block(
     address = _extract_address(lines)
     postal_code, city = _extract_location(address, joined)
     property_type = _extract_property_type(joined)
+    starting_price = _extract_after_label(joined, r"Mise à prix(?: initiale)?\s*:?\s*([^\n]+)")
+    adjudication_price = _extract_after_label(joined, r"Adjug[ée]\s*:?\s*([0-9][0-9\s,.]*\s*(?:€|euros?)?)")
+    sale_date = _extract_after_label(joined, r"Date de la vente\s*:?\s*([^\n]+)")
+    visit_dates = _extract_visit_dates(joined)
+    lawyer_name = _extract_after_label(joined, r"Cabinet\s*:?\s*([^\n]+)")
     return {
         "source_name": "avoventes",
         "source_url": source_url,
@@ -166,12 +171,29 @@ def _parse_text_block(
         "city": city,
         "postal_code": postal_code,
         "property_type": property_type,
-        "starting_price_eur": _extract_after_label(joined, r"Mise à prix(?: initiale)?\s*:?\s*([^\n]+)"),
-        "sale_date": _extract_after_label(joined, r"Date de la vente\s*:?\s*([^\n]+)"),
-        "visit_dates": _extract_visit_dates(joined),
-        "lawyer_name": _extract_after_label(joined, r"Cabinet\s*:?\s*([^\n]+)"),
+        "starting_price_eur": starting_price,
+        "adjudication_price_eur": adjudication_price,
+        "sale_date": sale_date,
+        "visit_dates": visit_dates,
+        "lawyer_name": lawyer_name,
+        "status": "adjudicated" if adjudication_price else None,
         "documents": documents or [],
         "raw_text": joined,
+        "source_blocks": {
+            key: value
+            for key, value in {
+                "titre": title,
+                "adresse": address,
+                "type_bien": property_type,
+                "mise_a_prix": starting_price,
+                "prix_adjudication": adjudication_price,
+                "date_vente": sale_date,
+                "visites": " | ".join(visit_dates) if visit_dates else None,
+                "cabinet": lawyer_name,
+                "page_text": joined,
+            }.items()
+            if value
+        },
     }
 
 
@@ -213,6 +235,11 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
         return
 
     details = parse_avoventes_detail_html(html, source_url)
+    if details.get("source_blocks"):
+        existing_blocks = sale.get("source_blocks") if isinstance(sale.get("source_blocks"), dict) else {}
+        sale["source_blocks"] = {**existing_blocks, **details["source_blocks"]}
+    if details.get("title") and _is_generic_title(sale.get("title")):
+        sale["title"] = details["title"]
     if details.get("documents"):
         sale["documents"] = _merge_documents(sale.get("documents", []), details["documents"])
     if details.get("source_images"):
@@ -223,7 +250,7 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
         sale["raw_image_url"] = details["raw_image_url"]
     if details.get("raw_text"):
         sale["raw_text"] = f"{sale.get('raw_text') or ''}\n{details['raw_text']}".strip()
-    for key in ("tribunal", "description", "lawyer_contact", "surface_m2"):
+    for key in ("tribunal", "description", "lawyer_contact", "surface_m2", "adjudication_price_eur", "status"):
         if details.get(key) and not sale.get(key):
             sale[key] = details[key]
 
@@ -233,15 +260,42 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
     raw_text = soup.get_text("\n", strip=True)
     documents = _extract_documents(soup.find_all("a", href=True), page_url)
     images = _extract_images(soup, page_url)
+    title = _extract_detail_title(soup, raw_text)
+    tribunal = _extract_after_label(raw_text, r"(?:Tribunal\s+Judiciaire|TJ)\s+de?\s*([^\n]+)")
+    description = _extract_description(raw_text)
+    lawyer_contact = _extract_after_label(raw_text, r"(?:Téléphone|Tél\.?|Tel\.?)\s*:?\s*([^\n]+)")
+    adjudication_price = _extract_after_label(raw_text, r"Adjug[ée]\s*:?\s*([0-9][0-9\s,.]*\s*(?:€|euros?)?)")
+    surface = _extract_after_label(
+        raw_text,
+        r"(?:Surface(?:\s+(?:habitable|totale))?|Superficie(?:\s+(?:des\s+)?Lots?\b[^:\n]{0,80})?)\s*:?\s*([0-9\s,.]+)\s*m",
+    )
     return {
         "documents": documents,
         "source_images": images,
         "raw_image_url": images[0] if images else None,
         "raw_text": raw_text,
-        "tribunal": _extract_after_label(raw_text, r"(?:Tribunal\s+Judiciaire|TJ)\s+de?\s*([^\n]+)"),
-        "description": _extract_description(raw_text),
-        "lawyer_contact": _extract_after_label(raw_text, r"(?:Téléphone|Tél\.?|Tel\.?)\s*:?\s*([^\n]+)"),
-        "surface_m2": _extract_after_label(raw_text, r"Surface\s*:?\s*([0-9\s,.]+)\s*m"),
+        "title": title,
+        "tribunal": tribunal,
+        "description": description,
+        "lawyer_contact": lawyer_contact,
+        "adjudication_price_eur": adjudication_price,
+        "status": "adjudicated" if adjudication_price else None,
+        "surface_m2": surface,
+        "source_blocks": {
+            key: value
+            for key, value in {
+                "titre_detail": title,
+                "description": description,
+                "tribunal": tribunal,
+                "contact_avocat": lawyer_contact,
+                "prix_adjudication": adjudication_price,
+                "surface": surface,
+                "documents": "; ".join(document["label"] for document in documents if document.get("label"))
+                or None,
+                "page_text": raw_text,
+            }.items()
+            if value
+        },
     }
 
 
@@ -315,13 +369,62 @@ def _extract_description(raw_text: str) -> str | None:
     return None
 
 
+def _extract_detail_title(soup: BeautifulSoup, raw_text: str) -> str | None:
+    for node in soup.find_all(["h1", "h2"]):
+        title = clean_text(node.get_text(" ", strip=True))
+        if _looks_like_detail_title(title):
+            return title
+
+    lines = [line for line in (clean_text(part) for part in raw_text.splitlines()) if line]
+    for index, line in enumerate(lines):
+        if re.search(r"Vente aux enchères", line, re.I):
+            for candidate in reversed(lines[max(0, index - 3) : index]):
+                if _looks_like_detail_title(candidate):
+                    return candidate
+    for candidate in lines[:20]:
+        if _looks_like_detail_title(candidate):
+            return candidate
+    return None
+
+
+def _looks_like_detail_title(value: str | None) -> bool:
+    text = clean_text(value)
+    if not text or len(text) < 8:
+        return False
+    if re.search(
+        r"^(?:avoventes\.fr|accueil|annuaire|connexion|retour|vente aux enchères|paramètres|documents?)$",
+        text,
+        re.I,
+    ):
+        return False
+    return bool(re.search(r"\b(?:appartement|maison|immeuble|terrain|parcelle|b[âa]timent|local|garage|commerce)\b", text, re.I))
+
+
 def _extract_title(lines: list[str]) -> str | None:
     for index, line in enumerate(lines):
         if re.search(r"Vente aux enchères", line, re.I):
-            for candidate in lines[index + 1 : index + 4]:
-                if not re.search(r"Mise à prix|Date de la vente|Cabinet", candidate, re.I):
+            for candidate in lines[index + 1 : index + 6]:
+                if _looks_like_list_title(candidate):
                     return candidate
     return lines[0] if lines else None
+
+
+def _looks_like_list_title(value: str | None) -> bool:
+    text = clean_text(value)
+    if not text:
+        return False
+    if re.fullmatch(r"(?:voir\s+la\s+vente|retour\s+vers\s+la\s+liste|autres?)", text, re.I):
+        return False
+    if re.search(r"^(?:mise à prix|date de la vente|date des visites|cabinet|adjug[ée]|surench[èe]re)\b", text, re.I):
+        return False
+    if re.search(r"\b\d{5}\b", text):
+        return False
+    return True
+
+
+def _is_generic_title(value: object | None) -> bool:
+    text = clean_text(value)
+    return text is None or text.lower() in {"autres", "autre", "bien", "vente aux enchères"}
 
 
 def _extract_address(lines: list[str]) -> str | None:

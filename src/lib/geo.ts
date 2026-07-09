@@ -1,9 +1,9 @@
-// Geocoding via the French government open API (no API key, no quota).
-// https://adresse.data.gouv.fr/api-doc/adresse
+import { getMapboxAccessToken } from "@/lib/mapbox";
 
 export type GeoPoint = { lat: number; lng: number; label?: string };
 
 const EARTH_KM = 6371;
+const FRANCE_GEOCODING_BBOX = "-5.6,41.0,9.7,51.5";
 
 export function haversineKm(a: GeoPoint, b: GeoPoint): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -16,6 +16,64 @@ export function haversineKm(a: GeoPoint, b: GeoPoint): number {
 }
 
 export async function geocodeAddress(q: string): Promise<GeoPoint | null> {
+  const mapboxPoint = await geocodeAddressWithMapbox(q);
+  if (mapboxPoint) return mapboxPoint;
+  return geocodeAddressWithFrenchApi(q);
+}
+
+async function geocodeAddressWithMapbox(q: string): Promise<GeoPoint | null> {
+  const token = getMapboxAccessToken();
+  if (!token) return null;
+
+  const params = new URLSearchParams({
+    q,
+    access_token: token,
+    autocomplete: "false",
+    bbox: FRANCE_GEOCODING_BBOX,
+    country: "fr",
+    language: "fr",
+    limit: "1",
+    types: "address,street,postcode,place,locality,neighborhood",
+  });
+  const url = `https://api.mapbox.com/search/geocode/v6/forward?${params.toString()}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      features?: Array<{
+        geometry?: { coordinates?: [number, number] };
+        properties?: {
+          full_address?: string;
+          name?: string;
+          place_formatted?: string;
+        };
+      }>;
+    };
+    const feature = json.features?.[0];
+    const coordinates = feature?.geometry?.coordinates;
+    if (!coordinates) return null;
+    const [lng, lat] = coordinates;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+    const label =
+      feature.properties?.full_address ||
+      [feature.properties?.name, feature.properties?.place_formatted].filter(Boolean).join(", ") ||
+      q;
+
+    return {
+      lat,
+      lng,
+      label,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Fallback via the French government open API (no API key, no quota).
+// https://adresse.data.gouv.fr/api-doc/adresse
+async function geocodeAddressWithFrenchApi(q: string): Promise<GeoPoint | null> {
   const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&limit=1`;
   try {
     const res = await fetch(url);

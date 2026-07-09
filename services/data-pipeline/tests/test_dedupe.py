@@ -91,6 +91,33 @@ def test_dedupe_merges_same_address_across_sources_when_price_differs() -> None:
     assert len(result) == 1
     assert result[0].dedupe_confidence == "address"
     assert "https://www.licitor.com/annonce/9.html" in result[0].source_urls
+    assert len(result[0].observations) == 2
+    assert result[0].raw_payload["merged_sources"][0]["source_name"] == "licitor"
+
+
+def test_dedupe_merges_same_address_with_abbreviated_street_and_missing_postal_code() -> None:
+    avoventes = _make(
+        "https://avoventes.fr/enchere/9-bis",
+        address="12 avenue de la République 33000 Bordeaux",
+        postal_code="33000",
+        surface_m2=None,
+    )
+    licitor = _make(
+        "https://www.licitor.com/annonce/9-bis.html",
+        source_name="licitor",
+        address="12 av. République, Bordeaux",
+        postal_code=None,
+        surface_m2="84 m²",
+        documents=[{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+    )
+
+    result = dedupe_sales([avoventes, licitor])
+
+    assert len(result) == 1
+    assert result[0].dedupe_confidence == "address"
+    assert result[0].surface_m2 is not None
+    assert result[0].documents == [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}]
+    assert "https://www.licitor.com/annonce/9-bis.html" in result[0].source_urls
 
 
 def test_dedupe_merges_same_address_when_one_is_missing_date_and_price() -> None:
@@ -124,6 +151,36 @@ def test_dedupe_keeps_distinct_lots_at_same_address() -> None:
     result = dedupe_sales([lot_a, lot_b])
 
     assert len(result) == 2
+
+
+def test_dedupe_merges_duplicate_lots_independently_at_same_address() -> None:
+    lot_a = _make(
+        "https://avoventes.fr/enchere/11-a",
+        starting_price="100 000 €",
+        sale_date="10 janvier 2027 à 9h00",
+    )
+    lot_b = _make(
+        "https://www.licitor.com/annonce/11-b.html",
+        source_name="licitor",
+        starting_price="260 000 €",
+        sale_date="15 mars 2027 à 9h00",
+        surface_m2=None,
+    )
+    lot_b_duplicate = _make(
+        "https://www.info-encheres.com/vente-11-b.html",
+        source_name="info_encheres",
+        starting_price="262 000 €",
+        sale_date="15 mars 2027 à 9h00",
+        surface_m2="72 m²",
+    )
+
+    result = dedupe_sales([lot_a, lot_b, lot_b_duplicate])
+
+    assert len(result) == 2
+    merged_lot_b = next(sale for sale in result if "11-b" in " ".join(sale.source_urls))
+    assert merged_lot_b.dedupe_confidence == "address"
+    assert "https://www.info-encheres.com/vente-11-b.html" in merged_lot_b.source_urls
+    assert merged_lot_b.surface_m2 is not None
 
 
 def test_dedupe_does_not_merge_city_only_addresses() -> None:

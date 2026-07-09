@@ -38,6 +38,22 @@ POSTGREST_UPSERT_RETRIES = 3
 POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 522, 524}
 POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE = 50
 POSTGRES_CONNECT_TIMEOUT = 15
+EXPIRED_SALE_DELETE_TABLES = (
+    "auction_observations",
+    "auction_documents",
+    "auction_extractions",
+    "auction_cadastre_parcels",
+    "auction_dpe_diagnostics",
+    "auction_risk_occurrences",
+    "auction_urban_planning_signals",
+    "auction_score_factors",
+    "auction_risks",
+    "auction_features",
+    "auction_surfaces",
+    "judicial_sales",
+    "properties",
+    "auction_sales",
+)
 POSTGRES_JSON_COLUMNS = {
     "source_urls",
     "visit_dates",
@@ -1065,6 +1081,24 @@ def mark_past_sales_in_supabase() -> int:
     return len(response.json()) if response.content else 0
 
 
+def delete_expired_sales_in_supabase(now: datetime | None = None) -> int:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return 0
+
+    cutoff = now or datetime.now(UTC)
+    if cutoff.tzinfo is None:
+        cutoff = cutoff.replace(tzinfo=UTC)
+    cutoff_iso = cutoff.astimezone(UTC).isoformat()
+
+    deleted = 0
+    while source_urls := _fetch_expired_sale_urls(str(url), str(key), cutoff_iso):
+        deleted += _delete_sale_rows_by_source_urls(str(url), str(key), source_urls)
+    return deleted
+
+
 def delete_vench_sales_without_surface_in_supabase() -> int:
     settings = load_settings()
     url = settings["supabase_url"]
@@ -1077,6 +1111,38 @@ def delete_vench_sales_without_surface_in_supabase() -> int:
         _postgrest_delete_by_source_urls(str(url), str(key), "auction_sales", source_urls)
         deleted += len(source_urls)
     return deleted
+
+
+def _fetch_expired_sale_urls(supabase_url: str, api_key: str, cutoff_iso: str) -> list[str]:
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_sales"
+    try:
+        response = httpx.get(
+            endpoint,
+            params={
+                "select": "source_url",
+                "sale_date": f"lt.{cutoff_iso}",
+                "order": "sale_date.asc.nullslast",
+                "limit": "1000",
+            },
+            headers=_rest_headers(api_key, prefer="count=none"),
+            timeout=30,
+        )
+    except httpx.HTTPError as exc:
+        LOGGER.warning("Supabase expired sale cleanup lookup failed: %s", exc)
+        return []
+    if response.is_error:
+        LOGGER.warning("Supabase expired sale cleanup lookup failed (%s): %s", response.status_code, response.text[:200])
+        return []
+    return [str(row["source_url"]) for row in response.json() if row.get("source_url")]
+
+
+def _delete_sale_rows_by_source_urls(supabase_url: str, api_key: str, source_urls: list[str]) -> int:
+    unique = _unique_source_urls(source_urls)
+    if not unique:
+        return 0
+    for table in EXPIRED_SALE_DELETE_TABLES:
+        _postgrest_delete_by_source_urls(supabase_url, api_key, table, unique)
+    return len(unique)
 
 
 def _fetch_vench_without_surface_urls(supabase_url: str, api_key: str) -> list[str]:
@@ -1416,13 +1482,7 @@ def _postgrest_delete(supabase_url: str, api_key: str, table: str, params: dict[
 
 
 def _postgrest_delete_by_source_urls(supabase_url: str, api_key: str, table: str, source_urls: list[str]) -> int:
-    unique: list[str] = []
-    seen: set[str] = set()
-    for source_url in source_urls:
-        if not source_url or source_url in seen:
-            continue
-        seen.add(source_url)
-        unique.append(source_url)
+    unique = _unique_source_urls(source_urls)
     for index in range(0, len(unique), POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE):
         batch = unique[index : index + POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE]
         _postgrest_delete(
@@ -1432,6 +1492,17 @@ def _postgrest_delete_by_source_urls(supabase_url: str, api_key: str, table: str
             {"source_url": _postgrest_in_filter(batch)},
         )
     return len(unique)
+
+
+def _unique_source_urls(source_urls: list[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for source_url in source_urls:
+        if not source_url or source_url in seen:
+            continue
+        seen.add(source_url)
+        unique.append(source_url)
+    return unique
 
 
 def _postgrest_request_with_retries(method: str, endpoint: str, table: str, **kwargs: Any) -> httpx.Response:

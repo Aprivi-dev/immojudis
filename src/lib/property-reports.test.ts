@@ -88,7 +88,7 @@ describe("property report sharing", () => {
           },
           streetFacadeAnalysis: {
             available: true,
-            streetViewUrl: "https://maps.example.test/street-view",
+            streetLevelUrl: "https://maps.example.test/street-level",
             summary: "vue façade exploitable",
           },
           neighborhoodAnalysis: {
@@ -128,7 +128,7 @@ describe("property report sharing", () => {
     expect(marketComparables.addressHistory).toEqual([]);
     expect(analysis.valuationBacktest).toBeNull();
     expect(urbanPlanning).toMatchObject({ available: false, items: [], missingChecks: [] });
-    expect(streetFacade).toMatchObject({ available: false, streetViewUrl: null });
+    expect(streetFacade).toMatchObject({ available: false, streetLevelUrl: null });
     expect(neighborhood).toMatchObject({ available: false, signals: [] });
     expect(activeComparables).toMatchObject({ available: false, items: [] });
   });
@@ -159,7 +159,7 @@ describe("property report sharing", () => {
           },
           streetFacadeAnalysis: {
             available: true,
-            streetViewUrl: "https://maps.example.test/street-view",
+            streetLevelUrl: "https://maps.example.test/street-level",
           },
           neighborhoodAnalysis: {
             available: true,
@@ -195,8 +195,8 @@ describe("property report sharing", () => {
     ]);
     expect(record(analysis.valuationBacktest).available).toBe(true);
     expect(record(analysis.urbanPlanningAnalysis).items).toEqual(["signal urbanisme"]);
-    expect(record(analysis.streetFacadeAnalysis).streetViewUrl).toBe(
-      "https://maps.example.test/street-view",
+    expect(record(analysis.streetFacadeAnalysis).streetLevelUrl).toBe(
+      "https://maps.example.test/street-level",
     );
     expect(record(analysis.neighborhoodAnalysis).signals).toEqual(["signal quartier"]);
     expect(record(analysis.activeComparablesAnalysis).items).toEqual(["bien concurrent"]);

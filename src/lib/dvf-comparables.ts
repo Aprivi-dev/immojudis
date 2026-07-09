@@ -10,6 +10,7 @@ import {
 import { haversineKm } from "@/lib/geo";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
@@ -150,7 +151,7 @@ export async function getDvfComparables({
     ok: true,
     sale: {
       id: sale.id,
-      title: sale.title,
+      title: cleanSaleTitle(sale.title),
       address: sale.address,
       city: sale.city,
       department: sale.department,

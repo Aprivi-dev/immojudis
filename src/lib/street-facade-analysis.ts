@@ -1,9 +1,4 @@
-import {
-  googleMapsAerial3dUrl,
-  googleMapsQueryUrl,
-  googleMapsStreetViewUrl,
-  googleMapsUrl,
-} from "@/lib/google-maps";
+import { mapboxAerial3dUrl, mapboxMapUrl, mapboxStreetLevelUrl } from "@/lib/mapbox";
 import type { AuctionSale } from "@/lib/types";
 
 export type StreetFacadeStatus = "coordinates_ready" | "address_only" | "missing";
@@ -20,8 +15,8 @@ export type StreetFacadeAnalysis = {
     lat: number;
     lng: number;
   } | null;
-  mapsUrl: string | null;
-  streetViewUrl: string | null;
+  mapUrl: string | null;
+  streetLevelUrl: string | null;
   aerial3dUrl: string | null;
   summary: string;
   decisionImpact: string;
@@ -33,11 +28,6 @@ export function buildStreetFacadeAnalysis(sale: AuctionSale): StreetFacadeAnalys
   const coordinates = validCoordinates(sale.latitude, sale.longitude);
   const addressLabel = saleAddress(sale);
   const status = coordinates ? "coordinates_ready" : addressLabel ? "address_only" : "missing";
-  const mapsUrl = coordinates
-    ? googleMapsUrl(coordinates.lat, coordinates.lng, addressLabel)
-    : addressLabel
-      ? googleMapsQueryUrl(addressLabel)
-      : null;
 
   return {
     available: status !== "missing",
@@ -48,9 +38,13 @@ export function buildStreetFacadeAnalysis(sale: AuctionSale): StreetFacadeAnalys
     confidenceLabel: confidenceLabel(status),
     addressLabel,
     coordinates,
-    mapsUrl,
-    streetViewUrl: coordinates ? googleMapsStreetViewUrl(coordinates.lat, coordinates.lng) : null,
-    aerial3dUrl: coordinates ? googleMapsAerial3dUrl(coordinates.lat, coordinates.lng) : null,
+    mapUrl: coordinates ? emptyToNull(mapboxMapUrl(coordinates.lat, coordinates.lng)) : null,
+    streetLevelUrl: coordinates
+      ? emptyToNull(mapboxStreetLevelUrl(coordinates.lat, coordinates.lng))
+      : null,
+    aerial3dUrl: coordinates
+      ? emptyToNull(mapboxAerial3dUrl(coordinates.lat, coordinates.lng))
+      : null,
     summary: summary({ status, addressLabel }),
     decisionImpact: decisionImpact(status),
     nextActions: nextActions(status),
@@ -113,10 +107,10 @@ function summary({
   addressLabel: string | null;
 }): string {
   if (status === "coordinates_ready") {
-    return "Street View, vue 3D et carte peuvent être ouverts depuis les coordonnées du bien.";
+    return "Vue rue Mapbox, vue 3D et carte peuvent être ouvertes depuis les coordonnées du bien.";
   }
   if (status === "address_only") {
-    return `Recherche Maps disponible pour ${addressLabel ?? "l'adresse"}, Street View à confirmer.`;
+    return `Adresse disponible pour ${addressLabel ?? "le bien"}, coordonnées Mapbox à confirmer.`;
   }
   return "Aucune localisation exploitable pour vérifier façade, rue ou environnement immédiat.";
 }
@@ -134,7 +128,7 @@ function decisionImpact(status: StreetFacadeStatus): string {
 function nextActions(status: StreetFacadeStatus): string[] {
   if (status === "coordinates_ready") {
     return [
-      "Ouvrir Street View pour vérifier façade, accès, stationnement et état apparent de la rue.",
+      "Ouvrir la vue rue Mapbox pour vérifier façade, accès, stationnement et état apparent de la rue.",
       "Comparer la vue 3D avec les photos et le PV descriptif.",
       "Noter toute nuisance visible à intégrer au plafond ou à la visite.",
     ];
@@ -142,8 +136,8 @@ function nextActions(status: StreetFacadeStatus): string[] {
   if (status === "address_only") {
     return [
       "Géocoder l'adresse pour obtenir des coordonnées fiables.",
-      "Vérifier que le résultat Maps correspond bien au bien vendu.",
-      "Compléter ensuite le contrôle Street View ou visite sur place.",
+      "Vérifier que la position Mapbox correspond bien au bien vendu.",
+      "Compléter ensuite le contrôle par vue rue Mapbox ou visite sur place.",
     ];
   }
   return [
@@ -163,4 +157,8 @@ function limitations(status: StreetFacadeStatus): string[] {
     );
   }
   return items;
+}
+
+function emptyToNull(value: string) {
+  return value || null;
 }

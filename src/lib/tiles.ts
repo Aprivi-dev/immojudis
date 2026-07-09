@@ -1,9 +1,17 @@
+import {
+  MAPBOX_ATTRIBUTION,
+  MAPBOX_COPYRIGHT_URL,
+  getMapboxAccessToken,
+  getMapboxStylePath,
+} from "@/lib/mapbox";
+
 const TILE_SIZE = 256;
 const MAX_MERCATOR_LAT = 85.05112878;
 const DEFAULT_OSM_TILE_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 export const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 export const OSM_COPYRIGHT_URL = "https://www.openstreetmap.org/copyright";
+export { MAPBOX_ATTRIBUTION, MAPBOX_COPYRIGHT_URL };
 
 export type LatLng = {
   lat: number;
@@ -27,7 +35,33 @@ export function getOsmTileTemplate() {
     process.env.VITE_OSM_TILE_URL ??
     process.env.VITE_OSM_TILE_TEMPLATE
   )?.trim();
-  return fromEnv || DEFAULT_OSM_TILE_TEMPLATE;
+  return fromEnv || getMapboxTileTemplate() || DEFAULT_OSM_TILE_TEMPLATE;
+}
+
+export function getTileAttribution(template = getOsmTileTemplate()) {
+  if (template.includes("mapbox.com")) {
+    return {
+      href: MAPBOX_COPYRIGHT_URL,
+      label: MAPBOX_ATTRIBUTION,
+    };
+  }
+
+  return {
+    href: OSM_COPYRIGHT_URL,
+    label: OSM_ATTRIBUTION,
+  };
+}
+
+function getMapboxTileTemplate() {
+  const token = getMapboxAccessToken();
+  if (!token) return "";
+
+  const style = getMapboxStylePath();
+  if (!style) return "";
+
+  return `https://api.mapbox.com/styles/v1/${style}/tiles/256/{z}/{x}/{y}?access_token=${encodeURIComponent(
+    token,
+  )}`;
 }
 
 export function osmTileUrlFromXYZ(

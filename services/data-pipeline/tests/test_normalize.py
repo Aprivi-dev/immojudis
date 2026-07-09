@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from src.normalize import (
+    normalize_occupancy_status,
     normalize_sale,
     normalize_source_urls,
     parse_confidence,
@@ -12,6 +13,7 @@ from src.normalize import (
 
 def test_parse_price_handles_french_money() -> None:
     assert parse_price("Mise à prix : 125 000,50 €") == Decimal("125000.50")
+    assert parse_price("Mise à prix : 1.180.000 €") == Decimal("1180000")
 
 
 def test_parse_price_preserves_already_normalized_numeric_values() -> None:
@@ -22,6 +24,7 @@ def test_parse_price_preserves_already_normalized_numeric_values() -> None:
 def test_parse_surface_preserves_decimal_point() -> None:
     assert parse_surface("91.78") == Decimal("91.78")
     assert parse_surface("91,78 m²") == Decimal("91.78")
+    assert parse_surface("Surface terrain : 2.464 m²") == Decimal("2464")
 
 
 def test_parse_confidence_normalizes_percent_and_ratio() -> None:
@@ -45,6 +48,23 @@ def test_parse_french_datetime_keeps_day_before_french_month() -> None:
     assert parsed.year == 2026
     assert parsed.month == 6
     assert parsed.day == 11
+
+
+def test_parse_french_datetime_keeps_iso_year_month_day_order() -> None:
+    parsed = parse_french_datetime("2026-07-09T09:00:00.000Z")
+    assert parsed is not None
+    assert parsed.year == 2026
+    assert parsed.month == 7
+    assert parsed.day == 9
+    assert parsed.hour == 9
+
+
+def test_parse_french_datetime_keeps_iso_date_embedded_in_text() -> None:
+    parsed = parse_french_datetime("Ouverture de la vente : 2026-06-09T11:40:00+00:00")
+    assert parsed is not None
+    assert parsed.year == 2026
+    assert parsed.month == 6
+    assert parsed.day == 9
 
 
 def test_normalize_sale_extracts_department_and_property_type() -> None:
@@ -85,6 +105,29 @@ def test_normalize_sale_preserves_collected_app_ready_metadata() -> None:
     assert sale.score_version == "score-v1"
     assert sale.score_confidence == Decimal("0.87")
     assert sale.score_factors == [{"factor_key": "surface"}]
+
+
+def test_normalize_sale_promotes_source_energy_diagnostics_from_source_blocks() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_publiques",
+            "source_url": "https://example.test/dpe-source-blocks",
+            "risk_notes": "Travaux à prévoir",
+            "source_blocks": {
+                "dpe": "G",
+                "ges": "D",
+                "diagnostic_date": "2026-04-27",
+            },
+        }
+    )
+
+    diagnostics = sale.raw_payload["source_energy_diagnostics"]
+    assert diagnostics["source"] == "source_blocks"
+    assert diagnostics["dpe_class"] == "G"
+    assert diagnostics["ges_class"] == "D"
+    assert diagnostics["diagnostic_date"] == "2026-04-27"
+    assert diagnostics["evidence"] == "DPE G, GES D, diagnostic du 2026-04-27"
+    assert sale.risk_notes == "Travaux à prévoir | DPE G"
 
 
 def test_normalize_source_urls_handles_mapping_and_dedupes_primary_first() -> None:
@@ -158,6 +201,66 @@ def test_normalize_sale_corrects_legacy_price_with_raw_text_evidence() -> None:
     assert sale.starting_price_eur == Decimal("118000.00")
 
 
+def test_normalize_sale_extracts_prix_de_vente_from_raw_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "cessions_etat",
+            "source_url": "https://cessions.immobilier-etat.gouv.fr/biens/prix-de-vente",
+            "raw_text": "Ancienne brigade de gendarmerie. Prix de vente : 210 000 euros.",
+        }
+    )
+
+    assert sale.starting_price_eur == Decimal("210000")
+
+
+def test_normalize_sale_keeps_legitimate_sale_price_near_sale_date() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "cessions_etat",
+            "source_url": "https://cessions.immobilier-etat.gouv.fr/biens/date-prix-vente",
+            "raw_text": "Date de vente prévue prochainement. Prix de vente : 210 000 euros.",
+        }
+    )
+
+    assert sale.starting_price_eur == Decimal("210000")
+
+
+def test_normalize_sale_extracts_adjudication_price_from_raw_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/adjuge-raw-text",
+            "starting_price_eur": "35 000,00 €",
+            "raw_text": (
+                "Mise à prix initiale : 35 000,00 €\n"
+                "Adjugé :\n"
+                "36 000,00 €\n"
+                "Surenchère possible jusqu'au 10 juillet 2026."
+            ),
+        }
+    )
+
+    assert sale.starting_price_eur == Decimal("35000.00")
+    assert sale.adjudication_price_eur == Decimal("36000.00")
+    assert sale.status == "adjudicated"
+
+
+def test_normalize_sale_does_not_mark_future_adjudication_audience_as_adjudicated() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/audience-adjudication-future.html",
+            "title": "Appartement à Bordeaux",
+            "status": "Audience d'adjudication",
+            "sale_date": "15 octobre 2026 à 15h00",
+            "raw_text": "Audience d'adjudication le 15 octobre 2026 à 15h00.",
+        }
+    )
+
+    assert sale.adjudication_price_eur is None
+    assert sale.status == "upcoming"
+
+
 def test_normalize_sale_extracts_rooms_count_from_source_text() -> None:
     sale = normalize_sale(
         {
@@ -169,6 +272,22 @@ def test_normalize_sale_extracts_rooms_count_from_source_text() -> None:
 
     assert sale.rooms_count == 5
     assert sale.bedrooms_count == 3
+
+
+def test_normalize_sale_does_not_read_surface_decimal_as_rooms_count() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/un-appartement-et-cave-a-chenove",
+            "raw_text": (
+                "VISITES : VISITE : MARDI 16 JUIN 2026 A 09 H 00 "
+                "1 pièces 34.52 m² superficie À propos du bien CHENOVE (21300), "
+                "Un appartement situé au rez-de-chaussée comprenant : entrée, cuisine, séjour."
+            ),
+        }
+    )
+
+    assert sale.rooms_count == 1
 
 
 def test_normalize_sale_distinguishes_rooms_and_bedrooms() -> None:
@@ -221,6 +340,18 @@ def test_normalize_sale_extracts_rooms_before_parking_count() -> None:
     assert sale.rooms_count == 3
 
 
+def test_normalize_sale_reads_single_main_room_as_one_room() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/un-appartement/paris/108781.html",
+            "raw_text": "Un appartement de 31,60 m² comprenant entrée, salle d'eau avec wc, pièce principale avec placard.",
+        }
+    )
+
+    assert sale.rooms_count == 1
+
+
 def test_normalize_sale_counts_numbered_bedrooms() -> None:
     sale = normalize_sale(
         {
@@ -243,6 +374,37 @@ def test_normalize_sale_ignores_dvf_comparable_rooms_count() -> None:
     )
 
     assert sale.rooms_count is None
+    assert sale.starting_price_eur is None
+
+
+def test_normalize_sale_ignores_compact_dvf_comparable_price() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/compact-dvf-price",
+            "raw_text": (
+                "Données des valeurs foncières Type de bien Date de vente Surface "
+                "Nb de pièces Prix de vente 410000 euros."
+            ),
+        }
+    )
+
+    assert sale.starting_price_eur is None
+
+
+def test_normalize_sale_ignores_dvf_comparable_price_with_colon() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/dvf-colon-price",
+            "raw_text": (
+                "Données des valeurs foncières Type de bien Date de vente Surface "
+                "Nb de pièces Prix de vente : 410000 euros."
+            ),
+        }
+    )
+
+    assert sale.starting_price_eur is None
 
 
 def test_normalize_sale_maps_french_occupancy_to_enum() -> None:
@@ -255,6 +417,57 @@ def test_normalize_sale_maps_french_occupancy_to_enum() -> None:
     )
 
     assert sale.occupancy_status == "vacant"
+
+
+def test_normalize_sale_maps_uncertain_occupancy_to_unknown() -> None:
+    values = (
+        "occupation à vérifier",
+        "occupation inconnue",
+        "occupation non renseignée",
+        "Occupation : à confirmer",
+        "statut occupation inconnu",
+    )
+
+    for index, value in enumerate(values):
+        sale = normalize_sale(
+            {
+                "source_name": "avoventes",
+                "source_url": f"https://avoventes.fr/enchere/occ-unknown-{index}",
+                "occupancy_status": value,
+            }
+        )
+
+        assert sale.occupancy_status == "unknown"
+
+
+def test_normalize_sale_does_not_treat_visit_libre_as_vacant_when_rented() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_immobilieres",
+            "source_url": "https://encheresimmobilieres.fr/ventes/appartement-loue-visite-libre",
+            "raw_text": (
+                "Visite libre le mercredi 10 juin 2026 de 14h00 à 15h00. "
+                "Appartement loué à un locataire suivant bail d'habitation."
+            ),
+        }
+    )
+
+    assert sale.occupancy_status == "rented"
+
+
+def test_normalize_sale_does_not_treat_no_lease_as_rented() -> None:
+    assert normalize_occupancy_status("occupé sans bail") == "occupied"
+    assert normalize_occupancy_status("absence de bail écrit") == "unknown"
+
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/maison-occupee-sans-bail",
+            "raw_text": "Maison occupée sans bail avec travaux à prévoir.",
+        }
+    )
+
+    assert sale.occupancy_status == "occupied"
 
 
 def test_normalize_sale_drops_unrecognised_occupancy() -> None:

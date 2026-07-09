@@ -63,7 +63,7 @@ export function PropertyMapCanvas({ property }: { property: Property }) {
         rel="noreferrer"
         className="absolute bottom-3 left-3 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-sm transition-colors hover:border-gold/50 hover:text-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
       >
-        Ouvrir la carte OSM
+        Ouvrir la carte
       </a>
     </div>
   );

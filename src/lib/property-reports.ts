@@ -26,6 +26,7 @@ import { buildNearbyServicesAnalysis } from "@/lib/nearby-services";
 import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
 import { buildOccupancyAnalysis } from "@/lib/occupation-analysis";
 import { buildRenovationAnalysis } from "@/lib/renovation-analysis";
+import { cleanSaleTitle } from "@/lib/sale-title";
 import {
   featureAccess,
   isActivePlanStatus,
@@ -698,8 +699,8 @@ function lockedStreetFacadeAnalysis(): ReturnType<typeof buildStreetFacadeAnalys
     confidenceLabel: "Réservé au plan Analyse",
     addressLabel: null,
     coordinates: null,
-    mapsUrl: null,
-    streetViewUrl: null,
+    mapUrl: null,
+    streetLevelUrl: null,
     aerial3dUrl: null,
     summary: "Fonctionnalité réservée au plan Analyse.",
     decisionImpact: "Débloquez l'analyse pour contrôler façade, rue et vues externes.",
@@ -1405,7 +1406,7 @@ function buildReportSnapshot({
     sourceTraceability,
     sale: {
       id: sale.id,
-      title: sale.title,
+      title: cleanSaleTitle(sale.title),
       city: sale.city,
       department: sale.department,
       address: sale.address,
@@ -1553,7 +1554,7 @@ function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements): strin
     `Genere le: ${formatDate(String(snapshot.generatedAt ?? report.updated_at))}`,
     "",
     "Bien",
-    `Titre: ${stringValue(sale.title, report.title)}`,
+    `Titre: ${stringValue(cleanSaleTitle(stringValue(sale.title, null)), report.title)}`,
     `Localisation: ${[sale.address, sale.city, sale.department].filter(Boolean).join(", ") || "a confirmer"}`,
     `Type: ${stringValue(sale.propertyType, "Bien")}`,
     `Surface retenue: ${stringValue(sale.surfaceLabel, "a confirmer")}`,
@@ -1787,9 +1788,9 @@ function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements): strin
             streetFacadeAnalysis.confidenceLabel,
             "a confirmer",
           )}`,
-          streetFacadeAnalysis.streetViewUrl
-            ? `Street View: ${stringValue(streetFacadeAnalysis.streetViewUrl, "")}`
-            : "Street View: a confirmer",
+          streetFacadeAnalysis.streetLevelUrl
+            ? `Vue rue Mapbox: ${stringValue(streetFacadeAnalysis.streetLevelUrl, "")}`
+            : "Vue rue Mapbox: a confirmer",
           streetFacadeAnalysis.aerial3dUrl
             ? `Vue 3D: ${stringValue(streetFacadeAnalysis.aerial3dUrl, "")}`
             : "Vue 3D: a confirmer",

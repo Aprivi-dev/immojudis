@@ -1,5 +1,7 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 
+from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
 from src.pdf_enrichment import (
     _adaptive_docling_timeout,
@@ -18,9 +20,21 @@ from src.pdf_enrichment import (
 def test_classify_document_type_prioritizes_known_pdf_labels() -> None:
     assert classify_document_type("PV descriptif anonyme.pdf") == "pv_huissier"
     assert classify_document_type("Cahier des conditions de vente.pdf") == "cahier_conditions_vente"
+    assert classify_document_type("Cahier des charges.pdf") == "cahier_conditions_vente"
+    assert classify_document_type("CAHIER LIQUIDATION 20260415.pdf") == "cahier_conditions_vente"
+    assert classify_document_type("Dossier de consultation") == "cahier_conditions_vente"
+    assert classify_document_type("Dossier de présentation") == "cahier_conditions_vente"
     assert classify_document_type("Diagnostics techniques DPE.pdf") == "diagnostics_techniques"
+    assert classify_document_type("Dossier diag (1).pdf") == "diagnostics_techniques"
     assert classify_document_type("Avis simplifié.pdf") == "annonce_vente"
+    assert classify_document_type("PLACARD PUBLICITE .pdf") == "annonce_vente"
     assert classify_document_type("PV de notaire.pdf") == "pv_notaire"
+
+
+def test_classify_document_type_normalizes_common_non_pdf_french_labels() -> None:
+    assert classify_document_type("Procès verbal", "https://example.test/download?id=1") == "proces_verbal"
+    assert classify_document_type("Proces verbal de description", "https://example.test/download?id=2") == "pv_huissier"
+    assert classify_document_type("Procès verbal descriptif", "https://example.test/telechargement?id=3") == "pv_huissier"
 
 
 def test_verify_tls_only_skips_broken_cessions_etat_chain() -> None:
@@ -57,6 +71,206 @@ def test_enrich_sale_from_pdf_text_extracts_fields() -> None:
     assert "PDF TEXT ENRICHMENT" in (sale.raw_text or "")
 
 
+def test_enrich_sale_from_pdf_text_does_not_treat_no_lease_as_rented() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/pdf-no-lease",
+            "property_type": "Maison",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, ["Procès-verbal descriptif : maison occupée sans bail écrit."])
+
+    assert sale.occupancy_status == "occupied"
+
+
+def test_enrich_sale_from_pdf_text_detects_occupation_without_right_or_title() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/pdf-occupation-sans-droit.html",
+            "property_type": "Appartement",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, ["Procès-verbal descriptif : le bien est occupé sans droit ni titre."])
+
+    assert sale.occupancy_status == "squatted"
+
+
+def test_enrich_sale_from_pdf_text_detects_squatted_occupation() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/pdf-logement-squatte.html",
+            "property_type": "Maison",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, ["Constat d'huissier : logement squatté depuis plusieurs mois."])
+
+    assert sale.occupancy_status == "squatted"
+
+
+def test_enrich_sale_from_pdf_text_extracts_energy_diagnostics_with_provenance() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/pdf-diagnostics/109999.html",
+            "property_type": "Appartement",
+            "documents": [{"label": "Diagnostics techniques", "url": "https://example.test/diagnostics"}],
+        }
+    )
+    pdf_texts = [
+        {
+            "label": "Diagnostics techniques",
+            "url": "https://example.test/diagnostics",
+            "document_type": "diagnostics_techniques",
+            "text": (
+                "Diagnostic de performance énergétique. "
+                "Classe énergie : F. GES : C. "
+                "Consommation énergétique : 394 kWhEP/m²/an. "
+                "Émissions de gaz à effet de serre : 12 kg CO2/m²/an."
+            ),
+            "pages": [
+                {"page": 1, "text": "Sommaire des diagnostics.", "confidence": 0.88, "method": "pymupdf_text"},
+                {
+                    "page": 2,
+                    "text": (
+                        "Diagnostic de performance énergétique. Classe énergie : F. GES : C. "
+                        "Consommation énergétique : 394 kWhEP/m²/an. "
+                        "Émissions de gaz à effet de serre : 12 kg CO2/m²/an."
+                    ),
+                    "confidence": 0.94,
+                    "method": "pymupdf_text",
+                },
+            ],
+            "extraction_method": "pymupdf_pages",
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+
+    diagnostics = sale.raw_payload["pdf_energy_diagnostics"]
+    assert diagnostics["dpe_class"] == "F"
+    assert diagnostics["ges_class"] == "C"
+    assert diagnostics["energy_consumption_kwh_m2_year"] == 394
+    assert diagnostics["emissions_kg_co2_m2_year"] == 12
+    assert diagnostics["document_label"] == "Diagnostics techniques"
+    assert diagnostics["document_url"] == "https://example.test/diagnostics"
+    assert diagnostics["document_type"] == "diagnostics_techniques"
+    assert diagnostics["page_number"] == 2
+    assert "DPE F" in (sale.risk_notes or "")
+
+
+def test_enrich_sale_from_pdf_text_extracts_compact_energy_diagnostics() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/pdf-dpe-compact",
+            "property_type": "Maison",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, ["DPE G - Gaz à effet de serre classe D - 520 kWh/m2/an - 32 kg CO2/m2/an."])
+
+    diagnostics = sale.raw_payload["pdf_energy_diagnostics"]
+    assert diagnostics["dpe_class"] == "G"
+    assert diagnostics["ges_class"] == "D"
+    assert diagnostics["energy_consumption_kwh_m2_year"] == 520
+    assert diagnostics["emissions_kg_co2_m2_year"] == 32
+    assert "DPE G" in (sale.risk_notes or "")
+
+
+def test_enrich_sale_from_pdf_text_extracts_visit_dates_with_provenance() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/pdf-visite/109998.html",
+            "property_type": "Maison",
+            "documents": [{"label": "Procès-verbal descriptif", "url": "https://example.test/pv"}],
+        }
+    )
+    pdf_texts = [
+        {
+            "label": "Procès-verbal descriptif",
+            "url": "https://example.test/pv",
+            "document_type": "pv_huissier",
+            "text": (
+                "Conditions de visite. Aucune visite virtuelle disponible. "
+                "Visite sur place le mardi 26 mai 2026 de 10h à 12h."
+            ),
+            "pages": [
+                {"page": 1, "text": "Sommaire. Aucune visite virtuelle disponible.", "confidence": 0.88, "method": "pymupdf_text"},
+                {
+                    "page": 2,
+                    "text": "Conditions de visite. Visite sur place le mardi 26 mai 2026 de 10h à 12h.",
+                    "confidence": 0.93,
+                    "method": "pymupdf_text",
+                },
+            ],
+            "extraction_method": "pymupdf_pages",
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+
+    assert sale.visit_dates == ["Visite sur place le mardi 26 mai 2026 de 10h à 12h"]
+    extraction = sale.raw_payload["pdf_visit_dates_extraction"]
+    assert extraction["document_label"] == "Procès-verbal descriptif"
+    assert extraction["document_url"] == "https://example.test/pv"
+    assert extraction["document_type"] == "pv_huissier"
+    assert extraction["page_number"] == 2
+    assert "visite virtuelle" not in " ".join(extraction["visit_dates"]).lower()
+
+
+def test_enrich_sale_from_pdf_text_extracts_sale_date_with_provenance() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/pdf-audience-document.html",
+            "property_type": "Appartement",
+            "documents": [{"label": "Cahier des conditions de vente", "url": "https://example.test/ccv"}],
+        }
+    )
+    pdf_texts = [
+        {
+            "label": "Cahier des conditions de vente",
+            "url": "https://example.test/ccv",
+            "document_type": "cahier_conditions_vente",
+            "text": (
+                "Sommaire du cahier. "
+                "Audience d'adjudication le jeudi 15 octobre 2026 à 15h00 au tribunal judiciaire de Bordeaux."
+            ),
+            "pages": [
+                {"page": 1, "text": "Sommaire du cahier sans calendrier.", "confidence": 0.87, "method": "pymupdf_text"},
+                {
+                    "page": 2,
+                    "text": (
+                        "Audience d'adjudication le jeudi 15 octobre 2026 à 15h00 "
+                        "au tribunal judiciaire de Bordeaux."
+                    ),
+                    "confidence": 0.94,
+                    "method": "pymupdf_text",
+                },
+            ],
+            "extraction_method": "pymupdf_pages",
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+
+    assert sale.sale_date == datetime(2026, 10, 15, 15, 0, tzinfo=UTC)
+    extraction = sale.raw_payload["pdf_sale_date_extraction"]
+    assert extraction["sale_date"] == "2026-10-15T15:00:00+00:00"
+    assert extraction["document_label"] == "Cahier des conditions de vente"
+    assert extraction["document_url"] == "https://example.test/ccv"
+    assert extraction["document_type"] == "cahier_conditions_vente"
+    assert extraction["page_number"] == 2
+    assert "Audience d'adjudication" in extraction["evidence"]
+
+
 def test_enrich_sale_from_pdf_text_extracts_rooms_and_carrez_surface() -> None:
     sale = normalize_sale(
         {
@@ -76,6 +290,121 @@ def test_enrich_sale_from_pdf_text_extracts_rooms_and_carrez_surface() -> None:
     assert sale.surface_m2 == Decimal("39.82")
     assert sale.rooms_count == 3
     assert sale.bedrooms_count == 2
+
+
+def test_enrich_sale_from_pdf_text_extracts_mesurage_loi_carrez_with_provenance() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/pdf-mesurage-carrez.html",
+            "property_type": "Appartement",
+            "documents": [{"label": "Procès verbal de description", "url": "https://example.test/download?id=pv"}],
+        }
+    )
+    pdf_texts = [
+        {
+            "label": "Procès verbal de description",
+            "url": "https://example.test/download?id=pv",
+            "document_type": "pv_huissier",
+            "text": "Constat. Mesurage loi Carrez : 39,82 m². Appartement de 2 pièces.",
+            "pages": [
+                {"page": 1, "text": "Constat sans métrage exploitable.", "confidence": 0.88, "method": "pymupdf_text"},
+                {
+                    "page": 2,
+                    "text": "Mesurage loi Carrez : 39,82 m². Appartement de 2 pièces.",
+                    "confidence": 0.93,
+                    "method": "pymupdf_text",
+                },
+            ],
+            "extraction_method": "pymupdf_pages",
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+
+    assert sale.surface_m2 == Decimal("39.82")
+    assert sale.carrez_surface_m2 == Decimal("39.82")
+    surface_extraction = sale.raw_payload["surface_extraction"]
+    assert surface_extraction["document_label"] == "Procès verbal de description"
+    assert surface_extraction["document_url"] == "https://example.test/download?id=pv"
+    assert surface_extraction["document_type"] == "pv_huissier"
+    assert surface_extraction["page_number"] == 2
+    assert "Mesurage loi Carrez" in surface_extraction["evidence"]
+
+
+def test_enrich_sale_from_pdf_text_extracts_cadastral_land_surface_with_provenance() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "cessions_etat",
+            "source_url": "https://cessions.immobilier-etat.gouv.fr/biens/terrain-cadastre",
+            "property_type": "Terrain",
+            "documents": [{"label": "Dossier de consultation", "url": "https://example.test/dossier"}],
+        }
+    )
+    pdf_texts = [
+        {
+            "label": "Dossier de consultation",
+            "url": "https://example.test/dossier",
+            "document_type": "cahier_conditions_vente",
+            "text": "Désignation. Parcelle cadastrée section AB n°12 pour une contenance de 12 a 34 ca.",
+            "pages": [
+                {"page": 1, "text": "Désignation générale sans surface.", "confidence": 0.86, "method": "pymupdf_text"},
+                {
+                    "page": 2,
+                    "text": "Parcelle cadastrée section AB n°12 pour une contenance de 12 a 34 ca.",
+                    "confidence": 0.91,
+                    "method": "pymupdf_text",
+                },
+            ],
+            "extraction_method": "pymupdf_pages",
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+
+    assert sale.land_surface_m2 == Decimal("1234")
+    assert sale.surface_m2 == Decimal("1234")
+    extraction = sale.raw_payload["land_surface_extraction"]
+    assert extraction["document_label"] == "Dossier de consultation"
+    assert extraction["document_url"] == "https://example.test/dossier"
+    assert extraction["document_type"] == "cahier_conditions_vente"
+    assert extraction["page_number"] == 2
+    assert extraction["kind"] == "land_surface_m2"
+
+
+def test_enrich_sale_from_pdf_text_adds_land_surface_without_overwriting_built_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/maison-terrain-pdf.html",
+            "property_type": "Maison",
+            "surface_m2": "80 m2",
+            "documents": [{"label": "Procès verbal descriptif", "url": "https://example.test/pv"}],
+        }
+    )
+    pdf_texts = [
+        {
+            "label": "Procès verbal descriptif",
+            "url": "https://example.test/pv",
+            "document_type": "pv_huissier",
+            "text": "Maison avec parcelle cadastrée section AC pour une contenance totale de 4 a 20 ca.",
+            "pages": [
+                {
+                    "page": 3,
+                    "text": "Maison avec parcelle cadastrée section AC pour une contenance totale de 4 a 20 ca.",
+                    "confidence": 0.9,
+                    "method": "pymupdf_text",
+                },
+            ],
+            "extraction_method": "pymupdf_pages",
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+
+    assert sale.surface_m2 == Decimal("80")
+    assert sale.land_surface_m2 == Decimal("420")
+    assert sale.raw_payload["land_surface_extraction"]["page_number"] == 3
 
 
 def test_enrich_sale_from_pdf_text_maps_studio_to_one_room() -> None:
@@ -120,6 +449,336 @@ def test_select_documents_for_extraction_prioritizes_useful_documents(monkeypatc
     assert [item["document_type"] for item in selected] == ["pv_huissier", "diagnostics_techniques"]
 
 
+def test_select_documents_for_extraction_accepts_legacy_document_type_aliases(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/legacy-doc-types.html",
+            "property_type": "Appartement",
+        }
+    )
+    documents = [
+        {"label": "Diagnostics.pdf", "document_type": "diagnostics"},
+        {"label": "PV descriptif.pdf", "document_type": "pv_descriptif"},
+        {"label": "Cahier.pdf", "document_type": "cahier_conditions"},
+    ]
+
+    selected = _select_documents_for_extraction(documents, sale=sale)
+
+    assert [item["label"] for item in selected] == [
+        "PV descriptif.pdf",
+        "Diagnostics.pdf",
+        "Cahier.pdf",
+    ]
+
+
+def test_select_documents_for_extraction_uses_legacy_type_when_label_is_vague(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-legacy-type.html",
+            "property_type": "Appartement",
+        }
+    )
+    documents = [
+        {"label": "Document 1.pdf", "url": "https://example.test/doc1.pdf", "type": "pv_descriptif"},
+        {"label": "Document 2.pdf", "url": "https://example.test/doc2.pdf", "type": "diagnostics"},
+        {"label": "Document 3.pdf", "url": "https://example.test/doc3.pdf", "type": "cahier_conditions"},
+    ]
+
+    selected = _select_documents_for_extraction(documents, sale=sale)
+
+    assert [item["url"] for item in selected] == [
+        "https://example.test/doc1.pdf",
+        "https://example.test/doc2.pdf",
+        "https://example.test/doc3.pdf",
+    ]
+
+
+def test_select_documents_for_extraction_uses_label_when_type_is_generic(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/generic-pdf-type.html",
+            "property_type": "Maison",
+        }
+    )
+    documents = [
+        {"label": "Autre document.pdf", "url": "https://example.test/other.pdf", "type": "pdf"},
+        {"label": "Diagnostics techniques.pdf", "url": "https://example.test/diag.pdf", "type": "pdf"},
+        {"label": "PV descriptif.pdf", "url": "https://example.test/pv.pdf", "type": "pdf"},
+        {"label": "Cahier des charges.pdf", "url": "https://example.test/ccv.pdf", "type": "document"},
+    ]
+
+    selected = _select_documents_for_extraction(documents, sale=sale)
+
+    assert [item["url"] for item in selected] == [
+        "https://example.test/pv.pdf",
+        "https://example.test/diag.pdf",
+        "https://example.test/ccv.pdf",
+    ]
+
+
+def test_select_documents_for_extraction_prioritizes_non_pdf_download_labels(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/non-pdf-download-labels.html",
+            "property_type": "Appartement",
+        }
+    )
+    documents = [
+        {"label": "Autre document", "url": "https://example.test/download?id=other", "type": "pdf"},
+        {"label": "Procès verbal de description", "url": "https://example.test/download?id=pv", "type": "pdf"},
+        {"label": "Règlement de consultation", "url": "https://example.test/telechargement?id=ccv", "type": "document"},
+    ]
+
+    selected = _select_documents_for_extraction(documents, sale=sale)
+
+    assert [item["url"] for item in selected] == [
+        "https://example.test/download?id=pv",
+        "https://example.test/telechargement?id=ccv",
+    ]
+
+
+def test_select_documents_for_extraction_classifies_avoventes_generic_pdf_labels(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/agricultural-document-labels",
+            "property_type": "Autres",
+        }
+    )
+    documents = [
+        {"label": "PLACARD PUBLICITE .pdf", "url": "https://example.test/placard.pdf", "type": "pdf"},
+        {"label": "CAHIER LIQUIDATION 20260415.pdf", "url": "https://example.test/cahier.pdf", "type": "pdf"},
+        {"label": "PV Description (5).pdf", "url": "https://example.test/pv.pdf", "type": "pdf"},
+        {"label": "Dossier diag (1).pdf", "url": "https://example.test/diag.pdf", "type": "pdf"},
+    ]
+
+    selected = _select_documents_for_extraction(documents, sale=sale)
+
+    assert [item["url"] for item in selected] == [
+        "https://example.test/pv.pdf",
+        "https://example.test/diag.pdf",
+        "https://example.test/cahier.pdf",
+    ]
+
+
+def test_select_documents_for_extraction_expands_when_surface_is_missing(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/missing-source-surface",
+            "property_type": "Maison",
+        }
+    )
+    documents = [
+        {"label": "Autre.pdf", "document_type": "pdf"},
+        {"label": "Diagnostics.pdf", "document_type": "diagnostics_techniques"},
+        {"label": "PV descriptif.pdf", "document_type": "pv_huissier"},
+        {"label": "Cahier des conditions.pdf", "document_type": "cahier_conditions_vente"},
+    ]
+
+    selected = _select_documents_for_extraction(documents, sale=sale)
+
+    assert [item["document_type"] for item in selected] == [
+        "pv_huissier",
+        "diagnostics_techniques",
+        "cahier_conditions_vente",
+    ]
+
+
+def test_select_documents_for_extraction_includes_bail_when_occupancy_is_missing(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/missing-occupancy",
+            "property_type": "Appartement",
+            "surface_m2": "45 m2",
+            "rooms_count": 2,
+        }
+    )
+    documents = [
+        {"label": "Diagnostics.pdf", "document_type": "diagnostics_techniques"},
+        {"label": "Bail.pdf", "document_type": "bail"},
+        {"label": "PV descriptif.pdf", "document_type": "pv_huissier"},
+        {"label": "Cahier des conditions.pdf", "document_type": "cahier_conditions_vente"},
+    ]
+
+    selected = _select_documents_for_extraction(documents, sale=sale)
+
+    assert [item["document_type"] for item in selected] == [
+        "pv_huissier",
+        "cahier_conditions_vente",
+        "bail",
+        "diagnostics_techniques",
+    ]
+
+
+def test_select_documents_for_extraction_includes_diagnostics_when_energy_missing(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "1")
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/missing-energy-diagnostics.html",
+            "property_type": "Appartement",
+            "surface_m2": "45 m2",
+            "rooms_count": 2,
+            "occupancy_status": "Libre de toute occupation",
+        }
+    )
+    documents = [
+        {"label": "PV descriptif.pdf", "document_type": "pv_huissier"},
+        {"label": "Diagnostics techniques.pdf", "document_type": "diagnostics_techniques"},
+        {"label": "Cahier des conditions.pdf", "document_type": "cahier_conditions_vente"},
+    ]
+
+    selected = _select_documents_for_extraction(documents, sale=sale)
+
+    assert [item["document_type"] for item in selected] == ["diagnostics_techniques"]
+
+
+def test_select_documents_for_extraction_does_not_force_diagnostics_when_dpe_exempt(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "1")
+    sale = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://www.immobilier.notaires.fr/fr/annonce-immo/dpe-non-soumis",
+            "property_type": "Terrain",
+            "surface_m2": "500 m2",
+            "risk_notes": "DPE non soumis",
+        }
+    )
+    documents = [
+        {"label": "PV descriptif.pdf", "document_type": "pv_huissier"},
+        {"label": "Diagnostics techniques.pdf", "document_type": "diagnostics_techniques"},
+    ]
+
+    selected = _select_documents_for_extraction(documents, sale=sale)
+
+    assert [item["document_type"] for item in selected] == ["pv_huissier"]
+
+
+def test_expanded_document_selection_allows_ccv_only_surface_extraction(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/ccv-only-surface",
+            "property_type": "Maison",
+        }
+    )
+    documents = [
+        {"label": "PV descriptif.pdf", "url": "https://example.test/pv.pdf", "document_type": "pv_huissier"},
+        {
+            "label": "Diagnostics.pdf",
+            "url": "https://example.test/diag.pdf",
+            "document_type": "diagnostics_techniques",
+        },
+        {
+            "label": "Cahier des conditions.pdf",
+            "url": "https://example.test/ccv.pdf",
+            "document_type": "cahier_conditions_vente",
+        },
+    ]
+    text_by_url = {
+        "https://example.test/pv.pdf": "Proces-verbal descriptif sans surface exploitable.",
+        "https://example.test/diag.pdf": "Diagnostic de performance energetique : 210 kWhEP/m2/an.",
+        "https://example.test/ccv.pdf": "Designation. Surface habitable : 72,4 m2. Occupation a verifier.",
+    }
+    selected = _select_documents_for_extraction(documents, sale=sale)
+    pdf_texts = [
+        {
+            **document,
+            "text": text_by_url[document["url"]],
+            "pages": [
+                {
+                    "page": 1,
+                    "text": text_by_url[document["url"]],
+                    "confidence": 0.9,
+                    "method": "pymupdf_text",
+                }
+            ],
+        }
+        for document in selected
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+    normalize_asset_features(sale)
+
+    assert [item["document_type"] for item in selected] == [
+        "pv_huissier",
+        "diagnostics_techniques",
+        "cahier_conditions_vente",
+    ]
+    assert sale.surface_m2 == Decimal("72.4")
+    assert sale.habitable_surface_m2 == Decimal("72.4")
+    surface_extraction = sale.raw_payload["surface_extraction"]
+    assert surface_extraction["document_label"] == "Cahier des conditions.pdf"
+    assert surface_extraction["document_url"] == "https://example.test/ccv.pdf"
+    assert surface_extraction["document_type"] == "cahier_conditions_vente"
+    assert surface_extraction["page_number"] == 1
+    assert "Surface habitable" in surface_extraction["evidence"]
+
+
+def test_document_analysis_status_normalizes_legacy_extracted_document_types() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/legacy-analysis.html",
+        }
+    )
+    documents = [
+        {"label": "PV descriptif", "url": "https://example.test/pv.pdf", "document_type": "pv_descriptif"},
+        {"label": "Diagnostics", "url": "https://example.test/diag.pdf", "document_type": "diagnostics"},
+        {"label": "Cahier", "url": "https://example.test/ccv.pdf", "document_type": "cahier_conditions"},
+    ]
+    pdf_texts = [
+        {
+            "label": "PV descriptif",
+            "url": "https://example.test/pv.pdf",
+            "document_type": "pv_descriptif",
+            "text": "Surface habitable : 50 m2.",
+        },
+        {
+            "label": "Diagnostics",
+            "url": "https://example.test/diag.pdf",
+            "document_type": "diagnostics",
+            "text": "DPE classe D.",
+        },
+        {
+            "label": "Cahier",
+            "url": "https://example.test/ccv.pdf",
+            "document_type": "cahier_conditions",
+            "text": "Cahier des conditions de vente.",
+        },
+    ]
+
+    _store_document_analysis_status(sale, documents, pdf_texts)
+
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["coverage_status"] == "rich"
+    assert analysis["missing_core_documents"] == []
+    assert analysis["document_types"] == {
+        "cahier_conditions_vente": 1,
+        "diagnostics_techniques": 1,
+        "pv_huissier": 1,
+    }
+    assert analysis["extracted_document_types"] == {
+        "cahier_conditions_vente": 1,
+        "diagnostics_techniques": 1,
+        "pv_huissier": 1,
+    }
+
+
 def test_enrich_sale_from_pdf_text_does_not_sum_repeated_document_surfaces() -> None:
     sale = normalize_sale(
         {
@@ -148,6 +807,90 @@ def test_enrich_sale_from_pdf_text_does_not_sum_repeated_document_surfaces() -> 
     assert sale.surface_evidence and "Diagnostics" in sale.surface_evidence
 
 
+def test_enrich_sale_from_pdf_text_extracts_document_only_surface_with_page_provenance() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/document-only-surface",
+            "property_type": "Maison",
+            "description": "Maison vendue aux enchères avec documents officiels joints.",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    long_intro = "Constatations générales sans métrage exploitable. " * 40
+    pdf_texts = [
+        {
+            "label": "PV descriptif",
+            "url": "https://example.test/pv.pdf",
+            "document_type": "pv_huissier",
+            "text": long_intro + "Deuxième page. Surface habitable : 87,5 m². Le bien comprend un séjour.",
+            "pages": [
+                {"page": 1, "text": long_intro, "confidence": 0.92, "method": "pymupdf_text"},
+                {
+                    "page": 2,
+                    "text": "Désignation du bien. Surface habitable : 87,5 m². Le bien comprend un séjour.",
+                    "confidence": 0.94,
+                    "method": "pymupdf_text",
+                },
+            ],
+            "extraction_method": "pymupdf_pages",
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("87.5")
+    assert sale.habitable_surface_m2 == Decimal("87.5")
+    assert sale.app_surface_m2 == Decimal("87.5")
+    assert sale.surface_source == "pdf"
+    surface_extraction = sale.raw_payload["surface_extraction"]
+    assert surface_extraction["document_label"] == "PV descriptif"
+    assert surface_extraction["document_url"] == "https://example.test/pv.pdf"
+    assert surface_extraction["document_type"] == "pv_huissier"
+    assert surface_extraction["page_number"] == 2
+    assert "Surface habitable" in surface_extraction["evidence"]
+
+
+def test_enrich_sale_from_pdf_text_keeps_thousands_surface_with_page_provenance() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/document-thousands-surface",
+            "property_type": "Propriété",
+            "documents": [{"label": "Cahier des conditions", "url": "https://example.test/ccv.pdf"}],
+        }
+    )
+    pdf_texts = [
+        {
+            "label": "Cahier des conditions",
+            "url": "https://example.test/ccv.pdf",
+            "document_type": "cahier_conditions_vente",
+            "text": "Désignation du bien. Surface totale : 2 464,70 m². Le bien est libre.",
+            "pages": [
+                {"page": 1, "text": "Désignation du bien sans métrage.", "confidence": 0.91, "method": "pymupdf_text"},
+                {
+                    "page": 2,
+                    "text": "Surface totale : 2 464,70 m². Le bien est libre.",
+                    "confidence": 0.93,
+                    "method": "pymupdf_text",
+                },
+            ],
+            "extraction_method": "pymupdf_pages",
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+
+    assert sale.surface_m2 == Decimal("2464.70")
+    surface_extraction = sale.raw_payload["surface_extraction"]
+    assert surface_extraction["document_label"] == "Cahier des conditions"
+    assert surface_extraction["document_url"] == "https://example.test/ccv.pdf"
+    assert surface_extraction["document_type"] == "cahier_conditions_vente"
+    assert surface_extraction["page_number"] == 2
+    assert "2 464,70 m²" in surface_extraction["evidence"]
+
+
 def test_extract_pdf_document_preserves_page_level_text(tmp_path, monkeypatch) -> None:
     import fitz
 
@@ -168,6 +911,51 @@ def test_extract_pdf_document_preserves_page_level_text(tmp_path, monkeypatch) -
     assert [page["page"] for page in payload["pages"]] == [1, 2]
     assert "Surface habitable" in payload["text"]
     assert "bail en cours" in payload["text"]
+
+
+def test_extract_pdf_document_then_enriches_document_only_surface(tmp_path, monkeypatch) -> None:
+    import fitz
+
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "false")
+    path = tmp_path / "pv-document-only-surface.pdf"
+    with fitz.open() as document:
+        page_1 = document.new_page()
+        page_1.insert_text((72, 72), "Proces-verbal descriptif sans surface sur cette premiere page.")
+        page_2 = document.new_page()
+        page_2.insert_text((72, 72), "Designation du lot. Superficie Carrez : 39,82 m2.")
+        document.save(path)
+
+    payload = extract_pdf_document(
+        path,
+        document={"label": "PV descriptif", "url": "https://example.test/pv.pdf", "document_type": "pv_huissier"},
+    )
+    payload.update(
+        {
+            "label": "PV descriptif",
+            "url": "https://example.test/pv.pdf",
+            "type": "pdf",
+            "document_type": "pv_huissier",
+            "file_path": str(path),
+        }
+    )
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/pdf-real-document-only-surface",
+            "property_type": "Appartement",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, [payload])
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("39.82")
+    assert sale.carrez_surface_m2 == Decimal("39.82")
+    assert sale.app_surface_m2 == Decimal("39.82")
+    assert sale.raw_payload["surface_extraction"]["page_number"] == 2
+    assert sale.raw_payload["surface_extraction"]["document_label"] == "PV descriptif"
 
 
 def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, monkeypatch) -> None:
@@ -191,6 +979,97 @@ def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, 
     monkeypatch.setattr("src.pdf_enrichment.httpx.get", fail_get)
 
     assert download_documents(sale, output_root=tmp_path) == []
+
+
+def test_download_documents_uses_legacy_type_when_label_and_url_are_vague(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"%PDF-1.4\n%%EOF"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return Response()
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-legacy-type.html",
+            "documents": [
+                {
+                    "label": "Document 1.pdf",
+                    "url": "https://example.test/doc1.pdf",
+                    "type": "pv_descriptif",
+                }
+            ],
+        }
+    )
+
+    downloaded = download_documents(sale, output_root=tmp_path)
+
+    assert calls
+    assert downloaded[0]["document_type"] == "pv_huissier"
+    assert downloaded[0]["type"] == "pdf"
+
+
+def test_download_documents_classifies_generic_type_from_label(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"%PDF-1.4\n%%EOF"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", lambda *args, **kwargs: Response())
+    sale = normalize_sale(
+        {
+            "source_name": "cessions_etat",
+            "source_url": "https://cessions.immobilier-etat.gouv.fr/biens/generic-doc-type",
+            "documents": [
+                {
+                    "label": "Cahier des charges.pdf",
+                    "url": "https://example.test/cahier.pdf",
+                    "type": "document",
+                }
+            ],
+        }
+    )
+
+    downloaded = download_documents(sale, output_root=tmp_path)
+
+    assert downloaded[0]["document_type"] == "cahier_conditions_vente"
+    assert downloaded[0]["type"] == "pdf"
+
+
+def test_download_documents_saves_non_pdf_download_endpoint_with_pdf_suffix(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"%PDF-1.4\n%%EOF"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", lambda *args, **kwargs: Response())
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/non-pdf-download-endpoint.html",
+            "documents": [
+                {
+                    "label": "Procès verbal de description",
+                    "url": "https://example.test/download.php?id=5980&type=pvd",
+                    "type": "pdf",
+                }
+            ],
+        }
+    )
+
+    downloaded = download_documents(sale, output_root=tmp_path)
+
+    assert downloaded[0]["document_type"] == "pv_huissier"
+    assert downloaded[0]["file_path"].endswith(".pdf")
 
 
 def test_adaptive_docling_timeout_shortens_signed_documents(tmp_path, monkeypatch) -> None:

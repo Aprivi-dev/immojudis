@@ -103,11 +103,41 @@ export function parseViewport(value: unknown): ViewportBounds | undefined {
   return { north, south, east, west };
 }
 
+export function parseBbox(value: unknown): ViewportBounds | undefined {
+  const raw = stringValue(value);
+  if (!raw) return undefined;
+
+  const decoded = raw.includes(",") ? raw : decodeBase64SearchValue(raw);
+  const [west, south, east, north] = decoded.split(",").map((part) => Number(part));
+  if (![north, south, east, west].every(Number.isFinite)) return undefined;
+  if (north <= south || east <= west) return undefined;
+
+  return { north, south, east, west };
+}
+
 export function serializeViewport(bounds: ViewportBounds | undefined): string | undefined {
   if (!bounds) return undefined;
   return [bounds.north, bounds.south, bounds.east, bounds.west]
     .map((value) => Number(value.toFixed(5)))
     .join(":");
+}
+
+export function serializeBbox(bounds: ViewportBounds | undefined): string | undefined {
+  if (!bounds) return undefined;
+  return [bounds.west, bounds.south, bounds.east, bounds.north]
+    .map((value) => Number(value.toFixed(5)))
+    .join(",");
+}
+
+function decodeBase64SearchValue(raw: string) {
+  if (!/^[A-Za-z0-9+/_=-]+$/.test(raw)) return raw;
+  try {
+    const normalized = raw.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    return atob(padded);
+  } catch {
+    return raw;
+  }
 }
 
 function parseSort(value: unknown): SearchSortKey | undefined {
@@ -134,7 +164,7 @@ export function validateSalesSearch(search: Record<string, unknown>): SalesSearc
     department: asSearchString(search.department),
     tribunal: asSearchString(search.tribunal ?? search.tribunal_code),
     query: asSearchString(search.query) ?? asSearchString(search.q),
-    viewport: parseViewport(search.viewport),
+    viewport: parseViewport(search.viewport) ?? parseBbox(search.bbox),
     sort: parseSort(search.sort),
     minPrice: numberValue(search.minPrice ?? search.min_price),
     maxPrice: numberValue(search.maxPrice ?? search.max_price),
@@ -170,7 +200,7 @@ export function salesSearchToUrlRecord(search: SalesSearchParams): SalesSearchUr
     department: search.department,
     tribunal: search.tribunal,
     query: search.query,
-    viewport: serializeViewport(search.viewport),
+    bbox: serializeBbox(search.viewport),
     sort: search.sort && search.sort !== "relevance" ? search.sort : undefined,
     minPrice: search.minPrice,
     maxPrice: search.maxPrice,

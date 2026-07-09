@@ -3,6 +3,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { cleanSaleTitle } from "@/lib/sale-title";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 type SupabaseClient = SupabaseAuthContext["supabase"];
@@ -556,7 +557,7 @@ function referralNextStep(
 function saleSnapshotJson(sale: SaleSnapshotSource): Json {
   return {
     id: sale.id,
-    title: sale.title,
+    title: cleanSaleTitle(sale.title),
     city: sale.city,
     department: sale.department,
     postal_code: sale.postal_code,

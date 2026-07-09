@@ -14,6 +14,7 @@ import {
   updateAlertNotification,
   updateNotificationPreferences,
 } from "@/lib/client-api";
+import { cleanSaleTitle } from "@/lib/sale-title";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
 
 const NOTIFICATION_QUERY_KEY = ["alert-notifications"] as const;
@@ -199,7 +200,7 @@ function NotificationItem({
   onDismiss: () => void;
 }) {
   const unread = !notification.readAt;
-  const title = notification.saleTitle || "Vente judiciaire";
+  const title = cleanSaleTitle(notification.saleTitle) || "Vente judiciaire";
   const location = [notification.city, notification.department].filter(Boolean).join(" · ");
 
   return (

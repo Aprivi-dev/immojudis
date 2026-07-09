@@ -79,9 +79,9 @@ export default async function SharedReportPage({ params }: PageParams) {
   const streetFacadeAnalysis = asRecord(analysis.streetFacadeAnalysis);
   const streetFacadeActions = normalizeStringList(streetFacadeAnalysis.nextActions);
   const streetFacadeLimitations = normalizeStringList(streetFacadeAnalysis.limitations);
-  const streetViewUrl = externalUrl(streetFacadeAnalysis.streetViewUrl);
+  const streetLevelUrl = externalUrl(streetFacadeAnalysis.streetLevelUrl);
   const aerial3dUrl = externalUrl(streetFacadeAnalysis.aerial3dUrl);
-  const mapsUrl = externalUrl(streetFacadeAnalysis.mapsUrl);
+  const mapUrl = externalUrl(streetFacadeAnalysis.mapUrl);
   const neighborhoodAnalysis = asRecord(analysis.neighborhoodAnalysis);
   const neighborhoodDimensions = normalizeStringList(neighborhoodAnalysis.dimensions);
   const neighborhoodSignals = normalizeNeighborhoodSignals(neighborhoodAnalysis.signals);
@@ -682,13 +682,13 @@ export default async function SharedReportPage({ params }: PageParams) {
                 )}
               />
             </div>
-            {mapsUrl || streetViewUrl || aerial3dUrl ? (
+            {mapUrl || streetLevelUrl || aerial3dUrl ? (
               <div className="mt-4 flex flex-wrap gap-2">
-                {streetViewUrl ? (
-                  <SharedExternalLink href={streetViewUrl} label="Street View" />
+                {streetLevelUrl ? (
+                  <SharedExternalLink href={streetLevelUrl} label="Vue rue Mapbox" />
                 ) : null}
                 {aerial3dUrl ? <SharedExternalLink href={aerial3dUrl} label="Vue 3D" /> : null}
-                {mapsUrl ? <SharedExternalLink href={mapsUrl} label="Carte" /> : null}
+                {mapUrl ? <SharedExternalLink href={mapUrl} label="Carte" /> : null}
               </div>
             ) : null}
             {streetFacadeActions.length ? (

@@ -94,15 +94,31 @@ const SALE_MAP_COLUMNS = [
   "sale_date",
   "latitude",
   "longitude",
+  "occupancy_status",
   "app_surface_m2",
   "habitable_surface_m2",
   "carrez_surface_m2",
+  "land_surface_m2",
+  "app_surface_kind",
+  "surface_scope",
+  "surface_source",
+  "surface_confidence",
+  "surface_evidence",
   "rooms_count",
   "bedrooms_count",
   "bathrooms_count",
+  "has_garden",
+  "has_terrace",
+  "has_garage",
   "status",
+  "investment_score",
+  "risks",
+  "media",
+  "source_name",
+  "primary_source",
   "source_blocks",
   "documents_rich",
+  "created_at",
 ].join(",");
 
 function assertCloudConfigured() {
@@ -210,6 +226,13 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
   if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
   if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
   if (filters.status_in?.length) q = q.in("status", filters.status_in);
+  if (filters.viewport) {
+    q = q
+      .gte("latitude", filters.viewport.south)
+      .lte("latitude", filters.viewport.north)
+      .gte("longitude", filters.viewport.west)
+      .lte("longitude", filters.viewport.east);
+  }
   if (filters.only_new) {
     q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
   }
