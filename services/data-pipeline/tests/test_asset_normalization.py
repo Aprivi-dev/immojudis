@@ -653,6 +653,28 @@ def test_asset_normalization_uses_built_surface_for_buildings() -> None:
     assert sale.surface_scope == "total"
 
 
+def test_asset_normalization_repairs_legacy_truncated_thousands_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/109084.html",
+            "property_type": "Immeuble",
+            "surface_m2": "612",
+            "description": (
+                "Un immeuble de 2.612 m², consistant en un grand espace vert "
+                "incorporé dans une ruche d'entreprises."
+            ),
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("2612")
+    assert sale.app_surface_m2 == Decimal("2612")
+    assert sale.app_surface_kind == "built"
+    assert sale.surface_scope == "total"
+
+
 def test_asset_normalization_keeps_supported_large_mixed_surface_and_specific_title() -> None:
     sale = normalize_sale(
         {
