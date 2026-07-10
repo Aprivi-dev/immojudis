@@ -57,8 +57,14 @@ describe("French geographic search", () => {
 
   it("matches region, department name, postal code and multi-term city searches", () => {
     const bordeaux = sale({ city: "Bordeaux", department: "33", postal_code: "33000" });
+    const bordeauxWithDepartmentName = sale({
+      city: "Bordeaux",
+      department: "Gironde",
+      postal_code: "33000",
+    });
 
     expect(matchesFrenchGeoSearch(bordeaux, "Nouvelle-Aquitaine")).toBe(true);
+    expect(matchesFrenchGeoSearch(bordeauxWithDepartmentName, "Nouvelle-Aquitaine")).toBe(true);
     expect(matchesFrenchGeoSearch(bordeaux, "Gironde")).toBe(true);
     expect(matchesFrenchGeoSearch(bordeaux, "33000")).toBe(true);
     expect(matchesFrenchGeoSearch(bordeaux, "Bordeaux 33000")).toBe(true);
