@@ -171,6 +171,8 @@ def build_display_title(sale: AuctionSale) -> str:
     label = _PROPERTY_TYPE_LABELS.get(sale.property_type or "", "Bien immobilier")
     if sale.property_type == "land":
         surface = _format_surface_m2(sale.land_surface_m2)
+    elif sale.surface_scope in {"partial", "room_or_annex", "unknown"}:
+        surface = None
     else:
         surface = _format_surface_m2(
             sale.app_surface_m2 or sale.habitable_surface_m2 or sale.carrez_surface_m2

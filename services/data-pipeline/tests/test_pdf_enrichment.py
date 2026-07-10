@@ -424,6 +424,7 @@ def test_info_encheres_keeps_incomplete_carrez_measurement_as_partial_evidence()
     assert sale.app_surface_m2 is None
     assert "partial_surface_measurement" in sale.quality_flags
     assert sale.raw_payload["surface_extraction"]["surface_scope"] == "partial"
+    assert sale.title == "Appartement"
 
 
 def test_enrich_sale_from_pdf_text_extracts_cadastral_land_surface_with_provenance() -> None:
