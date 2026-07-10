@@ -148,8 +148,25 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_display_description_word_count",
     "llm_prompt_version",
     "document_analysis",
+    "surface_extraction",
+    "land_surface_extraction",
     "investment_analysis",
     "llm_due_diligence",
+)
+
+KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS = (
+    "surface_m2",
+    "habitable_surface_m2",
+    "carrez_surface_m2",
+)
+KNOWN_DOCUMENT_LAND_SURFACE_FIELDS = ("land_surface_m2",)
+KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS = (
+    "app_surface_m2",
+    "app_surface_kind",
+    "surface_scope",
+    "surface_source",
+    "surface_confidence",
+    "surface_evidence",
 )
 
 
@@ -176,11 +193,17 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
     # Données connues en base : Vench s'en sert comme fallback quand la page est
     # paywall/sparse ; seules les lignes scorées peuvent servir au skip détail.
-    known_details: dict[str, dict[str, object]] = (
-        fetch_known_sale_details()
-        if (settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment)
-        else {}
-    )
+    try:
+        known_details: dict[str, dict[str, object]] = (
+            fetch_known_sale_details()
+            if (settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment)
+            else {}
+        )
+    except Exception as exc:
+        LOGGER.exception("Known enriched sale lookup failed; publication aborted: %s", exc)
+        errors.setdefault("supabase", []).append(str(exc))
+        finish_run_in_supabase(run_id, "failed", {"stage": "known_sale_lookup"}, errors)
+        return 1
     known_signatures = {
         source_url: str(row["_signature"])
         for source_url, row in known_details.items()
@@ -835,7 +858,38 @@ def _preserve_known_enrichment_payloads(
             known,
             keys=KNOWN_ENRICHMENT_PAYLOAD_FIELDS,
         )
+        preserved += _backfill_document_surface_fields_from_known(sale, known)
     return preserved
+
+
+def _backfill_document_surface_fields_from_known(
+    sale: dict[str, object],
+    known: dict[str, object],
+) -> int:
+    known_payload = known.get("raw_payload")
+    if not isinstance(known_payload, dict):
+        known_payload = {}
+    built_extraction = known_payload.get("surface_extraction")
+    land_extraction = known_payload.get("land_surface_extraction")
+    has_built_document_surface = known.get("surface_source") == "pdf" or (
+        isinstance(built_extraction, dict) and built_extraction.get("source") == "pdf"
+    )
+    has_land_document_surface = isinstance(land_extraction, dict) and land_extraction.get("source") == "pdf"
+    if not has_built_document_surface and not has_land_document_surface:
+        return 0
+
+    fields: tuple[str, ...] = KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS
+    if has_built_document_surface:
+        fields += KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS
+    if has_land_document_surface:
+        fields += KNOWN_DOCUMENT_LAND_SURFACE_FIELDS
+
+    copied = 0
+    for key in fields:
+        if _is_missing_raw_value(sale.get(key)) and not _is_missing_raw_value(known.get(key)):
+            sale[key] = known[key]
+            copied += 1
+    return copied
 
 
 def _backfill_raw_sale_from_known_detail(

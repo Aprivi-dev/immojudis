@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from src.normalize import normalize_sale
 from src.storage import supabase_client
 from src.storage.supabase_client import _sanitize_postgrest_payload, _secondary_source_urls
@@ -65,6 +67,60 @@ def test_known_signatures_only_include_scored_rows(monkeypatch) -> None:
     assert supabase_client.fetch_known_sale_signatures() == {
         "https://example.test/scored": "2027-01-10|100000"
     }
+
+
+def test_fetch_known_sale_details_uses_bounded_pages(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    calls: list[tuple[str, str]] = []
+
+    class Response:
+        is_error = False
+        status_code = 200
+        text = ""
+
+        def __init__(self, rows):
+            self._rows = rows
+
+        def json(self):
+            return self._rows
+
+    first_page = [
+        {"source_url": f"https://example.test/{index}", "source_urls": []}
+        for index in range(supabase_client.KNOWN_SALE_DETAIL_PAGE_SIZE)
+    ]
+
+    def fake_get(endpoint, params, headers, timeout):
+        calls.append((params["limit"], params["offset"]))
+        return Response(first_page if params["offset"] == "0" else [])
+
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+
+    details = supabase_client.fetch_known_sale_details()
+
+    assert len(details) == supabase_client.KNOWN_SALE_DETAIL_PAGE_SIZE
+    assert calls == [("100", "0"), ("100", "100")]
+
+
+def test_fetch_known_sale_details_raises_instead_of_returning_partial_data(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        is_error = True
+        status_code = 500
+        text = "canceling statement due to statement timeout"
+
+    monkeypatch.setattr(supabase_client.httpx, "get", lambda *args, **kwargs: Response())
+
+    with pytest.raises(RuntimeError, match="statement timeout"):
+        supabase_client.fetch_known_sale_details()
 
 
 def test_enriched_hashes_require_current_llm_description_when_requested(monkeypatch) -> None:
