@@ -78,7 +78,13 @@ export function Navbar() {
               method="get"
               className="hidden min-w-[18rem] max-w-xl flex-1 items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm shadow-inner md:flex"
             >
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <button
+                type="submit"
+                aria-label="Rechercher"
+                className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              >
+                <Search className="h-4 w-4" />
+              </button>
               <label htmlFor="product-search" className="sr-only">
                 Rechercher par région, département, ville ou code postal
               </label>
@@ -170,7 +176,13 @@ export function Navbar() {
                     method="get"
                     className="mb-3 flex items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm"
                   >
-                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <button
+                      type="submit"
+                      aria-label="Rechercher"
+                      className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    >
+                      <Search className="h-4 w-4" />
+                    </button>
                     <label htmlFor="product-mobile-search" className="sr-only">
                       Rechercher par région, département, ville ou code postal
                     </label>
