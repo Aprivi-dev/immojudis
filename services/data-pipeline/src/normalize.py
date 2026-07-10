@@ -596,6 +596,8 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         title = clean_text(_source_block_lookup(raw_sale, "titre", "title"))
     property_type = normalize_sale_property_type(raw_sale)
     description = clean_text(_field_or_source_block(raw_sale, "description", "description", "detail_description"))
+    if description and re.fullmatch(r"\$[a-z][a-z0-9_]*", description, re.I):
+        description = None
     address = clean_text(
         _field_or_source_block(raw_sale, "address", "adresse", "detail_adresse", "address", "localisation")
     )
@@ -872,14 +874,7 @@ def _is_non_document_url(url: str, *, source_url: str | None) -> bool:
     if host == "app-pro.la-loupe.immo" and path.startswith("/ext-partenaire/licitor/"):
         return True
 
-    source = urlparse(source_url or "")
-    return bool(
-        source.netloc
-        and host == source.netloc.lower()
-        and path == ""
-        and not parsed.query
-        and not parsed.fragment
-    )
+    return not path and not parsed.query and not parsed.fragment
 
 
 def normalize_source_urls(value: object | None, source_url: str) -> list[str]:
@@ -913,6 +908,8 @@ def _derive_initial_app_surface(
     land_surface_m2: Decimal | None,
     surface_scope: str | None,
 ) -> tuple[Decimal | None, str | None, str | None]:
+    if surface_scope in {"partial", "room_or_annex", "unknown"}:
+        return None, None, surface_scope
     if property_type == "apartment":
         value = carrez_surface_m2 or habitable_surface_m2
         kind = "carrez" if carrez_surface_m2 is not None else "habitable" if value is not None else None
