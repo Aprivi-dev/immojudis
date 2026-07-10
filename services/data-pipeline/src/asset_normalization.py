@@ -441,8 +441,16 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
     if sale.land_surface_m2 is None:
         sale.land_surface_m2 = _extract_surface_kind(text, "land_surface_m2", sale)
     _discard_placeholder_built_surface(sale)
+    text_built_surface = _extract_built_surface(text, sale)
     if sale.surface_m2 is None:
-        sale.surface_m2 = _extract_built_surface(text, sale)
+        sale.surface_m2 = text_built_surface
+    elif _should_prefer_text_built_surface(sale, text_built_surface):
+        previous_surface = sale.surface_m2
+        sale.surface_m2 = text_built_surface
+        if sale.property_type == "house" and (
+            sale.habitable_surface_m2 is None or sale.habitable_surface_m2 == previous_surface
+        ):
+            sale.habitable_surface_m2 = text_built_surface
     explicit_app_surface = None
     min_app_surface = Decimal("20")
     if sale.property_type == "apartment":
@@ -460,7 +468,7 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         sale.carrez_surface_m2 = sale.surface_m2
         if sale.surface_m2 is not None:
             _set_surface_evidence(sale, "surface_m2_fallback", None)
-    if sale.land_surface_m2 is not None and sale.property_type not in {"land", "house", "building"}:
+    if sale.land_surface_m2 is not None and sale.property_type not in {"land", "house", "building", "commercial", "mixed"}:
         sale.land_surface_m2 = None
     _set_app_surface(sale)
     _validate_app_surface_scope(sale)
@@ -477,10 +485,27 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
 def _discard_placeholder_built_surface(sale: AuctionSale) -> None:
     if sale.property_type not in {"house", "building"} or sale.land_surface_m2 is None:
         return
+    discarded = False
     if sale.habitable_surface_m2 is not None and sale.habitable_surface_m2 < Decimal("9"):
         sale.habitable_surface_m2 = None
+        discarded = True
     if sale.surface_m2 is not None and sale.surface_m2 < Decimal("9") and sale.habitable_surface_m2 is None:
         sale.surface_m2 = None
+        discarded = True
+    if discarded and sale.app_surface_m2 is not None and sale.app_surface_m2 < Decimal("9"):
+        sale.app_surface_m2 = None
+        sale.app_surface_kind = None
+        sale.surface_scope = None
+
+
+def _should_prefer_text_built_surface(sale: AuctionSale, candidate: Decimal | None) -> bool:
+    if candidate is None or sale.surface_m2 is None or candidate == sale.surface_m2:
+        return False
+    if sale.property_type not in {"house", "building"}:
+        return False
+    if sale.surface_m2 < Decimal("9"):
+        return True
+    return candidate >= Decimal("20") and candidate > sale.surface_m2
 
 
 def _apply_document_consistency_corrections(sale: AuctionSale, text: str) -> None:
@@ -1931,9 +1956,17 @@ def _set_app_surface(sale: AuctionSale) -> None:
         sale.app_surface_kind = "land" if sale.land_surface_m2 is not None else None
         sale.surface_scope = "land" if sale.app_surface_m2 is not None else sale.surface_scope
     elif sale.property_type in {"commercial", "mixed"}:
-        sale.app_surface_m2 = sale.surface_m2 or sale.habitable_surface_m2 or sale.carrez_surface_m2
-        sale.app_surface_kind = "built" if sale.app_surface_m2 is not None else None
-        sale.surface_scope = "total" if sale.app_surface_m2 is not None else sale.surface_scope
+        sale.app_surface_m2 = sale.surface_m2 or sale.habitable_surface_m2 or sale.carrez_surface_m2 or sale.land_surface_m2
+        sale.app_surface_kind = "land" if (
+            sale.app_surface_m2 is not None
+            and sale.surface_m2 is None
+            and sale.habitable_surface_m2 is None
+            and sale.carrez_surface_m2 is None
+            and sale.land_surface_m2 is not None
+        ) else "built" if sale.app_surface_m2 is not None else None
+        sale.surface_scope = (
+            "land" if sale.app_surface_kind == "land" else "total" if sale.app_surface_m2 is not None else sale.surface_scope
+        )
     else:
         sale.app_surface_m2 = sale.habitable_surface_m2
         sale.app_surface_kind = "habitable" if sale.habitable_surface_m2 is not None else None
@@ -2007,6 +2040,8 @@ def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decima
     patterns = (
         rf"superficie\s+au\s+sol\s+(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"d['’]une\s+superficie\s+au\s+sol\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"\b(?:appartement|maison|villa|immeuble|b[âa]timent|local|hangar)\b.{{0,80}}?"
+        rf"d['’]une\s+superficie\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"d['’]une\s+superficie\s+d['’]environ\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"surface\s+au\s+sol\s+(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"\btotal\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)",
@@ -2129,11 +2164,20 @@ def _surface_false_positive(text: str, start: int, end: int) -> bool:
 def _land_surface_false_positive(text: str, match: re.Match[str], kind: str) -> bool:
     if kind != "land_surface_m2":
         return False
+    matched_text = text[match.start() : match.end()]
     value_start = match.start(1)
     value_end = match.end(1)
     before_value = text[max(match.start(), value_start - 45) : value_start]
     after_value = text[value_end : min(len(text), value_end + 25)]
     return bool(
+        re.search(r"\b(?:maison|villa|appartement|immeuble|b[âa]timent|local|hangar)\s+de\s*$", before_value, re.I)
+        or re.search(
+            rf"\b(?:maison|villa|appartement|immeuble|b[âa]timent|local|hangar)\b.{{0,60}}?"
+            rf"\b(?:de|d['’]une\s+surface\s+de|d['’]une\s+superficie\s+de)\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+            matched_text,
+            re.I | re.S,
+        )
+        or
         re.search(
             r"\b(?:surface|superficie)\s+(?:habitable|carrez)\b|\bloi\s+carrez\b",
             before_value,

@@ -10,6 +10,7 @@ from src.models import AuctionSale
 from src.normalize import clean_text
 
 _STREET_NUMBER_RE = re.compile(r"\d")
+_POSTAL_CODE_RE = re.compile(r"\b(\d{5})\b")
 
 PRIMARY_SOURCE_PRIORITY = {
     "avoventes": 0,
@@ -227,7 +228,12 @@ def _address_dedupe_keys(sale: AuctionSale) -> list[str]:
     if not address:
         return []
     street = address
-    for token in (clean_text(sale.postal_code), clean_text(sale.city)):
+    postal_code = clean_text(sale.postal_code) or _postal_code_from_text(address)
+    city = clean_text(sale.city) or _city_from_address(address, postal_code)
+    department = clean_text(sale.department)
+    if department:
+        street = re.sub(rf"(?:,|\()\s*{re.escape(department)}\s*\)?\s*$", " ", street, flags=re.I)
+    for token in (postal_code, city):
         if token:
             street = re.sub(re.escape(token), " ", street, flags=re.IGNORECASE)
     street = re.sub(r"\b\d{5}\b", " ", street)
@@ -238,13 +244,25 @@ def _address_dedupe_keys(sale: AuctionSale) -> list[str]:
         return []
 
     localities: list[str] = []
-    postal_code = clean_text(sale.postal_code)
-    city = clean_text(sale.city)
     if postal_code:
         localities.append(postal_code.lower())
     if city:
         localities.append(_normalize_street_text(city))
     return [f"{street_key}|{locality}" for locality in _unique_values(localities) if locality]
+
+
+def _postal_code_from_text(value: str) -> str | None:
+    match = _POSTAL_CODE_RE.search(value)
+    return match.group(1) if match else None
+
+
+def _city_from_address(address: str, postal_code: str | None) -> str | None:
+    if not postal_code:
+        return None
+    match = re.search(rf"\b{re.escape(postal_code)}\s+([^,\n()]+)", address)
+    if not match:
+        return None
+    return clean_text(match.group(1).replace("France", "").strip(" ,"))
 
 
 def _prices_close(first: Any, second: Any, tolerance: float = 0.02) -> bool:

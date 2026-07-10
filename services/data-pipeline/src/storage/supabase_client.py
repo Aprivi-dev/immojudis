@@ -27,6 +27,7 @@ from src.asset_normalization import (
     extract_risk_occurrences_from_text,
 )
 from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
+from src.dedupe import merge_duplicate_sales
 from src.models import AuctionSale
 from src.normalize import make_sale_signature
 from src.pdf_enrichment import classify_document_type, sale_storage_id
@@ -191,6 +192,15 @@ JUDICIAL_SALE_COLUMNS = (
 LLM_BACKFILL_SALE_SELECT = ",".join(
     (
         "id",
+        *UPSERT_COLUMNS,
+        "first_seen_at",
+        "last_seen_at",
+        "created_at",
+        "updated_at",
+    )
+)
+DEDUPLICATION_SALE_SELECT = ",".join(
+    (
         *UPSERT_COLUMNS,
         "first_seen_at",
         "last_seen_at",
@@ -786,6 +796,126 @@ def _auction_sale_from_row(row: dict[str, Any]) -> AuctionSale | None:
     except Exception as exc:
         LOGGER.warning("Could not hydrate auction sale %s for LLM backfill: %s", row.get("source_url"), exc)
         return None
+
+
+def reconcile_duplicate_sales_in_supabase(
+    *,
+    statuses: tuple[str, ...] = ("active", "upcoming", "unknown"),
+    limit: int | None = None,
+) -> int:
+    """Merge historical duplicate rows that are not necessarily in today's scrape.
+
+    The in-run dedupe only sees the current source payload. If a source no
+    longer republishes a listing detail, an older duplicate row can remain in
+    Supabase. This bounded sweep reuses the same merge rules on existing
+    active/upcoming rows, updates the canonical row, then deletes secondary
+    source URLs.
+    """
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    db_url = settings.get("supabase_db_url")
+    if not url or not key:
+        return 0
+    max_rows = limit if limit is not None else int(settings.get("dedupe_reconcile_max_rows") or 2000)
+    if max_rows <= 0:
+        return 0
+
+    sales = _fetch_dedupe_candidate_sales(str(url), str(key), statuses=statuses, limit=max_rows)
+    if len(sales) < 2:
+        return 0
+
+    merged = merge_duplicate_sales(sales)
+    secondary_urls = _secondary_source_urls(merged)
+    if not secondary_urls:
+        return 0
+
+    impacted_urls = set(secondary_urls)
+    impacted_sales = [
+        sale
+        for sale in merged
+        if any(source_url in impacted_urls for source_url in sale.source_urls if source_url)
+    ]
+    if not impacted_sales:
+        return 0
+
+    now = datetime.now(UTC).isoformat()
+    payload = []
+    for sale in impacted_sales:
+        data = sale.to_storage_dict(exclude_none=False)
+        row = {column: data.get(column) for column in UPSERT_COLUMNS}
+        row["updated_at"] = now
+        row["last_seen_at"] = data.get("last_seen_at") or now
+        payload.append(row)
+
+    if db_url:
+        try:
+            _postgres_upsert(str(db_url), "auction_sales", payload, on_conflict="source_url")
+            deleted = _delete_secondary_sale_rows_with_postgres(str(db_url), impacted_sales)
+            _sync_normalized_sale_tables_with_rest(str(url), str(key), impacted_sales, now)
+            _upsert_asset_tables_with_rest(str(url), str(key), impacted_sales, now)
+            return deleted
+        except Exception as exc:
+            LOGGER.warning("Direct Postgres duplicate reconciliation failed; falling back to REST: %s", exc)
+
+    _upsert_with_rest(str(url), str(key), payload)
+    deleted = _delete_secondary_sale_rows(str(url), str(key), impacted_sales)
+    _sync_normalized_sale_tables_with_rest(str(url), str(key), impacted_sales, now)
+    _upsert_asset_tables_with_rest(str(url), str(key), impacted_sales, now)
+    return deleted
+
+
+def _fetch_dedupe_candidate_sales(
+    supabase_url: str,
+    api_key: str,
+    *,
+    statuses: tuple[str, ...],
+    limit: int,
+) -> list[AuctionSale]:
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_sales"
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    page_size = min(1000, max(100, limit))
+    while len(rows) < limit:
+        params: dict[str, str] = {
+            "select": DEDUPLICATION_SALE_SELECT,
+            "order": "sale_date.asc.nullslast,updated_at.desc.nullslast",
+            "limit": str(min(page_size, limit - len(rows))),
+            "offset": str(offset),
+        }
+        if statuses:
+            params["status"] = _postgrest_in_filter(list(statuses))
+        try:
+            response = httpx.get(
+                endpoint,
+                params=params,
+                headers=_rest_headers(api_key, prefer="count=none"),
+                timeout=POSTGREST_TIMEOUT,
+            )
+        except httpx.HTTPError as exc:
+            LOGGER.warning("Supabase duplicate reconciliation fetch failed: %s", exc)
+            break
+        if response.is_error:
+            LOGGER.warning(
+                "Supabase duplicate reconciliation fetch failed (%s): %s",
+                response.status_code,
+                response.text[:300],
+            )
+            break
+        page_rows = response.json()
+        if not page_rows:
+            break
+        rows.extend(row for row in page_rows if isinstance(row, dict))
+        if len(page_rows) < page_size:
+            break
+        offset += page_size
+
+    sales: list[AuctionSale] = []
+    for row in rows[:limit]:
+        sale = _auction_sale_from_row(row)
+        if sale is not None:
+            sales.append(sale)
+    return sales
 
 
 def _has_current_llm_description(raw_payload: Any, prompt_version: str | None) -> bool:

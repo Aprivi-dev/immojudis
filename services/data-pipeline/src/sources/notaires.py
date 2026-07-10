@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from typing import Any
 from urllib.parse import urlencode
+
+import httpx
 
 from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.normalize import SURFACE_VALUE_PATTERN, clean_text, parse_surface
@@ -58,6 +61,13 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
                 url = _api_url(page, transaction_type, department)
                 try:
                     payload = client.get(url)
+                except httpx.HTTPStatusError as exc:
+                    if _is_page_out_of_range_error(exc, page):
+                        LOGGER.info("Notaires pagination ended at %s", url)
+                        break
+                    LOGGER.error("Notaires API fetch failed for %s: %s", url, exc)
+                    errors.append(f"{url}: {exc}")
+                    continue
                 except Exception as exc:
                     LOGGER.error("Notaires API fetch failed for %s: %s", url, exc)
                     errors.append(f"{url}: {exc}")
@@ -314,6 +324,14 @@ def _api_url(page: int, transaction_type: str, department: str | None) -> str:
 def _detail_api_url(sale: dict[str, Any]) -> str | None:
     external_id = clean_text(sale.get("external_id"))
     return f"{API_URL}/{external_id}" if external_id else None
+
+
+def _is_page_out_of_range_error(exc: httpx.HTTPStatusError, page: int) -> bool:
+    if page <= 1 or exc.response is None or exc.response.status_code != 400:
+        return False
+    text = unicodedata.normalize("NFKD", exc.response.text or "")
+    normalized = text.encode("ascii", "ignore").decode("ascii").lower()
+    return "numero de page demande" in normalized and "superieur au nombre de" in normalized
 
 
 def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> bool:

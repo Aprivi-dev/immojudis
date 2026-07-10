@@ -55,6 +55,7 @@ from src.storage.supabase_client import (
     fetch_sales_needing_llm_descriptions,
     finish_run_in_supabase,
     mark_past_sales_in_supabase,
+    reconcile_duplicate_sales_in_supabase,
     update_run_progress_in_supabase,
     upsert_cadastre_parcels_to_supabase,
     upsert_dpe_diagnostics_to_supabase,
@@ -455,6 +456,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     cadastre_upserted = 0
     dpe_upserted = 0
     supabase_cleaned_past = 0
+    supabase_reconciled_duplicates = 0
     supabase_deleted_expired = 0
     supabase_deleted_vench_without_surface = 0
     summary = {
@@ -493,6 +495,10 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                         errors.setdefault("dpe", []).append(str(exc))
             upserted = max(early_upserted, final_upserted)
             observations_upserted = max(early_observations_upserted, final_observations_upserted)
+            if settings.get("dedupe_reconcile_enabled", True):
+                supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase(
+                    limit=int(settings.get("dedupe_reconcile_max_rows") or 2000)
+                )
             supabase_cleaned_past = mark_past_sales_in_supabase()
             supabase_deleted_expired = delete_expired_sales_in_supabase()
             supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()
@@ -508,6 +514,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                     "cadastre_upserted": cadastre_upserted,
                     "dpe_upserted": dpe_upserted,
                     "marked_past_in_run": lifecycle_stats.marked_past,
+                    "reconciled_duplicate_sales": supabase_reconciled_duplicates,
                     "marked_past_in_supabase": supabase_cleaned_past,
                     "deleted_expired_sales": supabase_deleted_expired,
                     "deleted_vench_without_surface": supabase_deleted_vench_without_surface,
@@ -534,6 +541,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print(f"- cadastre_upserted: {cadastre_upserted}")
     print(f"- dpe_upserted: {dpe_upserted}")
     print(f"- marked_past_in_run: {lifecycle_stats.marked_past}")
+    print(f"- reconciled_duplicate_sales: {supabase_reconciled_duplicates}")
     print(f"- marked_past_in_supabase: {supabase_cleaned_past}")
     print(f"- deleted_expired_sales: {supabase_deleted_expired}")
     print(f"- deleted_vench_without_surface: {supabase_deleted_vench_without_surface}")

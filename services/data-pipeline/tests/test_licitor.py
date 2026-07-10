@@ -209,6 +209,30 @@ def test_parse_licitor_detail_html_keeps_thousands_surface() -> None:
     assert sale.surface_m2 == Decimal("2464.70")
 
 
+def test_parse_licitor_detail_html_accepts_first_day_ordinal_sale_date() -> None:
+    html = """
+    <h1>Annonce n°109151 : un appartement à Sarcelles (Val-d'Oise), mise à prix : 44 000 €</h1>
+    <p>Tribunal Judiciaire de Pontoise (Val d'Oise)</p>
+    <p>Vente aux enchères publiques en un lot</p>
+    <p>mardi 1er septembre 2026 à 14h</p>
+    <h2>Un appartement</h2>
+    <p>d'une superficie privative (Loi Carrez - hors loggia) de 123,84 m²</p>
+    <h3>Mise à prix : 44 000 €</h3>
+    <p>Sarcelles</p>
+    <p>32, av. du 8 mai 1945</p>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/91/51/vente-aux-encheres/un-appartement/sarcelles/val-d-oise/109151.html",
+    )
+    sale = normalize_sale(raw)
+
+    assert raw["sale_date"] == "mardi 1er septembre 2026 à 14h"
+    assert sale.sale_date is not None
+    assert sale.surface_m2 == Decimal("123.84")
+
+
 def test_parse_licitor_detail_html_keeps_linked_pdf_documents() -> None:
     html = """
     <h1>Annonce n°108762 : divers biens à Montardon (Pyrénées-Atlantiques), mise à prix : 500 000 €</h1>

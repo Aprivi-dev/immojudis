@@ -412,6 +412,99 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     ]
 
 
+def test_reconcile_duplicate_sales_in_supabase_merges_historical_rows(monkeypatch) -> None:
+    notaires = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/merignac-33/2008146",
+            "address": "33 Avenue Léon Blum, 33700 Mérignac",
+            "city": "Mérignac",
+            "postal_code": "33700",
+            "department": "33",
+            "starting_price_eur": "330 000 €",
+            "sale_date": "22 juillet 2026 à 10h00",
+            "surface_m2": "94 m²",
+        }
+    )
+    encheres_publiques = normalize_sale(
+        {
+            "source_name": "encheres_publiques",
+            "source_url": "https://www.encheres-publiques.com/encheres/immobilier/maisons/merignac-33/belle-maison_129746",
+            "address": "33 Av. Léon Blum, 33700 Mérignac, France",
+            "city": "Mérignac",
+            "postal_code": "33700",
+            "department": "33",
+            "starting_price_eur": "330 000 €",
+            "sale_date": "22 juillet 2026 à 10h00",
+            "surface_m2": "94 m²",
+        }
+    )
+    rows = [
+        {**sale.to_storage_dict(exclude_none=False), "status": "upcoming"}
+        for sale in (notaires, encheres_publiques)
+    ]
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "dedupe_reconcile_max_rows": 20,
+        },
+    )
+
+    class Response:
+        is_error = False
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return rows
+
+    def fake_get(endpoint, params, headers, timeout):
+        captured["fetch_endpoint"] = endpoint
+        captured["fetch_params"] = params
+        return Response()
+
+    def fake_delete(supabase_url, api_key, sales):
+        captured["delete_sales"] = sales
+        return len(supabase_client._secondary_source_urls(sales))
+
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_with_rest",
+        lambda supabase_url, api_key, payload: captured.setdefault("upsert_payload", payload),
+    )
+    monkeypatch.setattr(supabase_client, "_delete_secondary_sale_rows", fake_delete)
+    monkeypatch.setattr(
+        supabase_client,
+        "_sync_normalized_sale_tables_with_rest",
+        lambda supabase_url, api_key, sales, now: captured.setdefault("normalized_sales", sales),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_asset_tables_with_rest",
+        lambda supabase_url, api_key, sales, now: captured.setdefault("asset_sales", sales),
+    )
+
+    deleted = supabase_client.reconcile_duplicate_sales_in_supabase(limit=20)
+
+    assert deleted == 1
+    assert captured["fetch_endpoint"] == "https://supabase.test/rest/v1/auction_sales"
+    assert captured["fetch_params"]["status"] == 'in.("active","upcoming","unknown")'
+    payload = captured["upsert_payload"]
+    assert isinstance(payload, list)
+    assert len(payload) == 1
+    assert payload[0]["dedupe_confidence"] == "address"
+    assert payload[0]["source_urls"] == [
+        "https://www.encheres-publiques.com/encheres/immobilier/maisons/merignac-33/belle-maison_129746",
+        "https://www.immo-interactif.fr/encheres-en-ligne/maison/merignac-33/2008146",
+    ]
+
+
 def test_normalized_sale_rows_split_property_and_judicial_context() -> None:
     sale = normalize_sale(
         {

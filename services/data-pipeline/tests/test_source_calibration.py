@@ -217,6 +217,34 @@ def test_normalize_sale_calibrates_avoventes_agricultural_mixed_asset() -> None:
     assert sale.occupancy_status == "vacant"
 
 
+def test_normalize_sale_calibrates_avoventes_house_surface_before_land_context() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/maison-15",
+            "title": "Villa",
+            "property_type": "Villa",
+            "address": "5B Chem. de Thenières, 74140 Massongy, France",
+            "starting_price_eur": "750 000,00 €",
+            "sale_date": "vendredi 28 août 2026 à 15h00",
+            "raw_text": (
+                "MASSONGY (74140), 5 B chemin de Thénières, cadastrés section D 1828, 1841, "
+                "1845, 1859 et 1864 pour une contenance totale de 7a 73ca, soit une maison "
+                "de 244,47 m² garage compris (+ 11,37 m²) sur son terrain, formant le lot 2 "
+                "du lotissement Les Gredalles. Biens occupés par la propriétaire."
+            ),
+        }
+    )
+
+    assert sale.property_type == "house"
+    assert sale.surface_m2 == Decimal("244.47")
+    assert sale.habitable_surface_m2 == Decimal("244.47")
+    assert sale.land_surface_m2 == Decimal("773")
+    assert sale.app_surface_m2 == Decimal("244.47")
+    assert sale.app_surface_kind == "habitable"
+    assert sale.occupancy_status == "occupied"
+
+
 def test_normalize_sale_keeps_cadastral_surface_as_land_not_built_surface() -> None:
     sale = normalize_sale(
         {
@@ -236,6 +264,34 @@ def test_normalize_sale_keeps_cadastral_surface_as_land_not_built_surface() -> N
     assert sale.habitable_surface_m2 is None
     assert sale.land_surface_m2 == Decimal("44")
     assert sale.occupancy_status == "vacant"
+
+
+def test_normalize_sale_keeps_mixed_notaires_land_surface_when_no_built_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/local-divers/st-martory-31/2017677",
+            "title": "Type de Bien : Grange / Hangar avec le terrain attenant.",
+            "property_type": "GRANGE",
+            "city": "Saint-Martory",
+            "postal_code": "31360",
+            "starting_price_eur": "45 000,00 €",
+            "sale_date": "2026-08-28T10:00:00Z",
+            "raw_text": (
+                "VENTE NOTARIALE INTERACTIVE - Grange / Hangar avec terrain de 1850 m² "
+                "en zone urbaine - Fort potentiel. Le vendeur est disposé à procéder "
+                "à la démolition et au retrait du hangar si l'acquéreur souhaite acheter "
+                "uniquement le terrain."
+            ),
+        }
+    )
+
+    assert sale.property_type == "mixed"
+    assert sale.surface_m2 is None
+    assert sale.land_surface_m2 == Decimal("1850")
+    assert sale.app_surface_m2 == Decimal("1850")
+    assert sale.app_surface_kind == "land"
+    assert sale.surface_scope == "land"
 
 
 def test_normalize_sale_calibrates_encheres_publiques_blocks() -> None:

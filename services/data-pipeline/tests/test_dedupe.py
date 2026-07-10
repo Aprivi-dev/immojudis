@@ -120,6 +120,36 @@ def test_dedupe_merges_same_address_with_abbreviated_street_and_missing_postal_c
     assert "https://www.licitor.com/annonce/9-bis.html" in result[0].source_urls
 
 
+def test_dedupe_merges_merignac_duplicate_with_location_suffixes() -> None:
+    notaires = _make(
+        "https://www.immo-interactif.fr/encheres-en-ligne/maison/merignac-33/2008146",
+        source_name="notaires",
+        address="33 Avenue Léon Blum, 33700 Mérignac",
+        city=None,
+        postal_code=None,
+        starting_price="330 000 €",
+        sale_date="22 juillet 2026 à 10h00",
+        surface_m2="94 m²",
+    )
+    encheres_publiques = _make(
+        "https://www.encheres-publiques.com/encheres/immobilier/maisons/merignac-33/belle-maison_129746",
+        source_name="encheres_publiques",
+        address="33 Av. Léon Blum, 33700 Mérignac, France, (33)",
+        city="Mérignac",
+        postal_code="33700",
+        starting_price="330 000 €",
+        sale_date="22 juillet 2026 à 10h00",
+        surface_m2="94 m²",
+    )
+
+    result = dedupe_sales([notaires, encheres_publiques])
+
+    assert len(result) == 1
+    assert result[0].dedupe_confidence == "address"
+    assert "https://www.immo-interactif.fr/encheres-en-ligne/maison/merignac-33/2008146" in result[0].source_urls
+    assert "https://www.encheres-publiques.com/encheres/immobilier/maisons/merignac-33/belle-maison_129746" in result[0].source_urls
+
+
 def test_dedupe_merges_same_address_when_one_is_missing_date_and_price() -> None:
     avoventes = _make("https://avoventes.fr/enchere/10")
     licitor = _make(

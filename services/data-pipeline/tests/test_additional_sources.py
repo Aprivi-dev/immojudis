@@ -1,6 +1,8 @@
 import json
 from decimal import Decimal
 
+import httpx
+
 from src.normalize import normalize_sale
 from src.raw_models import validate_raw_sales
 from src.sources import cessions_etat, notaires, petites_affiches
@@ -242,6 +244,65 @@ def test_petites_affiches_keeps_department_listing_for_partial_scope(monkeypatch
     monkeypatch.setattr(petites_affiches, "TARGET_DEPARTMENTS", ("33", "75"))
 
     assert petites_affiches._department_filters() == ("33", "75")
+
+
+def test_petites_affiches_falls_back_to_get_when_national_post_is_refused(monkeypatch) -> None:
+    html = """
+    <div class="annonce_lot_1 col-md-6">
+      <div class="annonceListe">
+        <div class="imgList">
+          <a href="/encheres-immobilieres/vente/immobiliere/judiciaire/appartement-bordeaux-1.html">
+            <img data-src="/image.jpg" />
+          </a>
+          <div class="miseAPrix">Mise a Prix : <strong>80 000</strong> €</div>
+        </div>
+        <div class="titreVente">
+          <a href="/encheres-immobilieres/vente/immobiliere/judiciaire/appartement-bordeaux-1.html">
+            UN APPARTEMENT a BORDEAUX <br /><strong>Ref. : 123 - Appartement</strong>
+          </a>
+        </div>
+        <div class="lieuVente"><strong>TJ DE BORDEAUX</strong></div>
+        <div class="dateVente"><strong>24/06/2026</strong></div>
+        <div class="infos">51 m² - 33000 Bordeaux - Maître Dupont, avocat</div>
+      </div>
+    </div>
+    """
+
+    class Client:
+        def __init__(self, *args, **kwargs) -> None:
+            self.calls: list[str] = []
+
+        def post_form(self, url: str, data: dict[str, str]) -> str:
+            self.calls.append(f"post:{url}:{data}")
+            request = httpx.Request("POST", url)
+            response = httpx.Response(403, request=request)
+            raise httpx.HTTPStatusError("forbidden", request=request, response=response)
+
+        def get(self, url: str) -> str:
+            self.calls.append(f"get:{url}")
+            return html
+
+    monkeypatch.setattr(petites_affiches, "TARGET_DEPARTMENTS", petites_affiches.FRANCE_DEPARTMENTS)
+    monkeypatch.setattr(petites_affiches, "PoliteHttpClient", Client)
+    monkeypatch.setattr(
+        petites_affiches,
+        "load_settings",
+        lambda: {
+            "browser_user_agent": "Mozilla/5.0",
+            "request_delay_seconds": 0,
+            "request_timeout_seconds": 1,
+        },
+    )
+    monkeypatch.setattr(petites_affiches, "_enrich_sale_from_detail", lambda *args, **kwargs: None)
+
+    result = petites_affiches.scrape_petites_affiches_aquitaine_result()
+
+    assert result.errors == []
+    assert len(result.sales) == 1
+    assert result.sales[0]["source_url"] == (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/judiciaire/"
+        "appartement-bordeaux-1.html"
+    )
 
 
 def test_parse_cessions_etat_public_cards() -> None:
@@ -900,6 +961,65 @@ def test_notaires_keeps_department_filter_for_targeted_override(monkeypatch) -> 
 
     assert notaires._department_filters() == ("33", "75")
     assert "departements=33" in notaires._api_url(1, "VAE", "33")
+
+
+def test_notaires_stops_pagination_when_api_reports_page_out_of_range(monkeypatch) -> None:
+    list_payload = json.dumps(
+        {
+            "annonceResumeDto": [
+                {
+                    "annonceId": 123,
+                    "typeTransaction": "VAE",
+                    "urlDetailAnnonceFr": "https://www.immobilier.notaires.fr/fr/annonce-immo/test",
+                    "inseeDepartement": "33",
+                    "communeNom": "Bordeaux",
+                    "typeBien": "APP",
+                    "descriptionFr": "Appartement à Bordeaux",
+                    "prixAffiche": 80000,
+                    "seanceDate": "2026-06-24",
+                }
+            ]
+        }
+    )
+
+    class Client:
+        requested: list[str] = []
+
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def get(self, url: str) -> str:
+            self.requested.append(url)
+            if "page=1" in url and "typeTransactions=VAE" in url:
+                return list_payload
+            if "page=2" in url and "typeTransactions=VAE" in url:
+                request = httpx.Request("GET", url)
+                response = httpx.Response(
+                    400,
+                    text='{"message":"Le numéro de page demandé est supérieur au nombre de pages"}',
+                    request=request,
+                )
+                raise httpx.HTTPStatusError("bad request", request=request, response=response)
+            return json.dumps({"annonceResumeDto": []})
+
+    monkeypatch.setattr(notaires, "PoliteHttpClient", Client)
+    monkeypatch.setattr(
+        notaires,
+        "load_settings",
+        lambda: {
+            "user_agent": "immojudis-test",
+            "request_delay_seconds": 0,
+            "request_timeout_seconds": 1,
+            "notaires_max_pages": 2,
+        },
+    )
+    monkeypatch.setattr(notaires, "_enrich_sale_from_detail", lambda *args, **kwargs: True)
+
+    result = notaires.scrape_notaires_aquitaine_result(max_pages=2)
+
+    assert result.errors == []
+    assert len(result.sales) == 1
+    assert any("page=2" in url and "typeTransactions=VAE" in url for url in Client.requested)
 
 
 def test_parse_notaires_detail_api_payload_extracts_rich_fields() -> None:
