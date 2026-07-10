@@ -519,3 +519,35 @@ def test_normalize_sale_drops_unrecognised_occupancy() -> None:
     )
 
     assert sale.occupancy_status is None
+
+
+def test_normalize_sale_drops_template_description_placeholder() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_immobilieres",
+            "source_url": "https://encheresimmobilieres.fr/ventes/9155-villa",
+            "description": "$d4",
+        }
+    )
+
+    assert sale.description is None
+
+
+def test_normalize_sale_does_not_promote_stored_partial_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-6009.html",
+            "property_type": "Appartement",
+            "surface_m2": "3,78",
+            "carrez_surface_m2": "3,78",
+            "surface_scope": "partial",
+            "surface_source": "pdf",
+        }
+    )
+
+    assert sale.surface_m2 == Decimal("3.78")
+    assert sale.carrez_surface_m2 == Decimal("3.78")
+    assert sale.app_surface_m2 is None
+    assert sale.app_surface_kind is None
+    assert sale.surface_scope == "partial"
