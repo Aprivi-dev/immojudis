@@ -455,6 +455,8 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
             sale.habitable_surface_m2 is None or sale.habitable_surface_m2 == previous_surface
         ):
             sale.habitable_surface_m2 = text_built_surface
+        if _corroborated_text_built_surface(sale) == text_built_surface:
+            _record_surface_conflict_resolution(sale, previous_surface, text_built_surface)
     explicit_app_surface = None
     min_app_surface = Decimal("20")
     if sale.property_type == "apartment":
@@ -509,7 +511,35 @@ def _should_prefer_text_built_surface(sale: AuctionSale, candidate: Decimal | No
         return False
     if sale.surface_m2 < Decimal("9"):
         return True
-    return candidate >= Decimal("20") and candidate > sale.surface_m2
+    if candidate >= Decimal("20") and candidate > sale.surface_m2:
+        return True
+    return candidate >= Decimal("9") and _corroborated_text_built_surface(sale) == candidate
+
+
+def _corroborated_text_built_surface(sale: AuctionSale) -> Decimal | None:
+    title_surface = _extract_built_surface(clean_text(sale.title) or "")
+    description_surface = _extract_built_surface(clean_text(sale.description) or "")
+    if title_surface is None or title_surface != description_surface:
+        return None
+    return title_surface
+
+
+def _record_surface_conflict_resolution(
+    sale: AuctionSale,
+    previous_surface: Decimal,
+    resolved_surface: Decimal,
+) -> None:
+    evidence = clean_text(" ".join(filter(None, (sale.title, sale.description))))
+    sale.surface_source = "corroborated_source_text"
+    sale.surface_confidence = Decimal("0.92")
+    sale.surface_evidence = evidence[:500] if evidence else None
+    sale.raw_payload["surface_reconciliation"] = {
+        "status": "resolved",
+        "rejected_surface_m2": str(previous_surface),
+        "resolved_built_surface_m2": str(resolved_surface),
+        "basis": "matching_title_and_description",
+    }
+    _add_quality_flag(sale, "surface_conflict_resolved")
 
 
 def _apply_document_consistency_corrections(sale: AuctionSale, text: str) -> None:
@@ -2050,6 +2080,8 @@ def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decima
         rf"d['’]une\s+superficie\s+au\s+sol\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"\b(?:appartement|maison|villa|immeuble|b[âa]timent|local|hangar)\b.{{0,80}}?"
         rf"d['’]une\s+superficie\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"\b(?:ensemble\s+immobilier|propri[ée]t[ée])"
+        rf"(?:\s+de\s+[0-9]+\s+pi[eè]ces?)?\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"d['’]une\s+superficie\s+d['’]environ\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"surface\s+au\s+sol\s+(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"\btotal\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)",
@@ -2989,6 +3021,7 @@ def _quality_flag_label(flag: str) -> str:
         "type_corrected_from_documents": "type corrigé par les documents",
         "occupation_conflict": "occupation contradictoire à confirmer",
         "room_count_conflict": "pièces/chambres incohérentes",
+        "surface_conflict_resolved": "contradiction de surface résolue",
         "source_page_only": "analyse basée sur la page source uniquement",
         "non_judicial_sale_context": "vente volontaire ou notariale, tribunal non prouvé",
     }.get(flag, flag.replace("_", " "))

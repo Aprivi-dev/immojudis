@@ -87,6 +87,59 @@ def test_normalize_asset_features_reads_thousands_surfaces_directly() -> None:
     assert "2 464,70 m²" in (sale.surface_evidence or "")
 
 
+def test_asset_normalization_resolves_structured_surface_outlier_from_corroborated_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/surface-conflict",
+            "property_type": "Maison",
+            "title": "Un ensemble immobilier de 187 m² situé rue Gâte-Bourse",
+            "description": (
+                "Un ensemble immobilier de 10 pièces de 187 m² avec un garage de 18 m², "
+                "édifié sur une parcelle de 1 110 m²."
+            ),
+            "surface_m2": 1877,
+            "habitable_surface_m2": 1877,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("187")
+    assert sale.habitable_surface_m2 == Decimal("187")
+    assert sale.land_surface_m2 == Decimal("1110")
+    assert sale.app_surface_m2 == Decimal("187")
+    assert sale.surface_source == "corroborated_source_text"
+    assert sale.surface_confidence == Decimal("0.92")
+    assert "surface_conflict_resolved" in sale.quality_flags
+    assert sale.raw_payload["surface_reconciliation"] == {
+        "status": "resolved",
+        "rejected_surface_m2": "1877",
+        "resolved_built_surface_m2": "187",
+        "basis": "matching_title_and_description",
+    }
+
+
+def test_asset_normalization_keeps_structured_surface_when_textual_values_disagree() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/surface-conflict-unresolved",
+            "property_type": "Maison",
+            "title": "Maison de 180 m²",
+            "description": "Maison de 170 m² selon une ancienne annonce.",
+            "surface_m2": 175,
+            "habitable_surface_m2": 175,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("175")
+    assert sale.habitable_surface_m2 == Decimal("175")
+    assert "surface_conflict_resolved" not in sale.quality_flags
+
+
 def test_notaires_short_house_code_promotes_surface_to_app_surface() -> None:
     sale = normalize_sale(
         {
