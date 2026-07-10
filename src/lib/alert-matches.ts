@@ -6,7 +6,7 @@ import { createAlertNotificationsForMatches } from "@/lib/alert-notifications";
 import { extractDpe } from "@/lib/dpe";
 import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { getMarketEstimate } from "@/lib/market.functions";
-import { featureIncluded, isActivePlanStatus } from "@/lib/plans";
+import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
 import { cleanSaleTitle } from "@/lib/sale-title";
@@ -82,6 +82,11 @@ export async function listUserAlertMatches({
   limit?: number;
   includeDismissed?: boolean;
 }): Promise<{ matches: AlertMatchSummary[] }> {
+  const plan = await resolvePlanEntitlements(auth);
+  if (!featureIncluded(plan.plan, "alerts.advanced")) {
+    throw new Error("Alertes avancées réservées au plan Analyse.");
+  }
+
   let query = auth.supabase
     .from("user_alert_matches")
     .select("*")
@@ -487,14 +492,16 @@ async function filterAnalyseUserIds(userIds: string[]): Promise<string[]> {
 
   const { data, error } = await supabaseAdmin
     .from("user_subscriptions")
-    .select("user_id,plan_code,status")
+    .select("user_id,plan_code,status,current_period_end")
     .in("user_id", userIds)
-    .in("plan_code", ["analyse", "investisseur"]);
+    .eq("plan_code", "analyse");
 
   if (error) throw error;
   const allowed = new Set(
     (data ?? [])
-      .filter((subscription) => isActivePlanStatus(subscription.status))
+      .filter((subscription) =>
+        isPlanPeriodActive(subscription.status, subscription.current_period_end),
+      )
       .map((subscription) => subscription.user_id),
   );
 

@@ -35,8 +35,6 @@ describe("admin readiness", () => {
     const items = buildEnvironmentReadiness({
       NEXT_PUBLIC_APP_URL: "https://immojudis.example",
       STRIPE_SECRET_KEY: "stripe-secret-test",
-      STRIPE_ANALYSE_PRICE_ID: "price_analyse",
-      STRIPE_INVESTISSEUR_PRICE_ID: "price_investisseur",
       STRIPE_WEBHOOK_SECRET: "whsec_test",
       RESEND_API_KEY: "re_test",
       ALERT_EMAIL_FROM: "ImmoJudis <alertes@immojudis.fr>",

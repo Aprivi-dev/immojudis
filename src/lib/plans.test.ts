@@ -1,47 +1,47 @@
 import { describe, expect, it } from "vitest";
-import { featureIncluded, normalizePlanCode, PLAN_LABELS, PLAN_LIMITS } from "@/lib/plans";
+import {
+  featureIncluded,
+  isPlanPeriodActive,
+  normalizePlanCode,
+  PLAN_FEATURES,
+  PLAN_LABELS,
+  PLAN_LIMITS,
+} from "@/lib/plans";
 
 describe("plan matrix", () => {
-  it("supports the investor plan as a higher-capacity paid tier", () => {
-    expect(normalizePlanCode("investisseur")).toBe("investisseur");
-    expect(PLAN_LABELS.investisseur).toBe("Investisseur / Marchand");
-    expect(PLAN_LIMITS.investisseur.watchedZones).toBeGreaterThan(
-      PLAN_LIMITS.analyse.watchedZones ?? 0,
+  it("exposes exactly Découverte and Analyse while folding legacy plans into Analyse", () => {
+    expect(Object.keys(PLAN_LABELS)).toEqual(["decouverte", "analyse"]);
+    expect(normalizePlanCode("investisseur")).toBe("analyse");
+    expect(normalizePlanCode("analyse")).toBe("analyse");
+    expect(normalizePlanCode("unknown")).toBe("decouverte");
+  });
+
+  it("keeps every premium feature locked for Découverte", () => {
+    const unexpectedlyUnlocked = Object.entries(PLAN_FEATURES.decouverte)
+      .filter(([feature]) => feature !== "sales.filters")
+      .filter(([, access]) => access !== "locked");
+
+    expect(unexpectedlyUnlocked).toEqual([]);
+    expect(PLAN_LIMITS.decouverte.propertyReportsPerMonth).toBe(0);
+    expect(PLAN_LIMITS.decouverte.pdfExportsPerMonth).toBe(0);
+    expect(PLAN_LIMITS.decouverte.favoriteSales).toBe(0);
+  });
+
+  it("unlocks all analysis and collaboration capabilities for Analyse", () => {
+    expect(Object.values(PLAN_FEATURES.analyse).every((access) => access === "included")).toBe(
+      true,
     );
-    expect(PLAN_LIMITS.investisseur.saleAnalysisItems).toBeGreaterThan(
-      PLAN_LIMITS.analyse.saleAnalysisItems ?? 0,
-    );
-    expect(PLAN_LIMITS.investisseur.apiKeys).toBeGreaterThan(PLAN_LIMITS.analyse.apiKeys ?? 0);
-    expect(PLAN_LIMITS.investisseur.workspaceCollaborators).toBeGreaterThan(
-      PLAN_LIMITS.analyse.workspaceCollaborators ?? 0,
-    );
-    expect(featureIncluded("investisseur", "sales.apiAccess")).toBe(true);
-    expect(featureIncluded("decouverte", "sales.favorites")).toBe(false);
-    expect(featureIncluded("analyse", "sales.favorites")).toBe(true);
-    expect(featureIncluded("decouverte", "property.bidCeiling")).toBe(true);
-    expect(featureIncluded("decouverte", "property.advancedBidScenarios")).toBe(false);
-    expect(featureIncluded("analyse", "property.advancedBidScenarios")).toBe(true);
-    expect(featureIncluded("decouverte", "property.streetFacade")).toBe(false);
-    expect(featureIncluded("analyse", "property.streetFacade")).toBe(true);
-    expect(featureIncluded("decouverte", "property.neighborhoodAnalysis")).toBe(false);
-    expect(featureIncluded("analyse", "property.neighborhoodAnalysis")).toBe(true);
-    expect(featureIncluded("decouverte", "property.activeComparables")).toBe(false);
-    expect(featureIncluded("analyse", "property.activeComparables")).toBe(true);
-    expect(featureIncluded("decouverte", "property.urbanPlanning")).toBe(false);
-    expect(featureIncluded("analyse", "property.urbanPlanning")).toBe(true);
-    expect(featureIncluded("decouverte", "market.demographics")).toBe(true);
-    expect(featureIncluded("analyse", "market.demographics")).toBe(true);
-    expect(featureIncluded("decouverte", "workspace.audienceTracking")).toBe(false);
-    expect(featureIncluded("analyse", "workspace.audienceTracking")).toBe(true);
-    expect(featureIncluded("decouverte", "data.onDemandRefresh")).toBe(false);
-    expect(featureIncluded("analyse", "data.onDemandRefresh")).toBe(true);
-    expect(featureIncluded("analyse", "alerts.realtimeChanges")).toBe(false);
-    expect(featureIncluded("investisseur", "alerts.realtimeChanges")).toBe(true);
-    expect(featureIncluded("analyse", "workspace.collaboration")).toBe(false);
-    expect(featureIncluded("investisseur", "workspace.collaboration")).toBe(true);
-    expect(featureIncluded("decouverte", "lawyers.directory")).toBe(true);
-    expect(featureIncluded("decouverte", "lawyers.referrals")).toBe(false);
-    expect(featureIncluded("analyse", "lawyers.referrals")).toBe(true);
-    expect(featureIncluded("investisseur", "lawyers.referrals")).toBe(true);
+    expect(featureIncluded("analyse", "property.valueEstimate")).toBe(true);
+    expect(featureIncluded("analyse", "alerts.realtimeChanges")).toBe(true);
+    expect(featureIncluded("analyse", "workspace.collaboration")).toBe(true);
+    expect(PLAN_LIMITS.analyse.workspaceCollaborators).toBeGreaterThan(0);
+  });
+
+  it("expires paid access at the end of its 30-day period", () => {
+    const now = new Date("2026-07-10T10:00:00.000Z");
+    expect(isPlanPeriodActive("active", "2026-07-11T10:00:00.000Z", now)).toBe(true);
+    expect(isPlanPeriodActive("active", "2026-07-09T10:00:00.000Z", now)).toBe(false);
+    expect(isPlanPeriodActive("expired", "2026-07-11T10:00:00.000Z", now)).toBe(false);
+    expect(isPlanPeriodActive("active", null, now)).toBe(true);
   });
 });

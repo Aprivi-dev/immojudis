@@ -146,6 +146,7 @@ export async function fetchEnvironmentalContext(args: {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(await authHeaders()),
     },
     body: JSON.stringify(args.data),
   });
@@ -669,7 +670,9 @@ export async function fetchFeaturedReferencedLawyer(args: {
   saleId: string;
 }): Promise<FeaturedReferencedLawyerResponse> {
   const search = new URLSearchParams({ saleId: args.saleId });
-  const response = await fetch(`/api/lawyers/featured?${search.toString()}`);
+  const response = await fetch(`/api/lawyers/featured?${search.toString()}`, {
+    headers: await authHeaders(),
+  });
 
   return readJson<FeaturedReferencedLawyerResponse>(response);
 }
@@ -682,6 +685,7 @@ export async function recordLawyerPlacementEvent(args: {
     keepalive: true,
     headers: {
       "Content-Type": "application/json",
+      ...(await authHeaders()),
     },
     body: JSON.stringify(args.data),
   });

@@ -20,7 +20,7 @@ const planStatusSchema = z.enum([
 
 export const adminSubscriptionGrantInputSchema = z.object({
   target: z.string().trim().min(3).max(320),
-  planCode: z.enum(["decouverte", "analyse", "investisseur"]).default("analyse"),
+  planCode: z.enum(["decouverte", "analyse"]).default("analyse"),
   status: planStatusSchema.default("active"),
   currentPeriodEnd: z
     .string()

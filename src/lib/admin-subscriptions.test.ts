@@ -8,7 +8,7 @@ describe("admin subscriptions", () => {
   it("normalizes manual grant input and preserves existing Stripe identifiers", () => {
     const input = adminSubscriptionGrantInputSchema.parse({
       target: "investisseur@example.test",
-      planCode: "investisseur",
+      planCode: "analyse",
       status: "trialing",
       currentPeriodEnd: "2026-08-01T12:30:00.000Z",
       note: "Accès pilote",
@@ -27,7 +27,7 @@ describe("admin subscriptions", () => {
 
     expect(payload).toMatchObject({
       user_id: "b8d4f60a-9e58-4a4c-83d7-30874062a395",
-      plan_code: "investisseur",
+      plan_code: "analyse",
       status: "trialing",
       stripe_customer_id: "cus_existing",
       stripe_subscription_id: "sub_existing",
@@ -39,7 +39,7 @@ describe("admin subscriptions", () => {
         source: "admin",
         granted_by: "3f1a1d80-8163-46b8-84de-fcfef5875652",
         target_email: "investisseur@example.test",
-        plan_code: "investisseur",
+        plan_code: "analyse",
         status: "trialing",
         note: "Accès pilote",
       },

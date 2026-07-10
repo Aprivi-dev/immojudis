@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { dispatchQueuedEmailAlertNotifications } from "@/lib/email-alerts";
 import { emailAlertConsentEnabled } from "@/lib/notification-preferences";
+import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { UserAlert } from "@/lib/types";
 
@@ -90,6 +91,12 @@ export async function listAlertNotifications({
   includeDismissed?: boolean;
   includeQueued?: boolean;
 }): Promise<AlertNotificationListResponse> {
+  await assertFeatureEntitlement(
+    auth,
+    "alerts.advanced",
+    "Notifications d'alertes réservées au plan Analyse.",
+  );
+
   let query = auth.supabase
     .from("user_alert_notifications")
     .select("*")
@@ -152,6 +159,12 @@ export async function updateAlertNotificationState({
   notificationId: string;
   action: "read" | "unread" | "dismiss" | "restore";
 }): Promise<{ notification: AlertNotificationSummary }> {
+  await assertFeatureEntitlement(
+    auth,
+    "alerts.advanced",
+    "Notifications d'alertes réservées au plan Analyse.",
+  );
+
   const now = new Date().toISOString();
   const patch =
     action === "read"

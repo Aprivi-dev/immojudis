@@ -284,7 +284,7 @@ async function assertWorkspaceCollaborationAvailable(
 ): Promise<PlanEntitlements> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "workspace.collaboration") && !hasAdminRole(auth.claims)) {
-    throw new Error("La collaboration de dossier est réservée au plan Investisseur / Marchand.");
+    throw new Error("La collaboration de dossier est réservée au plan Analyse.");
   }
   return plan;
 }

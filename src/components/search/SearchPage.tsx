@@ -223,6 +223,14 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   const searchKey = useMemo(() => salesSearchToUrlRecord(search), [search]);
   const searchKeySignature = useMemo(() => stableUrlRecord(searchKey), [searchKey]);
+  const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
+    queryKey: ["feature-entitlements", user?.id ?? "anonymous"],
+    queryFn: fetchFeatureEntitlements,
+    enabled: Boolean(user) && !authLoading,
+    staleTime: 5 * 60_000,
+  });
+  const isDiscovery = Boolean(user) && entitlementsData?.plan.hasAnalysisAccess !== true;
+  const catalogReady = !authLoading && (isPreview || !entitlementsLoading);
 
   const {
     data: rawSales = [],
@@ -230,31 +238,24 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     isFetching,
     isLoading,
   } = useQuery({
-    queryKey: ["sales-search", searchKeySignature, isPreview],
-    queryFn: () => fetchSearchResults({ search, preview: isPreview }),
-    enabled: !authLoading,
+    queryKey: ["sales-search", searchKeySignature, isPreview, isDiscovery],
+    queryFn: () => fetchSearchResults({ search, preview: isPreview, discovery: isDiscovery }),
+    enabled: catalogReady,
     staleTime: 60_000,
   });
 
   const { data: totalCount, isLoading: isCountLoading } = useQuery({
-    queryKey: ["sales-search-count", searchKeySignature, isPreview],
-    queryFn: () => fetchSearchCount({ search, preview: isPreview }),
-    enabled: !authLoading,
+    queryKey: ["sales-search-count", searchKeySignature, isPreview, isDiscovery],
+    queryFn: () => fetchSearchCount({ search, preview: isPreview, discovery: isDiscovery }),
+    enabled: catalogReady,
     staleTime: 60_000,
   });
 
   const { data: rawMapSales = [], isLoading: isMapLoading } = useQuery({
-    queryKey: ["sales-search-map", searchKeySignature],
-    queryFn: () => fetchSearchMapResults(search),
-    enabled: !authLoading && !isPreview,
+    queryKey: ["sales-search-map", searchKeySignature, isDiscovery],
+    queryFn: () => fetchSearchMapResults(search, { discovery: isDiscovery }),
+    enabled: catalogReady && !isPreview,
     staleTime: 60_000,
-  });
-
-  const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
-    queryKey: ["feature-entitlements"],
-    queryFn: fetchFeatureEntitlements,
-    enabled: Boolean(user) && !authLoading,
-    staleTime: 5 * 60_000,
   });
 
   const filteredSales = useMemo(
@@ -288,7 +289,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   });
   const displayedSales = mapListFollowsViewport ? mapViewportResults.sales : filteredSales;
   const hasLocalFilters = hasClientOnlyFilters(search);
-  const isInitialLoading = authLoading || isLoading;
+  const isInitialLoading = authLoading || entitlementsLoading || isLoading;
   const activeFiltersCount = countActiveSearchFilters(search);
   const searchDisplayCount = hasLocalFilters
     ? filteredSales.length
@@ -316,6 +317,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     isPreview || entitlementsData?.plan.features.salesCsvExport !== "included";
   const watchedZonesLocked =
     isPreview || entitlementsData?.plan.features.watchedZones !== "included";
+  const alertsLocked = isPreview || entitlementsData?.plan.features.smartAlerts !== "included";
   const { data: salesStatisticsData, isFetching: salesStatisticsLoading } = useQuery({
     queryKey: ["sales-statistics", searchKeySignature],
     queryFn: () => fetchSalesStatistics({ search }),
@@ -419,6 +421,11 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
       toast.error("Connectez-vous pour enregistrer une recherche");
       return;
     }
+    if (alertsLocked) {
+      toast.message("Alertes réservées au plan Analyse");
+      navigate({ to: "/accompagnement" });
+      return;
+    }
     if (activeFiltersCount === 0) {
       toast.error("Ajoutez au moins un filtre avant d'enregistrer");
       return;
@@ -512,6 +519,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         geocoding={geocoding}
         filtersOpen={filtersOpen}
         savingAlert={savingAlert}
+        alertsLocked={alertsLocked}
         exportingCsv={exportingCsv}
         csvExportLocked={csvExportLocked}
         wideMap={wideMap}
@@ -563,6 +571,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           <SearchResultsList
             sales={displayedSales}
             locked={isPreview}
+            analysisLocked={isDiscovery}
             isLoading={isInitialLoading}
             error={error}
             selectedSaleId={selectedSaleId}
@@ -686,6 +695,7 @@ function SearchHeader({
   geocoding,
   filtersOpen,
   savingAlert,
+  alertsLocked,
   exportingCsv,
   csvExportLocked,
   wideMap,
@@ -710,6 +720,7 @@ function SearchHeader({
   geocoding: boolean;
   filtersOpen: boolean;
   savingAlert: boolean;
+  alertsLocked: boolean;
   exportingCsv: boolean;
   csvExportLocked: boolean;
   wideMap: boolean;
@@ -744,7 +755,7 @@ function SearchHeader({
             />
 
             <div className="flex shrink-0 items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] lg:pb-0 [&::-webkit-scrollbar]:hidden">
-              <SaveSearchButton saving={savingAlert} onClick={onSaveSearch} />
+              <SaveSearchButton saving={savingAlert} locked={alertsLocked} onClick={onSaveSearch} />
               <CsvExportButton
                 exporting={exportingCsv}
                 locked={csvExportLocked}
@@ -1053,7 +1064,15 @@ function SortDropdown({
   );
 }
 
-function SaveSearchButton({ saving, onClick }: { saving: boolean; onClick: () => void }) {
+function SaveSearchButton({
+  saving,
+  locked,
+  onClick,
+}: {
+  saving: boolean;
+  locked: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -1061,8 +1080,14 @@ function SaveSearchButton({ saving, onClick }: { saving: boolean; onClick: () =>
       disabled={saving}
       className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md bg-[#c98d45] px-3 text-sm font-extrabold text-[#132238] shadow-sm transition-colors hover:bg-[#d69d58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98d45] disabled:cursor-not-allowed disabled:opacity-60"
     >
-      {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-      Enregistrer
+      {saving ? (
+        <LoaderCircle className="h-4 w-4 animate-spin" />
+      ) : locked ? (
+        <LockKeyhole className="h-4 w-4" />
+      ) : (
+        <Bell className="h-4 w-4" />
+      )}
+      {locked ? "Alertes Analyse" : "Enregistrer"}
     </button>
   );
 }
@@ -1238,21 +1263,25 @@ function SearchStatisticsPanel({
     {
       label: "Prix médian",
       value: formatPrice(statistics.medianPrice),
+      preview: "148 000 €",
       icon: <Building2 className="h-4 w-4" />,
     },
     {
       label: "Prix médian / m²",
       value: formatPricePerM2(statistics.medianPricePerM2),
+      preview: "2 780 €/m²",
       icon: <Ruler className="h-4 w-4" />,
     },
     {
       label: "Score moyen",
       value: statistics.averageScore == null ? "—" : `${Math.round(statistics.averageScore)}/100`,
+      preview: "76/100",
       icon: <ShieldCheck className="h-4 w-4" />,
     },
     {
       label: "DPE repérés",
       value: statistics.dpeKnownCount.toLocaleString("fr-FR"),
+      preview: "38",
       icon: <CalendarDays className="h-4 w-4" />,
       locked: dpeLocked,
     },
@@ -1282,12 +1311,23 @@ function SearchStatisticsPanel({
               <span className="text-[#0f766e]">{item.icon}</span>
               {item.label}
             </dt>
-            <dd className="mt-0.5 text-sm font-extrabold tabular-nums text-[#132238]">
-              {loading ? "…" : locked || item.locked ? "—" : item.value}
+            <dd
+              aria-hidden={locked || item.locked ? "true" : undefined}
+              className={`mt-0.5 text-sm font-extrabold tabular-nums text-[#132238] ${
+                locked || item.locked ? "select-none blur-[3px]" : ""
+              }`}
+            >
+              {loading ? "…" : locked || item.locked ? item.preview : item.value}
             </dd>
           </div>
         ))}
       </dl>
+      {locked && !loading ? (
+        <p className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-[#8a5b24]">
+          <LockKeyhole className="h-3 w-3" aria-hidden />
+          Valeurs de démonstration — données réelles réservées à Analyse
+        </p>
+      ) : null}
       {!dpeLocked && !loading ? (
         <>
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -1384,6 +1424,7 @@ function DpeExplorerMetric({ label, value }: { label: string; value: number }) {
 function SearchResultsList({
   sales,
   locked,
+  analysisLocked,
   isLoading,
   error,
   selectedSaleId,
@@ -1394,6 +1435,7 @@ function SearchResultsList({
 }: {
   sales: AuctionSale[];
   locked: boolean;
+  analysisLocked: boolean;
   isLoading: boolean;
   error: Error | null;
   selectedSaleId: string | null;
@@ -1416,6 +1458,7 @@ function SearchResultsList({
                 key={sale.id}
                 sale={sale}
                 locked={locked}
+                analysisLocked={analysisLocked}
                 active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
                 index={index}
                 reduceMotion={reduceMotion}
@@ -1431,6 +1474,7 @@ function SearchResultsList({
 function ListingCard({
   sale,
   locked,
+  analysisLocked,
   active,
   index,
   reduceMotion,
@@ -1439,6 +1483,7 @@ function ListingCard({
 }: {
   sale: AuctionSale;
   locked: boolean;
+  analysisLocked: boolean;
   active: boolean;
   index: number;
   reduceMotion: boolean;
@@ -1448,6 +1493,7 @@ function ListingCard({
   const displaySurface = getDisplaySurface(sale);
   const surface = getSaleSurface(sale).value;
   const { isViewed } = useViewedSales();
+  const premiumLocked = locked || analysisLocked;
   const viewed = !locked && isViewed(sale.id);
   const fresh = !locked && isNew(sale.created_at);
   const title = locked ? "Détail réservé aux membres" : saleDisplayTitle(sale);
@@ -1458,26 +1504,30 @@ function ListingCard({
         .join(", ");
   const beds = sale.bedrooms_count ?? sale.rooms_count;
   const baths = sale.bathrooms_count;
-  const riskCount = locked ? 0 : (sale.risks?.length ?? 0);
-  const ppm = locked ? null : pricePerM2(sale.starting_price_eur, surface);
-  const dpe = locked ? null : extractDpe(sale);
+  const riskCount = premiumLocked ? 0 : (sale.risks?.length ?? 0);
+  const ppm = premiumLocked ? null : pricePerM2(sale.starting_price_eur, surface);
+  const dpe = premiumLocked ? null : extractDpe(sale);
   const dpeTheme = dpeColor(dpe?.class);
   const tribunalLabel = locked
     ? "Tribunal réservé"
     : sale.tribunal_city
       ? `TJ ${sale.tribunal_city}`
       : (sale.tribunal_name ?? sale.tribunal ?? "Tribunal à confirmer");
-  const score = locked ? null : sale.investment_score;
-  const scoreLabel = score == null ? "À auditer" : `${Math.round(score)}`;
-  const riskLabel = locked
-    ? "Réservé"
+  const score = premiumLocked ? null : sale.investment_score;
+  const scoreLabel = premiumLocked
+    ? "78/100"
+    : score == null
+      ? "À auditer"
+      : `${Math.round(score)}`;
+  const riskLabel = premiumLocked
+    ? "3 alertes"
     : riskCount > 1
       ? `${riskCount} alertes`
       : riskCount === 1
         ? "1 alerte"
         : "Faible";
   const riskTone =
-    locked || riskCount > 1
+    premiumLocked || riskCount > 1
       ? "text-[#8a5b00]"
       : riskCount === 1
         ? "text-[#9c642b]"
@@ -1515,6 +1565,10 @@ function ListingCard({
               <ListingBadge tone="navy" icon={LockKeyhole}>
                 Aperçu limité
               </ListingBadge>
+            ) : analysisLocked ? (
+              <ListingBadge tone="cream" icon={LockKeyhole}>
+                Analyse verrouillée
+              </ListingBadge>
             ) : fresh ? (
               <ListingBadge tone="teal">Nouveau</ListingBadge>
             ) : (
@@ -1547,7 +1601,7 @@ function ListingCard({
             </div>
             <div className="flex shrink-0 gap-1">
               <ShareButton sale={sale} />
-              <CompactFavoriteButton saleId={sale.id} />
+              <CompactFavoriteButton saleId={sale.id} locked={premiumLocked} />
             </div>
           </div>
 
@@ -1570,19 +1624,48 @@ function ListingCard({
             <Metric icon={BedDouble} label={beds != null ? `${beds} ch.` : "Ch. n.c."} />
           </div>
 
-          <div className="mt-3 grid grid-cols-3 overflow-hidden rounded-md border border-[#e2e8ee] bg-[#fbfdff] text-xs">
+          <div
+            className={`relative mt-3 grid grid-cols-3 overflow-hidden rounded-md border border-[#e2e8ee] bg-[#fbfdff] text-xs ${
+              premiumLocked ? "select-none" : ""
+            }`}
+          >
             <ListingSignal
               label="Dossier"
-              value={locked ? "Réservé" : "Vérifié"}
-              tone={locked ? "text-[#8a5b24]" : "text-[#0f766e]"}
+              value={premiumLocked ? "8 pièces" : "Vérifié"}
+              tone={premiumLocked ? "text-[#8a5b24] blur-[3px]" : "text-[#0f766e]"}
             />
-            <ListingSignal label="Score" value={scoreLabel} tone="text-[#0f766e]" />
-            <ListingSignal label="Risque" value={riskLabel} tone={riskTone} />
+            <ListingSignal
+              label="Score"
+              value={scoreLabel}
+              tone={`text-[#0f766e] ${premiumLocked ? "blur-[3px]" : ""}`}
+            />
+            <ListingSignal
+              label="Risque"
+              value={riskLabel}
+              tone={`${riskTone} ${premiumLocked ? "blur-[3px]" : ""}`}
+            />
+            {analysisLocked ? (
+              <span className="pointer-events-none absolute inset-0 grid place-items-center bg-white/35 text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#132238]">
+                Plan Analyse
+              </span>
+            ) : null}
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[#667482]">
             {locked ? (
               <span>Analyse, pièces et localisation complète après connexion</span>
+            ) : analysisLocked ? (
+              <>
+                <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
+                  {propertyTypeLabel(sale.property_type)}
+                </span>
+                <span className="rounded-md border border-dashed border-[#c98d45] bg-[#fffaf2] px-2 py-1 text-[#8a5b24] blur-[2px]">
+                  Occupation analysée
+                </span>
+                <span className="rounded-md border border-dashed border-[#c98d45] bg-[#fffaf2] px-2 py-1 text-[#8a5b24] blur-[2px]">
+                  Prix/m² calculé
+                </span>
+              </>
             ) : (
               <>
                 <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
@@ -1616,9 +1699,11 @@ function ListingCard({
             <span className="line-clamp-1 text-[11px] font-bold text-[#8b949e]">
               {locked
                 ? "Immojudis"
-                : `Source ${sale.source_name || sale.primary_source || "publique"}${
-                    sale.tribunal_city ? ` · ${sale.tribunal_city}` : ""
-                  }`}
+                : analysisLocked
+                  ? "Sources et preuves réservées au plan Analyse"
+                  : `Source ${sale.source_name || sale.primary_source || "publique"}${
+                      sale.tribunal_city ? ` · ${sale.tribunal_city}` : ""
+                    }`}
             </span>
             <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[#f4f7f9] px-2 py-1 text-[11px] font-extrabold text-[#132238]">
               Voir le détail
@@ -1763,7 +1848,7 @@ function ShareButton({ sale }: { sale: AuctionSale }) {
   );
 }
 
-function CompactFavoriteButton({ saleId }: { saleId: string }) {
+function CompactFavoriteButton({ saleId, locked }: { saleId: string; locked: boolean }) {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -1771,7 +1856,7 @@ function CompactFavoriteButton({ saleId }: { saleId: string }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || locked) {
       setIsFavorite(false);
       return;
     }
@@ -1783,13 +1868,17 @@ function CompactFavoriteButton({ saleId }: { saleId: string }) {
       .eq("sale_id", saleId)
       .maybeSingle()
       .then(({ data }) => setIsFavorite(Boolean(data)));
-  }, [saleId, user]);
+  }, [locked, saleId, user]);
 
   async function toggle(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
 
     if (loading) return;
+    if (locked) {
+      navigate({ to: "/accompagnement" });
+      return;
+    }
     if (!user) {
       const redirect =
         typeof window !== "undefined"
@@ -1821,11 +1910,21 @@ function CompactFavoriteButton({ saleId }: { saleId: string }) {
       type="button"
       onClick={toggle}
       disabled={busy}
-      aria-pressed={isFavorite}
-      aria-label={isFavorite ? "Ne plus suivre cette vente" : "Suivre cette vente"}
+      aria-pressed={locked ? undefined : isFavorite}
+      aria-label={
+        locked
+          ? "Favoris réservés au plan Analyse"
+          : isFavorite
+            ? "Ne plus suivre cette vente"
+            : "Suivre cette vente"
+      }
       className="grid h-8 w-8 cursor-pointer place-items-center rounded-full text-[#132238] transition-colors hover:bg-[#eef2f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
     >
-      <Heart className={`h-5 w-5 ${isFavorite ? "fill-[#c2410c] text-[#c2410c]" : ""}`} />
+      {locked ? (
+        <LockKeyhole className="h-4 w-4 text-[#8a5b24]" />
+      ) : (
+        <Heart className={`h-5 w-5 ${isFavorite ? "fill-[#c2410c] text-[#c2410c]" : ""}`} />
+      )}
     </button>
   );
 }
