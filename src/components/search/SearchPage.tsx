@@ -260,8 +260,14 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   const filteredSales = useMemo(
     () =>
-      sortClientSearchResults(applyClientSearchFilters(rawSales, search, center), search, center),
-    [center, rawSales, search],
+      isPreview
+        ? rawSales
+        : sortClientSearchResults(
+            applyClientSearchFilters(rawSales, search, center),
+            search,
+            center,
+          ),
+    [center, isPreview, rawSales, search],
   );
 
   const mapSales = useMemo(
