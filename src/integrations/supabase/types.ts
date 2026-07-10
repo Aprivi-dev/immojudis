@@ -2608,14 +2608,26 @@ export type Database = {
         Args: {
           p_city?: string | null;
           p_departments?: string[] | null;
+          p_east?: number | null;
           p_keywords?: string[] | null;
           p_limit?: number;
           p_max_price?: number | null;
+          p_max_surface?: number | null;
+          p_min_bathrooms?: number | null;
+          p_min_bedrooms?: number | null;
           p_min_price?: number | null;
+          p_min_score?: number | null;
+          p_min_surface?: number | null;
+          p_north?: number | null;
+          p_occupancy_status?: string | null;
           p_offset?: number;
           p_postal_code?: string | null;
+          p_property_types?: string[] | null;
           p_sort?: string;
+          p_south?: number | null;
+          p_statuses?: string[] | null;
           p_tribunal?: string | null;
+          p_west?: number | null;
         };
         Returns: {
           id: string;

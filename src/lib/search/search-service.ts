@@ -76,14 +76,31 @@ async function fetchPreviewSearch(search: SalesSearchParams): Promise<PreviewSea
     : filters.department
       ? [filters.department]
       : null;
+  const propertyTypes = filters.property_types?.length
+    ? filters.property_types
+    : filters.property_type
+      ? [filters.property_type]
+      : null;
   const args = {
     p_departments: departments,
     p_city: filters.city ?? null,
     p_postal_code: filters.postal_code ?? null,
     p_tribunal: filters.tribunal ?? null,
     p_keywords: filters.keywords ? frenchSearchTerms(filters.keywords).slice(0, 12) : null,
+    p_property_types: propertyTypes,
     p_min_price: filters.min_price ?? null,
     p_max_price: filters.max_price ?? null,
+    p_min_surface: filters.min_surface ?? null,
+    p_max_surface: filters.max_surface ?? null,
+    p_min_bedrooms: filters.min_bedrooms ?? null,
+    p_min_bathrooms: filters.min_bathrooms ?? null,
+    p_occupancy_status: filters.occupancy_status ?? null,
+    p_min_score: filters.min_score ?? null,
+    p_statuses: filters.status_in ?? null,
+    p_north: filters.viewport?.north ?? null,
+    p_south: filters.viewport?.south ?? null,
+    p_east: filters.viewport?.east ?? null,
+    p_west: filters.viewport?.west ?? null,
     p_sort: dataSortFromSearch(search.sort),
     p_limit: page * perPage,
     p_offset: 0,
