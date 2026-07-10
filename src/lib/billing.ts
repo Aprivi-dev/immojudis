@@ -17,6 +17,8 @@ export type StripeWebhookResult = {
 };
 
 const STRIPE_API_VERSION = "2026-06-24.dahlia";
+export const ANALYSIS_ACCESS_DAYS = 30;
+export const ANALYSIS_PRICE_CENTS = 2_900;
 
 let stripeClient: Stripe | undefined;
 
@@ -30,14 +32,6 @@ function stripeWebhookSecret(): string {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) throw new Error("Stripe webhook non configuré: STRIPE_WEBHOOK_SECRET manquant.");
   return secret;
-}
-
-function planPriceId(plan: Exclude<PlanCode, "decouverte">): string {
-  const envName =
-    plan === "investisseur" ? "STRIPE_INVESTISSEUR_PRICE_ID" : "STRIPE_ANALYSE_PRICE_ID";
-  const priceId = process.env[envName];
-  if (!priceId) throw new Error(`Stripe n'est pas configuré: ${envName} manquant.`);
-  return priceId;
 }
 
 export function getStripe(): Stripe {
@@ -85,31 +79,64 @@ export async function createPlanCheckoutSession({
   const stripe = getStripe();
   const appOrigin = resolveBillingOrigin(origin);
   const customerId = await ensureStripeCustomer(auth);
-  const priceId = planPriceId(plan);
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    client_reference_id: auth.userId,
-    line_items: [{ price: priceId, quantity: 1 }],
-    allow_promotion_codes: true,
-    locale: "fr",
-    success_url: `${appOrigin}/accompagnement?checkout=success`,
-    cancel_url: `${appOrigin}/accompagnement?checkout=cancelled`,
-    metadata: {
-      user_id: auth.userId,
-      plan_code: plan,
-    },
-    subscription_data: {
-      metadata: {
-        user_id: auth.userId,
-        plan_code: plan,
-      },
-    },
-  });
+  const session = await stripe.checkout.sessions.create(
+    buildAnalysisCheckoutSessionParams({
+      appOrigin,
+      customerId,
+      userId: auth.userId,
+    }),
+  );
 
   if (!session.url) throw new Error("Session de paiement Stripe indisponible.");
   return { url: session.url };
+}
+
+export function buildAnalysisCheckoutSessionParams({
+  appOrigin,
+  customerId,
+  userId,
+}: {
+  appOrigin: string;
+  customerId: string;
+  userId: string;
+}): Stripe.Checkout.SessionCreateParams {
+  return {
+    mode: "payment",
+    submit_type: "pay",
+    customer: customerId,
+    client_reference_id: userId,
+    line_items: [
+      {
+        price_data: {
+          currency: "eur",
+          unit_amount: ANALYSIS_PRICE_CENTS,
+          product_data: {
+            name: "ImmoJudis Analyse — 30 jours",
+            description:
+              "Accès complet aux analyses, documents, risques, comparables et outils de décision pendant 30 jours.",
+          },
+        },
+        quantity: 1,
+      },
+    ],
+    locale: "fr",
+    success_url: `${appOrigin}/accompagnement?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${appOrigin}/accompagnement?checkout=cancelled`,
+    metadata: {
+      user_id: userId,
+      plan_code: "analyse",
+      access_duration_days: String(ANALYSIS_ACCESS_DAYS),
+      billing_model: "one_time_30_days",
+    },
+    payment_intent_data: {
+      metadata: {
+        user_id: userId,
+        plan_code: "analyse",
+        access_duration_days: String(ANALYSIS_ACCESS_DAYS),
+      },
+    },
+  };
 }
 
 export async function createBillingPortalSession({
@@ -150,6 +177,7 @@ export async function handleStripeWebhook({
 
   switch (event.type) {
     case "checkout.session.completed":
+    case "checkout.session.async_payment_succeeded":
       return {
         eventId: event.id,
         type: event.type,
@@ -249,10 +277,30 @@ async function getUserSubscription(auth: SupabaseAuthContext): Promise<UserSubsc
 }
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<boolean> {
-  if (session.mode !== "subscription") return false;
-
   const userId = session.metadata?.user_id || session.client_reference_id;
   if (!userId) return false;
+
+  if (session.mode === "payment") {
+    if (session.payment_status !== "paid") return false;
+    if (normalizePlanCode(session.metadata?.plan_code) !== "analyse") return false;
+    if (session.amount_total !== ANALYSIS_PRICE_CENTS || session.currency !== "eur") return false;
+    if (session.metadata?.access_duration_days !== String(ANALYSIS_ACCESS_DAYS)) return false;
+
+    const { data, error } = await supabaseAdmin.rpc("grant_analysis_access_from_checkout", {
+      p_amount_total: session.amount_total,
+      p_checkout_session_id: session.id,
+      p_currency: session.currency,
+      p_duration_days: ANALYSIS_ACCESS_DAYS,
+      p_paid_at: new Date().toISOString(),
+      p_stripe_customer_id: stripeObjectId(session.customer),
+      p_user_id: userId,
+    });
+
+    if (error) throw error;
+    return Boolean(data?.[0]?.granted);
+  }
+
+  if (session.mode !== "subscription") return false;
 
   const subscriptionValue = session.subscription;
   const subscription =
@@ -326,8 +374,8 @@ async function syncStripeSubscription(
   return true;
 }
 
-export function resolveCheckoutPlanCode(value: unknown): Exclude<PlanCode, "decouverte"> {
-  return normalizePlanCode(value) === "investisseur" ? "investisseur" : "analyse";
+export function resolveCheckoutPlanCode(_value: unknown): Exclude<PlanCode, "decouverte"> {
+  return "analyse";
 }
 
 export function resolveStripePlanCode({
@@ -337,9 +385,8 @@ export function resolveStripePlanCode({
   metadataPlanCode?: string | null;
   priceId?: string | null;
 }): Exclude<PlanCode, "decouverte"> {
-  const metadataPlan = normalizePlanCode(metadataPlanCode);
-  if (metadataPlan === "analyse" || metadataPlan === "investisseur") return metadataPlan;
-  if (priceId && process.env.STRIPE_INVESTISSEUR_PRICE_ID === priceId) return "investisseur";
+  void metadataPlanCode;
+  void priceId;
   return "analyse";
 }
 

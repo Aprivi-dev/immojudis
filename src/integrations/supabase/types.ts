@@ -1407,7 +1407,7 @@ export type Database = {
           created_at: string;
           current_period_end: string | null;
           metadata: Json;
-          plan_code: "decouverte" | "analyse" | "investisseur";
+          plan_code: "decouverte" | "analyse";
           status: "trialing" | "active" | "past_due" | "paused" | "cancelled" | "expired";
           stripe_customer_id: string | null;
           stripe_subscription_id: string | null;
@@ -1418,7 +1418,7 @@ export type Database = {
           created_at?: string;
           current_period_end?: string | null;
           metadata?: Json;
-          plan_code?: "decouverte" | "analyse" | "investisseur";
+          plan_code?: "decouverte" | "analyse";
           status?: "trialing" | "active" | "past_due" | "paused" | "cancelled" | "expired";
           stripe_customer_id?: string | null;
           stripe_subscription_id?: string | null;
@@ -1429,7 +1429,7 @@ export type Database = {
           created_at?: string;
           current_period_end?: string | null;
           metadata?: Json;
-          plan_code?: "decouverte" | "analyse" | "investisseur";
+          plan_code?: "decouverte" | "analyse";
           status?: "trialing" | "active" | "past_due" | "paused" | "cancelled" | "expired";
           stripe_customer_id?: string | null;
           stripe_subscription_id?: string | null;
@@ -2583,7 +2583,21 @@ export type Database = {
       };
     };
     Functions: {
-      [_ in never]: never;
+      grant_analysis_access_from_checkout: {
+        Args: {
+          p_amount_total: number | null;
+          p_checkout_session_id: string;
+          p_currency: string | null;
+          p_duration_days?: number;
+          p_paid_at: string;
+          p_stripe_customer_id: string | null;
+          p_user_id: string;
+        };
+        Returns: {
+          access_end: string;
+          granted: boolean;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;

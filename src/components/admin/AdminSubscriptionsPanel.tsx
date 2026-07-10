@@ -59,8 +59,8 @@ export function AdminSubscriptionsPanel() {
           </div>
           <h2 className="mt-3 font-display text-2xl">Attribution manuelle des plans</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Active un accès Analyse ou Investisseur pour un compte existant, utile pour les ventes
-            assistées, essais commerciaux ou bascules avant finalisation Stripe.
+            Active un accès Analyse pour 30 jours ou replace un compte en Découverte, utile pour les
+            ventes assistées et les essais commerciaux.
           </p>
         </div>
         <button
@@ -103,7 +103,6 @@ export function AdminSubscriptionsPanel() {
               value={form.planCode}
               options={[
                 ["analyse", PLAN_LABELS.analyse],
-                ["investisseur", PLAN_LABELS.investisseur],
                 ["decouverte", PLAN_LABELS.decouverte],
               ]}
               onChange={(planCode) =>
@@ -277,7 +276,7 @@ function emptySubscriptionForm(): SubscriptionFormState {
     target: "",
     planCode: "analyse",
     status: "active",
-    currentPeriodEnd: "",
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
     note: "",
   };
 }

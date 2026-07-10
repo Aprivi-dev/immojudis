@@ -43,7 +43,7 @@ export type AdminOperationalReadinessResponse = {
   webhookUrl: string | null;
 };
 
-export const EXPECTED_LATEST_MIGRATION_VERSION = "20260707083431";
+export const EXPECTED_LATEST_MIGRATION_VERSION = "20260710083858";
 export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v6_display";
 
 const EXPECTED_CRONS = [
@@ -77,8 +77,6 @@ export async function getAdminOperationalReadiness(
 export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>): ReadinessItem[] {
   const appUrl = appOrigin(env);
   const stripeSecret = env.STRIPE_SECRET_KEY;
-  const analysePrice = env.STRIPE_ANALYSE_PRICE_ID;
-  const investorPrice = env.STRIPE_INVESTISSEUR_PRICE_ID;
   const webhookSecret = env.STRIPE_WEBHOOK_SECRET;
   const emailConfig = resolveEmailAlertDeliveryConfig(env);
   const instantPipelineDispatch = firstFilledEnv(
@@ -95,29 +93,13 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       key: "billing.checkout.analyse",
       area: "billing",
       label: "Checkout Analyse",
-      status: stripeSecret && analysePrice && appUrl ? "ready" : "blocked",
+      status: stripeSecret && appUrl ? "ready" : "blocked",
       detail:
-        stripeSecret && analysePrice && appUrl
-          ? "Le checkout Analyse peut créer des abonnements Stripe."
-          : "Le checkout Analyse attend encore sa clé Stripe, son Price ID et l'URL canonique.",
+        stripeSecret && appUrl
+          ? "Le checkout Analyse peut encaisser 29 € et ouvrir 30 jours d'accès."
+          : "Le checkout Analyse attend encore sa clé Stripe et l'URL canonique.",
       action:
-        stripeSecret && analysePrice && appUrl
-          ? null
-          : "Configurer STRIPE_SECRET_KEY, STRIPE_ANALYSE_PRICE_ID et NEXT_PUBLIC_APP_URL.",
-    },
-    {
-      key: "billing.checkout.investisseur",
-      area: "billing",
-      label: "Checkout Investisseur",
-      status: stripeSecret && investorPrice && appUrl ? "ready" : "blocked",
-      detail:
-        stripeSecret && investorPrice && appUrl
-          ? "Le checkout Investisseur peut créer des abonnements Stripe."
-          : "Le checkout Investisseur attend encore sa clé Stripe, son Price ID et l'URL canonique.",
-      action:
-        stripeSecret && investorPrice && appUrl
-          ? null
-          : "Configurer STRIPE_SECRET_KEY, STRIPE_INVESTISSEUR_PRICE_ID et NEXT_PUBLIC_APP_URL.",
+        stripeSecret && appUrl ? null : "Configurer STRIPE_SECRET_KEY et NEXT_PUBLIC_APP_URL.",
     },
     {
       key: "billing.webhook",
@@ -126,8 +108,8 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       status: stripeSecret && webhookSecret ? "ready" : "blocked",
       detail:
         stripeSecret && webhookSecret
-          ? "Le webhook peut synchroniser les statuts d'abonnement."
-          : "La synchronisation automatique des abonnements Stripe n'est pas encore active.",
+          ? "Le webhook peut attribuer les accès Analyse de façon idempotente."
+          : "L'attribution automatique des 30 jours d'accès n'est pas encore active.",
       action: stripeSecret && webhookSecret ? null : "Configurer STRIPE_WEBHOOK_SECRET.",
     },
     {
@@ -135,7 +117,7 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       area: "access",
       label: "Attribution manuelle",
       status: "ready",
-      detail: "Les admins peuvent activer Analyse ou Investisseur sans Stripe live.",
+      detail: "Les admins peuvent activer Découverte ou Analyse sans Stripe live.",
       action: null,
     },
     {

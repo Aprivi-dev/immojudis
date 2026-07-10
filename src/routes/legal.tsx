@@ -73,6 +73,14 @@ function LegalPage() {
             </p>
           </section>
           <section className="liquid-panel-soft rounded-lg p-5">
+            <h2 className="text-base font-semibold text-foreground">Accès Découverte et Analyse</h2>
+            <p className="mt-2">
+              Découverte est accessible gratuitement après création d'un compte. Analyse est un
+              paiement unique de 29 € ouvrant les fonctionnalités payantes pendant 30 jours. Il ne
+              s'agit pas d'un abonnement et aucun renouvellement automatique n'est effectué.
+            </p>
+          </section>
+          <section className="liquid-panel-soft rounded-lg p-5">
             <h2 className="text-base font-semibold text-foreground">API et exports</h2>
             <p className="mt-2">
               Les exports CSV et l'API ImmoJudis sont réservés aux usages autorisés par le plan

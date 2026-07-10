@@ -5477,7 +5477,7 @@ function WorkspaceCollaborationPanel({ sale }: { sale: AuctionSale }) {
 
       {collaborationLocked ? (
         <div className="mt-4 text-sm text-muted-foreground">
-          Collaboration disponible avec le plan Investisseur / Marchand.
+          Collaboration disponible avec le plan Analyse.
         </div>
       ) : null}
 

@@ -154,25 +154,25 @@ const reportRows = [
 
 const planPreviews = [
   {
-    name: "ImmoJudis Pro",
-    price: "29 à 79 €/mois",
-    audience: "Acheteurs actifs, investisseurs particuliers, avocats partenaires",
+    name: "Découverte",
+    price: "Gratuit",
+    audience: "Un compte suffit pour explorer les ventes et leurs informations essentielles.",
     features: [
-      "Rapports complets et comparables DVF détaillés",
-      "Calcul de mise maximale et frais d'adjudication estimés",
-      "Mise en relation avec avocats référencés",
-      "Alertes avancées, favoris, notes privées et export PDF",
+      "Catalogue des ventes judiciaires et recherche de base",
+      "Mise à prix, audience, localisation, surface et tribunal",
+      "Aperçu flouté de chaque analyse disponible",
+      "Aucune carte bancaire et aucune limite de durée",
     ],
   },
   {
-    name: "ImmoJudis Investisseur",
-    price: "99 à 199 €/mois",
-    audience: "Marchands de biens, foncières locales, chasseurs et équipes multi-biens",
+    name: "Analyse",
+    price: "29 € / 30 jours",
+    audience: "Un paiement unique pour préparer vos décisions avant l'audience.",
     features: [
-      "Scoring de rentabilité, exports CSV et zones surveillées",
-      "Historique des ventes passées et analyse multi-biens",
-      "Pilotage des demandes avocat multi-dossiers",
-      "Accès API léger, documents centralisés et annotations collaboratives",
+      "Rapports, risques, documents et comparables DVF détaillés",
+      "Calcul de mise maximale, frais, travaux et scénarios",
+      "Alertes, favoris, exports, historique et analyse multi-biens",
+      "Cadastre, DPE, quartier et avocats référencés",
     ],
   },
 ] as const;
@@ -561,11 +561,11 @@ function OfferPlansSection() {
   return (
     <section className="ij-plans" aria-labelledby="plans-title">
       <div className="ij-plans-intro">
-        <p className="ij-proof-kicker">MVP payant recommandé</p>
-        <h2 id="plans-title">Deux offres verticales, pensées pour l'enchère judiciaire.</h2>
+        <p className="ij-proof-kicker">Une offre simple, sans abonnement</p>
+        <h2 id="plans-title">Découvrez gratuitement. Analysez pendant 30 jours pour 29 €.</h2>
         <p>
-          L'offre se vend sur l'aide à la décision : rapports complets, calcul de mise maximale,
-          alertes avancées, suivi d'audience et données exploitables.
+          Le compte gratuit montre l'étendue des informations disponibles. Le paiement débloque
+          toutes les preuves et tous les outils de décision pendant 30 jours.
         </p>
       </div>
 
@@ -591,11 +591,11 @@ function OfferPlansSection() {
 
       <div className="ij-plans-cta">
         <span>
-          La version gratuite peut rester utile, mais le payant doit donner accès aux preuves, aux
-          exports et aux workflows de décision.
+          Aucun renouvellement automatique : vous pouvez acheter 30 jours supplémentaires quand vous
+          en avez besoin.
         </span>
         <Link to="/accompagnement" className="ij-signup-button">
-          Voir l'offre Pro <ArrowRight aria-hidden className="h-4 w-4" />
+          Comparer Découverte et Analyse <ArrowRight aria-hidden className="h-4 w-4" />
         </Link>
       </div>
     </section>

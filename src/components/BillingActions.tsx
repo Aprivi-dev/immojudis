@@ -11,28 +11,30 @@ import {
 } from "@/lib/client-api";
 import type { PlanCode } from "@/lib/plans";
 
-export function BillingActions({
-  className = "",
-  targetPlan = "analyse",
-}: {
-  className?: string;
-  targetPlan?: Exclude<PlanCode, "decouverte">;
-}) {
+export function BillingActions({ className = "" }: { className?: string }) {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [plan, setPlan] = useState<PlanCode | null>(null);
+  const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
   const [busy, setBusy] = useState<"checkout" | "portal" | null>(null);
 
   useEffect(() => {
     let active = true;
     if (!user) {
       setPlan(null);
+      setCurrentPeriodEnd(null);
       return;
     }
 
+    setPlan(null);
+    setCurrentPeriodEnd(null);
+
     fetchFeatureEntitlements()
       .then((response) => {
-        if (active) setPlan(response.plan.plan);
+        if (active) {
+          setPlan(response.plan.plan);
+          setCurrentPeriodEnd(response.plan.currentPeriodEnd);
+        }
       })
       .catch(() => {
         if (active) setPlan(null);
@@ -60,7 +62,7 @@ export function BillingActions({
 
     setBusy("checkout");
     try {
-      const response = await startAnalyseCheckout(targetPlan);
+      const response = await startAnalyseCheckout();
       window.location.assign(response.url);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Paiement indisponible");
@@ -80,33 +82,32 @@ export function BillingActions({
       const response = await openBillingPortal();
       window.location.assign(response.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Portail d'abonnement indisponible");
+      toast.error(error instanceof Error ? error.message : "Portail de paiement indisponible");
       setBusy(null);
     }
   }
 
-  const hasTargetPlan = planRank(plan) >= planRank(targetPlan);
-  const targetLabel = targetPlan === "investisseur" ? "Investisseur" : "Analyse";
-  const primaryLabel = hasTargetPlan
-    ? busy === "portal"
-      ? "Ouverture..."
-      : "Gérer l'abonnement"
-    : busy === "checkout"
+  const hasAnalysis = plan === "analyse";
+  const primaryLabel =
+    busy === "checkout"
       ? "Redirection..."
-      : `Activer ${targetLabel}`;
+      : hasAnalysis
+        ? "Prolonger de 30 jours — 29 €"
+        : "Débloquer Analyse — 29 € / 30 jours";
+  const expiryLabel = formatAccessEnd(currentPeriodEnd);
 
   return (
     <div className={`flex flex-col gap-2 sm:flex-row ${className}`}>
       <button
         type="button"
-        onClick={hasTargetPlan ? openPortal : startCheckout}
+        onClick={startCheckout}
         disabled={loading || Boolean(busy)}
         className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {hasTargetPlan ? <Settings className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
+        <CreditCard className="h-4 w-4" />
         {primaryLabel}
       </button>
-      {!hasTargetPlan ? (
+      {hasAnalysis ? (
         <button
           type="button"
           onClick={openPortal}
@@ -114,15 +115,24 @@ export function BillingActions({
           className="ij-login-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Settings className="h-4 w-4" />
-          Déjà abonné
+          {busy === "portal" ? "Ouverture..." : (expiryLabel ?? "Voir mes paiements")}
         </button>
-      ) : null}
+      ) : (
+        <span className="inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-muted-foreground">
+          Paiement unique · aucun renouvellement automatique
+        </span>
+      )}
     </div>
   );
 }
 
-function planRank(plan: PlanCode | null): number {
-  if (plan === "investisseur") return 2;
-  if (plan === "analyse") return 1;
-  return 0;
+function formatAccessEnd(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return `Actif jusqu'au ${new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date)}`;
 }

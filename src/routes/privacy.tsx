@@ -40,9 +40,7 @@ function PrivacyPage() {
             </p>
           </section>
           <section className="liquid-panel-soft rounded-lg p-5">
-            <h2 className="text-base font-semibold text-foreground">
-              Rapports et espace investisseur
-            </h2>
+            <h2 className="text-base font-semibold text-foreground">Rapports et espace Analyse</h2>
             <p className="mt-2">
               Les rapports sauvegardés, simulations de mise maximale, notes privées, suivis
               d'audience, exports et clés API sont rattachés au compte connecté afin de respecter
@@ -86,9 +84,9 @@ function PrivacyPage() {
           <section className="liquid-panel-soft rounded-lg p-5">
             <h2 className="text-base font-semibold text-foreground">Sécurité</h2>
             <p className="mt-2">
-              Les accès aux favoris, alertes, rapports, notes et demandes sont limités à
-              l'utilisateur connecté via les règles de sécurité de la base de données. Les accès
-              administrateur sont réservés aux comptes explicitement autorisés.
+              Les accès aux données d'analyse, favoris, alertes, rapports, notes et demandes sont
+              limités aux comptes Analyse actifs via les règles de sécurité de la base de données.
+              Les accès administrateur sont réservés aux comptes explicitement autorisés.
             </p>
           </section>
           <section className="liquid-panel-soft rounded-lg p-5">

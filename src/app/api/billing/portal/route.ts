@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     const response = await createBillingPortalSession({ auth, origin: url.origin });
     return NextResponse.json(response);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Portail d'abonnement indisponible";
+    const message = error instanceof Error ? error.message : "Portail de paiement indisponible";
     const status = message.startsWith("Unauthorized")
       ? 401
       : message.includes("configur")

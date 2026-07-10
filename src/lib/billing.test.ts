@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import {
+  ANALYSIS_ACCESS_DAYS,
+  ANALYSIS_PRICE_CENTS,
+  buildAnalysisCheckoutSessionParams,
   resolveBillingOrigin,
   resolveCheckoutPlanCode,
   resolveStripePlanCode,
@@ -49,41 +52,53 @@ describe("billing helpers", () => {
   });
 
   it("normalizes checkout plan codes with Analyse as the safe paid default", () => {
-    expect(resolveCheckoutPlanCode("investisseur")).toBe("investisseur");
+    expect(resolveCheckoutPlanCode("investisseur")).toBe("analyse");
     expect(resolveCheckoutPlanCode("analyse")).toBe("analyse");
     expect(resolveCheckoutPlanCode("decouverte")).toBe("analyse");
     expect(resolveCheckoutPlanCode("unknown")).toBe("analyse");
   });
 
   it("resolves Stripe plan codes from metadata before falling back to price ids", () => {
-    const previous = process.env.STRIPE_INVESTISSEUR_PRICE_ID;
-    process.env.STRIPE_INVESTISSEUR_PRICE_ID = "price_investisseur";
+    expect(
+      resolveStripePlanCode({
+        metadataPlanCode: "investisseur",
+        priceId: "price_legacy",
+      }),
+    ).toBe("analyse");
+    expect(resolveStripePlanCode({ metadataPlanCode: null, priceId: null })).toBe("analyse");
+  });
 
-    try {
-      expect(
-        resolveStripePlanCode({
-          metadataPlanCode: "investisseur",
-          priceId: "price_analyse",
-        }),
-      ).toBe("investisseur");
-      expect(
-        resolveStripePlanCode({
-          metadataPlanCode: null,
-          priceId: "price_investisseur",
-        }),
-      ).toBe("investisseur");
-      expect(
-        resolveStripePlanCode({
-          metadataPlanCode: null,
-          priceId: "price_analyse",
-        }),
-      ).toBe("analyse");
-    } finally {
-      if (previous == null) {
-        delete process.env.STRIPE_INVESTISSEUR_PRICE_ID;
-      } else {
-        process.env.STRIPE_INVESTISSEUR_PRICE_ID = previous;
-      }
-    }
+  it("defines the commercial offer as 29 EUR for exactly 30 days", () => {
+    expect(ANALYSIS_PRICE_CENTS).toBe(2_900);
+    expect(ANALYSIS_ACCESS_DAYS).toBe(30);
+  });
+
+  it("builds a one-time checkout without recurring subscription data", () => {
+    const params = buildAnalysisCheckoutSessionParams({
+      appOrigin: "https://immojudis.test",
+      customerId: "cus_test",
+      userId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(params).toMatchObject({
+      mode: "payment",
+      customer: "cus_test",
+      client_reference_id: "11111111-1111-4111-8111-111111111111",
+      line_items: [
+        {
+          price_data: {
+            currency: "eur",
+            unit_amount: 2_900,
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        access_duration_days: "30",
+        billing_model: "one_time_30_days",
+        plan_code: "analyse",
+      },
+    });
+    expect(params).not.toHaveProperty("subscription_data");
   });
 });
