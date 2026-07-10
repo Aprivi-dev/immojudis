@@ -45,6 +45,7 @@ import { MapThumbnail } from "@/components/MapThumbnail";
 import { BrandMark } from "@/components/BrandLogo";
 import { EvidenceTrail } from "@/components/EvidenceTrail";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
+import { PhotoCarouselDialog, type CarouselImage } from "@/components/PhotoCarouselDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -1826,6 +1827,8 @@ function SaleMediaGallery({
 }) {
   const featured = media[0];
   const thumbnails = media.slice(1, 7);
+  const [carouselIndex, setCarouselIndex] = useState<number | null>(null);
+  const carouselImages = saleMediaCarouselImages(media, "l'annonce");
   const source = featured.source ?? media.find((item) => item.source)?.source;
   const mapLocation = saleMapboxLocation(sale);
   const mapDescription =
@@ -1867,14 +1870,13 @@ function SaleMediaGallery({
           />
         </div>
       )}
-      <a
-        href={featured.url}
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        type="button"
+        onClick={() => setCarouselIndex(0)}
         className="absolute bottom-3 right-3 z-10 inline-flex min-h-11 items-center gap-2 rounded-md border border-white/70 bg-white px-3 py-2 text-xs font-semibold text-foreground shadow-sm transition-colors hover:bg-white/90"
       >
         {media.length} photo{media.length > 1 ? "s" : ""} <Camera className="h-3.5 w-3.5" />
-      </a>
+      </button>
       {source && (
         <span className="absolute right-3 top-3 z-10 rounded-md border border-white/60 bg-white/90 px-3 py-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">
           Source · {source}
@@ -1885,8 +1887,10 @@ function SaleMediaGallery({
           <SaleMediaImage
             key={`${item.url}-${index}`}
             media={item}
+            index={index}
             featured={index === 0}
             alt={index === 0 ? "Photo principale du bien" : `Photo ${index + 1} du bien`}
+            onOpen={setCarouselIndex}
             className="h-full min-w-full shrink-0 snap-center"
           />
         ))}
@@ -1898,19 +1902,35 @@ function SaleMediaGallery({
             : "hidden h-full bg-white md:block"
         }
       >
-        <SaleMediaImage media={featured} featured alt="Photo principale du bien" />
+        <SaleMediaImage
+          media={featured}
+          index={0}
+          featured
+          alt="Photo principale du bien"
+          onOpen={setCarouselIndex}
+        />
         {thumbnails.length > 0 && (
           <div className={thumbnailGridClass}>
             {thumbnails.map((item, index) => (
               <SaleMediaImage
                 key={`${item.url}-${index}`}
                 media={item}
+                index={index + 1}
                 alt={`Photo ${index + 2} du bien`}
+                onOpen={setCarouselIndex}
               />
             ))}
           </div>
         )}
       </div>
+      {carouselIndex != null && (
+        <PhotoCarouselDialog
+          images={carouselImages}
+          initialIndex={carouselIndex}
+          title="Photos de l'annonce"
+          onClose={() => setCarouselIndex(null)}
+        />
+      )}
     </section>
   );
 }
@@ -1924,22 +1944,26 @@ function saleMapboxLocation(sale: AuctionSale): { lat: number; lng: number } | n
 
 function SaleMediaImage({
   media,
+  index,
   featured = false,
   alt,
+  onOpen,
   className,
 }: {
   media: SaleMedia;
+  index: number;
   featured?: boolean;
   alt: string;
+  onOpen: (index: number) => void;
   className?: string;
 }) {
   return (
-    <a
-      href={media.url}
-      target="_blank"
-      rel="noopener noreferrer"
+    <button
+      type="button"
+      onClick={() => onOpen(index)}
+      aria-label={`Ouvrir la photo ${index + 1} dans la galerie`}
       className={cn(
-        "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted md:h-full md:aspect-auto",
+        "group relative block aspect-[4/3] cursor-pointer overflow-hidden bg-muted text-left md:h-full md:aspect-auto",
         className,
       )}
     >
@@ -1952,10 +1976,19 @@ function SaleMediaImage({
         className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
       />
       <span className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/45 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
-        Ouvrir <ExternalLink className="h-3 w-3" />
+        Galerie <Camera className="h-3 w-3" />
       </span>
-    </a>
+    </button>
   );
+}
+
+function saleMediaCarouselImages(media: SaleMedia[], title: string): CarouselImage[] {
+  return media.map((item, index) => ({
+    id: `${item.url}-${index}`,
+    url: item.url,
+    alt: index === 0 ? `Photo principale de ${title}` : `Photo ${index + 1} de ${title}`,
+    source: item.source,
+  }));
 }
 
 function saleImages(media: AuctionSale["media"] | undefined): SaleMedia[] {
@@ -2087,6 +2120,16 @@ function DecisionMediaFrame({
 }) {
   const featured = media[0];
   const thumbnails = media.slice(1, 5);
+  const thumbnailGridClass =
+    thumbnails.length <= 1
+      ? "mt-2 grid grid-cols-1 gap-2"
+      : thumbnails.length === 2
+        ? "mt-2 grid grid-cols-2 gap-2"
+        : thumbnails.length === 3
+          ? "mt-2 grid grid-cols-3 gap-2"
+          : "mt-2 grid grid-cols-4 gap-2";
+  const [carouselIndex, setCarouselIndex] = useState<number | null>(null);
+  const carouselImages = saleMediaCarouselImages(media, title);
   const mapLocation = saleMapboxLocation(sale);
   const mapDescription =
     location || [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
@@ -2100,18 +2143,23 @@ function DecisionMediaFrame({
   }
 
   return (
-    <div className="min-w-0 rounded-lg border border-white/80 bg-white/85 p-2 shadow-[0_26px_70px_rgba(72,104,132,0.18)]">
+    <div className="min-w-0 self-start rounded-lg border border-white/80 bg-white/85 p-2 shadow-[0_26px_70px_rgba(72,104,132,0.18)]">
       <div className="relative overflow-hidden rounded-md border border-border bg-muted">
-        <a href={featured.url} target="_blank" rel="noopener noreferrer" className="block">
+        <button
+          type="button"
+          onClick={() => setCarouselIndex(0)}
+          aria-label="Ouvrir la photo principale dans la galerie"
+          className="group block w-full cursor-pointer overflow-hidden text-left"
+        >
           <img
             src={featured.url}
             alt={`Photo principale - ${title}`}
-            className="aspect-[16/9] w-full object-cover"
+            className="aspect-[16/9] w-full object-cover transition duration-500 group-hover:scale-[1.02] group-hover:brightness-95"
             loading="eager"
             decoding="async"
             referrerPolicy="no-referrer"
           />
-        </a>
+        </button>
         <span className="absolute right-3 top-3 rounded-md bg-brand-navy/78 px-3 py-1 text-xs font-semibold text-white">
           1 / {Math.max(media.length, 1)}
         </span>
@@ -2143,26 +2191,33 @@ function DecisionMediaFrame({
         )}
       </div>
       {thumbnails.length > 0 && (
-        <div className="mt-2 grid grid-cols-4 gap-2">
+        <div className={thumbnailGridClass}>
           {thumbnails.map((item, index) => (
-            <a
+            <button
               key={`${item.url}-${index}`}
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="overflow-hidden rounded-md border border-border bg-muted"
+              type="button"
+              onClick={() => setCarouselIndex(index + 1)}
+              className="group cursor-pointer overflow-hidden rounded-md border border-border bg-muted text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
             >
               <img
                 src={item.url}
                 alt={`Photo ${index + 2} du bien`}
-                className="aspect-[4/3] w-full object-cover transition duration-500 hover:scale-[1.03]"
+                className="aspect-[4/3] w-full object-cover transition duration-500 group-hover:scale-[1.03] group-hover:brightness-95"
                 loading="lazy"
                 decoding="async"
                 referrerPolicy="no-referrer"
               />
-            </a>
+            </button>
           ))}
         </div>
+      )}
+      {carouselIndex != null && (
+        <PhotoCarouselDialog
+          images={carouselImages}
+          initialIndex={carouselIndex}
+          title={title}
+          onClose={() => setCarouselIndex(null)}
+        />
       )}
     </div>
   );
