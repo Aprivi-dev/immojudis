@@ -137,6 +137,7 @@ def test_asset_normalization_corrects_truncated_stored_land_surface() -> None:
             "habitable_surface_m2": 187,
             "land_surface_m2": 110,
             "description": "Maison de 187 m² édifiée sur une parcelle de 1 110 m².",
+            "risk_notes": "Risques physiques: DPE F | DPE F",
         }
     )
 

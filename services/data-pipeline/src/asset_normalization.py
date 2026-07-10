@@ -2243,7 +2243,13 @@ def _text_has_works_signal(text: str) -> bool:
 
 def _surface_false_positive(text: str, start: int, end: int) -> bool:
     context = text[max(0, start - 20) : min(len(text), end + 30)]
-    return bool(re.search(r"\bkwh\b|kg\s*co2|\bges\b|dpe\b", context, re.I))
+    return bool(
+        re.search(
+            r"\bkwh(?:ep)?\b|kg\s*co2|m(?:2|²)\s*/\s*(?:an|year)",
+            context,
+            re.I,
+        )
+    )
 
 
 def _land_surface_false_positive(text: str, match: re.Match[str], kind: str) -> bool:
