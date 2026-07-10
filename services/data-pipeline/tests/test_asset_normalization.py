@@ -100,6 +100,7 @@ def test_asset_normalization_resolves_structured_surface_outlier_from_corroborat
             ),
             "surface_m2": 1877,
             "habitable_surface_m2": 1877,
+            "land_surface_m2": 110,
         }
     )
 
@@ -118,6 +119,51 @@ def test_asset_normalization_resolves_structured_surface_outlier_from_corroborat
         "resolved_built_surface_m2": "187",
         "basis": "matching_title_and_description",
     }
+    assert sale.raw_payload["land_surface_reconciliation"] == {
+        "status": "resolved",
+        "rejected_land_surface_m2": "110",
+        "resolved_land_surface_m2": "1110",
+        "basis": "explicit_land_text_and_truncated_digits",
+    }
+
+
+def test_asset_normalization_corrects_truncated_stored_land_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/truncated-land-surface",
+            "property_type": "Maison",
+            "surface_m2": 187,
+            "habitable_surface_m2": 187,
+            "land_surface_m2": 110,
+            "description": "Maison de 187 m² édifiée sur une parcelle de 1 110 m².",
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.land_surface_m2 == Decimal("1110")
+    assert "land_surface_conflict_resolved" in sale.quality_flags
+
+
+def test_asset_normalization_keeps_document_backed_land_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/documented-land-surface",
+            "property_type": "Maison",
+            "surface_m2": 187,
+            "habitable_surface_m2": 187,
+            "land_surface_m2": 110,
+            "description": "Maison de 187 m² édifiée sur une parcelle annoncée de 1 110 m².",
+            "land_surface_extraction": {"source": "pdf", "value_m2": 110},
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.land_surface_m2 == Decimal("110")
+    assert "land_surface_conflict_resolved" not in sale.quality_flags
 
 
 def test_asset_normalization_keeps_structured_surface_when_textual_values_disagree() -> None:

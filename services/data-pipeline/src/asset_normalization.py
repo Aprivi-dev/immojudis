@@ -442,8 +442,19 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         sale.habitable_surface_m2 = _extract_surface_kind(text, "habitable_surface_m2", sale)
     if sale.carrez_surface_m2 is None:
         sale.carrez_surface_m2 = _extract_surface_kind(text, "carrez_surface_m2", sale)
+    text_land_surface = _extract_surface_kind(text, "land_surface_m2", sale)
     if sale.land_surface_m2 is None:
-        sale.land_surface_m2 = _extract_surface_kind(text, "land_surface_m2", sale)
+        sale.land_surface_m2 = text_land_surface
+    elif _should_prefer_text_land_surface(sale, text_land_surface):
+        previous_land_surface = sale.land_surface_m2
+        sale.land_surface_m2 = text_land_surface
+        sale.raw_payload["land_surface_reconciliation"] = {
+            "status": "resolved",
+            "rejected_land_surface_m2": str(previous_land_surface),
+            "resolved_land_surface_m2": str(text_land_surface),
+            "basis": "explicit_land_text_and_truncated_digits",
+        }
+        _add_quality_flag(sale, "land_surface_conflict_resolved")
     _discard_placeholder_built_surface(sale)
     text_built_surface = _extract_built_surface(text, sale)
     if sale.surface_m2 is None:
@@ -524,6 +535,30 @@ def _surface_is_document_backed(sale: AuctionSale) -> bool:
         return sale.surface_source == "pdf"
     documented_value = parse_surface(extraction.get("value_m2"))
     return documented_value is not None and documented_value == sale.surface_m2
+
+
+def _should_prefer_text_land_surface(sale: AuctionSale, candidate: Decimal | None) -> bool:
+    current = sale.land_surface_m2
+    if candidate is None or current is None or candidate <= current:
+        return False
+    extraction = sale.raw_payload.get("land_surface_extraction")
+    if isinstance(extraction, dict) and extraction.get("source") == "pdf":
+        documented_value = parse_surface(extraction.get("value_m2"))
+        if documented_value == current:
+            return False
+    current_digits = _surface_integer_digits(current)
+    candidate_digits = _surface_integer_digits(candidate)
+    if not current_digits or not candidate_digits:
+        return False
+    return candidate_digits.endswith(current_digits) or (
+        candidate >= current * Decimal("9") and candidate <= current * Decimal("11")
+    )
+
+
+def _surface_integer_digits(value: Decimal) -> str | None:
+    if value != value.to_integral_value():
+        return None
+    return str(int(value))
 
 
 def _corroborated_text_built_surface(sale: AuctionSale) -> Decimal | None:
@@ -3032,6 +3067,7 @@ def _quality_flag_label(flag: str) -> str:
         "occupation_conflict": "occupation contradictoire à confirmer",
         "room_count_conflict": "pièces/chambres incohérentes",
         "surface_conflict_resolved": "contradiction de surface résolue",
+        "land_surface_conflict_resolved": "contradiction de terrain résolue",
         "source_page_only": "analyse basée sur la page source uniquement",
         "non_judicial_sale_context": "vente volontaire ou notariale, tribunal non prouvé",
     }.get(flag, flag.replace("_", " "))
