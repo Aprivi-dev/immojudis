@@ -2182,6 +2182,21 @@ def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decima
             if sale is not None:
                 _set_surface_evidence(sale, "built_surface_text", _evidence(text, match.start(), match.end()))
             return value
+
+    short_pattern = (
+        rf"\b(?:appartement|maison|villa|immeuble|b[âa]timent|local|hangar)\s+"
+        rf"(?:d['’]environ\s+|de\s+){SURFACE_VALUE_PATTERN}\s*m(?:2|²)"
+    )
+    candidates: list[tuple[Decimal, re.Match[str]]] = []
+    for match in re.finditer(short_pattern, text, re.I | re.S):
+        value = _parse_surface_decimal(match.group(1))
+        if value and not _surface_false_positive(text, match.start(), match.end()):
+            candidates.append((value, match))
+    if candidates and len({value for value, _ in candidates}) == 1:
+        value, match = candidates[0]
+        if sale is not None:
+            _set_surface_evidence(sale, "built_surface_text", _evidence(text, match.start(), match.end()))
+        return value
     return None
 
 
