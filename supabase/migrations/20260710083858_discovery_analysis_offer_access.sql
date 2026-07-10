@@ -143,12 +143,6 @@ on public.auction_sales for select
 to authenticated
 using (public.has_analysis_access());
 
-drop policy if exists auction_sales_app_read_authenticated_read on public.auction_sales_app_read;
-create policy auction_sales_app_read_authenticated_read
-on public.auction_sales_app_read for select
-to authenticated
-using (public.has_analysis_access());
-
 drop policy if exists auction_documents_authenticated_read on public.auction_documents;
 create policy auction_documents_authenticated_read
 on public.auction_documents for select
