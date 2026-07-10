@@ -592,6 +592,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         title = _extract_asset_title_from_text(source_text) or title
     if title is None:
         title = clean_text(_source_block_lookup(raw_sale, "titre", "title"))
+    property_type = normalize_sale_property_type(raw_sale)
     description = clean_text(_field_or_source_block(raw_sale, "description", "description", "detail_description"))
     address = clean_text(
         _field_or_source_block(raw_sale, "address", "adresse", "detail_adresse", "address", "localisation")
@@ -720,6 +721,20 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         )
     if surface_source is None and surface_evidence is not None:
         surface_source = "source_text"
+    if property_type == "house" and habitable_surface_m2 is None and surface_m2 is not None:
+        habitable_surface_m2 = surface_m2
+    app_surface_m2 = parse_surface(raw_sale.get("app_surface_m2"))
+    app_surface_kind = clean_text(raw_sale.get("app_surface_kind"))
+    surface_scope = clean_text(raw_sale.get("surface_scope"))
+    if app_surface_m2 is None:
+        app_surface_m2, app_surface_kind, surface_scope = _derive_initial_app_surface(
+            property_type=property_type,
+            surface_m2=surface_m2,
+            habitable_surface_m2=habitable_surface_m2,
+            carrez_surface_m2=carrez_surface_m2,
+            land_surface_m2=land_surface_m2,
+            surface_scope=surface_scope,
+        )
     # Note: an impossible rooms < bedrooms pair is resolved downstream by
     # normalize_asset_features() (clears rooms_count to NULL and flags a
     # room_count_conflict), so we deliberately do not coerce it here.
@@ -746,16 +761,16 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         city=city,
         address=address,
         postal_code=postal_code,
-        property_type=normalize_sale_property_type(raw_sale),
+        property_type=property_type,
         title=title,
         description=description,
         surface_m2=surface_m2,
         habitable_surface_m2=habitable_surface_m2,
         land_surface_m2=land_surface_m2,
         carrez_surface_m2=carrez_surface_m2,
-        app_surface_m2=parse_surface(raw_sale.get("app_surface_m2")),
-        app_surface_kind=clean_text(raw_sale.get("app_surface_kind")),
-        surface_scope=clean_text(raw_sale.get("surface_scope")),
+        app_surface_m2=app_surface_m2,
+        app_surface_kind=app_surface_kind,
+        surface_scope=surface_scope,
         surface_source=surface_source,
         surface_confidence=parse_confidence(raw_sale.get("surface_confidence")),
         surface_evidence=surface_evidence,
@@ -841,6 +856,39 @@ def normalize_source_urls(value: object | None, source_url: str) -> list[str]:
         seen.add(url)
         unique.append(url)
     return unique
+
+
+def _derive_initial_app_surface(
+    *,
+    property_type: str,
+    surface_m2: Decimal | None,
+    habitable_surface_m2: Decimal | None,
+    carrez_surface_m2: Decimal | None,
+    land_surface_m2: Decimal | None,
+    surface_scope: str | None,
+) -> tuple[Decimal | None, str | None, str | None]:
+    if property_type == "apartment":
+        value = carrez_surface_m2 or habitable_surface_m2
+        kind = "carrez" if carrez_surface_m2 is not None else "habitable" if value is not None else None
+        return value, kind, "total" if value is not None else surface_scope
+    if property_type == "house":
+        value = habitable_surface_m2
+        return value, "habitable" if value is not None else None, "total" if value is not None else surface_scope
+    if property_type == "land":
+        value = land_surface_m2
+        return value, "land" if value is not None else None, "land" if value is not None else surface_scope
+    if property_type in {"commercial", "mixed"}:
+        value = surface_m2 or habitable_surface_m2 or carrez_surface_m2 or land_surface_m2
+        if value is None:
+            return None, None, surface_scope
+        only_land = (
+            surface_m2 is None
+            and habitable_surface_m2 is None
+            and carrez_surface_m2 is None
+            and land_surface_m2 is not None
+        )
+        return value, "land" if only_land else "built", "land" if only_land else "total"
+    return None, None, surface_scope
 
 
 def _field_or_source_block(raw_sale: dict[str, object], field: str, *source_block_keys: str) -> object | None:
@@ -1070,6 +1118,12 @@ def _extract_carrez_surface_from_text(*values: object) -> Decimal | None:
 
 def _extract_land_surface_from_text(*values: object) -> Decimal | None:
     text = _joined_text(*values)
+    for match in re.finditer(
+        r"\b(?:contenance\s+(?:totale\s+)?(?:de\s+)?)?([0-9]+)\s*a\s*([0-9]+)\s*ca\b",
+        text,
+        re.I,
+    ):
+        return Decimal(match.group(1)) * Decimal("100") + Decimal(match.group(2))
     patterns = (
         rf"\b(?:terrain|parcelle|jardin)\s+(?:de\s+|d['’]une\s+surface\s+de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
         rf"\bcadastr[ée]e?.{{0,120}}?\bpour\s+un\s+total\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
@@ -1116,6 +1170,7 @@ def _extract_contextual_surface(
 
 
 def _is_secondary_surface_context(text: str, start: int, end: int) -> bool:
+    matched_text = text[start:end]
     context = text[max(0, start - 80) : min(len(text), end + 40)]
     if re.search(r"\b(?:surface|superficie)\s+(?:des\s+)?lots?\b", context, re.I):
         return False
@@ -1123,6 +1178,23 @@ def _is_secondary_surface_context(text: str, start: int, end: int) -> bool:
         r"\b(?:b[âa]timent|stabulation|hangar|salle\s+de\s+traite|stockage)\b",
         context,
         re.I,
+    ):
+        return False
+    if re.search(
+        r"\b(?:cadastr\w*|section\s+[A-Z]{1,4}\b|contenance)\b",
+        matched_text,
+        re.I,
+    ) and not re.search(
+        rf"\b(?:appartement|maison|villa|immeuble|b[âa]timent|local|hangar)\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        matched_text,
+        re.I | re.S,
+    ):
+        return True
+    if re.search(
+        rf"\b(?:appartement|maison|villa|immeuble|b[âa]timent|local|hangar)\b.{{0,60}}?"
+        rf"\b(?:de|d['’]une\s+surface\s+de|d['’]une\s+superficie\s+de)\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        context,
+        re.I | re.S,
     ):
         return False
     if re.search(r"\b(?:terrain|parcelle|cadastr\w*|jardin|terrasse|balcon)\b", context, re.I):

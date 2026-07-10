@@ -602,7 +602,7 @@ def _extract_coordinates(soup: BeautifulSoup) -> tuple[str | None, str | None]:
 
 def _extract_sale_date(lines: list[str]) -> str | None:
     for line in lines:
-        if re.search(r"\b\d{1,2}\s+\w+\s+20\d{2}\s+à\s+\d{1,2}h", line, re.I):
+        if re.search(r"\b(?:\d{1,2}|1er)\s+\w+\s+20\d{2}\s+à\s+\d{1,2}h", line, re.I):
             return line
     return None
 

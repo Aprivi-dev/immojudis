@@ -59,6 +59,14 @@ def load_settings() -> dict[str, str | float | None]:
         "supabase_db_url": os.getenv("SUPABASE_DB_URL"),
         "dvf_import_batch_size": int(os.getenv("DVF_IMPORT_BATCH_SIZE", "1000")),
         "user_agent": os.getenv("AUCTION_USER_AGENT", "immojudis-data-pipeline/1.0 (+https://example.com/contact)"),
+        "browser_user_agent": os.getenv(
+            "AUCTION_BROWSER_USER_AGENT",
+            (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/126.0.0.0 Safari/537.36"
+            ),
+        ),
         "request_delay_seconds": float(os.getenv("REQUEST_DELAY_SECONDS", "1.5")),
         "request_timeout_seconds": float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
         "geocode_enabled": os.getenv("GEOCODE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
@@ -125,6 +133,9 @@ def load_settings() -> dict[str, str | float | None]:
         "llm_pdf_max_chars": int(os.getenv("LLM_PDF_MAX_CHARS", "6000")),
         "incremental_enrichment": os.getenv("INCREMENTAL_ENRICHMENT", "true").lower()
         in {"1", "true", "yes", "on"},
+        "dedupe_reconcile_enabled": os.getenv("DEDUPE_RECONCILE_ENABLED", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "dedupe_reconcile_max_rows": max(0, int(os.getenv("DEDUPE_RECONCILE_MAX_ROWS", "2000"))),
         "pdf_ocr_enabled": os.getenv("PDF_OCR_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
         "pdf_ocr_language": os.getenv("PDF_OCR_LANGUAGE", "fra+eng"),
         "pdf_ocr_tessdata": os.getenv("TESSDATA_PREFIX") or os.getenv("PDF_OCR_TESSDATA"),

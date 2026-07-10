@@ -116,7 +116,14 @@ PIPELINE_PDF_MAX_TARGETS=10
 PIPELINE_LLM_MAX_TARGETS=10
 PIPELINE_LLM_BACKFILL_MAX_TARGETS=10
 PIPELINE_IDLE_LLM_BACKFILL_ENABLED=false
+DEDUPE_RECONCILE_ENABLED=true
+DEDUPE_RECONCILE_MAX_ROWS=2000
 ```
+
+Après les upserts, le pipeline peut relire un lot borné d'annonces
+actives/prochaines déjà stockées et réappliquer la fusion multi-sources. Cette
+passe corrige les doublons historiques qui ne repassent pas forcément ensemble
+dans le scraping du jour, puis supprime les lignes sources secondaires.
 
 Pour résorber progressivement les annonces déjà en base sans synthèse IA
 publique, lancer un backfill borné. Il ne relance pas le scraping et cible par
@@ -503,7 +510,8 @@ Le scraper :
 Variables optionnelles :
 
 ```bash
-AUCTION_USER_AGENT=immojudis-data-pipeline/1.0 (+contact@example.com)
+AUCTION_USER_AGENT=immojudis-data-pipeline/1.0 (+https://immojudis-dezt.vercel.app/contact)
+AUCTION_BROWSER_USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 REQUEST_DELAY_SECONDS=1.5
 REQUEST_TIMEOUT_SECONDS=20
 GEOCODE_ENABLED=true

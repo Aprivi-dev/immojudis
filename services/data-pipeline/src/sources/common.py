@@ -86,11 +86,19 @@ class PoliteHttpClient:
     timeout_seconds: float
     accept: str = "text/html,application/xhtml+xml"
     verify: bool = True
+    extra_headers: dict[str, str] | None = None
 
     def __post_init__(self) -> None:
         self._last_request_at = 0.0
+        headers = {
+            "User-Agent": self.user_agent,
+            "Accept": self.accept,
+            "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+        }
+        if self.extra_headers:
+            headers.update(self.extra_headers)
         self._client = httpx.Client(
-            headers={"User-Agent": self.user_agent, "Accept": self.accept},
+            headers=headers,
             timeout=self.timeout_seconds,
             follow_redirects=True,
             verify=self.verify,

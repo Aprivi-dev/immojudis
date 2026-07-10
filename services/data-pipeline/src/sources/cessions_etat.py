@@ -42,9 +42,11 @@ def scrape_cessions_etat_aquitaine_result(
     settings = load_settings()
     client = PoliteHttpClient(
         base_url=BASE_URL,
-        user_agent=str(settings["user_agent"]),
+        user_agent=str(settings["browser_user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
+        accept="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        extra_headers={"Upgrade-Insecure-Requests": "1"},
         # ponytail: the public site currently serves an incomplete cert chain to Python/httpx.
         verify=False,
     )

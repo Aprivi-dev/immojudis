@@ -5,6 +5,7 @@ import re
 from typing import Any
 from urllib.parse import urljoin
 
+import httpx
 from bs4 import BeautifulSoup, Tag
 
 from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
@@ -43,19 +44,18 @@ def scrape_petites_affiches_aquitaine_result(
     settings = load_settings()
     client = PoliteHttpClient(
         base_url=BASE_URL,
-        user_agent=str(settings["user_agent"]),
+        user_agent=str(settings["browser_user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
+        accept="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        extra_headers={"Origin": BASE_URL, "Referer": LIST_URL},
     )
 
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []
     for department in _department_filters():
         try:
-            form = {"historique": "0"}
-            if department is not None:
-                form["select_dep"] = department
-            html = client.post_form(LIST_URL, form)
+            html = _fetch_listing(client, department)
         except Exception as exc:
             LOGGER.error("Petites Affiches list fetch failed for department %s: %s", department, exc)
             errors.append(f"department {department}: {exc}")
@@ -75,6 +75,20 @@ def _department_filters() -> tuple[str | None, ...]:
     if set(TARGET_DEPARTMENTS) == set(FRANCE_DEPARTMENTS):
         return (None,)
     return TARGET_DEPARTMENTS
+
+
+def _fetch_listing(client: PoliteHttpClient, department: str | None) -> str:
+    form = {"historique": "0"}
+    if department is not None:
+        form["select_dep"] = department
+    try:
+        return client.post_form(LIST_URL, form)
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        if department is None and status in {403, 405, 406, 415, 429}:
+            LOGGER.warning("Petites Affiches POST refused with %s; falling back to national GET listing", status)
+            return client.get(LIST_URL)
+        raise
 
 
 def parse_petites_affiches_html(
