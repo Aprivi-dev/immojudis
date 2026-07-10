@@ -344,10 +344,14 @@ def build_auction_score_factor_rows(
     if not isinstance(factors, list):
         return []
     rows = []
+    seen_factor_keys: set[str] = set()
     for index, factor in enumerate(factors):
         if not isinstance(factor, dict):
             continue
         factor_key = str(factor.get("factor_key") or factor.get("name") or f"factor_{index}")
+        if factor_key in seen_factor_keys:
+            continue
+        seen_factor_keys.add(factor_key)
         evidence_refs = factor.get("evidence_refs") or []
         if not evidence_refs and factor_key in {"risques", "état", "etat"} and risk_occurrences:
             evidence_refs = _factor_refs_from_risk_occurrences(risk_occurrences)
