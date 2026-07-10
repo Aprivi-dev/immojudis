@@ -32,7 +32,7 @@ export function Navbar() {
   const isSalesListing = location.pathname === "/sales" || location.pathname === "/sales/";
   const isProductPage =
     location.pathname === "/annonce-exemple" || /^\/sales\/[^/]+/.test(location.pathname);
-  const admin = isAdminAccount(user);
+  const admin = isAdminAccount(user, profile);
   const navItems = user
     ? [
         ...AUTH_NAV_ITEMS,
@@ -80,14 +80,14 @@ export function Navbar() {
             >
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <label htmlFor="product-search" className="sr-only">
-                Rechercher une vente judiciaire
+                Rechercher par région, département, ville ou code postal
               </label>
-              <input type="hidden" name="around_radius" value="5" />
               <input
                 id="product-search"
-                name="around_address"
+                name="q"
                 type="search"
-                placeholder="Adresse, ville, tribunal ou référence"
+                placeholder="Région, département, ville, code postal..."
+                autoComplete="off"
                 className="w-full bg-transparent font-medium text-foreground outline-none placeholder:text-muted-foreground"
               />
             </form>
@@ -172,14 +172,14 @@ export function Navbar() {
                   >
                     <Search className="h-4 w-4 text-muted-foreground" />
                     <label htmlFor="product-mobile-search" className="sr-only">
-                      Rechercher une vente judiciaire
+                      Rechercher par région, département, ville ou code postal
                     </label>
-                    <input type="hidden" name="around_radius" value="5" />
                     <input
                       id="product-mobile-search"
-                      name="around_address"
+                      name="q"
                       type="search"
-                      placeholder="Adresse, ville ou tribunal"
+                      placeholder="Région, département, ville, CP..."
+                      autoComplete="off"
                       className="w-full bg-transparent outline-none"
                     />
                   </form>

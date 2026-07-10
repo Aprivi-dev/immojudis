@@ -3,6 +3,11 @@ import { isHouseWithLand } from "@/lib/alerts";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
 import { getSaleSurface } from "@/lib/surface";
 import { estimateGrossYieldPct, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
+import {
+  matchesFrenchGeoSearch,
+  matchesFrenchSearchText,
+  resolveFrenchGeoSearch,
+} from "./french-geo-search";
 import type { SalesSearchParams, SearchSortKey, ViewportBounds } from "./search-url-state";
 
 export const DEFAULT_SEARCH_LIMIT = 24;
@@ -60,9 +65,28 @@ export function dataSortFromSearch(sort: SearchSortKey | undefined): SortKey {
 }
 
 export function dataFiltersFromSearch(search: SalesSearchParams): SaleFilters {
+  const queryScope = resolveFrenchGeoSearch(search.query);
+  const departmentScope = resolveFrenchGeoSearch(search.department);
+  const explicitDepartments =
+    departmentScope.kind === "department" || departmentScope.kind === "region"
+      ? departmentScope.departments
+      : undefined;
+  const queryDepartments =
+    queryScope.kind === "department" || queryScope.kind === "region"
+      ? queryScope.departments
+      : undefined;
+  const departments = intersectDepartmentScopes(explicitDepartments, queryDepartments);
+  const keywords =
+    [queryScope.kind === "text" ? queryScope.text : undefined, search.keywords]
+      .filter(Boolean)
+      .join(" ") || undefined;
+
   return {
-    department: search.department,
+    department:
+      departmentScope.kind === "text" && search.department ? search.department : undefined,
+    departments,
     city: search.city,
+    postal_code: queryScope.kind === "postal_code" ? queryScope.postalCode : undefined,
     tribunal: search.tribunal,
     viewport: search.viewport,
     property_type: search.homeTypes?.length === 1 ? search.homeTypes[0] : undefined,
@@ -76,7 +100,7 @@ export function dataFiltersFromSearch(search: SalesSearchParams): SaleFilters {
     occupancy_status: search.occupancy,
     min_score: search.minScore,
     status_in: statusValuesForSearch(search),
-    keywords: search.keywords || search.query,
+    keywords,
   };
 }
 
@@ -159,12 +183,8 @@ export function applyClientSearchFilters(
     }
     if (search.status?.length && !matchesStatus(sale.status, search.status)) return false;
     if (!dpeMatches(extractDpe(sale).class, search.dpeClasses)) return false;
-    if (
-      (search.keywords || search.query) &&
-      !matchesKeywords(sale, search.keywords || search.query)
-    ) {
-      return false;
-    }
+    if (search.query && !matchesFrenchGeoSearch(sale, search.query)) return false;
+    if (search.keywords && !matchesFrenchSearchText(sale, search.keywords)) return false;
     if (search.maxPricePerM2 != null) {
       const ppm = pricePerM2(sale.starting_price_eur, surface);
       if (ppm == null || ppm > search.maxPricePerM2) return false;
@@ -259,32 +279,13 @@ function isSoldLike(sale: AuctionSale) {
   return new Date(sale.sale_date).getTime() < Date.now();
 }
 
-function matchesKeywords(sale: AuctionSale, keywords: string | undefined) {
-  if (!keywords) return true;
-  const query = keywords.toLowerCase();
-  const haystack = [
-    sale.title,
-    sale.description,
-    sale.source_description,
-    sale.llm_display_description,
-    sale.about_description,
-    sale.city,
-    sale.department,
-    sale.address,
-    sale.tribunal,
-    sale.tribunal_code,
-    sale.tribunal_name,
-    sale.tribunal_city,
-    sale.property_type,
-    sale.source_name,
-    sale.primary_source,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return query
-    .split(/\s+/)
-    .filter(Boolean)
-    .every((term) => haystack.includes(term));
+function intersectDepartmentScopes(
+  explicitDepartments: string[] | undefined,
+  queryDepartments: string[] | undefined,
+): string[] | undefined {
+  if (!explicitDepartments?.length) return queryDepartments;
+  if (!queryDepartments?.length) return explicitDepartments;
+  const queryCodes = new Set(queryDepartments);
+  const intersection = explicitDepartments.filter((code) => queryCodes.has(code));
+  return intersection.length ? intersection : ["__no_department__"];
 }

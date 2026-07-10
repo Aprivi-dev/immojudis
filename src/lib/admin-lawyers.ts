@@ -2,7 +2,6 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
-import { hasAdminRole } from "@/lib/account";
 
 type ReferencedLawyerRow = Database["public"]["Tables"]["referenced_lawyers"]["Row"];
 type ReferencedLawyerInsert = Database["public"]["Tables"]["referenced_lawyers"]["Insert"];
@@ -247,7 +246,7 @@ export function referencedLawyerCoverageRows(
 
 async function assertAdminAuth(authToken: string) {
   const auth = await requireSupabaseAuthContext(authToken);
-  if (!hasAdminRole(auth.claims)) {
+  if (!auth.isAdmin) {
     throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
   }
   return auth;

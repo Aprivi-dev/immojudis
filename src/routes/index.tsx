@@ -177,7 +177,14 @@ const planPreviews = [
   },
 ] as const;
 
-const searchGhostCities = ["Bordeaux", "Paris", "Lyon", "Nantes", "Toulouse", "Lille"] as const;
+const searchGhostCities = [
+  "Bordeaux",
+  "Gironde",
+  "33000",
+  "Nouvelle-Aquitaine",
+  "Paris",
+  "Hérault",
+] as const;
 
 function HomePage() {
   return (
@@ -401,7 +408,7 @@ function SearchBar() {
         <span className="ij-search-ghost-caret" />
       </span>
       <label className="sr-only" htmlFor="home-search">
-        Rechercher un bien, une ville ou un tribunal
+        Rechercher par région, département, ville ou code postal
       </label>
       <input
         id="home-search"

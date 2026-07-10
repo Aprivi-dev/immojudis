@@ -312,6 +312,9 @@ describe("property report sharing", () => {
     const auth = {
       userId: "11111111-1111-4111-8111-111111111111",
       claims: { app_metadata: { role: "admin" } },
+      accountTier: "premium",
+      userRole: "admin",
+      isAdmin: true,
       supabase: {
         from() {
           throw new Error("Admin entitlements should not query user_subscriptions.");
@@ -325,7 +328,31 @@ describe("property report sharing", () => {
     expect(plan.hasAnalysisAccess).toBe(true);
     expect(plan.features.realtimeAlertChanges).toBe("included");
     expect(plan.features.workspaceCollaboration).toBe("included");
-    expect(plan.limits.workspaceCollaborators).toBeGreaterThan(0);
+    expect(plan.limits.workspaceCollaborators).toBeNull();
+    expect(plan.limits.watchedZones).toBeNull();
+    expect(plan.limits.apiKeys).toBeNull();
+  });
+
+  it("keeps commercial Analyse quotas for a manually promoted premium user", async () => {
+    const auth = {
+      userId: "22222222-2222-4222-8222-222222222222",
+      claims: {},
+      accountTier: "premium",
+      userRole: "user",
+      isAdmin: false,
+      supabase: {
+        from() {
+          throw new Error("Manual premium entitlements should not query user_subscriptions.");
+        },
+      },
+    } as unknown as SupabaseAuthContext;
+
+    const plan = await resolvePlanEntitlements(auth);
+
+    expect(plan.plan).toBe("analyse");
+    expect(plan.limits.apiKeys).toBe(2);
+    expect(plan.limits.watchedZones).toBe(25);
+    expect(plan.limits.workspaceCollaborators).toBe(25);
   });
 });
 

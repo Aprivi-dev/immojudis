@@ -1,6 +1,6 @@
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { hasAdminRole, normalizeEmail } from "@/lib/account";
+import { normalizeEmail } from "@/lib/account";
 import { extractDpe } from "@/lib/dpe";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
 import { getSaleSurface } from "@/lib/surface";
@@ -58,6 +58,7 @@ export type DataQualityReport = {
 type AdminContext = {
   userId: string;
   claims?: Record<string, unknown>;
+  isAdmin: boolean;
 };
 
 type AuctionRunRow = {
@@ -148,7 +149,7 @@ export function buildDataQualityReport({
 }
 
 function assertAdmin(context: AdminContext): string {
-  if (!hasAdminRole(context.claims)) {
+  if (!context.isAdmin) {
     throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
   }
 

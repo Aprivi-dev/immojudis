@@ -1327,6 +1327,7 @@ export type Database = {
       user_profiles: {
         Row: {
           account_type: "b2c" | "b2b";
+          account_tier: "free" | "premium";
           created_at: string;
           email: string | null;
           full_name: string | null;
@@ -1335,9 +1336,11 @@ export type Database = {
           professional_status: "not_applicable" | "pending" | "approved" | "rejected";
           updated_at: string;
           user_id: string;
+          user_role: "user" | "admin";
         };
         Insert: {
           account_type?: "b2c" | "b2b";
+          account_tier?: "free" | "premium";
           created_at?: string;
           email?: string | null;
           full_name?: string | null;
@@ -1346,9 +1349,11 @@ export type Database = {
           professional_status?: "not_applicable" | "pending" | "approved" | "rejected";
           updated_at?: string;
           user_id: string;
+          user_role?: "user" | "admin";
         };
         Update: {
           account_type?: "b2c" | "b2b";
+          account_tier?: "free" | "premium";
           created_at?: string;
           email?: string | null;
           full_name?: string | null;
@@ -1357,6 +1362,7 @@ export type Database = {
           professional_status?: "not_applicable" | "pending" | "approved" | "rejected";
           updated_at?: string;
           user_id?: string;
+          user_role?: "user" | "admin";
         };
         Relationships: [];
       };
