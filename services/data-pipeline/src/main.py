@@ -28,7 +28,7 @@ from src.geocode import geocode_sale
 from src.lifecycle import mark_past_sales
 from src.models import AuctionSale
 from src.normalize import normalize_sale
-from src.pdf_enrichment import PdfEnrichmentStats, enrich_sale_from_pdfs
+from src.pdf_enrichment import PdfEnrichmentStats, classify_document_type, enrich_sale_from_pdfs
 from src.quality import (
     build_extraction_gap_report,
     build_quality_report,
@@ -251,6 +251,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         enriched_hashes = fetch_enriched_content_hashes(
             content_hashes,
             require_llm_description=False,
+            require_document_analysis=True,
         )
         if options.use_llm:
             current_llm_description_hashes = fetch_enriched_content_hashes(
@@ -1033,7 +1034,48 @@ def _limit_pdf_targets(
     max_targets = int(settings.get("pipeline_pdf_max_targets") or 0)
     if max_targets <= 0 or len(pdf_targets) <= max_targets:
         return pdf_targets
-    return sorted(pdf_targets, key=_llm_target_priority_key)[:max_targets]
+    return sorted(pdf_targets, key=_pdf_target_priority_key)[:max_targets]
+
+
+def _pdf_target_priority_key(sale: AuctionSale) -> tuple[int, int, str, str]:
+    has_surface = any(
+        value is not None
+        for value in (
+            sale.app_surface_m2,
+            sale.habitable_surface_m2,
+            sale.carrez_surface_m2,
+            sale.surface_m2,
+            sale.land_surface_m2,
+        )
+    )
+    document_types = {
+        classify_document_type(str(document.get("label") or ""), str(document.get("url") or ""))
+        for document in sale.documents
+        if isinstance(document, dict)
+    }
+    has_official_document = bool(
+        document_types
+        & {
+            "pv_huissier",
+            "pv_notaire",
+            "proces_verbal",
+            "diagnostics_techniques",
+            "cahier_conditions_vente",
+            "conditions_vente",
+        }
+    )
+    if not has_surface and has_official_document:
+        document_rank = 0
+    elif not has_surface and sale.documents:
+        document_rank = 1
+    elif has_official_document:
+        document_rank = 2
+    elif sale.documents:
+        document_rank = 3
+    else:
+        document_rank = 4
+    status_rank, sale_date, source_url = _llm_target_priority_key(sale)
+    return document_rank, status_rank, sale_date, source_url
 
 
 def _llm_target_priority_key(sale: AuctionSale) -> tuple[int, str, str]:

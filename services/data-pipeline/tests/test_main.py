@@ -80,6 +80,42 @@ def test_needs_heavy_enrichment_keeps_incomplete_sale() -> None:
     assert main._needs_heavy_enrichment(sale) is True
 
 
+def test_pdf_target_limit_prioritizes_missing_surface_with_official_documents() -> None:
+    partner_only = AuctionSale(
+        source_name="licitor",
+        source_url="https://www.licitor.com/annonce/partner-only.html",
+        property_type="house",
+        status="upcoming",
+        documents=[
+            {
+                "label": "Voir le dossier complet avec",
+                "url": "https://app-pro.la-loupe.immo/ext-partenaire/licitor/token/",
+                "type": "pdf",
+            }
+        ],
+    )
+    official_documents = AuctionSale(
+        source_name="info_encheres",
+        source_url="https://www.info-encheres.com/vente-pv.html",
+        property_type="apartment",
+        status="upcoming",
+        documents=[
+            {
+                "label": "Procès-verbal descriptif",
+                "url": "https://www.info-encheres.com/upload/pvd.pdf",
+                "type": "pv_descriptif",
+            }
+        ],
+    )
+
+    selected = main._limit_pdf_targets(
+        [partner_only, official_documents],
+        {"pipeline_pdf_max_targets": 1},
+    )
+
+    assert selected == [official_documents]
+
+
 def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> None:
     calls: list[str] = []
 

@@ -1948,6 +1948,10 @@ def _load_scoring_weights() -> dict[str, int | float | str]:
 
 
 def _set_app_surface(sale: AuctionSale) -> None:
+    if sale.surface_scope == "partial":
+        sale.app_surface_m2 = None
+        sale.app_surface_kind = None
+        return
     if sale.property_type == "apartment":
         sale.app_surface_m2 = sale.carrez_surface_m2 or sale.habitable_surface_m2
         if sale.app_surface_m2 is None:

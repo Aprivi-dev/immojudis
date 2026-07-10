@@ -37,7 +37,7 @@ from src.normalize import (
 )
 
 LOGGER = logging.getLogger(__name__)
-PDF_TEXT_CACHE_VERSION = "pdf_text_v2_page_level"
+PDF_TEXT_CACHE_VERSION = "pdf_text_v3_surface_calibration"
 DOCUMENT_TYPE_ALIASES = {
     "pv_descriptif": "pv_huissier",
     "proces_verbal_descriptif": "pv_huissier",
@@ -122,8 +122,14 @@ def download_documents(
     sale_dir.mkdir(parents=True, exist_ok=True)
 
     settings = load_settings()
-    headers = {"User-Agent": str(settings["user_agent"])}
+    headers = {
+        "User-Agent": str(settings["user_agent"]),
+        "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.5",
+        "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.6",
+        "Referer": sale.source_url,
+    }
     downloaded: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
     for document in sale.documents:
         url = document.get("url")
         document_type = _canonical_document_type(
@@ -131,14 +137,18 @@ def download_documents(
             label=document.get("label"),
             url=url,
         )
-        if not url or document_type == "other":
+        if not url or document_type == "other" or url in seen_urls:
             continue
+        seen_urls.add(url)
         if _is_robots_disallowed_licitor_document(url):
             LOGGER.info("Skipping robots-disallowed Licitor document %s", url)
             continue
 
         filename = _document_filename(document)
         file_path = sale_dir / filename
+        if file_path.exists() and not _looks_like_pdf_bytes(file_path.read_bytes()):
+            LOGGER.info("Discarding non-PDF document cache entry %s", file_path)
+            file_path.unlink(missing_ok=True)
         if not file_path.exists():
             try:
                 response = httpx.get(
@@ -146,8 +156,12 @@ def download_documents(
                     headers=headers,
                     timeout=float(settings["request_timeout_seconds"]),
                     verify=_verify_tls(url),
+                    follow_redirects=True,
                 )
                 response.raise_for_status()
+                if not _looks_like_pdf_bytes(response.content):
+                    content_type = response.headers.get("content-type", "")
+                    raise ValueError(f"response is not a PDF (content-type={content_type or 'unknown'})")
                 file_path.write_bytes(response.content)
                 if stats:
                     stats.downloaded += 1
@@ -163,6 +177,10 @@ def download_documents(
         enriched_document["file_path"] = str(file_path)
         downloaded.append(enriched_document)
     return downloaded
+
+
+def _looks_like_pdf_bytes(content: bytes) -> bool:
+    return b"%PDF-" in content[:1024]
 
 
 def _is_robots_disallowed_licitor_document(url: str) -> bool:
@@ -716,8 +734,9 @@ def _store_document_analysis_status(
 ) -> None:
     typed_documents = [_document_profile(document) for document in documents]
     extracted_profiles = [_extracted_document_profile(payload) for payload in pdf_texts]
+    text_profiles = [profile for profile in extracted_profiles if profile["extraction_status"] == "extracted"]
     type_counts = Counter(profile["document_type"] for profile in typed_documents)
-    extracted_type_counts = Counter(profile["document_type"] for profile in extracted_profiles)
+    extracted_type_counts = Counter(profile["document_type"] for profile in text_profiles)
 
     required_groups = {
         "pv_descriptif": {"pv_huissier", "pv_notaire", "proces_verbal"},
@@ -733,7 +752,7 @@ def _store_document_analysis_status(
     if not documents and not sale.documents:
         coverage_status = "source_only"
         warning = "Aucun PDF officiel exploitable n'a été trouvé : l'analyse reste un pré-tri."
-    elif not pdf_texts:
+    elif not text_profiles:
         coverage_status = "documents_not_extracted"
         warning = "Des documents sont listés, mais aucun texte PDF n'a encore été extrait."
     elif missing_core_documents:
@@ -748,7 +767,7 @@ def _store_document_analysis_status(
         "warning": warning,
         "documents_listed": len(sale.documents or []),
         "documents_downloaded": len(documents),
-        "documents_extracted": len(pdf_texts),
+        "documents_extracted": len(text_profiles),
         "document_types": dict(type_counts),
         "extracted_document_types": dict(extracted_type_counts),
         "missing_core_documents": missing_core_documents,
@@ -907,7 +926,12 @@ def _extract_surface_from_documents(pdf_texts: list[dict[str, object]] | list[st
                     "label": label,
                     "url": clean_text(item.get("url")) or "",
                     "document_type": document_type,
-                    "rank": _surface_document_rank(document_type, str(surface["evidence"])),
+                    "rank": _surface_document_rank(
+                        document_type,
+                        str(surface["evidence"]),
+                        surface_scope=clean_text(surface.get("surface_scope")),
+                    ),
+                    "surface_scope": surface.get("surface_scope"),
                     "page_number": surface.get("page_number"),
                     "page_confidence": surface.get("page_confidence"),
                     "extraction_method": surface.get("extraction_method") or item.get("extraction_method"),
@@ -930,6 +954,7 @@ def _extract_surface_from_documents(pdf_texts: list[dict[str, object]] | list[st
         "page_number": best.get("page_number"),
         "page_confidence": best.get("page_confidence"),
         "extraction_method": best.get("extraction_method"),
+        "surface_scope": best.get("surface_scope"),
     }
 
 
@@ -991,6 +1016,10 @@ def _document_surface_candidates(item: dict[str, object], text: str) -> list[dic
                 continue
             surface = _extract_surface_with_evidence(page_text)
             if surface:
+                surface["surface_scope"] = _surface_measurement_scope(
+                    f"{page_text}\n{text}",
+                    str(surface["evidence"]),
+                )
                 surface["page_number"] = page.get("page")
                 surface["page_confidence"] = page.get("confidence")
                 surface["extraction_method"] = page.get("method")
@@ -998,6 +1027,7 @@ def _document_surface_candidates(item: dict[str, object], text: str) -> list[dic
     if not candidates:
         surface = _extract_surface_with_evidence(text)
         if surface:
+            surface["surface_scope"] = _surface_measurement_scope(text, str(surface["evidence"]))
             candidates.append(surface)
     return candidates
 
@@ -1188,7 +1218,7 @@ def _energy_diagnostic_rank(item: dict[str, object]) -> tuple[int, int]:
     return document_score, field_score
 
 
-def _surface_document_rank(document_type: str, evidence: str) -> int:
+def _surface_document_rank(document_type: str, evidence: str, *, surface_scope: str | None = None) -> int:
     rank = {
         "diagnostics_techniques": 80,
         "pv_huissier": 75,
@@ -1200,8 +1230,12 @@ def _surface_document_rank(document_type: str, evidence: str) -> int:
     }.get(document_type, 30)
     if re.search(r"carrez|surface\s*habitable|superficie\s+privative", evidence, re.I):
         rank += 15
+    elif re.search(r"surface\s+de\s+r[ée]f[ée]rence", evidence, re.I):
+        rank += 10
     if re.search(r"terrain|parcelle|contenance cadastrale|are|centiare", evidence, re.I):
         rank -= 25
+    if surface_scope == "partial":
+        rank -= 40
     return rank
 
 
@@ -1233,8 +1267,15 @@ def _assign_pdf_surface(sale: AuctionSale, surface: dict[str, object]) -> None:
         sale.surface_m2 = decimal_value
     if sale.surface_m2 is None:
         sale.surface_m2 = decimal_value
+    surface_scope = clean_text(surface.get("surface_scope"))
+    if surface_scope == "partial":
+        sale.surface_scope = "partial"
+        if "partial_surface_measurement" not in sale.quality_flags:
+            sale.quality_flags.append("partial_surface_measurement")
     sale.surface_source = sale.surface_source or "pdf"
-    sale.surface_confidence = sale.surface_confidence or Decimal("0.75")
+    sale.surface_confidence = sale.surface_confidence or (
+        Decimal("0.45") if surface_scope == "partial" else Decimal("0.75")
+    )
     sale.surface_evidence = sale.surface_evidence or evidence
     sale.raw_payload["surface_extraction"] = {
         "source": "pdf",
@@ -1245,6 +1286,7 @@ def _assign_pdf_surface(sale: AuctionSale, surface: dict[str, object]) -> None:
         "page_number": surface.get("page_number"),
         "page_confidence": surface.get("page_confidence"),
         "extraction_method": clean_text(surface.get("extraction_method")),
+        "surface_scope": surface_scope,
         "evidence": evidence,
     }
 
@@ -1321,13 +1363,15 @@ def _extract_surface(text: str) -> Decimal | None:
 
 def _extract_surface_with_evidence(text: str) -> dict[str, Decimal | str] | None:
     patterns = (
-        rf"(?:surface\s*(?:habitable|privative|utile|totale|carrez)?|superficie(?:\s+carrez)?)\s*:?\s*(?:de\s+)?(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-        rf"(?:surface\s+(?:habitable|privative|utile|totale|carrez)?|superficie(?:\s+carrez)?).{{0,80}}?\b(?:soit|est\s+de|de)\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-        rf"(?:mesurage\s+(?:loi\s+)?carrez|loi\s+carrez|surface\s+(?:privative\s+)?(?:loi\s+)?carrez|superficie\s+(?:privative\s+)?(?:loi\s+)?carrez)\s*:?\s*(?:de\s+)?(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-        rf"\b(?:d['’]\s*)?environ\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
-        rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)\s+(?:habitables?|de\s+surface|loi\s+carrez)",
-        rf"\btotal\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)",
-        rf"superficie\s*approximative\s*habitable\s*totale\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\?)",
+        rf"(?:surface|superficie)\s+de\s+r[ée]f[ée]rence\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
+        rf"surface\s+(?:privative\s+)?(?:loi\s+)?carrez(?:\s+totale)?\s*:?\s*(?:de\s+)?(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
+        rf"(?:surface\s*(?:habitable|privative|utile|totale|carrez|au\s+sol\s+totale)?|superficie(?:\s+(?:carrez|habitable|privative))?)\s*:?\s*(?:de\s+)?(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
+        rf"(?:surface\s+(?:habitable|privative|utile|totale|carrez)?|superficie(?:\s+carrez)?).{{0,80}}?\b(?:soit|est\s+de|de)\s+{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
+        rf"(?:mesurage\s+(?:loi\s+)?carrez|loi\s+carrez|surface\s+(?:privative\s+)?(?:loi\s+)?carrez|superficie\s+(?:privative\s+)?(?:loi\s+)?carrez)\s*:?\s*(?:de\s+)?(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
+        rf"\b(?:d['’]\s*)?environ\s+{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)\b",
+        rf"{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²|\*)\s+(?:habitables?|de\s+surface|loi\s+carrez)",
+        rf"\btotal\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²|\*)",
+        rf"superficie\s*approximative\s*habitable\s*totale\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²|\?)",
     )
     for pattern in patterns:
         for match in re.finditer(pattern, text, re.I | re.S):
@@ -1343,8 +1387,10 @@ def _extract_surface_with_evidence(text: str) -> dict[str, Decimal | str] | None
 
 def _extract_land_surface_with_evidence(text: str) -> dict[str, Decimal | str] | None:
     m2_patterns = (
-        rf"\b(?:terrain|parcelles?|jardin|contenance|cadastr[ée]e?|surface\s+cadastrale|superficie\s+cadastrale).{{0,140}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
-        rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b.{{0,100}}\b(?:terrain|parcelles?|contenance|cadastr[ée]e?)\b",
+        rf"\b(?:surface|superficie)\s+(?:du\s+|de\s+la\s+)?(?:terrain|parcelle|jardin|cadastrale)\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)\b",
+        rf"\b(?:terrain|parcelles?|jardin)\b.{{0,140}}?\b(?:surface|superficie|contenance)\b.{{0,60}}?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)\b",
+        rf"\bcontenance(?:\s+(?:totale|cadastrale))?\b.{{0,100}}?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)\b",
+        rf"\b{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)\b.{{0,80}}\b(?:de\s+terrain|terrain|parcelles?|jardin)\b",
     )
     for pattern in m2_patterns:
         for match in re.finditer(pattern, text, re.I | re.S):
@@ -1613,14 +1659,50 @@ def _has_land_surface_context(text: str, start: int, end: int) -> bool:
 
 def _is_land_surface_evidence(evidence: str) -> bool:
     text = _normalize_document_classifier_text(evidence)
-    if not re.search(r"\b(?:terrain|parcelles?|cadastr(?:e|ee|al|ale)|contenance|jardin)\b", text):
+    if re.search(r"\b(?:habitable|habitables|carrez|loi\s+carrez|surface\s+privative|surface\s+de\s+reference|batie|bati)\b", text):
         return False
-    return not re.search(r"\b(?:habitable|habitables|carrez|loi\s+carrez|surface\s+privative|batie|bati)\b", text)
+    return bool(
+        re.search(
+            r"\b(?:surface|superficie)\s+(?:du\s+|de\s+la\s+)?(?:terrain|parcelle|jardin|cadastrale)\b|"
+            r"\b(?:terrain|parcelles?|jardin)\b.{0,100}\b(?:surface|superficie|contenance)\b|"
+            r"\bcontenance(?:\s+(?:totale|cadastrale))?\b.{0,100}\b(?:m\s*(?:2|²)|ha|ares?|centiares?)\b",
+            text,
+        )
+    )
 
 
 def _is_surface_false_positive(text: str, start: int, end: int) -> bool:
-    context = text[max(0, start - 20) : min(len(text), end + 30)]
-    return bool(re.search(r"\bkwh\b|kg\s*co2|\bges\b|dpe\b|performance\s+[ée]nerg[ée]tique", context, re.I))
+    context = text[max(0, start - 160) : min(len(text), end + 60)]
+    matched = text[start:end]
+    if re.search(r"\b(?:habitable|carrez|privative|surface\s+de\s+r[ée]f[ée]rence)\b", matched, re.I):
+        return False
+    if re.search(r"\b(?:surface|superficie)\s+de\s+r[ée]f[ée]rence\b", context, re.I):
+        return False
+    if re.search(r"\bkwh\b|kg\s*co2|\bges\b|performance\s+[ée]nerg[ée]tique", context, re.I):
+        return True
+    prefix = text[max(0, start - 120) : start]
+    return bool(
+        re.search(
+            r"\b(?:mur|paroi|plafond|toiture|fa[çc]ade|isolant|isolation|plancher|baie|fen[eê]tre|porte|garage|cave|parking)\b",
+            prefix,
+            re.I,
+        )
+    )
+
+
+def _surface_measurement_scope(text: str, evidence: str) -> str:
+    context = _normalize_document_classifier_text(f"{evidence} {text}")
+    if re.search(
+        r"\b(?:mesurage|calcul\s+de\s+superficie).{0,80}\b(?:incomplet|partiel|pas\s+pu|n(?:'|’)ont\s+pu)\b|"
+        r"\bn(?:'|’)ont\s+pu\s+[eê]tre\s+r[ée]alis[ée]s?\s+dans\s+leur\s+int[ée]gralit[ée]\b|"
+        r"\bpi[eè]ces?\s+(?:non\s+)?(?:mesur[ée]es?|accessibles?)\b",
+        context,
+    ):
+        return "partial"
+    evidence_text = _normalize_document_classifier_text(evidence)
+    if "carrez" in evidence_text and len(re.findall(r"\bencombrement\s+trop\s+important\b", context)) >= 2:
+        return "partial"
+    return "total"
 
 
 def _extract_rooms_count(text: str) -> int | None:

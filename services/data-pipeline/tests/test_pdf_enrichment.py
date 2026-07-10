@@ -4,6 +4,7 @@ from decimal import Decimal
 from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
 from src.pdf_enrichment import (
+    PdfEnrichmentStats,
     _adaptive_docling_timeout,
     _read_document_text_cache,
     _select_documents_for_extraction,
@@ -330,6 +331,94 @@ def test_enrich_sale_from_pdf_text_extracts_mesurage_loi_carrez_with_provenance(
     assert surface_extraction["document_type"] == "pv_huissier"
     assert surface_extraction["page_number"] == 2
     assert "Mesurage loi Carrez" in surface_extraction["evidence"]
+
+
+def test_info_encheres_diagnostics_prefers_reference_surface_over_technical_components() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/maison-surface-reference.html",
+            "property_type": "Maison",
+        }
+    )
+    document_text = """
+    Type de bien : Maison individuelle. Surface de référence : 116,72 m².
+    N° cadastre : ZI 40, ZI 43.
+    Détail des travaux : mur est, surface : 77 m². Plafond, surface : 60 m².
+    """
+    pdf_texts = [
+        {
+            "label": "Diagnostics techniques",
+            "url": "https://example.test/diagnostics.pdf",
+            "document_type": "diagnostics_techniques",
+            "text": document_text,
+            "pages": [
+                {
+                    "page": 114,
+                    "text": "Maison individuelle. Surface de référence : 116,72 m². N° cadastre : ZI 40, ZI 43.",
+                    "confidence": 0.92,
+                    "method": "pymupdf_text",
+                },
+                {
+                    "page": 130,
+                    "text": "Isolation du mur est, surface : 77 m². Plafond, surface : 60 m².",
+                    "confidence": 0.92,
+                    "method": "pymupdf_text",
+                },
+            ],
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("116.72")
+    assert sale.habitable_surface_m2 == Decimal("116.72")
+    assert sale.land_surface_m2 is None
+    assert sale.app_surface_m2 == Decimal("116.72")
+    assert sale.raw_payload["surface_extraction"]["page_number"] == 114
+
+
+def test_info_encheres_keeps_incomplete_carrez_measurement_as_partial_evidence() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/appartement-mesurage-partiel.html",
+            "property_type": "Appartement",
+        }
+    )
+    document_text = """
+    Le calcul de superficie n'a pas pu être réalisé dans son intégralité.
+    Cuisine, séjour et chambres : encombrement trop important.
+    Surface loi Carrez totale : 3,78 m².
+    """
+    pdf_texts = [
+        {
+            "label": "Diagnostics techniques",
+            "url": "https://example.test/diagnostics-partiels.pdf",
+            "document_type": "diagnostics_techniques",
+            "text": document_text,
+            "pages": [
+                {
+                    "page": 3,
+                    "text": "Superficie privative. Surface loi Carrez totale : 3,78 m².",
+                    "confidence": 0.92,
+                    "method": "pymupdf_text",
+                }
+            ],
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("3.78")
+    assert sale.carrez_surface_m2 == Decimal("3.78")
+    assert sale.surface_scope == "partial"
+    assert sale.surface_confidence == Decimal("0.45")
+    assert sale.app_surface_m2 is None
+    assert "partial_surface_measurement" in sale.quality_flags
+    assert sale.raw_payload["surface_extraction"]["surface_scope"] == "partial"
 
 
 def test_enrich_sale_from_pdf_text_extracts_cadastral_land_surface_with_provenance() -> None:
@@ -779,6 +868,35 @@ def test_document_analysis_status_normalizes_legacy_extracted_document_types() -
     }
 
 
+def test_document_analysis_does_not_count_empty_pdf_payload_as_extracted() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/scanned-empty-pdf.html",
+        }
+    )
+    documents = [
+        {"label": "PV descriptif", "url": "https://example.test/pv.pdf", "document_type": "pv_huissier"}
+    ]
+    pdf_texts = [
+        {
+            "label": "PV descriptif",
+            "url": "https://example.test/pv.pdf",
+            "document_type": "pv_huissier",
+            "text": "",
+            "pages": [{"page": 1, "text": "", "confidence": 0.0, "method": "fallback_text"}],
+        }
+    ]
+
+    _store_document_analysis_status(sale, documents, pdf_texts)
+
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["coverage_status"] == "documents_not_extracted"
+    assert analysis["documents_extracted"] == 0
+    assert analysis["extracted_document_types"] == {}
+    assert analysis["profiles"][0]["extraction_status"] == "empty"
+
+
 def test_enrich_sale_from_pdf_text_does_not_sum_repeated_document_surfaces() -> None:
     sale = normalize_sale(
         {
@@ -906,7 +1024,7 @@ def test_extract_pdf_document_preserves_page_level_text(tmp_path, monkeypatch) -
 
     payload = extract_pdf_document(path, document={"label": "PV", "document_type": "pv_huissier"})
 
-    assert payload["cache_version"] == "pdf_text_v2_page_level"
+    assert payload["cache_version"] == "pdf_text_v3_surface_calibration"
     assert payload["page_count"] == 2
     assert [page["page"] for page in payload["pages"]] == [1, 2]
     assert "Surface habitable" in payload["text"]
@@ -1070,6 +1188,77 @@ def test_download_documents_saves_non_pdf_download_endpoint_with_pdf_suffix(tmp_
 
     assert downloaded[0]["document_type"] == "pv_huissier"
     assert downloaded[0]["file_path"].endswith(".pdf")
+
+
+def test_download_documents_rejects_html_response_and_uses_source_referer(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"<html><body>Partner landing page</body></html>"
+        headers = {"content-type": "text/html; charset=utf-8"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    captured: dict[str, object] = {}
+
+    def fake_get(url, **kwargs):
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-avec-document.html",
+            "documents": [
+                {
+                    "label": "Procès verbal descriptif",
+                    "url": "https://example.test/download.php?id=5980&type=pvd",
+                    "type": "pdf",
+                }
+            ],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 1
+    assert captured["follow_redirects"] is True
+    assert captured["headers"]["Referer"] == sale.source_url
+    assert list(tmp_path.rglob("*.pdf")) == []
+
+
+def test_download_documents_fetches_duplicate_url_only_once(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"%PDF-1.4\n%%EOF"
+        headers = {"content-type": "application/pdf"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    calls: list[str] = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        return Response()
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    document = {
+        "label": "Diagnostics techniques",
+        "url": "https://example.test/diagnostics.pdf",
+        "type": "pdf",
+    }
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-document-duplique.html",
+            "documents": [document, document],
+        }
+    )
+
+    downloaded = download_documents(sale, output_root=tmp_path)
+
+    assert calls == ["https://example.test/diagnostics.pdf"]
+    assert len(downloaded) == 1
 
 
 def test_adaptive_docling_timeout_shortens_signed_documents(tmp_path, monkeypatch) -> None:

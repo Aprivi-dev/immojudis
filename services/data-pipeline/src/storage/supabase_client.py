@@ -668,6 +668,7 @@ def fetch_enriched_content_hashes(
     content_hashes: list[str],
     *,
     require_llm_description: bool = False,
+    require_document_analysis: bool = False,
     prompt_version: str | None = None,
 ) -> set[str]:
     """Return the subset of content_hashes already present and enriched in DB.
@@ -709,13 +710,29 @@ def fetch_enriched_content_hashes(
             for row in response.json():
                 value = row.get("content_hash")
                 if value and (
-                    not require_llm_description
-                    or _has_current_llm_description(row.get("raw_payload"), prompt_version)
+                    (not require_llm_description or _has_current_llm_description(row.get("raw_payload"), prompt_version))
+                    and (not require_document_analysis or _has_current_document_analysis(row.get("raw_payload")))
                 ):
                     found.add(str(value))
         except httpx.HTTPError as exc:
             LOGGER.warning("Enriched-hash lookup failed: %s", exc)
     return found
+
+
+def _has_current_document_analysis(raw_payload: object) -> bool:
+    if not isinstance(raw_payload, dict):
+        return False
+    analysis = raw_payload.get("document_analysis")
+    if not isinstance(analysis, dict):
+        return False
+    try:
+        listed = int(analysis.get("documents_listed") or 0)
+        extracted = int(analysis.get("documents_extracted") or 0)
+    except (TypeError, ValueError):
+        return False
+    if listed > 0:
+        return extracted > 0
+    return analysis.get("coverage_status") == "source_only"
 
 
 def fetch_sales_needing_llm_descriptions(

@@ -291,6 +291,30 @@ def test_parse_licitor_detail_html_keeps_document_links_without_pdf_extension() 
     assert raw["source_blocks"]["documents"] == "PV descriptif; Cahier des conditions de vente"
 
 
+def test_parse_licitor_detail_html_does_not_treat_navigation_and_partner_links_as_documents() -> None:
+    html = """
+    <h1>Annonce n°109014 : une hutte de chasse à Warhem</h1>
+    <a href="https://itunes.apple.com/fr/app/licitor/id1024474985?mt=8"><img alt="Application iOS"></a>
+    <a href="https://play.google.com/store/apps/details?id=fr.tiddle.licitor"></a>
+    <a href="https://www.licitor.com/"></a>
+    <a href="https://app-pro.la-loupe.immo/ext-partenaire/licitor/token/">Voir le dossier complet avec La Loupe</a>
+    <a href="/download/document?id=109014&amp;pvd=1">PV descriptif</a>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/90/14/vente-aux-encheres/une-hutte-de-chasse/warhem/nord/109014.html",
+    )
+
+    assert raw["documents"] == [
+        {
+            "label": "PV descriptif",
+            "url": "https://www.licitor.com/download/document?id=109014&pvd=1",
+            "type": "pdf",
+        }
+    ]
+
+
 def test_parse_licitor_detail_html_extracts_ad_images_without_site_assets() -> None:
     html = """
     <h1>Annonce n°108762 : divers biens à Montardon (Pyrénées-Atlantiques), mise à prix : 500 000 €</h1>
