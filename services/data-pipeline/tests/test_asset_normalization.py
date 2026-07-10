@@ -798,6 +798,71 @@ def test_asset_normalization_rejects_large_uncertain_surface_as_app_surface() ->
     assert "ambiguous_surface" in sale.quality_flags
 
 
+def test_asset_normalization_restores_partial_scope_from_pdf_extraction() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-6009.html",
+            "property_type": "Appartement",
+            "title": "Appartement 4 m²",
+            "surface_m2": "3.78",
+            "carrez_surface_m2": "3.78",
+            "app_surface_m2": "3.78",
+            "app_surface_kind": "carrez",
+            "surface_scope": "total",
+            "surface_source": "pdf",
+            "surface_extraction": {
+                "source": "pdf",
+                "value_m2": "3.78",
+                "surface_scope": "partial",
+            },
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("3.78")
+    assert sale.carrez_surface_m2 == Decimal("3.78")
+    assert sale.app_surface_m2 is None
+    assert sale.app_surface_kind is None
+    assert sale.surface_scope == "partial"
+    assert sale.title == "Appartement"
+    assert "partial_surface_scope_restored" in sale.quality_flags
+    assert sale.raw_payload["surface_scope_reconciliation"] == {
+        "status": "restored",
+        "previous_scope": "total",
+        "rejected_app_surface_m2": "3.78",
+        "documented_partial_surface_m2": "3.78",
+        "basis": "structured_pdf_extraction_scope",
+    }
+
+
+def test_partial_pdf_scope_does_not_override_a_distinct_total_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-with-total.html",
+            "property_type": "Appartement",
+            "surface_m2": "87",
+            "carrez_surface_m2": "87",
+            "app_surface_m2": "87",
+            "app_surface_kind": "carrez",
+            "surface_scope": "total",
+            "surface_extraction": {
+                "source": "pdf",
+                "value_m2": "3.78",
+                "surface_scope": "partial",
+            },
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.app_surface_m2 == Decimal("87")
+    assert sale.surface_scope == "total"
+    assert "partial_surface_scope_restored" not in sale.quality_flags
+
+
 def test_scoring_rewards_solid_free_discounted_asset() -> None:
     sale = normalize_sale(
         {
