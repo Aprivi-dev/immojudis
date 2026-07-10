@@ -213,6 +213,7 @@ def _is_specific_display_title(title: str | None) -> bool:
 
 
 def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
+    _restore_partial_document_surface_scope(sale)
     text = _sale_text(sale)
     if not text:
         _fill_quality_flags(sale)
@@ -230,6 +231,43 @@ def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
     _write_asset_payload(sale, risks)
     sale.title = build_display_title(sale)
     return sale
+
+
+def _restore_partial_document_surface_scope(sale: AuctionSale) -> None:
+    extraction = sale.raw_payload.get("surface_extraction")
+    if not isinstance(extraction, dict) or extraction.get("surface_scope") != "partial":
+        return
+    if extraction.get("source") != "pdf":
+        return
+
+    documented_value = parse_surface(extraction.get("value_m2"))
+    measured_values = {
+        value
+        for value in (
+            sale.surface_m2,
+            sale.habitable_surface_m2,
+            sale.carrez_surface_m2,
+        )
+        if value is not None
+    }
+    if documented_value is None or documented_value not in measured_values:
+        return
+    if sale.app_surface_m2 is not None and sale.app_surface_m2 != documented_value:
+        return
+
+    previous_scope = sale.surface_scope
+    previous_app_surface = sale.app_surface_m2
+    sale.surface_scope = "partial"
+    sale.app_surface_m2 = None
+    sale.app_surface_kind = None
+    sale.raw_payload["surface_scope_reconciliation"] = {
+        "status": "restored",
+        "previous_scope": previous_scope,
+        "rejected_app_surface_m2": str(previous_app_surface) if previous_app_surface is not None else None,
+        "documented_partial_surface_m2": str(documented_value),
+        "basis": "structured_pdf_extraction_scope",
+    }
+    _add_quality_flag(sale, "partial_surface_scope_restored")
 
 
 def build_auction_features_row(sale: AuctionSale) -> dict[str, Any]:
