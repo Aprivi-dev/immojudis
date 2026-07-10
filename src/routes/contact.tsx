@@ -29,15 +29,15 @@ function ContactPage() {
             Une question sur un dossier, une source ou un accès ?
           </h1>
           <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-            Pour une question sur une annonce, une source documentaire ou un accès investisseur,
-            préparez l'identifiant de la vente concernée afin de faciliter le traitement.
+            Pour une question sur une annonce, une source documentaire ou un accès Analyse, préparez
+            l'identifiant de la vente concernée afin de faciliter le traitement.
           </p>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             <div className="liquid-panel-soft rounded-lg p-5">
               <FileSearch className="h-5 w-5 text-gold" />
               <h2 className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
-                Investisseur
+                Découverte / Analyse
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 Centralisez vos biens à suivre depuis les favoris et revenez avec l'identifiant de

@@ -24,11 +24,11 @@ import { BillingActions } from "@/components/BillingActions";
 export const Route = createFileRoute("/accompagnement")({
   head: () => ({
     meta: [
-      { title: "Offre Pro — Immojudis" },
+      { title: "Offres Découverte et Analyse — Immojudis" },
       {
         name: "description",
         content:
-          "Offre Immojudis Pro : rapports d'opportunité, comparables DVF, calcul de mise maximale, alertes avancées, suivi d'audience et avocats référencés.",
+          "Découverte gratuite après création de compte, puis Analyse complète à 29 € pour 30 jours sans abonnement récurrent.",
       },
     ],
   }),
@@ -67,39 +67,38 @@ const productModules = [
 
 const plans = [
   {
-    planCode: "analyse",
-    icon: ShieldCheck,
-    name: "ImmoJudis Pro",
-    price: "29 à 79 €/mois",
+    planCode: "decouverte",
+    icon: Sparkles,
+    name: "Découverte",
+    price: "0 €",
     audience:
-      "Pour les acheteurs actifs, investisseurs particuliers et professionnels qui suivent quelques dossiers à la fois.",
+      "Pour explorer les ventes judiciaires et voir précisément la profondeur des analyses disponibles.",
     features: [
-      "Rapports complets sur les annonces suivies",
-      "Comparables DVF détaillés et prix/m² local",
-      "Calcul de mise maximale, frais et travaux estimés",
-      "Mise en relation avec des avocats référencés",
-      "Alertes avancées, favoris, notes et export PDF",
-      "Checklist avant audience et points à valider avec l'avocat",
+      "Création de compte gratuite",
+      "Catalogue et recherche des ventes",
+      "Mise à prix, audience, localisation, surface et tribunal",
+      "Toutes les analyses visibles sous forme d'aperçus floutés",
+      "Aucune donnée premium transmise au navigateur",
+      "Aucune carte bancaire requise",
     ],
   },
   {
-    planCode: "investisseur",
-    icon: UsersRound,
-    name: "ImmoJudis Investisseur",
-    price: "99 à 199 €/mois",
-    audience:
-      "Pour marchands de biens, chasseurs, foncières locales et équipes qui comparent plusieurs ventes.",
+    planCode: "analyse",
+    icon: ShieldCheck,
+    name: "Analyse",
+    price: "29 € / 30 jours",
+    audience: "Pour analyser un ou plusieurs dossiers avant audience, sans abonnement récurrent.",
     features: [
-      "Alertes temps réel et zones surveillées",
-      "Scoring de rentabilité et analyse multi-biens",
-      "Exports CSV, historique des ventes passées et accès API léger",
-      "Documents centralisés et annotation collaborative",
-      "Pilotage des demandes avocat sur plusieurs dossiers",
-      "Quotas de rapports plus élevés et suivi de portefeuille",
+      "Rapports, risques et documents complets",
+      "Comparables DVF, estimation et évolution du marché",
+      "Mise maximale, frais, travaux, rendement et marge",
+      "Cadastre, DPE, urbanisme, quartier et services",
+      "Alertes, favoris, exports, API et analyse multi-biens",
+      "Avocats référencés, suivi et collaboration de dossier",
     ],
   },
 ] satisfies Array<{
-  planCode: "analyse" | "investisseur";
+  planCode: "decouverte" | "analyse";
   icon: IconComponent;
   name: string;
   price: string;
@@ -119,7 +118,7 @@ const implementationSteps = [
   "V1 robuste sans IA avancée : règles de comparables, pondération récence-distance et niveau de confiance.",
   "Pipeline data : import ventes judiciaires, DVF semestriel, géocodage BAN, cadastre et DPE à la demande.",
   "Réseau avocats : fiches référencées par barreau, zones couvertes, disponibilité et demande tracée.",
-  "Monétisation : quotas de rapports, paywall, PDF watermark gratuit, logs d'usage et plans Stripe.",
+  "Monétisation : paywall sécurisé, paiement Stripe unique, durée de 30 jours et journal des accès.",
 ] as const;
 
 type ComparisonValue = boolean | "limited" | string;
@@ -129,36 +128,37 @@ const comparisonSections = [
     title: "Explorateur de ventes",
     rows: [
       { feature: "Filtres de recherche", discovery: true, analysis: true },
+      { feature: "Informations essentielles de l'annonce", discovery: true, analysis: true },
       { feature: "Statistiques des ventes judiciaires", discovery: false, analysis: true },
-      { feature: "Alertes email simples", discovery: true, analysis: true },
+      { feature: "Alertes email", discovery: false, analysis: true },
     ],
   },
   {
     title: "Rapport d'opportunité judiciaire",
     rows: [
-      { feature: "Estimation de valeur", discovery: true, analysis: true },
-      { feature: "Comparables DVF détaillés", discovery: "limited", analysis: true },
-      { feature: "Décote apparente vs mise à prix", discovery: true, analysis: true },
+      { feature: "Estimation de valeur", discovery: false, analysis: true },
+      { feature: "Comparables DVF détaillés", discovery: false, analysis: true },
+      { feature: "Décote apparente vs mise à prix", discovery: false, analysis: true },
       { feature: "Score d'opportunité et niveau de confiance", discovery: false, analysis: true },
-      { feature: "Frais d'adjudication estimés", discovery: "limited", analysis: true },
+      { feature: "Frais d'adjudication estimés", discovery: false, analysis: true },
       { feature: "Risques, occupation et points juridiques", discovery: false, analysis: true },
-      { feature: "Export PDF du rapport", discovery: "limited", analysis: true },
-      { feature: "Édition du rapport et notes privées", discovery: "limited", analysis: true },
+      { feature: "Export PDF du rapport", discovery: false, analysis: true },
+      { feature: "Édition du rapport et notes privées", discovery: false, analysis: true },
     ],
   },
   {
     title: "Moteur d'enchère",
     rows: [
-      { feature: "Calcul de mise maximale", discovery: true, analysis: true },
+      { feature: "Calcul de mise maximale", discovery: false, analysis: true },
       { feature: "Scénarios frais, travaux et marge cible", discovery: false, analysis: true },
       { feature: "Rentabilité brute potentielle", discovery: false, analysis: true },
-      { feature: "Checklist avant audience", discovery: true, analysis: true },
+      { feature: "Checklist avant audience", discovery: false, analysis: true },
     ],
   },
   {
     title: "Alertes intelligentes",
     rows: [
-      { feature: "Alerte par ville, budget et type de bien", discovery: true, analysis: true },
+      { feature: "Alerte par ville, budget et type de bien", discovery: false, analysis: true },
       { feature: "Alerte décote minimale", discovery: false, analysis: true },
       { feature: "Alerte rendement, DPE ou maison avec terrain", discovery: false, analysis: true },
       { feature: "Zones surveillées et suivi multi-biens", discovery: false, analysis: true },
@@ -167,10 +167,10 @@ const comparisonSections = [
   {
     title: "Avocats référencés",
     rows: [
-      { feature: "Identification du barreau compétent", discovery: true, analysis: true },
+      { feature: "Identification du barreau compétent", discovery: false, analysis: true },
       {
         feature: "Annuaire d'avocats référencés par tribunal",
-        discovery: "limited",
+        discovery: false,
         analysis: true,
       },
       { feature: "Demande de mise en relation", discovery: false, analysis: true },
@@ -184,7 +184,7 @@ const comparisonSections = [
   {
     title: "Données et exports avancés",
     rows: [
-      { feature: "Analyse cadastrale et DPE", discovery: "limited", analysis: true },
+      { feature: "Analyse cadastrale et DPE", discovery: false, analysis: true },
       { feature: "Historique des ventes passées", discovery: false, analysis: true },
       { feature: "Exports CSV", discovery: false, analysis: true },
       { feature: "Accès API léger", discovery: false, analysis: true },
@@ -202,15 +202,15 @@ function AccompagnementPage() {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/70 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-gold-soft shadow-sm">
             <ShieldCheck className="h-4 w-4" />
-            Offre ImmoJudis Pro
+            Offre ImmoJudis Analyse
           </div>
           <h1 className="mt-5 max-w-4xl font-display text-4xl leading-none text-foreground sm:text-6xl">
             L'espace de décision pour enchères immobilières judiciaires.
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            ImmoJudis Pro transforme les annonces judiciaires en rapports exploitables : valeur de
-            marché, comparables, risques, frais, rentabilité, mise maximale et accès à des avocats
-            référencés avant audience.
+            ImmoJudis Analyse transforme les annonces judiciaires en rapports exploitables : valeur
+            de marché, comparables, risques, frais, rentabilité, mise maximale et accès à des
+            avocats référencés avant audience, pendant 30 jours pour un paiement unique de 29 €.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
             <BillingActions />
@@ -256,10 +256,10 @@ function AccompagnementPage() {
       <section className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
         <div className="mb-5 max-w-3xl">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gold-soft">
-            Plans recommandés
+            Deux offres, sans ambiguïté
           </p>
           <h2 className="mt-2 font-display text-3xl leading-tight text-foreground sm:text-4xl">
-            Une offre payante centrée sur le moment de décision.
+            Commencez gratuitement, puis débloquez toute l'analyse quand vous en avez besoin.
           </h2>
         </div>
         <div className="grid gap-5 lg:grid-cols-2">
@@ -454,7 +454,7 @@ function PlanCard({
   features,
   planCode,
 }: {
-  planCode: "analyse" | "investisseur";
+  planCode: "decouverte" | "analyse";
   icon: IconComponent;
   name: string;
   price: string;
@@ -486,19 +486,33 @@ function PlanCard({
       </ul>
       <div className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
         <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1">
-          <Download className="h-3.5 w-3.5" />
-          Export
+          {planCode === "analyse" ? (
+            <Download className="h-3.5 w-3.5" />
+          ) : (
+            <Sparkles className="h-3.5 w-3.5" />
+          )}
+          {planCode === "analyse" ? "Export" : "Compte"}
         </span>
         <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1">
           <Radar className="h-3.5 w-3.5" />
-          Alertes
+          {planCode === "analyse" ? "Alertes" : "Catalogue"}
         </span>
         <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1">
           <FileSearch className="h-3.5 w-3.5" />
-          Sources
+          {planCode === "analyse" ? "Sources" : "Aperçus"}
         </span>
       </div>
-      <BillingActions targetPlan={planCode} className="mt-5" />
+      {planCode === "analyse" ? (
+        <BillingActions className="mt-5" />
+      ) : (
+        <Link
+          to="/login"
+          search={{ redirect: "/sales" }}
+          className="ij-signup-button mt-5 inline-flex px-5 py-3 text-sm font-bold"
+        >
+          Créer mon compte gratuit
+        </Link>
+      )}
     </article>
   );
 }

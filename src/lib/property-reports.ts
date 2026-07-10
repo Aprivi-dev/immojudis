@@ -29,11 +29,13 @@ import { buildRenovationAnalysis } from "@/lib/renovation-analysis";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import {
   featureAccess,
-  isActivePlanStatus,
+  featureIncluded,
+  isPlanPeriodActive,
   normalizePlanCode,
   PLAN_LABELS,
   PLAN_LIMITS,
   type FeatureAccess,
+  type FeatureKey,
   type PlanCode,
 } from "@/lib/plans";
 import {
@@ -101,6 +103,8 @@ export type PropertyReportUpdatePayload = z.output<typeof propertyReportUpdateSc
 export type PlanEntitlements = {
   plan: PlanCode;
   label: string;
+  hasAnalysisAccess: boolean;
+  currentPeriodEnd: string | null;
   limits: (typeof PLAN_LIMITS)[PlanCode];
   features: {
     salesStatistics: FeatureAccess;
@@ -114,6 +118,10 @@ export type PlanEntitlements = {
     dpeExplorer: FeatureAccess;
     marketDemographics: FeatureAccess;
     marketPriceDistribution: FeatureAccess;
+    valueEstimate: FeatureAccess;
+    cadastralAnalysis: FeatureAccess;
+    nearbyServices: FeatureAccess;
+    savedReports: FeatureAccess;
     pdfExport: FeatureAccess;
     reportEditing: FeatureAccess;
     urbanPlanning: FeatureAccess;
@@ -194,6 +202,7 @@ export async function listPropertyReports({
   saleId?: string | null;
 }): Promise<PropertyReportListResponse> {
   const plan = await resolvePlanEntitlements(auth);
+  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés au plan Analyse.");
   let query = auth.supabase
     .from("saved_property_reports")
     .select("*")
@@ -219,6 +228,7 @@ export async function savePropertyReport({
   input: PropertyReportRequestPayload;
 }): Promise<PropertyReportSaveResponse> {
   const plan = await resolvePlanEntitlements(auth);
+  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés au plan Analyse.");
   const existingReportId = await getExistingReportId(
     auth.supabase,
     auth.userId,
@@ -331,6 +341,11 @@ export async function updatePropertyReport({
   input: PropertyReportUpdatePayload;
 }): Promise<PropertyReportSaveResponse> {
   const plan = await resolvePlanEntitlements(auth);
+  assertEntitlementIncluded(
+    plan,
+    "property.reportEditing",
+    "Édition des rapports réservée au plan Analyse.",
+  );
   const patch: Database["public"]["Tables"]["saved_property_reports"]["Update"] = {};
   if (input.title !== undefined) patch.title = input.title;
   if (input.userNotes !== undefined) patch.user_notes = emptyToNull(input.userNotes ?? undefined);
@@ -375,6 +390,7 @@ export async function exportPropertyReportPdf({
   reportId: string;
 }): Promise<PropertyReportExport> {
   const plan = await resolvePlanEntitlements(auth);
+  assertEntitlementIncluded(plan, "property.pdfExport", "Export PDF réservé au plan Analyse.");
   await assertPdfExportAvailable(auth, plan);
   const report = await getReport(auth.supabase, auth.userId, reportId);
   const lines = reportToPdfLines(report, plan);
@@ -407,6 +423,7 @@ export async function enablePropertyReportShare({
   expiresAt?: string | null;
 }): Promise<PropertyReportShareResponse> {
   const plan = await resolvePlanEntitlements(auth);
+  assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé au plan Analyse.");
   const report = await getReport(auth.supabase, auth.userId, reportId);
   const shareToken = report.share_token || createShareToken();
   const shareExpiresAt = normalizeShareExpiresAt(expiresAt);
@@ -444,6 +461,7 @@ export async function disablePropertyReportShare({
   origin?: string | null;
 }): Promise<PropertyReportShareResponse> {
   const plan = await resolvePlanEntitlements(auth);
+  assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé au plan Analyse.");
 
   const { data, error } = await auth.supabase
     .from("saved_property_reports")
@@ -569,24 +587,41 @@ export function buildPublicSharedPropertyReport(
 export async function resolvePlanEntitlements(
   auth: SupabaseAuthContext,
 ): Promise<PlanEntitlements> {
-  if (hasAdminRole(auth.claims)) return buildPlanEntitlements("investisseur");
+  if (hasAdminRole(auth.claims)) return buildPlanEntitlements("analyse", null);
 
   const { data, error } = await auth.supabase
     .from("user_subscriptions")
-    .select("plan_code,status")
+    .select("plan_code,status,current_period_end")
     .eq("user_id", auth.userId)
     .maybeSingle();
 
   if (error) throw error;
   const plan =
-    data && isActivePlanStatus(data.status) ? normalizePlanCode(data.plan_code) : "decouverte";
-  return buildPlanEntitlements(plan);
+    data && isPlanPeriodActive(data.status, data.current_period_end)
+      ? normalizePlanCode(data.plan_code)
+      : "decouverte";
+  return buildPlanEntitlements(plan, data?.current_period_end ?? null);
 }
 
-function buildPlanEntitlements(plan: PlanCode): PlanEntitlements {
+export async function assertFeatureEntitlement(
+  auth: SupabaseAuthContext,
+  feature: FeatureKey,
+  message = "Fonctionnalité réservée au plan Analyse.",
+): Promise<PlanEntitlements> {
+  const plan = await resolvePlanEntitlements(auth);
+  assertEntitlementIncluded(plan, feature, message);
+  return plan;
+}
+
+function buildPlanEntitlements(
+  plan: PlanCode,
+  currentPeriodEnd: string | null = null,
+): PlanEntitlements {
   return {
     plan,
     label: PLAN_LABELS[plan],
+    hasAnalysisAccess: plan === "analyse",
+    currentPeriodEnd,
     limits: PLAN_LIMITS[plan],
     features: {
       salesStatistics: featureAccess(plan, "sales.statistics"),
@@ -600,6 +635,10 @@ function buildPlanEntitlements(plan: PlanCode): PlanEntitlements {
       dpeExplorer: featureAccess(plan, "dpe.latest"),
       marketDemographics: featureAccess(plan, "market.demographics"),
       marketPriceDistribution: featureAccess(plan, "market.priceDistribution"),
+      valueEstimate: featureAccess(plan, "property.valueEstimate"),
+      cadastralAnalysis: featureAccess(plan, "property.cadastralAnalysis"),
+      nearbyServices: featureAccess(plan, "property.nearbyServices"),
+      savedReports: featureAccess(plan, "property.savedReports"),
       pdfExport: featureAccess(plan, "property.pdfExport"),
       reportEditing: featureAccess(plan, "property.reportEditing"),
       urbanPlanning: featureAccess(plan, "property.urbanPlanning"),
@@ -617,6 +656,10 @@ function buildPlanEntitlements(plan: PlanCode): PlanEntitlements {
       workspaceCollaboration: featureAccess(plan, "workspace.collaboration"),
     },
   };
+}
+
+function assertEntitlementIncluded(plan: PlanEntitlements, feature: FeatureKey, message: string) {
+  if (!featureIncluded(plan.plan, feature)) throw new Error(message);
 }
 
 function featureUnlocked(access: FeatureAccess): boolean {

@@ -26,7 +26,7 @@ export function LawyerReferralButton({
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
-    queryKey: ["feature-entitlements"],
+    queryKey: ["feature-entitlements", user?.id ?? "anonymous"],
     queryFn: fetchFeatureEntitlements,
     enabled: Boolean(user) && !loading,
     staleTime: 5 * 60_000,
@@ -59,7 +59,7 @@ export function LawyerReferralButton({
     }
 
     if (referralLocked) {
-      toast.message("Mise en relation avocat réservée au plan Analyse ou Investisseur.");
+      toast.message("Mise en relation avocat réservée au plan Analyse.");
       navigate({ to: "/accompagnement" });
       return;
     }

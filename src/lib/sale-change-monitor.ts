@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { featureIncluded, isActivePlanStatus } from "@/lib/plans";
+import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
 import type { AuctionSale } from "@/lib/types";
@@ -645,14 +645,16 @@ async function insertChangeEvents(
 async function getInvestorUserIds(limit: number): Promise<string[]> {
   const { data, error } = await supabaseAdmin
     .from("user_subscriptions")
-    .select("user_id,plan_code,status")
-    .eq("plan_code", "investisseur")
+    .select("user_id,plan_code,status,current_period_end")
+    .eq("plan_code", "analyse")
     .order("updated_at", { ascending: true })
     .limit(limit);
 
   if (error) throw error;
   return (data ?? [])
-    .filter((subscription) => isActivePlanStatus(subscription.status))
+    .filter((subscription) =>
+      isPlanPeriodActive(subscription.status, subscription.current_period_end),
+    )
     .map((subscription) => subscription.user_id);
 }
 

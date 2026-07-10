@@ -276,8 +276,8 @@ function PublishPage() {
             La publication d'annonce est réservée aux comptes pro.
           </h1>
           <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-            Les investisseurs particuliers conservent l'accès aux fiches, favoris, alertes et à la
-            carte. Pour référencer une vente, créez un compte professionnel avocat, notaire,
+            Les comptes Découverte conservent l'accès au catalogue et les comptes Analyse aux outils
+            de suivi. Pour référencer une vente, créez un compte professionnel avocat, notaire,
             commissaire de justice ou tribunal.
           </p>
           <Link

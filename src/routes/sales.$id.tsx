@@ -7,10 +7,12 @@ import {
   SaleErrorComponent,
   SaleNotFoundComponent,
 } from "@/components/SaleDetailView";
+import { DiscoverySaleDetailView } from "@/components/DiscoverySaleDetailView";
 import { useAuth } from "@/hooks/use-auth";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { formatPrice } from "@/lib/format";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
+import { fetchFeatureEntitlements } from "@/lib/client-api";
 import { saleSeoTitle } from "@/lib/seo";
 import type { AuctionSale } from "@/lib/types";
 
@@ -19,14 +21,23 @@ type SaleDetailRouteData = {
   preview: AuctionSale | null;
 };
 
-async function loadSaleDetailRouteData(id: string): Promise<SaleDetailRouteData> {
-  const sale = await getSaleById(id);
+async function loadSaleDetailRouteData(
+  id: string,
+  options: { discovery?: boolean } = {},
+): Promise<SaleDetailRouteData> {
+  const sale = await getSaleById(id, options);
   if (sale) return { sale, preview: null };
   return { sale: null, preview: await getSalePreviewById(id) };
 }
 
 export const Route = createFileRoute("/sales/$id")({
-  loader: ({ params }) => loadSaleDetailRouteData(params.id),
+  // The route loader cannot know the viewer's paid entitlement. It therefore
+  // fetches only the public teaser; the component selects the curated
+  // Découverte or Analyse view after the entitlement request completes.
+  loader: async ({ params }) => ({
+    sale: null,
+    preview: await getSalePreviewById(params.id),
+  }),
   head: ({ loaderData }) => {
     const visibleSale = loaderData?.sale ?? loaderData?.preview ?? null;
     const title = saleSeoTitle(visibleSale);
@@ -56,11 +67,19 @@ function SaleDetailPage() {
   const initialData = Route.useLoaderData<SaleDetailRouteData | undefined>();
   const { session, loading: authLoading } = useAuth();
   const sessionKey = session?.user.id ?? "anonymous";
+  const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
+    queryKey: ["feature-entitlements", sessionKey],
+    queryFn: fetchFeatureEntitlements,
+    enabled: Boolean(session) && !authLoading,
+    staleTime: 5 * 60_000,
+  });
+  const discovery = Boolean(session) && entitlementsData?.plan.hasAnalysisAccess !== true;
+  const accessReady = !session || !entitlementsLoading;
   const canUseServerInitialData = Boolean(initialData?.sale);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["sale-detail", id, sessionKey],
-    queryFn: () => loadSaleDetailRouteData(id),
-    enabled: !authLoading,
+    queryKey: ["sale-detail", id, sessionKey, discovery ? "discovery" : "analysis"],
+    queryFn: () => loadSaleDetailRouteData(id, { discovery }),
+    enabled: !authLoading && accessReady,
     initialData: canUseServerInitialData ? initialData : undefined,
     staleTime: 5 * 60_000,
   });
@@ -71,12 +90,14 @@ function SaleDetailPage() {
     if (sale?.id) markSaleViewed(sale.id);
   }, [sale?.id]);
 
-  if (authLoading || isLoading) return <SaleDetailSkeleton />;
+  if (authLoading || entitlementsLoading || !accessReady || isLoading) {
+    return <SaleDetailSkeleton />;
+  }
   if (error) throw error;
   if (!sale && preview) return <SalePublicPreview saleId={id} preview={preview} />;
   if (!sale) return <SaleNotFoundComponent />;
 
-  return <SaleDetailView sale={sale} />;
+  return discovery ? <DiscoverySaleDetailView sale={sale} /> : <SaleDetailView sale={sale} />;
 }
 
 function SalePublicPreview({ saleId, preview }: { saleId: string; preview: AuctionSale }) {
@@ -107,7 +128,8 @@ function SalePublicPreview({ saleId, preview }: { saleId: string; preview: Aucti
         </dl>
         <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
           Les documents, risques, estimation de marché, coordonnées avocat et analyses détaillées
-          sont réservés aux comptes connectés afin de protéger le dossier complet.
+          sont réservés à l'offre Analyse. Créez gratuitement votre compte pour découvrir le
+          catalogue et prévisualiser tous les enrichissements disponibles.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
@@ -115,7 +137,7 @@ function SalePublicPreview({ saleId, preview }: { saleId: string; preview: Aucti
             search={{ redirect: `/sales/${saleId}` }}
             className="inline-flex items-center justify-center rounded-md bg-gold-soft px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gold"
           >
-            Se connecter pour voir le dossier
+            Créer un compte Découverte
           </Link>
           <Link
             to="/sales"

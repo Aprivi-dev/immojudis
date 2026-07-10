@@ -49,11 +49,11 @@ const modeCopy: Record<
     submit: "Se connecter",
   },
   investor: {
-    eyebrow: "Compte investisseur",
-    title: "Consulter les fiches",
+    eyebrow: "Compte Découverte",
+    title: "Explorer gratuitement",
     description:
-      "Un accès particulier pour analyser les ventes, suivre vos dossiers et fixer une limite d'enchère.",
-    submit: "Créer mon accès",
+      "Créez votre compte pour consulter les annonces et visualiser tous les aperçus d'analyse floutés.",
+    submit: "Créer mon compte gratuit",
   },
   professional: {
     eyebrow: "Compte professionnel",
@@ -128,7 +128,7 @@ function LoginPage() {
       toast.success(
         accountType === "b2b"
           ? "Demande pro créée. Vérifiez votre email si la confirmation est activée."
-          : "Compte investisseur créé. Vérifiez votre email si la confirmation est activée.",
+          : "Compte Découverte créé. Vérifiez votre email si la confirmation est activée.",
       );
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Erreur");
@@ -152,15 +152,15 @@ function LoginPage() {
               Deux parcours, une décision plus nette.
             </h1>
             <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
-              Les investisseurs consultent les fiches et les prix plafonds. Les professionnels
-              préparent leurs annonces, pièces et options de mise en avant.
+              Découverte ouvre gratuitement le catalogue. Analyse débloque ensuite toutes les
+              informations pendant 30 jours pour 29 €. Les professionnels préparent leurs annonces.
             </p>
 
             <div className="mt-10 grid gap-3">
               <FeatureLine
                 icon={FileSearch}
-                title="Investisseur"
-                text="Analyser un bien avant la salle de vente."
+                title="Découverte"
+                text="Explorer les annonces et les aperçus gratuitement."
               />
               <FeatureLine
                 icon={BriefcaseBusiness}
@@ -182,7 +182,7 @@ function LoginPage() {
               Connexion
             </ModeButton>
             <ModeButton active={mode === "investor"} onClick={() => setMode("investor")}>
-              Investisseur
+              Découverte
             </ModeButton>
             <ModeButton active={mode === "professional"} onClick={() => setMode("professional")}>
               Pro

@@ -236,7 +236,7 @@ describe("lawyer referrals", () => {
   });
 });
 
-function planEntitlements(plan: "decouverte" | "analyse" | "investisseur") {
+function planEntitlements(plan: "decouverte" | "analyse") {
   return {
     plan,
     label: plan,

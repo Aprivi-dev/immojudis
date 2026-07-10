@@ -4,9 +4,9 @@ import ImageOff from "lucide-react/dist/esm/icons/image-off.js";
 import Navigation2 from "lucide-react/dist/esm/icons/navigation-2.js";
 import Rotate3D from "lucide-react/dist/esm/icons/rotate-3d.js";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
+import { PhotoCarouselDialog, type CarouselImage } from "@/components/PhotoCarouselDialog";
 import type { PropertyPhoto } from "@/lib/property-types";
 import { cn } from "@/lib/utils";
-import { PhotoModal } from "./PhotoModal";
 import { PropertyImage } from "./PropertyImage";
 
 export function PhotoGallery({
@@ -23,6 +23,11 @@ export function PhotoGallery({
   const [modalIndex, setModalIndex] = useState<number | null>(null);
   const featured = photos[0];
   const thumbnails = photos.slice(1, 5);
+  const carouselImages: CarouselImage[] = photos.map((photo, index) => ({
+    id: photo.id,
+    url: photo.url,
+    alt: photo.alt || `Photo ${index + 1} de ${title}`,
+  }));
   const mapLinks = location
     ? [
         {
@@ -124,7 +129,12 @@ export function PhotoGallery({
         </div>
       )}
       {modalIndex != null && (
-        <PhotoModal photos={photos} initialIndex={modalIndex} onClose={() => setModalIndex(null)} />
+        <PhotoCarouselDialog
+          images={carouselImages}
+          initialIndex={modalIndex}
+          title={title}
+          onClose={() => setModalIndex(null)}
+        />
       )}
     </section>
   );

@@ -3,6 +3,7 @@ import type { Database } from "@/integrations/supabase/types";
 import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
 
 export const DETAIL_VIEW = "v_auction_sales_app";
+const DISCOVERY_VIEW = "v_auction_sales_discovery" as typeof DETAIL_VIEW;
 const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
 const CONFIGURATION_ERROR =
   "La configuration Supabase est absente. Ajoutez les variables d'environnement Supabase pour afficher les données.";
@@ -255,7 +256,7 @@ export async function getSales(
   limit = 100,
   sort: SortKey = "date_asc",
   offset = 0,
-  options: { preview?: boolean; client?: SupabaseReader } = {},
+  options: { preview?: boolean; discovery?: boolean; client?: SupabaseReader } = {},
 ): Promise<AuctionSale[]> {
   if (!options.client && !assertCloudConfigured()) return [];
   const db = options.client ?? supabase;
@@ -279,8 +280,9 @@ export async function getSales(
   }
 
   const s = SORT_MAP[sort];
+  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
   let q = db
-    .from(DETAIL_VIEW)
+    .from(catalogView)
     .select(SALE_LIST_COLUMNS)
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
@@ -292,9 +294,13 @@ export async function getSales(
   return (data ?? []) as unknown as AuctionSale[];
 }
 
-export async function getSalesCount(filters: SaleFilters = {}): Promise<number> {
+export async function getSalesCount(
+  filters: SaleFilters = {},
+  options: { discovery?: boolean } = {},
+): Promise<number> {
   if (!assertCloudConfigured()) return 0;
-  let q = supabase.from(DETAIL_VIEW).select("id", { count: "exact", head: true });
+  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  let q = supabase.from(catalogView).select("id", { count: "exact", head: true });
 
   q = applyAuthenticatedSaleFilters(q, filters);
 
@@ -318,14 +324,18 @@ export async function getSalesPreviewCount(filters: SaleFilters = {}): Promise<n
   return count ?? 0;
 }
 
-export async function getSaleById(id: string): Promise<AuctionSale | null> {
+export async function getSaleById(
+  id: string,
+  options: { discovery?: boolean } = {},
+): Promise<AuctionSale | null> {
   if (!assertCloudConfigured()) return null;
   if (typeof window === "undefined") return null;
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) return null;
-  const { data, error } = await supabase.from(DETAIL_VIEW).select("*").eq("id", id).maybeSingle();
+  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  const { data, error } = await supabase.from(catalogView).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   return data as AuctionSale | null;
 }
@@ -346,11 +356,13 @@ export async function getSalesWithCoords(
   filters: SaleFilters = {},
   limit = 500,
   sort: SortKey = "date_asc",
+  options: { discovery?: boolean } = {},
 ): Promise<AuctionSale[]> {
   if (!assertCloudConfigured()) return [];
   const s = SORT_MAP[sort];
+  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
   let q = supabase
-    .from(DETAIL_VIEW)
+    .from(catalogView)
     .select(SALE_MAP_COLUMNS)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
@@ -424,7 +436,7 @@ export async function getStats(): Promise<{
   } = await supabase.auth.getSession();
   if (!session) return { totalSales, departments: 0, nextSale: null };
   const { data: deps } = await supabase
-    .from(DETAIL_VIEW)
+    .from(DISCOVERY_VIEW)
     .select("department")
     .not("department", "is", null)
     .limit(1000);
@@ -432,7 +444,7 @@ export async function getStats(): Promise<{
     (deps ?? []).map((r: { department: string | null }) => r.department).filter(Boolean),
   );
   const { data: next } = await supabase
-    .from(DETAIL_VIEW)
+    .from(DISCOVERY_VIEW)
     .select("sale_date")
     .gte("sale_date", new Date().toISOString())
     .order("sale_date", { ascending: true })

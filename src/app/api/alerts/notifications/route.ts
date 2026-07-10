@@ -24,7 +24,11 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Notifications indisponibles";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
+    const status = message.startsWith("Unauthorized")
+      ? 401
+      : message.includes("réservées")
+        ? 403
+        : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
@@ -55,7 +59,11 @@ export async function PATCH(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Notification impossible";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
+    const status = message.startsWith("Unauthorized")
+      ? 401
+      : message.includes("réservées")
+        ? 403
+        : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

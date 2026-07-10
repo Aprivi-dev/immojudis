@@ -6,8 +6,14 @@ import Loader2 from "lucide-react/dist/esm/icons/loader-2.js";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2.js";
 import { useState } from "react";
 import { toast } from "sonner";
+import { PremiumPreview } from "@/components/PremiumPreview";
 import { useAuth } from "@/hooks/use-auth";
-import { createApiKey, fetchApiKeys, revokeApiKey } from "@/lib/client-api";
+import {
+  createApiKey,
+  fetchApiKeys,
+  fetchFeatureEntitlements,
+  revokeApiKey,
+} from "@/lib/client-api";
 
 const API_KEYS_QUERY_KEY = ["api-keys"] as const;
 
@@ -16,10 +22,17 @@ export function ApiKeyManager() {
   const queryClient = useQueryClient();
   const [name, setName] = useState("Flux ventes");
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
-  const apiKeysQuery = useQuery({
-    queryKey: API_KEYS_QUERY_KEY,
-    queryFn: fetchApiKeys,
+  const entitlementsQuery = useQuery({
+    queryKey: ["feature-entitlements", user?.id ?? "anonymous"],
+    queryFn: fetchFeatureEntitlements,
     enabled: Boolean(user),
+    staleTime: 5 * 60_000,
+  });
+  const apiAccessIncluded = entitlementsQuery.data?.plan.features.salesApiAccess === "included";
+  const apiKeysQuery = useQuery({
+    queryKey: [...API_KEYS_QUERY_KEY, user?.id ?? "anonymous"],
+    queryFn: fetchApiKeys,
+    enabled: Boolean(user) && apiAccessIncluded,
   });
 
   const createMutation = useMutation({
@@ -47,6 +60,10 @@ export function ApiKeyManager() {
   });
 
   if (!user) return null;
+
+  if (!apiAccessIncluded) {
+    return <LockedApiKeyPreview />;
+  }
 
   const keys = apiKeysQuery.data?.keys ?? [];
   const activeKeyCount = keys.filter((key) => !key.revokedAt).length;
@@ -173,6 +190,38 @@ export function ApiKeyManager() {
         </div>
       </div>
     </section>
+  );
+}
+
+function LockedApiKeyPreview() {
+  return (
+    <div className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
+      <PremiumPreview
+        title="Clés API ventes judiciaires"
+        description="Créez des clés révocables et interrogez le flux de ventes avec l'offre Analyse."
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-gold-soft">
+              <KeyRound className="h-4 w-4" aria-hidden />
+              Accès API léger
+            </div>
+            <h2 className="mt-2 font-display text-3xl text-foreground">
+              Clés API ventes judiciaires
+            </h2>
+          </div>
+          <div className="flex gap-2">
+            <div className="h-10 w-52 rounded-md border bg-white" />
+            <div className="h-10 w-24 rounded-md bg-primary/70" />
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-[1fr_0.8fr_0.7fr] gap-3 rounded-lg border p-4 text-sm">
+          <span>Flux ventes</span>
+          <code>ij_live_8f2…</code>
+          <span>Active</span>
+        </div>
+      </PremiumPreview>
+    </div>
   );
 }
 
