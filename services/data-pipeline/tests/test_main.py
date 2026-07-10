@@ -716,6 +716,87 @@ def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
     assert raw["source_blocks"] == {"visites": "Sur rendez-vous"}
 
 
+def test_known_pdf_surface_is_preserved_before_incremental_publication() -> None:
+    raw = {
+        "source_url": "https://www.info-encheres.com/vente-6009.html",
+        "source_name": "info_encheres",
+        "property_type": "Appartement",
+    }
+    known = {
+        raw["source_url"]: {
+            "surface_m2": 3.78,
+            "carrez_surface_m2": 3.78,
+            "app_surface_m2": None,
+            "app_surface_kind": None,
+            "surface_scope": "partial",
+            "surface_source": "pdf",
+            "surface_confidence": 0.45,
+            "surface_evidence": "Mesurage incomplet : 3,78 m².",
+            "raw_payload": {
+                "surface_extraction": {"source": "pdf", "value_m2": "3.78"},
+                "document_analysis": {"coverage_status": "rich", "documents_extracted": 3},
+            },
+        }
+    }
+
+    preserved = main._preserve_known_enrichment_payloads([raw], known)
+
+    assert preserved == 8
+    assert raw["surface_m2"] == 3.78
+    assert raw["carrez_surface_m2"] == 3.78
+    assert raw["surface_scope"] == "partial"
+    assert raw["surface_source"] == "pdf"
+    assert raw["surface_extraction"] == {"source": "pdf", "value_m2": "3.78"}
+    assert raw["document_analysis"]["documents_extracted"] == 3
+
+
+def test_pipeline_aborts_before_publication_when_known_sale_lookup_fails(monkeypatch) -> None:
+    settings = _settings()
+    settings["incremental_enrichment"] = True
+    finish_calls: list[tuple[str, dict[str, object], dict[str, list[str]]]] = []
+
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finish_calls.append((status, summary, errors)),
+    )
+    monkeypatch.setattr(
+        main,
+        "fetch_known_sale_details",
+        lambda: (_ for _ in ()).throw(RuntimeError("known sale query timed out")),
+    )
+    monkeypatch.setattr(
+        main,
+        "scrape_avoventes_aquitaine_result",
+        lambda known=None: (_ for _ in ()).throw(AssertionError("scraping must not start")),
+    )
+
+    result = main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=False, upsert=True))
+
+    assert result == 1
+    assert finish_calls == [
+        (
+            "failed",
+            {"stage": "known_sale_lookup"},
+            {
+                "avoventes": [],
+                "licitor": [],
+                "vench": [],
+                "info_encheres": [],
+                "encheres_publiques": [],
+                "petites_affiches": [],
+                "cessions_etat": [],
+                "agrasc": [],
+                "encheres_immobilieres": [],
+                "notaires": [],
+                "supabase": ["known sale query timed out"],
+            },
+        )
+    ]
+
+
 def _settings() -> dict[str, object]:
     return {
         "incremental_enrichment": False,

@@ -1053,6 +1053,7 @@ DATA_REFRESH_SALE_SELECT = ",".join(
         "raw_payload",
     )
 )
+KNOWN_SALE_DETAIL_PAGE_SIZE = 100
 
 
 def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
@@ -1101,26 +1102,26 @@ def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
                 endpoint,
                 params={
                     "select": KNOWN_SALE_DETAIL_SELECT,
-                    "limit": "1000",
+                    "limit": str(KNOWN_SALE_DETAIL_PAGE_SIZE),
                     "offset": str(offset),
                 },
                 headers=_rest_headers(str(key), prefer="count=none"),
                 timeout=30,
             )
             if response.is_error:
-                LOGGER.warning("Could not fetch known sale details: %s", response.text[:200])
-                break
+                raise RuntimeError(
+                    f"Could not fetch known sale details ({response.status_code}): {response.text[:200]}"
+                )
             rows = response.json()
         except httpx.HTTPError as exc:
-            LOGGER.warning("Known sale detail lookup failed: %s", exc)
-            break
+            raise RuntimeError(f"Known sale detail lookup failed: {exc}") from exc
         for row in rows:
             row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"))
             for source_url in _known_source_urls(row):
                 details.setdefault(source_url, row)
-        if len(rows) < 1000:
+        if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
             break
-        offset += 1000
+        offset += KNOWN_SALE_DETAIL_PAGE_SIZE
     return details
 
 
