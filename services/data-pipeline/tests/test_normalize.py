@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from src.normalize import (
+    normalize_documents,
     normalize_occupancy_status,
     normalize_sale,
     normalize_source_urls,
@@ -30,6 +31,44 @@ def test_parse_surface_preserves_decimal_point() -> None:
 def test_parse_confidence_normalizes_percent_and_ratio() -> None:
     assert parse_confidence("0.75") == Decimal("0.75")
     assert parse_confidence("75") == Decimal("0.75")
+
+
+def test_normalize_documents_removes_navigation_marketplace_and_partner_links() -> None:
+    documents = normalize_documents(
+        [
+            {"url": "https://itunes.apple.com/fr/app/licitor/id1024474985", "label": "document"},
+            {"url": "https://play.google.com/store/apps/details?id=fr.tiddle.licitor", "label": "document"},
+            {"url": "https://www.licitor.com/", "label": "document"},
+            {
+                "url": "https://app-pro.la-loupe.immo/ext-partenaire/licitor/token/",
+                "label": "Voir le dossier complet avec La Loupe",
+            },
+            {"url": "https://www.licitor.com/download/document?id=109014", "label": "PV descriptif"},
+            {"url": "https://www.licitor.com/download/document?id=109014", "label": "Doublon"},
+        ],
+        source_url="https://www.licitor.com/annonce/109014.html",
+    )
+
+    assert documents == [
+        {"url": "https://www.licitor.com/download/document?id=109014", "label": "Doublon"}
+    ]
+
+
+def test_normalize_sale_uses_explicit_built_surface_for_building() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-immeuble.html",
+            "property_type": "Un bâtiment à usage de bureaux",
+            "surface_m2": "158,95 m²",
+        }
+    )
+
+    assert sale.property_type == "building"
+    assert sale.surface_m2 == Decimal("158.95")
+    assert sale.app_surface_m2 == Decimal("158.95")
+    assert sale.app_surface_kind == "built"
+    assert sale.surface_scope == "total"
 
 
 def test_parse_french_datetime_handles_month_and_hour() -> None:

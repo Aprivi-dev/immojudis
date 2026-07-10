@@ -452,7 +452,17 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
             "status": "resolved",
             "rejected_land_surface_m2": str(previous_land_surface),
             "resolved_land_surface_m2": str(text_land_surface),
-            "basis": "explicit_land_text_and_truncated_digits",
+            "basis": "explicit_land_text_over_stored_value",
+        }
+        _add_quality_flag(sale, "land_surface_conflict_resolved")
+    elif text_land_surface is None and _should_clear_misclassified_land_surface(sale):
+        rejected_land_surface = sale.land_surface_m2
+        sale.land_surface_m2 = None
+        sale.raw_payload["land_surface_reconciliation"] = {
+            "status": "removed",
+            "rejected_land_surface_m2": str(rejected_land_surface),
+            "resolved_land_surface_m2": None,
+            "basis": "duplicated_built_surface_without_land_evidence",
         }
         _add_quality_flag(sale, "land_surface_conflict_resolved")
     _discard_placeholder_built_surface(sale)
@@ -539,13 +549,18 @@ def _surface_is_document_backed(sale: AuctionSale) -> bool:
 
 def _should_prefer_text_land_surface(sale: AuctionSale, candidate: Decimal | None) -> bool:
     current = sale.land_surface_m2
-    if candidate is None or current is None or candidate <= current:
+    if candidate is None or current is None or candidate == current:
         return False
     extraction = sale.raw_payload.get("land_surface_extraction")
     if isinstance(extraction, dict) and extraction.get("source") == "pdf":
         documented_value = parse_surface(extraction.get("value_m2"))
         if documented_value == current:
             return False
+    built_values = _built_surface_values(sale)
+    if current in built_values and candidate not in built_values:
+        return True
+    if candidate < current:
+        return False
     current_digits = _surface_integer_digits(current)
     candidate_digits = _surface_integer_digits(candidate)
     if not current_digits or not candidate_digits:
@@ -559,6 +574,29 @@ def _surface_integer_digits(value: Decimal) -> str | None:
     if value != value.to_integral_value():
         return None
     return str(int(value))
+
+
+def _should_clear_misclassified_land_surface(sale: AuctionSale) -> bool:
+    current = sale.land_surface_m2
+    if current is None or sale.property_type not in {"house", "apartment", "building"}:
+        return False
+    extraction = sale.raw_payload.get("land_surface_extraction")
+    if isinstance(extraction, dict) and extraction.get("source") == "pdf":
+        return False
+    return current in _built_surface_values(sale)
+
+
+def _built_surface_values(sale: AuctionSale) -> set[Decimal]:
+    return {
+        value
+        for value in (
+            sale.surface_m2,
+            sale.habitable_surface_m2,
+            sale.carrez_surface_m2,
+            sale.app_surface_m2,
+        )
+        if value is not None
+    }
 
 
 def _corroborated_text_built_surface(sale: AuctionSale) -> Decimal | None:
@@ -2038,6 +2076,10 @@ def _set_app_surface(sale: AuctionSale) -> None:
         sale.app_surface_m2 = sale.land_surface_m2
         sale.app_surface_kind = "land" if sale.land_surface_m2 is not None else None
         sale.surface_scope = "land" if sale.app_surface_m2 is not None else sale.surface_scope
+    elif sale.property_type == "building":
+        sale.app_surface_m2 = sale.surface_m2 or sale.habitable_surface_m2 or sale.carrez_surface_m2
+        sale.app_surface_kind = "built" if sale.app_surface_m2 is not None else None
+        sale.surface_scope = "total" if sale.app_surface_m2 is not None else sale.surface_scope
     elif sale.property_type in {"commercial", "mixed"}:
         sale.app_surface_m2 = sale.surface_m2 or sale.habitable_surface_m2 or sale.carrez_surface_m2 or sale.land_surface_m2
         sale.app_surface_kind = "land" if (

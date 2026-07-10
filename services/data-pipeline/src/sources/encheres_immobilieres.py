@@ -124,7 +124,7 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
     page_text = "\n".join(lines)
     compact_text = clean_text(page_text) or ""
     title = _detail_title(soup, lines) or _title_from_url(source_url)
-    description = _detail_description(lines)
+    description = _without_template_placeholder(_detail_description(lines))
     address = _detail_asset_address(lines, compact_text)
     city, department = _city_department_from_text(" ".join(filter(None, (title, address))))
     if not department:
@@ -714,7 +714,9 @@ def _raw_sale(item: dict[str, Any]) -> dict[str, Any] | None:
     slug = str(item.get("url") or "")
     if not slug:
         return None
-    description = _html_text(item.get("complement")) or clean_text(item.get("description"))
+    description = _without_template_placeholder(
+        _html_text(item.get("complement")) or clean_text(item.get("description"))
+    )
     lawyer = item.get("avocat") if isinstance(item.get("avocat"), dict) else {}
     title = clean_text(item.get("titre"))
     address = _join_address(item.get("adresse"), item.get("codePostal"), item.get("ville"))
@@ -862,6 +864,13 @@ def _html_text(value: Any) -> str | None:
     if not text:
         return None
     return clean_text(BeautifulSoup(text, "html.parser").get_text(" ", strip=True))
+
+
+def _without_template_placeholder(value: str | None) -> str | None:
+    text = clean_text(value)
+    if text and re.fullmatch(r"\$[a-z][a-z0-9_]*", text, re.I):
+        return None
+    return text
 
 
 def _property_type(item: dict[str, Any]) -> str | None:

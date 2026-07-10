@@ -123,7 +123,7 @@ def test_asset_normalization_resolves_structured_surface_outlier_from_corroborat
         "status": "resolved",
         "rejected_land_surface_m2": "110",
         "resolved_land_surface_m2": "1110",
-        "basis": "explicit_land_text_and_truncated_digits",
+        "basis": "explicit_land_text_over_stored_value",
     }
 
 
@@ -165,6 +165,53 @@ def test_asset_normalization_keeps_document_backed_land_surface() -> None:
 
     assert sale.land_surface_m2 == Decimal("110")
     assert "land_surface_conflict_resolved" not in sale.quality_flags
+
+
+def test_asset_normalization_removes_built_surface_misclassified_as_land() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/built-duplicated-as-land",
+            "property_type": "Maison",
+            "title": "Maison de 125,05 m²",
+            "surface_m2": 125.05,
+            "habitable_surface_m2": 125.05,
+            "land_surface_m2": 125.05,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("125.05")
+    assert sale.app_surface_m2 == Decimal("125.05")
+    assert sale.land_surface_m2 is None
+    assert sale.raw_payload["land_surface_reconciliation"] == {
+        "status": "removed",
+        "rejected_land_surface_m2": "125.05",
+        "resolved_land_surface_m2": None,
+        "basis": "duplicated_built_surface_without_land_evidence",
+    }
+
+
+def test_asset_normalization_replaces_duplicated_built_land_with_explicit_terrain() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/explicit-land-replacement",
+            "property_type": "Maison",
+            "surface_m2": 125,
+            "habitable_surface_m2": 125,
+            "land_surface_m2": 125,
+            "description": "Maison de 125 m² édifiée sur un terrain d'environ 500 m².",
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.land_surface_m2 == Decimal("500")
+    assert sale.raw_payload["land_surface_reconciliation"]["basis"] == (
+        "explicit_land_text_over_stored_value"
+    )
 
 
 def test_asset_normalization_keeps_structured_surface_when_textual_values_disagree() -> None:
@@ -586,6 +633,24 @@ def test_asset_normalization_uses_built_surface_for_commercial_assets() -> None:
     assert sale.app_surface_kind == "built"
     assert sale.surface_scope == "total"
     assert sale.surface_evidence is not None
+
+
+def test_asset_normalization_uses_built_surface_for_buildings() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-immeuble-158.html",
+            "property_type": "Immeuble",
+            "description": "Immeuble d'une surface totale bâtie de 158,95 m².",
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("158.95")
+    assert sale.app_surface_m2 == Decimal("158.95")
+    assert sale.app_surface_kind == "built"
+    assert sale.surface_scope == "total"
 
 
 def test_asset_normalization_keeps_supported_large_mixed_surface_and_specific_title() -> None:

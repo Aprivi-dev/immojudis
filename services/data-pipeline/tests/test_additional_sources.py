@@ -828,6 +828,23 @@ def test_parse_encheres_immobilieres_detail_html_extracts_rich_static_page() -> 
     assert detail["source_blocks"]["tribunal"] == "Tribunal Judiciaire de Thonon les Bains"
 
 
+def test_parse_encheres_immobilieres_detail_html_drops_template_description_placeholder() -> None:
+    html = """
+    <h1>UNE VILLA TRADITIONNELLE à GLEIZÉ (69)</h1>
+    <p>Réf. annonce : 9155</p>
+    <p>$d4</p>
+    <p>Avocat poursuivant</p>
+    """
+
+    detail = parse_encheres_immobilieres_detail_html(
+        html,
+        "https://encheresimmobilieres.fr/ventes/9155-une-villa-traditionnelle-a-gleize-69",
+    )
+
+    assert detail["description"] is None
+    assert "$d4" not in detail["raw_text"]
+
+
 def test_parse_encheres_immobilieres_detail_html_does_not_treat_visit_libre_as_vacant() -> None:
     html = """
     <article>

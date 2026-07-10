@@ -1,5 +1,9 @@
+import unicodedata
+import zipfile
 from datetime import UTC, datetime
 from decimal import Decimal
+from types import SimpleNamespace
+from urllib.parse import unquote, urlparse
 
 from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
@@ -14,6 +18,7 @@ from src.pdf_enrichment import (
     classify_document_type,
     download_documents,
     enrich_sale_from_pdf_text,
+    extract_attached_document,
     extract_pdf_document,
 )
 
@@ -1259,6 +1264,209 @@ def test_download_documents_fetches_duplicate_url_only_once(tmp_path, monkeypatc
 
     assert calls == ["https://example.test/diagnostics.pdf"]
     assert len(downloaded) == 1
+
+
+def test_download_documents_retries_nfc_unicode_url_variant(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"%PDF-1.4\n%%EOF"
+        headers = {"content-type": "application/pdf"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    decomposed_url = "https://example.test/Droit_de_pre\u0301emption_-_internet.pdf"
+    calls: list[str] = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        decoded_path = unquote(urlparse(url).path)
+        if not unicodedata.is_normalized("NFC", decoded_path):
+            raise RuntimeError("404 decomposed path")
+        return Response()
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-document-accentue.html",
+            "documents": [{"label": "Droit de préemption", "url": decomposed_url, "type": "pdf"}],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    downloaded = download_documents(sale, output_root=tmp_path, stats=stats)
+
+    assert len(calls) == 2
+    assert calls[0] == decomposed_url
+    assert unicodedata.is_normalized("NFC", unquote(urlparse(calls[1]).path))
+    assert downloaded[0]["url"] == decomposed_url
+    assert stats.downloaded == 1
+    assert stats.errors == 0
+
+
+def test_download_documents_normalizes_percent_encoded_combining_accent(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"%PDF-1.4\n%%EOF"
+        headers = {"content-type": "application/pdf"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    encoded_decomposed_url = "https://example.test/Droit_de_pre%CC%81emption.pdf"
+    calls: list[str] = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        decoded_path = unquote(urlparse(url).path)
+        if not unicodedata.is_normalized("NFC", decoded_path):
+            raise RuntimeError("404 decomposed path")
+        return Response()
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-document-encode.html",
+            "documents": [{"label": "Droit de préemption", "url": encoded_decomposed_url, "type": "pdf"}],
+        }
+    )
+
+    downloaded = download_documents(sale, output_root=tmp_path)
+
+    assert len(calls) == 2
+    assert calls[0] == encoded_decomposed_url
+    assert "%C3%A9" in calls[1]
+    assert len(downloaded) == 1
+
+
+def test_download_documents_accepts_legacy_word_attachment(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64
+        headers = {"content-type": "application/msword"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", lambda *args, **kwargs: Response())
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-avec-ccv-word.html",
+            "documents": [
+                {
+                    "label": "Cahier des conditions de vente",
+                    "url": "https://www.info-encheres.com/upload/CCVok.doc",
+                    "type": "cahier_conditions",
+                }
+            ],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    downloaded = download_documents(sale, output_root=tmp_path, stats=stats)
+
+    assert len(downloaded) == 1
+    assert downloaded[0]["type"] == "doc"
+    assert downloaded[0]["file_format"] == "doc"
+    assert downloaded[0]["document_type"] == "cahier_conditions_vente"
+    assert downloaded[0]["file_path"].endswith(".doc")
+    assert stats.downloaded == 1
+    assert stats.errors == 0
+
+
+def test_extract_attached_legacy_word_document_feeds_surface_rules(tmp_path, monkeypatch) -> None:
+    file_path = tmp_path / "CCVok.doc"
+    file_path.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64)
+    extracted_text = (
+        "Une villa traditionnelle d'une superficie privative de 87.58 m² comprenant "
+        "un séjour, une cuisine et trois chambres."
+    )
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment.shutil.which",
+        lambda command: f"/usr/bin/{command}" if command == "antiword" else None,
+    )
+    monkeypatch.setattr(
+        "src.pdf_enrichment.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=extracted_text, stderr=""),
+    )
+
+    payload = extract_attached_document(
+        file_path,
+        document={"file_format": "doc", "label": "CCV", "url": "https://example.test/CCVok.doc"},
+    )
+    payload.update(
+        {
+            "label": "Cahier des conditions de vente",
+            "url": "https://example.test/CCVok.doc",
+            "type": "doc",
+            "document_type": "cahier_conditions_vente",
+        }
+    )
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/vente-word",
+            "property_type": "Maison",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, [payload])
+
+    assert payload["extraction_method"] == "antiword"
+    assert payload["text"] == extracted_text
+    assert sale.surface_m2 == Decimal("87.58")
+
+
+def test_extract_attached_docx_document_uses_embedded_xml(tmp_path) -> None:
+    file_path = tmp_path / "conditions.docx"
+    with zipfile.ZipFile(file_path, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body><w:p><w:r><w:t>Surface habitable : 92,40 m².</w:t></w:r></w:p></w:body>
+            </w:document>""",
+        )
+
+    payload = extract_attached_document(file_path, document={"file_format": "docx"})
+
+    assert payload["extraction_method"] == "docx_xml"
+    assert payload["text"] == "Surface habitable : 92,40 m²."
+
+
+def test_document_land_surface_prefers_explicit_private_parcel_over_cadastral_rows() -> None:
+    text = (
+        "Dans un lotissement cadastré : Section AM 55 Surface 00ha 05a 80ca ; "
+        "Section AM 117 Surface 00ha 27a 13ca ; Section AM 119 Surface 00ha 06a 40ca ; "
+        "Section AM 120 Surface 00ha 00a 74ca. Une villa d'une superficie privative "
+        "de 87.58 m². Outre piscine, le droit à la jouissance exclusive et perpétuelle "
+        "d'une parcelle de terrain de 3 ares environ."
+    )
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/vente-word-cadastre",
+            "property_type": "Maison",
+        }
+    )
+
+    enrich_sale_from_pdf_text(
+        sale,
+        [
+            {
+                "text": text,
+                "pages": [{"page": 1, "text": text, "confidence": 0.92, "method": "antiword"}],
+                "label": "Cahier des conditions de vente",
+                "url": "https://example.test/CCVok.doc",
+                "type": "doc",
+                "document_type": "cahier_conditions_vente",
+            }
+        ],
+    )
+
+    assert sale.surface_m2 == Decimal("87.58")
+    assert sale.land_surface_m2 == Decimal("300")
 
 
 def test_adaptive_docling_timeout_shortens_signed_documents(tmp_path, monkeypatch) -> None:
