@@ -1,4 +1,4 @@
-import { asFiniteNumber, asSearchString } from "@/lib/types";
+import { asFiniteNumber } from "@/lib/types";
 
 export type ViewportBounds = {
   north: number;
@@ -160,10 +160,10 @@ function parseTransactionType(value: unknown): TransactionType | undefined {
 
 export function validateSalesSearch(search: Record<string, unknown>): SalesSearchParams {
   return {
-    city: asSearchString(search.city),
-    department: asSearchString(search.department),
-    tribunal: asSearchString(search.tribunal ?? search.tribunal_code),
-    query: asSearchString(search.query) ?? asSearchString(search.q),
+    city: stringValue(search.city),
+    department: stringValue(search.department),
+    tribunal: stringValue(search.tribunal ?? search.tribunal_code),
+    query: stringValue(search.query) ?? stringValue(search.q),
     viewport: parseViewport(search.viewport) ?? parseBbox(search.bbox),
     sort: parseSort(search.sort),
     minPrice: numberValue(search.minPrice ?? search.min_price),
@@ -176,16 +176,16 @@ export function validateSalesSearch(search: Record<string, unknown>): SalesSearc
     status: listValue(search.status),
     page: positiveInteger(search.page),
     limit: positiveInteger(search.limit),
-    keywords: asSearchString(search.keywords),
+    keywords: stringValue(search.keywords),
     transactionType: parseTransactionType(search.transactionType),
-    occupancy: asSearchString(search.occupancy),
+    occupancy: stringValue(search.occupancy),
     dpeClasses: listValue(search.dpe ?? search.dpeClasses),
     minScore: numberValue(search.minScore ?? search.min_score),
     maxPricePerM2: numberValue(search.maxPricePerM2 ?? search.max_price_per_m2),
     minYield: numberValue(search.minYield ?? search.min_yield),
     minMarketDiscount: numberValue(search.minMarketDiscount ?? search.min_market_discount),
     houseWithLand: booleanValue(search.houseWithLand ?? search.house_with_land),
-    aroundAddress: asSearchString(search.aroundAddress ?? search.around_address),
+    aroundAddress: stringValue(search.aroundAddress ?? search.around_address),
     aroundRadius: numberValue(search.aroundRadius ?? search.around_radius),
     yearBuilt: positiveInteger(search.yearBuilt),
     openHouse: booleanValue(search.openHouse),
