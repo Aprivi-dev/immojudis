@@ -460,6 +460,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     supabase_reconciled_duplicates = 0
     supabase_deleted_expired = 0
     supabase_deleted_vench_without_surface = 0
+    publication_failed = False
     summary = {
         "collected": len(raw_sales),
         "collected_by_source": raw_by_source,
@@ -526,6 +527,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             LOGGER.exception("Supabase upsert failed: %s", exc)
             errors.setdefault("supabase", []).append(str(exc))
             finish_run_in_supabase(run_id, "failed", summary, errors)
+            publication_failed = True
 
     print("Immojudis data pipeline summary")
     print(f"- collected: {len(raw_sales)}")
@@ -555,7 +557,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     for key, value in timings.items():
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
-    return 0
+    return 1 if publication_failed else 0
 
 
 def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:

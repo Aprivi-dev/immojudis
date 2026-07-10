@@ -6,16 +6,19 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import unicodedata
+import zipfile
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse, urlsplit, urlunsplit
+from xml.etree import ElementTree
 
 import fitz
 import httpx
@@ -79,7 +82,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
                 pdf_texts.append(cached_payload)
                 continue
             stats.document_cache_misses += 1
-            payload = extract_pdf_document(file_path, document=document)
+            payload = extract_attached_document(file_path, document=document)
         except Exception as exc:
             LOGGER.warning("PDF text extraction failed for %s: %s", file_path, exc)
             stats.errors += 1
@@ -146,33 +149,63 @@ def download_documents(
 
         filename = _document_filename(document)
         file_path = sale_dir / filename
-        if file_path.exists() and not _looks_like_pdf_bytes(file_path.read_bytes()):
-            LOGGER.info("Discarding non-PDF document cache entry %s", file_path)
+        if file_path.exists() and _document_file_format(
+            file_path.read_bytes(),
+            url=url,
+            content_type=None,
+        ) is None:
+            LOGGER.info("Discarding unsupported document cache entry %s", file_path)
             file_path.unlink(missing_ok=True)
         if not file_path.exists():
+            download_error: Exception | None = None
             try:
-                response = httpx.get(
-                    url,
-                    headers=headers,
-                    timeout=float(settings["request_timeout_seconds"]),
-                    verify=_verify_tls(url),
-                    follow_redirects=True,
-                )
-                response.raise_for_status()
-                if not _looks_like_pdf_bytes(response.content):
-                    content_type = response.headers.get("content-type", "")
-                    raise ValueError(f"response is not a PDF (content-type={content_type or 'unknown'})")
-                file_path.write_bytes(response.content)
-                if stats:
-                    stats.downloaded += 1
+                for candidate_url in _document_url_variants(url):
+                    try:
+                        response = httpx.get(
+                            candidate_url,
+                            headers=headers,
+                            timeout=float(settings["request_timeout_seconds"]),
+                            verify=_verify_tls(candidate_url),
+                            follow_redirects=True,
+                        )
+                        response.raise_for_status()
+                        response_headers = getattr(response, "headers", {})
+                        content_type = response_headers.get("content-type", "")
+                        file_format = _document_file_format(
+                            response.content,
+                            url=candidate_url,
+                            content_type=content_type,
+                        )
+                        if file_format is None:
+                            raise ValueError(
+                                f"response is not a supported document (content-type={content_type or 'unknown'})"
+                            )
+                    except Exception as exc:
+                        download_error = exc
+                        continue
+                    if candidate_url != url:
+                        LOGGER.info("PDF URL Unicode variant succeeded for %s", url)
+                    file_path.write_bytes(response.content)
+                    if stats:
+                        stats.downloaded += 1
+                    download_error = None
+                    break
             except Exception as exc:
-                LOGGER.warning("PDF download failed for %s: %s", url, exc)
+                download_error = exc
+            if download_error is not None:
+                LOGGER.warning("PDF download failed for %s: %s", url, download_error)
                 if stats:
                     stats.errors += 1
                 continue
 
         enriched_document = dict(document)
-        enriched_document["type"] = "pdf"
+        file_format = _document_file_format(
+            file_path.read_bytes(),
+            url=url,
+            content_type=None,
+        ) or "unknown"
+        enriched_document["type"] = file_format
+        enriched_document["file_format"] = file_format
         enriched_document["document_type"] = document_type
         enriched_document["file_path"] = str(file_path)
         downloaded.append(enriched_document)
@@ -181,6 +214,52 @@ def download_documents(
 
 def _looks_like_pdf_bytes(content: bytes) -> bool:
     return b"%PDF-" in content[:1024]
+
+
+def _document_file_format(content: bytes, *, url: str, content_type: str | None) -> str | None:
+    if _looks_like_pdf_bytes(content):
+        return "pdf"
+    suffix = Path(urlparse(url).path).suffix.lower()
+    normalized_content_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1") and (
+        suffix == ".doc" or normalized_content_type == "application/msword"
+    ):
+        return "doc"
+    if content.startswith(b"PK\x03\x04") and (
+        suffix == ".docx"
+        or normalized_content_type
+        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        return "docx"
+    return None
+
+
+def _document_url_variants(url: str) -> list[str]:
+    variants = [url]
+    for form in ("NFC", "NFD"):
+        normalized = _normalize_document_url(url, form=form)
+        if normalized not in variants:
+            variants.append(normalized)
+    return variants
+
+
+def _normalize_document_url(url: str, *, form: str) -> str:
+    parsed = urlsplit(url)
+    safe_segment_chars = ":@-._~!$&'()*+,;="
+    normalized_segments = [
+        quote(unicodedata.normalize(form, unquote(segment)), safe=safe_segment_chars)
+        for segment in parsed.path.split("/")
+    ]
+    normalized_query = unicodedata.normalize(form, parsed.query)
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            "/".join(normalized_segments),
+            normalized_query,
+            parsed.fragment,
+        )
+    )
 
 
 def _is_robots_disallowed_licitor_document(url: str) -> bool:
@@ -194,6 +273,87 @@ def _is_robots_disallowed_licitor_document(url: str) -> bool:
 def _verify_tls(url: str) -> bool:
     # ponytail: public Cessions Etat PDFs currently ship an incomplete cert chain to Python/httpx.
     return urlparse(url).netloc.lower() != "cessions.immobilier-etat.gouv.fr"
+
+
+def extract_attached_document(
+    file: str | Path,
+    document: dict[str, str] | None = None,
+) -> dict[str, object]:
+    path = Path(file)
+    file_format = str((document or {}).get("file_format") or path.suffix.lstrip(".")).lower()
+    if file_format == "pdf":
+        return extract_pdf_document(path, document=document)
+    if file_format == "doc":
+        return _extract_legacy_word_document(path)
+    if file_format == "docx":
+        return _extract_docx_document(path)
+    raise ValueError(f"unsupported attached document format: {file_format or 'unknown'}")
+
+
+def _extract_legacy_word_document(path: Path) -> dict[str, object]:
+    commands: list[tuple[list[str], str]] = []
+    if shutil.which("antiword"):
+        commands.append((["antiword", str(path)], "antiword"))
+    if shutil.which("textutil"):
+        commands.append((["textutil", "-convert", "txt", "-stdout", str(path)], "textutil"))
+    if not commands:
+        raise RuntimeError("legacy Word extraction requires antiword or textutil")
+
+    last_error = ""
+    for command, method in commands:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            check=False,
+        )
+        text = clean_text(result.stdout) or ""
+        if result.returncode == 0 and text:
+            return _single_page_document_payload(path, text, extraction_method=method)
+        last_error = clean_text(result.stderr) or f"exit code {result.returncode}"
+    raise RuntimeError(f"legacy Word extraction failed: {last_error}")
+
+
+def _extract_docx_document(path: Path) -> dict[str, object]:
+    with zipfile.ZipFile(path) as archive:
+        xml = archive.read("word/document.xml")
+    root = ElementTree.fromstring(xml)
+    text = clean_text(" ".join(node.text or "" for node in root.iter() if node.tag.endswith("}t"))) or ""
+    if not text:
+        raise ValueError("DOCX document contains no extractable text")
+    return _single_page_document_payload(path, text, extraction_method="docx_xml")
+
+
+def _single_page_document_payload(
+    path: Path,
+    text: str,
+    *,
+    extraction_method: str,
+) -> dict[str, object]:
+    confidence = _page_text_confidence(text, method="pymupdf_text")
+    return {
+        "cache_version": PDF_TEXT_CACHE_VERSION,
+        "text": text,
+        "pages": [
+            {
+                "page": 1,
+                "text": text,
+                "chars": len(text),
+                "raw_text_chars": len(text),
+                "method": extraction_method,
+                "confidence": confidence,
+            }
+        ],
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "page_count": 1,
+        "text_chars": len(text),
+        "extraction_method": extraction_method,
+        "confidence": confidence,
+        "ocr_pages": 0,
+    }
 
 
 def extract_pdf_text(file: str | Path, document: dict[str, str] | None = None) -> str:
@@ -1396,6 +1556,8 @@ def _extract_land_surface_with_evidence(text: str) -> dict[str, Decimal | str] |
         for match in re.finditer(pattern, text, re.I | re.S):
             if not _has_land_surface_context(text, match.start(), match.end()):
                 continue
+            if _land_surface_match_is_built(text, match):
+                continue
             value = parse_surface(match.group(1))
             if value is None:
                 continue
@@ -1406,6 +1568,7 @@ def _extract_land_surface_with_evidence(text: str) -> dict[str, Decimal | str] |
         r"\b(?P<ha>\d{1,5})\s*(?:ha|hectares?)\s*(?:(?P<a>\d{1,5})\s*(?:a|ares?))?\s*(?:(?P<ca>\d{1,2})\s*(?:ca|centiares?))?\b",
         r"\b(?P<a>\d{1,5})\s*(?:a|ares?)\s*(?:(?P<ca>\d{1,2})\s*(?:ca|centiares?))?\b",
     )
+    unit_candidates: list[dict[str, Decimal | str | int]] = []
     for pattern in unit_patterns:
         for match in re.finditer(pattern, text, re.I):
             if not _has_land_surface_context(text, match.start(), match.end()):
@@ -1414,8 +1577,49 @@ def _extract_land_surface_with_evidence(text: str) -> dict[str, Decimal | str] |
             if value is None:
                 continue
             evidence = clean_text(text[max(0, match.start() - 120) : min(len(text), match.end() + 160)]) or ""
-            return {"value": value, "evidence": evidence}
+            unit_candidates.append(
+                {
+                    "value": value,
+                    "evidence": evidence,
+                    "rank": _land_unit_candidate_rank(text, match.start(), match.end()),
+                }
+            )
+    if unit_candidates:
+        unit_candidates.sort(key=lambda item: int(item["rank"]), reverse=True)
+        best = unit_candidates[0]
+        if len(unit_candidates) == 1 or int(best["rank"]) >= 40:
+            return {"value": best["value"], "evidence": best["evidence"]}
     return None
+
+
+def _land_surface_match_is_built(text: str, match: re.Match[str]) -> bool:
+    value_start = match.start(1)
+    before_value = text[max(0, value_start - 100) : value_start]
+    if not re.search(
+        r"\b(?:habitable|carrez|privative|utile|b[âa]tie|surface\s+de\s+r[ée]f[ée]rence)\b",
+        before_value,
+        re.I,
+    ):
+        return False
+    return not re.search(r"\b(?:terrain|parcelle|jardin|cadastrale)\b", before_value[-70:], re.I)
+
+
+def _land_unit_candidate_rank(text: str, start: int, end: int) -> int:
+    before = _normalize_document_classifier_text(text[max(0, start - 120) : start])
+    after = _normalize_document_classifier_text(text[end : min(len(text), end + 100)])
+    context = f"{before} {after}"
+    rank = 0
+    if re.search(r"\b(?:parcelle|terrain|jardin)\b", before[-90:]):
+        rank += 60
+    if re.search(r"\b(?:parcelle|terrain|jardin)\b", after[:70]):
+        rank += 40
+    if re.search(r"\b(?:contenance|total|totale)\b", context):
+        rank += 45
+    if re.search(r"\bjouissance\s+(?:exclusive|privative)\b", before):
+        rank += 20
+    if re.search(r"\b(?:section|cadastre|cadastree|tableau)\b", context):
+        rank -= 15
+    return rank
 
 
 def _extract_energy_diagnostics_with_evidence(text: str) -> dict[str, object] | None:
@@ -1813,8 +2017,8 @@ def _merge_pdf_risk_notes(*values: str | None) -> str | None:
 def _document_filename(document: dict[str, str]) -> str:
     url = document.get("url", "")
     label = document.get("label", "")
-    suffix = Path(urlparse(url).path).suffix
-    if suffix.lower() != ".pdf":
+    suffix = Path(urlparse(url).path).suffix.lower()
+    if suffix not in {".pdf", ".doc", ".docx"}:
         suffix = ".pdf"
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
     stem = re.sub(r"[^a-zA-Z0-9._-]+", "-", Path(label or "document").stem).strip("-") or "document"

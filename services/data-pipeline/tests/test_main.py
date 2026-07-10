@@ -233,6 +233,94 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch) 
     assert summary_capture["deleted_expired_sales"] == 3
 
 
+def test_pipeline_returns_failure_when_final_supabase_publication_fails(monkeypatch) -> None:
+    finish_calls: list[tuple[str, dict[str, list[str]]]] = []
+    upsert_calls = 0
+
+    monkeypatch.setattr(main, "load_settings", lambda: _settings())
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finish_calls.append((status, errors)),
+    )
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: len(sales))
+
+    def upsert_sales(sales: list[AuctionSale]) -> int:
+        nonlocal upsert_calls
+        upsert_calls += 1
+        if upsert_calls == 2:
+            raise RuntimeError("final publication rejected")
+        return len(sales)
+
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", upsert_sales)
+
+    result = main.run_pipeline(
+        main.PipelineOptions(source="avoventes", use_llm=False, heavy_enrichment=False, upsert=True)
+    )
+
+    assert result == 1
+    assert finish_calls[-1][0] == "failed"
+    assert finish_calls[-1][1]["supabase"] == ["final publication rejected"]
+
+
+def test_pipeline_recovers_when_only_early_supabase_publication_fails(monkeypatch) -> None:
+    finish_statuses: list[str] = []
+    upsert_calls = 0
+
+    monkeypatch.setattr(main, "load_settings", lambda: _settings())
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finish_statuses.append(status),
+    )
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: len(sales))
+
+    def upsert_sales(sales: list[AuctionSale]) -> int:
+        nonlocal upsert_calls
+        upsert_calls += 1
+        if upsert_calls == 1:
+            raise RuntimeError("temporary early publication failure")
+        return len(sales)
+
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", upsert_sales)
+
+    result = main.run_pipeline(
+        main.PipelineOptions(source="avoventes", use_llm=False, heavy_enrichment=False, upsert=True)
+    )
+
+    assert result == 0
+    assert finish_statuses[-1] == "succeeded"
+    assert upsert_calls == 2
+
+
 def test_pipeline_skips_redundant_final_sale_upsert_when_unchanged(monkeypatch) -> None:
     calls: list[str] = []
 
