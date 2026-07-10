@@ -17,7 +17,7 @@ export function useAuth() {
       const { data, error } = await supabase
         .from("user_profiles")
         .select(
-          "user_id,email,full_name,account_type,professional_role,organization_name,professional_status,created_at,updated_at",
+          "user_id,email,full_name,account_type,account_tier,user_role,professional_role,organization_name,professional_status,created_at,updated_at",
         )
         .eq("user_id", nextUser.id)
         .maybeSingle();

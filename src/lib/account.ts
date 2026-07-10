@@ -1,6 +1,8 @@
 import type { User } from "@supabase/supabase-js";
 
 export type AccountType = "b2c" | "b2b";
+export type AccountTier = "free" | "premium";
+export type UserRole = "user" | "admin";
 export type ProfessionalRole = "lawyer" | "notary" | "bailiff" | "court" | "other";
 export type ProfessionalStatus = "not_applicable" | "pending" | "approved" | "rejected";
 
@@ -9,6 +11,8 @@ export type AccountProfile = {
   email: string | null;
   full_name: string | null;
   account_type: AccountType;
+  account_tier: AccountTier;
+  user_role: UserRole;
   professional_role: ProfessionalRole | null;
   organization_name: string | null;
   professional_status: ProfessionalStatus;
@@ -48,6 +52,14 @@ export function isAccountType(value: unknown): value is AccountType {
   return value === "b2c" || value === "b2b";
 }
 
+export function isAccountTier(value: unknown): value is AccountTier {
+  return value === "free" || value === "premium";
+}
+
+export function isUserRole(value: unknown): value is UserRole {
+  return value === "user" || value === "admin";
+}
+
 export function isProfessionalRole(value: unknown): value is ProfessionalRole {
   return (
     value === "lawyer" ||
@@ -77,7 +89,11 @@ export function hasAdminRole(value: unknown): boolean {
   return metadata.app_metadata?.role === "admin" || metadata.user_role === "admin";
 }
 
-export function isAdminAccount(user: User | null | undefined): boolean {
+export function isAdminAccount(
+  user: User | null | undefined,
+  profile?: AccountProfile | null,
+): boolean {
+  if (profile) return profile.user_role === "admin";
   return hasAdminRole(user);
 }
 
@@ -90,6 +106,7 @@ export function profileFromUserMetadata(user: User | null | undefined): AccountP
     ? user.user_metadata.professional_role
     : null;
   const status = accountType === "b2b" ? "pending" : "not_applicable";
+  const admin = hasAdminRole(user);
 
   return {
     user_id: user.id,
@@ -97,6 +114,8 @@ export function profileFromUserMetadata(user: User | null | undefined): AccountP
     full_name:
       typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null,
     account_type: accountType,
+    account_tier: admin ? "premium" : "free",
+    user_role: admin ? "admin" : "user",
     professional_role: accountType === "b2b" ? professionalRole : null,
     organization_name:
       typeof user.user_metadata?.organization_name === "string"
@@ -120,7 +139,7 @@ export function isProfessionalAccount(
   profile?: AccountProfile | null,
 ) {
   return (
-    isAdminAccount(user) ||
+    isAdminAccount(user, profile) ||
     (getAccountType(user, profile) === "b2b" && getProfessionalStatus(profile) === "approved")
   );
 }

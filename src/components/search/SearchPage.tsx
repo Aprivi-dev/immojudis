@@ -837,13 +837,14 @@ function HeaderStatusPill({
 function SearchInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
     <label className="relative min-w-0 flex-1">
-      <span className="sr-only">Rechercher par adresse, mot-clé ou référence</span>
+      <span className="sr-only">Rechercher par région, département, ville ou code postal</span>
       <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667482]" />
       <Input
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Ville, adresse, tribunal..."
+        placeholder="Région, département, ville, code postal..."
+        autoComplete="off"
         className="h-11 rounded-md border-white/25 bg-white pl-10 pr-3 text-[15px] font-semibold text-[#132238] shadow-[0_10px_24px_rgba(0,0,0,0.18)] focus-visible:ring-[#c98d45]"
       />
     </label>
@@ -2022,7 +2023,7 @@ function MobileFilterDrawer({
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, department: event.target.value }))
                 }
-                placeholder="33"
+                placeholder="33 ou Gironde"
                 className="h-10 bg-white"
               />
             </FilterField>

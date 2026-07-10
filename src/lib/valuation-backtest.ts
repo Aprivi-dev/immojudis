@@ -2,7 +2,6 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
-import { hasAdminRole } from "@/lib/account";
 import {
   buildDvfComparableAnalysis,
   type DvfComparableCandidate,
@@ -244,7 +243,7 @@ export async function buildValuationBacktestForSale({
 }
 
 async function assertValuationBacktestAvailable(auth: SupabaseAuthContext) {
-  if (hasAdminRole(auth.claims)) return;
+  if (auth.isAdmin || auth.accountTier === "premium") return;
 
   const { data, error } = await auth.supabase
     .from("user_subscriptions")

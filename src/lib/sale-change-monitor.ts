@@ -643,19 +643,30 @@ async function insertChangeEvents(
 }
 
 async function getInvestorUserIds(limit: number): Promise<string[]> {
-  const { data, error } = await supabaseAdmin
-    .from("user_subscriptions")
-    .select("user_id,plan_code,status,current_period_end")
-    .eq("plan_code", "analyse")
-    .order("updated_at", { ascending: true })
-    .limit(limit);
+  const [profilesResult, subscriptionsResult] = await Promise.all([
+    supabaseAdmin
+      .from("user_profiles")
+      .select("user_id,account_tier,user_role")
+      .or("account_tier.eq.premium,user_role.eq.admin")
+      .order("updated_at", { ascending: true })
+      .limit(limit),
+    supabaseAdmin
+      .from("user_subscriptions")
+      .select("user_id,plan_code,status,current_period_end")
+      .eq("plan_code", "analyse")
+      .order("updated_at", { ascending: true })
+      .limit(limit),
+  ]);
 
-  if (error) throw error;
-  return (data ?? [])
-    .filter((subscription) =>
-      isPlanPeriodActive(subscription.status, subscription.current_period_end),
-    )
-    .map((subscription) => subscription.user_id);
+  if (profilesResult.error) throw profilesResult.error;
+  if (subscriptionsResult.error) throw subscriptionsResult.error;
+  const userIds = new Set((profilesResult.data ?? []).map((profile) => profile.user_id));
+  for (const subscription of (subscriptionsResult.data ?? []).filter((row) =>
+    isPlanPeriodActive(row.status, row.current_period_end),
+  )) {
+    userIds.add(subscription.user_id);
+  }
+  return Array.from(userIds).slice(0, limit);
 }
 
 function systemAuthForUser(userId: string): SupabaseAuthContext {
@@ -663,6 +674,9 @@ function systemAuthForUser(userId: string): SupabaseAuthContext {
     supabase: supabaseAdmin,
     userId,
     claims: {},
+    accountTier: "free",
+    userRole: "user",
+    isAdmin: false,
   };
 }
 

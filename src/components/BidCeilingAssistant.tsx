@@ -15,9 +15,12 @@ import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import {
   computeMarketCeiling,
   DEFAULTS,
+  estimateWorksBudget,
   MARKET_CEILING_SCENARIOS,
+  WORKS_SCENARIOS,
   type MarketCeilingResult,
   type MarketCeilingScenarioKey,
+  type WorksScenarioKey,
 } from "@/lib/profitability";
 import { fetchMarketEstimate } from "@/lib/client-api";
 import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.functions";
@@ -35,6 +38,7 @@ import type { AuctionSale, SaleRisk } from "@/lib/types";
 type AssistantState = {
   price: number;
   works: number;
+  worksScenario: WorksScenarioKey | null;
   fpt: number;
   scenario: MarketCeilingScenarioKey;
   manualMarketPricePerM2: number;
@@ -112,6 +116,50 @@ function signedMoney(value: number): string {
   return `${rounded > 0 ? "+" : "-"}${fmt(Math.abs(rounded))}`;
 }
 
+function isWorksScenarioKey(value: unknown): value is WorksScenarioKey {
+  return WORKS_SCENARIOS.some((scenario) => scenario.key === value);
+}
+
+function createAssistantState(
+  startingPrice: number,
+  surface: number | null,
+  stored: Partial<AssistantState> | null = null,
+): AssistantState {
+  const defaultWorksScenario: WorksScenarioKey = "rafraichissement";
+  const fallback: AssistantState = {
+    price: startingPrice,
+    works: estimateWorksBudget(surface, defaultWorksScenario),
+    worksScenario: defaultWorksScenario,
+    fpt: DEFAULTS.fpt,
+    scenario: "equilibre",
+    manualMarketPricePerM2: 0,
+    marketEdited: false,
+  };
+
+  if (!stored) return fallback;
+
+  // Les anciens réglages ne connaissaient pas les scénarios : leur montant
+  // travaux reste une hypothèse manuelle afin de ne pas écraser une saisie.
+  if (!Object.prototype.hasOwnProperty.call(stored, "worksScenario")) {
+    return {
+      ...fallback,
+      ...stored,
+      works: Math.max(0, stored.works || 0),
+      worksScenario: null,
+    };
+  }
+
+  const worksScenario = isWorksScenarioKey(stored.worksScenario) ? stored.worksScenario : null;
+  return {
+    ...fallback,
+    ...stored,
+    worksScenario,
+    works: worksScenario
+      ? estimateWorksBudget(surface, worksScenario)
+      : Math.max(0, stored.works || 0),
+  };
+}
+
 export function BidCeilingAssistant({
   sale,
   marketEstimateOverride = null,
@@ -128,29 +176,26 @@ export function BidCeilingAssistant({
   const [cachedEstimate, setCachedEstimate] = useState<DvfMarketEstimate | null>(
     () => marketEstimateOverride ?? loadCachedMarketEstimate(sale.id),
   );
-  const [state, setState] = useState<AssistantState>(() => ({
-    price: startingPrice,
-    works: 0,
-    fpt: DEFAULTS.fpt,
-    scenario: "equilibre",
-    manualMarketPricePerM2: 0,
-    marketEdited: false,
-  }));
+  const [state, setState] = useState<AssistantState>(() =>
+    createAssistantState(startingPrice, surface, loadState(sale.id)),
+  );
+  const [stateSaleId, setStateSaleId] = useState(sale.id);
 
   useEffect(() => {
     const stored = loadState(sale.id);
-    if (stored) setState((current) => ({ ...current, ...stored }));
+    setState(createAssistantState(startingPrice, surface, stored));
+    setStateSaleId(sale.id);
     setCachedEstimate(marketEstimateOverride ?? loadCachedMarketEstimate(sale.id));
-  }, [marketEstimateOverride, sale.id]);
+  }, [marketEstimateOverride, sale.id, startingPrice, surface]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || stateSaleId !== sale.id) return;
     try {
       window.localStorage.setItem(storageKey(sale.id), JSON.stringify(state));
     } catch {
       /* ignore quota errors */
     }
-  }, [sale.id, state]);
+  }, [sale.id, state, stateSaleId]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: [
@@ -238,14 +283,7 @@ export function BidCeilingAssistant({
 
   const reset = () => {
     if (typeof window !== "undefined") window.localStorage.removeItem(storageKey(sale.id));
-    setState({
-      price: startingPrice,
-      works: 0,
-      fpt: DEFAULTS.fpt,
-      scenario: "equilibre",
-      manualMarketPricePerM2: 0,
-      marketEdited: false,
-    });
+    setState(createAssistantState(startingPrice, surface));
   };
 
   const verdictAvailable = selected.result.available;
@@ -384,19 +422,37 @@ export function BidCeilingAssistant({
           </div>
         </div>
 
-        {/* ── 2. Pourquoi ce chiffre ───────────────────────────────────── */}
+        {/* ── 2. Estimation des travaux ───────────────────────────────── */}
+        <WorksScenarioSelector
+          surface={surface}
+          works={state.works}
+          selectedScenario={state.worksScenario}
+          maxWorks={selected.result.available ? selected.result.maxWorksAtSimulatedPrice : null}
+          onSelect={(worksScenario) =>
+            setState((current) => ({
+              ...current,
+              worksScenario,
+              works: estimateWorksBudget(surface, worksScenario),
+            }))
+          }
+          onWorksChange={(works) =>
+            setState((current) => ({ ...current, works, worksScenario: null }))
+          }
+        />
+
+        {/* ── 3. Pourquoi ce chiffre ───────────────────────────────────── */}
         <div className="mt-5">
           <MethodCard result={balanced.result} estimate={effectiveEstimate} />
         </div>
 
-        {/* ── 2b. Marché local (DVF parcellaire + historique adresse) ──── */}
+        {/* ── 3b. Marché local (DVF parcellaire + historique adresse) ──── */}
         <MarketLocalCard
           estimate={effectiveEstimate}
           usingCachedEstimate={usingCachedEstimate}
           isLoading={isLoading && !effectiveEstimate}
         />
 
-        {/* ── 3. Conditions pour rester gagnant ────────────────────────── */}
+        {/* ── 4. Conditions pour rester gagnant ────────────────────────── */}
         <SuccessConditions
           sale={sale}
           result={selected.result}
@@ -404,7 +460,7 @@ export function BidCeilingAssistant({
           useManualMarket={useManualMarket}
         />
 
-        {/* ── 4. Ajuster mes hypothèses (replié par défaut) ────────────── */}
+        {/* ── 5. Ajuster mes hypothèses (replié par défaut) ────────────── */}
         <button
           type="button"
           aria-expanded={detailsOpen}
@@ -576,6 +632,143 @@ function WorksEnvelope({
           </>
         )}
       </p>
+    </div>
+  );
+}
+
+function WorksScenarioSelector({
+  surface,
+  works,
+  selectedScenario,
+  maxWorks,
+  onSelect,
+  onWorksChange,
+}: {
+  surface: number;
+  works: number;
+  selectedScenario: WorksScenarioKey | null;
+  maxWorks: number | null;
+  onSelect: (scenario: WorksScenarioKey) => void;
+  onWorksChange: (works: number) => void;
+}) {
+  const selectedConfig = WORKS_SCENARIOS.find((scenario) => scenario.key === selectedScenario);
+  const exceedsEnvelope = maxWorks != null && works > maxWorks;
+  const retainedPricePerM2 = surface > 0 ? Math.round(works / surface) : 0;
+
+  return (
+    <div className="mt-5 rounded-lg border border-border bg-muted/35 p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+            <Wrench className="h-4 w-4" />
+            Estimation des travaux
+          </div>
+          <h3 className="mt-2 text-base font-semibold text-foreground">
+            Quelle est l'étendue probable de la rénovation ?
+          </h3>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            Choisissez l'ordre de grandeur le plus proche du projet. Le budget calculé sur les{" "}
+            {formatSurface(surface)} du bien est immédiatement déduit de votre mise plafond.
+          </p>
+        </div>
+        <span className="rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-xs font-semibold text-gold-soft">
+          Surface × prix moyen au m²
+        </span>
+      </div>
+
+      <div
+        className="mt-4 grid gap-3 lg:grid-cols-3"
+        role="radiogroup"
+        aria-label="Étendue estimée des travaux"
+      >
+        {WORKS_SCENARIOS.map((scenario, index) => {
+          const selected = scenario.key === selectedScenario;
+          const budget = estimateWorksBudget(surface, scenario.key);
+          return (
+            <button
+              key={scenario.key}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onSelect(scenario.key)}
+              className={`flex h-full flex-col rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                selected
+                  ? "border-gold bg-gold/[0.09] shadow-[0_0_0_1px_rgb(192_138_68/20%)]"
+                  : "border-border bg-white hover:border-gold/45 hover:bg-gold/[0.04]"
+              }`}
+            >
+              <span className="flex items-start justify-between gap-3">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Scénario {index + 1}
+                </span>
+                {selected ? (
+                  <span className="rounded-full bg-gold px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-background">
+                    Retenu
+                  </span>
+                ) : null}
+              </span>
+              <span className="mt-3 text-base font-semibold text-foreground">{scenario.label}</span>
+              <span className="mt-1 text-2xl font-semibold tabular-nums text-gold-soft">
+                {ppm2(scenario.pricePerM2)}
+              </span>
+              <span className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                {scenario.summary}
+              </span>
+              <span className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                {scenario.scope}
+              </span>
+              <span className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+                Pour ce bien :{" "}
+                <strong className="text-sm tabular-nums text-foreground">{fmt(budget)}</strong>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        className={`mt-4 grid gap-4 rounded-lg border p-4 sm:grid-cols-[1fr_190px] sm:items-end ${
+          exceedsEnvelope
+            ? "border-amber-300/40 bg-amber-50"
+            : "border-emerald-300/30 bg-emerald-50/70"
+        }`}
+      >
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Budget travaux retenu
+          </div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+            {fmt(works)}
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {selectedConfig
+              ? `${formatSurface(surface)} × ${ppm2(selectedConfig.pricePerM2)}. Ce montant est déjà retranché du plafond affiché.`
+              : `Montant personnalisé, soit environ ${ppm2(retainedPricePerM2)}. Il remplace l'estimation par scénario.`}
+          </p>
+          {exceedsEnvelope ? (
+            <p className="mt-2 text-xs font-medium leading-relaxed text-amber-700">
+              Ce budget dépasse de {fmt(works - maxWorks!)} l'enveloppe travaux compatible avec la
+              mise simulée. Le plafond d'enchère baisse en conséquence.
+            </p>
+          ) : null}
+        </div>
+        <label className="block">
+          <span className="text-xs font-medium text-muted-foreground">Remplacer par un devis</span>
+          <div className="mt-1 flex items-center rounded-md border border-border bg-white focus-within:ring-1 focus-within:ring-ring">
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step={500}
+              value={Number.isFinite(works) ? works : 0}
+              onChange={(event) => onWorksChange(parseFloat(event.target.value) || 0)}
+              className="w-full bg-transparent px-3 py-2 text-sm tabular-nums outline-none"
+              aria-label="Budget travaux personnalisé"
+            />
+            <span className="pr-3 text-xs text-muted-foreground">€</span>
+          </div>
+        </label>
+      </div>
     </div>
   );
 }
@@ -848,20 +1041,13 @@ function HypothesisEditor({
   onChange: Dispatch<SetStateAction<AssistantState>>;
 }) {
   return (
-    <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Field
         label="Mise simulée"
         suffix="€"
         value={state.price}
         onChange={(price) => onChange((current) => ({ ...current, price }))}
         hint={`Mise à prix : ${formatPrice(startingPrice)}`}
-      />
-      <Field
-        label="Travaux à provisionner"
-        suffix="€"
-        value={state.works}
-        onChange={(works) => onChange((current) => ({ ...current, works }))}
-        hint="À retirer du plafond"
       />
       <Field
         label="Frais préalables taxés"

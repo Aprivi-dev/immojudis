@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
 import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
 
 export const DETAIL_VIEW = "v_auction_sales_app";
@@ -86,6 +87,7 @@ const SALE_MAP_COLUMNS = [
   "title",
   "city",
   "department",
+  "postal_code",
   "address",
   "tribunal",
   "tribunal_name",
@@ -201,20 +203,43 @@ type FilterableQuery = {
 };
 
 function textPattern(value: string) {
-  return `%${value.replace(/[,%()]/g, " ").trim()}%`;
+  return `%${value.replace(/[,%().]/g, " ").trim()}%`;
 }
 
 function applyTextSearch(query: FilterableQuery, columns: string[], value: string | undefined) {
   if (!value?.trim()) return query;
-  const pattern = textPattern(value);
-  return query.or(columns.map((column) => `${column}.ilike.${pattern}`).join(","));
+  const terms = frenchSearchTerms(value).slice(0, 12);
+
+  return terms.reduce((current, term) => {
+    const alternatives = accentTolerantPatterns(term);
+    return current.or(
+      columns
+        .flatMap((column) =>
+          alternatives.map((pattern) => `${column}.ilike.${textPattern(pattern)}`),
+        )
+        .join(","),
+    );
+  }, query);
+}
+
+function accentTolerantPatterns(term: string): string[] {
+  const patterns = [term];
+  for (let index = 0; index < term.length && patterns.length < 8; index += 1) {
+    if (!/[aeiouycn]/.test(term[index] ?? "")) continue;
+    patterns.push(`${term.slice(0, index)}_${term.slice(index + 1)}`);
+  }
+  return patterns;
 }
 
 function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilters) {
   let q = query as unknown as FilterableQuery;
 
   if (filters.department) q = q.eq("department", filters.department);
+  if (filters.departments?.length) {
+    q = q.in("department", departmentSearchValues(filters.departments));
+  }
   if (filters.city) q = q.ilike("city", textPattern(filters.city));
+  if (filters.postal_code) q = q.eq("postal_code", filters.postal_code);
   if (filters.property_type) q = q.eq("property_type", filters.property_type);
   if (filters.property_types?.length) q = q.in("property_type", filters.property_types);
   if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
@@ -244,7 +269,19 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
   );
   q = applyTextSearch(
     q,
-    ["title", "description", "source_description", "city", "address", "tribunal_name"],
+    [
+      "title",
+      "description",
+      "source_description",
+      "city",
+      "department",
+      "postal_code",
+      "address",
+      "tribunal",
+      "tribunal_name",
+      "tribunal_city",
+      "tribunal_code",
+    ],
     filters.keywords,
   );
 
