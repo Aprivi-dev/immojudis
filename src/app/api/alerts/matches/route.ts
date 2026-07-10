@@ -18,7 +18,11 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Matches d'alertes indisponibles";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
+    const status = message.startsWith("Unauthorized")
+      ? 401
+      : message.includes("réservées")
+        ? 403
+        : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

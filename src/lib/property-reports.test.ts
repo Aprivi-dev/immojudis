@@ -308,7 +308,7 @@ describe("property report sharing", () => {
     });
   });
 
-  it("gives administrators investor-level entitlements for premium offer testing", async () => {
+  it("gives administrators Analyse entitlements for premium offer testing", async () => {
     const auth = {
       userId: "11111111-1111-4111-8111-111111111111",
       claims: { app_metadata: { role: "admin" } },
@@ -321,7 +321,8 @@ describe("property report sharing", () => {
 
     const plan = await resolvePlanEntitlements(auth);
 
-    expect(plan.plan).toBe("investisseur");
+    expect(plan.plan).toBe("analyse");
+    expect(plan.hasAnalysisAccess).toBe(true);
     expect(plan.features.realtimeAlertChanges).toBe("included");
     expect(plan.features.workspaceCollaboration).toBe("included");
     expect(plan.limits.workspaceCollaborators).toBeGreaterThan(0);

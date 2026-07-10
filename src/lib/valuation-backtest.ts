@@ -8,7 +8,7 @@ import {
   type DvfComparableCandidate,
 } from "@/lib/dvf-comparable-engine";
 import { haversineKm } from "@/lib/geo";
-import { featureIncluded, isActivePlanStatus, normalizePlanCode } from "@/lib/plans";
+import { featureIncluded, isPlanPeriodActive, normalizePlanCode } from "@/lib/plans";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -248,13 +248,15 @@ async function assertValuationBacktestAvailable(auth: SupabaseAuthContext) {
 
   const { data, error } = await auth.supabase
     .from("user_subscriptions")
-    .select("plan_code,status")
+    .select("plan_code,status,current_period_end")
     .eq("user_id", auth.userId)
     .maybeSingle();
 
   if (error) throw error;
   const plan =
-    data && isActivePlanStatus(data.status) ? normalizePlanCode(data.plan_code) : "decouverte";
+    data && isPlanPeriodActive(data.status, data.current_period_end)
+      ? normalizePlanCode(data.plan_code)
+      : "decouverte";
 
   if (!featureIncluded(plan, "property.soldComparables")) {
     throw new Error("Backtest de valorisation réservé au plan Analyse.");

@@ -61,15 +61,11 @@ const requiredGroups = [
 const optionalGroups = [
   {
     label: "Stripe checkout",
-    names: ["STRIPE_SECRET_KEY", "STRIPE_ANALYSE_PRICE_ID"],
+    names: ["STRIPE_SECRET_KEY"],
   },
   {
     label: "Stripe webhooks",
     names: ["STRIPE_WEBHOOK_SECRET"],
-  },
-  {
-    label: "Investisseur plan checkout",
-    names: ["STRIPE_INVESTISSEUR_PRICE_ID"],
   },
   {
     label: "Canonical app URL",

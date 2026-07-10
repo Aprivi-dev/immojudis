@@ -19,7 +19,7 @@ const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin" } as const;
 const HOME_NAV_ITEMS = [
   { to: "/sales", label: "Rechercher un bien" },
   { to: "/annonce-exemple", label: "Annonce exemple" },
-  { to: "/accompagnement", label: "Offre Pro" },
+  { to: "/accompagnement", label: "Offres" },
   { to: "/ressources", label: "Ressources" },
   { to: "/a-propos", label: "À propos" },
 ] as const;

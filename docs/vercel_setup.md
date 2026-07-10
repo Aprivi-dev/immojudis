@@ -36,8 +36,8 @@ npm run dev        # http://localhost:3000
 | `SMART_ALERT_CRON_USER_LIMIT`   | ❌      | Nombre max d'utilisateurs Analyse évalués par exécution. Défaut : `25`.                                                     |
 | `SMART_ALERT_CRON_SALE_LIMIT`   | ❌      | Nombre max de ventes actives/à venir évaluées par utilisateur. Défaut : `160`.                                              |
 | `ALERT_NOTIFICATION_CRON_LIMIT` | ❌      | Nombre max de notifications d'alertes planifiées libérées par exécution. Défaut : `200`.                                    |
-| `STRIPE_ANALYSE_PRICE_ID`       | ✅ prod | Price ID Stripe du plan Analyse.                                                                                            |
-| `STRIPE_INVESTISSEUR_PRICE_ID`  | ✅ prod | Price ID Stripe du plan Investisseur / Marchand.                                                                            |
+| `STRIPE_SECRET_KEY`             | ✅ prod | Clé serveur Stripe utilisée pour le paiement unique Analyse à 29 €.                                                         |
+| `STRIPE_WEBHOOK_SECRET`         | ✅ prod | Secret de signature du webhook qui attribue les 30 jours d'accès.                                                           |
 | `RESEND_API_KEY`                | ✅ prod | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés.                          |
 | `ALERT_EMAIL_FROM`              | ✅ prod | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`.                                                  |
 
@@ -75,13 +75,14 @@ Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans
 
 Le token `GITHUB_SCROLL_TOKEN` côté Vercel doit être un fine-grained PAT GitHub limité au repo `Aprivi-dev/immojudis` avec accès Actions en écriture.
 
-### Plans payants Stripe
+### Offre payante Stripe
 
-Le checkout `/api/billing/checkout` accepte `plan=analyse` ou
-`plan=investisseur`. Les variables `STRIPE_ANALYSE_PRICE_ID` et
-`STRIPE_INVESTISSEUR_PRICE_ID` doivent pointer vers deux prix récurrents Stripe.
-Le webhook réconcilie `user_subscriptions.plan_code` depuis les métadonnées
-Stripe, avec repli sur le Price ID si nécessaire.
+Le checkout `/api/billing/checkout` crée un paiement unique de 29 € pour le plan
+`analyse`. Le montant et la durée de 30 jours sont définis côté serveur ; aucun
+Price ID récurrent n'est nécessaire. Le webhook vérifie la signature, traite
+`checkout.session.completed` (et les paiements asynchrones réussis), puis inscrit
+le Checkout Session dans un journal idempotent avant d'étendre l'accès de 30 jours.
+Il n'y a aucun renouvellement automatique.
 
 ### Accès API léger
 
@@ -108,8 +109,8 @@ Sur un plan Vercel Pro, ces deux derniers crons peuvent repasser à `*/15 * * * 
 pour se rapprocher du temps réel. Les routes refusent toute requête sans
 `Authorization: Bearer $CRON_SECRET`.
 
-Le cron `/api/cron/smart-alerts` évalue les alertes avancées des utilisateurs ayant un abonnement
-`analyse` actif, persiste les lignes dans `user_alert_matches`, puis met à jour
+Le cron `/api/cron/smart-alerts` évalue les alertes avancées des utilisateurs ayant un accès
+Analyse actif, persiste les lignes dans `user_alert_matches`, puis met à jour
 `last_evaluated_at` et `last_match_count` sur chaque alerte.
 
 Le cron `/api/cron/alert-notifications` transforme les digests `queued` échus en
