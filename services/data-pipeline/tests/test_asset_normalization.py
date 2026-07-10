@@ -140,6 +140,29 @@ def test_asset_normalization_keeps_structured_surface_when_textual_values_disagr
     assert "surface_conflict_resolved" not in sale.quality_flags
 
 
+def test_asset_normalization_keeps_document_backed_surface_over_editorial_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/documented-surface",
+            "property_type": "Maison",
+            "title": "Maison de 180 m²",
+            "description": "Maison de 180 m² selon l'annonce.",
+            "surface_m2": 175,
+            "habitable_surface_m2": 175,
+            "surface_source": "pdf",
+            "surface_extraction": {"source": "pdf", "value_m2": 175},
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("175")
+    assert sale.habitable_surface_m2 == Decimal("175")
+    assert sale.surface_source == "pdf"
+    assert "surface_conflict_resolved" not in sale.quality_flags
+
+
 def test_notaires_short_house_code_promotes_surface_to_app_surface() -> None:
     sale = normalize_sale(
         {

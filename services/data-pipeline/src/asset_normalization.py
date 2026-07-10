@@ -509,11 +509,21 @@ def _should_prefer_text_built_surface(sale: AuctionSale, candidate: Decimal | No
         return False
     if sale.property_type not in {"house", "building"}:
         return False
+    if _surface_is_document_backed(sale):
+        return False
     if sale.surface_m2 < Decimal("9"):
         return True
     if candidate >= Decimal("20") and candidate > sale.surface_m2:
         return True
     return candidate >= Decimal("9") and _corroborated_text_built_surface(sale) == candidate
+
+
+def _surface_is_document_backed(sale: AuctionSale) -> bool:
+    extraction = sale.raw_payload.get("surface_extraction")
+    if not isinstance(extraction, dict) or extraction.get("source") != "pdf":
+        return sale.surface_source == "pdf"
+    documented_value = parse_surface(extraction.get("value_m2"))
+    return documented_value is not None and documented_value == sale.surface_m2
 
 
 def _corroborated_text_built_surface(sale: AuctionSale) -> Decimal | None:
