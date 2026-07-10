@@ -77,7 +77,7 @@ jobs:
       LLM_PROMPT_VERSION: auction_llm_v6_display
       PDF_EXTRACTOR: auto
       PDF_DOCLING_ENABLED: false
-      PDF_OCR_ENABLED: false
+      PDF_OCR_ENABLED: true
       PDF_MAX_DOCUMENTS_PER_SALE: 2
       ENABLE_LICITOR_BENCHMARK: true
       ENABLE_VENCH_BENCHMARK: true

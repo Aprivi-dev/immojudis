@@ -140,6 +140,59 @@ def test_enriched_hashes_keep_legacy_score_only_mode(monkeypatch) -> None:
     ) == {"hash-current", "hash-missing"}
 
 
+def test_enriched_hashes_require_successful_document_analysis_when_requested(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+
+    class Response:
+        is_error = False
+
+        def json(self):
+            return [
+                {
+                    "content_hash": "hash-extracted",
+                    "raw_payload": {
+                        "document_analysis": {
+                            "coverage_status": "partial",
+                            "documents_listed": 3,
+                            "documents_extracted": 1,
+                        }
+                    },
+                },
+                {
+                    "content_hash": "hash-source-only",
+                    "raw_payload": {
+                        "document_analysis": {
+                            "coverage_status": "source_only",
+                            "documents_listed": 0,
+                            "documents_extracted": 0,
+                        }
+                    },
+                },
+                {
+                    "content_hash": "hash-not-extracted",
+                    "raw_payload": {
+                        "document_analysis": {
+                            "coverage_status": "documents_not_extracted",
+                            "documents_listed": 3,
+                            "documents_extracted": 0,
+                        }
+                    },
+                },
+                {"content_hash": "hash-never-analyzed", "raw_payload": {}},
+            ]
+
+    monkeypatch.setattr(supabase_client.httpx, "get", lambda *args, **kwargs: Response())
+
+    assert supabase_client.fetch_enriched_content_hashes(
+        ["hash-extracted", "hash-source-only", "hash-not-extracted", "hash-never-analyzed"],
+        require_document_analysis=True,
+    ) == {"hash-extracted", "hash-source-only"}
+
+
 def test_fetch_sales_needing_llm_descriptions_filters_current_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         supabase_client,

@@ -643,24 +643,32 @@ def _extract_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, s
     documents: list[dict[str, str]] = []
     for link in soup.find_all("a", href=True):
         href = str(link.get("href"))
-        label = clean_text(link.get_text(" ", strip=True)) or "document"
+        label = clean_text(link.get_text(" ", strip=True))
         if href.startswith(("javascript:", "#")):
             continue
         if not _looks_like_document_link(href, label):
             continue
         url = urljoin(source_url, href)
-        documents.append({"label": label, "url": url, "type": "pdf"})
+        documents.append({"label": label or href.rstrip("/").rsplit("/", 1)[-1] or "document", "url": url, "type": "pdf"})
     return documents
 
 
 def _looks_like_document_link(href: str, label: str | None) -> bool:
-    text = _normalize_document_text(f"{href} {label or ''}")
+    href_text = _normalize_document_text(href)
+    label_text = _normalize_document_text(label)
+    if re.search(r"\.pdf(?:$|[?#])", href_text):
+        return True
+    if re.search(r"(?:^|/)(?:download|telechargement|document)(?:/|\?|$)", href_text):
+        return True
+    if not label_text or label_text in {"document", "documents", "dossier", "pieces jointes"}:
+        return False
+    if re.search(r"\b(?:voir|consulter)\s+le\s+dossier\s+complet\b", label_text):
+        return False
     return bool(
-        ".pdf" in text
-        or re.search(
-            r"\b(?:documents?|dossiers?|cahiers?|conditions?|diagnostics?|annexes?|"
-            r"pv|pvd|proces\s+verbal|proces-verbal|descriptif|telecharg\w*|download\w*)\b",
-            text,
+        re.search(
+            r"\b(?:cahier(?:\s+des\s+conditions)?|conditions\s+de\s+vente|diagnostics?|annexes?|"
+            r"pv|pvd|proces\s+verbal|proces-verbal|descriptif|telecharg\w*)\b",
+            label_text,
         )
     )
 
