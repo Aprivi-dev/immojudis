@@ -14,6 +14,22 @@ from src.models import AuctionSale
 from src.normalize import normalize_sale
 
 
+def test_build_auction_score_factor_rows_deduplicates_factor_keys() -> None:
+    sale = AuctionSale(
+        source_name="notaires",
+        source_url="https://example.test/merged",
+        score_factors=[
+            {"factor_key": "occupation", "delta": 3, "reason": "source primaire"},
+            {"factor_key": "occupation", "delta": -3, "reason": "source secondaire"},
+            {"factor_key": "surface", "delta": 6, "reason": "surface retenue"},
+        ],
+    )
+
+    rows = build_auction_score_factor_rows(sale)
+
+    assert [row["factor_key"] for row in rows] == ["occupation", "surface"]
+
+
 def test_normalize_asset_features_extracts_surfaces_features_and_score() -> None:
     sale = normalize_sale(
         {

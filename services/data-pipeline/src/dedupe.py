@@ -161,7 +161,10 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
         if _is_empty(current) and not _is_empty(incoming):
             setattr(target, field, incoming)
         elif field in {"documents", "quality_flags", "score_factors"} and isinstance(current, list) and isinstance(incoming, list):
-            setattr(target, field, _merge_lists(current, incoming))
+            if field == "score_factors":
+                setattr(target, field, _merge_score_factors(current, incoming))
+            else:
+                setattr(target, field, _merge_lists(current, incoming))
         elif field == "raw_payload" and isinstance(current, dict) and isinstance(incoming, dict):
             current.setdefault("merged_sources", [])
             current["merged_sources"].append(_observation_summary(source))
@@ -425,6 +428,21 @@ def _merge_lists(first: list[Any], second: list[Any]) -> list[Any]:
     seen: set[str] = set()
     for item in [*first, *second]:
         marker = repr(item)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        merged.append(item)
+    return merged
+
+
+def _merge_score_factors(first: list[Any], second: list[Any]) -> list[Any]:
+    merged: list[Any] = []
+    seen: set[str] = set()
+    for item in [*first, *second]:
+        if not isinstance(item, dict):
+            marker = repr(item)
+        else:
+            marker = str(item.get("factor_key") or item.get("name") or repr(item))
         if marker in seen:
             continue
         seen.add(marker)
