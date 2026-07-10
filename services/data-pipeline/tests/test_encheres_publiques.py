@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
 from src.sources.encheres_publiques import (
     _enrich_sale_from_detail,
@@ -328,6 +329,61 @@ def test_parse_encheres_publiques_detail_html_extracts_rich_lot_context() -> Non
     assert "autorisation" not in (sale.raw_text or "")
     assert raw_sale["source_blocks"]["renseignements_de_vente"].startswith("Texte générique")
     assert raw_sale["source_images"] == ["https://www.encheres-publiques.com/static/lot/photo/bordeaux.jpg"]
+
+
+def test_encheres_publiques_resolves_malformed_structured_surface_from_matching_text() -> None:
+    html = """
+    <html>
+      <body>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "apolloState": {
+                "data": {
+                  "Adresse:1": {
+                    "text": "41 Rue Gâte Bourse, 85350 L'Île-d'Yeu, France",
+                    "ville": "L'Île-d'Yeu",
+                    "ville_slug": "l-ile-d-yeu-85"
+                  },
+                  "Lot:130432": {
+                    "id": "130432",
+                    "nom": "Un ensemble immobilier de 187 m² situé rue Gâte-Bourse à L'Île-d'Yeu",
+                    "categorie": "immobilier",
+                    "sous_categorie": "maisons",
+                    "adresse_physique": {"__ref": "Adresse:1"},
+                    "criteres_resume": "L'Île-d'Yeu · 1877 m² · 10 pièces · 266 €/m²",
+                    "critere_surface_habitable": 1877,
+                    "critere_nombre_de_pieces": 10,
+                    "description": "Un ensemble immobilier de 10 pièces de 187 m², avec un garage de 18 m², le tout édifié sur une parcelle de 1 110 m².",
+                    "mise_a_prix": 500000,
+                    "termine": false
+                  }
+                }
+              }
+            }
+          }
+        }
+        </script>
+      </body>
+    </html>
+    """
+
+    raw_sale = parse_encheres_publiques_detail_html(
+        html,
+        "https://www.encheres-publiques.com/encheres/immobilier/maisons/l-ile-d-yeu-85/ensemble-immobilier_130432",
+    )
+    sale = normalize_asset_features(normalize_sale(raw_sale))
+
+    assert raw_sale["surface_m2"] == "187"
+    assert raw_sale["habitable_surface_m2"] == "187"
+    assert sale.surface_m2 == Decimal("187")
+    assert sale.habitable_surface_m2 == Decimal("187")
+    assert sale.land_surface_m2 == Decimal("1110")
+    assert sale.app_surface_m2 == Decimal("187")
+    assert sale.app_surface_kind == "habitable"
+    assert sale.surface_scope == "total"
+    assert sale.title == "Maison 187 m²"
 
 
 def test_enrich_encheres_publiques_detail_merges_source_blocks() -> None:
