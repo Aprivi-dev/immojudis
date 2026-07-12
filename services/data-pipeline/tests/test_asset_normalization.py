@@ -164,6 +164,8 @@ def test_asset_normalization_prefers_value_before_carrez_label() -> None:
             ),
             "surface_m2": 9,
             "habitable_surface_m2": 39.67,
+            "carrez_surface_m2": 40,
+            "app_surface_m2": 40,
         }
     )
 
@@ -172,6 +174,12 @@ def test_asset_normalization_prefers_value_before_carrez_label() -> None:
     assert sale.carrez_surface_m2 == Decimal("39.67")
     assert sale.app_surface_m2 == Decimal("39.67")
     assert sale.app_surface_kind == "carrez"
+    assert sale.raw_payload["carrez_surface_reconciliation"] == {
+        "status": "resolved",
+        "rejected_carrez_surface_m2": "40",
+        "resolved_carrez_surface_m2": "39.67",
+        "basis": "explicit_decimal_carrez_text",
+    }
 
 
 def test_asset_normalization_corrects_truncated_stored_land_surface() -> None:
