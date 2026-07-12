@@ -127,6 +127,30 @@ def test_asset_normalization_resolves_structured_surface_outlier_from_corroborat
     }
 
 
+def test_asset_normalization_resolves_apartment_surface_outlier_from_corroborated_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/apartment-surface-conflict",
+            "property_type": "Appartement",
+            "title": "Appartement de 187 m²",
+            "description": "Appartement de 187 m² avec balcon, édifié sur une parcelle de 1 110 m².",
+            "surface_m2": 1877,
+            "habitable_surface_m2": 1877,
+            "carrez_surface_m2": 1877,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("187")
+    assert sale.habitable_surface_m2 == Decimal("187")
+    assert sale.carrez_surface_m2 == Decimal("187")
+    assert sale.land_surface_m2 is None
+    assert sale.app_surface_m2 == Decimal("187")
+    assert sale.raw_payload["surface_reconciliation"]["rejected_surface_m2"] == "1877"
+
+
 def test_asset_normalization_corrects_truncated_stored_land_surface() -> None:
     sale = normalize_sale(
         {

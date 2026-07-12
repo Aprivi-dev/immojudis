@@ -1186,6 +1186,82 @@ def test_parse_notaires_detail_prefers_precise_text_surface_and_ignores_visit_ui
     assert detail["visit_dates"] == ["ABSENCE DE VISITE (arrêté de péril)"]
 
 
+def test_parse_notaires_detail_rejects_balcony_surface_as_habitable_outlier() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VNI",
+            "vni": {
+                "descriptions": [
+                    {
+                        "langue": "fr",
+                        "descCourte": "Appartement T2 avec balcon",
+                        "descLongue": (
+                            "L'appartement de 40 m² habitables (39,67 m² Loi Carrez) "
+                            "avec 9 m² de balcon se compose d'une chambre et d'un séjour."
+                        ),
+                    }
+                ],
+                "premierPrix": 250000,
+                "dateDebutEncheres": "2026-08-07T10:00:00Z",
+            },
+            "bien": {
+                "typeBien": "APP",
+                "appartement": {
+                    "typeBien": "APP",
+                    "surfaceHabitable": 9,
+                    "codePostal": "83270",
+                    "communeNom": "Saint-Cyr-sur-Mer",
+                    "inseeDepartement": "83",
+                },
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["surface_m2"] == 40
+    assert detail["habitable_surface_m2"] == 40
+    assert detail["carrez_surface_m2"] == 39.67
+    assert detail["surface_source"] == "notaires.description.surface_batie"
+    assert "40 m² habitables" in detail["surface_evidence"]
+
+
+def test_parse_notaires_detail_does_not_replace_global_surface_with_room_surface() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VNI",
+            "vni": {
+                "descriptions": [
+                    {
+                        "langue": "fr",
+                        "descCourte": "Appartement duplex",
+                        "descLongue": (
+                            "Appartement deux pièces avec combles aménagés : 28 m² Carrez et 47,67 m² au sol. "
+                            "La chambre aménagée dans les combles a une superficie de 23,4 m² dont 5,6 m² Carrez."
+                        ),
+                    }
+                ]
+            },
+            "bien": {
+                "typeBien": "APP",
+                "appartement": {
+                    "typeBien": "APP",
+                    "surfaceHabitable": 47,
+                    "codePostal": "75007",
+                    "communeNom": "Paris",
+                    "inseeDepartement": "75",
+                },
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["habitable_surface_m2"] == 47
+    assert detail["carrez_surface_m2"] == 28
+    assert detail["surface_source"] == "notaires.surfaceHabitable"
+
+
 def test_parse_notaires_detail_keeps_thousands_text_surface() -> None:
     payload = json.dumps(
         {

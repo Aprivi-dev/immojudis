@@ -512,10 +512,12 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
     elif _should_prefer_text_built_surface(sale, text_built_surface):
         previous_surface = sale.surface_m2
         sale.surface_m2 = text_built_surface
-        if sale.property_type == "house" and (
+        if sale.property_type in {"house", "apartment"} and (
             sale.habitable_surface_m2 is None or sale.habitable_surface_m2 == previous_surface
         ):
             sale.habitable_surface_m2 = text_built_surface
+        if sale.property_type == "apartment" and sale.carrez_surface_m2 == previous_surface:
+            sale.carrez_surface_m2 = text_built_surface
         if _corroborated_text_built_surface(sale) == text_built_surface:
             _record_surface_conflict_resolution(sale, previous_surface, text_built_surface)
     explicit_app_surface = None
@@ -568,7 +570,7 @@ def _discard_placeholder_built_surface(sale: AuctionSale) -> None:
 def _should_prefer_text_built_surface(sale: AuctionSale, candidate: Decimal | None) -> bool:
     if candidate is None or sale.surface_m2 is None or candidate == sale.surface_m2:
         return False
-    if sale.property_type not in {"house", "building"}:
+    if sale.property_type not in {"house", "apartment", "building"}:
         return False
     if _surface_is_document_backed(sale):
         return False
