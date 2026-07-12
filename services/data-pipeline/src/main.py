@@ -27,8 +27,13 @@ from src.export import export_sales
 from src.geocode import geocode_sale
 from src.lifecycle import mark_past_sales
 from src.models import AuctionSale
-from src.normalize import normalize_sale
-from src.pdf_enrichment import PdfEnrichmentStats, classify_document_type, enrich_sale_from_pdfs
+from src.normalize import normalize_sale, parse_price
+from src.pdf_enrichment import (
+    DOCUMENT_FACTS_VERSION,
+    PdfEnrichmentStats,
+    classify_document_type,
+    enrich_sale_from_pdfs,
+)
 from src.quality import (
     build_extraction_gap_report,
     build_quality_report,
@@ -859,6 +864,7 @@ def _preserve_known_enrichment_payloads(
             keys=KNOWN_ENRICHMENT_PAYLOAD_FIELDS,
         )
         preserved += _backfill_document_surface_fields_from_known(sale, known)
+        preserved += _backfill_document_price_from_known(sale, known)
     return preserved
 
 
@@ -889,6 +895,42 @@ def _backfill_document_surface_fields_from_known(
         if _is_missing_raw_value(sale.get(key)) and not _is_missing_raw_value(known.get(key)):
             sale[key] = known[key]
             copied += 1
+    return copied
+
+
+def _backfill_document_price_from_known(
+    sale: dict[str, object],
+    known: dict[str, object],
+) -> int:
+    known_payload = known.get("raw_payload")
+    if not isinstance(known_payload, dict):
+        return 0
+    extraction = known_payload.get("starting_price_extraction")
+    if not isinstance(extraction, dict) or extraction.get("version") != DOCUMENT_FACTS_VERSION:
+        return 0
+
+    known_price = parse_price(known.get("starting_price_eur"))
+    if known_price is None:
+        return 0
+    incoming_price = parse_price(sale.get("starting_price_eur"))
+    status = extraction.get("status")
+    rejected_price = parse_price(extraction.get("rejected_source_price_eur"))
+    source_matches_rejected = (
+        status == "resolved" and rejected_price is not None and incoming_price == rejected_price
+    )
+    if incoming_price is not None and incoming_price != known_price and not source_matches_rejected:
+        return 0
+
+    copied = 0
+    if incoming_price != known_price:
+        sale["starting_price_eur"] = known_price
+        copied += 1
+    if sale.get("starting_price_extraction") != extraction:
+        sale["starting_price_extraction"] = extraction
+        copied += 1
+    if sale.get("document_facts_version") != DOCUMENT_FACTS_VERSION:
+        sale["document_facts_version"] = DOCUMENT_FACTS_VERSION
+        copied += 1
     return copied
 
 
@@ -1037,6 +1079,8 @@ def _needs_heavy_enrichment(
 def _needs_structured_heavy_enrichment(sale: AuctionSale) -> bool:
     if not sale.documents and not sale.raw_text:
         return False
+    if sale.documents and sale.raw_payload.get("document_facts_version") != DOCUMENT_FACTS_VERSION:
+        return True
     has_surface = any(
         (
             sale.app_surface_m2,
@@ -1059,6 +1103,8 @@ def _heavy_enrichment_already_current(
     use_llm: bool = True,
     prompt_version: str | None = None,
 ) -> bool:
+    if sale.documents and sale.raw_payload.get("document_facts_version") != DOCUMENT_FACTS_VERSION:
+        return False
     if not sale.content_hash or sale.content_hash not in enriched_hashes:
         return False
     if use_llm and _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
@@ -1093,7 +1139,7 @@ def _limit_pdf_targets(
     return sorted(pdf_targets, key=_pdf_target_priority_key)[:max_targets]
 
 
-def _pdf_target_priority_key(sale: AuctionSale) -> tuple[int, int, str, str]:
+def _pdf_target_priority_key(sale: AuctionSale) -> tuple[int, int, int, str, str]:
     has_surface = any(
         value is not None
         for value in (
@@ -1120,6 +1166,11 @@ def _pdf_target_priority_key(sale: AuctionSale) -> tuple[int, int, str, str]:
             "conditions_vente",
         }
     )
+    suspicious_price_rank = 0 if (
+        sale.starting_price_eur is not None
+        and sale.starting_price_eur < 1000
+        and "cahier_conditions_vente" in document_types
+    ) else 1
     if not has_surface and has_official_document:
         document_rank = 0
     elif not has_surface and sale.documents:
@@ -1131,7 +1182,7 @@ def _pdf_target_priority_key(sale: AuctionSale) -> tuple[int, int, str, str]:
     else:
         document_rank = 4
     status_rank, sale_date, source_url = _llm_target_priority_key(sale)
-    return document_rank, status_rank, sale_date, source_url
+    return suspicious_price_rank, document_rank, status_rank, sale_date, source_url
 
 
 def _llm_target_priority_key(sale: AuctionSale) -> tuple[int, str, str]:

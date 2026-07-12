@@ -2213,6 +2213,8 @@ def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decima
         rf"surface\s+au\s+sol\s+(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"\btotal\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)",
     )
+    if sale is not None and sale.source_name == "licitor":
+        patterns = (*patterns, rf"\bde\s+{SURFACE_VALUE_PATTERN}\s*²\b")
     for pattern in patterns:
         match = re.search(pattern, text, re.I | re.S)
         if not match:

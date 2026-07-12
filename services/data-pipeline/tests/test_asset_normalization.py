@@ -764,6 +764,27 @@ def test_asset_normalization_reads_licitor_apartment_surface() -> None:
     assert sale.parking_count == 2
 
 
+def test_asset_normalization_recovers_licitor_surface_with_missing_m_symbol() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/109135.html",
+            "property_type": "Un bâtiment à usage de bureaux",
+            "description": (
+                "Un bâtiment à usage de bureaux. de 636,70 ², comprenant vingt bureaux, "
+                "une cuisine et des salles de réunion."
+            ),
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("636.70")
+    assert sale.app_surface_m2 == Decimal("636.70")
+    assert sale.app_surface_kind == "built"
+    assert sale.surface_scope == "total"
+
+
 def test_asset_normalization_rejects_room_surface_as_app_surface_for_house() -> None:
     sale = normalize_sale(
         {
