@@ -507,7 +507,7 @@ function PlanCard({
       ) : (
         <Link
           to="/login"
-          search={{ redirect: "/sales" }}
+          search={{ mode: "investor", redirect: "/sales" }}
           className="ij-signup-button mt-5 inline-flex px-5 py-3 text-sm font-bold"
         >
           Créer mon compte gratuit

@@ -11,6 +11,7 @@ import { BrandMark } from "@/components/BrandLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { isAdminAccount, isProfessionalAccount } from "@/lib/account";
+import { RESOURCES_PATH } from "@/lib/navigation";
 
 const AUTH_NAV_ITEMS = [{ to: "/sales", label: "Annonces" }] as const;
 
@@ -20,7 +21,7 @@ const HOME_NAV_ITEMS = [
   { to: "/sales", label: "Rechercher un bien" },
   { to: "/annonce-exemple", label: "Annonce exemple" },
   { to: "/accompagnement", label: "Offres" },
-  { to: "/ressources", label: "Ressources" },
+  { to: RESOURCES_PATH, label: "Ressources" },
   { to: "/a-propos", label: "À propos" },
 ] as const;
 
@@ -36,7 +37,7 @@ export function Navbar() {
   const navItems = user
     ? [
         ...AUTH_NAV_ITEMS,
-        { to: "/ressources", label: "Ressources" },
+        { to: RESOURCES_PATH, label: "Ressources" },
         ...(isProfessionalAccount(user, profile) ? [PRO_NAV_ITEM] : []),
         ...(admin ? [ADMIN_NAV_ITEM] : []),
       ]
@@ -133,7 +134,7 @@ export function Navbar() {
                   </Link>
                   <Link
                     to="/login"
-                    search={{ redirect: undefined }}
+                    search={{ mode: "investor", redirect: undefined }}
                     className="rounded-md bg-gold-soft px-3 py-2 text-sm font-semibold text-white hover:bg-gold"
                   >
                     S'inscrire
@@ -236,7 +237,11 @@ export function Navbar() {
             <Link to="/login" search={{ redirect: undefined }} className="ij-login-button">
               Connexion
             </Link>
-            <Link to="/login" search={{ redirect: undefined }} className="ij-signup-button">
+            <Link
+              to="/login"
+              search={{ mode: "investor", redirect: undefined }}
+              className="ij-signup-button"
+            >
               S'inscrire
             </Link>
           </div>
@@ -288,7 +293,7 @@ export function Navbar() {
                 </Link>
                 <Link
                   to="/login"
-                  search={{ redirect: undefined }}
+                  search={{ mode: "investor", redirect: undefined }}
                   onClick={closeMobileMenu}
                   className="ij-signup-button"
                 >
@@ -330,7 +335,11 @@ export function Navbar() {
                 <Link to="/login" search={{ redirect: undefined }} className="ij-login-button">
                   Connexion
                 </Link>
-                <Link to="/login" search={{ redirect: undefined }} className="ij-signup-button">
+                <Link
+                  to="/login"
+                  search={{ mode: "investor", redirect: undefined }}
+                  className="ij-signup-button"
+                >
                   S'inscrire
                 </Link>
               </>
@@ -401,7 +410,7 @@ export function Navbar() {
                       </Link>
                       <Link
                         to="/login"
-                        search={{ redirect: undefined }}
+                        search={{ mode: "investor", redirect: undefined }}
                         onClick={closeMobileMenu}
                         className="ij-signup-button w-full"
                       >

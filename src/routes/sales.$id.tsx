@@ -13,6 +13,7 @@ import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { formatPrice } from "@/lib/format";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { fetchFeatureEntitlements } from "@/lib/client-api";
+import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import { saleSeoTitle } from "@/lib/seo";
 import type { AuctionSale } from "@/lib/types";
 
@@ -31,6 +32,10 @@ async function loadSaleDetailRouteData(
 }
 
 export const Route = createFileRoute("/sales/$id")({
+  validateSearch: (search: Record<string, unknown>) => {
+    const from = safeSalesReturnTo(search.from);
+    return from ? { from } : {};
+  },
   // The route loader cannot know the viewer's paid entitlement. It therefore
   // fetches only the public teaser; the component selects the curated
   // Découverte or Analyse view after the entitlement request completes.
@@ -64,6 +69,8 @@ export const Route = createFileRoute("/sales/$id")({
 
 function SaleDetailPage() {
   const { id } = Route.useParams();
+  const { from } = Route.useSearch<{ from?: string }>();
+  const returnTo = from ?? "/sales";
   const initialData = Route.useLoaderData<SaleDetailRouteData | undefined>();
   const { session, loading: authLoading } = useAuth();
   const sessionKey = session?.user.id ?? "anonymous";
@@ -94,13 +101,27 @@ function SaleDetailPage() {
     return <SaleDetailSkeleton />;
   }
   if (error) throw error;
-  if (!sale && preview) return <SalePublicPreview saleId={id} preview={preview} />;
+  if (!sale && preview) {
+    return <SalePublicPreview saleId={id} preview={preview} returnTo={returnTo} />;
+  }
   if (!sale) return <SaleNotFoundComponent />;
 
-  return discovery ? <DiscoverySaleDetailView sale={sale} /> : <SaleDetailView sale={sale} />;
+  return discovery ? (
+    <DiscoverySaleDetailView sale={sale} returnTo={returnTo} />
+  ) : (
+    <SaleDetailView sale={sale} returnTo={returnTo} />
+  );
 }
 
-function SalePublicPreview({ saleId, preview }: { saleId: string; preview: AuctionSale }) {
+function SalePublicPreview({
+  saleId,
+  preview,
+  returnTo,
+}: {
+  saleId: string;
+  preview: AuctionSale;
+  returnTo: string;
+}) {
   const price = formatPrice(preview.starting_price_eur);
 
   return (
@@ -134,13 +155,16 @@ function SalePublicPreview({ saleId, preview }: { saleId: string; preview: Aucti
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
             to="/login"
-            search={{ redirect: `/sales/${saleId}` }}
+            search={{
+              mode: "investor",
+              redirect: saleDetailPath(saleId, returnTo),
+            }}
             className="inline-flex items-center justify-center rounded-md bg-gold-soft px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gold"
           >
             Créer un compte Découverte
           </Link>
           <Link
-            to="/sales"
+            to={returnTo}
             className="inline-flex items-center justify-center rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
           >
             Retour aux ventes
