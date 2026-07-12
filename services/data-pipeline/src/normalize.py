@@ -1156,8 +1156,8 @@ def _extract_habitable_surface_from_text(*values: object) -> Decimal | None:
 def _extract_carrez_surface_from_text(*values: object) -> Decimal | None:
     text = _joined_text(*values)
     patterns = (
-        rf"\b(?:surface\s+)?carrez\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
         rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+(?:loi\s+)?carrez\b",
+        rf"\b(?:surface\s+)?carrez\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
     )
     return _extract_contextual_surface(text, patterns, exclude_secondary=False)
 
