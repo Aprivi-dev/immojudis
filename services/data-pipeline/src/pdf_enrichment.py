@@ -35,12 +35,14 @@ from src.normalize import (
     normalize_property_type,
     normalize_status,
     parse_french_datetime,
+    parse_price,
     parse_surface,
     strip_accents,
 )
 
 LOGGER = logging.getLogger(__name__)
 PDF_TEXT_CACHE_VERSION = "pdf_text_v3_surface_calibration"
+DOCUMENT_FACTS_VERSION = "document_facts_v1_starting_price"
 DOCUMENT_TYPE_ALIASES = {
     "pv_descriptif": "pv_huissier",
     "proces_verbal_descriptif": "pv_huissier",
@@ -839,6 +841,8 @@ def _required_document_groups_for_sale(sale: AuctionSale | None) -> tuple[frozen
         groups.extend((PDF_DESCRIPTION_GROUP, PDF_CONDITIONS_GROUP, PDF_BAIL_GROUP))
     if _needs_energy_diagnostics(sale):
         groups.append(PDF_DIAGNOSTICS_GROUP)
+    if sale.raw_payload.get("document_facts_version") != DOCUMENT_FACTS_VERSION:
+        groups.append(PDF_CONDITIONS_GROUP)
     return _unique_document_groups(groups)
 
 
@@ -1038,6 +1042,9 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
         sale_date = _extract_sale_date_from_documents(pdf_texts) or _extract_sale_date_with_evidence(combined)
         if sale_date:
             _assign_pdf_sale_date(sale, sale_date)
+    starting_price = _extract_starting_price_from_documents(pdf_texts)
+    if starting_price:
+        _reconcile_pdf_starting_price(sale, starting_price)
     if not sale.visit_dates:
         visit_dates = _extract_visit_dates_from_documents(pdf_texts) or _extract_visit_dates_with_evidence(combined)
         if visit_dates:
@@ -1063,6 +1070,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     if enriched_marker.strip() in current_raw:
         current_raw = current_raw.split(enriched_marker.strip(), 1)[0]
     sale.raw_text = clean_text(f"{current_raw}{enriched_marker}{combined[:15000]}")
+    sale.raw_payload["document_facts_version"] = DOCUMENT_FACTS_VERSION
     return sale
 
 
@@ -1162,6 +1170,78 @@ def _extract_land_surface_from_documents(pdf_texts: list[dict[str, object]] | li
         "page_confidence": best.get("page_confidence"),
         "extraction_method": best.get("extraction_method"),
     }
+
+
+def _extract_starting_price_from_documents(
+    pdf_texts: list[dict[str, object]] | list[str],
+) -> dict[str, object] | None:
+    candidates: list[dict[str, object]] = []
+    for item in pdf_texts:
+        if not isinstance(item, dict):
+            continue
+        label = clean_text(item.get("label")) or ""
+        document_type = _canonical_document_type(
+            item.get("document_type") or item.get("type"),
+            label=label,
+            url=clean_text(item.get("url")) or "",
+        )
+        if document_type in {"diagnostics_techniques", "bail", "cadastre"}:
+            continue
+
+        item_candidate_count = len(candidates)
+        pages = item.get("pages")
+        if isinstance(pages, list):
+            for page in pages:
+                if not isinstance(page, dict):
+                    continue
+                extracted = _extract_starting_price_with_evidence(str(page.get("text") or ""))
+                if not extracted:
+                    continue
+                extracted.update(
+                    {
+                        "document_label": label,
+                        "document_url": clean_text(item.get("url")) or "",
+                        "document_type": document_type,
+                        "page_number": page.get("page"),
+                        "page_confidence": page.get("confidence"),
+                        "extraction_method": page.get("method") or item.get("extraction_method"),
+                    }
+                )
+                candidates.append(extracted)
+        if len(candidates) == item_candidate_count:
+            extracted = _extract_starting_price_with_evidence(str(item.get("text") or ""))
+            if extracted:
+                extracted.update(
+                    {
+                        "document_label": label,
+                        "document_url": clean_text(item.get("url")) or "",
+                        "document_type": document_type,
+                        "page_number": None,
+                        "page_confidence": None,
+                        "extraction_method": item.get("extraction_method"),
+                    }
+                )
+                candidates.append(extracted)
+    if not candidates:
+        return None
+    candidates.sort(key=_starting_price_document_rank, reverse=True)
+    return candidates[0]
+
+
+def _starting_price_document_rank(item: dict[str, object]) -> tuple[int, float, int]:
+    document_type = str(item.get("document_type") or "")
+    document_score = {
+        "cahier_conditions_vente": 100,
+        "conditions_vente": 95,
+        "annonce_vente": 70,
+        "pv_huissier": 55,
+        "pv_notaire": 55,
+        "proces_verbal": 45,
+        "pdf": 40,
+    }.get(document_type, 30)
+    page_confidence = float(item.get("page_confidence") or 0)
+    page_number = int(item.get("page_number") or 0)
+    return document_score, page_confidence, page_number
 
 
 def _document_surface_candidates(item: dict[str, object], text: str) -> list[dict[str, object]]:
@@ -1478,6 +1558,54 @@ def _assign_pdf_land_surface(sale: AuctionSale, surface: dict[str, object]) -> N
         sale.raw_payload["surface_extraction"] = {**extraction, "kind": "surface_m2"}
 
 
+def _reconcile_pdf_starting_price(sale: AuctionSale, extraction: dict[str, object]) -> None:
+    value = extraction.get("value")
+    if not isinstance(value, Decimal):
+        value = parse_price(value)
+    if value is None or value <= 0:
+        return
+
+    source_value = sale.starting_price_eur
+    if source_value is None:
+        sale.starting_price_eur = value
+        status = "extracted"
+    elif source_value == value:
+        status = "corroborated"
+    elif _should_replace_starting_price_with_document(source_value, value):
+        sale.starting_price_eur = value
+        status = "resolved"
+        if "starting_price_conflict_resolved" not in sale.quality_flags:
+            sale.quality_flags.append("starting_price_conflict_resolved")
+    else:
+        status = "conflict_unresolved"
+        if "starting_price_conflict" not in sale.quality_flags:
+            sale.quality_flags.append("starting_price_conflict")
+
+    sale.raw_payload["starting_price_extraction"] = {
+        "version": DOCUMENT_FACTS_VERSION,
+        "source": "pdf",
+        "status": status,
+        "value_eur": float(value),
+        "rejected_source_price_eur": (
+            float(source_value) if status == "resolved" and source_value is not None else None
+        ),
+        "selected_value_eur": float(sale.starting_price_eur) if sale.starting_price_eur is not None else None,
+        "document_label": clean_text(extraction.get("document_label")),
+        "document_url": clean_text(extraction.get("document_url")),
+        "document_type": clean_text(extraction.get("document_type")),
+        "page_number": extraction.get("page_number"),
+        "page_confidence": extraction.get("page_confidence"),
+        "extraction_method": clean_text(extraction.get("extraction_method")),
+        "evidence": clean_text(extraction.get("evidence")),
+    }
+
+
+def _should_replace_starting_price_with_document(current: Decimal, documented: Decimal) -> bool:
+    if current <= 0:
+        return True
+    return current < Decimal("1000") and documented >= Decimal("3000") and documented / current >= Decimal("20")
+
+
 def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> None:
     parsed = sale_date.get("value")
     if not isinstance(parsed, datetime):
@@ -1514,6 +1642,38 @@ def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, str]]) ->
     ]
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
+
+
+def _extract_starting_price_with_evidence(text: str) -> dict[str, object] | None:
+    if not clean_text(text):
+        return None
+    value_pattern = r"(?P<price>[0-9][0-9\s.\u00a0]*(?:,[0-9]{1,2})?)"
+    patterns = (
+        rf"\bmise\s+[àa]\s+prix\s*[:\-]\s*{value_pattern}\s*(?:€|euros?)(?=\s|[).,;:]|$)",
+        rf"\bmise\s+[àa]\s+prix\b.{{0,260}}?"
+        rf"(?:ci[\s-]*apr[eè]s\s+indiqu[eé]e?s?|adjudication\s+aura\s+lieu|en\s+un\s+seul\s+lot)"
+        rf".{{0,140}}?{value_pattern}\s*(?:€|euros?)(?=\s|[).,;:]|$)",
+        rf"\badjudication\b.{{0,180}}?\bsur\s+la\s+mise\s+[àa]\s+prix\b"
+        rf".{{0,180}}?{value_pattern}\s*(?:€|euros?)(?=\s|[).,;:]|$)",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.I | re.S):
+            context = clean_text(text[max(0, match.start() - 180) : min(len(text), match.end() + 220)]) or ""
+            normalized_context = strip_accents(context).lower()
+            if re.search(
+                r"\b(?:caution|cheque\s+de\s+banque|minimum\s+de)\b|"
+                r"\b10\s*%\s+du\s+montant\s+de\s+la\s+mise\s+a\s+prix\b",
+                normalized_context,
+            ) and not re.search(
+                r"\b(?:adjudication\s+aura\s+lieu|en\s+un\s+seul\s+lot|ci[\s-]*apres\s+indique)\b",
+                normalized_context,
+            ):
+                continue
+            value = parse_price(match.group("price"))
+            if value is None or value <= 0:
+                continue
+            return {"value": value, "evidence": context}
+    return None
 
 
 def _extract_surface(text: str) -> Decimal | None:

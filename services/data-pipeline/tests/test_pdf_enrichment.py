@@ -77,6 +77,120 @@ def test_enrich_sale_from_pdf_text_extracts_fields() -> None:
     assert "PDF TEXT ENRICHMENT" in (sale.raw_text or "")
 
 
+def test_enrich_sale_from_ccv_replaces_implausible_source_starting_price() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-6008.html",
+            "property_type": "Maison",
+            "starting_price_eur": "11 €",
+        }
+    )
+    pdf_text = {
+        "label": "Cahier des conditions de la vente",
+        "url": "https://www.info-encheres.com/upload/cahier-6008.pdf",
+        "document_type": "cahier_conditions_vente",
+        "text": (
+            "Avant de porter les enchères, l'avocat reçoit un chèque représentant 10% du montant "
+            "de la mise à prix, avec un minimum de 3.000 euros. "
+            "Mise à prix adjudication. L'adjudication aura lieu en un seul lot sur la mise à prix "
+            "ci-après indiquée : 10.500 € (dix mille cinq cents euros)."
+        ),
+        "pages": [
+            {
+                "page": 4,
+                "text": (
+                    "Le chèque représente 10% du montant de la mise à prix, "
+                    "avec un minimum de 3.000 euros."
+                ),
+                "confidence": 0.99,
+                "method": "pymupdf",
+            },
+            {
+                "page": 17,
+                "text": (
+                    "Mise à prix adjudication. L'adjudication aura lieu en un seul lot sur la mise à prix "
+                    "ci-après indiquée : 10.500 € (dix mille cinq cents euros)."
+                ),
+                "confidence": 0.98,
+                "method": "pymupdf",
+            },
+        ],
+    }
+
+    enrich_sale_from_pdf_text(sale, [pdf_text])
+
+    assert sale.starting_price_eur == Decimal("10500")
+    assert "starting_price_conflict_resolved" in sale.quality_flags
+    assert sale.raw_payload["document_facts_version"] == "document_facts_v1_starting_price"
+    assert sale.raw_payload["starting_price_extraction"] == {
+        "version": "document_facts_v1_starting_price",
+        "source": "pdf",
+        "status": "resolved",
+        "value_eur": 10500.0,
+        "rejected_source_price_eur": 11.0,
+        "selected_value_eur": 10500.0,
+        "document_label": "Cahier des conditions de la vente",
+        "document_url": "https://www.info-encheres.com/upload/cahier-6008.pdf",
+        "document_type": "cahier_conditions_vente",
+        "page_number": 17,
+        "page_confidence": 0.98,
+        "extraction_method": "pymupdf",
+        "evidence": (
+            "Mise à prix adjudication. L'adjudication aura lieu en un seul lot sur la mise à prix "
+            "ci-après indiquée : 10.500 € (dix mille cinq cents euros)."
+        ),
+    }
+
+
+def test_enrich_sale_from_ccv_ignores_bid_guarantee_minimum() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-guarantee.html",
+            "property_type": "Maison",
+            "starting_price_eur": "11 €",
+        }
+    )
+    pdf_text = {
+        "label": "Cahier des conditions de la vente",
+        "document_type": "cahier_conditions_vente",
+        "text": (
+            "Avant de porter les enchères, l'avocat reçoit un chèque représentant 10% du montant "
+            "de la mise à prix, avec un minimum de 3.000 euros."
+        ),
+    }
+
+    enrich_sale_from_pdf_text(sale, [pdf_text])
+
+    assert sale.starting_price_eur == Decimal("11")
+    assert "starting_price_extraction" not in sale.raw_payload
+    assert sale.raw_payload["document_facts_version"] == "document_facts_v1_starting_price"
+
+
+def test_enrich_sale_from_ccv_keeps_plausible_current_price_on_conflict() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-current-price.html",
+            "property_type": "Maison",
+            "starting_price_eur": "100 000 €",
+        }
+    )
+    pdf_text = {
+        "label": "Cahier des conditions de la vente",
+        "document_type": "cahier_conditions_vente",
+        "text": "Mise à prix : 10.500 €.",
+    }
+
+    enrich_sale_from_pdf_text(sale, [pdf_text])
+
+    assert sale.starting_price_eur == Decimal("100000")
+    assert "starting_price_conflict" in sale.quality_flags
+    assert sale.raw_payload["starting_price_extraction"]["status"] == "conflict_unresolved"
+    assert sale.raw_payload["starting_price_extraction"]["selected_value_eur"] == 100000.0
+
+
 def test_enrich_sale_from_pdf_text_does_not_treat_no_lease_as_rented() -> None:
     sale = normalize_sale(
         {
@@ -738,7 +852,10 @@ def test_select_documents_for_extraction_includes_diagnostics_when_energy_missin
 
     selected = _select_documents_for_extraction(documents, sale=sale)
 
-    assert [item["document_type"] for item in selected] == ["diagnostics_techniques"]
+    assert [item["document_type"] for item in selected] == [
+        "diagnostics_techniques",
+        "cahier_conditions_vente",
+    ]
 
 
 def test_select_documents_for_extraction_does_not_force_diagnostics_when_dpe_exempt(monkeypatch) -> None:
