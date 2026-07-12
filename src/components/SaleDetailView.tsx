@@ -127,9 +127,11 @@ const SECTION_NAV = [
 export function SaleDetailView({
   sale,
   marketEstimateOverride,
+  returnTo = "/sales",
 }: {
   sale: AuctionSale;
   marketEstimateOverride?: MarketEstimate | null;
+  returnTo?: string;
 }) {
   const location = saleLocation(sale.address, sale.postal_code, sale.city);
   const referenceLabel = saleDisplayTitle(sale);
@@ -221,6 +223,7 @@ export function SaleDetailView({
         title={referenceLabel}
         decision={decision}
         location={location}
+        returnTo={returnTo}
       />
 
       <DecisionHero
@@ -1436,18 +1439,20 @@ function ListingActionBar({
   title,
   decision,
   location,
+  returnTo,
 }: {
   sale: AuctionSale;
   title: string;
   decision: DecisionSummary;
   location: string;
+  returnTo: string;
 }) {
   return (
     <nav className="sticky top-16 z-40 border-b border-border bg-white/95 backdrop-blur">
       <div className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-1.5 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
           <Link
-            to="/sales"
+            to={returnTo}
             className="inline-flex min-h-11 shrink-0 items-center gap-1 text-[11px] font-semibold text-gold-soft hover:text-gold"
           >
             <ChevronRight className="h-3 w-3 rotate-180" />

@@ -18,20 +18,26 @@ import {
   type AccountType,
   type ProfessionalRole,
 } from "@/lib/account";
+import { loginPageMode, type LoginPageMode } from "@/lib/navigation";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): LoginSearch => {
     const redirect = safeRedirect(search.redirect);
-    return redirect ? { redirect } : {};
+    const mode = loginPageMode(search.mode);
+    return {
+      ...(redirect ? { redirect } : {}),
+      ...(mode !== "login" ? { mode } : {}),
+    };
   },
   component: LoginPage,
 });
 
 type LoginSearch = {
   redirect?: string;
+  mode?: Exclude<LoginPageMode, "login">;
 };
 
-type LoginMode = "login" | "investor" | "professional";
+type LoginMode = LoginPageMode;
 
 const modeCopy: Record<
   LoginMode,
@@ -65,9 +71,9 @@ const modeCopy: Record<
 
 function LoginPage() {
   const { user, profile } = useAuth();
-  const { redirect } = Route.useSearch();
+  const { redirect, mode: requestedMode } = Route.useSearch();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<LoginMode>("login");
+  const mode: LoginMode = requestedMode ?? "login";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -178,13 +184,37 @@ function LoginPage() {
 
         <section className="glass-shell rounded-lg p-6 sm:p-8">
           <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-1">
-            <ModeButton active={mode === "login"} onClick={() => setMode("login")}>
+            <ModeButton
+              active={mode === "login"}
+              onClick={() =>
+                navigate({
+                  search: (previous) => ({ ...previous, mode: undefined }),
+                  replace: true,
+                })
+              }
+            >
               Connexion
             </ModeButton>
-            <ModeButton active={mode === "investor"} onClick={() => setMode("investor")}>
+            <ModeButton
+              active={mode === "investor"}
+              onClick={() =>
+                navigate({
+                  search: (previous) => ({ ...previous, mode: "investor" }),
+                  replace: true,
+                })
+              }
+            >
               Découverte
             </ModeButton>
-            <ModeButton active={mode === "professional"} onClick={() => setMode("professional")}>
+            <ModeButton
+              active={mode === "professional"}
+              onClick={() =>
+                navigate({
+                  search: (previous) => ({ ...previous, mode: "professional" }),
+                  replace: true,
+                })
+              }
+            >
               Pro
             </ModeButton>
           </div>

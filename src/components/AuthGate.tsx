@@ -50,8 +50,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (isPublic || loading || user) return;
-    void navigate({ to: "/login", search: { redirect: pathname }, replace: true });
-  }, [isPublic, loading, navigate, pathname, user]);
+    void navigate({ to: "/login", search: { redirect: location.href }, replace: true });
+  }, [isPublic, loading, location.href, navigate, user]);
 
   if (isPublic) return <>{children}</>;
 

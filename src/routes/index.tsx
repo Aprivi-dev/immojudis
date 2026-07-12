@@ -16,6 +16,7 @@ import Search from "lucide-react/dist/esm/icons/search.js";
 import UsersRound from "lucide-react/dist/esm/icons/users-round.js";
 import { useEffect, useState, type ComponentType } from "react";
 import { BrandMark } from "@/components/BrandLogo";
+import { RESOURCES_PATH } from "@/lib/navigation";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -242,7 +243,7 @@ function HeroSection() {
               Une mise à prix basse ne suffit jamais : le rapport relie marché local, frais et
               risques pour cadrer l'enchère.
             </p>
-            <Link to="/ressources">
+            <Link to={RESOURCES_PATH}>
               Comprendre la méthode <ArrowRight aria-hidden className="h-4 w-4" />
             </Link>
           </article>
@@ -532,7 +533,7 @@ function AuctionCardsSection() {
 
       <div className="ij-card-grid">
         {auctionCards.map((card) => (
-          <Link key={card.title} to="/sales" className="ij-auction-card">
+          <Link key={card.title} to="/sales" search={{ q: card.city }} className="ij-auction-card">
             <span className="ij-card-image">
               <img src={card.image} alt="" width={896} height={512} loading="lazy" />
               <span>{card.badge}</span>
@@ -674,7 +675,7 @@ function HomeFooter() {
         <nav className="ij-footer-nav" aria-label="Navigation pied de page">
           <Link to="/sales">Ventes</Link>
           <Link to="/annonce-exemple">Annonce exemple</Link>
-          <Link to="/ressources">Ressources</Link>
+          <Link to={RESOURCES_PATH}>Ressources</Link>
           <Link to="/contact">Contact</Link>
         </nav>
 
