@@ -300,6 +300,44 @@ def test_normalize_sale_does_not_mark_future_adjudication_audience_as_adjudicate
     assert sale.status == "upcoming"
 
 
+def test_normalize_sale_infers_future_status_when_source_says_unknown() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/future-unknown-status",
+            "status": "unknown",
+            "sale_date": "15 octobre 2099 à 15h00",
+        }
+    )
+
+    assert sale.status == "upcoming"
+
+
+def test_normalize_sale_infers_past_status_when_source_says_unknown() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://example.test/past-unknown-status",
+            "status": "unknown",
+            "sale_date": "15 octobre 2000 à 15h00",
+        }
+    )
+
+    assert sale.status == "past"
+
+
+def test_normalize_sale_keeps_unknown_status_without_date() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://example.test/undated-unknown-status",
+            "status": "unknown",
+        }
+    )
+
+    assert sale.status == "unknown"
+
+
 def test_normalize_sale_extracts_rooms_count_from_source_text() -> None:
     sale = normalize_sale(
         {
