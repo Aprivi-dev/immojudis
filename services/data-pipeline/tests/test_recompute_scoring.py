@@ -36,6 +36,21 @@ def test_storage_recompute_preserves_editorial_text_for_surface_reconciliation()
     assert sale.raw_payload["surface_reconciliation"]["rejected_surface_m2"] == "1877"
 
 
+def test_storage_recompute_reclassifies_future_unknown_status() -> None:
+    row = {
+        "id": "future-status",
+        "source_name": "info_encheres",
+        "source_url": "https://example.test/future-status",
+        "status": "unknown",
+        "sale_date": "2099-10-15T13:00:00+00:00",
+        "raw_payload": {"status": "unknown"},
+    }
+
+    sale = _sale_from_storage_row(row)
+
+    assert sale.status == "upcoming"
+
+
 def test_storage_recompute_restores_partial_pdf_surface_scope() -> None:
     row = {
         "id": "35f44afc-36ff-4c0b-93c0-4288334989a2",

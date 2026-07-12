@@ -421,7 +421,7 @@ def normalize_status(value: object | None, sale_date: datetime | None = None) ->
         return "past"
     if "venir" in text or "upcoming" in text:
         return "upcoming"
-    if text in VALID_STATUSES:
+    if text in VALID_STATUSES and text != "unknown":
         return text
     if sale_date:
         return "past" if sale_date < datetime.now(UTC) else "upcoming"
