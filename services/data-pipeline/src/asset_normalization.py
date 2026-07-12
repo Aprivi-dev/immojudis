@@ -480,8 +480,22 @@ def extract_risk_occurrences_from_text(
 def _fill_surfaces(sale: AuctionSale, text: str) -> None:
     if sale.habitable_surface_m2 is None:
         sale.habitable_surface_m2 = _extract_surface_kind(text, "habitable_surface_m2", sale)
+    text_carrez_surface = _extract_surface_kind(text, "carrez_surface_m2", sale)
     if sale.carrez_surface_m2 is None:
-        sale.carrez_surface_m2 = _extract_surface_kind(text, "carrez_surface_m2", sale)
+        sale.carrez_surface_m2 = text_carrez_surface
+    elif not _carrez_surface_is_document_backed(sale) and _should_prefer_text_measured_surface(
+        sale.carrez_surface_m2,
+        text_carrez_surface,
+    ):
+        previous_carrez_surface = sale.carrez_surface_m2
+        sale.carrez_surface_m2 = text_carrez_surface
+        sale.raw_payload["carrez_surface_reconciliation"] = {
+            "status": "resolved",
+            "rejected_carrez_surface_m2": str(previous_carrez_surface),
+            "resolved_carrez_surface_m2": str(text_carrez_surface),
+            "basis": "explicit_decimal_carrez_text",
+        }
+        _add_quality_flag(sale, "surface_conflict_resolved")
     text_land_surface = _extract_surface_kind(text, "land_surface_m2", sale)
     if sale.land_surface_m2 is None:
         sale.land_surface_m2 = text_land_surface
@@ -581,12 +595,30 @@ def _should_prefer_text_built_surface(sale: AuctionSale, candidate: Decimal | No
     return candidate >= Decimal("9") and _corroborated_text_built_surface(sale) == candidate
 
 
+def _should_prefer_text_measured_surface(current: Decimal, candidate: Decimal | None) -> bool:
+    if candidate is None or candidate == current or candidate < Decimal("9"):
+        return False
+    if current == current.to_integral_value() and candidate != candidate.to_integral_value():
+        return abs(current - candidate) < Decimal("1")
+    if min(current, candidate) <= 0:
+        return False
+    return max(current, candidate) / min(current, candidate) >= Decimal("1.5")
+
+
 def _surface_is_document_backed(sale: AuctionSale) -> bool:
     extraction = sale.raw_payload.get("surface_extraction")
     if not isinstance(extraction, dict) or extraction.get("source") != "pdf":
         return sale.surface_source == "pdf"
     documented_value = parse_surface(extraction.get("value_m2"))
     return documented_value is not None and documented_value == sale.surface_m2
+
+
+def _carrez_surface_is_document_backed(sale: AuctionSale) -> bool:
+    extraction = sale.raw_payload.get("surface_extraction")
+    if not isinstance(extraction, dict) or extraction.get("source") != "pdf":
+        return sale.surface_source == "pdf"
+    documented_value = parse_surface(extraction.get("value_m2"))
+    return documented_value is not None and documented_value == sale.carrez_surface_m2
 
 
 def _should_prefer_text_land_surface(sale: AuctionSale, candidate: Decimal | None) -> bool:
