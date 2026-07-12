@@ -151,6 +151,29 @@ def test_asset_normalization_resolves_apartment_surface_outlier_from_corroborate
     assert sale.raw_payload["surface_reconciliation"]["rejected_surface_m2"] == "1877"
 
 
+def test_asset_normalization_prefers_value_before_carrez_label() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://example.test/apartment-balcony-conflict",
+            "property_type": "Appartement",
+            "title": "Appartement 9 m²",
+            "description": (
+                "L'appartement de 40 m² habitables (39,67 m² Loi Carrez) "
+                "avec 9 m² de balcon se compose d'une chambre et d'un séjour."
+            ),
+            "surface_m2": 9,
+            "habitable_surface_m2": 39.67,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.carrez_surface_m2 == Decimal("39.67")
+    assert sale.app_surface_m2 == Decimal("39.67")
+    assert sale.app_surface_kind == "carrez"
+
+
 def test_asset_normalization_corrects_truncated_stored_land_surface() -> None:
     sale = normalize_sale(
         {

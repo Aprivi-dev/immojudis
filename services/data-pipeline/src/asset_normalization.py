@@ -83,9 +83,9 @@ SURFACE_PATTERNS = {
         rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+habitables?",
     ),
     "carrez_surface_m2": (
+        rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)\s+(?:loi\s+)?carrez",
         rf"(?:surface\s+)?carrez.{{0,40}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"loi\s+carrez.{{0,40}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-        rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)\s+loi\s+carrez",
         rf"superficie\s*approximative\s*habitable\s*totale\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\?)",
     ),
     "land_surface_m2": (
