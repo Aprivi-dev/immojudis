@@ -499,7 +499,9 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     monkeypatch.setattr(
         supabase_client,
         "_sync_normalized_sale_tables_with_rest",
-        lambda supabase_url, api_key, sales, now: calls.append((supabase_url, "normalized_tables", len(sales))),
+        lambda supabase_url, api_key, sales, now, **kwargs: calls.append(
+            (supabase_url, "normalized_tables", len(sales))
+        ),
     )
     monkeypatch.setattr(
         supabase_client,
@@ -519,6 +521,48 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
         ("https://supabase.test", "normalized_tables", 1),
         ("https://supabase.test", "asset_tables", 1),
     ]
+
+
+def test_upsert_sales_can_preserve_last_seen_during_recompute(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://example.test/licitor-sale",
+        }
+    )
+    sale.last_seen_at = datetime(2026, 7, 1, 9, 30, tzinfo=UTC)
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://example",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgres_upsert",
+        lambda db_url, table, payload, on_conflict: captured.setdefault("payload", payload),
+    )
+    monkeypatch.setattr(supabase_client, "_delete_secondary_sale_rows_with_postgres", lambda *args: 0)
+    monkeypatch.setattr(
+        supabase_client,
+        "_sync_normalized_sale_tables_with_rest",
+        lambda supabase_url, api_key, sales, now, **kwargs: captured.setdefault(
+            "refresh_last_seen", kwargs.get("refresh_last_seen")
+        ),
+    )
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *args: None)
+
+    assert supabase_client.upsert_sales_to_supabase([sale], refresh_last_seen=False) == 1
+
+    payload = captured["payload"]
+    assert isinstance(payload, list)
+    assert payload[0]["last_seen_at"] == "2026-07-01T09:30:00+00:00"
+    assert captured["refresh_last_seen"] is False
 
 
 def test_reconcile_duplicate_sales_in_supabase_merges_historical_rows(monkeypatch) -> None:
@@ -660,6 +704,20 @@ def test_normalized_sale_rows_split_property_and_judicial_context() -> None:
     assert judicial_sales[0]["source_lawyer_contact"] == "source@example.test"
     assert judicial_sales[0]["documents_count"] == 1
     assert "referenced_lawyer_id" not in judicial_sales[0]
+
+    sale.last_seen_at = datetime(2026, 7, 1, 9, 30, tzinfo=UTC)
+    preserved_properties = supabase_client._property_rows_for_sales(
+        [sale],
+        "2026-07-06T10:00:00+00:00",
+        refresh_last_seen=False,
+    )
+    preserved_judicial_sales = supabase_client._judicial_sale_rows_for_sales(
+        [sale],
+        "2026-07-06T10:00:00+00:00",
+        refresh_last_seen=False,
+    )
+    assert preserved_properties[0]["last_seen_at"] == "2026-07-01T09:30:00+00:00"
+    assert preserved_judicial_sales[0]["last_seen_at"] == "2026-07-01T09:30:00+00:00"
 
 
 def test_sync_normalized_sale_tables_upserts_properties_before_judicial_sales(monkeypatch) -> None:
