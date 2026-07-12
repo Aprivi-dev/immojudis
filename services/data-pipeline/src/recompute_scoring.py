@@ -43,7 +43,7 @@ def recompute_scoring(
 
     upserted = 0
     for batch in _chunks(sales, max(1, batch_size)):
-        upserted += upsert_sales_to_supabase(batch)
+        upserted += upsert_sales_to_supabase(batch, refresh_last_seen=False)
     _print_summary(sales, dry_run=False, upserted=upserted)
     return 0
 
