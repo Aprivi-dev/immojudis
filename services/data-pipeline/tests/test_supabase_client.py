@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -16,6 +17,7 @@ def test_sanitize_postgrest_payload_removes_null_characters_recursively() -> Non
             }
         ],
         "untouched": None,
+        "decimal_values": [Decimal("187"), Decimal("39.67")],
     }
 
     assert _sanitize_postgrest_payload(payload) == {
@@ -26,6 +28,7 @@ def test_sanitize_postgrest_payload_removes_null_characters_recursively() -> Non
             }
         ],
         "untouched": None,
+        "decimal_values": [187, 39.67],
     }
 
 

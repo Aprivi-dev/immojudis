@@ -4,6 +4,7 @@ import json
 import logging
 import time
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -1758,6 +1759,8 @@ def _timestamped(row: dict[str, object], now: str) -> dict[str, object]:
 def _sanitize_postgrest_payload(value: Any) -> Any:
     if isinstance(value, str):
         return value.replace("\x00", "")
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
     if isinstance(value, list):
         return [_sanitize_postgrest_payload(item) for item in value]
     if isinstance(value, dict):
