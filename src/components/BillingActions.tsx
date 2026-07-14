@@ -11,7 +11,13 @@ import {
 } from "@/lib/client-api";
 import type { PlanCode } from "@/lib/plans";
 
-export function BillingActions({ className = "" }: { className?: string }) {
+export function BillingActions({
+  className = "",
+  hideHelper = false,
+}: {
+  className?: string;
+  hideHelper?: boolean;
+}) {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [plan, setPlan] = useState<PlanCode | null>(null);
@@ -117,7 +123,7 @@ export function BillingActions({ className = "" }: { className?: string }) {
           <Settings className="h-4 w-4" />
           {busy === "portal" ? "Ouverture..." : (expiryLabel ?? "Voir mes paiements")}
         </button>
-      ) : (
+      ) : hideHelper ? null : (
         <span className="inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-muted-foreground">
           Paiement unique · aucun renouvellement automatique
         </span>

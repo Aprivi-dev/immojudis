@@ -2,9 +2,9 @@ import { useState } from "react";
 import Camera from "lucide-react/dist/esm/icons/camera.js";
 import ImageOff from "lucide-react/dist/esm/icons/image-off.js";
 import Navigation2 from "lucide-react/dist/esm/icons/navigation-2.js";
-import Rotate3D from "lucide-react/dist/esm/icons/rotate-3d.js";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { PhotoCarouselDialog, type CarouselImage } from "@/components/PhotoCarouselDialog";
+import { RotatingCamera360 } from "@/components/RotatingCamera360";
 import type { PropertyPhoto } from "@/lib/property-types";
 import { cn } from "@/lib/utils";
 import { PropertyImage } from "./PropertyImage";
@@ -28,26 +28,6 @@ export function PhotoGallery({
     url: photo.url,
     alt: photo.alt || `Photo ${index + 1} de ${title}`,
   }));
-  const mapLinks = location
-    ? [
-        {
-          mode: "aerial3d" as const,
-          label: "Vue 3D",
-          title: "Vue 3D Mapbox",
-          description: address,
-          ariaLabel: `Afficher la vue 3D Mapbox de ${address}`,
-          icon: Rotate3D,
-        },
-        {
-          mode: "streetLevel" as const,
-          label: "Vue rue",
-          title: "Vue rue Mapbox",
-          description: address,
-          ariaLabel: `Afficher la vue rue Mapbox pour ${address}`,
-          icon: Navigation2,
-        },
-      ]
-    : [];
 
   if (!featured) {
     return (
@@ -70,14 +50,14 @@ export function PhotoGallery({
 
   return (
     <section aria-label={`Photos de ${title}`} className="relative bg-white">
-      <div className="flex h-[22rem] snap-x snap-mandatory overflow-x-auto bg-white [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
+      <div className="flex h-[clamp(16rem,78vw,22rem)] snap-x snap-mandatory overflow-x-auto overscroll-x-contain bg-white [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
         {photos.map((photo, index) => (
           <GalleryButton
             key={photo.id}
             photo={photo}
             index={index}
             onOpen={setModalIndex}
-            className="h-full min-w-full shrink-0 snap-center"
+            className="h-full w-full max-w-full flex-none snap-start snap-always"
             priority={index === 0}
           />
         ))}
@@ -110,22 +90,20 @@ export function PhotoGallery({
         <Camera className="h-4 w-4" />
         {photos.length} photo{photos.length > 1 ? "s" : ""}
       </button>
-      {mapLinks.length > 0 && (
-        <div className="absolute left-4 top-4 z-20 flex flex-wrap gap-2 md:bottom-4 md:top-auto">
-          {mapLinks.map(({ mode, label, title, description, ariaLabel, icon }) => (
-            <MapboxPreviewButton
-              key={label}
-              mode={mode}
-              lat={location?.lat}
-              lng={location?.lng}
-              label={label}
-              title={title}
-              description={description}
-              ariaLabel={ariaLabel}
-              icon={icon}
-              className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-lg transition-colors hover:border-gold/50 hover:text-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
-            />
-          ))}
+      {photos.length > 1 && <RotatingCamera360 className="absolute right-4 top-4 z-20" />}
+      {location && (
+        <div className="absolute left-4 top-4 z-20 md:bottom-4 md:top-auto">
+          <MapboxPreviewButton
+            mode="streetLevel"
+            lat={location.lat}
+            lng={location.lng}
+            label="Vue rue"
+            title="Vue rue Mapbox"
+            description={address}
+            ariaLabel={`Afficher la vue rue Mapbox pour ${address}`}
+            icon={Navigation2}
+            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-lg transition-colors hover:border-gold/50 hover:text-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          />
         </div>
       )}
       {modalIndex != null && (
