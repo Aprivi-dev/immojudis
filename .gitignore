@@ -24,6 +24,9 @@ output/
 .playwright-cli/
 *.local
 
+# Generated valuation model bundles
+deployment/valuation-models/*.json
+
 # Environment
 .env
 .env.*
