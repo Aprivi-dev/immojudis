@@ -673,23 +673,20 @@ export async function fetchFeaturedReferencedLawyer(args: {
   saleId: string;
 }): Promise<FeaturedReferencedLawyerResponse> {
   const search = new URLSearchParams({ saleId: args.saleId });
-  const response = await fetch(`/api/lawyers/featured?${search.toString()}`, {
-    headers: await authHeaders(),
-  });
+  const response = await fetch(`/api/lawyers/featured?${search.toString()}`);
 
   return readJson<FeaturedReferencedLawyerResponse>(response);
 }
 
 export async function fetchLawyerDirectory(
-  args: { saleId?: string; city?: string; department?: string } = {},
+  args: { saleId?: string; bar?: string; city?: string; department?: string } = {},
 ): Promise<LawyerDirectoryResponse> {
   const search = new URLSearchParams();
   if (args.saleId) search.set("saleId", args.saleId);
+  if (args.bar) search.set("bar", args.bar);
   if (args.city) search.set("city", args.city);
   if (args.department) search.set("department", args.department);
-  const response = await fetch(`/api/lawyers/directory?${search.toString()}`, {
-    headers: await authHeaders(),
-  });
+  const response = await fetch(`/api/lawyers/directory?${search.toString()}`);
   return readJson<LawyerDirectoryResponse>(response);
 }
 
