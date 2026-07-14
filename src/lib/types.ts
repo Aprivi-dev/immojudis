@@ -67,7 +67,9 @@ export type AuctionSale = {
 
 export type SaleFilters = {
   department?: string;
+  departments?: string[];
   city?: string;
+  postal_code?: string;
   tribunal?: string;
   property_type?: string;
   property_types?: string[];

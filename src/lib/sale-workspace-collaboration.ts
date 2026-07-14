@@ -2,7 +2,6 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
-import { hasAdminRole } from "@/lib/account";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements, type PlanEntitlements } from "@/lib/property-reports";
 
@@ -163,7 +162,7 @@ export async function acceptSaleWorkspaceInvitation({
   if (error) throw error;
   if (!invitation) throw new Error("Invitation introuvable.");
   if (invitation.status === "revoked") throw new Error("Cette invitation a été révoquée.");
-  if (normalizeEmail(invitation.invited_email) !== email && !hasAdminRole(auth.claims)) {
+  if (normalizeEmail(invitation.invited_email) !== email && !auth.isAdmin) {
     throw new Error("Cette invitation ne correspond pas à votre email.");
   }
 
@@ -283,7 +282,7 @@ async function assertWorkspaceCollaborationAvailable(
   auth: SupabaseAuthContext,
 ): Promise<PlanEntitlements> {
   const plan = await resolvePlanEntitlements(auth);
-  if (!featureIncluded(plan.plan, "workspace.collaboration") && !hasAdminRole(auth.claims)) {
+  if (!featureIncluded(plan.plan, "workspace.collaboration") && !auth.isAdmin) {
     throw new Error("La collaboration de dossier est réservée au plan Analyse.");
   }
   return plan;
@@ -299,7 +298,7 @@ async function assertCollaboratorLimitAvailable({
   plan: PlanEntitlements;
 }) {
   const limit = plan.limits.workspaceCollaborators;
-  if (limit == null || hasAdminRole(auth.claims)) return;
+  if (limit == null || auth.isAdmin) return;
 
   const { count, error } = await auth.supabase
     .from("sale_workspace_collaborators")

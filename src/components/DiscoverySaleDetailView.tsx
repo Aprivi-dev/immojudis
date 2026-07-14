@@ -26,7 +26,13 @@ const PLACEHOLDER_METRICS = [
   ["Comparables DVF", "11 ventes"],
 ] as const;
 
-export function DiscoverySaleDetailView({ sale }: { sale: AuctionSale }) {
+export function DiscoverySaleDetailView({
+  sale,
+  returnTo = "/sales",
+}: {
+  sale: AuctionSale;
+  returnTo?: string;
+}) {
   const title = saleDisplayTitle(sale, propertyTypeLabel(sale.property_type));
   const location = [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
   const surface = getDisplaySurface(sale);
@@ -36,7 +42,7 @@ export function DiscoverySaleDetailView({ sale }: { sale: AuctionSale }) {
     <main className="min-h-screen bg-muted/30 text-foreground">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <Button asChild variant="ghost" size="sm">
-          <Link to="/sales">
+          <Link to={returnTo}>
             <ArrowLeft data-icon="inline-start" aria-hidden />
             Retour aux ventes
           </Link>

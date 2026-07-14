@@ -1,6 +1,5 @@
 import postgres from "postgres";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
-import { hasAdminRole } from "@/lib/account";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
@@ -171,7 +170,7 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
 
 async function assertAdminAuth(authToken: string) {
   const auth = await requireSupabaseAuthContext(authToken);
-  if (!hasAdminRole(auth.claims)) {
+  if (!auth.isAdmin) {
     throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
   }
 }

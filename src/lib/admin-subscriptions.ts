@@ -3,7 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { hasAdminRole, normalizeEmail } from "@/lib/account";
+import { normalizeEmail } from "@/lib/account";
 import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
@@ -156,7 +156,7 @@ export function manualSubscriptionPayload({
 
 async function assertAdminAuth(authToken: string) {
   const auth = await requireSupabaseAuthContext(authToken);
-  if (!hasAdminRole(auth.claims)) {
+  if (!auth.isAdmin) {
     throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
   }
   return auth;

@@ -490,20 +490,29 @@ async function getSmartAlertCandidateUserIds(limit: number): Promise<string[]> {
 async function filterAnalyseUserIds(userIds: string[]): Promise<string[]> {
   if (!userIds.length) return [];
 
-  const { data, error } = await supabaseAdmin
-    .from("user_subscriptions")
-    .select("user_id,plan_code,status,current_period_end")
-    .in("user_id", userIds)
-    .eq("plan_code", "analyse");
+  const [profilesResult, subscriptionsResult] = await Promise.all([
+    supabaseAdmin
+      .from("user_profiles")
+      .select("user_id,account_tier,user_role")
+      .in("user_id", userIds)
+      .or("account_tier.eq.premium,user_role.eq.admin"),
+    supabaseAdmin
+      .from("user_subscriptions")
+      .select("user_id,plan_code,status,current_period_end")
+      .in("user_id", userIds)
+      .eq("plan_code", "analyse"),
+  ]);
 
-  if (error) throw error;
+  if (profilesResult.error) throw profilesResult.error;
+  if (subscriptionsResult.error) throw subscriptionsResult.error;
   const allowed = new Set(
-    (data ?? [])
+    (subscriptionsResult.data ?? [])
       .filter((subscription) =>
         isPlanPeriodActive(subscription.status, subscription.current_period_end),
       )
       .map((subscription) => subscription.user_id),
   );
+  for (const profile of profilesResult.data ?? []) allowed.add(profile.user_id);
 
   return userIds.filter((userId) => allowed.has(userId));
 }
@@ -513,6 +522,9 @@ function systemAuthForUser(userId: string): SupabaseAuthContext {
     supabase: supabaseAdmin,
     userId,
     claims: {},
+    accountTier: "free",
+    userRole: "user",
+    isAdmin: false,
   };
 }
 

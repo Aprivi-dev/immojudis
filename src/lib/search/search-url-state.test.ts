@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { salesSearchToUrlRecord, validateSalesSearch } from "./search-url-state";
 
 describe("sales search URL state", () => {
+  it("preserves numeric-looking geographic searches parsed by the router", () => {
+    expect(validateSalesSearch({ q: 33000, department: 33 })).toMatchObject({
+      query: "33000",
+      department: "33",
+    });
+  });
+
   it("parses a SeLoger-style base64 bbox as a viewport", () => {
     const search = validateSalesSearch({
       bbox: "LTEuNzU5NDgwMTAyNDU2NzM0Niw0My45NjE1MDg0Mzg5MTY1MjUsMS4yODI2MTcxNTQ0Mzg0MTI0LDQ1LjQzNjcyMzc4NjY3NjEx",

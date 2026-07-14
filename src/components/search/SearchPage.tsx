@@ -34,7 +34,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { supabase } from "@/integrations/supabase/client";
-import { Link, useNavigate } from "@/lib/router-compat";
+import { Link, useLocation, useNavigate } from "@/lib/router-compat";
 import {
   createWatchedZone as createWatchedZoneRequest,
   addFavoriteSale as addFavoriteSaleRequest,
@@ -128,6 +128,7 @@ type SearchDraft = {
 
 export function SearchPage({ search }: { search: SalesSearchParams }) {
   const navigate = useNavigate({ from: "/sales" });
+  const currentLocation = useLocation();
   const { user, loading: authLoading } = useAuth();
   const isPreview = !user;
   const reduceMotion = useReducedMotion();
@@ -260,8 +261,14 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   const filteredSales = useMemo(
     () =>
-      sortClientSearchResults(applyClientSearchFilters(rawSales, search, center), search, center),
-    [center, rawSales, search],
+      isPreview
+        ? rawSales
+        : sortClientSearchResults(
+            applyClientSearchFilters(rawSales, search, center),
+            search,
+            center,
+          ),
+    [center, isPreview, rawSales, search],
   );
 
   const mapSales = useMemo(
@@ -570,6 +577,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
           <SearchResultsList
             sales={displayedSales}
+            returnTo={currentLocation.href}
             locked={isPreview}
             analysisLocked={isDiscovery}
             isLoading={isInitialLoading}
@@ -837,13 +845,14 @@ function HeaderStatusPill({
 function SearchInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
     <label className="relative min-w-0 flex-1">
-      <span className="sr-only">Rechercher par adresse, mot-clé ou référence</span>
+      <span className="sr-only">Rechercher par région, département, ville ou code postal</span>
       <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667482]" />
       <Input
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Ville, adresse, tribunal..."
+        placeholder="Région, département, ville, code postal..."
+        autoComplete="off"
         className="h-11 rounded-md border-white/25 bg-white pl-10 pr-3 text-[15px] font-semibold text-[#132238] shadow-[0_10px_24px_rgba(0,0,0,0.18)] focus-visible:ring-[#c98d45]"
       />
     </label>
@@ -1423,6 +1432,7 @@ function DpeExplorerMetric({ label, value }: { label: string; value: number }) {
 
 function SearchResultsList({
   sales,
+  returnTo,
   locked,
   analysisLocked,
   isLoading,
@@ -1434,6 +1444,7 @@ function SearchResultsList({
   onSelect,
 }: {
   sales: AuctionSale[];
+  returnTo: string;
   locked: boolean;
   analysisLocked: boolean;
   isLoading: boolean;
@@ -1457,6 +1468,7 @@ function SearchResultsList({
               <ListingCard
                 key={sale.id}
                 sale={sale}
+                returnTo={returnTo}
                 locked={locked}
                 analysisLocked={analysisLocked}
                 active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
@@ -1473,6 +1485,7 @@ function SearchResultsList({
 
 function ListingCard({
   sale,
+  returnTo,
   locked,
   analysisLocked,
   active,
@@ -1482,6 +1495,7 @@ function ListingCard({
   onSelect,
 }: {
   sale: AuctionSale;
+  returnTo: string;
   locked: boolean;
   analysisLocked: boolean;
   active: boolean;
@@ -1534,184 +1548,182 @@ function ListingCard({
         : "text-[#0f766e]";
 
   return (
-    <Link
-      id={`sale-card-${sale.id}`}
-      to="/sales/$id"
-      params={{ id: sale.id }}
+    <motion.article
       onMouseEnter={() => onHover(sale.id)}
       onMouseLeave={() => onHover(null)}
-      onFocus={() => onHover(sale.id)}
-      onBlur={() => onHover(null)}
-      onClick={() => onSelect(sale.id)}
-      className={`group block h-full rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] ${
-        viewed ? "opacity-75" : ""
-      }`}
-      aria-label={`Voir ${title}`}
+      onFocusCapture={() => onHover(sale.id)}
+      onBlurCapture={() => onHover(null)}
+      initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, delay: Math.min(index * 0.025, 0.18) }}
+      className={`group relative grid h-full overflow-hidden rounded-md border bg-white shadow-[0_2px_8px_rgba(19,34,56,0.08)] transition duration-200 sm:grid-cols-[9.5rem_1fr] xl:grid-cols-[10.5rem_1fr] ${
+        active
+          ? "border-[#c98d45] shadow-[0_0_0_2px_rgba(201,141,69,0.22),0_14px_36px_rgba(19,34,56,0.14)]"
+          : "border-[#d8e0e7] hover:border-[#c98d45] hover:shadow-md"
+      } ${viewed ? "opacity-75" : ""}`}
     >
-      <motion.article
-        initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.22, delay: Math.min(index * 0.025, 0.18) }}
-        className={`grid h-full overflow-hidden rounded-md border bg-white shadow-[0_2px_8px_rgba(19,34,56,0.08)] transition duration-200 sm:grid-cols-[9.5rem_1fr] xl:grid-cols-[10.5rem_1fr] ${
-          active
-            ? "border-[#c98d45] shadow-[0_0_0_2px_rgba(201,141,69,0.22),0_14px_36px_rgba(19,34,56,0.14)]"
-            : "border-[#d8e0e7] hover:border-[#c98d45] hover:shadow-md"
-        }`}
-      >
-        <div className="relative aspect-[1.35] overflow-hidden bg-[#edf2f5] sm:aspect-auto sm:min-h-[12.25rem]">
-          <ListingImage sale={sale} locked={locked} title={title} />
-          <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
-            {locked ? (
-              <ListingBadge tone="navy" icon={LockKeyhole}>
-                Aperçu limité
-              </ListingBadge>
-            ) : analysisLocked ? (
-              <ListingBadge tone="cream" icon={LockKeyhole}>
-                Analyse verrouillée
-              </ListingBadge>
-            ) : fresh ? (
-              <ListingBadge tone="teal">Nouveau</ListingBadge>
-            ) : (
-              <ListingBadge tone="navy">Judiciaire</ListingBadge>
-            )}
-            {!locked && sale.sale_date ? (
-              <ListingBadge tone="cream">{formatDate(sale.sale_date)}</ListingBadge>
-            ) : null}
+      <Link
+        id={`sale-card-${sale.id}`}
+        to="/sales/$id"
+        params={{ id: sale.id }}
+        search={{ from: returnTo }}
+        onClick={() => onSelect(sale.id)}
+        className="absolute inset-0 z-10 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0f766e]"
+        aria-label={`Voir ${title}`}
+      />
+      <div className="relative aspect-[1.35] overflow-hidden bg-[#edf2f5] sm:aspect-auto sm:min-h-[12.25rem]">
+        <ListingImage sale={sale} locked={locked} title={title} />
+        <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+          {locked ? (
+            <ListingBadge tone="navy" icon={LockKeyhole}>
+              Aperçu limité
+            </ListingBadge>
+          ) : analysisLocked ? (
+            <ListingBadge tone="cream" icon={LockKeyhole}>
+              Analyse verrouillée
+            </ListingBadge>
+          ) : fresh ? (
+            <ListingBadge tone="teal">Nouveau</ListingBadge>
+          ) : (
+            <ListingBadge tone="navy">Judiciaire</ListingBadge>
+          )}
+          {!locked && sale.sale_date ? (
+            <ListingBadge tone="cream">{formatDate(sale.sale_date)}</ListingBadge>
+          ) : null}
+        </div>
+        {viewed ? (
+          <span className="absolute right-3 top-3 rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-[#55626f] shadow-sm">
+            Vu
+          </span>
+        ) : null}
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col p-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#667482]">
+              Mise à prix
+            </div>
+            <div className="mt-0.5 text-[22px] font-extrabold leading-tight text-[#132238]">
+              {formatPrice(sale.starting_price_eur)}
+            </div>
+            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#132238]">
+              <MapPin className="h-4 w-4 shrink-0 text-[#0f766e]" />
+              <span className="truncate">{location || "Adresse à confirmer"}</span>
+            </div>
           </div>
-          {viewed ? (
-            <span className="absolute right-3 top-3 rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-[#55626f] shadow-sm">
-              Vu
+          <div className="flex shrink-0 gap-1">
+            <ShareButton sale={sale} />
+            <CompactFavoriteButton saleId={sale.id} locked={premiumLocked} />
+          </div>
+        </div>
+
+        <div className="mt-2 min-w-0">
+          <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-[#3d4b57]">
+            {title}
+          </h3>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-[#3d4b57]">
+          <Metric icon={Landmark} label={tribunalLabel} />
+          <Metric
+            icon={CalendarDays}
+            label={locked ? "Audience réservée" : `Audience ${formatDate(sale.sale_date)}`}
+          />
+          <Metric
+            icon={Ruler}
+            label={displaySurface.value != null ? displaySurface.label : "Surface n.c."}
+          />
+          <Metric icon={BedDouble} label={beds != null ? `${beds} ch.` : "Ch. n.c."} />
+        </div>
+
+        <div
+          className={`relative mt-3 grid grid-cols-3 overflow-hidden rounded-md border border-[#e2e8ee] bg-[#fbfdff] text-xs ${
+            premiumLocked ? "select-none" : ""
+          }`}
+        >
+          <ListingSignal
+            label="Dossier"
+            value={premiumLocked ? "8 pièces" : "Vérifié"}
+            tone={premiumLocked ? "text-[#8a5b24] blur-[3px]" : "text-[#0f766e]"}
+          />
+          <ListingSignal
+            label="Score"
+            value={scoreLabel}
+            tone={`text-[#0f766e] ${premiumLocked ? "blur-[3px]" : ""}`}
+          />
+          <ListingSignal
+            label="Risque"
+            value={riskLabel}
+            tone={`${riskTone} ${premiumLocked ? "blur-[3px]" : ""}`}
+          />
+          {analysisLocked ? (
+            <span className="pointer-events-none absolute inset-0 grid place-items-center bg-white/35 text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#132238]">
+              Plan Analyse
             </span>
           ) : null}
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col p-3.5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#667482]">
-                Mise à prix
-              </div>
-              <div className="mt-0.5 text-[22px] font-extrabold leading-tight text-[#132238]">
-                {formatPrice(sale.starting_price_eur)}
-              </div>
-              <div className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#132238]">
-                <MapPin className="h-4 w-4 shrink-0 text-[#0f766e]" />
-                <span className="truncate">{location || "Adresse à confirmer"}</span>
-              </div>
-            </div>
-            <div className="flex shrink-0 gap-1">
-              <ShareButton sale={sale} />
-              <CompactFavoriteButton saleId={sale.id} locked={premiumLocked} />
-            </div>
-          </div>
-
-          <div className="mt-2 min-w-0">
-            <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-[#3d4b57]">
-              {title}
-            </h3>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-[#3d4b57]">
-            <Metric icon={Landmark} label={tribunalLabel} />
-            <Metric
-              icon={CalendarDays}
-              label={locked ? "Audience réservée" : `Audience ${formatDate(sale.sale_date)}`}
-            />
-            <Metric
-              icon={Ruler}
-              label={displaySurface.value != null ? displaySurface.label : "Surface n.c."}
-            />
-            <Metric icon={BedDouble} label={beds != null ? `${beds} ch.` : "Ch. n.c."} />
-          </div>
-
-          <div
-            className={`relative mt-3 grid grid-cols-3 overflow-hidden rounded-md border border-[#e2e8ee] bg-[#fbfdff] text-xs ${
-              premiumLocked ? "select-none" : ""
-            }`}
-          >
-            <ListingSignal
-              label="Dossier"
-              value={premiumLocked ? "8 pièces" : "Vérifié"}
-              tone={premiumLocked ? "text-[#8a5b24] blur-[3px]" : "text-[#0f766e]"}
-            />
-            <ListingSignal
-              label="Score"
-              value={scoreLabel}
-              tone={`text-[#0f766e] ${premiumLocked ? "blur-[3px]" : ""}`}
-            />
-            <ListingSignal
-              label="Risque"
-              value={riskLabel}
-              tone={`${riskTone} ${premiumLocked ? "blur-[3px]" : ""}`}
-            />
-            {analysisLocked ? (
-              <span className="pointer-events-none absolute inset-0 grid place-items-center bg-white/35 text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#132238]">
-                Plan Analyse
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[#667482]">
+          {locked ? (
+            <span>Analyse, pièces et localisation complète après connexion</span>
+          ) : analysisLocked ? (
+            <>
+              <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
+                {propertyTypeLabel(sale.property_type)}
               </span>
-            ) : null}
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[#667482]">
-            {locked ? (
-              <span>Analyse, pièces et localisation complète après connexion</span>
-            ) : analysisLocked ? (
-              <>
+              <span className="rounded-md border border-dashed border-[#c98d45] bg-[#fffaf2] px-2 py-1 text-[#8a5b24] blur-[2px]">
+                Occupation analysée
+              </span>
+              <span className="rounded-md border border-dashed border-[#c98d45] bg-[#fffaf2] px-2 py-1 text-[#8a5b24] blur-[2px]">
+                Prix/m² calculé
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
+                {propertyTypeLabel(sale.property_type)}
+              </span>
+              <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
+                {occupancyLabel(sale.occupancy_status)}
+              </span>
+              {ppm != null ? (
                 <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
-                  {propertyTypeLabel(sale.property_type)}
+                  {Math.round(ppm).toLocaleString("fr-FR")} €/m²
                 </span>
-                <span className="rounded-md border border-dashed border-[#c98d45] bg-[#fffaf2] px-2 py-1 text-[#8a5b24] blur-[2px]">
-                  Occupation analysée
+              ) : null}
+              {dpe?.class ? (
+                <span
+                  className="rounded-md border px-2 py-1 font-extrabold"
+                  style={{
+                    backgroundColor: dpeTheme?.background,
+                    borderColor: dpeTheme?.border,
+                    color: dpeTheme?.foreground,
+                  }}
+                >
+                  DPE {dpe.class}
                 </span>
-                <span className="rounded-md border border-dashed border-[#c98d45] bg-[#fffaf2] px-2 py-1 text-[#8a5b24] blur-[2px]">
-                  Prix/m² calculé
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
-                  {propertyTypeLabel(sale.property_type)}
-                </span>
-                <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
-                  {occupancyLabel(sale.occupancy_status)}
-                </span>
-                {ppm != null ? (
-                  <span className="rounded-md bg-[#f0f5f8] px-2 py-1">
-                    {Math.round(ppm).toLocaleString("fr-FR")} €/m²
-                  </span>
-                ) : null}
-                {dpe?.class ? (
-                  <span
-                    className="rounded-md border px-2 py-1 font-extrabold"
-                    style={{
-                      backgroundColor: dpeTheme?.background,
-                      borderColor: dpeTheme?.border,
-                      color: dpeTheme?.foreground,
-                    }}
-                  >
-                    DPE {dpe.class}
-                  </span>
-                ) : null}
-              </>
-            )}
-          </div>
-
-          <div className="mt-auto flex items-end justify-between gap-3 pt-3">
-            <span className="line-clamp-1 text-[11px] font-bold text-[#8b949e]">
-              {locked
-                ? "Immojudis"
-                : analysisLocked
-                  ? "Sources et preuves réservées au plan Analyse"
-                  : `Source ${sale.source_name || sale.primary_source || "publique"}${
-                      sale.tribunal_city ? ` · ${sale.tribunal_city}` : ""
-                    }`}
-            </span>
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[#f4f7f9] px-2 py-1 text-[11px] font-extrabold text-[#132238]">
-              Voir le détail
-            </span>
-          </div>
+              ) : null}
+            </>
+          )}
         </div>
-      </motion.article>
-    </Link>
+
+        <div className="mt-auto flex items-end justify-between gap-3 pt-3">
+          <span className="line-clamp-1 text-[11px] font-bold text-[#8b949e]">
+            {locked
+              ? "Immojudis"
+              : analysisLocked
+                ? "Sources et preuves réservées au plan Analyse"
+                : `Source ${sale.source_name || sale.primary_source || "publique"}${
+                    sale.tribunal_city ? ` · ${sale.tribunal_city}` : ""
+                  }`}
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[#f4f7f9] px-2 py-1 text-[11px] font-extrabold text-[#132238]">
+            Voir le détail
+          </span>
+        </div>
+      </div>
+    </motion.article>
   );
 }
 
@@ -1840,7 +1852,7 @@ function ShareButton({ sale }: { sale: AuctionSale }) {
     <button
       type="button"
       onClick={share}
-      className="grid h-8 w-8 cursor-pointer place-items-center rounded-full text-[#132238] transition-colors hover:bg-[#eef2f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
+      className="relative z-20 grid h-8 w-8 cursor-pointer place-items-center rounded-full text-[#132238] transition-colors hover:bg-[#eef2f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
       aria-label="Partager cette vente"
     >
       <Share2 className="h-5 w-5" />
@@ -1918,7 +1930,7 @@ function CompactFavoriteButton({ saleId, locked }: { saleId: string; locked: boo
             ? "Ne plus suivre cette vente"
             : "Suivre cette vente"
       }
-      className="grid h-8 w-8 cursor-pointer place-items-center rounded-full text-[#132238] transition-colors hover:bg-[#eef2f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
+      className="relative z-20 grid h-8 w-8 cursor-pointer place-items-center rounded-full text-[#132238] transition-colors hover:bg-[#eef2f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
     >
       {locked ? (
         <LockKeyhole className="h-4 w-4 text-[#8a5b24]" />
@@ -2022,7 +2034,7 @@ function MobileFilterDrawer({
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, department: event.target.value }))
                 }
-                placeholder="33"
+                placeholder="33 ou Gironde"
                 className="h-10 bg-white"
               />
             </FilterField>

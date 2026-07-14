@@ -1327,6 +1327,7 @@ export type Database = {
       user_profiles: {
         Row: {
           account_type: "b2c" | "b2b";
+          account_tier: "free" | "premium";
           created_at: string;
           email: string | null;
           full_name: string | null;
@@ -1335,9 +1336,11 @@ export type Database = {
           professional_status: "not_applicable" | "pending" | "approved" | "rejected";
           updated_at: string;
           user_id: string;
+          user_role: "user" | "admin";
         };
         Insert: {
           account_type?: "b2c" | "b2b";
+          account_tier?: "free" | "premium";
           created_at?: string;
           email?: string | null;
           full_name?: string | null;
@@ -1346,9 +1349,11 @@ export type Database = {
           professional_status?: "not_applicable" | "pending" | "approved" | "rejected";
           updated_at?: string;
           user_id: string;
+          user_role?: "user" | "admin";
         };
         Update: {
           account_type?: "b2c" | "b2b";
+          account_tier?: "free" | "premium";
           created_at?: string;
           email?: string | null;
           full_name?: string | null;
@@ -1357,6 +1362,7 @@ export type Database = {
           professional_status?: "not_applicable" | "pending" | "approved" | "rejected";
           updated_at?: string;
           user_id?: string;
+          user_role?: "user" | "admin";
         };
         Relationships: [];
       };
@@ -2596,6 +2602,37 @@ export type Database = {
         Returns: {
           access_end: string;
           granted: boolean;
+        }[];
+      };
+      search_auction_sales_preview: {
+        Args: {
+          p_city?: string | null;
+          p_departments?: string[] | null;
+          p_east?: number | null;
+          p_keywords?: string[] | null;
+          p_limit?: number;
+          p_max_price?: number | null;
+          p_max_surface?: number | null;
+          p_min_bathrooms?: number | null;
+          p_min_bedrooms?: number | null;
+          p_min_price?: number | null;
+          p_min_score?: number | null;
+          p_min_surface?: number | null;
+          p_north?: number | null;
+          p_occupancy_status?: string | null;
+          p_offset?: number;
+          p_postal_code?: string | null;
+          p_property_types?: string[] | null;
+          p_sort?: string;
+          p_south?: number | null;
+          p_statuses?: string[] | null;
+          p_tribunal?: string | null;
+          p_west?: number | null;
+        };
+        Returns: {
+          id: string;
+          starting_price_eur: number | null;
+          total_count: number;
         }[];
       };
     };
