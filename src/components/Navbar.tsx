@@ -11,6 +11,7 @@ import { BrandMark } from "@/components/BrandLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { isAdminAccount, isProfessionalAccount } from "@/lib/account";
+import { RESOURCES_PATH } from "@/lib/navigation";
 
 const AUTH_NAV_ITEMS = [{ to: "/sales", label: "Annonces" }] as const;
 
@@ -20,7 +21,7 @@ const HOME_NAV_ITEMS = [
   { to: "/sales", label: "Rechercher un bien" },
   { to: "/annonce-exemple", label: "Annonce exemple" },
   { to: "/accompagnement", label: "Offres" },
-  { to: "/ressources", label: "Ressources" },
+  { to: RESOURCES_PATH, label: "Ressources" },
   { to: "/a-propos", label: "À propos" },
 ] as const;
 
@@ -32,11 +33,11 @@ export function Navbar() {
   const isSalesListing = location.pathname === "/sales" || location.pathname === "/sales/";
   const isProductPage =
     location.pathname === "/annonce-exemple" || /^\/sales\/[^/]+/.test(location.pathname);
-  const admin = isAdminAccount(user);
+  const admin = isAdminAccount(user, profile);
   const navItems = user
     ? [
         ...AUTH_NAV_ITEMS,
-        { to: "/ressources", label: "Ressources" },
+        { to: RESOURCES_PATH, label: "Ressources" },
         ...(isProfessionalAccount(user, profile) ? [PRO_NAV_ITEM] : []),
         ...(admin ? [ADMIN_NAV_ITEM] : []),
       ]
@@ -78,16 +79,22 @@ export function Navbar() {
               method="get"
               className="hidden min-w-[18rem] max-w-xl flex-1 items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm shadow-inner md:flex"
             >
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <button
+                type="submit"
+                aria-label="Rechercher"
+                className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              >
+                <Search className="h-4 w-4" />
+              </button>
               <label htmlFor="product-search" className="sr-only">
-                Rechercher une vente judiciaire
+                Rechercher par région, département, ville ou code postal
               </label>
-              <input type="hidden" name="around_radius" value="5" />
               <input
                 id="product-search"
-                name="around_address"
+                name="q"
                 type="search"
-                placeholder="Adresse, ville, tribunal ou référence"
+                placeholder="Région, département, ville, code postal..."
+                autoComplete="off"
                 className="w-full bg-transparent font-medium text-foreground outline-none placeholder:text-muted-foreground"
               />
             </form>
@@ -127,7 +134,7 @@ export function Navbar() {
                   </Link>
                   <Link
                     to="/login"
-                    search={{ redirect: undefined }}
+                    search={{ mode: "investor", redirect: undefined }}
                     className="rounded-md bg-gold-soft px-3 py-2 text-sm font-semibold text-white hover:bg-gold"
                   >
                     S'inscrire
@@ -170,16 +177,22 @@ export function Navbar() {
                     method="get"
                     className="mb-3 flex items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm"
                   >
-                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <button
+                      type="submit"
+                      aria-label="Rechercher"
+                      className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    >
+                      <Search className="h-4 w-4" />
+                    </button>
                     <label htmlFor="product-mobile-search" className="sr-only">
-                      Rechercher une vente judiciaire
+                      Rechercher par région, département, ville ou code postal
                     </label>
-                    <input type="hidden" name="around_radius" value="5" />
                     <input
                       id="product-mobile-search"
-                      name="around_address"
+                      name="q"
                       type="search"
-                      placeholder="Adresse, ville ou tribunal"
+                      placeholder="Région, département, ville, CP..."
+                      autoComplete="off"
                       className="w-full bg-transparent outline-none"
                     />
                   </form>
@@ -224,7 +237,11 @@ export function Navbar() {
             <Link to="/login" search={{ redirect: undefined }} className="ij-login-button">
               Connexion
             </Link>
-            <Link to="/login" search={{ redirect: undefined }} className="ij-signup-button">
+            <Link
+              to="/login"
+              search={{ mode: "investor", redirect: undefined }}
+              className="ij-signup-button"
+            >
               S'inscrire
             </Link>
           </div>
@@ -276,7 +293,7 @@ export function Navbar() {
                 </Link>
                 <Link
                   to="/login"
-                  search={{ redirect: undefined }}
+                  search={{ mode: "investor", redirect: undefined }}
                   onClick={closeMobileMenu}
                   className="ij-signup-button"
                 >
@@ -318,7 +335,11 @@ export function Navbar() {
                 <Link to="/login" search={{ redirect: undefined }} className="ij-login-button">
                   Connexion
                 </Link>
-                <Link to="/login" search={{ redirect: undefined }} className="ij-signup-button">
+                <Link
+                  to="/login"
+                  search={{ mode: "investor", redirect: undefined }}
+                  className="ij-signup-button"
+                >
                   S'inscrire
                 </Link>
               </>
@@ -389,7 +410,7 @@ export function Navbar() {
                       </Link>
                       <Link
                         to="/login"
-                        search={{ redirect: undefined }}
+                        search={{ mode: "investor", redirect: undefined }}
                         onClick={closeMobileMenu}
                         className="ij-signup-button w-full"
                       >

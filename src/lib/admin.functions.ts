@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { hasAdminRole, normalizeEmail } from "@/lib/account";
+import { normalizeEmail } from "@/lib/account";
 
 const SCROLL_SOURCES = [
   "all",
@@ -131,6 +131,7 @@ type AdminClient = {
 type AdminContext = {
   userId: string;
   claims?: JsonObject;
+  isAdmin: boolean;
 };
 
 type AuctionRunRow = {
@@ -205,7 +206,7 @@ function claimEmail(context: AdminContext): string | null {
 async function assertAdminContext(context: AdminContext): Promise<{ email: string }> {
   const email = claimEmail(context);
 
-  if (hasAdminRole(context.claims)) {
+  if (context.isAdmin) {
     return { email: normalizeEmail(email) || "admin" };
   }
 

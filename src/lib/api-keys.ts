@@ -140,9 +140,21 @@ export async function apiKeyAuthContextFromRequest(
   if (!secret) return null;
 
   const row = await verifyApiKeySecret({ secret, requiredScope });
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("user_profiles")
+    .select("account_tier,user_role")
+    .eq("user_id", row.user_id)
+    .maybeSingle();
+  if (profileError) throw profileError;
+  const accountTier = profile?.account_tier === "premium" ? "premium" : "free";
+  const userRole = profile?.user_role === "admin" ? "admin" : "user";
+
   return {
     supabase: supabaseAdmin,
     userId: row.user_id,
+    accountTier,
+    userRole,
+    isAdmin: userRole === "admin",
     claims: {
       sub: row.user_id,
       api_key_id: row.id,

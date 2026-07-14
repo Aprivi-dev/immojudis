@@ -35,6 +35,41 @@ export const DEFAULTS = {
   safetyDiscountPct: 12,
 };
 
+export const WORKS_SCENARIOS = [
+  {
+    key: "rafraichissement",
+    label: "Rafraîchissement locatif",
+    pricePerM2: 800,
+    summary: "Remettre le bien au propre sans modifier sa structure.",
+    scope: "Peinture complète, sol PVC et remise à niveau légère de la salle d'eau.",
+  },
+  {
+    key: "confort",
+    label: "Rénovation confort",
+    pricePerM2: 1_440,
+    summary: "Moderniser un logement ancien pour un usage confortable.",
+    scope: "Électricité, isolation légère, cuisine, salle de bain, sols et peinture.",
+  },
+  {
+    key: "premium",
+    label: "Rénovation premium",
+    pricePerM2: 1_850,
+    summary: "Reprendre intégralement un bien ancien ou très dégradé.",
+    scope: "Isolation, fenêtres, toiture, plomberie, électricité et pièces d'eau haut de gamme.",
+  },
+] as const;
+
+export type WorksScenarioKey = (typeof WORKS_SCENARIOS)[number]["key"];
+
+export function estimateWorksBudget(
+  surface: number | null | undefined,
+  scenarioKey: WorksScenarioKey,
+): number {
+  const cleanSurface = Math.max(0, surface || 0);
+  const scenario = WORKS_SCENARIOS.find((item) => item.key === scenarioKey);
+  return scenario ? Math.round(cleanSurface * scenario.pricePerM2) : 0;
+}
+
 export type AcquisitionCostResult = {
   price: number;
   emolumentsHT: number;

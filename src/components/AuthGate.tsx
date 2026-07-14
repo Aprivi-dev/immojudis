@@ -44,14 +44,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
     pathname.startsWith("/reports/shared/");
   const requiresProfessionalAccount = PROFESSIONAL_PATHS.has(pathname);
   const requiresAdminAccount = pathname === ADMIN_PREFIX || pathname.startsWith(`${ADMIN_PREFIX}/`);
-  const isAdmin = isAdminAccount(user);
+  const isAdmin = isAdminAccount(user, profile);
   const isPendingProfessional =
     getAccountType(user, profile) === "b2b" && getProfessionalStatus(profile) !== "approved";
 
   useEffect(() => {
     if (isPublic || loading || user) return;
-    void navigate({ to: "/login", search: { redirect: pathname }, replace: true });
-  }, [isPublic, loading, navigate, pathname, user]);
+    void navigate({ to: "/login", search: { redirect: location.href }, replace: true });
+  }, [isPublic, loading, location.href, navigate, user]);
 
   if (isPublic) return <>{children}</>;
 

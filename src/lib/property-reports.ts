@@ -69,7 +69,6 @@ import type {
   SaleRisk,
   SaleScoreFactor,
 } from "@/lib/types";
-import { hasAdminRole } from "@/lib/account";
 
 type SupabaseClient = SupabaseAuthContext["supabase"];
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
@@ -138,6 +137,19 @@ export type PlanEntitlements = {
     audienceTracking: FeatureAccess;
     workspaceCollaboration: FeatureAccess;
   };
+};
+
+const ADMIN_PLAN_LIMITS: PlanEntitlements["limits"] = {
+  propertyReportsPerMonth: null,
+  pdfExportsPerMonth: null,
+  savedReports: null,
+  reportEditing: "full",
+  favoriteSales: null,
+  watchedZones: null,
+  saleAnalysisSets: null,
+  saleAnalysisItems: null,
+  apiKeys: null,
+  workspaceCollaborators: null,
 };
 
 export type SavedPropertyReport = SavedReportRow & {
@@ -587,7 +599,12 @@ export function buildPublicSharedPropertyReport(
 export async function resolvePlanEntitlements(
   auth: SupabaseAuthContext,
 ): Promise<PlanEntitlements> {
-  if (hasAdminRole(auth.claims)) return buildPlanEntitlements("analyse", null);
+  if (auth.isAdmin) {
+    return buildPlanEntitlements("analyse", null, ADMIN_PLAN_LIMITS);
+  }
+  if (auth.accountTier === "premium") {
+    return buildPlanEntitlements("analyse", null);
+  }
 
   const { data, error } = await auth.supabase
     .from("user_subscriptions")
@@ -616,13 +633,14 @@ export async function assertFeatureEntitlement(
 function buildPlanEntitlements(
   plan: PlanCode,
   currentPeriodEnd: string | null = null,
+  limits: PlanEntitlements["limits"] = PLAN_LIMITS[plan],
 ): PlanEntitlements {
   return {
     plan,
     label: PLAN_LABELS[plan],
     hasAnalysisAccess: plan === "analyse",
     currentPeriodEnd,
-    limits: PLAN_LIMITS[plan],
+    limits,
     features: {
       salesStatistics: featureAccess(plan, "sales.statistics"),
       saleFavorites: featureAccess(plan, "sales.favorites"),

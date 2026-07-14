@@ -2,7 +2,6 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { hasAdminRole } from "@/lib/account";
 import {
   resolveEmailAlertDeliveryConfig,
   sendResendEmail,
@@ -240,7 +239,7 @@ export function adminLawyerReferralUpdatePayload({
 
 async function assertAdminAuth(authToken: string) {
   const auth = await requireSupabaseAuthContext(authToken);
-  if (!hasAdminRole(auth.claims)) {
+  if (!auth.isAdmin) {
     throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
   }
   return auth;

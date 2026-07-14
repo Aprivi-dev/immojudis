@@ -282,7 +282,7 @@ function PublishPage() {
           </p>
           <Link
             to="/login"
-            search={{ redirect: "/publish" }}
+            search={{ mode: "professional", redirect: "/publish" }}
             className="liquid-button mt-6 inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background"
           >
             Créer un compte pro

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { AccountTier, UserRole } from "@/lib/account";
 import type { Database } from "./types";
 
 type Claims = Record<string, unknown> & {
@@ -10,6 +11,9 @@ export type SupabaseAuthContext = {
   supabase: ReturnType<typeof createClient<Database>>;
   userId: string;
   claims: Claims;
+  accountTier: AccountTier;
+  userRole: UserRole;
+  isAdmin: boolean;
 };
 
 function supabasePublicEnv() {
@@ -72,9 +76,25 @@ export async function requireSupabaseAuthContext(token: string): Promise<Supabas
     throw new Error("Unauthorized: No user ID found in token");
   }
 
+  const { data: profile, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("account_tier,user_role")
+    .eq("user_id", claims.sub)
+    .maybeSingle();
+
+  if (profileError) {
+    throw new Error(`Unauthorized: User access profile unavailable (${profileError.message})`);
+  }
+
+  const accountTier: AccountTier = profile?.account_tier === "premium" ? "premium" : "free";
+  const userRole: UserRole = profile?.user_role === "admin" ? "admin" : "user";
+
   return {
     supabase,
     userId: claims.sub,
     claims,
+    accountTier,
+    userRole,
+    isAdmin: userRole === "admin",
   };
 }

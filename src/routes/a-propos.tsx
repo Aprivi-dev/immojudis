@@ -3,6 +3,7 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import SearchCheck from "lucide-react/dist/esm/icons/search-check.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import { RESOURCES_PATH } from "@/lib/navigation";
 
 export const Route = createFileRoute("/a-propos")({
   head: () => ({
@@ -38,7 +39,7 @@ function AboutPage() {
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Link
-                  to="/ressources"
+                  to={RESOURCES_PATH}
                   className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-background"
                 >
                   Lire les ressources <ArrowRight className="h-4 w-4" />

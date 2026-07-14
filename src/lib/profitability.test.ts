@@ -3,7 +3,26 @@ import {
   computeAcquisitionCosts,
   computeMarketCeiling,
   computeRentabilityScore,
+  estimateWorksBudget,
+  WORKS_SCENARIOS,
 } from "./profitability";
+
+describe("estimateWorksBudget", () => {
+  it("exposes the three reference prices per square metre", () => {
+    expect(WORKS_SCENARIOS.map((scenario) => scenario.pricePerM2)).toEqual([800, 1_440, 1_850]);
+  });
+
+  it("reproduces the reference budgets from the renovation examples", () => {
+    expect(estimateWorksBudget(25, "rafraichissement")).toBe(20_000);
+    expect(estimateWorksBudget(65, "confort")).toBe(93_600);
+    expect(estimateWorksBudget(120, "premium")).toBe(222_000);
+  });
+
+  it("never returns a negative works budget", () => {
+    expect(estimateWorksBudget(-25, "premium")).toBe(0);
+    expect(estimateWorksBudget(null, "confort")).toBe(0);
+  });
+});
 
 describe("computeAcquisitionCosts", () => {
   it("applies judicial auction fees and registration duties", () => {
@@ -53,6 +72,28 @@ describe("computeMarketCeiling", () => {
     expect(result.basis).toBe("manual");
     expect(result.safetyDiscountPct).toBe(16);
     expect(result.marketReferencePricePerM2).toBe(2_800);
+  });
+
+  it("deducts a selected works scenario from the auction ceiling", () => {
+    const works = estimateWorksBudget(50, "rafraichissement");
+    const withoutWorks = computeMarketCeiling({
+      surface: 50,
+      price: 90_000,
+      works: 0,
+      scenario: "equilibre",
+      medianPricePerM2: 3_000,
+    });
+    const withWorks = computeMarketCeiling({
+      surface: 50,
+      price: 90_000,
+      works,
+      scenario: "equilibre",
+      medianPricePerM2: 3_000,
+    });
+
+    expect(withWorks.simulated.works).toBe(40_000);
+    expect(withWorks.maxBid).toBeLessThan(withoutWorks.maxBid);
+    expect(withWorks.maxBid).toBeLessThanOrEqual(withoutWorks.maxBid - 37_000);
   });
 });
 
