@@ -4,6 +4,7 @@ import Camera from "lucide-react/dist/esm/icons/camera.js";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left.js";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import { RotatingCamera360 } from "@/components/RotatingCamera360";
 import { cn } from "@/lib/utils";
 
 export type CarouselImage = {
@@ -30,7 +31,7 @@ export function PhotoCarouselDialog({
   const [index, setIndex] = useState(() => clampIndex(initialIndex, count));
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
-  const touchStartX = useRef<number | null>(null);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const activeThumbnailRef = useRef<HTMLButtonElement | null>(null);
   const current = images[index];
   const counterLabel = useMemo(() => `${index + 1} / ${count}`, [count, index]);
@@ -77,16 +78,19 @@ export function PhotoCarouselDialog({
   if (!count || !current) return null;
 
   const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    touchStartX.current = event.changedTouches[0]?.clientX ?? null;
+    const touch = event.changedTouches[0];
+    touchStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
   };
 
   const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
-    const startX = touchStartX.current;
-    touchStartX.current = null;
-    if (startX == null || count <= 1) return;
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start || count <= 1) return;
 
-    const deltaX = (event.changedTouches[0]?.clientX ?? startX) - startX;
-    if (Math.abs(deltaX) < 48) return;
+    const touch = event.changedTouches[0];
+    const deltaX = (touch?.clientX ?? start.x) - start.x;
+    const deltaY = (touch?.clientY ?? start.y) - start.y;
+    if (Math.abs(deltaX) < 48 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
     if (deltaX < 0) goNext();
     else goPrevious();
   };
@@ -98,9 +102,9 @@ export function PhotoCarouselDialog({
       aria-modal="true"
       aria-label="Galerie photos"
       tabIndex={-1}
-      className="fixed inset-0 z-[70] flex flex-col bg-[#07111f] text-white outline-none"
+      className="fixed inset-0 z-[70] flex h-[100dvh] flex-col overflow-hidden bg-[#07111f] text-white outline-none"
     >
-      <div className="flex min-h-14 items-center justify-between gap-3 border-b border-white/10 px-3 sm:min-h-16 sm:px-5">
+      <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-white/10 px-3 pt-[env(safe-area-inset-top)] sm:min-h-16 sm:px-5">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">
             <Camera className="h-3.5 w-3.5" />
@@ -123,28 +127,32 @@ export function PhotoCarouselDialog({
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1fr)_15rem] lg:grid-rows-1">
+      <div className="grid min-h-0 min-w-0 w-full flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1fr)_15rem] lg:grid-rows-1">
         <div
-          className="relative min-h-0 bg-black/30"
+          className="relative min-h-0 min-w-0 w-full touch-pan-y overflow-hidden bg-black/30"
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
-          <div className="relative w-full lg:h-full">
+          <div className="relative flex h-full min-h-0 w-full items-center justify-center px-0 py-2 sm:px-4 sm:py-4">
             <img
               src={current.url}
               alt={current.alt}
-              className="mx-auto block max-h-[calc(100vh-10.5rem)] max-w-full object-contain lg:h-full lg:max-h-[calc(100vh-4rem)] lg:w-full"
+              className="block max-h-full max-w-full select-none object-contain"
               loading="eager"
               decoding="async"
+              draggable={false}
               referrerPolicy="no-referrer"
             />
+            {count > 1 && (
+              <RotatingCamera360 className="absolute left-3 top-3 sm:left-5 sm:top-5" />
+            )}
             {count > 1 && (
               <>
                 <button
                   type="button"
                   onClick={goPrevious}
                   aria-label="Photo précédente"
-                  className="absolute left-2 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/12 bg-black/45 text-white shadow-lg backdrop-blur transition-colors hover:bg-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:left-4"
+                  className="absolute left-2 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/12 bg-black/55 text-white shadow-lg backdrop-blur transition-colors hover:bg-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:left-4 sm:h-11 sm:w-11"
                 >
                   <ChevronLeft className="h-6 w-6" />
                 </button>
@@ -152,7 +160,7 @@ export function PhotoCarouselDialog({
                   type="button"
                   onClick={goNext}
                   aria-label="Photo suivante"
-                  className="absolute right-2 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/12 bg-black/45 text-white shadow-lg backdrop-blur transition-colors hover:bg-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:right-4"
+                  className="absolute right-2 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/12 bg-black/55 text-white shadow-lg backdrop-blur transition-colors hover:bg-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:right-4 sm:h-11 sm:w-11"
                 >
                   <ChevronRight className="h-6 w-6" />
                 </button>
@@ -166,8 +174,8 @@ export function PhotoCarouselDialog({
           )}
         </div>
 
-        <div className="min-h-0 border-t border-white/10 bg-[#0b1625] p-3 lg:border-l lg:border-t-0">
-          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] lg:grid lg:max-h-full lg:grid-cols-1 lg:overflow-y-auto lg:pb-0 [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 shrink-0 border-t border-white/10 bg-[#0b1625] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:border-l lg:border-t-0 lg:p-3">
+          <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] lg:grid lg:max-h-full lg:grid-cols-1 lg:overflow-y-auto lg:pb-0 [&::-webkit-scrollbar]:hidden">
             {images.map((image, thumbnailIndex) => (
               <button
                 key={image.id ?? `${image.url}-${thumbnailIndex}`}
@@ -177,7 +185,7 @@ export function PhotoCarouselDialog({
                 aria-label={`Afficher la photo ${thumbnailIndex + 1}`}
                 aria-current={thumbnailIndex === index}
                 className={cn(
-                  "relative h-16 w-24 shrink-0 cursor-pointer overflow-hidden rounded-md border bg-white/8 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-20 lg:w-full",
+                  "relative h-16 w-24 shrink-0 snap-center cursor-pointer overflow-hidden rounded-md border bg-white/8 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-20 lg:w-full",
                   thumbnailIndex === index
                     ? "border-gold-soft ring-2 ring-gold-soft/45"
                     : "border-white/12 opacity-72 hover:opacity-100",

@@ -1,9 +1,12 @@
 import { createFileRoute } from "@/lib/router-compat";
-import { SaleDetailView } from "@/components/SaleDetailView";
+import { AnalysisSaleDetailView, FreeSaleDetailView } from "@/components/SimplifiedSaleDetailView";
 import { EXAMPLE_MARKET_ESTIMATE, EXAMPLE_SALE } from "@/lib/example-sale";
 import { saleSeoTitle } from "@/lib/seo";
 
 export const Route = createFileRoute("/annonce-exemple")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    offre: search.offre === "decouverte" ? ("decouverte" as const) : ("analyse" as const),
+  }),
   head: () => ({
     meta: [
       { title: saleSeoTitle(EXAMPLE_SALE) },
@@ -19,5 +22,11 @@ export const Route = createFileRoute("/annonce-exemple")({
 });
 
 function ExampleSalePage() {
-  return <SaleDetailView sale={EXAMPLE_SALE} marketEstimateOverride={EXAMPLE_MARKET_ESTIMATE} />;
+  const { offre } = Route.useSearch<{ offre: "decouverte" | "analyse" }>();
+  if (offre === "decouverte") {
+    return <FreeSaleDetailView sale={EXAMPLE_SALE} />;
+  }
+  return (
+    <AnalysisSaleDetailView sale={EXAMPLE_SALE} marketEstimateOverride={EXAMPLE_MARKET_ESTIMATE} />
+  );
 }

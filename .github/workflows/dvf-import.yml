@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       resource_url:
-        description: "Optional DVF .txt/.csv/.zip URL. Leave empty to import all main resources from data.gouv.fr."
+        description: "Optional DVF .txt/.csv/.csv.gz/.zip URL. Leave empty to import the geolocated main resource."
         required: false
         type: string
       limit:
@@ -37,7 +37,8 @@ jobs:
         working-directory: services/data-pipeline
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      DVF_DATASET_API_URL: https://www.data.gouv.fr/api/1/datasets/demandes-de-valeurs-foncieres/
+      DVF_DATASET_API_URL: https://www.data.gouv.fr/api/1/datasets/demandes-de-valeurs-foncieres-geolocalisees/
+      DVF_STATISTICS_DATASET_API_URL: https://www.data.gouv.fr/api/1/datasets/statistiques-dvf/
       REQUESTED_RESOURCE_URL: ${{ github.event.inputs.resource_url }}
       REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
       REQUESTED_DRY_RUN: ${{ github.event.inputs.dry_run }}
@@ -71,6 +72,7 @@ jobs:
           from urllib.parse import urlparse
 
           dataset_api_url = os.environ["DVF_DATASET_API_URL"]
+          statistics_dataset_api_url = os.environ["DVF_STATISTICS_DATASET_API_URL"]
           requested_url = (os.environ.get("REQUESTED_RESOURCE_URL") or "").strip()
           requested_limit = (os.environ.get("REQUESTED_LIMIT") or "").strip()
           dry_run = (os.environ.get("REQUESTED_DRY_RUN") or "").lower() == "true"
@@ -106,7 +108,7 @@ jobs:
               }
               for resource in dataset.get("resources", [])
               if resource.get("type") == "main"
-              and str(resource.get("format") or "").lower() in {"txt.zip", "zip", "txt", "csv"}
+              and str(resource.get("format") or "").lower() in {"csv.gz", "zip", "txt", "csv"}
               and resource.get("url")
             ]
 
@@ -126,7 +128,8 @@ jobs:
 
             expected_sha1 = resource.get("checksum")
             if expected_sha1:
-              digest = hashlib.sha1(target.read_bytes()).hexdigest()
+              with target.open("rb") as handle:
+                digest = hashlib.file_digest(handle, "sha1").hexdigest()
               if digest != expected_sha1:
                 raise RuntimeError(
                   f"Checksum mismatch for {target}: expected {expected_sha1}, got {digest}"
@@ -140,6 +143,42 @@ jobs:
 
             print("+", " ".join(command))
             subprocess.run(command, check=True)
+
+          statistics_dataset = read_json(statistics_dataset_api_url)
+          statistics_resources = [
+            resource
+            for resource in statistics_dataset.get("resources", [])
+            if resource.get("url")
+            and str(resource.get("format") or "").lower() == "csv"
+            and "whole_period" in str(resource.get("url") or "")
+          ]
+          if not statistics_resources:
+            raise RuntimeError("No whole-period DVF statistics CSV found.")
+
+          statistics_resource = statistics_resources[0]
+          statistics_target = raw_dir / "stats_whole_period.csv"
+          print(f"Downloading DVF market statistics -> {statistics_target}")
+          urllib.request.urlretrieve(statistics_resource["url"], statistics_target)
+          source_updated_at = str(
+            statistics_resource.get("last_modified")
+            or statistics_dataset.get("last_modified")
+            or ""
+          )[:10]
+          statistics_command = [
+            "python",
+            "-m",
+            "src.dvf_statistics_import",
+            str(statistics_target),
+            "--source-url",
+            "https://www.data.gouv.fr/datasets/statistiques-dvf",
+          ]
+          if source_updated_at:
+            statistics_command.extend(["--source-updated-at", source_updated_at])
+          if dry_run:
+            statistics_command.append("--dry-run")
+
+          print("+", " ".join(statistics_command))
+          subprocess.run(statistics_command, check=True)
 
           sys.exit(0)
           PY

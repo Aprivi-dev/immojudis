@@ -12,6 +12,7 @@ function tx(overrides: Partial<DvfBacktestTransaction> = {}): DvfBacktestTransac
     sale_date: overrides.sale_date ?? "2026-01-15",
     total_price_eur: overrides.total_price_eur ?? 200_000,
     built_surface_m2: overrides.built_surface_m2 ?? 80,
+    land_surface_m2: overrides.land_surface_m2 ?? null,
     price_per_m2: overrides.price_per_m2 ?? 2_500,
     property_type: overrides.property_type ?? "apartment",
     dvf_property_type_code: overrides.dvf_property_type_code ?? null,

@@ -1,0 +1,5 @@
+-r requirements.txt
+h3==4.3.1
+lightgbm==4.6.0
+mapie==1.4.1
+scikit-learn==1.7.2

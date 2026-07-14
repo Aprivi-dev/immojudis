@@ -151,8 +151,13 @@ function confidenceLabel({
 function comparableModeLabel(mode: MarketEstimate["comparableMode"]): string {
   const labels: Record<MarketEstimate["comparableMode"], string> = {
     surface_matched: "Surfaces comparables",
+    surface_land_matched: "Surfaces bâties et terrains comparables",
+    land_matched: "Terrains comparables",
+    same_type_expanded: "Même type, surfaces élargies",
     nearby_type_only: "Type proche, surfaces élargies",
     address_history: "Historique exact d'adresse",
+    geographic_aggregate: "Médiane géographique agrégée",
+    unit_sales: "Ventes unitaires de stationnement",
   };
   return labels[mode];
 }
@@ -223,7 +228,11 @@ function limitations({
       "L'échantillon retenu est court : la fourchette doit être considérée comme fragile.",
     );
   }
-  if (estimate.comparableMode !== "surface_matched") {
+  if (
+    estimate.comparableMode !== "surface_matched" &&
+    estimate.comparableMode !== "surface_land_matched" &&
+    estimate.comparableMode !== "land_matched"
+  ) {
     limitations.unshift(
       "Les surfaces ou le mode de comparaison sont élargis faute de références strictement comparables.",
     );

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import hashlib
 import json
 import logging
@@ -29,6 +30,7 @@ LOGGER = logging.getLogger(__name__)
 DVF_SOURCE = "DVF"
 DEFAULT_BATCH_SIZE = 1_000
 TEXT_EXTENSIONS = {".csv", ".txt"}
+GZIP_EXTENSION = ".gz"
 CSV_DELIMITERS = ("|", ";", ",", "\t")
 
 DVF_TRANSACTION_COLUMNS = (
@@ -108,6 +110,7 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
             },
         )
         summary.batch_id = batch_id
+        connection.commit()
         try:
             payload: list[dict[str, object]] = []
             for transaction in _iter_normalized_transactions(rows, options, summary):
@@ -126,6 +129,7 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
             _finish_import_batch(connection, summary)
         except Exception as exc:
             summary.errors.append(str(exc))
+            connection.rollback()
             _fail_import_batch(connection, batch_id, str(exc))
             connection.commit()
             raise
@@ -135,6 +139,10 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
 def iter_dvf_rows(path: Path) -> Iterator[dict[str, str]]:
     if path.suffix.lower() == ".zip":
         yield from _iter_zip_rows(path)
+        return
+    if path.suffix.lower() == GZIP_EXTENSION:
+        with gzip.open(path, "rt", encoding="utf-8-sig", newline="") as handle:
+            yield from _iter_text_rows(handle)
         return
     if path.suffix.lower() not in TEXT_EXTENSIONS:
         raise ValueError(f"Unsupported DVF file extension: {path.suffix}")
@@ -149,8 +157,19 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
 
     sale_date = parse_date(first_value(row, "date_mutation", "datemut"))
     total_price = decimal_value(first_value(row, "valeur_fonciere", "valeurfonc"))
-    built_surface = decimal_value(first_value(row, "surface_reelle_bati", "sbati"))
+    built_surface = positive_decimal_value(first_value(row, "surface_reelle_bati", "sbati"))
+    land_surface = nonnegative_decimal_value(first_value(row, "surface_terrain", "sterr"))
     if not sale_date or not total_price or total_price <= 0:
+        return None
+
+    property_type = clean_text(first_value(row, "type_local", "libtypbien"))
+    property_type_code = normalized_property_type_code(
+        first_value(row, "code_type_local", "codtypbien"),
+        property_type,
+        built_surface,
+        land_surface,
+    )
+    if property_type_code is None:
         return None
 
     source_mutation_id = clean_text(first_value(row, "id_mutation", "idmutinvar"))
@@ -167,7 +186,17 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
     )
     postal_code = clean_text(first_value(row, "code_postal", "postal_code"))
     department = clean_text(first_value(row, "code_departement", "department")) or department_from_postal_code(postal_code)
-    raw_payload = {key: value for key, value in row.items() if value not in ("", None)}
+    raw_payload = {
+        key: row[key]
+        for key in (
+            "id_mutation",
+            "numero_disposition",
+            "code_nature_culture",
+            "nature_culture",
+            "ancien_id_parcelle",
+        )
+        if row.get(key) not in ("", None)
+    }
 
     return {
         "import_batch_id": None,
@@ -178,11 +207,13 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
         "mutation_nature": mutation_nature,
         "total_price_eur": total_price,
         "built_surface_m2": built_surface,
-        "land_surface_m2": decimal_value(first_value(row, "surface_terrain", "sterr")),
-        "property_type": clean_text(first_value(row, "type_local", "libtypbien")),
-        "dvf_property_type_code": clean_text(first_value(row, "code_type_local", "codtypbien")),
-        "rooms_count": int_value(first_value(row, "nombre_pieces_principales", "nb_pieces_principales")),
-        "lots_count": int_value(first_value(row, "nombre_lots", "nb_lots")),
+        "land_surface_m2": land_surface,
+        "property_type": property_type,
+        "dvf_property_type_code": property_type_code,
+        "rooms_count": nonnegative_int_value(
+            first_value(row, "nombre_pieces_principales", "nb_pieces_principales")
+        ),
+        "lots_count": nonnegative_int_value(first_value(row, "nombre_lots", "nb_lots")),
         "address": address,
         "city": clean_text(first_value(row, "nom_commune", "commune", "city")),
         "postal_code": postal_code,
@@ -295,11 +326,49 @@ def decimal_value(value: str | None) -> Decimal | None:
         return None
 
 
+def positive_decimal_value(value: str | None) -> Decimal | None:
+    number = decimal_value(value)
+    return number if number is not None and number > 0 else None
+
+
+def nonnegative_decimal_value(value: str | None) -> Decimal | None:
+    number = decimal_value(value)
+    return number if number is not None and number >= 0 else None
+
+
 def int_value(value: str | None) -> int | None:
     number = decimal_value(value)
     if number is None:
         return None
     return int(number)
+
+
+def nonnegative_int_value(value: str | None) -> int | None:
+    number = int_value(value)
+    return number if number is not None and number >= 0 else None
+
+
+def normalized_property_type_code(
+    raw_code: str | None,
+    property_type: str | None,
+    built_surface: Decimal | None,
+    land_surface: Decimal | None,
+) -> str | None:
+    code = clean_text(raw_code)
+    text = (property_type or "").lower()
+    if code in {"111", "121", "112", "122", "123", "141", "142", "151", "152"}:
+        return code
+    if code == "1" or any(token in text for token in ("maison", "villa", "pavillon", "house")):
+        return "111" if built_surface is not None else None
+    if code == "2" or any(token in text for token in ("appartement", "studio", "apartment")):
+        return "121" if built_surface is not None else None
+    if code == "4" or any(
+        token in text for token in ("local industriel", "local commercial", "commerce", "bureau")
+    ):
+        return "141" if built_surface is not None else None
+    if code is None and not text and built_surface is None and land_surface is not None and land_surface > 0:
+        return "211"
+    return None
 
 
 def parse_date(value: str | None) -> date | None:

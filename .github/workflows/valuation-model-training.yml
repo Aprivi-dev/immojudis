@@ -1,0 +1,120 @@
+name: Immojudis Valuation Model Training
+
+on:
+  workflow_dispatch:
+    inputs:
+      segment:
+        description: "Segment to train, or all"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - apartment
+          - house
+          - building
+          - commercial
+          - land
+      min_rows:
+        description: "Minimum usable rows required per segment"
+        required: true
+        default: "500"
+        type: string
+      limit:
+        description: "Most recent rows loaded per segment"
+        required: true
+        default: "750000"
+        type: string
+      activate:
+        description: "Activate models that pass the promotion gates"
+        required: true
+        default: true
+        type: boolean
+      confirm_target:
+        description: "Type production when activate=true"
+        required: true
+        type: string
+  workflow_run:
+    workflows: ["Immojudis DVF Import"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-valuation-model-training
+  cancel-in-progress: false
+
+jobs:
+  train:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request')
+    name: Train ${{ matrix.segment }} model
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        segment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.segment != 'all' && fromJSON(format('["{0}"]', github.event.inputs.segment)) || fromJSON('["apartment", "house", "building", "commercial", "land"]') }}
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      TRIGGER_EVENT: ${{ github.event_name }}
+      REQUESTED_MIN_ROWS: ${{ github.event.inputs.min_rows || '500' }}
+      REQUESTED_LIMIT: ${{ github.event.inputs.limit || '750000' }}
+      REQUESTED_ACTIVATE: ${{ github.event_name == 'workflow_run' && 'true' || github.event.inputs.activate }}
+      REQUESTED_CONFIRM_TARGET: ${{ github.event.inputs.confirm_target }}
+    steps:
+      - name: Validate production activation
+        run: |
+          set -euo pipefail
+          if [ "$TRIGGER_EVENT" = "workflow_dispatch" ] && [ "$REQUESTED_ACTIVATE" = "true" ] && [ "$REQUESTED_CONFIRM_TARGET" != "production" ]; then
+            echo "confirm_target must be exactly production when activating a model" >&2
+            exit 1
+          fi
+          if ! [[ "$REQUESTED_MIN_ROWS" =~ ^[0-9]+$ ]] || [ "$REQUESTED_MIN_ROWS" -lt 100 ]; then
+            echo "min_rows must be an integer greater than or equal to 100" >&2
+            exit 1
+          fi
+          if ! [[ "$REQUESTED_LIMIT" =~ ^[0-9]+$ ]] || [ "$REQUESTED_LIMIT" -lt "$REQUESTED_MIN_ROWS" ]; then
+            echo "limit must be an integer greater than or equal to min_rows" >&2
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements-valuation.txt
+
+      - name: Install valuation dependencies
+        run: python -m pip install -r requirements-valuation.txt
+
+      - name: Train, validate and publish
+        run: |
+          set -euo pipefail
+          args=(
+            --segment "${{ matrix.segment }}"
+            --min-rows "$REQUESTED_MIN_ROWS"
+            --limit "$REQUESTED_LIMIT"
+            --publish
+          )
+          if [ "$REQUESTED_ACTIVATE" = "true" ]; then
+            args+=(--activate)
+          fi
+          python -m src.valuation_training "${args[@]}"
+
+      - name: Upload auditable model bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: valuation-model-${{ matrix.segment }}-${{ github.run_id }}
+          path: services/data-pipeline/data/processed/valuation_models/*.json
+          if-no-files-found: error
+          retention-days: 30
