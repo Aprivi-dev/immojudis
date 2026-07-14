@@ -20,13 +20,14 @@ import {
 import { getEnvironmentalContext, type EnvironmentalContext } from "@/lib/environment.functions";
 import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { buildLegalAttentionAnalysis } from "@/lib/legal-attention-analysis";
-import { getMarketEstimate, type MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.functions";
 import { buildMarketComparablesAnalysis } from "@/lib/market-comparables-analysis";
 import { buildNearbyServicesAnalysis } from "@/lib/nearby-services";
 import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
 import { buildOccupancyAnalysis } from "@/lib/occupation-analysis";
 import { buildRenovationAnalysis } from "@/lib/renovation-analysis";
 import { cleanSaleTitle } from "@/lib/sale-title";
+import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import {
   featureAccess,
   featureIncluded,
@@ -40,8 +41,9 @@ import {
 } from "@/lib/plans";
 import {
   computeAcquisitionCosts,
-  computeMarketCeiling,
+  computeRecommendedCeilings,
   computeRentabilityScore,
+  DEFAULT_MARKET_CEILING_SCENARIO,
   DEFAULTS,
 } from "@/lib/profitability";
 import { createTextPdf } from "@/lib/simple-pdf";
@@ -51,7 +53,7 @@ import {
   type SourceTraceEntry,
 } from "@/lib/source-traceability";
 import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
-import { getSaleSurface } from "@/lib/surface";
+import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import {
   buildUrbanPlanningAnalysis,
   type StructuredUrbanPlanningSignal,
@@ -1216,37 +1218,25 @@ async function recordPdfExport(auth: SupabaseAuthContext, report: SavedReportRow
 }
 
 async function buildMarketSnapshot(sale: AuctionSale): Promise<MarketEstimate | null> {
-  const surface = getSaleSurface(sale).value;
-  if (sale.latitude == null || sale.longitude == null || surface == null || surface <= 0) {
-    return null;
-  }
-
-  const response = await getMarketEstimate({
-    lat: sale.latitude,
-    lng: sale.longitude,
-    propertyType: sale.property_type,
-    surfaceM2: surface,
-  });
-
-  return response.estimate;
+  return getPrecomputedMarketEstimate(sale.id);
 }
 
 function buildCeilingSnapshot(sale: AuctionSale, marketEstimate: MarketEstimate | null) {
-  const surface = getSaleSurface(sale).value;
-  const scenario = "equilibre";
-  const ceiling = computeMarketCeiling({
+  const surface = getMarketValuationSurfaces(sale).builtSurfaceM2;
+  const scenario = DEFAULT_MARKET_CEILING_SCENARIO;
+  const ceilings = computeRecommendedCeilings({
     surface,
     price: Math.max(0, sale.starting_price_eur ?? 0),
-    works: DEFAULTS.works,
     fpt: DEFAULTS.fpt,
     scenario,
-    medianPricePerM2: marketEstimate?.medianPricePerM2,
-    p25PricePerM2: marketEstimate?.p25PricePerM2,
-    p75PricePerM2: marketEstimate?.p75PricePerM2,
+    medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
+    p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
+    p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
   });
+  const ceiling = ceilings.withRefreshWorks;
   const acquisition = computeAcquisitionCosts({
     price: Math.max(0, sale.starting_price_eur ?? 0),
-    works: DEFAULTS.works,
+    works: ceilings.refreshWorksBudget,
     fpt: DEFAULTS.fpt,
   });
 
@@ -1255,6 +1245,11 @@ function buildCeilingSnapshot(sale: AuctionSale, marketEstimate: MarketEstimate 
     available: ceiling.available,
     reason: ceiling.reason ?? null,
     maxBid: ceiling.available ? ceiling.maxBid : null,
+    maxBidWithoutWorks: ceilings.withoutWorks.available ? ceilings.withoutWorks.maxBid : null,
+    maxBidWithRefreshWorks: ceilings.withRefreshWorks.available
+      ? ceilings.withRefreshWorks.maxBid
+      : null,
+    refreshWorksBudget: ceilings.refreshWorksBudget,
     targetTotalCost: ceiling.available ? ceiling.targetTotalCost : null,
     marketReferencePricePerM2: ceiling.available ? ceiling.marketReferencePricePerM2 : null,
     safetyDiscountPct: ceiling.available ? ceiling.safetyDiscountPct : null,

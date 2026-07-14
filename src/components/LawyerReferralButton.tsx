@@ -14,10 +14,14 @@ import type { LawyerReferralSummary } from "@/lib/lawyer-referrals";
 
 export function LawyerReferralButton({
   saleId,
+  requestedLawyerId,
+  label,
   className = "",
   onIntent,
 }: {
   saleId: string;
+  requestedLawyerId?: string;
+  label?: string;
   className?: string;
   onIntent?: () => void;
 }) {
@@ -66,7 +70,9 @@ export function LawyerReferralButton({
 
     setBusy(true);
     try {
-      const response = await requestLawyerReferral({ data: { saleId } });
+      const response = await requestLawyerReferral({
+        data: { saleId, lawyerId: requestedLawyerId },
+      });
       if (response.reusedExisting) {
         toast.message("Une demande de mise en relation existe déjà pour cette vente.");
       } else if (response.matchedLawyer) {
@@ -103,7 +109,7 @@ export function LawyerReferralButton({
               ? "Débloquer la mise en relation"
               : hasOpenRequest
                 ? "Demande avocat en cours"
-                : "Mise en relation ImmoJudis"}
+                : (label ?? "Mise en relation ImmoJudis")}
       </button>
       {latestRequest ? <LawyerReferralStatus request={latestRequest} /> : null}
     </div>

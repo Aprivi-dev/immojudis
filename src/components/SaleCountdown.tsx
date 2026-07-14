@@ -1,8 +1,8 @@
 import Clock from "lucide-react/dist/esm/icons/clock.js";
 import { useEffect, useState } from "react";
 
-function diffParts(target: Date) {
-  const ms = target.getTime() - Date.now();
+function diffParts(target: Date, now: number) {
+  const ms = target.getTime() - now;
   if (ms <= 0) return null;
   const totalMinutes = Math.floor(ms / 60000);
   const days = Math.floor(totalMinutes / (60 * 24));
@@ -45,11 +45,12 @@ export function SaleCountdown({
 }) {
   const target = date ? new Date(date) : null;
   const valid = target && !isNaN(target.getTime());
-  const [, setTick] = useState(0);
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
     if (!valid) return;
-    const i = setInterval(() => setTick((t) => t + 1), 60_000);
+    setNow(Date.now());
+    const i = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(i);
   }, [valid]);
 
@@ -62,7 +63,15 @@ export function SaleCountdown({
     );
   }
 
-  const parts = diffParts(target!);
+  if (now == null) {
+    return variant === "chip" ? null : (
+      <div className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+        Calcul du délai…
+      </div>
+    );
+  }
+
+  const parts = diffParts(target!, now);
   const t = tone(parts ? parts.days : null);
 
   if (!parts) {

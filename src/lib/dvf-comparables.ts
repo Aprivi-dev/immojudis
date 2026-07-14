@@ -120,6 +120,7 @@ export async function getDvfComparables({
   const analysis = buildDvfComparableAnalysis({
     subject: {
       surfaceM2: surface.value,
+      landSurfaceM2: sale.land_surface_m2,
       propertyType: sale.property_type,
       startingPriceEur: sale.starting_price_eur,
     },
@@ -253,6 +254,7 @@ function rowToComparableCandidate(
     saleDate: row.sale_date,
     totalPriceEur: row.total_price_eur,
     surfaceM2: row.built_surface_m2,
+    landSurfaceM2: row.land_surface_m2,
     pricePerM2: row.price_per_m2,
     propertyType: row.property_type ?? row.dvf_property_type_code,
     distanceM,

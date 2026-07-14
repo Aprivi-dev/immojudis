@@ -191,14 +191,16 @@ Le fichier active `pgcrypto`, crée `auction_sales`, les index demandés, active
 
 ## Import DVF semestriel
 
-Les comparables DVF détaillés s'appuient sur les fichiers officiels
-`Demandes de valeurs foncières` publiés sur data.gouv.fr. L'import accepte les
-fichiers `.txt`/`.csv` bruts et les archives `.zip`, avec séparateur `|`, `;`,
-`,` ou tabulation.
+Les comparables DVF détaillés s'appuient sur le jeu certifié `Demandes de
+valeurs foncières géolocalisées` publié sur data.gouv.fr. L'import accepte les
+fichiers `.txt`/`.csv`, les flux `.csv.gz` et les archives `.zip`, avec
+séparateur `|`, `;`, `,` ou tabulation. Les codes DGFiP des maisons,
+appartements et locaux sont normalisés vers le contrat DVF+ interne ; les
+dépendances sans surface exploitable sont ignorées.
 
 Le workflow GitHub Actions `Immojudis DVF Import` est planifié le 10 avril et
 le 10 octobre. Il lit l'API officielle data.gouv.fr, récupère les ressources
-principales DVF disponibles, vérifie les checksums SHA-1 quand ils sont fournis,
+principales DVF géolocalisées, vérifie les checksums SHA-1 quand ils sont fournis,
 puis appelle `python -m src.dvf_import`. Le workflow peut aussi être lancé
 manuellement avec `dry_run=true`, une `resource_url` précise ou une limite de
 lignes pour tester un millésime avant import complet.
@@ -212,14 +214,72 @@ python -m src.dvf_import data/raw/dvf/valeursfoncieres-2024.txt --dry-run --limi
 Importer dans Supabase/Postgres :
 
 ```bash
-python -m src.dvf_import data/raw/dvf/valeursfoncieres-2024.txt \
-  --source-url "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres"
+python -m src.dvf_import data/raw/dvf/dvf.csv.gz \
+  --source-url "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees"
+```
+
+Le calcul backend tente d’abord les ventes détaillées normalisées en base, puis
+les fichiers officiels DVF par commune publiés sur data.gouv.fr. Quand cet
+échantillon local reste insuffisant, il utilise les médianes officielles par
+commune, intercommunalité ou département comme estimation indicative de repli.
+Cette dernière conserve une fourchette volontairement large et n’alimente pas
+automatiquement la mise plafond tant qu’elle n’est pas confirmée.
+
+Importer ou rafraîchir ces statistiques agrégées :
+
+```bash
+python -m src.dvf_statistics_import data/raw/dvf/stats_whole_period.csv \
+  --source-url "https://www.data.gouv.fr/datasets/statistiques-dvf" \
+  --source-updated-at 2026-04-27
 ```
 
 Cette commande requiert `SUPABASE_DB_URL` et écrit dans `dvf_import_batches` et
 `dvf_transactions`. Les données brutes restent derrière les API ImmoJudis
 plan-gatées ; elles ne doivent pas être ré-exposées directement ni indexées par
 des moteurs externes.
+
+## Entraînement de l'estimation immobilière
+
+Le modèle de valorisation est entraîné hors ligne à partir de la table DVF
+normalisée. Il utilise trois modèles LightGBM quantiles (P10, P50 et P90), puis
+MAPIE pour conformaliser l'intervalle sur un jeu de calibration chronologique.
+La séparation train/calibration/test respecte l'ordre des dates afin d'éviter
+de faire fuiter des ventes futures dans les métriques.
+
+Installer les dépendances optionnelles :
+
+```bash
+pip install -r requirements-valuation.txt
+```
+
+Entraîner et écrire les artefacts localement :
+
+```bash
+python -m src.valuation_training --segment apartment --segment house
+```
+
+Publier une version en brouillon, puis l'activer après contrôle :
+
+```bash
+python -m src.valuation_training --segment apartment --publish
+python -m src.valuation_training --segment apartment --activate
+```
+
+L'activation est refusée si le jeu de test contient moins de 50 ventes, si
+l'erreur absolue médiane dépasse 30 %, si la MAPE dépasse 40 %, si la couverture
+P10-P90 est inférieure à 72 % ou si la largeur moyenne de l'intervalle dépasse
+110 %. `--force` existe pour les essais contrôlés, pas pour les runs planifiés.
+L'API mélange le modèle actif avec les comparables locaux et revient
+automatiquement au moteur comparable si l'artefact est absent ou invalide.
+La valeur de marché ainsi produite reste distincte du calcul de mise plafond,
+qui retire ensuite travaux, frais et marge de sécurité.
+
+Le workflow GitHub Actions `Immojudis Valuation Model Training` peut aussi être
+déclenché manuellement. Il se relance automatiquement après un import DVF
+réussi, entraîne chaque segment séparément sur au plus 750 000 ventes récentes,
+applique les mêmes seuils de promotion et conserve le bundle JSON pendant 30
+jours pour audit. Une activation manuelle exige la confirmation explicite de la
+cible `production`.
 
 ## Enrichissement cadastre
 

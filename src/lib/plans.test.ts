@@ -16,12 +16,14 @@ describe("plan matrix", () => {
     expect(normalizePlanCode("unknown")).toBe("decouverte");
   });
 
-  it("keeps every premium feature locked for Découverte", () => {
+  it("keeps premium features locked while exposing lawyer discovery", () => {
     const unexpectedlyUnlocked = Object.entries(PLAN_FEATURES.decouverte)
-      .filter(([feature]) => feature !== "sales.filters")
+      .filter((feature) => !["sales.filters", "lawyers.directory"].includes(feature[0]))
       .filter(([, access]) => access !== "locked");
 
     expect(unexpectedlyUnlocked).toEqual([]);
+    expect(featureIncluded("decouverte", "lawyers.directory")).toBe(true);
+    expect(featureIncluded("decouverte", "lawyers.referrals")).toBe(false);
     expect(PLAN_LIMITS.decouverte.propertyReportsPerMonth).toBe(0);
     expect(PLAN_LIMITS.decouverte.pdfExportsPerMonth).toBe(0);
     expect(PLAN_LIMITS.decouverte.favoriteSales).toBe(0);

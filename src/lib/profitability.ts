@@ -32,14 +32,18 @@ export function computeEmolumentsHT(price: number): number {
 export const DEFAULTS = {
   fpt: 3_000,
   works: 0,
-  safetyDiscountPct: 12,
+  safetyDiscountPct: 8,
 };
+
+export const DEFAULT_MARKET_CEILING_SCENARIO = "prudent" as const;
+
+export const REFRESH_WORKS_PRICE_PER_M2 = 500;
 
 export const WORKS_SCENARIOS = [
   {
     key: "rafraichissement",
     label: "Rafraîchissement locatif",
-    pricePerM2: 800,
+    pricePerM2: REFRESH_WORKS_PRICE_PER_M2,
     summary: "Remettre le bien au propre sans modifier sa structure.",
     scope: "Peinture complète, sol PVC et remise à niveau légère de la salle d'eau.",
   },
@@ -117,29 +121,18 @@ export const MARKET_CEILING_SCENARIOS = [
   {
     key: "prudent",
     label: "Prudent",
-    basis: "p25",
-    basisLabel: "bas de marché",
-    safetyDiscountPct: 10,
-    // With a manual market price there is no p25: keep Prudent the most
-    // conservative scenario by deepening its discount on the shared reference.
-    manualSafetyDiscountPct: 16,
-    description: "On part du quart bas des ventes et on garde une marge forte.",
-  },
-  {
-    key: "equilibre",
-    label: "Équilibré",
-    basis: "median",
-    basisLabel: "médiane locale",
-    safetyDiscountPct: 12,
-    description: "Lecture centrale : prix médian du secteur moins une marge de sécurité.",
+    basis: "p10",
+    basisLabel: "borne basse calibrée (P10)",
+    safetyDiscountPct: 8,
+    description: "Profil par défaut : borne basse à 80 % et marge de sécurité de 8 %.",
   },
   {
     key: "offensif",
     label: "Offensif",
     basis: "median",
     basisLabel: "médiane locale",
-    safetyDiscountPct: 6,
-    description: "Marge plus courte, à réserver aux dossiers très lisibles.",
+    safetyDiscountPct: 4,
+    description: "Marge de sécurité de 4 %, à réserver aux dossiers très lisibles.",
   },
 ] as const;
 
@@ -154,8 +147,10 @@ export type MarketCeilingInputs = {
   scenario: MarketCeilingScenarioKey | "custom";
   customSafetyDiscountPct?: number;
   medianPricePerM2?: number | null;
+  p10PricePerM2?: number | null;
   p25PricePerM2?: number | null;
   p75PricePerM2?: number | null;
+  p90PricePerM2?: number | null;
   manualMarketPricePerM2?: number | null;
 };
 
@@ -180,9 +175,17 @@ export type MarketCeilingResult = {
   marginTotal: number;
   marginPerM2: number;
   maxWorksAtSimulatedPrice: number;
+  p10PricePerM2: number | null;
   p25PricePerM2: number | null;
   medianPricePerM2: number | null;
   p75PricePerM2: number | null;
+  p90PricePerM2: number | null;
+};
+
+export type RecommendedCeilings = {
+  withoutWorks: MarketCeilingResult;
+  withRefreshWorks: MarketCeilingResult;
+  refreshWorksBudget: number;
 };
 
 export type RentabilityScoreFactor = {
@@ -260,12 +263,13 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
   const manualMarket = cleanPositive(inputs.manualMarketPricePerM2);
   const scenarioConfig =
     MARKET_CEILING_SCENARIOS.find((item) => item.key === inputs.scenario) ??
-    MARKET_CEILING_SCENARIOS.find((item) => item.key === "equilibre")!;
+    MARKET_CEILING_SCENARIOS.find((item) => item.key === DEFAULT_MARKET_CEILING_SCENARIO)!;
   const basis = manualMarket ? "manual" : scenarioConfig.basis;
   const marketReference =
     manualMarket ??
-    cleanPositive(basis === "p25" ? inputs.p25PricePerM2 : inputs.medianPricePerM2) ??
+    cleanPositive(basis === "p10" ? inputs.p10PricePerM2 : inputs.medianPricePerM2) ??
     cleanPositive(inputs.medianPricePerM2) ??
+    cleanPositive(inputs.p10PricePerM2) ??
     cleanPositive(inputs.p25PricePerM2);
 
   if (!marketReference) {
@@ -275,9 +279,7 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
   const safetyDiscountPct =
     inputs.scenario === "custom"
       ? clamp(inputs.customSafetyDiscountPct ?? DEFAULTS.safetyDiscountPct, 0, 40)
-      : basis === "manual" && "manualSafetyDiscountPct" in scenarioConfig
-        ? scenarioConfig.manualSafetyDiscountPct
-        : scenarioConfig.safetyDiscountPct;
+      : scenarioConfig.safetyDiscountPct;
   const maxAllInPricePerM2 = marketReference * (1 - safetyDiscountPct / 100);
   const targetTotalCost = Math.max(0, maxAllInPricePerM2 * surface);
   const maxBid = solveMaxBid(targetTotalCost, inputs.works ?? 0, inputs.fpt ?? DEFAULTS.fpt);
@@ -314,9 +316,22 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
           computeAcquisitionCosts({ price: simulated.price, works: 0, fpt: inputs.fpt }).totalCost,
       ),
     ),
+    p10PricePerM2: cleanPositive(inputs.p10PricePerM2),
     p25PricePerM2: cleanPositive(inputs.p25PricePerM2),
     medianPricePerM2: cleanPositive(inputs.medianPricePerM2),
     p75PricePerM2: cleanPositive(inputs.p75PricePerM2),
+    p90PricePerM2: cleanPositive(inputs.p90PricePerM2),
+  };
+}
+
+export function computeRecommendedCeilings(
+  inputs: Omit<MarketCeilingInputs, "works">,
+): RecommendedCeilings {
+  const refreshWorksBudget = estimateWorksBudget(inputs.surface, "rafraichissement");
+  return {
+    withoutWorks: computeMarketCeiling({ ...inputs, works: 0 }),
+    withRefreshWorks: computeMarketCeiling({ ...inputs, works: refreshWorksBudget }),
+    refreshWorksBudget,
   };
 }
 
@@ -703,9 +718,11 @@ function unavailableResult(
     marginTotal: 0,
     marginPerM2: 0,
     maxWorksAtSimulatedPrice: 0,
+    p10PricePerM2: cleanPositive(inputs.p10PricePerM2),
     p25PricePerM2: cleanPositive(inputs.p25PricePerM2),
     medianPricePerM2: cleanPositive(inputs.medianPricePerM2),
     p75PricePerM2: cleanPositive(inputs.p75PricePerM2),
+    p90PricePerM2: cleanPositive(inputs.p90PricePerM2),
   };
 }
 

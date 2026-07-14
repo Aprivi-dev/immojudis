@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import zipfile
 from datetime import date
 from decimal import Decimal
@@ -46,6 +47,7 @@ def test_normalize_dvf_row_maps_official_columns() -> None:
     assert transaction["latitude"] == Decimal("44.83779")
     assert transaction["longitude"] == Decimal("-0.57918")
     assert transaction["source_url"] == "https://data.gouv.fr/dvf"
+    assert transaction["dvf_property_type_code"] == "121"
 
 
 def test_normalize_dvf_row_skips_non_sale_mutations() -> None:
@@ -94,6 +96,57 @@ def test_iter_dvf_rows_reads_zip_archives(tmp_path) -> None:
 
     assert rows[0]["id_mutation"] == "2024-2"
     assert rows[0]["valeur_fonciere"] == "180000"
+
+
+def test_iter_dvf_rows_reads_geolocated_gzip(tmp_path) -> None:
+    path = tmp_path / "dvf.csv.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as archive:
+        archive.write(
+            "id_mutation,date_mutation,nature_mutation,valeur_fonciere,longitude,latitude\n"
+            "2025-1,2025-02-15,Vente,200000,-0.57918,44.83779\n"
+        )
+
+    rows = list(iter_dvf_rows(path))
+
+    assert rows[0]["id_mutation"] == "2025-1"
+    assert rows[0]["longitude"] == "-0.57918"
+
+
+def test_normalize_dvf_row_turns_zero_surface_into_null_and_skips_dependency() -> None:
+    transaction = normalize_dvf_row(
+        {
+            "id_mutation": "2025-dependency",
+            "date_mutation": "2025-01-07",
+            "nature_mutation": "Vente",
+            "valeur_fonciere": "468000",
+            "surface_reelle_bati": "0",
+            "surface_terrain": "133",
+            "code_type_local": "3",
+            "type_local": "Dépendance",
+        }
+    )
+
+    assert transaction is None
+
+
+def test_normalize_dvf_row_maps_land_only_sale() -> None:
+    transaction = normalize_dvf_row(
+        {
+            "id_mutation": "2025-land",
+            "date_mutation": "2025-04-08",
+            "nature_mutation": "Vente",
+            "valeur_fonciere": "85000",
+            "surface_reelle_bati": "",
+            "surface_terrain": "720",
+            "code_type_local": "",
+            "type_local": "",
+            "id_parcelle": "13013000AB0001",
+        }
+    )
+
+    assert transaction is not None
+    assert transaction["dvf_property_type_code"] == "211"
+    assert transaction["land_surface_m2"] == Decimal("720")
 
 
 def test_import_dvf_file_dry_run_counts_valid_and_skipped_rows(tmp_path, monkeypatch) -> None:

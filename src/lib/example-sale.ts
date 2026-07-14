@@ -4,7 +4,7 @@ import type { AuctionSale } from "@/lib/types";
 // Données fictives destinées à la page publique d'exemple.
 export const EXAMPLE_SALE = {
   id: "example-immojudis-bordeaux-t2",
-  title: "Appartement T2 avec balcon - annonce d'exemple Immojudis",
+  title: "Appartement T2 avec balcon à Bordeaux",
   description:
     "Appartement de deux pièces avec balcon, situé à Bordeaux, dans un immeuble ancien proche du tribunal.",
   source_description:
@@ -251,6 +251,23 @@ export const EXAMPLE_SALE = {
 
 export const EXAMPLE_MARKET_ESTIMATE = {
   source: "DVF Cerema",
+  engineVersion: "v2",
+  segment: "apartment",
+  surfaceBasis: "built",
+  actionable: true,
+  collectionComplete: true,
+  missingYears: [],
+  effectiveSampleSize: 8.4,
+  estimationLevel: "reliable",
+  subjectSurfaceM2: 42.6,
+  subjectSurfaceEstimated: false,
+  subjectSurfaceAssumption: null,
+  subjectSurfaceUncertaintyPct: null,
+  locationSource: "provided",
+  locationApproximate: false,
+  estimatedValueEur: 173_000,
+  estimatedValueLowEur: 161_000,
+  estimatedValueHighEur: 190_000,
   radiusM: 100,
   yearsBack: 6,
   areaKind: "urban",
@@ -265,6 +282,8 @@ export const EXAMPLE_MARKET_ESTIMATE = {
   comparableMode: "surface_matched",
   surfaceMinM2: 32,
   surfaceMaxM2: 58,
+  landSurfaceMinM2: null,
+  landSurfaceMaxM2: null,
   medianPricePerM2: 4_060,
   p25PricePerM2: 3_780,
   p75PricePerM2: 4_450,
