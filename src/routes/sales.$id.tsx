@@ -160,9 +160,8 @@ function SalePublicPreview({
           </div>
         </dl>
         <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
-          Les documents, risques, estimation de marché, coordonnées avocat et analyses détaillées
-          sont réservés à l'offre Analyse. Créez gratuitement votre compte pour découvrir le
-          catalogue et prévisualiser tous les enrichissements disponibles.
+          Les documents, risques, estimation de marché et analyses détaillées sont réservés à
+          l'offre Analyse. L'annuaire des avocats par barreau reste accessible gratuitement.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
@@ -180,6 +179,13 @@ function SalePublicPreview({
             className="inline-flex items-center justify-center rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
           >
             Retour aux ventes
+          </Link>
+          <Link
+            to="/avocats"
+            search={{ saleId }}
+            className="inline-flex items-center justify-center rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+          >
+            Trouver un avocat
           </Link>
         </div>
       </section>

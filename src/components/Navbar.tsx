@@ -22,6 +22,7 @@ const PRO_NAV_ITEM = { to: "/publish", label: "Publier" } as const;
 const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin" } as const;
 const HOME_NAV_ITEMS = [
   { to: "/sales", label: "Rechercher un bien" },
+  { to: "/avocats", label: "Trouver un avocat" },
   { to: "/annonce-exemple", label: "Annonce exemple" },
   { to: "/accompagnement", label: "Offres" },
   { to: RESOURCES_PATH, label: "Ressources" },

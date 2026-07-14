@@ -686,7 +686,8 @@ export async function fetchLawyerDirectory(
   if (args.bar) search.set("bar", args.bar);
   if (args.city) search.set("city", args.city);
   if (args.department) search.set("department", args.department);
-  const response = await fetch(`/api/lawyers/directory?${search.toString()}`);
+  const suffix = search.size ? `?${search.toString()}` : "";
+  const response = await fetch(`/api/lawyers/directory${suffix}`);
   return readJson<LawyerDirectoryResponse>(response);
 }
 

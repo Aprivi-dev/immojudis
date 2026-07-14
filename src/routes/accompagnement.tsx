@@ -17,7 +17,7 @@ export const Route = createFileRoute("/accompagnement")({
       {
         name: "description",
         content:
-          "Photos et enveloppe travaux gratuitement, puis mise plafond, marché, risques et avocats avec Analyse à 29 € pour 30 jours.",
+          "Photos, enveloppe travaux et annuaire d'avocats gratuitement, puis mise plafond, marché et risques avec Analyse à 29 € pour 30 jours.",
       },
     ],
   }),
@@ -29,13 +29,14 @@ const discoveryFeatures = [
   "Mise à prix et date d'audience",
   "Surface et localisation",
   "Montant global estimé des travaux",
+  "Annuaire des avocats par barreau",
 ] as const;
 
 const analysisFeatures = [
   "Mise plafond avec travaux incluse par défaut",
   "Estimation du bien et ventes comparables",
   "Détail des frais, travaux, risques et pièces",
-  "Annuaire d'avocats et demande de mise en relation",
+  "Mise en relation avec un avocat depuis le dossier",
 ] as const;
 
 function AccompagnementPage() {

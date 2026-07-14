@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const message = error instanceof Error ? error.message : "Annuaire indisponible";
     const status = message.includes("introuvable") ? 404 : 400;
     return NextResponse.json(
-      { lawyers: [], sectorLabel: null, barAssociation: null, error: message },
+      { lawyers: [], sectorLabel: null, barAssociation: null, isDemo: false, error: message },
       { status },
     );
   }
