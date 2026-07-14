@@ -104,7 +104,7 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "property.activeComparables": "locked",
     "property.neighborhoodAnalysis": "locked",
     "data.onDemandRefresh": "locked",
-    "lawyers.directory": "locked",
+    "lawyers.directory": "included",
     "lawyers.referrals": "locked",
     "workspace.audienceTracking": "locked",
     "workspace.collaboration": "locked",
