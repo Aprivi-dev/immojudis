@@ -656,6 +656,99 @@ export type Database = {
         };
         Relationships: [];
       };
+      auction_sale_market_estimates: {
+        Row: {
+          actionable: boolean;
+          attempt_count: number;
+          auction_sale_id: string;
+          comparable_count: number;
+          computed_at: string | null;
+          confidence_score: number | null;
+          created_at: string;
+          engine_kind: "comparable_ensemble" | "hybrid_lightgbm" | null;
+          engine_version: string | null;
+          error_message: string | null;
+          estimate: Json | null;
+          input_fingerprint: string;
+          last_started_at: string | null;
+          model_version: string | null;
+          model_version_id: string | null;
+          next_refresh_at: string;
+          segment: "apartment" | "house" | "building" | "commercial" | "land" | "parking" | null;
+          source_updated_at: string | null;
+          status: "pending" | "processing" | "ready" | "insufficient_data" | "failed";
+          updated_at: string;
+          value_p10_eur: number | null;
+          value_p50_eur: number | null;
+          value_p90_eur: number | null;
+        };
+        Insert: {
+          actionable?: boolean;
+          attempt_count?: number;
+          auction_sale_id: string;
+          comparable_count?: number;
+          computed_at?: string | null;
+          confidence_score?: number | null;
+          created_at?: string;
+          engine_kind?: "comparable_ensemble" | "hybrid_lightgbm" | null;
+          engine_version?: string | null;
+          error_message?: string | null;
+          estimate?: Json | null;
+          input_fingerprint: string;
+          last_started_at?: string | null;
+          model_version?: string | null;
+          model_version_id?: string | null;
+          next_refresh_at?: string;
+          segment?: "apartment" | "house" | "building" | "commercial" | "land" | "parking" | null;
+          source_updated_at?: string | null;
+          status?: "pending" | "processing" | "ready" | "insufficient_data" | "failed";
+          updated_at?: string;
+          value_p10_eur?: number | null;
+          value_p50_eur?: number | null;
+          value_p90_eur?: number | null;
+        };
+        Update: {
+          actionable?: boolean;
+          attempt_count?: number;
+          auction_sale_id?: string;
+          comparable_count?: number;
+          computed_at?: string | null;
+          confidence_score?: number | null;
+          created_at?: string;
+          engine_kind?: "comparable_ensemble" | "hybrid_lightgbm" | null;
+          engine_version?: string | null;
+          error_message?: string | null;
+          estimate?: Json | null;
+          input_fingerprint?: string;
+          last_started_at?: string | null;
+          model_version?: string | null;
+          model_version_id?: string | null;
+          next_refresh_at?: string;
+          segment?: "apartment" | "house" | "building" | "commercial" | "land" | "parking" | null;
+          source_updated_at?: string | null;
+          status?: "pending" | "processing" | "ready" | "insufficient_data" | "failed";
+          updated_at?: string;
+          value_p10_eur?: number | null;
+          value_p50_eur?: number | null;
+          value_p90_eur?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_sale_market_estimates_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: true;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_market_estimates_model_version_id_fkey";
+            columns: ["model_version_id"];
+            isOneToOne: false;
+            referencedRelation: "valuation_model_versions";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       auction_sales: {
         Row: {
           address: string | null;
@@ -855,6 +948,48 @@ export type Database = {
         };
         Relationships: [];
       };
+      dvf_market_statistics: {
+        Row: {
+          geography_code: string;
+          geography_label: string;
+          geography_level: "department" | "epci" | "commune";
+          imported_at: string;
+          mean_price_per_m2: number | null;
+          median_price_per_m2: number | null;
+          parent_code: string | null;
+          sales_count: number;
+          segment: "apartment" | "house" | "residential" | "commercial";
+          source_updated_at: string | null;
+          source_url: string;
+        };
+        Insert: {
+          geography_code: string;
+          geography_label: string;
+          geography_level: "department" | "epci" | "commune";
+          imported_at?: string;
+          mean_price_per_m2?: number | null;
+          median_price_per_m2?: number | null;
+          parent_code?: string | null;
+          sales_count: number;
+          segment: "apartment" | "house" | "residential" | "commercial";
+          source_updated_at?: string | null;
+          source_url: string;
+        };
+        Update: {
+          geography_code?: string;
+          geography_label?: string;
+          geography_level?: "department" | "epci" | "commune";
+          imported_at?: string;
+          mean_price_per_m2?: number | null;
+          median_price_per_m2?: number | null;
+          parent_code?: string | null;
+          sales_count?: number;
+          segment?: "apartment" | "house" | "residential" | "commercial";
+          source_updated_at?: string | null;
+          source_url?: string;
+        };
+        Relationships: [];
+      };
       dvf_transactions: {
         Row: {
           address: string | null;
@@ -955,6 +1090,150 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      valuation_estimates: {
+        Row: {
+          actionable: boolean;
+          auction_sale_id: string | null;
+          comparable_count: number;
+          confidence_score: number | null;
+          created_at: string;
+          engine_kind: string;
+          engine_version: string;
+          id: string;
+          input_snapshot: Json;
+          latency_ms: number | null;
+          market_cell: string | null;
+          model_version_id: string | null;
+          request_fingerprint: string | null;
+          result_snapshot: Json;
+          segment: string;
+          user_id: string | null;
+          value_p10_eur: number | null;
+          value_p50_eur: number | null;
+          value_p90_eur: number | null;
+        };
+        Insert: {
+          actionable?: boolean;
+          auction_sale_id?: string | null;
+          comparable_count?: number;
+          confidence_score?: number | null;
+          created_at?: string;
+          engine_kind: string;
+          engine_version: string;
+          id?: string;
+          input_snapshot?: Json;
+          latency_ms?: number | null;
+          market_cell?: string | null;
+          model_version_id?: string | null;
+          request_fingerprint?: string | null;
+          result_snapshot?: Json;
+          segment: string;
+          user_id?: string | null;
+          value_p10_eur?: number | null;
+          value_p50_eur?: number | null;
+          value_p90_eur?: number | null;
+        };
+        Update: {
+          actionable?: boolean;
+          auction_sale_id?: string | null;
+          comparable_count?: number;
+          confidence_score?: number | null;
+          created_at?: string;
+          engine_kind?: string;
+          engine_version?: string;
+          id?: string;
+          input_snapshot?: Json;
+          latency_ms?: number | null;
+          market_cell?: string | null;
+          model_version_id?: string | null;
+          request_fingerprint?: string | null;
+          result_snapshot?: Json;
+          segment?: string;
+          user_id?: string | null;
+          value_p10_eur?: number | null;
+          value_p50_eur?: number | null;
+          value_p90_eur?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "valuation_estimates_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "valuation_estimates_model_version_id_fkey";
+            columns: ["model_version_id"];
+            isOneToOne: false;
+            referencedRelation: "valuation_model_versions";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      valuation_model_versions: {
+        Row: {
+          activated_at: string | null;
+          artifact: Json;
+          calibration: Json;
+          created_at: string;
+          feature_names: string[];
+          framework: string;
+          id: string;
+          model_key: string;
+          retired_at: string | null;
+          segment: string;
+          status: string;
+          trained_at: string | null;
+          training_metrics: Json;
+          training_period_end: string | null;
+          training_period_start: string | null;
+          training_rows: number | null;
+          updated_at: string;
+          version: string;
+        };
+        Insert: {
+          activated_at?: string | null;
+          artifact?: Json;
+          calibration?: Json;
+          created_at?: string;
+          feature_names?: string[];
+          framework: string;
+          id?: string;
+          model_key?: string;
+          retired_at?: string | null;
+          segment: string;
+          status?: string;
+          trained_at?: string | null;
+          training_metrics?: Json;
+          training_period_end?: string | null;
+          training_period_start?: string | null;
+          training_rows?: number | null;
+          updated_at?: string;
+          version: string;
+        };
+        Update: {
+          activated_at?: string | null;
+          artifact?: Json;
+          calibration?: Json;
+          created_at?: string;
+          feature_names?: string[];
+          framework?: string;
+          id?: string;
+          model_key?: string;
+          retired_at?: string | null;
+          segment?: string;
+          status?: string;
+          trained_at?: string | null;
+          training_metrics?: Json;
+          training_period_end?: string | null;
+          training_period_start?: string | null;
+          training_rows?: number | null;
+          updated_at?: string;
+          version?: string;
+        };
+        Relationships: [];
       };
       tribunals: {
         Row: {
@@ -1542,6 +1821,7 @@ export type Database = {
             | "bid_ceiling.calculated"
             | "dvf.comparables_viewed"
             | "valuation.backtest_viewed"
+            | "valuation.estimated"
             | "workspace.audience_tracking_viewed"
             | "sale_changes.monitored"
             | "lawyer.referral_requested"
@@ -1569,6 +1849,7 @@ export type Database = {
             | "bid_ceiling.calculated"
             | "dvf.comparables_viewed"
             | "valuation.backtest_viewed"
+            | "valuation.estimated"
             | "workspace.audience_tracking_viewed"
             | "sale_changes.monitored"
             | "lawyer.referral_requested"
@@ -1596,6 +1877,7 @@ export type Database = {
             | "bid_ceiling.calculated"
             | "dvf.comparables_viewed"
             | "valuation.backtest_viewed"
+            | "valuation.estimated"
             | "workspace.audience_tracking_viewed"
             | "sale_changes.monitored"
             | "lawyer.referral_requested"

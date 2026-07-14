@@ -42,13 +42,14 @@ export type AdminOperationalReadinessResponse = {
   webhookUrl: string | null;
 };
 
-export const EXPECTED_LATEST_MIGRATION_VERSION = "20260710083858";
+export const EXPECTED_LATEST_MIGRATION_VERSION = "20260713164324";
 export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v6_display";
 
 const EXPECTED_CRONS = [
   "/api/cron/smart-alerts",
   "/api/cron/alert-notifications",
   "/api/cron/sale-change-monitor",
+  "/api/cron/precompute-valuations",
 ] as const;
 
 export async function getAdminOperationalReadiness(

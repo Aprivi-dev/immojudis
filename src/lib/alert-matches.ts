@@ -5,12 +5,12 @@ import { alertMatchesSale } from "@/lib/alerts";
 import { createAlertNotificationsForMatches } from "@/lib/alert-notifications";
 import { extractDpe } from "@/lib/dpe";
 import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
-import { getMarketEstimate } from "@/lib/market.functions";
 import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
+import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import { cleanSaleTitle } from "@/lib/sale-title";
-import { getSaleSurface } from "@/lib/surface";
+import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import type { AuctionSale, UserAlert, UserWatchedZone } from "@/lib/types";
 import { normalizeWatchedZone } from "@/lib/watched-zones";
 
@@ -567,11 +567,14 @@ async function getCachedMarketDiscount(
 }
 
 async function estimateMarketDiscountPct(sale: AuctionSale): Promise<number | null> {
-  const surface = getSaleSurface(sale).value;
+  const marketSurfaces = getMarketValuationSurfaces(sale);
+  const surface = marketSurfaces.builtSurfaceM2 ?? marketSurfaces.landSurfaceM2;
   const startingPrice = sale.starting_price_eur;
   if (
-    sale.latitude == null ||
-    sale.longitude == null ||
+    (!sale.address &&
+      !sale.city &&
+      !sale.postal_code &&
+      (sale.latitude == null || sale.longitude == null)) ||
     surface == null ||
     surface <= 0 ||
     startingPrice == null ||
@@ -581,15 +584,12 @@ async function estimateMarketDiscountPct(sale: AuctionSale): Promise<number | nu
   }
 
   try {
-    const response = await getMarketEstimate({
-      lat: sale.latitude,
-      lng: sale.longitude,
-      propertyType: sale.property_type,
-      surfaceM2: surface,
-    });
-    const medianPricePerM2 = response.estimate?.medianPricePerM2;
-    if (!medianPricePerM2) return null;
-    const estimatedValue = medianPricePerM2 * surface;
+    const estimate = await getPrecomputedMarketEstimate(sale.id);
+    if (!estimate?.actionable) return null;
+    const estimatedValue =
+      estimate.estimatedValueEur ??
+      (estimate.medianPricePerM2 ? estimate.medianPricePerM2 * surface : null);
+    if (!estimatedValue || estimatedValue <= 0) return null;
     return roundPercent(((estimatedValue - startingPrice) / estimatedValue) * 100);
   } catch {
     return null;

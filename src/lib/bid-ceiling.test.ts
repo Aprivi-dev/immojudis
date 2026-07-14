@@ -76,6 +76,7 @@ describe("bid ceiling analysis", () => {
       },
       input: bidCeilingRequestSchema.parse({
         saleId: "7d335032-e935-4550-9347-ed22b0f63449",
+        // Ancien profil conservé pour vérifier sa migration vers Prudent.
         scenario: "equilibre",
         simulatedBidEur: 135_000,
         userBudgetEur: 230_000,
@@ -98,12 +99,9 @@ describe("bid ceiling analysis", () => {
       medianPricePerM2: 3_000,
       sampleSize: 18,
     });
-    expect(analysis.scenarios.map((scenario) => scenario.key)).toEqual([
-      "prudent",
-      "equilibre",
-      "offensif",
-    ]);
-    expect(analysis.selected.key).toBe("equilibre");
+    expect(analysis.scenarios.map((scenario) => scenario.key)).toEqual(["prudent", "offensif"]);
+    expect(analysis.selected.key).toBe("prudent");
+    expect(analysis.selected.result.safetyDiscountPct).toBe(8);
     expect(analysis.selected.result.available).toBe(true);
     expect(analysis.budget.selectedMaxBidEur).toBeGreaterThan(0);
     expect(analysis.budget.withinSelectedCeiling).toBe(false);
@@ -130,6 +128,12 @@ describe("bid ceiling analysis", () => {
       advancedScenarios: "locked",
     });
     expect(analysis.scenarios).toHaveLength(1);
-    expect(analysis.scenarios[0].key).toBe("equilibre");
+    expect(analysis.scenarios[0].key).toBe("prudent");
+    expect(analysis.scenarios[0].result.safetyDiscountPct).toBe(8);
+    expect(analysis.assumptions).toMatchObject({
+      worksEur: 40_000,
+      worksSource: "default_refresh",
+      worksScenario: "rafraichissement",
+    });
   });
 });

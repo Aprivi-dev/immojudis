@@ -134,4 +134,31 @@ describe("dvf comparable engine", () => {
     });
     expect(analysis.summary).toContain("Aucun comparable DVF exploitable");
   });
+
+  it("does not label missing subject surface as surface matched", () => {
+    const analysis = buildDvfComparableAnalysis({
+      subject: { surfaceM2: null, propertyType: "Appartement" },
+      candidates: [candidate("a"), candidate("b"), candidate("c"), candidate("d")],
+      options: { now: NOW, maxRadiusM: 1_000 },
+    });
+
+    expect(analysis.comparableMode).toBe("nearby_type_only");
+  });
+
+  it("never mixes property types in the sparse fallback", () => {
+    const analysis = buildDvfComparableAnalysis({
+      subject: { surfaceM2: 100, propertyType: "Maison" },
+      candidates: [
+        candidate("house", { propertyType: "Maison", surfaceM2: 105 }),
+        candidate("flat-1"),
+        candidate("flat-2"),
+        candidate("flat-3"),
+        candidate("flat-4"),
+      ],
+      options: { now: NOW, maxRadiusM: 1_000 },
+    });
+
+    expect(analysis.sampleSize).toBe(1);
+    expect(analysis.comparables.every((item) => item.typeMatch)).toBe(true);
+  });
 });

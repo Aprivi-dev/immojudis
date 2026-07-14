@@ -2,18 +2,20 @@ import { describe, expect, it } from "vitest";
 import {
   computeAcquisitionCosts,
   computeMarketCeiling,
+  computeRecommendedCeilings,
   computeRentabilityScore,
   estimateWorksBudget,
+  MARKET_CEILING_SCENARIOS,
   WORKS_SCENARIOS,
 } from "./profitability";
 
 describe("estimateWorksBudget", () => {
   it("exposes the three reference prices per square metre", () => {
-    expect(WORKS_SCENARIOS.map((scenario) => scenario.pricePerM2)).toEqual([800, 1_440, 1_850]);
+    expect(WORKS_SCENARIOS.map((scenario) => scenario.pricePerM2)).toEqual([500, 1_440, 1_850]);
   });
 
   it("reproduces the reference budgets from the renovation examples", () => {
-    expect(estimateWorksBudget(25, "rafraichissement")).toBe(20_000);
+    expect(estimateWorksBudget(25, "rafraichissement")).toBe(12_500);
     expect(estimateWorksBudget(65, "confort")).toBe(93_600);
     expect(estimateWorksBudget(120, "premium")).toBe(222_000);
   });
@@ -47,11 +49,20 @@ describe("computeAcquisitionCosts", () => {
 });
 
 describe("computeMarketCeiling", () => {
+  it("exposes only the Prudent 8% and Offensif 4% profiles", () => {
+    expect(
+      MARKET_CEILING_SCENARIOS.map((scenario) => [scenario.key, scenario.safetyDiscountPct]),
+    ).toEqual([
+      ["prudent", 8],
+      ["offensif", 4],
+    ]);
+  });
+
   it("returns unavailable when surface is missing", () => {
     const result = computeMarketCeiling({
       surface: null,
       price: 100_000,
-      scenario: "equilibre",
+      scenario: "prudent",
       medianPricePerM2: 3_000,
     });
 
@@ -70,30 +81,26 @@ describe("computeMarketCeiling", () => {
 
     expect(result.available).toBe(true);
     expect(result.basis).toBe("manual");
-    expect(result.safetyDiscountPct).toBe(16);
+    expect(result.safetyDiscountPct).toBe(8);
     expect(result.marketReferencePricePerM2).toBe(2_800);
   });
 
   it("deducts a selected works scenario from the auction ceiling", () => {
-    const works = estimateWorksBudget(50, "rafraichissement");
-    const withoutWorks = computeMarketCeiling({
+    const ceilings = computeRecommendedCeilings({
       surface: 50,
       price: 90_000,
-      works: 0,
-      scenario: "equilibre",
+      scenario: "prudent",
       medianPricePerM2: 3_000,
-    });
-    const withWorks = computeMarketCeiling({
-      surface: 50,
-      price: 90_000,
-      works,
-      scenario: "equilibre",
-      medianPricePerM2: 3_000,
+      p25PricePerM2: 2_700,
     });
 
-    expect(withWorks.simulated.works).toBe(40_000);
-    expect(withWorks.maxBid).toBeLessThan(withoutWorks.maxBid);
-    expect(withWorks.maxBid).toBeLessThanOrEqual(withoutWorks.maxBid - 37_000);
+    expect(ceilings.refreshWorksBudget).toBe(25_000);
+    expect(ceilings.withoutWorks.simulated.works).toBe(0);
+    expect(ceilings.withRefreshWorks.simulated.works).toBe(25_000);
+    expect(ceilings.withRefreshWorks.maxBid).toBeLessThan(ceilings.withoutWorks.maxBid);
+    expect(ceilings.withRefreshWorks.maxBid).toBeLessThanOrEqual(
+      ceilings.withoutWorks.maxBid - 23_000,
+    );
   });
 });
 

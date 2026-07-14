@@ -150,7 +150,11 @@ function qualityCheckpoint(estimate: MarketEstimate): ValuationCheckpoint {
 }
 
 function modeCheckpoint(estimate: MarketEstimate): ValuationCheckpoint {
-  if (estimate.comparableMode === "surface_matched") {
+  if (
+    estimate.comparableMode === "surface_matched" ||
+    estimate.comparableMode === "surface_land_matched" ||
+    estimate.comparableMode === "land_matched"
+  ) {
     return {
       key: "comparable_mode",
       label: "Mode de comparaison",
@@ -159,7 +163,10 @@ function modeCheckpoint(estimate: MarketEstimate): ValuationCheckpoint {
       action: "Relire les transactions retenues avant validation finale.",
     };
   }
-  if (estimate.comparableMode === "nearby_type_only") {
+  if (
+    estimate.comparableMode === "nearby_type_only" ||
+    estimate.comparableMode === "same_type_expanded"
+  ) {
     return {
       key: "comparable_mode",
       label: "Mode de comparaison",

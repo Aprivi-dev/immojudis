@@ -5,7 +5,9 @@ import {
   computeAcquisitionCosts,
   computeMarketCeiling,
   computeRentabilityScore,
+  DEFAULT_MARKET_CEILING_SCENARIO,
   DEFAULTS,
+  estimateWorksBudget,
   MARKET_CEILING_SCENARIOS,
   marketCeilingVerdict,
   type MarketCeilingResult,
@@ -14,13 +16,17 @@ import {
 } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
-import { getMarketEstimate, type MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.functions";
+import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { AuctionSale } from "@/lib/types";
 
-const scenarioSchema = z.enum(["prudent", "equilibre", "offensif", "custom"]);
+const scenarioSchema = z.preprocess(
+  (value) => (value === "equilibre" ? DEFAULT_MARKET_CEILING_SCENARIO : value),
+  z.enum(["prudent", "offensif", "custom"]),
+);
 
 export const bidCeilingRequestSchema = z.object({
   saleId: z.string().uuid(),
@@ -28,7 +34,7 @@ export const bidCeilingRequestSchema = z.object({
   userBudgetEur: z.number().finite().min(0).nullable().optional(),
   worksEur: z.number().finite().min(0).nullable().optional(),
   fptEur: z.number().finite().min(0).nullable().optional(),
-  scenario: scenarioSchema.default("equilibre"),
+  scenario: scenarioSchema.default(DEFAULT_MARKET_CEILING_SCENARIO),
   customSafetyDiscountPct: z.number().finite().min(0).max(40).nullable().optional(),
   manualMarketPricePerM2: z.number().finite().min(0).nullable().optional(),
   monthlyRentEur: z.number().finite().min(0).nullable().optional(),
@@ -63,12 +69,17 @@ export type BidCeilingSaleSnapshot = {
 export type BidCeilingMarketReference = {
   source: "dvf" | "manual" | "missing";
   medianPricePerM2: number | null;
+  p10PricePerM2: number | null;
   p25PricePerM2: number | null;
   p75PricePerM2: number | null;
+  p90PricePerM2: number | null;
   manualMarketPricePerM2: number | null;
   sampleSize: number | null;
   radiusM: number | null;
   qualityLabel: string | null;
+  engineVersion: string | null;
+  engineKind: string | null;
+  modelVersion: string | null;
 };
 
 export type BidCeilingScenarioAnalysis = {
@@ -93,6 +104,8 @@ export type BidCeilingBudgetAnalysis = {
 export type BidCeilingAssumptions = {
   simulatedBidEur: number;
   worksEur: number;
+  worksSource: "user" | "default_refresh";
+  worksScenario: "rafraichissement" | null;
   fptEur: number;
   scenario: BidCeilingRequestPayload["scenario"];
   customSafetyDiscountPct: number | null;
@@ -164,7 +177,8 @@ export function buildBidCeilingAnalysis({
 }): BidCeilingAnalysisResponse {
   const surface = getSaleSurface(sale);
   const simulatedBidEur = Math.max(0, input.simulatedBidEur ?? sale.starting_price_eur ?? 0);
-  const worksEur = Math.max(0, input.worksEur ?? DEFAULTS.works);
+  const defaultWorksEur = estimateWorksBudget(surface.value, "rafraichissement");
+  const worksEur = Math.max(0, input.worksEur ?? defaultWorksEur);
   const fptEur = Math.max(0, input.fptEur ?? DEFAULTS.fpt);
   const scenarioKeys = scenarioKeysForPlan(plan, input.scenario);
   const marketReference = buildMarketReference(input, marketEstimate);
@@ -180,8 +194,10 @@ export function buildBidCeilingAnalysis({
       customSafetyDiscountPct: input.customSafetyDiscountPct ?? undefined,
       manualMarketPricePerM2: input.manualMarketPricePerM2,
       medianPricePerM2: marketEstimate?.medianPricePerM2,
+      p10PricePerM2: marketEstimate?.p10PricePerM2,
       p25PricePerM2: marketEstimate?.p25PricePerM2,
       p75PricePerM2: marketEstimate?.p75PricePerM2,
+      p90PricePerM2: marketEstimate?.p90PricePerM2,
     });
     return {
       key: scenario,
@@ -230,6 +246,8 @@ export function buildBidCeilingAnalysis({
     assumptions: {
       simulatedBidEur,
       worksEur,
+      worksSource: input.worksEur == null ? "default_refresh" : "user",
+      worksScenario: input.worksEur == null ? "rafraichissement" : null,
       fptEur,
       scenario: input.scenario,
       customSafetyDiscountPct: input.customSafetyDiscountPct ?? null,
@@ -268,7 +286,7 @@ function assertBidCeilingInputAllowed(
 ) {
   if (featureIncluded(plan.plan, "property.advancedBidScenarios")) return;
   const usesAdvancedScenario =
-    input.scenario !== "equilibre" || input.customSafetyDiscountPct != null;
+    input.scenario !== DEFAULT_MARKET_CEILING_SCENARIO || input.customSafetyDiscountPct != null;
   const usesAdvancedAssumptions =
     input.worksEur != null ||
     input.fptEur != null ||
@@ -305,18 +323,8 @@ async function resolveMarketEstimate(
   input: BidCeilingRequestPayload,
 ): Promise<MarketEstimate | null> {
   if (input.manualMarketPricePerM2) return null;
-  const surface = getSaleSurface(sale).value;
-  if (sale.latitude == null || sale.longitude == null || surface == null || surface <= 0) {
-    return null;
-  }
-
-  const response = await getMarketEstimate({
-    lat: sale.latitude,
-    lng: sale.longitude,
-    propertyType: sale.property_type,
-    surfaceM2: surface,
-  });
-  return response.estimate;
+  const estimate = await getPrecomputedMarketEstimate(sale.id);
+  return estimate?.actionable ? estimate : null;
 }
 
 function bidCeilingPlanAccess(plan: { plan: PlanCode; label: string }): BidCeilingPlanAccess {
@@ -346,12 +354,17 @@ function buildMarketReference(
   return {
     source: input.manualMarketPricePerM2 ? "manual" : marketEstimate ? "dvf" : "missing",
     medianPricePerM2: marketEstimate?.medianPricePerM2 ?? null,
+    p10PricePerM2: marketEstimate?.p10PricePerM2 ?? null,
     p25PricePerM2: marketEstimate?.p25PricePerM2 ?? null,
     p75PricePerM2: marketEstimate?.p75PricePerM2 ?? null,
+    p90PricePerM2: marketEstimate?.p90PricePerM2 ?? null,
     manualMarketPricePerM2: input.manualMarketPricePerM2 ?? null,
     sampleSize: marketEstimate?.sampleSize ?? null,
     radiusM: marketEstimate?.radiusM ?? null,
     qualityLabel: marketEstimate?.qualityLabel ?? null,
+    engineVersion: marketEstimate?.engineVersion ?? null,
+    engineKind: marketEstimate?.engineKind ?? null,
+    modelVersion: marketEstimate?.modelVersion ?? null,
   };
 }
 

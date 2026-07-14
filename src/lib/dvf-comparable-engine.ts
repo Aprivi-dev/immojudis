@@ -3,6 +3,7 @@ export type DvfComparableCandidate = {
   saleDate: string;
   totalPriceEur: number | null;
   surfaceM2: number | null;
+  landSurfaceM2?: number | null;
   pricePerM2?: number | null;
   propertyType: string | null;
   distanceM?: number | null;
@@ -16,6 +17,7 @@ export type DvfComparableCandidate = {
 
 export type DvfComparableSubject = {
   surfaceM2: number | null;
+  landSurfaceM2?: number | null;
   propertyType: string | null;
   startingPriceEur?: number | null;
 };
@@ -295,13 +297,15 @@ function selectComparableScope({
     const inRadius = candidates.filter(
       (candidate) => candidate.distanceM == null || candidate.distanceM <= radiusM,
     );
-    const strict = inRadius.filter(
-      (candidate) =>
-        candidate.typeMatch &&
-        inSurfaceWindow(candidate.surfaceM2, surfaceWindow.minM2, surfaceWindow.maxM2),
-    );
-    if (strict.length >= minSampleSize) {
-      return { radiusM, mode: "surface_matched", candidates: strict };
+    if (surfaceWindow.minM2 != null && surfaceWindow.maxM2 != null) {
+      const strict = inRadius.filter(
+        (candidate) =>
+          candidate.typeMatch &&
+          inSurfaceWindow(candidate.surfaceM2, surfaceWindow.minM2, surfaceWindow.maxM2),
+      );
+      if (strict.length >= minSampleSize) {
+        return { radiusM, mode: "surface_matched", candidates: strict };
+      }
     }
   }
 
@@ -316,7 +320,8 @@ function selectComparableScope({
   }
 
   const fallback = candidates.filter(
-    (candidate) => candidate.distanceM == null || candidate.distanceM <= maxRadiusM,
+    (candidate) =>
+      candidate.typeMatch && (candidate.distanceM == null || candidate.distanceM <= maxRadiusM),
   );
   if (fallback.length > 0)
     return { radiusM: maxRadiusM, mode: "expanded_fallback", candidates: fallback };

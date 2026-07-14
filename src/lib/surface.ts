@@ -11,7 +11,20 @@ type SurfaceSaleLike = {
   habitable_surface_m2?: number | null;
   carrez_surface_m2?: number | null;
   land_surface_m2?: number | null;
+  app_surface_kind?: string | null;
+  surface_scope?: string | null;
   rooms_count?: number | null;
+  bedrooms_count?: number | null;
+};
+
+export type MarketValuationSurfaces = {
+  builtSurfaceM2: number | null;
+  landSurfaceM2: number | null;
+  builtSurfaceEstimated: boolean;
+  builtSurfaceAssumption: string | null;
+  builtSurfaceUncertaintyPct: number | null;
+  surfaceKind: string | null;
+  surfaceScope: string | null;
 };
 
 export type SaleSurface = {
@@ -88,6 +101,82 @@ export function getSaleSurface(sale: SurfaceSaleLike): SaleSurface {
     metricLabel: "Surface",
     kind: "none",
     helperText: null,
+  };
+}
+
+export function getMarketValuationSurfaces(sale: SurfaceSaleLike): MarketValuationSurfaces {
+  const landSurfaceM2 = positiveSurface(sale.land_surface_m2);
+  const type = typeText(sale);
+  const landOnly =
+    sale.app_surface_kind === "land" ||
+    sale.surface_scope === "land" ||
+    /\b(land|terrain|parcelle)\b/.test(type);
+  const rawRecordedBuiltSurface = landOnly ? null : getRecordedSurface(sale);
+  const recordedBuiltSurface =
+    rawRecordedBuiltSurface != null && rawRecordedBuiltSurface >= 9
+      ? rawRecordedBuiltSurface
+      : null;
+  const estimatedBuiltSurface =
+    landOnly || recordedBuiltSurface ? null : estimateBuiltSurface(sale);
+  return {
+    builtSurfaceM2: recordedBuiltSurface ?? estimatedBuiltSurface?.value ?? null,
+    landSurfaceM2: landSurfaceM2 ?? (landOnly ? positiveSurface(sale.app_surface_m2) : null),
+    builtSurfaceEstimated: estimatedBuiltSurface != null,
+    builtSurfaceAssumption: estimatedBuiltSurface?.assumption ?? null,
+    builtSurfaceUncertaintyPct: estimatedBuiltSurface?.uncertaintyPct ?? null,
+    surfaceKind: landOnly ? "land" : (sale.app_surface_kind ?? null),
+    surfaceScope: landOnly ? "land" : (sale.surface_scope ?? null),
+  };
+}
+
+function estimateBuiltSurface(
+  sale: SurfaceSaleLike,
+): { value: number; assumption: string; uncertaintyPct: number } | null {
+  const type = typeText(sale);
+  const apartment = isApartmentSale(sale) || /\b(studio|studette)\b/.test(type);
+  const house = /\b(maison|house|villa|pavillon)\b/.test(type);
+  const buildingOrActivity = /\b(building|immeuble|commercial|commerce|local|mixed|mixte)\b/.test(
+    type,
+  );
+  if (!apartment && !house && !buildingOrActivity) return null;
+
+  const rooms =
+    positiveSurface(sale.rooms_count) ??
+    (positiveSurface(sale.bedrooms_count) != null
+      ? positiveSurface(sale.bedrooms_count)! + 1
+      : null);
+  if (rooms == null) {
+    if (isStudioSale(sale)) {
+      return {
+        value: STUDIO_ESTIMATED_SURFACE_M2,
+        assumption: "surface provisoire de 20 m² retenue pour un studio sans surface publiée",
+        uncertaintyPct: 20,
+      };
+    }
+    const value = apartment
+      ? 50
+      : house
+        ? 100
+        : /immeuble|building|mixed|mixte/.test(type)
+          ? 250
+          : 80;
+    return {
+      value,
+      assumption: `surface provisoire de ${value} m² retenue faute de surface et de nombre de pièces publiés`,
+      uncertaintyPct: 45,
+    };
+  }
+
+  const roundedRooms = Math.max(1, Math.round(rooms));
+  const value = apartment
+    ? [20, 42, 62, 82, 105][Math.min(4, roundedRooms - 1)] + Math.max(0, roundedRooms - 5) * 20
+    : house
+      ? [45, 60, 80, 100, 120][Math.min(4, roundedRooms - 1)] + Math.max(0, roundedRooms - 5) * 22
+      : roundedRooms * 28;
+  return {
+    value,
+    assumption: `surface provisoire de ${value} m² estimée à partir de ${roundedRooms} pièce${roundedRooms > 1 ? "s" : ""}`,
+    uncertaintyPct: apartment ? 25 : house ? 30 : 35,
   };
 }
 

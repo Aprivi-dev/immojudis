@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getDisplaySurface, getSaleSurface, STUDIO_ESTIMATED_SURFACE_M2 } from "./surface";
+import {
+  getDisplaySurface,
+  getMarketValuationSurfaces,
+  getSaleSurface,
+  STUDIO_ESTIMATED_SURFACE_M2,
+} from "./surface";
 
 describe("getSaleSurface", () => {
   it("prefers app surface over habitable and carrez surfaces", () => {
@@ -30,5 +35,59 @@ describe("getDisplaySurface", () => {
     expect(surface.value).toBe(720);
     expect(surface.metricLabel).toBe("Terrain");
     expect(surface.kind).toBe("land");
+  });
+});
+
+describe("getMarketValuationSurfaces", () => {
+  it("never exposes a land application surface as built area", () => {
+    expect(
+      getMarketValuationSurfaces({
+        property_type: "land",
+        app_surface_m2: 800,
+        app_surface_kind: "land",
+        surface_scope: "land",
+        land_surface_m2: 800,
+      }),
+    ).toEqual({
+      builtSurfaceM2: null,
+      landSurfaceM2: 800,
+      builtSurfaceEstimated: false,
+      builtSurfaceAssumption: null,
+      builtSurfaceUncertaintyPct: null,
+      surfaceKind: "land",
+      surfaceScope: "land",
+    });
+  });
+
+  it("estimates a missing apartment surface from the room count", () => {
+    expect(
+      getMarketValuationSurfaces({
+        property_type: "apartment",
+        rooms_count: 3,
+      }),
+    ).toMatchObject({
+      builtSurfaceM2: 62,
+      builtSurfaceEstimated: true,
+    });
+  });
+
+  it("estimates a missing house surface from bedrooms when rooms are absent", () => {
+    expect(
+      getMarketValuationSurfaces({
+        property_type: "house",
+        bedrooms_count: 3,
+      }),
+    ).toMatchObject({
+      builtSurfaceM2: 100,
+      builtSurfaceEstimated: true,
+    });
+  });
+
+  it("uses a wide, explicit fallback when no surface or room count is published", () => {
+    expect(getMarketValuationSurfaces({ property_type: "house" })).toMatchObject({
+      builtSurfaceM2: 100,
+      builtSurfaceEstimated: true,
+      builtSurfaceUncertaintyPct: 45,
+    });
   });
 });
