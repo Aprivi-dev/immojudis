@@ -4,6 +4,7 @@ import json
 import logging
 import time
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -219,7 +220,11 @@ def get_supabase_client() -> Client | None:
     return create_client(str(url), str(key))
 
 
-def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
+def upsert_sales_to_supabase(
+    sales: list[AuctionSale],
+    *,
+    refresh_last_seen: bool = True,
+) -> int:
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
@@ -232,7 +237,7 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
     for sale in sales:
         data = sale.to_storage_dict(exclude_none=False)
         row = {column: data.get(column) for column in UPSERT_COLUMNS}
-        row["last_seen_at"] = now
+        row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
         row["updated_at"] = now
         payload.append(row)
     if not payload:
@@ -241,14 +246,26 @@ def upsert_sales_to_supabase(sales: list[AuctionSale]) -> int:
         try:
             _postgres_upsert(str(db_url), "auction_sales", payload, on_conflict="source_url")
             _delete_secondary_sale_rows_with_postgres(str(db_url), sales)
-            _sync_normalized_sale_tables_with_rest(str(url), str(key), sales, now)
+            _sync_normalized_sale_tables_with_rest(
+                str(url),
+                str(key),
+                sales,
+                now,
+                refresh_last_seen=refresh_last_seen,
+            )
             _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
             return len(payload)
         except Exception as exc:
             LOGGER.warning("Direct Postgres auction_sales sync failed; falling back to REST: %s", exc)
     _upsert_with_rest(str(url), str(key), payload)
     _delete_secondary_sale_rows(str(url), str(key), sales)
-    _sync_normalized_sale_tables_with_rest(str(url), str(key), sales, now)
+    _sync_normalized_sale_tables_with_rest(
+        str(url),
+        str(key),
+        sales,
+        now,
+        refresh_last_seen=refresh_last_seen,
+    )
     _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
     return len(payload)
 
@@ -1053,6 +1070,7 @@ DATA_REFRESH_SALE_SELECT = ",".join(
         "raw_payload",
     )
 )
+KNOWN_SALE_DETAIL_PAGE_SIZE = 100
 
 
 def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
@@ -1101,26 +1119,26 @@ def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
                 endpoint,
                 params={
                     "select": KNOWN_SALE_DETAIL_SELECT,
-                    "limit": "1000",
+                    "limit": str(KNOWN_SALE_DETAIL_PAGE_SIZE),
                     "offset": str(offset),
                 },
                 headers=_rest_headers(str(key), prefer="count=none"),
                 timeout=30,
             )
             if response.is_error:
-                LOGGER.warning("Could not fetch known sale details: %s", response.text[:200])
-                break
+                raise RuntimeError(
+                    f"Could not fetch known sale details ({response.status_code}): {response.text[:200]}"
+                )
             rows = response.json()
         except httpx.HTTPError as exc:
-            LOGGER.warning("Known sale detail lookup failed: %s", exc)
-            break
+            raise RuntimeError(f"Known sale detail lookup failed: {exc}") from exc
         for row in rows:
             row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"))
             for source_url in _known_source_urls(row):
                 details.setdefault(source_url, row)
-        if len(rows) < 1000:
+        if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
             break
-        offset += 1000
+        offset += KNOWN_SALE_DETAIL_PAGE_SIZE
     return details
 
 
@@ -1412,16 +1430,29 @@ def _sync_normalized_sale_tables_with_rest(
     api_key: str,
     sales: list[AuctionSale],
     now: str,
+    *,
+    refresh_last_seen: bool = True,
 ) -> None:
-    properties = [_timestamped(row, now) for row in _property_rows_for_sales(sales, now)]
-    judicial_sales = [_timestamped(row, now) for row in _judicial_sale_rows_for_sales(sales, now)]
+    properties = [
+        _timestamped(row, now)
+        for row in _property_rows_for_sales(sales, now, refresh_last_seen=refresh_last_seen)
+    ]
+    judicial_sales = [
+        _timestamped(row, now)
+        for row in _judicial_sale_rows_for_sales(sales, now, refresh_last_seen=refresh_last_seen)
+    ]
     if properties:
         _postgrest_upsert(supabase_url, api_key, "properties", properties, on_conflict="source_url")
     if judicial_sales:
         _postgrest_upsert(supabase_url, api_key, "judicial_sales", judicial_sales, on_conflict="source_url")
 
 
-def _property_rows_for_sales(sales: list[AuctionSale], now: str) -> list[dict[str, object]]:
+def _property_rows_for_sales(
+    sales: list[AuctionSale],
+    now: str,
+    *,
+    refresh_last_seen: bool = True,
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for sale in sales:
         data = sale.to_storage_dict(exclude_none=False)
@@ -1429,12 +1460,17 @@ def _property_rows_for_sales(sales: list[AuctionSale], now: str) -> list[dict[st
         row["primary_source"] = row.get("primary_source") or row.get("source_name")
         row["source_urls"] = _normalized_source_urls(sale, data)
         row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
-        row["last_seen_at"] = now
+        row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
         rows.append(row)
     return rows
 
 
-def _judicial_sale_rows_for_sales(sales: list[AuctionSale], now: str) -> list[dict[str, object]]:
+def _judicial_sale_rows_for_sales(
+    sales: list[AuctionSale],
+    now: str,
+    *,
+    refresh_last_seen: bool = True,
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for sale in sales:
         data = sale.to_storage_dict(exclude_none=False)
@@ -1451,7 +1487,7 @@ def _judicial_sale_rows_for_sales(sales: list[AuctionSale], now: str) -> list[di
         row["score_factors"] = data.get("score_factors") if isinstance(data.get("score_factors"), list) else []
         row["quality_flags"] = data.get("quality_flags") if isinstance(data.get("quality_flags"), list) else []
         row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
-        row["last_seen_at"] = now
+        row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
         rows.append(row)
     return rows
 
@@ -1723,6 +1759,8 @@ def _timestamped(row: dict[str, object], now: str) -> dict[str, object]:
 def _sanitize_postgrest_payload(value: Any) -> Any:
     if isinstance(value, str):
         return value.replace("\x00", "")
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
     if isinstance(value, list):
         return [_sanitize_postgrest_payload(item) for item in value]
     if isinstance(value, dict):

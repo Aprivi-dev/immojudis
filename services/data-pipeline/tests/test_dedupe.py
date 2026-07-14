@@ -250,3 +250,17 @@ def test_dedupe_keeps_richest_source_for_cross_source_duplicate() -> None:
     assert len(result) == 1
     assert result[0].source_url == "https://www.vench.fr/vente-1-maison.html"
     assert "https://avoventes.fr/enchere/1" in result[0].source_urls
+
+
+def test_dedupe_sanitizes_documents_hydrated_directly_from_storage() -> None:
+    sale = _sale("https://avoventes.fr/enchere/document-cleanup")
+    sale.documents = [
+        {"label": "document", "url": "https://www.licitor.com/"},
+        {"label": "PV descriptif", "url": "https://example.test/pv.pdf"},
+    ]
+
+    result = dedupe_sales([sale])
+
+    assert result[0].documents == [
+        {"label": "PV descriptif", "url": "https://example.test/pv.pdf"}
+    ]

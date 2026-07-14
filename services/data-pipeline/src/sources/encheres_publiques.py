@@ -139,7 +139,7 @@ def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, An
                 "property_type": lot.get("sous_categorie") or lot.get("nom"),
                 "title": lot.get("nom"),
                 "description": lot.get("criteres_resume") or event.get("titre"),
-                "surface_m2": _extract_surface(lot.get("criteres_resume"), lot.get("nom")),
+                "surface_m2": _extract_surface(lot.get("nom"), lot.get("criteres_resume")),
                 "starting_price_eur": lot.get("mise_a_prix"),
                 "adjudication_price_eur": adjudication_price,
                 "sale_date": _timestamp_to_iso(lot.get("ouverture_date") or event.get("ouverture_date")),
@@ -179,7 +179,7 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
     visit_dates = _extract_visit_dates(state, lot)
     source_blocks = _extract_source_blocks(lot)
     raw_text = _build_detail_raw_text(lot, address, organizer, event, visit_dates, source_blocks)
-    surface = lot.get("critere_surface_habitable") or _extract_surface(lot.get("criteres_resume"), lot.get("nom"))
+    surface = _resolve_built_surface(lot)
     title = _plain_text(lot.get("nom"))
     adjudication_price = lot.get("prix_adjuge")
 
@@ -195,7 +195,7 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
         "title": title,
         "description": description,
         "surface_m2": surface,
-        "habitable_surface_m2": lot.get("critere_surface_habitable") or surface,
+        "habitable_surface_m2": surface,
         "carrez_surface_m2": surface if _mentions_carrez(title, description) else None,
         "land_surface_m2": lot.get("critere_surface_terrain"),
         "rooms_count": lot.get("critere_nombre_de_pieces"),
@@ -402,6 +402,21 @@ def _extract_surface(*values: object) -> str | None:
     match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
     surface = parse_surface(match.group(1)) if match else None
     return str(surface) if surface is not None else None
+
+
+def _resolve_built_surface(lot: dict[str, Any]) -> str | None:
+    structured = parse_surface(lot.get("critere_surface_habitable"))
+    title_surface = parse_surface(_extract_surface(lot.get("nom")))
+    description_surface = parse_surface(_extract_surface(lot.get("description")))
+
+    # Encheres-Publiques can expose a malformed criterion while the editorial
+    # title and description both carry the correct built surface.
+    if title_surface is not None and title_surface == description_surface:
+        return str(title_surface)
+    if structured is not None:
+        return str(structured)
+    fallback = title_surface or description_surface or parse_surface(_extract_surface(lot.get("criteres_resume")))
+    return str(fallback) if fallback is not None else None
 
 
 def _extract_visit_dates(state: dict[str, Any], lot: dict[str, Any]) -> list[str]:

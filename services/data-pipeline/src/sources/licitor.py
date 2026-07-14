@@ -723,7 +723,7 @@ def _is_disallowed_document_url(url: str) -> bool:
 
 def _extract_surface_m2(text: str) -> str | None:
     # Première surface bâtie plausible mentionnée dans la page (en m²).
-    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b", text, re.I)
+    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*(?:m\s*(?:²|2)|²)\b", text, re.I)
     return _normalize_surface_number(match.group(1)) if match else None
 
 

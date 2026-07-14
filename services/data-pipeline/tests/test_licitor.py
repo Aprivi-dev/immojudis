@@ -209,6 +209,32 @@ def test_parse_licitor_detail_html_keeps_thousands_surface() -> None:
     assert sale.surface_m2 == Decimal("2464.70")
 
 
+def test_parse_licitor_detail_html_accepts_square_symbol_without_m() -> None:
+    html = """
+    <h1>Annonce n°109135 : un bâtiment à usage de bureaux à Vieillevigne</h1>
+    <p>Tribunal Judiciaire de Nantes</p>
+    <p>Vente aux enchères publiques</p>
+    <p>jeudi 3 septembre 2026 à 10h</p>
+    <h2>Un bâtiment à usage de bureaux</h2>
+    <h3>Mise à prix : 120 000 €</h3>
+    <p>Vieillevigne</p>
+    <div class="AddressBlock">
+      <div class="Lot">
+        <div class="SousLot"><p>de 636,70 ², comprenant vingt bureaux et des salles de réunion.</p></div>
+      </div>
+    </div>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/91/35/vente-aux-encheres/bureaux/vieillevigne/109135.html",
+    )
+    sale = normalize_sale(raw)
+
+    assert raw["surface_m2"] == "636,70"
+    assert sale.surface_m2 == Decimal("636.70")
+
+
 def test_parse_licitor_detail_html_accepts_first_day_ordinal_sale_date() -> None:
     html = """
     <h1>Annonce n°109151 : un appartement à Sarcelles (Val-d'Oise), mise à prix : 44 000 €</h1>

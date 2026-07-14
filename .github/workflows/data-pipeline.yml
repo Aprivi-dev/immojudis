@@ -235,11 +235,15 @@ jobs:
           restore-keys: |
             immojudis-data-pipeline-${{ runner.os }}-
 
-      - name: Install OCR system packages
-        if: steps.preflight.outputs.should_run == 'true' && env.PDF_OCR_ENABLED == 'true'
+      - name: Install document extraction packages
+        if: steps.preflight.outputs.should_run == 'true'
         run: |
+          packages=(antiword)
+          if [ "${PDF_OCR_ENABLED:-false}" = "true" ]; then
+            packages+=(tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng)
+          fi
           sudo apt-get update
-          sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
+          sudo apt-get install -y "${packages[@]}"
 
       - name: Install Python dependencies
         if: steps.preflight.outputs.should_run == 'true'

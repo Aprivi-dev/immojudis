@@ -45,6 +45,33 @@ def test_needs_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
     assert main._needs_heavy_enrichment(sale, use_llm=True) is False
 
 
+def test_document_facts_version_forces_one_time_pdf_reanalysis() -> None:
+    sale = AuctionSale(
+        source_name="info_encheres",
+        source_url="https://www.info-encheres.com/vente-6008.html",
+        property_type="house",
+        app_surface_m2=Decimal("375"),
+        occupancy_status="occupied",
+        rooms_count=2,
+        starting_price_eur=Decimal("11"),
+        documents=[
+            {
+                "label": "Cahier des conditions de la vente",
+                "url": "https://www.info-encheres.com/upload/cahier-6008.pdf",
+            }
+        ],
+        content_hash="known-content",
+    )
+
+    assert main._needs_structured_heavy_enrichment(sale) is True
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
+
+    sale.raw_payload["document_facts_version"] = "document_facts_v1_starting_price"
+
+    assert main._needs_structured_heavy_enrichment(sale) is False
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is True
+
+
 def test_heavy_enrichment_does_not_skip_stale_llm_description(monkeypatch) -> None:
     monkeypatch.setattr(main, "load_settings", lambda: {**_settings(), "llm_prompt_version": "auction_llm_v5"})
     sale = AuctionSale(
@@ -233,6 +260,94 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch) 
     assert summary_capture["deleted_expired_sales"] == 3
 
 
+def test_pipeline_returns_failure_when_final_supabase_publication_fails(monkeypatch) -> None:
+    finish_calls: list[tuple[str, dict[str, list[str]]]] = []
+    upsert_calls = 0
+
+    monkeypatch.setattr(main, "load_settings", lambda: _settings())
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finish_calls.append((status, errors)),
+    )
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: len(sales))
+
+    def upsert_sales(sales: list[AuctionSale]) -> int:
+        nonlocal upsert_calls
+        upsert_calls += 1
+        if upsert_calls == 2:
+            raise RuntimeError("final publication rejected")
+        return len(sales)
+
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", upsert_sales)
+
+    result = main.run_pipeline(
+        main.PipelineOptions(source="avoventes", use_llm=False, heavy_enrichment=False, upsert=True)
+    )
+
+    assert result == 1
+    assert finish_calls[-1][0] == "failed"
+    assert finish_calls[-1][1]["supabase"] == ["final publication rejected"]
+
+
+def test_pipeline_recovers_when_only_early_supabase_publication_fails(monkeypatch) -> None:
+    finish_statuses: list[str] = []
+    upsert_calls = 0
+
+    monkeypatch.setattr(main, "load_settings", lambda: _settings())
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finish_statuses.append(status),
+    )
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: len(sales))
+
+    def upsert_sales(sales: list[AuctionSale]) -> int:
+        nonlocal upsert_calls
+        upsert_calls += 1
+        if upsert_calls == 1:
+            raise RuntimeError("temporary early publication failure")
+        return len(sales)
+
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", upsert_sales)
+
+    result = main.run_pipeline(
+        main.PipelineOptions(source="avoventes", use_llm=False, heavy_enrichment=False, upsert=True)
+    )
+
+    assert result == 0
+    assert finish_statuses[-1] == "succeeded"
+    assert upsert_calls == 2
+
+
 def test_pipeline_skips_redundant_final_sale_upsert_when_unchanged(monkeypatch) -> None:
     calls: list[str] = []
 
@@ -392,13 +507,14 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatc
     calls: list[str] = []
     settings = _settings()
     settings["incremental_enrichment"] = True
+    raw = {**_raw_sale(), "document_facts_version": main.DOCUMENT_FACTS_VERSION}
 
     monkeypatch.setattr(main, "load_settings", lambda: settings)
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
     monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set(hashes))
-    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([raw], []))
     _fake_geocode.calls = calls
     monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
     monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
@@ -428,6 +544,7 @@ def test_pipeline_skips_pdf_when_only_llm_description_is_missing(monkeypatch) ->
         "surface_m2": "42",
         "rooms_count": 2,
         "occupancy_status": "vacant",
+        "document_facts_version": main.DOCUMENT_FACTS_VERSION,
         "source_blocks": {"description": "Appartement libre de 42 m2."},
     }
 
@@ -626,6 +743,131 @@ def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
     assert raw["visit_dates"] == ["2027-01-05 10:00"]
     assert raw["lawyer_name"] == "Me Test"
     assert raw["source_blocks"] == {"visites": "Sur rendez-vous"}
+
+
+def test_known_pdf_surface_is_preserved_before_incremental_publication() -> None:
+    raw = {
+        "source_url": "https://www.info-encheres.com/vente-6009.html",
+        "source_name": "info_encheres",
+        "property_type": "Appartement",
+    }
+    known = {
+        raw["source_url"]: {
+            "surface_m2": 3.78,
+            "carrez_surface_m2": 3.78,
+            "app_surface_m2": None,
+            "app_surface_kind": None,
+            "surface_scope": "partial",
+            "surface_source": "pdf",
+            "surface_confidence": 0.45,
+            "surface_evidence": "Mesurage incomplet : 3,78 m².",
+            "raw_payload": {
+                "surface_extraction": {"source": "pdf", "value_m2": "3.78"},
+                "document_analysis": {"coverage_status": "rich", "documents_extracted": 3},
+            },
+        }
+    }
+
+    preserved = main._preserve_known_enrichment_payloads([raw], known)
+
+    assert preserved == 8
+    assert raw["surface_m2"] == 3.78
+    assert raw["carrez_surface_m2"] == 3.78
+    assert raw["surface_scope"] == "partial"
+    assert raw["surface_source"] == "pdf"
+    assert raw["surface_extraction"] == {"source": "pdf", "value_m2": "3.78"}
+    assert raw["document_analysis"]["documents_extracted"] == 3
+
+
+def test_known_pdf_price_resolution_is_preserved_until_source_price_changes() -> None:
+    source_url = "https://www.info-encheres.com/vente-6008.html"
+    raw = {
+        "source_url": source_url,
+        "source_name": "info_encheres",
+        "starting_price_eur": "11 €",
+    }
+    extraction = {
+        "version": "document_facts_v1_starting_price",
+        "source": "pdf",
+        "status": "resolved",
+        "value_eur": 10500.0,
+        "rejected_source_price_eur": 11.0,
+        "selected_value_eur": 10500.0,
+    }
+    known = {
+        source_url: {
+            "starting_price_eur": 10500,
+            "raw_payload": {
+                "starting_price_extraction": extraction,
+                "document_facts_version": "document_facts_v1_starting_price",
+            },
+        }
+    }
+
+    preserved = main._preserve_known_enrichment_payloads([raw], known)
+
+    assert preserved == 3
+    assert raw["starting_price_eur"] == Decimal("10500")
+    assert raw["starting_price_extraction"] == extraction
+    assert raw["document_facts_version"] == "document_facts_v1_starting_price"
+
+    changed_raw = {
+        "source_url": source_url,
+        "source_name": "info_encheres",
+        "starting_price_eur": "12 000 €",
+    }
+
+    assert main._preserve_known_enrichment_payloads([changed_raw], known) == 0
+    assert changed_raw["starting_price_eur"] == "12 000 €"
+    assert "starting_price_extraction" not in changed_raw
+    assert "document_facts_version" not in changed_raw
+
+
+def test_pipeline_aborts_before_publication_when_known_sale_lookup_fails(monkeypatch) -> None:
+    settings = _settings()
+    settings["incremental_enrichment"] = True
+    finish_calls: list[tuple[str, dict[str, object], dict[str, list[str]]]] = []
+
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finish_calls.append((status, summary, errors)),
+    )
+    monkeypatch.setattr(
+        main,
+        "fetch_known_sale_details",
+        lambda: (_ for _ in ()).throw(RuntimeError("known sale query timed out")),
+    )
+    monkeypatch.setattr(
+        main,
+        "scrape_avoventes_aquitaine_result",
+        lambda known=None: (_ for _ in ()).throw(AssertionError("scraping must not start")),
+    )
+
+    result = main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=False, upsert=True))
+
+    assert result == 1
+    assert finish_calls == [
+        (
+            "failed",
+            {"stage": "known_sale_lookup"},
+            {
+                "avoventes": [],
+                "licitor": [],
+                "vench": [],
+                "info_encheres": [],
+                "encheres_publiques": [],
+                "petites_affiches": [],
+                "cessions_etat": [],
+                "agrasc": [],
+                "encheres_immobilieres": [],
+                "notaires": [],
+                "supabase": ["known sale query timed out"],
+            },
+        )
+    ]
 
 
 def _settings() -> dict[str, object]:

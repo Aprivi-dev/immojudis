@@ -837,7 +837,7 @@ begin
     alter table auction_sales add constraint auction_sales_longitude_check check (longitude is null or (longitude >= -180 and longitude <= 180));
   end if;
   if not exists (select 1 from pg_constraint where conname = 'auction_sales_surface_scope_check') then
-    alter table auction_sales add constraint auction_sales_surface_scope_check check (surface_scope is null or surface_scope in ('total','room','annex','room_or_annex','land','unknown'));
+    alter table auction_sales add constraint auction_sales_surface_scope_check check (surface_scope is null or surface_scope in ('total','room','annex','room_or_annex','land','unknown','partial'));
   end if;
 end $$;
 

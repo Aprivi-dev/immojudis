@@ -4,6 +4,7 @@ import re
 import unicodedata
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlparse
 
 from dateutil import parser
 
@@ -45,6 +46,7 @@ PROPERTY_TYPE_MAP = {
     "maison": "house",
     "villa": "house",
     "building": "building",
+    "batiment": "building",
     "immeuble": "building",
     "land": "land",
     "terrain": "land",
@@ -419,7 +421,7 @@ def normalize_status(value: object | None, sale_date: datetime | None = None) ->
         return "past"
     if "venir" in text or "upcoming" in text:
         return "upcoming"
-    if text in VALID_STATUSES:
+    if text in VALID_STATUSES and text != "unknown":
         return text
     if sale_date:
         return "past" if sale_date < datetime.now(UTC) else "upcoming"
@@ -594,6 +596,8 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         title = clean_text(_source_block_lookup(raw_sale, "titre", "title"))
     property_type = normalize_sale_property_type(raw_sale)
     description = clean_text(_field_or_source_block(raw_sale, "description", "description", "detail_description"))
+    if description and re.fullmatch(r"\$[a-z][a-z0-9_]*", description, re.I):
+        description = None
     address = clean_text(
         _field_or_source_block(raw_sale, "address", "adresse", "detail_adresse", "address", "localisation")
     )
@@ -735,6 +739,8 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             land_surface_m2=land_surface_m2,
             surface_scope=surface_scope,
         )
+    documents = normalize_documents(raw_sale.get("documents"), source_url=source_url)
+    raw_sale["documents"] = documents
     # Note: an impossible rooms < bedrooms pair is resolved downstream by
     # normalize_asset_features() (clears rooms_count to NULL and flags a
     # room_count_conflict), so we deliberately do not coerce it here.
@@ -819,7 +825,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         ),
         status=status,
         adjudication_price_eur=adjudication_price,
-        documents=raw_sale.get("documents") if isinstance(raw_sale.get("documents"), list) else [],
+        documents=documents,
         latitude=parse_decimal(raw_sale.get("latitude")),
         longitude=parse_decimal(raw_sale.get("longitude")),
         occupancy_status=occupancy_status,
@@ -834,6 +840,41 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         raw_payload=raw_sale,
         observations=raw_sale.get("observations") if isinstance(raw_sale.get("observations"), list) else [],
     )
+
+
+def normalize_documents(value: object | None, *, source_url: str | None = None) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+
+    normalized: dict[str, dict[str, str]] = {}
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        url = clean_text(item.get("url"))
+        if not url or _is_non_document_url(url, source_url=source_url):
+            continue
+        document = {
+            key: cleaned
+            for key, field_value in item.items()
+            if isinstance(key, str) and (cleaned := clean_text(field_value)) is not None
+        }
+        document["url"] = url
+        normalized[url] = document
+    return list(normalized.values())
+
+
+def _is_non_document_url(url: str, *, source_url: str | None) -> bool:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    path = parsed.path.rstrip("/")
+    if parsed.scheme not in {"http", "https"} or not host:
+        return True
+    if host in {"itunes.apple.com", "apps.apple.com", "play.google.com"}:
+        return True
+    if host == "app-pro.la-loupe.immo" and path.startswith("/ext-partenaire/licitor/"):
+        return True
+
+    return not path and not parsed.query and not parsed.fragment
 
 
 def normalize_source_urls(value: object | None, source_url: str) -> list[str]:
@@ -867,6 +908,8 @@ def _derive_initial_app_surface(
     land_surface_m2: Decimal | None,
     surface_scope: str | None,
 ) -> tuple[Decimal | None, str | None, str | None]:
+    if surface_scope in {"partial", "room_or_annex", "unknown"}:
+        return None, None, surface_scope
     if property_type == "apartment":
         value = carrez_surface_m2 or habitable_surface_m2
         kind = "carrez" if carrez_surface_m2 is not None else "habitable" if value is not None else None
@@ -874,6 +917,9 @@ def _derive_initial_app_surface(
     if property_type == "house":
         value = habitable_surface_m2
         return value, "habitable" if value is not None else None, "total" if value is not None else surface_scope
+    if property_type == "building":
+        value = surface_m2 or habitable_surface_m2 or carrez_surface_m2
+        return value, "built" if value is not None else None, "total" if value is not None else surface_scope
     if property_type == "land":
         value = land_surface_m2
         return value, "land" if value is not None else None, "land" if value is not None else surface_scope
@@ -1110,8 +1156,8 @@ def _extract_habitable_surface_from_text(*values: object) -> Decimal | None:
 def _extract_carrez_surface_from_text(*values: object) -> Decimal | None:
     text = _joined_text(*values)
     patterns = (
-        rf"\b(?:surface\s+)?carrez\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
         rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+(?:loi\s+)?carrez\b",
+        rf"\b(?:surface\s+)?carrez\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
     )
     return _extract_contextual_surface(text, patterns, exclude_secondary=False)
 

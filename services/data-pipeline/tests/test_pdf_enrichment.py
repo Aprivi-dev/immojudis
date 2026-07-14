@@ -1,5 +1,9 @@
+import unicodedata
+import zipfile
 from datetime import UTC, datetime
 from decimal import Decimal
+from types import SimpleNamespace
+from urllib.parse import unquote, urlparse
 
 from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
@@ -14,6 +18,7 @@ from src.pdf_enrichment import (
     classify_document_type,
     download_documents,
     enrich_sale_from_pdf_text,
+    extract_attached_document,
     extract_pdf_document,
 )
 
@@ -70,6 +75,120 @@ def test_enrich_sale_from_pdf_text_extracts_fields() -> None:
     assert sale.property_type == "house"
     assert "amiante" in (sale.risk_notes or "")
     assert "PDF TEXT ENRICHMENT" in (sale.raw_text or "")
+
+
+def test_enrich_sale_from_ccv_replaces_implausible_source_starting_price() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-6008.html",
+            "property_type": "Maison",
+            "starting_price_eur": "11 €",
+        }
+    )
+    pdf_text = {
+        "label": "Cahier des conditions de la vente",
+        "url": "https://www.info-encheres.com/upload/cahier-6008.pdf",
+        "document_type": "cahier_conditions_vente",
+        "text": (
+            "Avant de porter les enchères, l'avocat reçoit un chèque représentant 10% du montant "
+            "de la mise à prix, avec un minimum de 3.000 euros. "
+            "Mise à prix adjudication. L'adjudication aura lieu en un seul lot sur la mise à prix "
+            "ci-après indiquée : 10.500 € (dix mille cinq cents euros)."
+        ),
+        "pages": [
+            {
+                "page": 4,
+                "text": (
+                    "Le chèque représente 10% du montant de la mise à prix, "
+                    "avec un minimum de 3.000 euros."
+                ),
+                "confidence": 0.99,
+                "method": "pymupdf",
+            },
+            {
+                "page": 17,
+                "text": (
+                    "Mise à prix adjudication. L'adjudication aura lieu en un seul lot sur la mise à prix "
+                    "ci-après indiquée : 10.500 € (dix mille cinq cents euros)."
+                ),
+                "confidence": 0.98,
+                "method": "pymupdf",
+            },
+        ],
+    }
+
+    enrich_sale_from_pdf_text(sale, [pdf_text])
+
+    assert sale.starting_price_eur == Decimal("10500")
+    assert "starting_price_conflict_resolved" in sale.quality_flags
+    assert sale.raw_payload["document_facts_version"] == "document_facts_v1_starting_price"
+    assert sale.raw_payload["starting_price_extraction"] == {
+        "version": "document_facts_v1_starting_price",
+        "source": "pdf",
+        "status": "resolved",
+        "value_eur": 10500.0,
+        "rejected_source_price_eur": 11.0,
+        "selected_value_eur": 10500.0,
+        "document_label": "Cahier des conditions de la vente",
+        "document_url": "https://www.info-encheres.com/upload/cahier-6008.pdf",
+        "document_type": "cahier_conditions_vente",
+        "page_number": 17,
+        "page_confidence": 0.98,
+        "extraction_method": "pymupdf",
+        "evidence": (
+            "Mise à prix adjudication. L'adjudication aura lieu en un seul lot sur la mise à prix "
+            "ci-après indiquée : 10.500 € (dix mille cinq cents euros)."
+        ),
+    }
+
+
+def test_enrich_sale_from_ccv_ignores_bid_guarantee_minimum() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-guarantee.html",
+            "property_type": "Maison",
+            "starting_price_eur": "11 €",
+        }
+    )
+    pdf_text = {
+        "label": "Cahier des conditions de la vente",
+        "document_type": "cahier_conditions_vente",
+        "text": (
+            "Avant de porter les enchères, l'avocat reçoit un chèque représentant 10% du montant "
+            "de la mise à prix, avec un minimum de 3.000 euros."
+        ),
+    }
+
+    enrich_sale_from_pdf_text(sale, [pdf_text])
+
+    assert sale.starting_price_eur == Decimal("11")
+    assert "starting_price_extraction" not in sale.raw_payload
+    assert sale.raw_payload["document_facts_version"] == "document_facts_v1_starting_price"
+
+
+def test_enrich_sale_from_ccv_keeps_plausible_current_price_on_conflict() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-current-price.html",
+            "property_type": "Maison",
+            "starting_price_eur": "100 000 €",
+        }
+    )
+    pdf_text = {
+        "label": "Cahier des conditions de la vente",
+        "document_type": "cahier_conditions_vente",
+        "text": "Mise à prix : 10.500 €.",
+    }
+
+    enrich_sale_from_pdf_text(sale, [pdf_text])
+
+    assert sale.starting_price_eur == Decimal("100000")
+    assert "starting_price_conflict" in sale.quality_flags
+    assert sale.raw_payload["starting_price_extraction"]["status"] == "conflict_unresolved"
+    assert sale.raw_payload["starting_price_extraction"]["selected_value_eur"] == 100000.0
 
 
 def test_enrich_sale_from_pdf_text_does_not_treat_no_lease_as_rented() -> None:
@@ -419,6 +538,7 @@ def test_info_encheres_keeps_incomplete_carrez_measurement_as_partial_evidence()
     assert sale.app_surface_m2 is None
     assert "partial_surface_measurement" in sale.quality_flags
     assert sale.raw_payload["surface_extraction"]["surface_scope"] == "partial"
+    assert sale.title == "Appartement"
 
 
 def test_enrich_sale_from_pdf_text_extracts_cadastral_land_surface_with_provenance() -> None:
@@ -732,7 +852,10 @@ def test_select_documents_for_extraction_includes_diagnostics_when_energy_missin
 
     selected = _select_documents_for_extraction(documents, sale=sale)
 
-    assert [item["document_type"] for item in selected] == ["diagnostics_techniques"]
+    assert [item["document_type"] for item in selected] == [
+        "diagnostics_techniques",
+        "cahier_conditions_vente",
+    ]
 
 
 def test_select_documents_for_extraction_does_not_force_diagnostics_when_dpe_exempt(monkeypatch) -> None:
@@ -1259,6 +1382,209 @@ def test_download_documents_fetches_duplicate_url_only_once(tmp_path, monkeypatc
 
     assert calls == ["https://example.test/diagnostics.pdf"]
     assert len(downloaded) == 1
+
+
+def test_download_documents_retries_nfc_unicode_url_variant(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"%PDF-1.4\n%%EOF"
+        headers = {"content-type": "application/pdf"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    decomposed_url = "https://example.test/Droit_de_pre\u0301emption_-_internet.pdf"
+    calls: list[str] = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        decoded_path = unquote(urlparse(url).path)
+        if not unicodedata.is_normalized("NFC", decoded_path):
+            raise RuntimeError("404 decomposed path")
+        return Response()
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-document-accentue.html",
+            "documents": [{"label": "Droit de préemption", "url": decomposed_url, "type": "pdf"}],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    downloaded = download_documents(sale, output_root=tmp_path, stats=stats)
+
+    assert len(calls) == 2
+    assert calls[0] == decomposed_url
+    assert unicodedata.is_normalized("NFC", unquote(urlparse(calls[1]).path))
+    assert downloaded[0]["url"] == decomposed_url
+    assert stats.downloaded == 1
+    assert stats.errors == 0
+
+
+def test_download_documents_normalizes_percent_encoded_combining_accent(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"%PDF-1.4\n%%EOF"
+        headers = {"content-type": "application/pdf"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    encoded_decomposed_url = "https://example.test/Droit_de_pre%CC%81emption.pdf"
+    calls: list[str] = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        decoded_path = unquote(urlparse(url).path)
+        if not unicodedata.is_normalized("NFC", decoded_path):
+            raise RuntimeError("404 decomposed path")
+        return Response()
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-document-encode.html",
+            "documents": [{"label": "Droit de préemption", "url": encoded_decomposed_url, "type": "pdf"}],
+        }
+    )
+
+    downloaded = download_documents(sale, output_root=tmp_path)
+
+    assert len(calls) == 2
+    assert calls[0] == encoded_decomposed_url
+    assert "%C3%A9" in calls[1]
+    assert len(downloaded) == 1
+
+
+def test_download_documents_accepts_legacy_word_attachment(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64
+        headers = {"content-type": "application/msword"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr("src.pdf_enrichment.httpx.get", lambda *args, **kwargs: Response())
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-avec-ccv-word.html",
+            "documents": [
+                {
+                    "label": "Cahier des conditions de vente",
+                    "url": "https://www.info-encheres.com/upload/CCVok.doc",
+                    "type": "cahier_conditions",
+                }
+            ],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    downloaded = download_documents(sale, output_root=tmp_path, stats=stats)
+
+    assert len(downloaded) == 1
+    assert downloaded[0]["type"] == "doc"
+    assert downloaded[0]["file_format"] == "doc"
+    assert downloaded[0]["document_type"] == "cahier_conditions_vente"
+    assert downloaded[0]["file_path"].endswith(".doc")
+    assert stats.downloaded == 1
+    assert stats.errors == 0
+
+
+def test_extract_attached_legacy_word_document_feeds_surface_rules(tmp_path, monkeypatch) -> None:
+    file_path = tmp_path / "CCVok.doc"
+    file_path.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64)
+    extracted_text = (
+        "Une villa traditionnelle d'une superficie privative de 87.58 m² comprenant "
+        "un séjour, une cuisine et trois chambres."
+    )
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment.shutil.which",
+        lambda command: f"/usr/bin/{command}" if command == "antiword" else None,
+    )
+    monkeypatch.setattr(
+        "src.pdf_enrichment.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=extracted_text, stderr=""),
+    )
+
+    payload = extract_attached_document(
+        file_path,
+        document={"file_format": "doc", "label": "CCV", "url": "https://example.test/CCVok.doc"},
+    )
+    payload.update(
+        {
+            "label": "Cahier des conditions de vente",
+            "url": "https://example.test/CCVok.doc",
+            "type": "doc",
+            "document_type": "cahier_conditions_vente",
+        }
+    )
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/vente-word",
+            "property_type": "Maison",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, [payload])
+
+    assert payload["extraction_method"] == "antiword"
+    assert payload["text"] == extracted_text
+    assert sale.surface_m2 == Decimal("87.58")
+
+
+def test_extract_attached_docx_document_uses_embedded_xml(tmp_path) -> None:
+    file_path = tmp_path / "conditions.docx"
+    with zipfile.ZipFile(file_path, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body><w:p><w:r><w:t>Surface habitable : 92,40 m².</w:t></w:r></w:p></w:body>
+            </w:document>""",
+        )
+
+    payload = extract_attached_document(file_path, document={"file_format": "docx"})
+
+    assert payload["extraction_method"] == "docx_xml"
+    assert payload["text"] == "Surface habitable : 92,40 m²."
+
+
+def test_document_land_surface_prefers_explicit_private_parcel_over_cadastral_rows() -> None:
+    text = (
+        "Dans un lotissement cadastré : Section AM 55 Surface 00ha 05a 80ca ; "
+        "Section AM 117 Surface 00ha 27a 13ca ; Section AM 119 Surface 00ha 06a 40ca ; "
+        "Section AM 120 Surface 00ha 00a 74ca. Une villa d'une superficie privative "
+        "de 87.58 m². Outre piscine, le droit à la jouissance exclusive et perpétuelle "
+        "d'une parcelle de terrain de 3 ares environ."
+    )
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/vente-word-cadastre",
+            "property_type": "Maison",
+        }
+    )
+
+    enrich_sale_from_pdf_text(
+        sale,
+        [
+            {
+                "text": text,
+                "pages": [{"page": 1, "text": text, "confidence": 0.92, "method": "antiword"}],
+                "label": "Cahier des conditions de vente",
+                "url": "https://example.test/CCVok.doc",
+                "type": "doc",
+                "document_type": "cahier_conditions_vente",
+            }
+        ],
+    )
+
+    assert sale.surface_m2 == Decimal("87.58")
+    assert sale.land_surface_m2 == Decimal("300")
 
 
 def test_adaptive_docling_timeout_shortens_signed_documents(tmp_path, monkeypatch) -> None:
