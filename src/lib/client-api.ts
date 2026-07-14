@@ -31,6 +31,7 @@ import type { AlertEvaluationResponse, AlertMatchSummary } from "@/lib/alert-mat
 import type { BidCeilingAnalysisResponse, BidCeilingRequestInput } from "@/lib/bid-ceiling";
 import type { EnvironmentalContextResponse } from "@/lib/environment.functions";
 import type { FeaturedReferencedLawyerResponse } from "@/lib/featured-lawyers";
+import type { LawyerDirectoryResponse } from "@/lib/lawyer-directory";
 import type {
   LawyerPlacementEventInput,
   LawyerPlacementEventResponse,
@@ -126,14 +127,16 @@ async function readJson<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
-export async function fetchMarketEstimate(args: { data: unknown }): Promise<MarketContext> {
+export async function fetchPrecomputedMarketEstimate(args: {
+  saleId: string;
+}): Promise<MarketContext> {
   const response = await fetch("/api/market-estimate", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(await authHeaders()),
     },
-    body: JSON.stringify(args.data),
+    body: JSON.stringify({ saleId: args.saleId }),
   });
 
   return readJson<MarketContext>(response);
@@ -675,6 +678,19 @@ export async function fetchFeaturedReferencedLawyer(args: {
   });
 
   return readJson<FeaturedReferencedLawyerResponse>(response);
+}
+
+export async function fetchLawyerDirectory(
+  args: { saleId?: string; city?: string; department?: string } = {},
+): Promise<LawyerDirectoryResponse> {
+  const search = new URLSearchParams();
+  if (args.saleId) search.set("saleId", args.saleId);
+  if (args.city) search.set("city", args.city);
+  if (args.department) search.set("department", args.department);
+  const response = await fetch(`/api/lawyers/directory?${search.toString()}`, {
+    headers: await authHeaders(),
+  });
+  return readJson<LawyerDirectoryResponse>(response);
 }
 
 export async function recordLawyerPlacementEvent(args: {

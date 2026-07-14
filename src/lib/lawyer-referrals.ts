@@ -55,6 +55,7 @@ export type LawyerReferralMatchingStatus = z.infer<typeof referralMatchingStatus
 
 export const lawyerReferralRequestInputSchema = z.object({
   saleId: z.string().uuid(),
+  lawyerId: z.string().uuid().optional(),
   preferredContactMethod: z.enum(["email", "phone", "either"]).default("email"),
   phone: z.string().trim().max(40).optional(),
   message: z.string().trim().max(1500).optional(),
@@ -156,7 +157,12 @@ export async function createLawyerReferralRequest({
     };
   }
 
-  const matchedLawyer = await findMatchingReferencedLawyer(auth.supabase, sale);
+  const matchedLawyer = input.lawyerId
+    ? await getReferencedLawyerSummary(auth.supabase, input.lawyerId)
+    : await findMatchingReferencedLawyer(auth.supabase, sale);
+  if (input.lawyerId && !matchedLawyer) {
+    throw new Error("Avocat référencé introuvable ou indisponible.");
+  }
   const matchingStatus = matchedLawyer ? "matched" : "manual_review";
   const status = matchedLawyer ? "new" : "manual_review";
 
@@ -177,8 +183,9 @@ export async function createLawyerReferralRequest({
       max_bid_eur: input.maxBidEur ?? null,
       assigned_at: matchedLawyer ? new Date().toISOString() : null,
       metadata: {
-        source: "sale_detail",
+        source: input.lawyerId ? "lawyer_directory" : "sale_detail",
         matching_basis: matchedLawyer ? "referenced_lawyer_coverage" : "manual_review",
+        selected_lawyer_id: input.lawyerId ?? null,
       },
     })
     .select("id,status,matching_status")
