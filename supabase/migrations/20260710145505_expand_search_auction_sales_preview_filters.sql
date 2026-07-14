@@ -217,4 +217,3 @@ grant execute on function public.search_auction_sales_preview to anon, authentic
 notify pgrst, 'reload schema';
 
 commit;
-

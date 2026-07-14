@@ -1,0 +1,82 @@
+name: Recompute Existing Sales
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Existing source rows to recalibrate"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - avoventes
+          - licitor
+          - vench
+          - info_encheres
+          - encheres_publiques
+          - petites_affiches
+          - cessions_etat
+          - agrasc
+          - encheres_immobilieres
+          - notaires
+      limit:
+        description: "Optional maximum number of stored rows"
+        required: false
+        type: string
+      dry_run:
+        description: "Recompute without publishing changes"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-recompute-existing-sales
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Recompute stored sales
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.txt
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Recompute existing sales
+        env:
+          REQUESTED_SOURCE: ${{ inputs.source }}
+          REQUESTED_LIMIT: ${{ inputs.limit }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--batch-size 20)
+          if [ "$REQUESTED_SOURCE" != "all" ]; then
+            args+=(--source "$REQUESTED_SOURCE")
+          fi
+          if [ -n "$REQUESTED_LIMIT" ]; then
+            args+=(--limit "$REQUESTED_LIMIT")
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          python -m src.recompute_scoring "${args[@]}"

@@ -87,6 +87,231 @@ def test_normalize_asset_features_reads_thousands_surfaces_directly() -> None:
     assert "2 464,70 m²" in (sale.surface_evidence or "")
 
 
+def test_asset_normalization_resolves_structured_surface_outlier_from_corroborated_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/surface-conflict",
+            "property_type": "Maison",
+            "title": "Un ensemble immobilier de 187 m² situé rue Gâte-Bourse",
+            "description": (
+                "Un ensemble immobilier de 10 pièces de 187 m² avec un garage de 18 m², "
+                "édifié sur une parcelle de 1 110 m²."
+            ),
+            "surface_m2": 1877,
+            "habitable_surface_m2": 1877,
+            "land_surface_m2": 110,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("187")
+    assert sale.habitable_surface_m2 == Decimal("187")
+    assert sale.land_surface_m2 == Decimal("1110")
+    assert sale.app_surface_m2 == Decimal("187")
+    assert sale.surface_source == "corroborated_source_text"
+    assert sale.surface_confidence == Decimal("0.92")
+    assert "surface_conflict_resolved" in sale.quality_flags
+    assert sale.raw_payload["surface_reconciliation"] == {
+        "status": "resolved",
+        "rejected_surface_m2": "1877",
+        "resolved_built_surface_m2": "187",
+        "basis": "matching_title_and_description",
+    }
+    assert sale.raw_payload["land_surface_reconciliation"] == {
+        "status": "resolved",
+        "rejected_land_surface_m2": "110",
+        "resolved_land_surface_m2": "1110",
+        "basis": "explicit_land_text_over_stored_value",
+    }
+
+
+def test_asset_normalization_resolves_apartment_surface_outlier_from_corroborated_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/apartment-surface-conflict",
+            "property_type": "Appartement",
+            "title": "Appartement de 187 m²",
+            "description": "Appartement de 187 m² avec balcon, édifié sur une parcelle de 1 110 m².",
+            "surface_m2": 1877,
+            "habitable_surface_m2": 1877,
+            "carrez_surface_m2": 1877,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("187")
+    assert sale.habitable_surface_m2 == Decimal("187")
+    assert sale.carrez_surface_m2 == Decimal("187")
+    assert sale.land_surface_m2 is None
+    assert sale.app_surface_m2 == Decimal("187")
+    assert sale.raw_payload["surface_reconciliation"]["rejected_surface_m2"] == "1877"
+
+
+def test_asset_normalization_prefers_value_before_carrez_label() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://example.test/apartment-balcony-conflict",
+            "property_type": "Appartement",
+            "title": "Appartement 9 m²",
+            "description": (
+                "L'appartement de 40 m² habitables (39,67 m² Loi Carrez) "
+                "avec 9 m² de balcon se compose d'une chambre et d'un séjour."
+            ),
+            "surface_m2": 9,
+            "habitable_surface_m2": 39.67,
+            "carrez_surface_m2": 40,
+            "app_surface_m2": 40,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.carrez_surface_m2 == Decimal("39.67")
+    assert sale.app_surface_m2 == Decimal("39.67")
+    assert sale.app_surface_kind == "carrez"
+    assert sale.raw_payload["carrez_surface_reconciliation"] == {
+        "status": "resolved",
+        "rejected_carrez_surface_m2": "40",
+        "resolved_carrez_surface_m2": "39.67",
+        "basis": "explicit_decimal_carrez_text",
+    }
+
+
+def test_asset_normalization_corrects_truncated_stored_land_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/truncated-land-surface",
+            "property_type": "Maison",
+            "surface_m2": 187,
+            "habitable_surface_m2": 187,
+            "land_surface_m2": 110,
+            "description": "Maison de 187 m² édifiée sur une parcelle de 1 110 m².",
+            "risk_notes": "Risques physiques: DPE F | DPE F",
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.land_surface_m2 == Decimal("1110")
+    assert "land_surface_conflict_resolved" in sale.quality_flags
+
+
+def test_asset_normalization_keeps_document_backed_land_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/documented-land-surface",
+            "property_type": "Maison",
+            "surface_m2": 187,
+            "habitable_surface_m2": 187,
+            "land_surface_m2": 110,
+            "description": "Maison de 187 m² édifiée sur une parcelle annoncée de 1 110 m².",
+            "land_surface_extraction": {"source": "pdf", "value_m2": 110},
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.land_surface_m2 == Decimal("110")
+    assert "land_surface_conflict_resolved" not in sale.quality_flags
+
+
+def test_asset_normalization_removes_built_surface_misclassified_as_land() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/built-duplicated-as-land",
+            "property_type": "Maison",
+            "title": "Maison de 125,05 m²",
+            "surface_m2": 125.05,
+            "habitable_surface_m2": 125.05,
+            "land_surface_m2": 125.05,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("125.05")
+    assert sale.app_surface_m2 == Decimal("125.05")
+    assert sale.land_surface_m2 is None
+    assert sale.raw_payload["land_surface_reconciliation"] == {
+        "status": "removed",
+        "rejected_land_surface_m2": "125.05",
+        "resolved_land_surface_m2": None,
+        "basis": "duplicated_built_surface_without_land_evidence",
+    }
+
+
+def test_asset_normalization_replaces_duplicated_built_land_with_explicit_terrain() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/explicit-land-replacement",
+            "property_type": "Maison",
+            "surface_m2": 125,
+            "habitable_surface_m2": 125,
+            "land_surface_m2": 125,
+            "description": "Maison de 125 m² édifiée sur un terrain d'environ 500 m².",
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.land_surface_m2 == Decimal("500")
+    assert sale.raw_payload["land_surface_reconciliation"]["basis"] == (
+        "explicit_land_text_over_stored_value"
+    )
+
+
+def test_asset_normalization_keeps_structured_surface_when_textual_values_disagree() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/surface-conflict-unresolved",
+            "property_type": "Maison",
+            "title": "Maison de 180 m²",
+            "description": "Maison de 170 m² selon une ancienne annonce.",
+            "surface_m2": 175,
+            "habitable_surface_m2": 175,
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("175")
+    assert sale.habitable_surface_m2 == Decimal("175")
+    assert "surface_conflict_resolved" not in sale.quality_flags
+
+
+def test_asset_normalization_keeps_document_backed_surface_over_editorial_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "unit",
+            "source_url": "https://example.test/documented-surface",
+            "property_type": "Maison",
+            "title": "Maison de 180 m²",
+            "description": "Maison de 180 m² selon l'annonce.",
+            "surface_m2": 175,
+            "habitable_surface_m2": 175,
+            "surface_source": "pdf",
+            "surface_extraction": {"source": "pdf", "value_m2": 175},
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("175")
+    assert sale.habitable_surface_m2 == Decimal("175")
+    assert sale.surface_source == "pdf"
+    assert "surface_conflict_resolved" not in sale.quality_flags
+
+
 def test_notaires_short_house_code_promotes_surface_to_app_surface() -> None:
     sale = normalize_sale(
         {
@@ -465,6 +690,46 @@ def test_asset_normalization_uses_built_surface_for_commercial_assets() -> None:
     assert sale.surface_evidence is not None
 
 
+def test_asset_normalization_uses_built_surface_for_buildings() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-immeuble-158.html",
+            "property_type": "Immeuble",
+            "description": "Immeuble d'une surface totale bâtie de 158,95 m².",
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("158.95")
+    assert sale.app_surface_m2 == Decimal("158.95")
+    assert sale.app_surface_kind == "built"
+    assert sale.surface_scope == "total"
+
+
+def test_asset_normalization_repairs_legacy_truncated_thousands_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/109084.html",
+            "property_type": "Immeuble",
+            "surface_m2": "612",
+            "description": (
+                "Un immeuble de 2.612 m², consistant en un grand espace vert "
+                "incorporé dans une ruche d'entreprises."
+            ),
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("2612")
+    assert sale.app_surface_m2 == Decimal("2612")
+    assert sale.app_surface_kind == "built"
+    assert sale.surface_scope == "total"
+
+
 def test_asset_normalization_keeps_supported_large_mixed_surface_and_specific_title() -> None:
     sale = normalize_sale(
         {
@@ -554,6 +819,27 @@ def test_asset_normalization_reads_licitor_apartment_surface() -> None:
     assert sale.parking_count == 2
 
 
+def test_asset_normalization_recovers_licitor_surface_with_missing_m_symbol() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/109135.html",
+            "property_type": "Un bâtiment à usage de bureaux",
+            "description": (
+                "Un bâtiment à usage de bureaux. de 636,70 ², comprenant vingt bureaux, "
+                "une cuisine et des salles de réunion."
+            ),
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("636.70")
+    assert sale.app_surface_m2 == Decimal("636.70")
+    assert sale.app_surface_kind == "built"
+    assert sale.surface_scope == "total"
+
+
 def test_asset_normalization_rejects_room_surface_as_app_surface_for_house() -> None:
     sale = normalize_sale(
         {
@@ -586,6 +872,71 @@ def test_asset_normalization_rejects_large_uncertain_surface_as_app_surface() ->
     assert sale.surface_scope == "unknown"
     assert sale.app_surface_m2 is None
     assert "ambiguous_surface" in sale.quality_flags
+
+
+def test_asset_normalization_restores_partial_scope_from_pdf_extraction() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-6009.html",
+            "property_type": "Appartement",
+            "title": "Appartement 4 m²",
+            "surface_m2": "3.78",
+            "carrez_surface_m2": "3.78",
+            "app_surface_m2": "3.78",
+            "app_surface_kind": "carrez",
+            "surface_scope": "total",
+            "surface_source": "pdf",
+            "surface_extraction": {
+                "source": "pdf",
+                "value_m2": "3.78",
+                "surface_scope": "partial",
+            },
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("3.78")
+    assert sale.carrez_surface_m2 == Decimal("3.78")
+    assert sale.app_surface_m2 is None
+    assert sale.app_surface_kind is None
+    assert sale.surface_scope == "partial"
+    assert sale.title == "Appartement"
+    assert "partial_surface_scope_restored" in sale.quality_flags
+    assert sale.raw_payload["surface_scope_reconciliation"] == {
+        "status": "restored",
+        "previous_scope": "total",
+        "rejected_app_surface_m2": "3.78",
+        "documented_partial_surface_m2": "3.78",
+        "basis": "structured_pdf_extraction_scope",
+    }
+
+
+def test_partial_pdf_scope_does_not_override_a_distinct_total_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-with-total.html",
+            "property_type": "Appartement",
+            "surface_m2": "87",
+            "carrez_surface_m2": "87",
+            "app_surface_m2": "87",
+            "app_surface_kind": "carrez",
+            "surface_scope": "total",
+            "surface_extraction": {
+                "source": "pdf",
+                "value_m2": "3.78",
+                "surface_scope": "partial",
+            },
+        }
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.app_surface_m2 == Decimal("87")
+    assert sale.surface_scope == "total"
+    assert "partial_surface_scope_restored" not in sale.quality_flags
 
 
 def test_scoring_rewards_solid_free_discounted_asset() -> None:
