@@ -7,6 +7,7 @@ import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { fetchFeaturedReferencedLawyer, recordLawyerPlacementEvent } from "@/lib/client-api";
 import type { FeaturedReferencedLawyer } from "@/lib/featured-lawyers";
 import type { LawyerPlacementEventInput } from "@/lib/lawyer-placement-events";
+import { Link } from "@/lib/router-compat";
 
 export function FeaturedLawyerPlacement({
   saleId,
@@ -80,7 +81,7 @@ export function FeaturedLawyerPlacement({
     <section ref={sectionRef} className={shellClassName}>
       <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
         <Scale className="h-3.5 w-3.5" />
-        Avocat référencé
+        Avocat partenaire · profil sponsorisé
       </div>
       <h3 className="mt-2 text-base font-semibold leading-tight text-foreground">
         Besoin d'un accompagnement d'un avocat ?
@@ -98,11 +99,22 @@ export function FeaturedLawyerPlacement({
         </p>
       )}
       <div className="mt-4">
-        <LawyerReferralButton saleId={saleId} onIntent={() => recordPlacementEvent("cta_click")} />
+        <LawyerReferralButton
+          saleId={saleId}
+          requestedLawyerId={lawyer?.id}
+          onIntent={() => recordPlacementEvent("cta_click")}
+        />
+        <Link
+          to="/avocats"
+          search={{ saleId }}
+          className="mt-2 inline-flex min-h-10 w-full items-center justify-center rounded-md border border-gold/25 bg-white/60 px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-gold"
+        >
+          Voir tout l'annuaire du barreau
+        </Link>
       </div>
       <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-        Bloc issu de l'annuaire ImmoJudis. Il est séparé des contacts présents dans les annonces
-        sources.
+        Ce partenaire rémunère Immojudis pour sa visibilité. Cette mise en avant n'est ni une
+        notation, ni une garantie de résultat.
       </p>
     </section>
   );
@@ -122,8 +134,8 @@ function FeaturedLawyerSummary({ lawyer }: { lawyer: FeaturedReferencedLawyer })
   return (
     <div className="mt-2 text-sm leading-relaxed text-muted-foreground">
       <p>
-        <span className="font-semibold text-foreground">{lawyerDisplayName(lawyer)}</span> est
-        sélectionné par ImmoJudis sur ce secteur.
+        <span className="font-semibold text-foreground">{lawyerDisplayName(lawyer)}</span> présente
+        son activité sur ce secteur.
       </p>
       <dl className="mt-3 grid gap-2 rounded-md border border-white/70 bg-white/60 p-3 text-xs">
         {lawyer.firmName ? <PlacementFact label="Cabinet" value={lawyer.firmName} /> : null}

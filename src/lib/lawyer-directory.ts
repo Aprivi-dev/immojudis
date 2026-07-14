@@ -67,6 +67,7 @@ export type LawyerDirectoryResponse = {
   lawyers: LawyerDirectoryProfile[];
   sectorLabel: string | null;
   barAssociation: string | null;
+  isDemo: boolean;
 };
 
 const LAWYER_COLUMNS =
@@ -77,16 +78,34 @@ export async function listLawyerDirectory(
   query: LawyerDirectoryQuery,
   now = new Date(),
 ): Promise<LawyerDirectoryResponse> {
-  const sale = query.saleId ? await getSaleSector(query.saleId) : null;
-  const { data, error } = await supabaseAdmin
-    .from("referenced_lawyers")
-    .select(LAWYER_COLUMNS)
-    .eq("status", "active")
-    .eq("accepts_judicial_auctions", true)
-    .order("priority_weight", { ascending: false })
-    .order("display_name", { ascending: true });
+  let sale: SaleSector | null = null;
+  if (query.saleId) {
+    try {
+      sale = await getSaleSector(query.saleId);
+    } catch (error) {
+      if (process.env.NODE_ENV !== "development" || !isMissingSupabaseServerConfiguration(error)) {
+        throw error;
+      }
+    }
+  }
+  let data: unknown[] | null;
+  try {
+    const response = await supabaseAdmin
+      .from("referenced_lawyers")
+      .select(LAWYER_COLUMNS)
+      .eq("status", "active")
+      .eq("accepts_judicial_auctions", true)
+      .order("priority_weight", { ascending: false })
+      .order("display_name", { ascending: true });
+    if (response.error) throw response.error;
+    data = response.data;
+  } catch (error) {
+    if (process.env.NODE_ENV === "development" && isMissingSupabaseServerConfiguration(error)) {
+      return demoLawyerDirectory(query, sale);
+    }
+    throw error;
+  }
 
-  if (error) throw error;
   const activeLawyers = (data ?? []) as LawyerRow[];
   const coverage = await getCoverage(activeLawyers.map((lawyer) => lawyer.id));
   const criteria = buildCriteria(sale, query);
@@ -98,7 +117,7 @@ export async function listLawyerDirectory(
         lawyer,
         lawyerCoverage,
         match: bestMatch(lawyer, lawyerCoverage, criteria),
-        isSponsored: paidPlacementIsActive(lawyer, now),
+        isSponsored: isSponsoredLawyerPlacement(lawyer, now),
       };
     })
     .filter((item) => criteria.length === 0 || item.match != null)
@@ -123,6 +142,80 @@ export async function listLawyerDirectory(
       ? `Barreau de ${resolvedBarAssociation}`
       : (clean(sale?.department) ?? clean(query.department)),
     barAssociation: resolvedBarAssociation,
+    isDemo: false,
+  };
+}
+
+function demoLawyerDirectory(
+  query: LawyerDirectoryQuery,
+  sale: SaleSector | null,
+): LawyerDirectoryResponse {
+  const barAssociation = resolveBarAssociation(sale, query) ?? "Bordeaux";
+  const coverageLabels = [`Barreau de ${barAssociation}`];
+  const baseProfile = {
+    phone: "05 00 00 00 00",
+    websiteUrl: "https://example.com/",
+    barAssociation,
+    barNumber: null,
+    city: barAssociation,
+    department: query.department ?? sale?.department ?? null,
+    address: `Centre-ville, ${barAssociation}`,
+    acceptsRemoteContact: true,
+    coverageLabels,
+    matchingLabel: `Barreau de ${barAssociation}`,
+  } satisfies Omit<
+    LawyerDirectoryProfile,
+    "id" | "displayName" | "firmName" | "email" | "profileSummary" | "practiceTags" | "isSponsored"
+  >;
+
+  return {
+    lawyers: [
+      {
+        ...baseProfile,
+        id: "10000000-0000-4000-8000-000000000001",
+        displayName: "Maître Claire Durand",
+        firmName: "Cabinet Durand — démonstration",
+        email: "claire.durand@example.com",
+        profileSummary:
+          "Accompagnement des adjudicataires, analyse du cahier des conditions de vente et préparation de l'audience.",
+        practiceTags: ["ventes judiciaires", "droit immobilier", "adjudication"],
+        isSponsored: true,
+      },
+      {
+        ...baseProfile,
+        id: "10000000-0000-4000-8000-000000000002",
+        displayName: "Maître Marc Lefèvre",
+        firmName: "Lefèvre Avocats — démonstration",
+        email: "marc.lefevre@example.com",
+        profileSummary:
+          "Conseil en acquisition immobilière judiciaire, financement de l'enchère et formalités après adjudication.",
+        practiceTags: ["adjudication", "saisie immobilière", "financement"],
+        isSponsored: true,
+      },
+      {
+        ...baseProfile,
+        id: "10000000-0000-4000-8000-000000000003",
+        displayName: "Maître Sophie Bernard",
+        firmName: "Cabinet Bernard — démonstration",
+        email: "sophie.bernard@example.com",
+        profileSummary: null,
+        practiceTags: ["droit immobilier"],
+        isSponsored: false,
+      },
+      {
+        ...baseProfile,
+        id: "10000000-0000-4000-8000-000000000004",
+        displayName: "Maître Julien Martin",
+        firmName: "Cabinet Martin — démonstration",
+        email: "julien.martin@example.com",
+        profileSummary: null,
+        practiceTags: ["droit immobilier"],
+        isSponsored: false,
+      },
+    ],
+    sectorLabel: `Barreau de ${barAssociation}`,
+    barAssociation,
+    isDemo: true,
   };
 }
 
@@ -167,7 +260,8 @@ function buildCriteria(sale: SaleSector | null, query: LawyerDirectoryQuery): Cr
   const criteria: Criterion[] = [];
   const requestedBar = clean(query.bar);
   if (requestedBar) {
-    pushCriterion(criteria, "bar", requestedBar, 70, `Barreau de ${cleanBarLabel(requestedBar)}`);
+    const label = cleanBarLabel(requestedBar) ?? requestedBar;
+    pushCriterion(criteria, "bar", requestedBar, 70, `Barreau de ${label}`);
     return criteria;
   }
 
@@ -244,7 +338,7 @@ function toDirectoryProfile(
     firmName: lawyer.firm_name,
     email: lawyer.email,
     phone: lawyer.phone,
-    websiteUrl: lawyer.website_url,
+    websiteUrl: safeWebsiteUrl(lawyer.website_url),
     barAssociation: lawyer.bar_association,
     barNumber: lawyer.bar_number,
     city: lawyer.city,
@@ -266,7 +360,7 @@ function toDirectoryProfile(
   };
 }
 
-function paidPlacementIsActive(
+export function isSponsoredLawyerPlacement(
   lawyer: Pick<
     LawyerRow,
     "paid_placement_status" | "paid_placement_starts_at" | "paid_placement_ends_at"
@@ -347,6 +441,20 @@ function normalizedBarKey(value: string | null | undefined): string | null {
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
   return key || null;
+}
+
+function safeWebsiteUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function isMissingSupabaseServerConfiguration(error: unknown) {
+  return error instanceof Error && error.message.includes("Missing Supabase environment variable");
 }
 
 function clean(value: string | null | undefined) {

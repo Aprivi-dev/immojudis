@@ -14,6 +14,7 @@ const PUBLIC_PATHS = new Set([
   "/",
   "/login",
   "/sales",
+  "/avocats",
   "/annonce-exemple",
   "/accompagnement",
   "/a-propos",

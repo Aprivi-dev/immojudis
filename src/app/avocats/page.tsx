@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { LawyerDirectoryRouteClient } from "../_route-clients/LawyerDirectoryRouteClient";
 
 export const metadata: Metadata = {
-  title: "Annuaire des avocats en ventes judiciaires — Immojudis",
+  title: "Annuaire des avocats en droit immobilier — Immojudis",
   description:
-    "Trouvez un avocat référencé pour vérifier votre dossier et porter vos enchères judiciaires.",
+    "Trouvez un avocat en droit immobilier par barreau et identifiez clairement les profils partenaires sponsorisés.",
 };
 
 export default function Page() {
