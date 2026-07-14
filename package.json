@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:ready": "node scripts/dev-ready.mjs",
-    "build": "node scripts/verify-required-env.mjs && node scripts/apply-supabase-migrations.mjs --if-enabled && next build",
+    "build": "node scripts/verify-required-env.mjs && node scripts/apply-supabase-migrations.mjs --if-enabled && node scripts/publish-valuation-models.mjs && next build",
     "build:dev": "next build",
     "start": "next start",
     "preview": "next start",
@@ -30,6 +30,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",
+    "h3-js": "^4.5.0",
     "lucide-react": "^0.575.0",
     "mapbox-gl": "^3.25.0",
     "next": "^16.2.9",

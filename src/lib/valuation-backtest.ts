@@ -3,9 +3,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import {
-  buildDvfComparableAnalysis,
-  type DvfComparableCandidate,
-} from "@/lib/dvf-comparable-engine";
+  analyzeMarketCandidates,
+  resolveMarketPropertySegment,
+  type MarketEngineCandidate,
+} from "@/lib/market-estimation-engine";
 import { haversineKm } from "@/lib/geo";
 import { featureIncluded, isPlanPeriodActive, normalizePlanCode } from "@/lib/plans";
 import { cleanSaleTitle } from "@/lib/sale-title";
@@ -21,6 +22,7 @@ export type DvfBacktestTransaction = Pick<
   | "sale_date"
   | "total_price_eur"
   | "built_surface_m2"
+  | "land_surface_m2"
   | "price_per_m2"
   | "property_type"
   | "dvf_property_type_code"
@@ -39,7 +41,7 @@ const REFERENCE_SALE_COLUMNS =
   "id,title,city,department,postal_code,address,property_type,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,latitude,longitude";
 
 const DVF_BACKTEST_COLUMNS =
-  "id,source_mutation_id,sale_date,total_price_eur,built_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source,source_url";
+  "id,source_mutation_id,sale_date,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source,source_url";
 
 export const valuationBacktestQuerySchema = z.object({
   saleId: z.string().uuid(),
@@ -63,6 +65,9 @@ export type ValuationBacktestPoint = {
   actualPricePerM2: number;
   predictedPriceEur: number | null;
   predictedPricePerM2: number | null;
+  predictedLowPriceEur: number | null;
+  predictedHighPriceEur: number | null;
+  withinPredictionInterval: boolean | null;
   errorPct: number | null;
   absoluteErrorPct: number | null;
   comparableSampleSize: number;
@@ -81,6 +86,8 @@ export type ValuationBacktestSummary = {
   p75AbsoluteErrorPct: number | null;
   within10Pct: number | null;
   within20Pct: number | null;
+  intervalCoveragePct: number | null;
+  intervalCoverageTargetPct: 80;
   averageComparableSampleSize: number | null;
   interpretation: string;
 };
@@ -386,6 +393,7 @@ type NormalizedBacktestTransaction = {
   saleDate: string;
   totalPriceEur: number;
   surfaceM2: number;
+  landSurfaceM2: number | null;
   pricePerM2: number;
   propertyType: string | null;
   address: string | null;
@@ -417,26 +425,36 @@ function backtestPointForTransaction({
     .filter((candidate) => candidate.id !== test.id)
     .filter((candidate) => new Date(candidate.saleDate).getTime() < testDate.getTime())
     .map((candidate) => normalizedToCandidate(candidate, test))
-    .filter((candidate) => candidate.distanceM == null || candidate.distanceM <= radiusM);
-  const analysis = buildDvfComparableAnalysis({
-    subject: {
-      surfaceM2: test.surfaceM2,
-      propertyType: test.propertyType,
-      startingPriceEur: null,
-    },
-    candidates,
-    options: {
-      now: testDate.getTime() <= now.getTime() ? testDate : now,
-      minSampleSize: 3,
-      maxRadiusM: radiusM,
-      maxAgeMonths: months,
-      limit: 12,
-    },
-  });
-  const predictedPricePerM2 = analysis.medianPricePerM2;
+    .filter((candidate): candidate is MarketEngineCandidate => candidate != null)
+    .filter((candidate) => candidate.distanceM <= radiusM);
+  const segment = resolveMarketPropertySegment({ propertyType: test.propertyType });
+  const analysis =
+    segment === "unsupported"
+      ? null
+      : analyzeMarketCandidates({
+          segment,
+          subjectBuiltSurfaceM2: test.surfaceM2,
+          subjectLandSurfaceM2: test.landSurfaceM2,
+          subjectLatitude: test.latitude,
+          subjectLongitude: test.longitude,
+          candidates,
+          now: testDate.getTime() <= now.getTime() ? testDate : now,
+          maxAgeMonths: months,
+        });
+  const predictedPricePerM2 = analysis?.medianPricePerM2 ?? null;
   const predictedPriceEur = predictedPricePerM2
     ? Math.round(predictedPricePerM2 * test.surfaceM2)
     : null;
+  const predictedLowPriceEur = analysis
+    ? Math.round(analysis.p10PricePerM2 * test.surfaceM2)
+    : null;
+  const predictedHighPriceEur = analysis
+    ? Math.round(analysis.p90PricePerM2 * test.surfaceM2)
+    : null;
+  const withinPredictionInterval =
+    predictedLowPriceEur != null && predictedHighPriceEur != null
+      ? test.totalPriceEur >= predictedLowPriceEur && test.totalPriceEur <= predictedHighPriceEur
+      : null;
   const errorPct =
     predictedPriceEur && test.totalPriceEur
       ? round(((predictedPriceEur - test.totalPriceEur) / test.totalPriceEur) * 100, 1)
@@ -452,11 +470,14 @@ function backtestPointForTransaction({
     actualPricePerM2: Math.round(test.pricePerM2),
     predictedPriceEur,
     predictedPricePerM2,
+    predictedLowPriceEur,
+    predictedHighPriceEur,
+    withinPredictionInterval,
     errorPct,
     absoluteErrorPct: errorPct == null ? null : Math.abs(errorPct),
-    comparableSampleSize: analysis.sampleSize,
-    comparableMode: analysis.comparableMode,
-    confidenceScore: analysis.confidenceScore,
+    comparableSampleSize: analysis?.sampleSize ?? 0,
+    comparableMode: analysis?.mode ?? null,
+    confidenceScore: analysis ? Math.round(Math.min(100, analysis.effectiveSampleSize * 15)) : 0,
     distanceM: test.distanceM,
   };
 }
@@ -477,7 +498,16 @@ function buildBacktestSummary({
     .sort((a, b) => a - b);
   const medianError = percentileRounded(errors, 0.5, 1);
   const p75Error = percentileRounded(errors, 0.75, 1);
-  const status = backtestStatus({ usableTests: usable.length, medianError });
+  const intervalCoveragePct = shareTrue(
+    usable
+      .map((point) => point.withinPredictionInterval)
+      .filter((value): value is boolean => value != null),
+  );
+  const status = backtestStatus({
+    usableTests: usable.length,
+    medianError,
+    intervalCoveragePct,
+  });
   const within10Pct = shareUnder(errors, 10);
   const within20Pct = shareUnder(errors, 20);
 
@@ -491,6 +521,8 @@ function buildBacktestSummary({
     p75AbsoluteErrorPct: p75Error,
     within10Pct,
     within20Pct,
+    intervalCoveragePct,
+    intervalCoverageTargetPct: 80,
     averageComparableSampleSize: averageRounded(
       usable.map((point) => point.comparableSampleSize),
       1,
@@ -522,6 +554,8 @@ function missingBacktest({
       p75AbsoluteErrorPct: null,
       within10Pct: null,
       within20Pct: null,
+      intervalCoveragePct: null,
+      intervalCoverageTargetPct: 80,
       averageComparableSampleSize: null,
       interpretation: reason,
     },
@@ -547,6 +581,7 @@ function normalizeTransaction(
   reference: { latitude: number; longitude: number },
 ): NormalizedBacktestTransaction | null {
   const surfaceM2 = positiveNumber(transaction.built_surface_m2);
+  const landSurfaceM2 = positiveNumber(transaction.land_surface_m2);
   const totalPriceEur = positiveNumber(transaction.total_price_eur);
   const pricePerM2 = positiveNumber(transaction.price_per_m2);
   const saleDate = parseDate(transaction.sale_date);
@@ -568,6 +603,7 @@ function normalizeTransaction(
     saleDate: transaction.sale_date,
     totalPriceEur,
     surfaceM2,
+    landSurfaceM2,
     pricePerM2,
     propertyType: transaction.property_type ?? transaction.dvf_property_type_code,
     address: transaction.address,
@@ -585,7 +621,7 @@ function normalizeTransaction(
 function normalizedToCandidate(
   transaction: NormalizedBacktestTransaction,
   test: NormalizedBacktestTransaction,
-): DvfComparableCandidate {
+): MarketEngineCandidate | null {
   const distanceM =
     transaction.latitude != null &&
     transaction.longitude != null &&
@@ -599,33 +635,40 @@ function normalizedToCandidate(
         )
       : transaction.distanceM;
 
+  const segment = resolveMarketPropertySegment({ propertyType: transaction.propertyType });
+  const testSegment = resolveMarketPropertySegment({ propertyType: test.propertyType });
+  if (segment === "unsupported" || testSegment === "unsupported" || segment !== testSegment) {
+    return null;
+  }
+
   return {
     id: transaction.id,
-    saleDate: transaction.saleDate,
-    totalPriceEur: transaction.totalPriceEur,
-    surfaceM2: transaction.surfaceM2,
+    date: transaction.saleDate,
+    totalPrice: transaction.totalPriceEur,
+    builtSurfaceM2: transaction.surfaceM2,
+    landSurfaceM2: transaction.landSurfaceM2,
     pricePerM2: transaction.pricePerM2,
-    propertyType: transaction.propertyType,
-    distanceM,
-    address: transaction.address,
-    city: transaction.city,
-    postalCode: transaction.postalCode,
-    parcelId: transaction.parcelId,
-    source: transaction.source,
-    sourceUrl: transaction.sourceUrl,
+    propertyType: transaction.propertyType ?? "—",
+    segment,
+    distanceM: distanceM ?? 0,
+    parcelId: transaction.parcelId ?? transaction.id,
+    latitude: transaction.latitude,
+    longitude: transaction.longitude,
   };
 }
 
 function backtestStatus({
   usableTests,
   medianError,
+  intervalCoveragePct,
 }: {
   usableTests: number;
   medianError: number | null;
+  intervalCoveragePct: number | null;
 }): ValuationBacktestStatus {
   if (usableTests < 3 || medianError == null) return "missing";
-  if (usableTests >= 10 && medianError <= 12) return "strong";
-  if (usableTests >= 6 && medianError <= 20) return "usable";
+  if (usableTests >= 10 && medianError <= 12 && (intervalCoveragePct ?? 0) >= 72) return "strong";
+  if (usableTests >= 6 && medianError <= 20 && (intervalCoveragePct ?? 0) >= 65) return "usable";
   return "fragile";
 }
 
@@ -733,6 +776,11 @@ function percentileRounded(values: number[], percentile: number, digits = 0): nu
 function shareUnder(values: number[], threshold: number): number | null {
   if (!values.length) return null;
   return round((values.filter((value) => value <= threshold).length / values.length) * 100, 1);
+}
+
+function shareTrue(values: boolean[]): number | null {
+  if (!values.length) return null;
+  return round((values.filter(Boolean).length / values.length) * 100, 1);
 }
 
 function averageRounded(values: number[], digits = 0): number | null {

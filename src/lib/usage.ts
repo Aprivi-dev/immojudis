@@ -17,6 +17,7 @@ export type UsageEventKey =
   | "bid_ceiling.calculated"
   | "dvf.comparables_viewed"
   | "valuation.backtest_viewed"
+  | "valuation.estimated"
   | "workspace.audience_tracking_viewed"
   | "sale_changes.monitored"
   | "lawyer.referral_requested"
