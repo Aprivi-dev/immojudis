@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from src.models import AuctionSale
-from src.normalize import clean_text
+from src.normalize import clean_text, normalize_documents
 
 _STREET_NUMBER_RE = re.compile(r"\d")
 _POSTAL_CODE_RE = re.compile(r"\b(\d{5})\b")
@@ -175,6 +175,7 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
 
 
 def _ensure_observation_metadata(sale: AuctionSale) -> None:
+    sale.documents = normalize_documents(sale.documents, source_url=sale.source_url)
     sale.primary_source = sale.primary_source or sale.source_name
     if sale.source_url not in sale.source_urls:
         sale.source_urls.append(sale.source_url)

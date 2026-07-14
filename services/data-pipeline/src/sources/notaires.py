@@ -172,8 +172,9 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
     source_images = _multimedia_images(transaction.get("multimedias"))
     address = _address(property_block, postal_code, city, description_text)
     text_surface, text_surface_evidence = _built_surface_from_text(description_text, description.get("short"))
+    text_carrez_surface, _ = _carrez_surface_from_text(description_text, description.get("short"))
     api_habitable_surface = _usable_habitable_surface(property_block.get("surfaceHabitable"), description_text)
-    if _is_more_precise_text_surface(api_habitable_surface, text_surface):
+    if _should_prefer_text_surface(api_habitable_surface, text_surface, text_surface_evidence):
         habitable_surface = text_surface
         habitable_surface_source = "notaires.description.surface_batie"
         habitable_surface_confidence = 0.9
@@ -193,6 +194,12 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         habitable_surface_source = None
         habitable_surface_confidence = None
         habitable_surface_evidence = None
+    api_carrez_surface = _surface_value(property_block.get("surfaceCarrez"))
+    carrez_surface = (
+        text_carrez_surface
+        if _should_prefer_text_surface(api_carrez_surface, text_carrez_surface, "surface Carrez")
+        else api_carrez_surface or text_carrez_surface
+    )
     source_land_surface = _surface_value(property_block.get("surfaceTerrain"))
     cadastral_surface, cadastral_evidence = _cadastral_surface_from_text(description_text)
     land_surface = source_land_surface or cadastral_surface
@@ -251,7 +258,7 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         "description": description.get("long") or description.get("short"),
         "surface_m2": habitable_surface or generic_surface,
         "habitable_surface_m2": habitable_surface,
-        "carrez_surface_m2": property_block.get("surfaceCarrez"),
+        "carrez_surface_m2": carrez_surface,
         "land_surface_m2": land_surface,
         "surface_source": surface_source,
         "surface_confidence": surface_confidence,
@@ -498,7 +505,11 @@ def _usable_habitable_surface(value: object | None, description_text: str | None
     return None
 
 
-def _is_more_precise_text_surface(api_surface: object | None, text_surface: object | None) -> bool:
+def _should_prefer_text_surface(
+    api_surface: object | None,
+    text_surface: object | None,
+    text_evidence: str | None,
+) -> bool:
     if api_surface is None or text_surface is None:
         return False
     try:
@@ -506,9 +517,21 @@ def _is_more_precise_text_surface(api_surface: object | None, text_surface: obje
         text_value = float(text_surface)
     except (TypeError, ValueError):
         return False
-    if api_value == text_value or text_value.is_integer():
+    if api_value == text_value:
         return False
-    return int(api_value) == int(text_value)
+    if not text_value.is_integer() and int(api_value) == int(text_value):
+        return True
+    if not text_evidence or min(api_value, text_value) <= 0:
+        return False
+    ratio = max(api_value, text_value) / min(api_value, text_value)
+    explicitly_qualified = bool(
+        re.search(
+            r"\b(?:surface|superficie)\s+habitable\b|\bm(?:2|²)\s+habitables?\b|\b(?:surface|superficie)\s+(?:loi\s+)?carrez\b",
+            text_evidence,
+            re.I,
+        )
+    )
+    return text_value >= 9 and ratio >= 1.5 and explicitly_qualified
 
 
 def _usable_generic_surface(value: object | None, land_surface: object | None) -> int | float | None:
@@ -541,6 +564,21 @@ def _built_surface_from_text(*values: str | None) -> tuple[int | float | None, s
         for match in re.finditer(pattern, text, re.I | re.S):
             if _is_surface_context_excluded(text, match.start(), match.end()):
                 continue
+            return _surface_value(match.group(1)), _evidence_sentence(text, match.start(), match.end())
+    return None, None
+
+
+def _carrez_surface_from_text(*values: str | None) -> tuple[int | float | None, str | None]:
+    text = clean_text("\n".join(value for value in values if value))
+    if not text:
+        return None, None
+    patterns = (
+        rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s*(?:loi\s+)?carrez\b",
+        rf"\b(?:surface|superficie)\s+(?:loi\s+)?carrez\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if match:
             return _surface_value(match.group(1)), _evidence_sentence(text, match.start(), match.end())
     return None, None
 
