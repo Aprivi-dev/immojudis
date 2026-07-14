@@ -13,7 +13,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { isAdminAccount, isProfessionalAccount } from "@/lib/account";
 import { RESOURCES_PATH } from "@/lib/navigation";
 
-const AUTH_NAV_ITEMS = [{ to: "/sales", label: "Annonces" }] as const;
+const AUTH_NAV_ITEMS = [
+  { to: "/sales", label: "Annonces" },
+  { to: "/avocats", label: "Avocats" },
+] as const;
 
 const PRO_NAV_ITEM = { to: "/publish", label: "Publier" } as const;
 const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin" } as const;
