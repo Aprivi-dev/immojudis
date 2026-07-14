@@ -8,7 +8,7 @@ import {
 } from "@/lib/format";
 import type { EnvironmentalContext, EnvironmentMonthlyPoint } from "@/lib/environment.functions";
 import type { MarketEstimate } from "@/lib/market.functions";
-import type { MarketCeilingResult } from "@/lib/profitability";
+import { REFRESH_WORKS_PRICE_PER_M2, type MarketCeilingResult } from "@/lib/profitability";
 import { parseDocs } from "@/lib/documents";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { saleSourceLinks } from "@/lib/sale-source-links";
@@ -84,6 +84,8 @@ export type SaleProductSources = {
 export function buildSaleProductSources({
   sale,
   ceiling,
+  ceilingWithoutWorks,
+  ceilingWithRefreshWorks,
   primaryCheck,
   primaryDocument,
   action,
@@ -97,6 +99,8 @@ export function buildSaleProductSources({
 }: {
   sale: AuctionSale;
   ceiling: MarketCeilingResult;
+  ceilingWithoutWorks: MarketCeilingResult;
+  ceilingWithRefreshWorks: MarketCeilingResult;
   primaryCheck: string;
   primaryDocument: string;
   action: string;
@@ -149,9 +153,18 @@ export function buildSaleProductSources({
     subtitle: `${propertyTypeLabel(sale.property_type)} en vente judiciaire`,
     mainStats: [
       {
-        label: "Plafond",
-        value: ceiling.available ? formatPrice(ceiling.maxBid) : "À compléter",
-        detail: "recommandé",
+        label: "Plafond sans travaux",
+        value: ceilingWithoutWorks.available
+          ? formatPrice(ceilingWithoutWorks.maxBid)
+          : "À compléter",
+        detail: "Prudent · 8 %",
+      },
+      {
+        label: "Plafond avec rafraîchissement",
+        value: ceilingWithRefreshWorks.available
+          ? formatPrice(ceilingWithRefreshWorks.maxBid)
+          : "À compléter",
+        detail: `${REFRESH_WORKS_PRICE_PER_M2} €/m² de travaux`,
       },
       {
         label: displaySurface.metricLabel,

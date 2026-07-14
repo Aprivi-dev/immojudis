@@ -3,11 +3,11 @@ import { createFileRoute, Link } from "@/lib/router-compat";
 import { useQuery } from "@tanstack/react-query";
 import {
   SaleDetailSkeleton,
-  SaleDetailView,
   SaleErrorComponent,
   SaleNotFoundComponent,
 } from "@/components/SaleDetailView";
 import { DiscoverySaleDetailView } from "@/components/DiscoverySaleDetailView";
+import { AnalysisSaleDetailView } from "@/components/SimplifiedSaleDetailView";
 import { useAuth } from "@/hooks/use-auth";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { formatPrice } from "@/lib/format";
@@ -109,7 +109,7 @@ function SaleDetailPage() {
   return discovery ? (
     <DiscoverySaleDetailView sale={sale} returnTo={returnTo} />
   ) : (
-    <SaleDetailView sale={sale} returnTo={returnTo} />
+    <AnalysisSaleDetailView sale={sale} returnTo={returnTo} />
   );
 }
 
@@ -143,6 +143,18 @@ function SalePublicPreview({
           <div>
             <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
               Accès dossier
+            </dt>
+            <dd className="mt-1 text-sm font-medium text-foreground">Connexion requise</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Plafond conseillé sans travaux
+            </dt>
+            <dd className="mt-1 text-sm font-medium text-foreground">Connexion requise</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Plafond conseillé avec rafraîchissement
             </dt>
             <dd className="mt-1 text-sm font-medium text-foreground">Connexion requise</dd>
           </div>

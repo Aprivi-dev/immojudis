@@ -14,7 +14,6 @@ import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import FileCheck2 from "lucide-react/dist/esm/icons/file-check-2.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import MessageSquare from "lucide-react/dist/esm/icons/message-square.js";
-import Rotate3D from "lucide-react/dist/esm/icons/rotate-3d.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Send from "lucide-react/dist/esm/icons/send.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
@@ -22,6 +21,7 @@ import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import Target from "lucide-react/dist/esm/icons/target.js";
 import TriangleAlert from "lucide-react/dist/esm/icons/triangle-alert.js";
 import Users from "lucide-react/dist/esm/icons/users.js";
+import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import {
   formatPrice,
   formatDate,
@@ -33,7 +33,7 @@ import {
   propertyTypeLabel,
   saleStatusLabel,
 } from "@/lib/format";
-import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
+import { getDisplaySurface, getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import { parseDocs } from "@/lib/documents";
 import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
 import { FavoriteButton } from "@/components/FavoriteButton";
@@ -46,6 +46,7 @@ import { BrandMark } from "@/components/BrandLogo";
 import { EvidenceTrail } from "@/components/EvidenceTrail";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { PhotoCarouselDialog, type CarouselImage } from "@/components/PhotoCarouselDialog";
+import { RotatingCamera360 } from "@/components/RotatingCamera360";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -60,7 +61,7 @@ import {
   createSaleAnalysisSet,
   createSaleWorkspaceAnnotationClient,
   fetchEnvironmentalContext,
-  fetchMarketEstimate,
+  fetchPrecomputedMarketEstimate,
   fetchMarketAnalytics,
   fetchSaleHistory,
   fetchSaleWorkspace,
@@ -89,9 +90,10 @@ import { propertyImages } from "@/lib/sale-media";
 import { saleSourceLinks } from "@/lib/sale-source-links";
 import {
   computeAcquisitionCosts,
-  computeMarketCeiling,
+  computeRecommendedCeilings,
+  DEFAULT_MARKET_CEILING_SCENARIO,
   DEFAULTS,
-  MARKET_CEILING_SCENARIOS,
+  REFRESH_WORKS_PRICE_PER_M2,
   type MarketCeilingResult,
 } from "@/lib/profitability";
 import {
@@ -135,32 +137,11 @@ export function SaleDetailView({
 }) {
   const location = saleLocation(sale.address, sale.postal_code, sale.city);
   const referenceLabel = saleDisplayTitle(sale);
-  const saleSurface = getSaleSurface(sale).value;
   const media = saleImages(sale.media);
   const marketQuery = useQuery({
-    queryKey: [
-      "market-estimate",
-      sale.id,
-      sale.latitude,
-      sale.longitude,
-      sale.property_type,
-      Math.round(saleSurface ?? 0),
-    ],
-    queryFn: () =>
-      fetchMarketEstimate({
-        data: {
-          lat: sale.latitude!,
-          lng: sale.longitude!,
-          propertyType: sale.property_type,
-          surfaceM2: saleSurface,
-        },
-      }),
-    enabled:
-      marketEstimateOverride == null &&
-      sale.latitude != null &&
-      sale.longitude != null &&
-      saleSurface != null &&
-      saleSurface > 0,
+    queryKey: ["precomputed-market-estimate", sale.id],
+    queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
+    enabled: marketEstimateOverride == null,
     staleTime: 24 * 60 * 60_000,
   });
   const marketEstimate = marketEstimateOverride ?? marketQuery.data?.estimate ?? null;
@@ -197,12 +178,14 @@ export function SaleDetailView({
     price: decision.ceiling?.available
       ? decision.ceiling.maxBid
       : Math.max(0, sale.starting_price_eur ?? 0),
-    works: DEFAULTS.works,
+    works: decision.refreshWorksBudget,
     fpt: DEFAULTS.fpt,
   });
   const product = buildSaleProductSources({
     sale,
     ceiling: decision.ceiling,
+    ceilingWithoutWorks: decision.ceilingWithoutWorks,
+    ceilingWithRefreshWorks: decision.ceilingWithRefreshWorks,
     primaryCheck: decision.primaryCheck,
     primaryDocument: decision.primaryDocument,
     action: decision.action,
@@ -233,9 +216,6 @@ export function SaleDetailView({
         media={media}
         decision={decision}
         acquisitionCost={acquisitionCost}
-        marketEstimate={marketEstimate}
-        marketLoading={marketLoading}
-        marketError={marketError}
       />
 
       <div className="mx-auto grid max-w-[1360px] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8">
@@ -1852,17 +1832,6 @@ function SaleMediaGallery({
       {mapLocation && (
         <div className="absolute left-3 top-3 z-20 flex max-w-[calc(100%-7.5rem)] flex-col items-start gap-2 sm:max-w-none md:bottom-3 md:top-auto md:flex-row md:flex-wrap">
           <MapboxPreviewButton
-            mode="aerial3d"
-            lat={mapLocation.lat}
-            lng={mapLocation.lng}
-            label="Vue 3D"
-            title="Vue 3D Mapbox"
-            description={mapDescription || "Adresse de l'annonce"}
-            ariaLabel="Afficher la vue 3D Mapbox de l'annonce"
-            icon={Rotate3D}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
-          />
-          <MapboxPreviewButton
             mode="streetLevel"
             lat={mapLocation.lat}
             lng={mapLocation.lng}
@@ -1882,12 +1851,15 @@ function SaleMediaGallery({
       >
         {media.length} photo{media.length > 1 ? "s" : ""} <Camera className="h-3.5 w-3.5" />
       </button>
-      {source && (
-        <span className="absolute right-3 top-3 z-10 rounded-md border border-white/60 bg-white/90 px-3 py-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">
-          Source · {source}
-        </span>
-      )}
-      <div className="flex h-[22rem] snap-x snap-mandatory overflow-x-auto bg-white [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
+      <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
+        {media.length > 1 && <RotatingCamera360 />}
+        {source && (
+          <span className="rounded-md border border-white/60 bg-white/90 px-3 py-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">
+            Source · {source}
+          </span>
+        )}
+      </div>
+      <div className="flex h-[clamp(16rem,78vw,22rem)] snap-x snap-mandatory overflow-x-auto overscroll-x-contain bg-white [-webkit-overflow-scrolling:touch] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
         {media.map((item, index) => (
           <SaleMediaImage
             key={`${item.url}-${index}`}
@@ -1896,7 +1868,7 @@ function SaleMediaGallery({
             featured={index === 0}
             alt={index === 0 ? "Photo principale du bien" : `Photo ${index + 1} du bien`}
             onOpen={setCarouselIndex}
-            className="h-full min-w-full shrink-0 snap-center"
+            className="h-full w-full max-w-full flex-none snap-start snap-always"
           />
         ))}
       </div>
@@ -2002,6 +1974,9 @@ function saleImages(media: AuctionSale["media"] | undefined): SaleMedia[] {
 
 type DecisionSummary = {
   ceiling: MarketCeilingResult;
+  ceilingWithoutWorks: MarketCeilingResult;
+  ceilingWithRefreshWorks: MarketCeilingResult;
+  refreshWorksBudget: number;
   primaryCheck: string;
   primaryDocument: string;
   action: string;
@@ -2016,9 +1991,6 @@ function DecisionHero({
   media,
   decision,
   acquisitionCost,
-  marketEstimate,
-  marketLoading = false,
-  marketError = false,
 }: {
   sale: AuctionSale;
   title: string;
@@ -2026,14 +1998,9 @@ function DecisionHero({
   media: SaleMedia[];
   decision: DecisionSummary;
   acquisitionCost: AcquisitionCost;
-  marketEstimate?: MarketEstimate | null;
-  marketLoading?: boolean;
-  marketError?: boolean;
 }) {
   const city = sale.city ?? location.split(",").at(-1)?.trim() ?? "ce secteur";
   const propertyLabel = shortPropertyLabel(sale);
-  const ceilingLabel = ceilingValueLabel(decision);
-  const marginLabel = marginTargetLabel(decision, marketEstimate, marketLoading, marketError);
   const vigilance = [
     isUnknownOccupation(sale.occupancy_status) ? "Occupation à confirmer" : null,
     hasWorksRisk(sale) ? "Travaux à chiffrer" : "Travaux à estimer",
@@ -2069,16 +2036,21 @@ function DecisionHero({
             />
             <DecisionMetricCard
               icon={<Target className="h-4 w-4" />}
-              label="Plafond conseillé"
-              value={ceilingLabel}
-              detail={decision.ceiling.available ? "À ne pas dépasser" : "Marché à compléter"}
+              label="Plafond conseillé sans travaux"
+              value={ceilingWithoutWorksLabel(decision)}
+              detail={
+                decision.ceilingWithoutWorks.available
+                  ? "Profil Prudent · marge 8 %"
+                  : "Marché à compléter"
+              }
               accent
             />
             <DecisionMetricCard
-              icon={<Scale className="h-4 w-4" />}
-              label="Marge visée"
-              value={marginLabel}
-              detail="Sous le marché local"
+              icon={<Wrench className="h-4 w-4" />}
+              label="Plafond conseillé avec rafraîchissement"
+              value={ceilingWithRefreshWorksLabel(decision)}
+              detail={`${formatPrice(decision.refreshWorksBudget)} de travaux · ${REFRESH_WORKS_PRICE_PER_M2} €/m²`}
+              accent
             />
             <DecisionMetricCard
               icon={<TriangleAlert className="h-4 w-4" />}
@@ -2168,19 +2140,9 @@ function DecisionMediaFrame({
         <span className="absolute right-3 top-3 rounded-md bg-brand-navy/78 px-3 py-1 text-xs font-semibold text-white">
           1 / {Math.max(media.length, 1)}
         </span>
+        {media.length > 1 && <RotatingCamera360 className="absolute left-3 top-3" />}
         {mapLocation && (
           <div className="absolute bottom-3 left-3 flex flex-wrap gap-2">
-            <MapboxPreviewButton
-              mode="aerial3d"
-              lat={mapLocation.lat}
-              lng={mapLocation.lng}
-              label="Vue 3D"
-              title="Vue 3D Mapbox"
-              description={mapDescription || "Adresse de l'annonce"}
-              ariaLabel="Afficher la vue 3D Mapbox de l'annonce"
-              icon={Rotate3D}
-              className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
-            />
             <MapboxPreviewButton
               mode="streetLevel"
               lat={mapLocation.lat}
@@ -2289,10 +2251,9 @@ function DecisionIntroGrid({
               {formatPrice(sale.starting_price_eur)}.
             </p>
             <p>
-              Notre plafond conseillé est de {ceilingValueLabel(decision)} pour rester environ{" "}
-              {marginTargetLabel(decision, marketEstimate, marketLoading, marketError)} sous le
-              marché local, après prise en compte des frais, des travaux estimés et d'une marge de
-              sécurité.
+              En profil Prudent, le plafond conseillé est de {ceilingWithoutWorksLabel(decision)}{" "}
+              sans travaux et de {ceilingWithRefreshWorksLabel(decision)} avec une enveloppe de
+              rafraîchissement de {formatPrice(decision.refreshWorksBudget)}.
             </p>
             <p>
               Le dossier semble intéressant, mais deux points peuvent modifier fortement l'enchère
@@ -2355,10 +2316,8 @@ function AiPropertyDescriptionCard({
       "Surface retenue",
       getDisplaySurface(sale).value ? getDisplaySurface(sale).label : "À confirmer",
     ],
-    [
-      "Plafond conseillé",
-      decision.ceiling.available ? formatPrice(decision.ceiling.maxBid) : "À compléter",
-    ],
+    ["Plafond sans travaux", ceilingWithoutWorksLabel(decision)],
+    ["Plafond avec rafraîchissement", ceilingWithRefreshWorksLabel(decision)],
     ["Source à relire", decision.primaryDocument],
   ];
 
@@ -2379,7 +2338,7 @@ function AiPropertyDescriptionCard({
           </div>
         </div>
         <p className="mt-5 text-base leading-relaxed text-brand-navy/78">{displayDescription}</p>
-        <dl className="mt-5 grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+        <dl className="mt-5 grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2 lg:grid-cols-5">
           {facts.map(([label, value]) => (
             <div key={label} className="min-w-0">
               <dt className="text-[11px] font-semibold uppercase text-brand-navy/54">{label}</dt>
@@ -2473,9 +2432,14 @@ function KeyFiguresSection({
   const figures = [
     ["Mise à prix", formatPrice(sale.starting_price_eur), "Prix de départ, pas prix final"],
     [
-      "Plafond conseillé",
-      ceilingValueLabel(decision),
-      "Après frais, travaux estimés et marge de sécurité",
+      "Plafond conseillé sans travaux",
+      ceilingWithoutWorksLabel(decision),
+      "Profil Prudent · marge de sécurité 8 %",
+    ],
+    [
+      "Plafond conseillé avec rafraîchissement",
+      ceilingWithRefreshWorksLabel(decision),
+      `${formatPrice(decision.refreshWorksBudget)} de travaux à ${REFRESH_WORKS_PRICE_PER_M2} €/m²`,
     ],
     [
       "Prix local de référence",
@@ -2547,7 +2511,8 @@ function PriceChangingRisksSection({
         <div className="mt-5 rounded-lg border border-gold/20 bg-gold/[0.08] p-4">
           <div className="text-sm font-semibold text-brand-navy">Impact sur le plafond</div>
           <p className="mt-1 text-sm leading-relaxed text-brand-navy/72">
-            Plafond actuel : {ceilingValueLabel(decision)}. {impact}
+            Plafond avec rafraîchissement actuel : {ceilingWithRefreshWorksLabel(decision)}.{" "}
+            {impact}
           </p>
         </div>
       </div>
@@ -2618,11 +2583,20 @@ function CeilingCalculationSection({
     ],
     ["Valeur cible après marge", targetMarket, "Point de départ du raisonnement."],
     [
-      "Frais et travaux retirés",
-      formatPrice(acquisitionCost.acquisitionFeesTotal + acquisitionCost.works),
-      "Nous retirons les frais et les travaux estimés pour obtenir le montant maximum à enchérir.",
+      "Frais d'acquisition retirés",
+      formatPrice(acquisitionCost.acquisitionFeesTotal),
+      "Les frais estimés sont retirés de la valeur cible avant de calculer l'enchère maximale.",
     ],
-    ["Plafond d'enchère conseillé", ceilingValueLabel(decision), decision.action],
+    [
+      "Plafond conseillé sans travaux",
+      ceilingWithoutWorksLabel(decision),
+      "Référence haute avant toute enveloppe de rénovation.",
+    ],
+    [
+      "Plafond conseillé avec rafraîchissement",
+      ceilingWithRefreshWorksLabel(decision),
+      `${formatPrice(decision.refreshWorksBudget)} de travaux retirés · ${decision.action}.`,
+    ],
   ];
 
   return (
@@ -2705,8 +2679,9 @@ function CeilingSimulatorCard({
       marginTargetLabel(decision, marketEstimate, marketLoading, marketError),
     ],
     ["Frais d'acquisition estimés", formatPrice(acquisitionCost.acquisitionFeesTotal)],
-    ["Travaux estimés", formatPrice(acquisitionCost.works)],
-    ["Plafond actuel", ceilingValueLabel(decision)],
+    ["Travaux de rafraîchissement", formatPrice(decision.refreshWorksBudget)],
+    ["Plafond conseillé sans travaux", ceilingWithoutWorksLabel(decision)],
+    ["Plafond conseillé avec rafraîchissement", ceilingWithRefreshWorksLabel(decision)],
   ];
 
   return (
@@ -2848,7 +2823,7 @@ function BeforeAuctionSection({
     ["Vérifier le cahier des conditions", "Contrôler frais, consignation, délais et clauses."],
     [
       "Ajuster votre plafond",
-      `Ne pas dépasser ${ceilingValueLabel(decision)} sans élément nouveau.`,
+      `Ne pas dépasser ${ceilingWithRefreshWorksLabel(decision)} avec l'hypothèse de rafraîchissement, sans élément nouveau.`,
     ],
   ];
 
@@ -3021,13 +2996,29 @@ function DecisionActionRail({
       <div className="sticky top-32 space-y-4">
         <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
           <div className="text-[11px] font-semibold uppercase text-brand-navy/54">
-            Plafond conseillé
+            Plafonds conseillés · Prudent 8 %
           </div>
-          <div className="mt-2 text-4xl font-semibold tabular-nums text-gold-soft">
-            {ceilingValueLabel(decision)}
-          </div>
+          <dl className="mt-3 grid gap-3">
+            <div>
+              <dt className="text-[10px] uppercase tracking-[0.1em] text-brand-navy/54">
+                Sans travaux
+              </dt>
+              <dd className="mt-1 text-2xl font-semibold tabular-nums text-gold-soft">
+                {ceilingWithoutWorksLabel(decision)}
+              </dd>
+            </div>
+            <div className="border-t border-border/70 pt-3">
+              <dt className="text-[10px] uppercase tracking-[0.1em] text-brand-navy/54">
+                Avec rafraîchissement
+              </dt>
+              <dd className="mt-1 text-2xl font-semibold tabular-nums text-gold-soft">
+                {ceilingWithRefreshWorksLabel(decision)}
+              </dd>
+            </div>
+          </dl>
           <p className="mt-2 text-xs leading-relaxed text-brand-navy/62">
-            Coût complet simulé : {formatPrice(acquisitionCost.totalCost)}. {decision.primaryCheck}.
+            Rafraîchissement retenu : {formatPrice(decision.refreshWorksBudget)}.{" "}
+            {decision.primaryCheck}.
           </p>
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
             <SaleCountdown date={sale.sale_date} variant="block" />
@@ -3163,6 +3154,18 @@ function shortPropertyLabel(sale: AuctionSale): string {
 
 function ceilingValueLabel(decision: DecisionSummary): string {
   return decision.ceiling.available ? formatPrice(decision.ceiling.maxBid) : "À compléter";
+}
+
+function ceilingWithoutWorksLabel(decision: DecisionSummary): string {
+  return decision.ceilingWithoutWorks.available
+    ? formatPrice(decision.ceilingWithoutWorks.maxBid)
+    : "À compléter";
+}
+
+function ceilingWithRefreshWorksLabel(decision: DecisionSummary): string {
+  return decision.ceilingWithRefreshWorks.available
+    ? formatPrice(decision.ceilingWithRefreshWorks.maxBid)
+    : "À compléter";
 }
 
 function marginTargetLabel(
@@ -3336,7 +3339,7 @@ function QuickDecision({
   const costPerM2 = surface ? acquisitionCost.totalCost / surface : null;
   const referencePerM2 = marketEstimate?.medianPricePerM2 ?? null;
   const reason = marketLoading
-    ? "Lecture de la référence locale DVF en cours."
+    ? "Chargement de la référence locale pré-calculée."
     : marketError
       ? "Référence locale temporairement indisponible."
       : costPerM2 != null && referencePerM2 != null
@@ -4737,7 +4740,7 @@ function MarketLocalSection({
         ? "Indisponible"
         : "À compléter";
   const dialogDescription = marketLoading
-    ? "Lecture des ventes DVF proches en cours."
+    ? "Chargement de l'estimation pré-calculée."
     : marketError
       ? "L'estimation DVF est temporairement indisponible."
       : `${excluded} vente${excluded > 1 ? "s" : ""} exclue${
@@ -4847,7 +4850,7 @@ function MarketLocalSection({
                     <tr>
                       <td colSpan={4} className="px-3 py-4 text-sm text-muted-foreground">
                         {marketLoading
-                          ? "Lecture des transactions DVF en cours."
+                          ? "Chargement des transactions DVF pré-calculées."
                           : marketError
                             ? "Estimation DVF temporairement indisponible."
                             : "Les transactions DVF détaillées apparaîtront quand l'estimation DVF sera disponible."}
@@ -6640,15 +6643,31 @@ function MobileActionBar({ sale, decision }: { sale: AuctionSale; decision: Deci
           className="min-h-12 min-w-0 rounded-md bg-foreground px-3 py-2 text-xs text-background"
         >
           <span className="block text-[10px] uppercase tracking-[0.12em] text-background/70">
-            Plafond conseillé
+            Plafonds conseillés · Prudent
           </span>
-          <span className="block truncate font-semibold">
-            {decision.ceiling.available
-              ? formatPrice(decision.ceiling.maxBid)
-              : "Ajuster mon plafond"}
+          <span className="mt-1 grid grid-cols-2 gap-2 tabular-nums">
+            <span className="min-w-0">
+              <span className="block text-[9px] uppercase tracking-wide text-background/65">
+                Sans travaux
+              </span>
+              <strong className="block truncate text-xs">
+                {ceilingWithoutWorksLabel(decision)}
+              </strong>
+            </span>
+            <span className="min-w-0 border-l border-background/20 pl-2">
+              <span className="block text-[9px] uppercase tracking-wide text-background/65">
+                Avec travaux
+              </span>
+              <strong className="block truncate text-xs">
+                {ceilingWithRefreshWorksLabel(decision)}
+              </strong>
+            </span>
           </span>
         </a>
-        <FavoriteButton saleId={sale.id} className="min-h-12 justify-center px-3 text-xs" />
+        <FavoriteButton
+          saleId={sale.id}
+          className="min-h-12 w-12 justify-center gap-0 px-0 text-[0px] [&_svg]:h-4 [&_svg]:w-4"
+        />
       </div>
     </div>
   );
@@ -6658,23 +6677,24 @@ function buildDecisionSummary(
   sale: AuctionSale,
   marketEstimate: MarketEstimate | null | undefined,
 ): DecisionSummary {
-  const balancedScenario =
-    MARKET_CEILING_SCENARIOS.find((scenario) => scenario.key === "equilibre") ??
-    MARKET_CEILING_SCENARIOS[1];
-  const ceiling = computeMarketCeiling({
-    surface: getSaleSurface(sale).value,
+  const marketSurface = getMarketValuationSurfaces(sale).builtSurfaceM2;
+  const ceilings = computeRecommendedCeilings({
+    surface: marketSurface,
     price: Math.max(0, sale.starting_price_eur ?? 0),
-    works: DEFAULTS.works,
     fpt: DEFAULTS.fpt,
-    scenario: balancedScenario.key,
-    medianPricePerM2: marketEstimate?.medianPricePerM2,
-    p25PricePerM2: marketEstimate?.p25PricePerM2,
-    p75PricePerM2: marketEstimate?.p75PricePerM2,
+    scenario: DEFAULT_MARKET_CEILING_SCENARIO,
+    medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
+    p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
+    p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
   });
+  const ceiling = ceilings.withRefreshWorks;
 
   const primaryCheck = primaryCheckLabel(sale);
   return {
     ceiling,
+    ceilingWithoutWorks: ceilings.withoutWorks,
+    ceilingWithRefreshWorks: ceilings.withRefreshWorks,
+    refreshWorksBudget: ceilings.refreshWorksBudget,
     primaryCheck,
     primaryDocument: primaryDocumentLabel(sale, primaryCheck),
     action: recommendedAction(sale, ceiling),

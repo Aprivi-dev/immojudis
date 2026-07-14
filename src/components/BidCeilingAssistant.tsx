@@ -14,15 +14,18 @@ import TrendingDown from "lucide-react/dist/esm/icons/trending-down.js";
 import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import {
   computeMarketCeiling,
+  computeRecommendedCeilings,
+  DEFAULT_MARKET_CEILING_SCENARIO,
   DEFAULTS,
   estimateWorksBudget,
   MARKET_CEILING_SCENARIOS,
+  REFRESH_WORKS_PRICE_PER_M2,
   WORKS_SCENARIOS,
   type MarketCeilingResult,
   type MarketCeilingScenarioKey,
   type WorksScenarioKey,
 } from "@/lib/profitability";
-import { fetchMarketEstimate } from "@/lib/client-api";
+import { fetchPrecomputedMarketEstimate } from "@/lib/client-api";
 import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.functions";
 import {
   documentTypeLabel,
@@ -32,7 +35,7 @@ import {
   formatSurface,
   occupancyLabel,
 } from "@/lib/format";
-import { getSaleSurface } from "@/lib/surface";
+import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 
 type AssistantState = {
@@ -52,19 +55,8 @@ type ScenarioResult = {
   result: MarketCeilingResult;
 };
 
-const MARKET_ESTIMATE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-type CachedMarketEstimatePayload = {
-  savedAt: number;
-  estimate: DvfMarketEstimate;
-};
-
 function storageKey(saleId: string) {
   return `bid-ceiling-assistant:${saleId}`;
-}
-
-function marketEstimateCacheKey(saleId: string) {
-  return `market-estimate:${saleId}`;
 }
 
 function loadState(saleId: string): Partial<AssistantState> | null {
@@ -75,30 +67,6 @@ function loadState(saleId: string): Partial<AssistantState> | null {
     return JSON.parse(raw) as Partial<AssistantState>;
   } catch {
     return null;
-  }
-}
-
-function loadCachedMarketEstimate(saleId: string): DvfMarketEstimate | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(marketEstimateCacheKey(saleId));
-    if (!raw) return null;
-    const payload = JSON.parse(raw) as Partial<CachedMarketEstimatePayload>;
-    if (!payload.savedAt || !payload.estimate) return null;
-    if (Date.now() - payload.savedAt > MARKET_ESTIMATE_CACHE_TTL_MS) return null;
-    return payload.estimate;
-  } catch {
-    return null;
-  }
-}
-
-function saveCachedMarketEstimate(saleId: string, estimate: DvfMarketEstimate) {
-  if (typeof window === "undefined") return;
-  try {
-    const payload: CachedMarketEstimatePayload = { savedAt: Date.now(), estimate };
-    window.localStorage.setItem(marketEstimateCacheKey(saleId), JSON.stringify(payload));
-  } catch {
-    /* ignore quota errors */
   }
 }
 
@@ -120,6 +88,10 @@ function isWorksScenarioKey(value: unknown): value is WorksScenarioKey {
   return WORKS_SCENARIOS.some((scenario) => scenario.key === value);
 }
 
+function normalizeMarketScenario(value: unknown): MarketCeilingScenarioKey {
+  return value === "offensif" ? "offensif" : DEFAULT_MARKET_CEILING_SCENARIO;
+}
+
 function createAssistantState(
   startingPrice: number,
   surface: number | null,
@@ -131,7 +103,7 @@ function createAssistantState(
     works: estimateWorksBudget(surface, defaultWorksScenario),
     worksScenario: defaultWorksScenario,
     fpt: DEFAULTS.fpt,
-    scenario: "equilibre",
+    scenario: DEFAULT_MARKET_CEILING_SCENARIO,
     manualMarketPricePerM2: 0,
     marketEdited: false,
   };
@@ -144,6 +116,7 @@ function createAssistantState(
     return {
       ...fallback,
       ...stored,
+      scenario: normalizeMarketScenario(stored.scenario),
       works: Math.max(0, stored.works || 0),
       worksScenario: null,
     };
@@ -153,6 +126,7 @@ function createAssistantState(
   return {
     ...fallback,
     ...stored,
+    scenario: normalizeMarketScenario(stored.scenario),
     worksScenario,
     works: worksScenario
       ? estimateWorksBudget(surface, worksScenario)
@@ -168,14 +142,13 @@ export function BidCeilingAssistant({
   marketEstimateOverride?: DvfMarketEstimate | null;
 }) {
   const surfaceInfo = getSaleSurface(sale);
-  const surface = surfaceInfo.value;
+  const marketSurfaces = getMarketValuationSurfaces(sale);
+  const surface = marketSurfaces.builtSurfaceM2;
+  const valuationSurface = marketSurfaces.builtSurfaceM2 ?? marketSurfaces.landSurfaceM2;
   const startingPrice = sale.starting_price_eur ?? 0;
   const hasMarketEstimateOverride = marketEstimateOverride != null;
 
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [cachedEstimate, setCachedEstimate] = useState<DvfMarketEstimate | null>(
-    () => marketEstimateOverride ?? loadCachedMarketEstimate(sale.id),
-  );
   const [state, setState] = useState<AssistantState>(() =>
     createAssistantState(startingPrice, surface, loadState(sale.id)),
   );
@@ -185,8 +158,7 @@ export function BidCeilingAssistant({
     const stored = loadState(sale.id);
     setState(createAssistantState(startingPrice, surface, stored));
     setStateSaleId(sale.id);
-    setCachedEstimate(marketEstimateOverride ?? loadCachedMarketEstimate(sale.id));
-  }, [marketEstimateOverride, sale.id, startingPrice, surface]);
+  }, [sale.id, startingPrice, surface]);
 
   useEffect(() => {
     if (typeof window === "undefined" || stateSaleId !== sale.id) return;
@@ -198,44 +170,20 @@ export function BidCeilingAssistant({
   }, [sale.id, state, stateSaleId]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: [
-      "market-estimate",
-      sale.id,
-      sale.latitude,
-      sale.longitude,
-      sale.property_type,
-      Math.round(surface ?? 0),
-    ],
-    queryFn: () =>
-      fetchMarketEstimate({
-        data: {
-          lat: sale.latitude!,
-          lng: sale.longitude!,
-          // Rayon auto-déduit côté serveur : 100 m en ville, 300 m en campagne.
-          propertyType: sale.property_type,
-          surfaceM2: surface,
-        },
-      }),
-    enabled:
-      !hasMarketEstimateOverride &&
-      sale.latitude != null &&
-      sale.longitude != null &&
-      surface != null &&
-      surface > 0,
+    queryKey: ["precomputed-market-estimate", sale.id],
+    queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
+    enabled: !hasMarketEstimateOverride,
     staleTime: 24 * 60 * 60_000,
   });
 
   const estimate = data?.estimate ?? null;
-  useEffect(() => {
-    if (!estimate || hasMarketEstimateOverride) return;
-    saveCachedMarketEstimate(sale.id, estimate);
-    setCachedEstimate(estimate);
-  }, [hasMarketEstimateOverride, sale.id, estimate]);
-
-  const effectiveEstimate = marketEstimateOverride ?? estimate ?? cachedEstimate;
-  const usingCachedEstimate = !hasMarketEstimateOverride && !estimate && Boolean(cachedEstimate);
+  const effectiveEstimate = marketEstimateOverride ?? estimate;
+  const usingCachedEstimate = false;
   const hasDvfError = !hasMarketEstimateOverride && Boolean(error || data?.ok === false);
-  const useManualMarket = state.marketEdited || !effectiveEstimate?.medianPricePerM2;
+  const useManualMarket =
+    state.marketEdited ||
+    effectiveEstimate?.actionable !== true ||
+    !effectiveEstimate.medianPricePerM2;
 
   const scenarioResults = useMemo<ScenarioResult[]>(
     () =>
@@ -259,8 +207,29 @@ export function BidCeilingAssistant({
   );
 
   const selected =
-    scenarioResults.find((item) => item.key === state.scenario) ?? scenarioResults[1];
-  const balanced = scenarioResults.find((item) => item.key === "equilibre") ?? selected;
+    scenarioResults.find((item) => item.key === state.scenario) ?? scenarioResults[0];
+  const recommendedCeilings = useMemo(
+    () =>
+      computeRecommendedCeilings({
+        surface,
+        price: state.price,
+        fpt: state.fpt,
+        scenario: selected.key,
+        manualMarketPricePerM2: useManualMarket ? state.manualMarketPricePerM2 : null,
+        medianPricePerM2: effectiveEstimate?.medianPricePerM2,
+        p25PricePerM2: effectiveEstimate?.p25PricePerM2,
+        p75PricePerM2: effectiveEstimate?.p75PricePerM2,
+      }),
+    [
+      effectiveEstimate,
+      selected.key,
+      state.fpt,
+      state.manualMarketPricePerM2,
+      state.price,
+      surface,
+      useManualMarket,
+    ],
+  );
   const availableResults = scenarioResults
     .map((item) => item.result)
     .filter((item) => item.available);
@@ -365,6 +334,13 @@ export function BidCeilingAssistant({
             </div>
           </div>
 
+          <CeilingReferencePair
+            withoutWorks={recommendedCeilings.withoutWorks}
+            withRefreshWorks={recommendedCeilings.withRefreshWorks}
+            refreshWorksBudget={recommendedCeilings.refreshWorksBudget}
+            profileLabel={selected.label}
+          />
+
           {surfaceInfo.estimated && (
             <p className="mt-4 rounded-lg border border-gold/20 bg-gold/[0.06] px-3 py-2 text-xs leading-relaxed text-gold-soft">
               {surfaceInfo.helperText}
@@ -442,7 +418,7 @@ export function BidCeilingAssistant({
 
         {/* ── 3. Pourquoi ce chiffre ───────────────────────────────────── */}
         <div className="mt-5">
-          <MethodCard result={balanced.result} estimate={effectiveEstimate} />
+          <MethodCard result={selected.result} estimate={effectiveEstimate} />
         </div>
 
         {/* ── 3b. Marché local (DVF parcellaire + historique adresse) ──── */}
@@ -450,6 +426,13 @@ export function BidCeilingAssistant({
           estimate={effectiveEstimate}
           usingCachedEstimate={usingCachedEstimate}
           isLoading={isLoading && !effectiveEstimate}
+          valuationSurface={valuationSurface}
+          unavailableReason={marketUnavailableReason({
+            valuationSurface,
+            isLand: marketSurfaces.surfaceKind === "land",
+            hasDvfError,
+            storedError: data?.error ?? null,
+          })}
         />
 
         {/* ── 4. Conditions pour rester gagnant ────────────────────────── */}
@@ -509,6 +492,47 @@ export function BidCeilingAssistant({
         </p>
       </div>
     </section>
+  );
+}
+
+function CeilingReferencePair({
+  withoutWorks,
+  withRefreshWorks,
+  refreshWorksBudget,
+  profileLabel,
+}: {
+  withoutWorks: MarketCeilingResult;
+  withRefreshWorks: MarketCeilingResult;
+  refreshWorksBudget: number;
+  profileLabel: string;
+}) {
+  const rows = [
+    {
+      label: "Plafond conseillé sans travaux",
+      result: withoutWorks,
+      detail: `${profileLabel} · ${withoutWorks.safetyDiscountPct} % de marge`,
+    },
+    {
+      label: "Plafond conseillé avec rafraîchissement",
+      result: withRefreshWorks,
+      detail: `${fmt(refreshWorksBudget)} de travaux · ${REFRESH_WORKS_PRICE_PER_M2} €/m²`,
+    },
+  ];
+
+  return (
+    <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+      {rows.map((row) => (
+        <div key={row.label} className="rounded-lg border border-gold/20 bg-white/75 p-4">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.1em] text-gold-soft">
+            {row.label}
+          </dt>
+          <dd className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
+            {row.result.available ? fmt(row.result.maxBid) : "À compléter"}
+          </dd>
+          <p className="mt-1 text-xs text-muted-foreground">{row.detail}</p>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -864,7 +888,7 @@ function MarketInput({
             Prix de marché local
           </div>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {isLoading ? "Recherche des ventes DVF proches en cours..." : helper}
+            {isLoading ? "Chargement de l'estimation pré-calculée..." : helper}
           </p>
         </div>
         <label className="block">
@@ -888,22 +912,64 @@ function MarketInput({
   );
 }
 
+function marketUnavailableReason(input: {
+  valuationSurface: number | null;
+  isLand: boolean;
+  hasDvfError: boolean;
+  storedError: string | null;
+}): string {
+  if (input.storedError) return input.storedError;
+  if (!input.valuationSurface) {
+    return input.isLand
+      ? "La surface du terrain manque pour calculer une valeur foncière."
+      : "La surface ou le nombre de pièces manque pour estimer ce bien.";
+  }
+  if (input.hasDvfError) {
+    return "L'estimation pré-calculée est temporairement indisponible.";
+  }
+  return "Aucune vente du même segment n'a été trouvée, même après élargissement de la zone.";
+}
+
 function MarketLocalCard({
   estimate,
   usingCachedEstimate,
   isLoading,
+  valuationSurface,
+  unavailableReason,
 }: {
   estimate: DvfMarketEstimate | null;
   usingCachedEstimate: boolean;
   isLoading: boolean;
+  valuationSurface: number | null;
+  unavailableReason: string;
 }) {
   const areaLabel = estimate?.areaKind === "urban" ? "ville" : "campagne";
-  const hasRange = Boolean(estimate?.medianPricePerM2);
+  const hasRange = Boolean(estimate?.medianPricePerM2 || estimate?.medianUnitPriceEur);
   const usesAddressHistory = estimate?.comparableMode === "address_history";
+  const usesAggregateStatistics = estimate?.comparableMode === "geographic_aggregate";
+  const usesUnitSales = estimate?.comparableMode === "unit_sales";
+  const isLandEstimate = estimate?.surfaceBasis === "land";
+  const estimatedValue =
+    estimate?.estimatedValueEur ??
+    (estimate?.medianPricePerM2 && valuationSurface
+      ? Math.round(estimate.medianPricePerM2 * valuationSurface)
+      : null);
   const sampleLabel = estimate
     ? usesAddressHistory
       ? `vente${estimate.sampleSize > 1 ? "s" : ""} de l'adresse`
-      : `parcelle${estimate.sampleSize > 1 ? "s" : ""} bâtie${estimate.sampleSize > 1 ? "s" : ""} (une vente par parcelle)`
+      : usesUnitSales
+        ? `vente${estimate.sampleSize > 1 ? "s" : ""} de stationnement`
+        : `vente${estimate.sampleSize > 1 ? "s" : ""} ${
+            isLandEstimate
+              ? "foncière"
+              : estimate.segment === "house"
+                ? "de maison"
+                : estimate.segment === "building"
+                  ? "d'immeuble"
+                  : estimate.segment === "commercial"
+                    ? "de local d'activité"
+                    : "d'appartement"
+          }${estimate.sampleSize > 1 ? "s" : ""}`
     : "";
 
   return (
@@ -915,28 +981,70 @@ function MarketLocalCard({
         </div>
         {estimate && (
           <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-            {estimate.commune ? `${estimate.commune} · ` : ""}rayon {estimate.radiusM} m (
-            {areaLabel})
+            {estimate.commune ? `${estimate.commune} · ` : ""}
+            {usesUnitSales
+              ? `stationnements · rayon ${estimate.radiusM} m`
+              : usesAggregateStatistics
+                ? `référence ${aggregateScopeLabel(estimate.geographyLevel)}`
+                : `rayon ${estimate.radiusM} m (${areaLabel})`}
           </span>
         )}
       </div>
 
       {isLoading && !estimate ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          Lecture des ventes DVF par parcelle autour de l'adresse...
+          Chargement de l'estimation pré-calculée...
         </p>
       ) : !hasRange ? (
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          Pas assez de ventes exploitables autour de l'adresse pour établir une fourchette fiable.
-          Saisis un prix de marché au m² dans les réglages pour obtenir un plafond provisoire.
+          {unavailableReason} Saisis un prix de marché au m² dans les réglages pour obtenir un
+          plafond provisoire.
         </p>
       ) : (
         <>
+          {estimatedValue && (
+            <div className="mt-3 rounded-md border border-gold/20 bg-gold/5 px-3 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                {isLandEstimate ? "Valeur foncière estimée" : "Valeur estimée du bien"}
+              </p>
+              <p className="mt-1 font-display text-2xl text-foreground">
+                {formatPrice(estimatedValue)}
+              </p>
+              {estimate?.estimatedValueLowEur && estimate.estimatedValueHighEur && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Fourchette indicative : {formatPrice(estimate.estimatedValueLowEur)} à{" "}
+                  {formatPrice(estimate.estimatedValueHighEur)}
+                </p>
+              )}
+            </div>
+          )}
           <PriceRange estimate={estimate!} />
+          {estimate!.actionable === false && (
+            <p className="mt-3 rounded-md border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+              Référence indicative uniquement : elle n'est pas utilisée automatiquement pour le
+              plafond d'enchère. Confirme un prix manuel ou renforce les comparables.
+            </p>
+          )}
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            Fourchette établie sur{" "}
-            <strong className="text-foreground">{estimate!.sampleSize}</strong> {sampleLabel}, sur{" "}
-            {estimate!.totalNearbySampleSize} ventes recensées dans le rayon.
+            {usesUnitSales ? (
+              <>
+                Fourchette indicative établie sur{" "}
+                <strong className="text-foreground">{estimate!.sampleSize}</strong> ventes DVF
+                composées uniquement de dépendances, dans un rayon de {estimate!.radiusM} m.
+              </>
+            ) : usesAggregateStatistics ? (
+              <>
+                Fourchette indicative établie sur la médiane de{" "}
+                <strong className="text-foreground">{estimate!.sampleSize}</strong> ventes de
+                référence à l’échelle {aggregateScopeLabel(estimate!.geographyLevel)}.
+              </>
+            ) : (
+              <>
+                Fourchette établie sur{" "}
+                <strong className="text-foreground">{estimate!.sampleSize}</strong> {sampleLabel},
+                sur {estimate!.totalNearbySampleSize} ventes recensées dans le rayon.
+              </>
+            )}
             {usingCachedEstimate ? " Estimation conservée en cache." : ""}
           </p>
           {estimate!.qualityWarnings.length > 0 && (
@@ -952,7 +1060,28 @@ function MarketLocalCard({
   );
 }
 
+function aggregateScopeLabel(level: DvfMarketEstimate["geographyLevel"]): string {
+  if (level === "commune") return "de la commune";
+  if (level === "epci") return "de l’intercommunalité";
+  return "du département";
+}
+
 function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
+  if (estimate.surfaceBasis === "unit" && estimate.medianUnitPriceEur) {
+    return (
+      <div className="mt-4 flex items-baseline justify-between border-y border-border py-3 text-xs">
+        <span className="uppercase tracking-[0.12em] text-muted-foreground">
+          Prix unitaire observé
+        </span>
+        <span className="tabular-nums text-foreground">
+          {estimate.p10UnitPriceEur ? formatPrice(estimate.p10UnitPriceEur) : "—"} à{" "}
+          {estimate.p90UnitPriceEur ? formatPrice(estimate.p90UnitPriceEur) : "—"}
+          {" · médiane "}
+          <strong>{formatPrice(estimate.medianUnitPriceEur)}</strong>
+        </span>
+      </div>
+    );
+  }
   const min = estimate.minPricePerM2 ?? estimate.p25PricePerM2 ?? 0;
   const max = estimate.maxPricePerM2 ?? estimate.p75PricePerM2 ?? 0;
   const p25 = estimate.p25PricePerM2 ?? min;
@@ -964,7 +1093,9 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
   return (
     <div className="mt-4">
       <div className="flex items-baseline justify-between text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-        <span>Prix au m² observé</span>
+        <span>
+          {estimate.surfaceBasis === "land" ? "Prix foncier au m² observé" : "Prix au m² observé"}
+        </span>
         <span className="tabular-nums">
           médiane <strong className="text-foreground">{ppm2(median)}</strong>
         </span>
@@ -1400,7 +1531,9 @@ function buildSuccessConditions(
           ? `Référence DVF ${estimate.qualityLabel} : ${estimate.sampleSize} ${
               estimate.comparableMode === "address_history"
                 ? "ventes de l'adresse"
-                : "ventes comparables"
+                : estimate.comparableMode === "unit_sales"
+                  ? "ventes unitaires de stationnement"
+                  : "ventes comparables"
             } retenues dans un rayon de ${estimate.radiusM} m.`
           : "Référence à compléter manuellement si les ventes DVF ne suffisent pas autour de l'adresse.",
     },

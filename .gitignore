@@ -27,6 +27,11 @@ output/
 # Generated valuation model bundles
 deployment/valuation-models/*.json
 
+# Local design exploration and rendered QA captures
+docs/design/annonce-detail/*-viewport.png
+docs/design/annonce-detail/offer-page.png
+docs/design/annonce-detail/rendered-*.png
+
 # Environment
 .env
 .env.*
