@@ -59,7 +59,7 @@ export async function runMonitoredCron(
       { headers: { "cache-control": "no-store", "x-request-id": requestId } },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Scheduled job failed";
+    const message = operationalErrorMessage(error);
     const durationMs = Date.now() - startedAt;
     await finishRun(runId, "failed", {}, message);
     logCron("error", { requestId, runId, jobName, durationMs, status: "failed", message });
@@ -68,6 +68,19 @@ export async function runMonitoredCron(
       { status: 500, headers: { "cache-control": "no-store", "x-request-id": requestId } },
     );
   }
+}
+
+export function operationalErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (typeof error === "string" && error.trim()) return error.trim();
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const parts = [record.message, record.details, record.hint, record.code]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map((value) => value.trim());
+    if (parts.length) return [...new Set(parts)].join(" · ");
+  }
+  return "Scheduled job failed";
 }
 
 export async function runDataRetention(now = new Date()): Promise<Record<string, unknown>> {

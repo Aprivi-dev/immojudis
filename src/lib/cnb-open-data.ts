@@ -127,19 +127,21 @@ export function parseCnbRealEstateLawyers(
   importedAt = new Date(),
 ): CnbLawyerImportRow[] {
   const iterator = parseSemicolonRows(csv)[Symbol.iterator]();
-  let headers: string[] | null = null;
+  let headerIndexes: Map<(typeof REQUIRED_HEADERS)[number], number> | null = null;
   for (let rowIndex = 0; rowIndex < 5; rowIndex += 1) {
     const candidate = iterator.next();
     if (candidate.done) break;
     const candidateHeaders = candidate.value.map((header) => header.replace(/^\uFEFF/, "").trim());
-    if (candidateHeaders.includes("NomBarreau") && candidateHeaders.includes("avNom")) {
-      headers = candidateHeaders;
+    const candidateIndexes = buildHeaderIndexes(candidateHeaders);
+    if (candidateIndexes.has("NomBarreau") && candidateIndexes.has("avNom")) {
+      headerIndexes = candidateIndexes;
       break;
     }
   }
-  if (!headers) throw new Error("L'export CNB ne contient pas de ligne d'en-tête reconnue.");
+  if (!headerIndexes) {
+    throw new Error("L'export CNB ne contient pas de ligne d'en-tête reconnue.");
+  }
 
-  const headerIndexes = new Map(headers.map((header, index) => [header, index]));
   const missingHeaders = REQUIRED_HEADERS.filter((header) => !headerIndexes.has(header));
   if (missingHeaders.length) {
     throw new Error(`Colonnes CNB absentes : ${missingHeaders.join(", ")}.`);
@@ -210,6 +212,23 @@ export function parseCnbRealEstateLawyers(
   if (!result.length || result.length > 5_000) {
     throw new Error(`Nombre de spécialistes CNB incohérent : ${result.length}.`);
   }
+  return result;
+}
+
+function buildHeaderIndexes(headers: string[]): Map<(typeof REQUIRED_HEADERS)[number], number> {
+  const sourceIndexes = new Map(
+    headers.map((header, index) => [normalizeHeader(header), index] as const),
+  );
+  const result = new Map<(typeof REQUIRED_HEADERS)[number], number>();
+
+  for (const header of REQUIRED_HEADERS) {
+    const aliases = header === "NomBarreau" ? ["NomBarreau", "Barreau"] : [header];
+    const index = aliases
+      .map((alias) => sourceIndexes.get(normalizeHeader(alias)))
+      .find((candidate): candidate is number => candidate != null);
+    if (index != null) result.set(header, index);
+  }
+
   return result;
 }
 
@@ -326,6 +345,13 @@ function normalizeKey(value: string | null | undefined) {
       .replace(/[^a-z0-9]+/g, " ")
       .trim() ?? ""
   );
+}
+
+function normalizeHeader(value: string) {
+  return value
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLocaleLowerCase("fr");
 }
 
 function clean(value: string | null | undefined) {
