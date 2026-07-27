@@ -149,6 +149,46 @@ def test_normalize_dvf_row_maps_land_only_sale() -> None:
     assert transaction["land_surface_m2"] == Decimal("720")
 
 
+def test_upsert_transactions_uses_one_multi_row_statement() -> None:
+    cursor = RecordingCursor()
+    connection = RecordingConnection(cursor)
+    payload = [
+        {column: f"first-{column}" for column in dvf_import.DVF_TRANSACTION_COLUMNS},
+        {column: f"second-{column}" for column in dvf_import.DVF_TRANSACTION_COLUMNS},
+    ]
+
+    dvf_import._upsert_transactions(connection, payload)
+
+    assert len(cursor.calls) == 1
+    assert len(cursor.calls[0][1]) == 2 * len(dvf_import.DVF_TRANSACTION_COLUMNS)
+    assert cursor.calls[0][1][0] == "first-import_batch_id"
+    assert cursor.calls[0][1][-1] == "second-updated_at"
+
+
+def test_commit_transaction_batch_persists_progress_before_commit(monkeypatch) -> None:
+    cursor = RecordingCursor()
+    connection = RecordingConnection(cursor)
+    summary = dvf_import.DvfImportSummary(
+        file_name="dvf.csv.gz",
+        parsed_rows=4,
+        skipped_rows=2,
+    )
+    payload = [{"source_mutation_id": "2026-1"}, {"source_mutation_id": "2026-2"}]
+    upserted: list[list[dict[str, object]]] = []
+    monkeypatch.setattr(
+        dvf_import,
+        "_upsert_transactions",
+        lambda received_connection, received_payload: upserted.append(received_payload),
+    )
+
+    dvf_import._commit_transaction_batch(connection, "batch-id", payload, summary)
+
+    assert upserted == [payload]
+    assert connection.commits == 1
+    assert cursor.calls[0][1] == (2, 4, 2, "batch-id")
+    assert summary.upserted_rows == 2
+
+
 def test_import_dvf_file_dry_run_counts_valid_and_skipped_rows(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(dvf_import, "load_settings", lambda: {"supabase_db_url": None})
     path = tmp_path / "valeursfoncieres-2024.txt"
@@ -168,3 +208,32 @@ def test_import_dvf_file_dry_run_counts_valid_and_skipped_rows(tmp_path, monkeyp
     assert summary.upserted_rows == 0
     assert summary.period_start == date(2024, 2, 15)
     assert summary.period_end == date(2024, 2, 15)
+
+
+class RecordingCursor:
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, list[object]]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+    def execute(self, statement: object, values: list[object]) -> None:
+        self.calls.append((statement, values))
+
+    def executemany(self, statement: object, values: object) -> None:
+        raise AssertionError("DVF imports must not use psycopg pipeline mode")
+
+
+class RecordingConnection:
+    def __init__(self, cursor: RecordingCursor) -> None:
+        self._cursor = cursor
+        self.commits = 0
+
+    def cursor(self) -> RecordingCursor:
+        return self._cursor
+
+    def commit(self) -> None:
+        self.commits += 1

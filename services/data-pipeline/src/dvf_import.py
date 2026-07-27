@@ -120,13 +120,12 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
                 payload.append(transaction)
                 _record_period(summary, transaction["sale_date"])
                 if len(payload) >= options.batch_size:
-                    _upsert_transactions(connection, payload)
-                    summary.upserted_rows += len(payload)
+                    _commit_transaction_batch(connection, batch_id, payload, summary)
                     payload = []
             if payload:
-                _upsert_transactions(connection, payload)
-                summary.upserted_rows += len(payload)
+                _commit_transaction_batch(connection, batch_id, payload, summary)
             _finish_import_batch(connection, summary)
+            connection.commit()
         except Exception as exc:
             summary.errors.append(str(exc))
             connection.rollback()
@@ -465,6 +464,31 @@ def _fail_import_batch(connection: Any, batch_id: str, error_message: str) -> No
         )
 
 
+def _commit_transaction_batch(
+    connection: Any,
+    batch_id: str,
+    payload: list[dict[str, object]],
+    summary: DvfImportSummary,
+) -> None:
+    _upsert_transactions(connection, payload)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            update public.dvf_import_batches
+            set imported_rows = imported_rows + %s,
+                metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+                  'parsed_rows', %s,
+                  'skipped_rows', %s
+                ),
+                updated_at = now()
+            where id = %s
+            """,
+            (len(payload), summary.parsed_rows, summary.skipped_rows, batch_id),
+        )
+    connection.commit()
+    summary.upserted_rows += len(payload)
+
+
 def _upsert_transactions(connection: Any, payload: list[dict[str, object]]) -> None:
     if not payload:
         return
@@ -474,21 +498,30 @@ def _upsert_transactions(connection: Any, payload: list[dict[str, object]]) -> N
     insert_statement = sql.SQL(
         """
         insert into public.dvf_transactions ({columns})
-        values ({values})
+        values {values}
         on conflict (source, source_mutation_id, coalesce(parcel_id, '')) do update set {updates}
         """
     ).format(
         columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
-        values=sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+        values=sql.SQL(", ").join(
+            sql.SQL("({})").format(
+                sql.SQL(", ").join(sql.Placeholder() for _ in columns)
+            )
+            for _ in payload
+        ),
         updates=sql.SQL(", ").join(
             sql.SQL("{} = excluded.{}").format(sql.Identifier(column), sql.Identifier(column))
             for column in columns
             if column not in {"source", "source_mutation_id", "parcel_id"}
         ),
     )
-    rows = [tuple(postgres_value(row.get(column)) for column in columns) for row in payload]
+    values = [
+        postgres_value(row.get(column))
+        for row in payload
+        for column in columns
+    ]
     with connection.cursor() as cursor:
-        cursor.executemany(insert_statement, rows)
+        cursor.execute(insert_statement, values)
 
 
 def postgres_value(value: object) -> object:
