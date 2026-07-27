@@ -48,6 +48,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiError(error, context, {
       fallbackMessage: "Refresh DPE/cadastre impossible.",
+      headers: { "retry-after": "60" },
     });
   }
 }

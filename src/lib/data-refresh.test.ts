@@ -1,16 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import {
+  DATA_REFRESH_REQUESTS_PER_MINUTE,
   dataRefreshRequestSchema,
   normalizeDataRefreshKindList,
   requestDataRefresh,
 } from "@/lib/data-refresh";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
-const { serverFrom } = vi.hoisted(() => ({ serverFrom: vi.fn() }));
+const { serverFrom, serverRpc } = vi.hoisted(() => ({
+  serverFrom: vi.fn(),
+  serverRpc: vi.fn(),
+}));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { from: serverFrom },
+  supabaseAdmin: { from: serverFrom, rpc: serverRpc },
 }));
 
 vi.mock("@/lib/property-reports", () => ({
@@ -26,9 +31,22 @@ vi.mock("@/lib/usage", () => ({
   recordFeatureUsageEvent: vi.fn(async () => undefined),
 }));
 
+vi.mock("@/lib/rate-limit", () => ({
+  enforceUserRateLimit: vi.fn(async () => 1),
+}));
+
 describe("data refresh requests", () => {
   beforeEach(() => {
     serverFrom.mockReset();
+    serverRpc.mockReset();
+    serverRpc.mockImplementation(async (_name, args: { p_request_kind: string }) => ({
+      data: [
+        args.p_request_kind === "dpe"
+          ? { request_id: DPE_REQUEST_ID, reused: true }
+          : { request_id: CADASTRE_REQUEST_ID, reused: false },
+      ],
+      error: null,
+    }));
   });
 
   it("normalizes refresh scopes and collapses full refreshes", () => {
@@ -41,7 +59,7 @@ describe("data refresh requests", () => {
     });
   });
 
-  it("creates missing refresh requests and reuses an active request for the same sale", async () => {
+  it("admits refresh requests atomically and preserves exact deduplication", async () => {
     const auth = fakeRefreshAuth();
     serverFrom.mockImplementation((table: string) =>
       (auth.supabase as unknown as { from: (name: string) => unknown }).from(table),
@@ -66,17 +84,23 @@ describe("data refresh requests", () => {
       ["cadastre", false],
       ["dpe", true],
     ]);
-    expect(auth.inserts).toHaveLength(1);
-    expect(auth.inserts[0]).toMatchObject({
-      user_id: USER_ID,
-      sale_id: SALE_ID,
-      source_url: SOURCE_URL,
-      request_kind: "cadastre",
-      priority: 60,
-      requested_payload: {
-        force: true,
-        requested_from: "app",
-      },
+    expect(enforceUserRateLimit).toHaveBeenCalledWith({
+      userId: USER_ID,
+      bucketKey: "data.refresh",
+      limit: DATA_REFRESH_REQUESTS_PER_MINUTE,
+      windowSeconds: 60,
+    });
+    expect(serverRpc).toHaveBeenNthCalledWith(1, "enqueue_data_refresh_bounded", {
+      p_force: true,
+      p_request_kind: "cadastre",
+      p_sale_id: SALE_ID,
+      p_user_id: USER_ID,
+    });
+    expect(serverRpc).toHaveBeenNthCalledWith(2, "enqueue_data_refresh_bounded", {
+      p_force: true,
+      p_request_kind: "dpe",
+      p_sale_id: SALE_ID,
+      p_user_id: USER_ID,
     });
     expect(recordFeatureUsageEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -87,16 +111,35 @@ describe("data refresh requests", () => {
       }),
     );
   });
+
+  it("surfaces database backpressure as an API-rate-limit error", async () => {
+    const auth = fakeRefreshAuth();
+    serverFrom.mockImplementation((table: string) =>
+      (auth.supabase as unknown as { from: (name: string) => unknown }).from(table),
+    );
+    serverRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: "DATA_REFRESH_USER_ACTIVE_LIMIT" },
+    });
+
+    await expect(
+      requestDataRefresh({
+        auth,
+        input: { saleId: SALE_ID, kinds: ["full"], force: false },
+      }),
+    ).rejects.toThrow("Trop de demandes de rafraîchissement");
+  });
 });
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const SALE_ID = "22222222-2222-4222-8222-222222222222";
 const SOURCE_URL = "https://example.test/sale";
+const DPE_REQUEST_ID = "33333333-3333-4333-8333-333333333333";
+const CADASTRE_REQUEST_ID = "44444444-4444-4444-8444-444444444444";
 
-function fakeRefreshAuth(): SupabaseAuthContext & { inserts: Record<string, unknown>[] } {
-  const inserts: Record<string, unknown>[] = [];
+function fakeRefreshAuth(): SupabaseAuthContext {
   const activeDpeRequest = refreshRow({
-    id: "33333333-3333-4333-8333-333333333333",
+    id: DPE_REQUEST_ID,
     request_kind: "dpe",
     status: "running",
   });
@@ -104,15 +147,12 @@ function fakeRefreshAuth(): SupabaseAuthContext & { inserts: Record<string, unkn
   return {
     userId: USER_ID,
     claims: { sub: USER_ID },
-    inserts,
     supabase: {
       from(table: string) {
         const state: {
           filters: Record<string, unknown>;
-          insertPayload: Record<string, unknown> | null;
         } = {
           filters: {},
-          insertPayload: null,
         };
         const builder = {
           select() {
@@ -120,21 +160,6 @@ function fakeRefreshAuth(): SupabaseAuthContext & { inserts: Record<string, unkn
           },
           eq(column: string, value: unknown) {
             state.filters[column] = value;
-            return builder;
-          },
-          in(column: string, value: unknown) {
-            state.filters[column] = value;
-            return builder;
-          },
-          order() {
-            return builder;
-          },
-          limit() {
-            return builder;
-          },
-          insert(payload: Record<string, unknown>) {
-            inserts.push(payload);
-            state.insertPayload = payload;
             return builder;
           },
           async single() {
@@ -150,27 +175,19 @@ function fakeRefreshAuth(): SupabaseAuthContext & { inserts: Record<string, unkn
                 error: null,
               };
             }
-            if (table === "data_refresh_requests" && state.insertPayload) {
+            if (table === "data_refresh_requests" && state.filters.id === DPE_REQUEST_ID) {
+              return { data: activeDpeRequest, error: null };
+            }
+            if (table === "data_refresh_requests" && state.filters.id === CADASTRE_REQUEST_ID) {
               return {
                 data: refreshRow({
-                  ...state.insertPayload,
-                  id: "44444444-4444-4444-8444-444444444444",
+                  id: CADASTRE_REQUEST_ID,
                   status: "queued",
                 }),
                 error: null,
               };
             }
             return { data: null, error: new Error(`Unexpected single query on ${table}`) };
-          },
-          async maybeSingle() {
-            if (
-              table === "data_refresh_requests" &&
-              state.filters.request_kind === "dpe" &&
-              state.filters.source_url === SOURCE_URL
-            ) {
-              return { data: activeDpeRequest, error: null };
-            }
-            return { data: null, error: null };
           },
           then(resolve: (value: { data: unknown[]; error: null }) => void) {
             resolve({ data: [], error: null });
@@ -179,7 +196,7 @@ function fakeRefreshAuth(): SupabaseAuthContext & { inserts: Record<string, unkn
         return builder;
       },
     },
-  } as unknown as SupabaseAuthContext & { inserts: Record<string, unknown>[] };
+  } as unknown as SupabaseAuthContext;
 }
 
 function refreshRow(overrides: Record<string, unknown>) {

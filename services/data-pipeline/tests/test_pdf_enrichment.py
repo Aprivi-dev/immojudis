@@ -1,3 +1,4 @@
+import socket
 import unicodedata
 import zipfile
 from datetime import UTC, datetime
@@ -5,13 +6,19 @@ from decimal import Decimal
 from types import SimpleNamespace
 from urllib.parse import unquote, urlparse
 
+import pytest
+
 from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
 from src.pdf_enrichment import (
     PdfEnrichmentStats,
+    PublicDocumentTarget,
     _adaptive_docling_timeout,
     _bounded_document_content,
+    _download_document_response,
+    _PinnedNetworkBackend,
     _read_document_text_cache,
+    _resolve_public_document_target,
     _select_documents_for_extraction,
     _store_document_analysis_status,
     _write_document_text_cache,
@@ -38,6 +45,90 @@ def test_bounded_document_content_rejects_declared_and_actual_oversize_payloads(
         raise AssertionError("actual oversize payload should be rejected")
     except ValueError as exc:
         assert "download limit" in str(exc)
+
+
+def test_resolve_public_document_target_rejects_any_non_public_answer() -> None:
+    def resolver_for(*addresses: str):
+        def resolve(host: str, port: int, *, type: int):
+            assert host == "documents.example"
+            assert port == 443
+            assert type == socket.SOCK_STREAM
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (address, port))
+                for address in addresses
+            ]
+
+        return resolve
+
+    target = _resolve_public_document_target(
+        "https://documents.example/pv.pdf",
+        resolver=resolver_for("93.184.216.34"),
+    )
+    assert target.addresses == ("93.184.216.34",)
+
+    with pytest.raises(ValueError, match="outside the public network"):
+        _resolve_public_document_target(
+            "https://documents.example/pv.pdf",
+            resolver=resolver_for("93.184.216.34", "127.0.0.1"),
+        )
+    with pytest.raises(ValueError, match="outside the public network"):
+        _resolve_public_document_target(
+            "https://documents.example/pv.pdf",
+            resolver=resolver_for("10.0.0.5"),
+        )
+
+
+def test_pinned_document_backend_dials_only_an_approved_address() -> None:
+    calls: list[tuple[str, int]] = []
+    expected_stream = object()
+
+    class RecordingBackend:
+        def connect_tcp(self, host: str, port: int, **kwargs):
+            calls.append((host, port))
+            return expected_stream
+
+        def sleep(self, seconds: float) -> None:
+            return None
+
+    target = PublicDocumentTarget(
+        url="https://documents.example/pv.pdf",
+        hostname="documents.example",
+        port=443,
+        addresses=("93.184.216.34",),
+    )
+    backend = _PinnedNetworkBackend(target, backend=RecordingBackend())
+
+    assert backend.connect_tcp("documents.example", 443) is expected_stream
+    assert calls == [("93.184.216.34", 443)]
+    with pytest.raises(ValueError, match="unexpected destination"):
+        backend.connect_tcp("other.example", 443)
+
+
+def test_document_redirect_reenters_the_public_destination_boundary(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class RedirectResponse:
+        status_code = 302
+        headers = {"location": "http://127.0.0.1/private.pdf"}
+
+    def send(url: str, **kwargs):
+        calls.append(url)
+        if url.startswith("http://127.0.0.1"):
+            raise ValueError("blocked redirect destination")
+        return RedirectResponse()
+
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", send)
+
+    with pytest.raises(ValueError, match="blocked redirect destination"):
+        _download_document_response(
+            "https://documents.example/pv.pdf",
+            headers={},
+            timeout_seconds=5,
+        )
+    assert calls == [
+        "https://documents.example/pv.pdf",
+        "http://127.0.0.1/private.pdf",
+    ]
 
 
 def test_classify_document_type_prioritizes_known_pdf_labels() -> None:
@@ -1235,7 +1326,7 @@ def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, 
     def fail_get(*args, **kwargs):
         raise AssertionError("robots-disallowed Licitor PDFs must not be downloaded")
 
-    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fail_get)
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fail_get)
 
     assert download_documents(sale, output_root=tmp_path) == []
 
@@ -1253,7 +1344,7 @@ def test_download_documents_uses_legacy_type_when_label_and_url_are_vague(tmp_pa
         calls.append((url, kwargs))
         return Response()
 
-    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fake_get)
     sale = normalize_sale(
         {
             "source_name": "vench",
@@ -1282,7 +1373,7 @@ def test_download_documents_classifies_generic_type_from_label(tmp_path, monkeyp
         def raise_for_status(self) -> None:
             return None
 
-    monkeypatch.setattr("src.pdf_enrichment.httpx.get", lambda *args, **kwargs: Response())
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", lambda *args, **kwargs: Response())
     sale = normalize_sale(
         {
             "source_name": "cessions_etat",
@@ -1310,7 +1401,7 @@ def test_download_documents_saves_non_pdf_download_endpoint_with_pdf_suffix(tmp_
         def raise_for_status(self) -> None:
             return None
 
-    monkeypatch.setattr("src.pdf_enrichment.httpx.get", lambda *args, **kwargs: Response())
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", lambda *args, **kwargs: Response())
     sale = normalize_sale(
         {
             "source_name": "info_encheres",
@@ -1345,7 +1436,7 @@ def test_download_documents_rejects_html_response_and_uses_source_referer(tmp_pa
         captured.update(kwargs)
         return Response()
 
-    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fake_get)
     sale = normalize_sale(
         {
             "source_name": "info_encheres",
@@ -1363,16 +1454,21 @@ def test_download_documents_rejects_html_response_and_uses_source_referer(tmp_pa
 
     assert download_documents(sale, output_root=tmp_path, stats=stats) == []
     assert stats.errors == 1
-    assert captured["follow_redirects"] is False
-    assert captured["verify"] is True
     assert captured["headers"]["Referer"] == sale.source_url
+    assert captured["timeout_seconds"] > 0
     assert list(tmp_path.rglob("*.pdf")) == []
 
 
 def test_download_documents_rejects_private_network_urls(tmp_path, monkeypatch) -> None:
+    transport_targets: list[PublicDocumentTarget] = []
+
+    def record_transport(target: PublicDocumentTarget):
+        transport_targets.append(target)
+        raise AssertionError("private URL reached the HTTP transport")
+
     monkeypatch.setattr(
-        "src.pdf_enrichment.httpx.get",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("private URL must not be fetched")),
+        "src.pdf_enrichment._PinnedHTTPTransport",
+        record_transport,
     )
     sale = normalize_sale(
         {
@@ -1391,6 +1487,7 @@ def test_download_documents_rejects_private_network_urls(tmp_path, monkeypatch) 
 
     assert download_documents(sale, output_root=tmp_path, stats=stats) == []
     assert stats.errors == 1
+    assert transport_targets == []
 
 
 def test_download_documents_fetches_duplicate_url_only_once(tmp_path, monkeypatch) -> None:
@@ -1407,7 +1504,7 @@ def test_download_documents_fetches_duplicate_url_only_once(tmp_path, monkeypatc
         calls.append(url)
         return Response()
 
-    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fake_get)
     document = {
         "label": "Diagnostics techniques",
         "url": "https://example.test/diagnostics.pdf",
@@ -1425,6 +1522,47 @@ def test_download_documents_fetches_duplicate_url_only_once(tmp_path, monkeypatc
 
     assert calls == ["https://example.test/diagnostics.pdf"]
     assert len(downloaded) == 1
+
+
+def test_download_documents_applies_selection_budget_before_network_fanout(tmp_path, monkeypatch) -> None:
+    class Response:
+        content = b"%PDF-1.4\n%%EOF"
+        headers = {"content-type": "application/pdf"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    calls: list[str] = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        return Response()
+
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fake_get)
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-budgetee.html",
+            "property_type": "Terrain",
+            "surface_m2": "500 m2",
+            "occupancy_status": "Libre",
+            "documents": [
+                {
+                    "label": f"Annexe {index:02d}.pdf",
+                    "url": f"https://example.test/document-{index:02d}.pdf",
+                    "type": "pdf",
+                }
+                for index in range(40)
+            ],
+        }
+    )
+    sale.raw_payload["document_facts_version"] = "document_facts_v1_starting_price"
+
+    downloaded = download_documents(sale, output_root=tmp_path)
+
+    assert len(calls) == 2
+    assert len(downloaded) == 2
 
 
 def test_download_documents_retries_nfc_unicode_url_variant(tmp_path, monkeypatch) -> None:
@@ -1445,7 +1583,7 @@ def test_download_documents_retries_nfc_unicode_url_variant(tmp_path, monkeypatc
             raise RuntimeError("404 decomposed path")
         return Response()
 
-    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fake_get)
     sale = normalize_sale(
         {
             "source_name": "info_encheres",
@@ -1483,7 +1621,7 @@ def test_download_documents_normalizes_percent_encoded_combining_accent(tmp_path
             raise RuntimeError("404 decomposed path")
         return Response()
 
-    monkeypatch.setattr("src.pdf_enrichment.httpx.get", fake_get)
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fake_get)
     sale = normalize_sale(
         {
             "source_name": "info_encheres",
@@ -1508,7 +1646,7 @@ def test_download_documents_accepts_legacy_word_attachment(tmp_path, monkeypatch
         def raise_for_status(self) -> None:
             return None
 
-    monkeypatch.setattr("src.pdf_enrichment.httpx.get", lambda *args, **kwargs: Response())
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", lambda *args, **kwargs: Response())
     sale = normalize_sale(
         {
             "source_name": "info_encheres",
