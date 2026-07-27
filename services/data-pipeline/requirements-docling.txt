@@ -4,4 +4,4 @@
 # Install this file after requirements.txt when you want the Docling-first PDF pipeline.
 # The project upsert path uses Supabase REST directly with the service-role key, so this
 # conflict does not block normal pipeline runs.
-docling==2.94.0
+docling==2.115.0
