@@ -83,6 +83,26 @@ export function AdminReadinessPanel() {
                   : "Chargement"
               }
             />
+            <DiagnosticLine
+              label="Contrôle santé"
+              value={
+                readiness?.operations.lastHealthRunAt
+                  ? formatDateTime(readiness.operations.lastHealthRunAt)
+                  : "Non vérifié"
+              }
+            />
+            <DiagnosticLine
+              label="Alertes ouvertes"
+              value={
+                readiness?.operations.openAlertCount == null
+                  ? "Non vérifié"
+                  : String(readiness.operations.openAlertCount)
+              }
+            />
+            <DiagnosticLine
+              label="Scheduler santé"
+              value={readiness?.operations.schedulerSchedule ?? "Inactif"}
+            />
           </div>
 
           {webhookUrl ? (
@@ -113,6 +133,33 @@ export function AdminReadinessPanel() {
           </div>
         </div>
       </div>
+
+      {readiness?.operations.alerts.length ? (
+        <div className="mt-5 overflow-hidden rounded-lg border border-white/10">
+          <div className="grid grid-cols-[1fr_0.34fr_0.34fr] gap-3 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <span>Incident opérationnel</span>
+            <span>Sévérité</span>
+            <span>Livraison</span>
+          </div>
+          <div className="divide-y divide-white/10">
+            {readiness.operations.alerts.map((alert) => (
+              <div
+                key={alert.key}
+                className="grid grid-cols-[1fr_0.34fr_0.34fr] gap-3 px-3 py-3 text-xs"
+              >
+                <div className="min-w-0">
+                  <div className="truncate font-mono text-foreground">{alert.key}</div>
+                  <div className="mt-1 text-muted-foreground">
+                    {alert.category} · {formatDateTime(alert.lastSeenAt)}
+                  </div>
+                </div>
+                <span className="text-foreground">{alert.severity}</span>
+                <span className="text-foreground">{alert.deliveryStatus}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

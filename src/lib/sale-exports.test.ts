@@ -18,6 +18,21 @@ describe("sales CSV export", () => {
     expect(csv).toContain("https://app.immojudis.test/sales/7d335032-e935-4550-9347-ed22b0f63449");
   });
 
+  it("neutralizes spreadsheet formulas in user and source controlled cells", () => {
+    const sale: AuctionSale = {
+      ...EXAMPLE_SALE,
+      title: '=HYPERLINK("https://example.test","ouvrir")',
+      city: "+cmd|' /C calc'!A0",
+      address: "@SUM(1+1)",
+    };
+
+    const csv = buildSalesCsv([sale]);
+
+    expect(csv).toContain("'=HYPERLINK");
+    expect(csv).toContain("'+cmd|' /C calc'!A0");
+    expect(csv).toContain("'@SUM(1+1)");
+  });
+
   it("builds a light JSON feed item for Analyse API access", () => {
     const sale: AuctionSale = {
       ...EXAMPLE_SALE,

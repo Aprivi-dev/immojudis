@@ -56,6 +56,14 @@ const requiredGroups = [
     label: "Vercel Cron secret",
     names: ["CRON_SECRET"],
   },
+  {
+    label: "Canonical site URL",
+    names: ["SITE_URL", "NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_APP_URL", "APP_URL", "VERCEL_URL"],
+  },
+  {
+    label: "Mapbox public access token",
+    names: ["NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "VITE_MAPBOX_ACCESS_TOKEN"],
+  },
 ];
 
 const optionalGroups = [
@@ -68,10 +76,6 @@ const optionalGroups = [
     names: ["STRIPE_WEBHOOK_SECRET"],
   },
   {
-    label: "Canonical app URL",
-    names: ["NEXT_PUBLIC_APP_URL"],
-  },
-  {
     label: "Email alert delivery",
     names: ["RESEND_API_KEY", "ALERT_EMAIL_FROM"],
   },
@@ -79,6 +83,20 @@ const optionalGroups = [
 
 const missing = requiredGroups.filter((group) => !firstPresent(group.names));
 const warnings = optionalGroups.filter((group) => !firstPresent(group.names));
+const configuredSiteUrl = firstValue([
+  "SITE_URL",
+  "NEXT_PUBLIC_SITE_URL",
+  "NEXT_PUBLIC_APP_URL",
+  "APP_URL",
+  "VERCEL_URL",
+]);
+const invalidSiteUrl = configuredSiteUrl && !isValidHttpOrigin(configuredSiteUrl);
+const configuredMapboxToken = firstValue([
+  "NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN",
+  "VITE_MAPBOX_ACCESS_TOKEN",
+]);
+const invalidMapboxToken =
+  configuredMapboxToken && !isValidMapboxPublicToken(configuredMapboxToken);
 
 if (missing.length) {
   console.error("[env:prod] Missing required production environment groups:");
@@ -94,7 +112,15 @@ if (warnings.length) {
   }
 }
 
-if (missing.length) process.exit(1);
+if (invalidSiteUrl) {
+  console.error(`[env:prod] Invalid canonical site URL: ${configuredSiteUrl}`);
+}
+
+if (invalidMapboxToken) {
+  console.error("[env:prod] Invalid Mapbox token: expected a public token beginning with pk.");
+}
+
+if (missing.length || invalidSiteUrl || invalidMapboxToken) process.exit(1);
 
 console.log("[env:prod] Required production environment groups are configured.");
 const declaredOnly = requiredGroups
@@ -110,6 +136,10 @@ function firstPresent(names) {
   return names.find((name) => !isMissing(process.env[name]) || declaredProductionNames.has(name));
 }
 
+function firstValue(names) {
+  return names.map((name) => process.env[name]).find((value) => !isMissing(value));
+}
+
 function unquote(value) {
   return value.replace(/^(['"])(.*)\1$/, "$2");
 }
@@ -121,6 +151,27 @@ function isMissing(value) {
   return (
     !normalized ||
     normalized.startsWith("your-") ||
-    ["changeme", "todo", "null", "undefined"].includes(normalized)
+    ["changeme", "placeholder", "todo", "null", "undefined"].includes(normalized)
   );
+}
+
+function isValidHttpOrigin(value) {
+  try {
+    const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`;
+    const url = new URL(candidate);
+    return (
+      ["http:", "https:"].includes(url.protocol) &&
+      !url.username &&
+      !url.password &&
+      url.pathname === "/" &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isValidMapboxPublicToken(value) {
+  return /^pk\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(String(value).trim());
 }

@@ -19,4 +19,16 @@ describe("market cadastre fallback", () => {
       cadastreSurfaceFromPayload({ features: [{ properties: { contenance: 0 } }] }),
     ).toBeNull();
   });
+
+  it("caps oversized upstream feature collections before normalization", () => {
+    const features = Array.from({ length: 20 }, (_, index) => ({
+      properties: { idu: `parcel-${index}`, contenance: 1_000 + index },
+    }));
+    features.push({ properties: { idu: "out-of-budget", contenance: 1 } });
+
+    expect(cadastreSurfaceFromPayload({ features })).toMatchObject({
+      parcelId: "parcel-0",
+      surfaceM2: 1_000,
+    });
+  });
 });

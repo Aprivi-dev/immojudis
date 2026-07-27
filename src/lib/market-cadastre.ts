@@ -1,5 +1,6 @@
 const CADASTRE_API = "https://apicarto.ign.fr/api/cadastre/parcelle";
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
+const MAX_CADASTRE_FEATURES = 16;
 
 export type CadastreSurface = {
   surfaceM2: number;
@@ -41,6 +42,7 @@ export function cadastreSurfaceFromPayload(payload: unknown): CadastreSurface | 
   if (!Array.isArray(features)) return null;
 
   const candidates = features
+    .slice(0, MAX_CADASTRE_FEATURES)
     .map((feature) => {
       if (!feature || typeof feature !== "object") return null;
       const properties = (feature as { properties?: unknown }).properties;

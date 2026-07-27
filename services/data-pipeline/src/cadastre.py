@@ -13,6 +13,7 @@ from src.models import AuctionSale
 
 LOGGER = logging.getLogger(__name__)
 SOURCE_API_NAME = "API Carto Cadastre"
+MAX_CADASTRE_FEATURES = 100
 
 
 @dataclass(frozen=True)
@@ -101,9 +102,10 @@ def fetch_cadastre_parcels_for_sale(
     lat = float(sale.latitude)
     lng = float(sale.longitude)
     point = {"type": "Point", "coordinates": [lng, lat]}
+    bounded_max_parcels = min(max(1, max_parcels), MAX_CADASTRE_FEATURES)
     params: dict[str, object] = {
         "geom": json.dumps(point, separators=(",", ":")),
-        "_limit": max(1, max_parcels),
+        "_limit": bounded_max_parcels,
     }
     if source_ign:
         params["source_ign"] = source_ign
@@ -137,9 +139,15 @@ def cadastre_rows_from_feature_collection(
     if not isinstance(features, list):
         return []
 
+    requested_limit = (request_params or {}).get("_limit", MAX_CADASTRE_FEATURES)
+    try:
+        feature_limit = min(max(1, int(requested_limit)), MAX_CADASTRE_FEATURES)
+    except (TypeError, ValueError):
+        feature_limit = MAX_CADASTRE_FEATURES
+
     parcels: list[CadastreParcel] = []
     seen: set[str] = set()
-    for feature in features:
+    for feature in features[:feature_limit]:
         if not isinstance(feature, dict):
             continue
         parcel = cadastre_parcel_from_feature(

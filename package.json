@@ -4,19 +4,32 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
-  "packageManager": "npm@10.1.0",
+  "packageManager": "npm@11.18.0",
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "npm": ">=11.18.0 <12"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:ready": "node scripts/dev-ready.mjs",
-    "build": "node scripts/verify-required-env.mjs && node scripts/apply-supabase-migrations.mjs --if-enabled && node scripts/publish-valuation-models.mjs && next build",
+    "build": "node scripts/verify-required-env.mjs && next build",
     "build:dev": "next build",
+    "build:budgets": "node scripts/check-build-budgets.mjs",
+    "test:security-invariants": "node scripts/check-security-invariants.mjs",
+    "test:db-concurrency": "node scripts/test-concurrent-db-quotas.mjs && node scripts/test-phase-2-db-concurrency.mjs",
+    "check:schema-drift": "node scripts/check-supabase-schema-drift.mjs",
+    "test:e2e": "playwright test",
     "start": "next start",
     "preview": "next start",
     "test": "vitest run",
     "lint": "eslint .",
     "audit:ai-descriptions": "node scripts/audit-ai-descriptions.mjs",
     "env:check:prod": "node scripts/verify-production-env.mjs",
+    "check:migrations": "node scripts/apply-supabase-migrations.mjs --check",
     "db:migrate": "node scripts/apply-supabase-migrations.mjs",
+    "ops:health-scheduler:configure": "node scripts/configure-operational-health-scheduler.mjs",
+    "valuation:publish": "node scripts/publish-valuation-models.mjs",
+    "release:prepare": "npm run env:check:prod && npm run db:migrate && npm run ops:health-scheduler:configure && npm run check:schema-drift -- --remote && npm run valuation:publish",
     "format": "prettier --write ."
   },
   "dependencies": {
@@ -25,7 +38,7 @@
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.4",
     "@supabase/supabase-js": "^2.105.4",
-    "@tailwindcss/postcss": "^4.3.2",
+    "@tailwindcss/postcss": "^4.3.3",
     "@tanstack/react-query": "^5.83.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -33,7 +46,7 @@
     "h3-js": "^4.5.0",
     "lucide-react": "^0.575.0",
     "mapbox-gl": "^3.25.0",
-    "next": "^16.2.9",
+    "next": "^16.2.12",
     "postgres": "^3.4.9",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -46,23 +59,34 @@
   },
   "overrides": {
     "esbuild": "0.28.1",
-    "postcss": "8.5.15"
+    "postcss": "8.5.23",
+    "sharp": "0.35.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.2": true,
+    "fsevents@2.3.3": true
   },
   "devDependencies": {
-    "@eslint/js": "^9.32.0",
-    "@types/node": "^22.16.5",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.61.1",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "^24.13.3",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "eslint": "^9.32.0",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.1",
-    "eslint-plugin-prettier": "^5.2.6",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.20",
+    "eslint-plugin-prettier": "^5.5.6",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^15.15.0",
+    "jsdom": "29.1.1",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.56.1",
+    "typescript-eslint": "^8.65.0",
     "vite": "^7.3.1",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "vitest-axe": "0.1.0"
   }
 }

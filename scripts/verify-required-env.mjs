@@ -28,6 +28,17 @@ if (missing.length) {
   process.exit(1);
 }
 
+const configuredSiteUrl =
+  process.env.SITE_URL ||
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  process.env.NEXT_PUBLIC_APP_URL ||
+  process.env.APP_URL ||
+  process.env.VERCEL_URL;
+if (configuredSiteUrl && !isValidHttpOrigin(configuredSiteUrl)) {
+  console.error(`[env] Invalid canonical site URL: ${configuredSiteUrl}`);
+  process.exit(1);
+}
+
 function unquote(value) {
   return value.replace(/^(['"])(.*)\1$/, "$2");
 }
@@ -39,6 +50,23 @@ function isMissing(value) {
   return (
     !normalized ||
     normalized.startsWith("your-") ||
-    ["changeme", "todo", "null"].includes(normalized)
+    ["changeme", "placeholder", "todo", "null", "undefined"].includes(normalized)
   );
+}
+
+function isValidHttpOrigin(value) {
+  try {
+    const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`;
+    const url = new URL(candidate);
+    return (
+      ["http:", "https:"].includes(url.protocol) &&
+      !url.username &&
+      !url.password &&
+      url.pathname === "/" &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
 }

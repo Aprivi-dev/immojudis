@@ -14,10 +14,11 @@ from bs4 import BeautifulSoup, Tag
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
-from src.sources.common import ScrapeResult
+from src.sources.common import MAX_SAFE_REDIRECTS, REDIRECT_STATUS_CODES, ScrapeResult, is_allowed_origin_url
 
 BASE_URL = "https://avoventes.fr"
 SEARCH_URL = f"{BASE_URL}/recherche"
+ALLOWED_ORIGINS = (BASE_URL, "https://www.avoventes.fr")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -32,7 +33,7 @@ class AvoventesClient:
         self._client = httpx.Client(
             headers={"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml"},
             timeout=self.timeout_seconds,
-            follow_redirects=True,
+            follow_redirects=False,
         )
         self._robots = RobotFileParser()
         self._robots.set_url(urljoin(BASE_URL, "/robots.txt"))
@@ -44,6 +45,8 @@ class AvoventesClient:
             LOGGER.warning("Could not read Avoventes robots.txt: %s", exc)
 
     def get(self, url: str) -> str:
+        if not is_allowed_origin_url(url, ALLOWED_ORIGINS):
+            raise RuntimeError(f"refusing URL outside Avoventes origins: {url}")
         if self._robots_available and not self._robots.can_fetch(self.user_agent, url):
             raise RuntimeError(f"robots.txt does not allow fetching {url}")
         elapsed = time.monotonic() - self._last_request_at
@@ -51,7 +54,19 @@ class AvoventesClient:
             time.sleep(self.delay_seconds - elapsed)
         LOGGER.info("Fetching %s", url)
         try:
-            response = self._client.get(url)
+            current_url = url
+            for redirect_count in range(MAX_SAFE_REDIRECTS + 1):
+                if not is_allowed_origin_url(current_url, ALLOWED_ORIGINS):
+                    raise RuntimeError(f"refusing Avoventes redirect outside trusted origins: {current_url}")
+                response = self._client.get(current_url)
+                if response.status_code not in REDIRECT_STATUS_CODES:
+                    break
+                if redirect_count >= MAX_SAFE_REDIRECTS:
+                    raise RuntimeError(f"too many redirects while fetching {url}")
+                location = response.headers.get("location")
+                if not location:
+                    break
+                current_url = urljoin(current_url, location)
         finally:
             self._last_request_at = time.monotonic()
         response.raise_for_status()
@@ -100,13 +115,16 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
     return ScrapeResult(validate_raw_sales("avoventes", raw_sales, errors), errors)
 
 
-def parse_avoventes_html(html: str, page_url: str = SEARCH_URL, fallback_department: str | None = None) -> list[dict[str, Any]]:
+def parse_avoventes_html(
+    html: str, page_url: str = SEARCH_URL, fallback_department: str | None = None
+) -> list[dict[str, Any]]:
     soup = BeautifulSoup(html, "html.parser")
     sale_nodes = _find_sale_nodes(soup)
     if not sale_nodes:
         text = soup.get_text("\n", strip=True)
         return [_parse_text_block(text, page_url, fallback_department)] if "Mise à prix" in text else []
-    return [_parse_sale_node(node, page_url, fallback_department) for node in sale_nodes]
+    parsed_sales = [_parse_sale_node(node, page_url, fallback_department) for node in sale_nodes]
+    return [sale for sale in parsed_sales if sale is not None]
 
 
 def _find_sale_nodes(soup: BeautifulSoup) -> list[Tag]:
@@ -136,10 +154,13 @@ def _find_sale_nodes(soup: BeautifulSoup) -> list[Tag]:
     return unique
 
 
-def _parse_sale_node(node: Tag, page_url: str, fallback_department: str | None) -> dict[str, Any]:
+def _parse_sale_node(node: Tag, page_url: str, fallback_department: str | None) -> dict[str, Any] | None:
     raw_text = node.get_text("\n", strip=True)
     links = node.find_all("a", href=True)
     sale_url = urljoin(BASE_URL, str(node.get("data-link") or _choose_sale_url(links, page_url)))
+    if not is_allowed_origin_url(sale_url, ALLOWED_ORIGINS):
+        LOGGER.warning("Ignoring Avoventes listing with an untrusted source URL: %s", sale_url)
+        return None
     documents = _extract_documents(links, page_url)
     return _parse_text_block(raw_text, sale_url, fallback_department, documents=documents)
 
@@ -218,14 +239,18 @@ def _extract_documents(links: list[Tag], page_url: str) -> list[dict[str, str]]:
         if href.startswith("javascript:") or href.startswith("#"):
             continue
         if ".pdf" in searchable or any(word in searchable for word in ("document", "affiche", "cahier")):
+            document_url = urljoin(page_url, href)
+            if not is_allowed_origin_url(document_url, ALLOWED_ORIGINS):
+                LOGGER.warning("Ignoring Avoventes document with an untrusted URL: %s", document_url)
+                continue
             label = text or href.rstrip("/").split("/")[-1] or "document"
-            documents.append({"label": label, "url": urljoin(page_url, href), "type": _document_type(href, label)})
+            documents.append({"label": label, "url": document_url, "type": _document_type(href, label)})
     return documents
 
 
 def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], errors: list[str]) -> None:
     source_url = str(sale.get("source_url") or "")
-    if not source_url.startswith(BASE_URL):
+    if not is_allowed_origin_url(source_url, ALLOWED_ORIGINS):
         return
     try:
         html = client.get(source_url)
@@ -290,8 +315,7 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
                 "contact_avocat": lawyer_contact,
                 "prix_adjudication": adjudication_price,
                 "surface": surface,
-                "documents": "; ".join(document["label"] for document in documents if document.get("label"))
-                or None,
+                "documents": "; ".join(document["label"] for document in documents if document.get("label")) or None,
                 "page_text": raw_text,
             }.items()
             if value
@@ -314,6 +338,8 @@ def _append_image(images: list[str], value: object | None, page_url: str) -> Non
     if not image_url or image_url.startswith("data:"):
         return
     absolute = urljoin(page_url, image_url)
+    if not is_allowed_origin_url(absolute, ALLOWED_ORIGINS):
+        return
     lowered = absolute.lower()
     if "/documents/" in lowered or lowered.endswith(".pdf"):
         return
@@ -332,7 +358,9 @@ def _merge_documents(existing: object, incoming: list[dict[str, str]]) -> list[d
             merged[str(document["url"])] = {
                 "label": str(document.get("label") or "document"),
                 "url": str(document["url"]),
-                "type": str(document.get("type") or _document_type(str(document["url"]), str(document.get("label") or ""))),
+                "type": str(
+                    document.get("type") or _document_type(str(document["url"]), str(document.get("label") or ""))
+                ),
             }
     return list(merged.values())
 
@@ -397,7 +425,9 @@ def _looks_like_detail_title(value: str | None) -> bool:
         re.I,
     ):
         return False
-    return bool(re.search(r"\b(?:appartement|maison|immeuble|terrain|parcelle|b[âa]timent|local|garage|commerce)\b", text, re.I))
+    return bool(
+        re.search(r"\b(?:appartement|maison|immeuble|terrain|parcelle|b[âa]timent|local|garage|commerce)\b", text, re.I)
+    )
 
 
 def _extract_title(lines: list[str]) -> str | None:
@@ -454,7 +484,11 @@ def _extract_after_label(text: str, pattern: str) -> str | None:
 
 
 def _extract_visit_dates(text: str) -> list[str]:
-    match = re.search(r"Date des visites\s*:?\s*(.+?)(?:\n(?:Vente aux enchères|Mise à prix|Date de la vente|Cabinet)\b|$)", text, re.I | re.S)
+    match = re.search(
+        r"Date des visites\s*:?\s*(.+?)(?:\n(?:Vente aux enchères|Mise à prix|Date de la vente|Cabinet)\b|$)",
+        text,
+        re.I | re.S,
+    )
     if not match:
         return []
     visits = clean_text(match.group(1))

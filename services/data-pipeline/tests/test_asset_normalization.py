@@ -2,7 +2,11 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from src.asset_normalization import (
+    MAX_NORMALIZATION_TEXT_CHARS,
+    AssetNormalizationInputTooLarge,
     build_auction_features_row,
     build_auction_risk_rows,
     build_auction_score_factor_rows,
@@ -12,6 +16,17 @@ from src.asset_normalization import (
 )
 from src.models import AuctionSale
 from src.normalize import normalize_sale
+
+
+def test_asset_normalization_rejects_unbounded_regex_input() -> None:
+    sale = AuctionSale(
+        source_name="unit",
+        source_url="https://example.test/oversized-normalization",
+        raw_text="x" * (MAX_NORMALIZATION_TEXT_CHARS + 1),
+    )
+
+    with pytest.raises(AssetNormalizationInputTooLarge):
+        normalize_asset_features(sale)
 
 
 def test_build_auction_score_factor_rows_deduplicates_factor_keys() -> None:

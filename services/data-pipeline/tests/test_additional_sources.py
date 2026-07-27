@@ -543,7 +543,7 @@ def test_parse_cessions_etat_card_keeps_land_surface_with_thousands() -> None:
 def test_parse_agrasc_public_real_estate_cards() -> None:
     html = """
     <div class="fr-card card-vente-immo external-link">
-      <h3 class="fr-card__title"><a href="https://example.test/vente">Maison</a></h3>
+      <h3 class="fr-card__title"><a href="https://agrasc.gouv.fr/vente">Maison</a></h3>
       <p class="fr-card__detail">Agen (47)</p>
       <p class="fr-card__desc">Maison avec jardin.</p>
       <p class="fr-badge fr-badge--sm">89 m²</p>

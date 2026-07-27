@@ -1,0 +1,552 @@
+begin;
+
+-- Phase 3 runs the health control from Supabase because the current Vercel
+-- Hobby scheduler cannot execute more than once per day. Secrets used by the
+-- HTTP invocation are provisioned separately in Vault and never live in SQL.
+create extension if not exists pg_cron with schema pg_catalog;
+create extension if not exists pg_net;
+
+grant usage on schema cron to postgres;
+grant all privileges on all tables in schema cron to postgres;
+
+alter table public.operational_alerts
+  drop constraint if exists operational_alerts_category_check;
+
+alter table public.operational_alerts
+  add constraint operational_alerts_category_check check (
+    category in ('cron', 'webhook', 'import', 'refresh_queue', 'dvf')
+  ),
+  add column if not exists occurrence_count bigint not null default 1 check (occurrence_count > 0),
+  add column if not exists notification_event text not null default 'opened' check (
+    notification_event in ('opened', 'updated', 'resolved')
+  ),
+  add column if not exists notification_status text not null default 'pending' check (
+    notification_status in ('pending', 'processing', 'delivered', 'failed')
+  ),
+  add column if not exists notification_version bigint not null default 1 check (
+    notification_version > 0
+  ),
+  add column if not exists notification_attempt_count integer not null default 0 check (
+    notification_attempt_count >= 0
+  ),
+  add column if not exists notification_next_attempt_at timestamptz not null default now(),
+  add column if not exists notification_claimed_at timestamptz,
+  add column if not exists notified_at timestamptz,
+  add column if not exists notification_error text;
+
+update public.operational_alerts
+set
+  notification_event = 'resolved',
+  notification_status = 'delivered',
+  notification_next_attempt_at = coalesce(resolved_at, last_seen_at),
+  notified_at = coalesce(resolved_at, last_seen_at)
+where status = 'resolved'
+  and notified_at is null;
+
+create index if not exists operational_alerts_delivery_queue_idx
+  on public.operational_alerts (notification_next_attempt_at, severity, last_seen_at)
+  where notification_status in ('pending', 'failed');
+
+create or replace function app_private.sync_operational_alert(
+  p_alert_key text,
+  p_category text,
+  p_severity text,
+  p_details jsonb,
+  p_active boolean,
+  p_now timestamptz default statement_timestamp()
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_alert public.operational_alerts%rowtype;
+  should_notify boolean;
+  next_event text;
+begin
+  select * into current_alert
+  from public.operational_alerts
+  where alert_key = p_alert_key
+  for update;
+
+  if p_active then
+    if not found then
+      insert into public.operational_alerts (
+        alert_key,
+        category,
+        severity,
+        status,
+        details,
+        first_seen_at,
+        last_seen_at,
+        notification_event,
+        notification_status,
+        notification_next_attempt_at
+      ) values (
+        p_alert_key,
+        p_category,
+        p_severity,
+        'open',
+        coalesce(p_details, '{}'::jsonb),
+        p_now,
+        p_now,
+        'opened',
+        'pending',
+        p_now
+      );
+      return;
+    end if;
+
+    should_notify := current_alert.status = 'resolved'
+      or current_alert.severity is distinct from p_severity
+      or current_alert.notified_at is null
+      or (
+        current_alert.notification_status = 'delivered'
+        and current_alert.notified_at <= p_now - interval '6 hours'
+      );
+    next_event := case when current_alert.status = 'resolved' then 'opened' else 'updated' end;
+
+    update public.operational_alerts
+    set
+      category = p_category,
+      severity = p_severity,
+      status = 'open',
+      details = coalesce(p_details, '{}'::jsonb),
+      occurrence_count = occurrence_count + 1,
+      last_seen_at = p_now,
+      resolved_at = null,
+      notification_event = case when should_notify then next_event else notification_event end,
+      notification_status = case when should_notify then 'pending' else notification_status end,
+      notification_version = case
+        when should_notify then notification_version + 1
+        else notification_version
+      end,
+      notification_attempt_count = case when should_notify then 0 else notification_attempt_count end,
+      notification_next_attempt_at = case
+        when should_notify then p_now
+        else notification_next_attempt_at
+      end,
+      notification_claimed_at = case when should_notify then null else notification_claimed_at end,
+      notification_error = case when should_notify then null else notification_error end
+    where alert_key = p_alert_key;
+    return;
+  end if;
+
+  if found and current_alert.status = 'open' then
+    update public.operational_alerts
+    set
+      status = 'resolved',
+      last_seen_at = p_now,
+      resolved_at = p_now,
+      notification_event = 'resolved',
+      notification_status = 'pending',
+      notification_version = notification_version + 1,
+      notification_attempt_count = 0,
+      notification_next_attempt_at = p_now,
+      notification_claimed_at = null,
+      notification_error = null
+    where alert_key = p_alert_key;
+  end if;
+end;
+$$;
+
+revoke all on function app_private.sync_operational_alert(
+  text, text, text, jsonb, boolean, timestamptz
+) from public, anon, authenticated, service_role;
+
+create or replace function app_private.evaluate_operational_health(
+  p_now timestamptz default statement_timestamp()
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  stale_cron_jobs text[] := '{}'::text[];
+  webhook_failure_count integer;
+  webhook_stuck_count integer;
+  import_failure_count integer;
+  import_stuck_count integer;
+  import_backlog_count integer;
+  oldest_import_age_seconds integer;
+  refresh_backlog_count integer;
+  oldest_refresh_age_seconds integer;
+  dvf_batch_count bigint;
+  dvf_transaction_count bigint;
+  dvf_failed_count integer;
+  dvf_stuck_count integer;
+  dvf_last_completed_at timestamptz;
+  open_alert_count integer;
+begin
+  with expected(job_name, max_age) as (
+    values
+      ('operational-health', interval '45 minutes'),
+      ('smart-alerts', interval '30 hours'),
+      ('alert-notifications', interval '30 hours'),
+      ('sale-change-monitor', interval '30 hours'),
+      ('precompute-valuations', interval '30 hours'),
+      ('data-retention', interval '8 days'),
+      ('cnb-lawyer-directory', interval '8 days')
+  )
+  select coalesce(array_agg(expected.job_name order by expected.job_name), '{}'::text[])
+  into stale_cron_jobs
+  from expected
+  where not exists (
+    select 1
+    from public.operational_job_runs run
+    where run.job_name = expected.job_name
+      and (
+        (
+          run.status = 'success'
+          and run.finished_at >= p_now - expected.max_age
+        )
+        or (
+          expected.job_name = 'operational-health'
+          and run.status = 'running'
+          and run.started_at >= p_now - interval '10 minutes'
+        )
+      )
+  );
+
+  select count(*)::integer into webhook_failure_count
+  from public.stripe_webhook_events
+  where processing_status = 'failed'
+    and updated_at >= p_now - interval '1 hour';
+
+  select count(*)::integer into webhook_stuck_count
+  from public.stripe_webhook_events
+  where processing_status = 'processing'
+    and updated_at < p_now - interval '15 minutes';
+
+  select count(*)::integer into import_failure_count
+  from public.auction_runs
+  where status = 'failed'
+    and coalesce(finished_at, updated_at, created_at) >= p_now - interval '1 hour';
+
+  select count(*)::integer into import_stuck_count
+  from public.auction_runs
+  where status = 'running'
+    and started_at < p_now - interval '3 hours';
+
+  select
+    count(*)::integer,
+    coalesce(max(extract(epoch from (p_now - created_at)))::integer, 0)
+  into import_backlog_count, oldest_import_age_seconds
+  from public.auction_runs
+  where status = 'queued';
+
+  select
+    count(*)::integer,
+    coalesce(max(extract(epoch from (p_now - created_at)))::integer, 0)
+  into refresh_backlog_count, oldest_refresh_age_seconds
+  from public.data_refresh_requests
+  where status in ('queued', 'running');
+
+  select
+    count(*)::bigint,
+    max(completed_at) filter (where status = 'completed'),
+    count(*) filter (
+      where status = 'failed' and updated_at >= p_now - interval '24 hours'
+    )::integer,
+    count(*) filter (
+      where status = 'running' and created_at < p_now - interval '6 hours'
+    )::integer
+  into dvf_batch_count, dvf_last_completed_at, dvf_failed_count, dvf_stuck_count
+  from public.dvf_import_batches;
+
+  select count(*)::bigint into dvf_transaction_count
+  from public.dvf_transactions;
+
+  perform app_private.sync_operational_alert(
+    'cron.stale',
+    'cron',
+    'critical',
+    jsonb_build_object(
+      'stale_job_count', cardinality(stale_cron_jobs),
+      'stale_jobs', to_jsonb(stale_cron_jobs)
+    ),
+    cardinality(stale_cron_jobs) > 0,
+    p_now
+  );
+
+  perform app_private.sync_operational_alert(
+    'stripe.webhook.unhealthy',
+    'webhook',
+    'critical',
+    jsonb_build_object(
+      'failed_last_hour', webhook_failure_count,
+      'stuck_processing', webhook_stuck_count
+    ),
+    webhook_failure_count > 0 or webhook_stuck_count > 0,
+    p_now
+  );
+
+  perform app_private.sync_operational_alert(
+    'pipeline.import.unhealthy',
+    'import',
+    case
+      when import_stuck_count > 0 or oldest_import_age_seconds > 7200 then 'critical'
+      else 'warning'
+    end,
+    jsonb_build_object(
+      'failed_last_hour', import_failure_count,
+      'stuck_running', import_stuck_count,
+      'queued', import_backlog_count,
+      'oldest_queued_age_seconds', oldest_import_age_seconds
+    ),
+    import_failure_count > 0
+      or import_stuck_count > 0
+      or oldest_import_age_seconds > 1800,
+    p_now
+  );
+
+  perform app_private.sync_operational_alert(
+    'refresh_queue.stale',
+    'refresh_queue',
+    case when oldest_refresh_age_seconds > 7200 then 'critical' else 'warning' end,
+    jsonb_build_object(
+      'backlog', refresh_backlog_count,
+      'oldest_age_seconds', oldest_refresh_age_seconds
+    ),
+    oldest_refresh_age_seconds > 1800,
+    p_now
+  );
+
+  perform app_private.sync_operational_alert(
+    'dvf.freshness',
+    'dvf',
+    case
+      when dvf_transaction_count = 0 or dvf_failed_count > 0 or dvf_stuck_count > 0 then 'critical'
+      else 'warning'
+    end,
+    jsonb_build_object(
+      'transaction_count', dvf_transaction_count,
+      'batch_count', dvf_batch_count,
+      'last_completed_at', dvf_last_completed_at,
+      'failed_last_day', dvf_failed_count,
+      'stuck_running', dvf_stuck_count,
+      'maximum_age_days', 220
+    ),
+    dvf_transaction_count = 0
+      or dvf_last_completed_at is null
+      or dvf_last_completed_at < p_now - interval '220 days'
+      or dvf_failed_count > 0
+      or dvf_stuck_count > 0,
+    p_now
+  );
+
+  select count(*)::integer into open_alert_count
+  from public.operational_alerts
+  where status = 'open';
+
+  return jsonb_build_object(
+    'ok', open_alert_count = 0,
+    'open_alerts', open_alert_count,
+    'stale_crons', cardinality(stale_cron_jobs),
+    'stale_cron_jobs', to_jsonb(stale_cron_jobs),
+    'webhook_failures', webhook_failure_count,
+    'webhook_stuck', webhook_stuck_count,
+    'import_failures', import_failure_count,
+    'import_stuck', import_stuck_count,
+    'import_backlog', import_backlog_count,
+    'oldest_import_age_seconds', oldest_import_age_seconds,
+    'refresh_backlog', refresh_backlog_count,
+    'oldest_refresh_age_seconds', oldest_refresh_age_seconds,
+    'dvf_transactions', dvf_transaction_count,
+    'dvf_batches', dvf_batch_count,
+    'dvf_last_completed_at', dvf_last_completed_at,
+    'dvf_failed_last_day', dvf_failed_count,
+    'dvf_stuck', dvf_stuck_count
+  );
+end;
+$$;
+
+revoke all on function app_private.evaluate_operational_health(timestamptz)
+from public, anon, authenticated;
+grant execute on function app_private.evaluate_operational_health(timestamptz) to service_role;
+
+create or replace function public.evaluate_operational_health(
+  p_now timestamptz default statement_timestamp()
+)
+returns jsonb
+language sql
+security definer
+set search_path = ''
+as $$
+  select app_private.evaluate_operational_health(p_now);
+$$;
+
+revoke all on function public.evaluate_operational_health(timestamptz)
+from public, anon, authenticated;
+grant execute on function public.evaluate_operational_health(timestamptz) to service_role;
+
+create or replace function public.claim_operational_alert_notifications(
+  p_limit integer default 10,
+  p_now timestamptz default statement_timestamp()
+)
+returns table (
+  alert_key text,
+  category text,
+  severity text,
+  event_type text,
+  details jsonb,
+  notification_version bigint,
+  first_seen_at timestamptz,
+  last_seen_at timestamptz,
+  resolved_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  return query
+  with candidates as (
+    select alert.alert_key
+    from public.operational_alerts alert
+    where alert.notification_status in ('pending', 'failed')
+      and alert.notification_next_attempt_at <= p_now
+      and (
+        alert.notification_claimed_at is null
+        or alert.notification_claimed_at < p_now - interval '10 minutes'
+      )
+    order by
+      case alert.severity when 'critical' then 0 else 1 end,
+      alert.notification_next_attempt_at,
+      alert.alert_key
+    for update skip locked
+    limit greatest(1, least(coalesce(p_limit, 10), 20))
+  ),
+  claimed as (
+    update public.operational_alerts alert
+    set
+      notification_status = 'processing',
+      notification_attempt_count = alert.notification_attempt_count + 1,
+      notification_claimed_at = p_now,
+      notification_next_attempt_at = p_now + interval '10 minutes'
+    from candidates
+    where alert.alert_key = candidates.alert_key
+    returning alert.*
+  )
+  select
+    claimed.alert_key,
+    claimed.category,
+    claimed.severity,
+    claimed.notification_event,
+    claimed.details,
+    claimed.notification_version,
+    claimed.first_seen_at,
+    claimed.last_seen_at,
+    claimed.resolved_at
+  from claimed;
+end;
+$$;
+
+create or replace function public.complete_operational_alert_notification(
+  p_alert_key text,
+  p_notification_version bigint,
+  p_success boolean,
+  p_error_message text default null,
+  p_now timestamptz default statement_timestamp()
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.operational_alerts alert
+  set
+    notification_status = case when p_success then 'delivered' else 'failed' end,
+    notified_at = case when p_success then p_now else alert.notified_at end,
+    notification_error = case when p_success then null else left(p_error_message, 1000) end,
+    notification_claimed_at = null,
+    notification_next_attempt_at = case
+      when p_success then p_now
+      else p_now + make_interval(
+        secs => least(3600, 30 * (2 ^ least(alert.notification_attempt_count, 6)))::integer
+      )
+    end
+  where alert.alert_key = p_alert_key
+    and alert.notification_version = p_notification_version
+    and alert.notification_status = 'processing';
+end;
+$$;
+
+revoke all on function public.claim_operational_alert_notifications(integer, timestamptz)
+from public, anon, authenticated;
+revoke all on function public.complete_operational_alert_notification(
+  text, bigint, boolean, text, timestamptz
+) from public, anon, authenticated;
+grant execute on function public.claim_operational_alert_notifications(integer, timestamptz)
+to service_role;
+grant execute on function public.complete_operational_alert_notification(
+  text, bigint, boolean, text, timestamptz
+) to service_role;
+
+create or replace function app_private.invoke_operational_health_endpoint()
+returns bigint
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  endpoint_url text;
+  cron_secret text;
+  request_id bigint;
+begin
+  select decrypted_secret into endpoint_url
+  from vault.decrypted_secrets
+  where name = 'immojudis_operational_health_url'
+  order by updated_at desc
+  limit 1;
+
+  select decrypted_secret into cron_secret
+  from vault.decrypted_secrets
+  where name = 'immojudis_operational_health_secret'
+  order by updated_at desc
+  limit 1;
+
+  if nullif(pg_catalog.btrim(endpoint_url), '') is null
+    or nullif(pg_catalog.btrim(cron_secret), '') is null then
+    raise warning 'ImmoJudis operational health Vault secrets are not configured.';
+    return null;
+  end if;
+
+  select net.http_get(
+    url => pg_catalog.rtrim(endpoint_url, '/') || '/api/cron/operational-health',
+    headers => jsonb_build_object(
+      'Authorization', 'Bearer ' || cron_secret,
+      'Accept', 'application/json',
+      'User-Agent', 'immojudis-supabase-cron/1.0'
+    ),
+    timeout_milliseconds => 10000
+  ) into request_id;
+
+  return request_id;
+end;
+$$;
+
+revoke all on function app_private.invoke_operational_health_endpoint()
+from public, anon, authenticated, service_role;
+
+select cron.schedule(
+  'immojudis-operational-health',
+  '*/15 * * * *',
+  'select app_private.invoke_operational_health_endpoint();'
+);
+
+select cron.schedule(
+  'immojudis-operational-history-retention',
+  '35 3 * * *',
+  $job$
+    delete from cron.job_run_details where end_time < now() - interval '30 days';
+    delete from public.operational_job_runs where started_at < now() - interval '90 days';
+  $job$
+);
+
+notify pgrst, 'reload schema';
+
+commit;

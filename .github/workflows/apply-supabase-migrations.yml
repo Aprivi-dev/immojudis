@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 20
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      OPERATIONS_HEALTH_URL: https://immojudis-dezt.vercel.app
     steps:
       - name: Check target confirmation
         run: |
@@ -32,7 +34,7 @@ jobs:
           fi
 
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install PostgreSQL client
         run: |
@@ -40,9 +42,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "24.x"
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install project tooling
+        run: npm ci --ignore-scripts
 
       - name: Apply pending migrations
         run: node scripts/apply-supabase-migrations.mjs
+
+      - name: Configure the 15-minute health scheduler
+        run: npm run ops:health-scheduler:configure
+
+      - name: Detect production schema drift
+        run: npm run check:schema-drift -- --remote

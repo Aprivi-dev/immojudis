@@ -4,6 +4,7 @@ import { AdminQualityRouteClient } from "../../_route-clients/AdminQualityRouteC
 export const metadata: Metadata = {
   title: "Qualite des donnees",
   description: "Suivi de qualite des donnees Immojudis.",
+  robots: { index: false, follow: false },
 };
 
 export default function Page() {

@@ -15,6 +15,14 @@ def test_dpe_query_uses_geo_distance_when_coordinates_are_available() -> None:
         department="33",
         latitude=Decimal("44.8378"),
         longitude=Decimal("-0.5792"),
+        raw_payload={
+            "geocode": {
+                "provider": "ban_geoplateforme",
+                "accepted": True,
+                "latitude": 44.8378,
+                "longitude": -0.5792,
+            }
+        },
     )
 
     params = dpe_query_params_for_sale(sale, geo_radius_m=120, max_results=5)
@@ -33,8 +41,17 @@ def test_dpe_payload_builds_storage_ready_rows() -> None:
         city="Bordeaux",
         department="33",
         postal_code="33000",
+        address="10 Rue Exemple 33000 Bordeaux",
         latitude=Decimal("44.8378"),
         longitude=Decimal("-0.5792"),
+        raw_payload={
+            "geocode": {
+                "provider": "ban_geoplateforme",
+                "accepted": True,
+                "latitude": 44.8378,
+                "longitude": -0.5792,
+            }
+        },
     )
     payload = {
         "results": [
@@ -82,6 +99,7 @@ def test_dpe_payload_builds_storage_ready_rows() -> None:
     assert row["longitude"] == -0.57925
     assert row["match_kind"] == "geo_distance"
     assert row["confidence"] >= 0.9
+    assert row["raw_payload"]["address_match"] is True
     assert row["source_api"] == "ADEME DPE Open Data"
 
 
@@ -91,6 +109,14 @@ def test_fetch_dpe_diagnostics_calls_data_fair_lines_endpoint(monkeypatch) -> No
         source_url="https://example.test/vente",
         latitude=Decimal("44.8378"),
         longitude=Decimal("-0.5792"),
+        raw_payload={
+            "geocode": {
+                "provider": "ban_geoplateforme",
+                "accepted": True,
+                "latitude": 44.8378,
+                "longitude": -0.5792,
+            }
+        },
     )
     captured = {}
 
@@ -133,3 +159,60 @@ def test_fetch_dpe_diagnostics_calls_data_fair_lines_endpoint(monkeypatch) -> No
     assert captured["params"]["size"] == 3
     assert captured["headers"] == {"User-Agent": "immojudis-test"}
     assert captured["timeout"] == 9
+
+
+def test_unverified_source_coordinates_do_not_drive_dpe_geo_query() -> None:
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/vente",
+        address="10 rue Exemple",
+        postal_code="33000",
+        city="Bordeaux",
+        department="33",
+        latitude=Decimal("44.8378"),
+        longitude=Decimal("-0.5792"),
+    )
+
+    params = dpe_query_params_for_sale(sale, geo_radius_m=120, max_results=5)
+
+    assert params is not None
+    assert "geo_distance" not in params
+    assert params["q"] == "10 rue Exemple 33000 Bordeaux"
+
+
+def test_dpe_confidence_is_capped_without_address_match() -> None:
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/vente",
+        department="33",
+        latitude=Decimal("44.8378"),
+        longitude=Decimal("-0.5792"),
+        raw_payload={
+            "geocode": {
+                "provider": "ban_geoplateforme",
+                "accepted": True,
+                "latitude": 44.8378,
+                "longitude": -0.5792,
+            }
+        },
+    )
+
+    rows = dpe_rows_from_payload(
+        sale,
+        {
+            "results": [
+                {
+                    "numero_dpe": "2133E0178774F",
+                    "adresse_ban": "99 rue Sans Rapport 33000 Bordeaux",
+                    "code_departement_ban": "33",
+                    "score_ban": 0.99,
+                    "_geopoint": "44.8378,-0.5792",
+                }
+            ]
+        },
+        source_api_url="https://data.ademe.test/lines",
+        request_params={"geo_distance": "-0.5792:44.8378:120"},
+    )
+
+    assert rows[0].confidence <= 0.69
+    assert rows[0].raw_payload["address_match"] is False

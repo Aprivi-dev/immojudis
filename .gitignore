@@ -20,8 +20,11 @@ dist-ssr
 .nitro
 tsconfig.tsbuildinfo
 supabase/.temp
+supabase/.branches
 output/
 .playwright-cli/
+playwright-report/
+test-results/
 *.local
 
 # Generated valuation model bundles

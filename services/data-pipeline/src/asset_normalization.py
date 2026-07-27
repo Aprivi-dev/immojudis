@@ -31,6 +31,11 @@ class ScoreComponent:
 RISK_DETECTOR_VERSION = "risk_context_v3"
 BUSINESS_RULE_VERSION = "business_rules_v1"
 PREMIUM_ANALYSIS_VERSION = "premium_due_diligence_v1"
+MAX_NORMALIZATION_TEXT_CHARS = 1_000_000
+
+
+class AssetNormalizationInputTooLarge(ValueError):
+    """Raised when attacker-controlled source text exceeds the regex safety budget."""
 
 AXIS_DEFINITIONS: dict[str, dict[str, object]] = {
     "financial_attractiveness": {
@@ -213,6 +218,7 @@ def _is_specific_display_title(title: str | None) -> bool:
 
 
 def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
+    _assert_normalization_input_size(sale)
     _restore_partial_document_surface_scope(sale)
     text = _sale_text(sale)
     if not text:
@@ -231,6 +237,15 @@ def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
     _write_asset_payload(sale, risks)
     sale.title = build_display_title(sale)
     return sale
+
+
+def _assert_normalization_input_size(sale: AuctionSale) -> None:
+    text_fields = (sale.title, sale.description, sale.risk_notes, sale.raw_text, sale.surface_evidence)
+    total_chars = sum(len(value) for value in text_fields if isinstance(value, str))
+    if total_chars > MAX_NORMALIZATION_TEXT_CHARS:
+        raise AssetNormalizationInputTooLarge(
+            f"Asset normalization input exceeds {MAX_NORMALIZATION_TEXT_CHARS} characters."
+        )
 
 
 def _restore_partial_document_surface_scope(sale: AuctionSale) -> None:

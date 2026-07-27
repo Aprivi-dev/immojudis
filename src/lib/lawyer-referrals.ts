@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
@@ -143,7 +144,7 @@ export async function createLawyerReferralRequest({
   }
 
   const sale = await getSaleSnapshot(auth.supabase, input.saleId);
-  const existing = await getExistingOpenRequest(auth.supabase, auth.userId, input.saleId);
+  const existing = await getExistingOpenRequest(auth.userId, input.saleId);
 
   if (existing) {
     return {
@@ -166,7 +167,7 @@ export async function createLawyerReferralRequest({
   const matchingStatus = matchedLawyer ? "matched" : "manual_review";
   const status = matchedLawyer ? "new" : "manual_review";
 
-  const { data, error } = await auth.supabase
+  const { data, error } = await supabaseAdmin
     .from("lawyer_referral_requests")
     .insert({
       requester_id: auth.userId,
@@ -221,7 +222,7 @@ export async function listLawyerReferralRequests({
   auth: SupabaseAuthContext;
   query: LawyerReferralListQuery;
 }): Promise<LawyerReferralListResponse> {
-  let requestQuery = auth.supabase
+  let requestQuery = supabaseAdmin
     .from("lawyer_referral_requests")
     .select(USER_REFERRAL_COLUMNS)
     .eq("requester_id", auth.userId)
@@ -282,14 +283,13 @@ async function getSaleSnapshot(
 }
 
 async function getExistingOpenRequest(
-  supabase: SupabaseClient,
   userId: string,
   saleId: string,
 ): Promise<Pick<
   Database["public"]["Tables"]["lawyer_referral_requests"]["Row"],
   "id" | "status" | "matching_status" | "requested_lawyer_id"
 > | null> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("lawyer_referral_requests")
     .select("id,status,matching_status,requested_lawyer_id")
     .eq("requester_id", userId)
