@@ -474,21 +474,30 @@ def _upsert_transactions(connection: Any, payload: list[dict[str, object]]) -> N
     insert_statement = sql.SQL(
         """
         insert into public.dvf_transactions ({columns})
-        values ({values})
+        values {values}
         on conflict (source, source_mutation_id, coalesce(parcel_id, '')) do update set {updates}
         """
     ).format(
         columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
-        values=sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+        values=sql.SQL(", ").join(
+            sql.SQL("({})").format(
+                sql.SQL(", ").join(sql.Placeholder() for _ in columns)
+            )
+            for _ in payload
+        ),
         updates=sql.SQL(", ").join(
             sql.SQL("{} = excluded.{}").format(sql.Identifier(column), sql.Identifier(column))
             for column in columns
             if column not in {"source", "source_mutation_id", "parcel_id"}
         ),
     )
-    rows = [tuple(postgres_value(row.get(column)) for column in columns) for row in payload]
+    values = [
+        postgres_value(row.get(column))
+        for row in payload
+        for column in columns
+    ]
     with connection.cursor() as cursor:
-        cursor.executemany(insert_statement, rows)
+        cursor.execute(insert_statement, values)
 
 
 def postgres_value(value: object) -> object:
