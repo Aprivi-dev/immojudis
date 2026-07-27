@@ -8,6 +8,8 @@ import logging
 import os
 import re
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -22,6 +24,7 @@ from urllib.parse import quote, unquote, urljoin, urlparse, urlsplit, urlunsplit
 from xml.etree import ElementTree
 
 import fitz
+import httpcore
 import httpx
 
 from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
@@ -71,6 +74,80 @@ class PdfEnrichmentStats:
     document_cache_hits: int = 0
     document_cache_misses: int = 0
     documents_processed: int = 0
+
+
+@dataclass(frozen=True)
+class PublicDocumentTarget:
+    url: str
+    hostname: str
+    port: int
+    addresses: tuple[str, ...]
+
+
+class _PinnedNetworkBackend(httpcore.NetworkBackend):
+    """Dial only addresses approved for one document hostname."""
+
+    def __init__(
+        self,
+        target: PublicDocumentTarget,
+        backend: httpcore.NetworkBackend | None = None,
+    ) -> None:
+        self._target = target
+        self._backend = backend or httpcore.SyncBackend()
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: object = None,
+    ) -> httpcore.NetworkStream:
+        requested_host = host.decode("ascii") if isinstance(host, bytes) else host
+        if requested_host.rstrip(".").lower() != self._target.hostname or port != self._target.port:
+            raise ValueError("pinned document transport received an unexpected destination")
+
+        last_error: Exception | None = None
+        for address in self._target.addresses:
+            try:
+                return self._backend.connect_tcp(
+                    address,
+                    port,
+                    timeout=timeout,
+                    local_address=local_address,
+                    socket_options=socket_options,
+                )
+            except Exception as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        raise ValueError("pinned document transport has no approved address")
+
+    def connect_unix_socket(
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: object = None,
+    ) -> httpcore.NetworkStream:
+        raise ValueError("document downloads cannot use Unix sockets")
+
+    def sleep(self, seconds: float) -> None:
+        self._backend.sleep(seconds)
+
+
+class _PinnedHTTPTransport(httpx.HTTPTransport):
+    def __init__(self, target: PublicDocumentTarget) -> None:
+        super().__init__(verify=True, trust_env=False, retries=0)
+        self._pool.close()
+        self._pool = httpcore.ConnectionPool(
+            ssl_context=ssl.create_default_context(),
+            max_connections=1,
+            max_keepalive_connections=0,
+            http1=True,
+            http2=False,
+            retries=0,
+            network_backend=_PinnedNetworkBackend(target),
+        )
 
 
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
@@ -140,7 +217,7 @@ def download_documents(
     }
     downloaded: list[dict[str, str]] = []
     seen_urls: set[str] = set()
-    for document in sale.documents:
+    for document in _select_documents_for_extraction(sale.documents, sale=sale):
         url = document.get("url")
         document_type = _canonical_document_type(
             document.get("document_type") or document.get("type"),
@@ -309,14 +386,10 @@ def _download_document_response(
 ) -> httpx.Response:
     current_url = url
     for redirect_count in range(MAX_DOCUMENT_REDIRECTS + 1):
-        if not _is_safe_public_document_url(current_url):
-            raise ValueError(f"unsafe document URL: {current_url}")
-        response = httpx.get(
+        response = _send_pinned_document_request(
             current_url,
             headers=headers,
-            timeout=timeout_seconds,
-            verify=True,
-            follow_redirects=False,
+            timeout_seconds=timeout_seconds,
         )
         status_code = int(getattr(response, "status_code", 200))
         if status_code not in DOCUMENT_REDIRECT_STATUS_CODES:
@@ -330,20 +403,76 @@ def _download_document_response(
     raise ValueError(f"too many document redirects: {url}")
 
 
-def _is_safe_public_document_url(url: str) -> bool:
+def _send_pinned_document_request(
+    url: str,
+    *,
+    headers: dict[str, str],
+    timeout_seconds: float,
+) -> httpx.Response:
+    target = _resolve_public_document_target(url)
+    transport = _PinnedHTTPTransport(target)
+    with httpx.Client(
+        transport=transport,
+        follow_redirects=False,
+        timeout=timeout_seconds,
+        trust_env=False,
+    ) as client:
+        return client.get(target.url, headers=headers)
+
+
+def _resolve_public_document_target(
+    url: str,
+    *,
+    resolver: object = socket.getaddrinfo,
+) -> PublicDocumentTarget:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return False
+        raise ValueError(f"unsafe document URL: {url}")
     if parsed.username is not None or parsed.password is not None:
-        return False
+        raise ValueError(f"unsafe document URL authority: {url}")
+
     hostname = parsed.hostname.rstrip(".").lower()
+    if not hostname or "%" in hostname:
+        raise ValueError(f"unsafe document hostname: {url}")
     if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal")):
-        return False
+        raise ValueError(f"unsafe document hostname: {url}")
     try:
-        address = ipaddress.ip_address(hostname)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        raise ValueError(f"invalid document URL port: {url}") from exc
+
+    try:
+        answers = resolver(hostname, port, type=socket.SOCK_STREAM)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"document hostname cannot be resolved: {hostname}") from exc
+
+    addresses: set[str] = set()
+    for answer in answers:
+        raw_address = str(answer[4][0]).split("%", 1)[0]
+        try:
+            address = ipaddress.ip_address(raw_address)
+        except ValueError as exc:
+            raise ValueError(f"resolver returned an invalid document address: {raw_address}") from exc
+        if not address.is_global:
+            raise ValueError(f"document hostname resolves outside the public network: {hostname}")
+        addresses.add(address.compressed)
+
+    if not addresses:
+        raise ValueError(f"document hostname has no usable address: {hostname}")
+    return PublicDocumentTarget(
+        url=url,
+        hostname=hostname,
+        port=port,
+        addresses=tuple(sorted(addresses)),
+    )
+
+
+def _is_safe_public_document_url(url: str) -> bool:
+    try:
+        _resolve_public_document_target(url)
     except ValueError:
-        return True
-    return address.is_global
+        return False
+    return True
 
 
 def extract_attached_document(

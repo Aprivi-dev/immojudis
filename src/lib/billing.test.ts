@@ -7,6 +7,7 @@ import {
   resolveBillingOrigin,
   resolveCheckoutPlanCode,
   resolveStripePlanCode,
+  stripeDisputeStatusToPaymentState,
   stripeDisputeStatusToPlanStatus,
   stripeRefundRequiresAccessRevocation,
   stripeCurrentPeriodEndIso,
@@ -96,6 +97,9 @@ describe("billing helpers", () => {
     );
     expect(stripeDisputeStatusToPlanStatus("won", "2026-08-01T00:00:00.000Z", now)).toBe("active");
     expect(stripeDisputeStatusToPlanStatus("won", "2026-07-01T00:00:00.000Z", now)).toBe("expired");
+    expect(stripeDisputeStatusToPaymentState("under_review")).toBe("disputed");
+    expect(stripeDisputeStatusToPaymentState("lost")).toBe("dispute_lost");
+    expect(stripeDisputeStatusToPaymentState("won")).toBe("cleared");
   });
 
   it("builds a one-time checkout without recurring subscription data", () => {

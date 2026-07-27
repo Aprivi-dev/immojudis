@@ -29,6 +29,50 @@ type StripeWebhookEventRpcClient = {
   ): Promise<{ data: null; error: { message?: string } | null }>;
 };
 
+type StripePaymentLifecycleState = "disputed" | "dispute_lost" | "cleared" | "refunded";
+type StripeReconciledPlanStatus = "active" | "paused" | "cancelled" | "expired";
+
+type StripePaymentLifecycleRpcClient = {
+  rpc(
+    name: "record_stripe_payment_state",
+    args: {
+      p_entitlement_status: StripeReconciledPlanStatus;
+      p_event_created: number;
+      p_event_id: string;
+      p_event_type: string;
+      p_payment_intent_id: string;
+      p_revoke_immediately: boolean;
+      p_state: StripePaymentLifecycleState;
+      p_user_id: string;
+    },
+  ): Promise<{
+    data: Array<{
+      effective_state: string;
+      entitlement_updated: boolean;
+      recorded: boolean;
+    }> | null;
+    error: { message?: string } | null;
+  }>;
+  rpc(
+    name: "grant_analysis_access_from_payment",
+    args: {
+      p_amount_total: number;
+      p_checkout_session_id: string;
+      p_currency: string;
+      p_duration_days: number;
+      p_event_created: number;
+      p_event_id: string;
+      p_paid_at: string;
+      p_payment_intent_id: string;
+      p_stripe_customer_id: string | null;
+      p_user_id: string;
+    },
+  ): Promise<{
+    data: Array<{ access_end: string | null; granted: boolean }> | null;
+    error: { message?: string } | null;
+  }>;
+};
+
 const STRIPE_API_VERSION = "2026-06-24.dahlia";
 export const ANALYSIS_ACCESS_DAYS = 30;
 export const ANALYSIS_PRICE_CENTS = 2_900;
@@ -190,7 +234,10 @@ export async function handleStripeWebhook({
     switch (event.type) {
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded":
-        handled = await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+        handled = await handleCheckoutCompleted(
+          event.data.object as Stripe.Checkout.Session,
+          event,
+        );
         break;
       case "customer.subscription.created":
       case "customer.subscription.updated":
@@ -200,11 +247,11 @@ export async function handleStripeWebhook({
         handled = await syncStripeSubscription(event.data.object as Stripe.Subscription);
         break;
       case "charge.refunded":
-        handled = await handleChargeRefunded(event.data.object as Stripe.Charge, event.id);
+        handled = await handleChargeRefunded(event.data.object as Stripe.Charge, event);
         break;
       case "charge.dispute.created":
       case "charge.dispute.closed":
-        handled = await handleChargeDispute(event.data.object as Stripe.Dispute, event.id);
+        handled = await handleChargeDispute(event.data.object as Stripe.Dispute, event);
         break;
       default:
         handled = false;
@@ -229,12 +276,20 @@ export function stripeDisputeStatusToPlanStatus(
   status: Stripe.Dispute.Status | string,
   currentPeriodEnd: string | null,
   now = new Date(),
-): PlanStatus {
+): StripeReconciledPlanStatus {
   if (status === "won") {
     return currentPeriodEnd && Date.parse(currentPeriodEnd) > now.getTime() ? "active" : "expired";
   }
   if (status === "lost") return "cancelled";
   return "paused";
+}
+
+export function stripeDisputeStatusToPaymentState(
+  status: Stripe.Dispute.Status | string,
+): Exclude<StripePaymentLifecycleState, "refunded"> {
+  if (status === "won") return "cleared";
+  if (status === "lost") return "dispute_lost";
+  return "disputed";
 }
 
 export function stripeSubscriptionStatusToPlanStatus(
@@ -315,7 +370,10 @@ async function getUserSubscription(auth: SupabaseAuthContext): Promise<UserSubsc
   return data;
 }
 
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<boolean> {
+async function handleCheckoutCompleted(
+  session: Stripe.Checkout.Session,
+  event: Stripe.Event,
+): Promise<boolean> {
   const userId = session.metadata?.user_id || session.client_reference_id;
   if (!userId) return false;
 
@@ -324,13 +382,19 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     if (normalizePlanCode(session.metadata?.plan_code) !== "analyse") return false;
     if (session.amount_total !== ANALYSIS_PRICE_CENTS || session.currency !== "eur") return false;
     if (session.metadata?.access_duration_days !== String(ANALYSIS_ACCESS_DAYS)) return false;
+    const paymentIntentId = stripeObjectId(session.payment_intent);
+    if (!paymentIntentId) return false;
 
-    const { data, error } = await supabaseAdmin.rpc("grant_analysis_access_from_checkout", {
+    const client = supabaseAdmin as unknown as StripePaymentLifecycleRpcClient;
+    const { data, error } = await client.rpc("grant_analysis_access_from_payment", {
       p_amount_total: session.amount_total,
       p_checkout_session_id: session.id,
       p_currency: session.currency,
       p_duration_days: ANALYSIS_ACCESS_DAYS,
-      p_paid_at: new Date().toISOString(),
+      p_event_created: event.created,
+      p_event_id: event.id,
+      p_paid_at: new Date(event.created * 1000).toISOString(),
+      p_payment_intent_id: paymentIntentId,
       p_stripe_customer_id: stripeObjectId(session.customer),
       p_user_id: userId,
     });
@@ -399,26 +463,29 @@ async function completeStripeWebhookEvent(
   if (error) throw new Error(error.message || "Mise à jour du journal Stripe impossible.");
 }
 
-async function handleChargeRefunded(charge: Stripe.Charge, eventId: string): Promise<boolean> {
+async function handleChargeRefunded(charge: Stripe.Charge, event: Stripe.Event): Promise<boolean> {
   if (!stripeRefundRequiresAccessRevocation(charge.amount, charge.amount_refunded)) return false;
   const userId = await stripeUserIdFromPaymentObject(charge);
-  if (!userId) return false;
-  return reconcileAnalysisAccess({
+  const paymentIntentId = stripeObjectId(charge.payment_intent);
+  if (!userId || !paymentIntentId) return false;
+  return recordStripePaymentState({
     userId,
+    paymentIntentId,
+    state: "refunded",
     status: "cancelled",
-    eventId,
-    reason: "charge_refunded",
+    event,
     revokeImmediately: true,
   });
 }
 
-async function handleChargeDispute(dispute: Stripe.Dispute, eventId: string): Promise<boolean> {
+async function handleChargeDispute(dispute: Stripe.Dispute, event: Stripe.Event): Promise<boolean> {
   const charge =
     typeof dispute.charge === "string"
       ? await getStripe().charges.retrieve(dispute.charge)
       : dispute.charge;
   const userId = await stripeUserIdFromPaymentObject(charge);
-  if (!userId) return false;
+  const paymentIntentId = stripeObjectId(charge.payment_intent);
+  if (!userId || !paymentIntentId) return false;
 
   const { data, error } = await supabaseAdmin
     .from("user_subscriptions")
@@ -427,11 +494,12 @@ async function handleChargeDispute(dispute: Stripe.Dispute, eventId: string): Pr
     .maybeSingle();
   if (error) throw error;
   const status = stripeDisputeStatusToPlanStatus(dispute.status, data?.current_period_end ?? null);
-  return reconcileAnalysisAccess({
+  return recordStripePaymentState({
     userId,
+    paymentIntentId,
+    state: stripeDisputeStatusToPaymentState(dispute.status),
     status,
-    eventId,
-    reason: `charge_dispute_${dispute.status}`,
+    event,
     revokeImmediately: status === "cancelled",
   });
 }
@@ -447,42 +515,34 @@ async function stripeUserIdFromPaymentObject(charge: Stripe.Charge): Promise<str
   return paymentIntent.metadata?.user_id ?? null;
 }
 
-async function reconcileAnalysisAccess({
+async function recordStripePaymentState({
   userId,
+  paymentIntentId,
+  state,
   status,
-  eventId,
-  reason,
+  event,
   revokeImmediately,
 }: {
   userId: string;
-  status: PlanStatus;
-  eventId: string;
-  reason: string;
+  paymentIntentId: string;
+  state: StripePaymentLifecycleState;
+  status: StripeReconciledPlanStatus;
+  event: Stripe.Event;
   revokeImmediately: boolean;
 }): Promise<boolean> {
-  const { data: subscription, error: readError } = await supabaseAdmin
-    .from("user_subscriptions")
-    .select("plan_code,metadata")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (readError) throw readError;
-  if (!subscription || normalizePlanCode(subscription.plan_code) !== "analyse") return false;
-
-  const { error } = await supabaseAdmin
-    .from("user_subscriptions")
-    .update({
-      status,
-      current_period_end: revokeImmediately ? new Date().toISOString() : undefined,
-      metadata: asJson({
-        ...jsonObject(subscription.metadata),
-        last_reconciliation_event_id: eventId,
-        last_reconciliation_reason: reason,
-        last_reconciled_at: new Date().toISOString(),
-      }),
-    })
-    .eq("user_id", userId);
-  if (error) throw error;
-  return true;
+  const client = supabaseAdmin as unknown as StripePaymentLifecycleRpcClient;
+  const { data, error } = await client.rpc("record_stripe_payment_state", {
+    p_entitlement_status: status,
+    p_event_created: event.created,
+    p_event_id: event.id,
+    p_event_type: event.type,
+    p_payment_intent_id: paymentIntentId,
+    p_revoke_immediately: revokeImmediately,
+    p_state: state,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(error.message || "Réconciliation du paiement Stripe impossible.");
+  return data?.[0]?.recorded === true;
 }
 
 async function syncStripeSubscription(

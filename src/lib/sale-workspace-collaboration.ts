@@ -161,7 +161,9 @@ export async function acceptSaleWorkspaceInvitation({
 
   if (error) throw error;
   if (!invitation) throw new Error("Invitation introuvable.");
-  if (invitation.status === "revoked") throw new Error("Cette invitation a été révoquée.");
+  if (invitation.status !== "invited") {
+    throw new Error("Cette invitation n'est plus disponible.");
+  }
   if (normalizeEmail(invitation.invited_email) !== email && !auth.isAdmin) {
     throw new Error("Cette invitation ne correspond pas à votre email.");
   }
@@ -172,14 +174,17 @@ export async function acceptSaleWorkspaceInvitation({
     .update({
       collaborator_user_id: auth.userId,
       status: "accepted",
-      accepted_at: invitation.accepted_at ?? now,
+      accepted_at: now,
       revoked_at: null,
     })
     .eq("id", input.collaboratorId)
+    .eq("status", "invited")
+    .is("collaborator_user_id", null)
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (updateError) throw updateError;
+  if (!data) throw new Error("Cette invitation n'est plus disponible.");
   return { collaborator: data };
 }
 
