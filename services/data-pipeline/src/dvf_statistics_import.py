@@ -82,12 +82,13 @@ def import_dvf_statistics(options: DvfStatisticsImportOptions) -> DvfStatisticsI
             payload.append(row)
             if len(payload) >= options.batch_size:
                 _upsert_statistics(connection, payload)
+                connection.commit()
                 summary.upserted_rows += len(payload)
                 payload = []
         if payload:
             _upsert_statistics(connection, payload)
+            connection.commit()
             summary.upserted_rows += len(payload)
-        connection.commit()
     return summary
 
 
@@ -165,7 +166,7 @@ def _upsert_statistics(connection: Any, payload: list[dict[str, object]]) -> Non
     statement = sql.SQL(
         """
         insert into public.dvf_market_statistics ({columns})
-        values ({values})
+        values {values}
         on conflict (geography_level, geography_code, segment) do update set
           geography_label = excluded.geography_label,
           parent_code = excluded.parent_code,
@@ -178,11 +179,16 @@ def _upsert_statistics(connection: Any, payload: list[dict[str, object]]) -> Non
         """
     ).format(
         columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
-        values=sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+        values=sql.SQL(", ").join(
+            sql.SQL("({})").format(
+                sql.SQL(", ").join(sql.Placeholder() for _ in columns)
+            )
+            for _ in payload
+        ),
     )
-    values = [tuple(row.get(column) for column in columns) for row in payload]
+    values = [row.get(column) for row in payload for column in columns]
     with connection.cursor() as cursor:
-        cursor.executemany(statement, values)
+        cursor.execute(statement, values)
 
 
 def clean_text(value: str | None) -> str | None:
