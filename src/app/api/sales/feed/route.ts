@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -6,8 +5,10 @@ import {
 import { apiKeyAuthContextFromRequest } from "@/lib/api-keys";
 import { exportSalesApiFeed } from "@/lib/sale-exports";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
+import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 
 export async function GET(request: Request) {
+  const context = createApiRequestContext(request, "api.sales.feed");
   try {
     const apiKeyAuth = await apiKeyAuthContextFromRequest(request, "sales.feed:read");
     const auth = apiKeyAuth ?? (await requireSupabaseAuthContext(bearerTokenFromRequest(request)));
@@ -19,19 +20,16 @@ export async function GET(request: Request) {
       origin: url.origin,
     });
 
-    return NextResponse.json(response, {
+    return apiJson(response, context, {
       headers: {
         "cache-control": "private, no-store",
         "x-immojudis-export-row-count": String(response.meta.rowCount),
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Flux API ventes indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservée")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiError(error, context, {
+      fallbackMessage: "Flux API ventes indisponible.",
+      headers: { "retry-after": "60" },
+    });
   }
 }

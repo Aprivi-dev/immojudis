@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@/lib/router-compat";
+import Image from "next/image";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
@@ -48,7 +49,7 @@ const benefits = [
 
 const auctionCards = [
   {
-    image: "/media/landing/auction-bordeaux.jpg",
+    image: "/media/landing/auction-bordeaux.webp",
     badge: "Décote apparente -31%",
     city: "Bordeaux",
     tribunal: "Tribunal judiciaire de Bordeaux",
@@ -59,7 +60,7 @@ const auctionCards = [
     confidence: "Confiance moyenne",
   },
   {
-    image: "/media/landing/auction-nantes.jpg",
+    image: "/media/landing/auction-nantes.webp",
     badge: "Maison + terrain",
     city: "Nantes",
     tribunal: "Tribunal judiciaire de Nantes",
@@ -70,7 +71,7 @@ const auctionCards = [
     confidence: "Dossier à compléter",
   },
   {
-    image: "/media/landing/auction-lyon.jpg",
+    image: "/media/landing/auction-lyon.webp",
     badge: "Audience le 16 juillet",
     city: "Lyon",
     tribunal: "Tribunal judiciaire de Lyon",
@@ -81,7 +82,7 @@ const auctionCards = [
     confidence: "Confiance prudente",
   },
   {
-    image: "/media/landing/auction-toulouse.jpg",
+    image: "/media/landing/auction-toulouse.webp",
     badge: "Alerte investisseur",
     city: "Toulouse",
     tribunal: "Tribunal judiciaire de Toulouse",
@@ -431,13 +432,13 @@ function JusticeGoddessVisual() {
     <div className="ij-goddess" aria-hidden="true">
       <div className="ij-cloud ij-cloud-a" />
       <div className="ij-cloud ij-cloud-b" />
-      <img
-        src="/media/landing/justice-goddess.png"
+      <Image
+        src="/media/landing/justice-goddess.webp"
         alt=""
         width={1600}
         height={2400}
-        decoding="async"
-        fetchPriority="high"
+        priority
+        sizes="(max-width: 900px) 120vw, 70vw"
       />
       <span className="ij-balance-glint" />
     </div>
@@ -447,12 +448,12 @@ function JusticeGoddessVisual() {
 function CandleAnimation() {
   return (
     <div className="ij-candle" aria-hidden="true">
-      <img
-        src="/media/landing/judicial-candle.png"
+      <Image
+        src="/media/landing/judicial-candle.webp"
         alt=""
         width={1188}
         height={1324}
-        decoding="async"
+        sizes="336px"
       />
       <span className="ij-candle-glow" />
       <span className="ij-candle-flame-glow" />
@@ -535,7 +536,13 @@ function AuctionCardsSection() {
         {auctionCards.map((card) => (
           <Link key={card.title} to="/sales" search={{ q: card.city }} className="ij-auction-card">
             <span className="ij-card-image">
-              <img src={card.image} alt="" width={896} height={512} loading="lazy" />
+              <Image
+                src={card.image}
+                alt=""
+                width={896}
+                height={512}
+                sizes="(max-width: 700px) 100vw, (max-width: 1100px) 50vw, 25vw"
+              />
               <span>{card.badge}</span>
             </span>
             <span className="ij-card-body">

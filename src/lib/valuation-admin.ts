@@ -29,9 +29,15 @@ export type ValuationModelSummary = Pick<
   | "created_at"
 > & {
   metrics: {
+    testMapePct: number | null;
     testMedianApePct: number | null;
     intervalCoveragePct: number | null;
+    intervalMeanWidthPct: number | null;
     testRows: number | null;
+  };
+  promotionGate: {
+    passes: boolean;
+    failures: string[];
   };
 };
 
@@ -44,6 +50,8 @@ export type ValuationRuntimeHealth = {
   averageComparableCount: number | null;
   averageLatencyMs: number | null;
   bySegment: Record<string, number>;
+  status: "healthy" | "degraded" | "unknown";
+  driftSignals: string[];
 };
 
 export type ValuationAdminResponse = {
@@ -100,16 +108,52 @@ export function summarizeValuationRuntime(rows: EstimateRow[]): ValuationRuntime
   const bySegment: Record<string, number> = {};
   for (const row of rows) bySegment[row.segment] = (bySegment[row.segment] ?? 0) + 1;
 
+  const actionableSharePct = share(rows, (row) => row.actionable);
+  const averageConfidenceScore = average(rows.map((row) => row.confidence_score));
+  const averageLatencyMs = average(rows.map((row) => row.latency_ms));
+  const driftSignals = runtimeDriftSignals({
+    count,
+    actionableSharePct,
+    averageConfidenceScore,
+    averageLatencyMs,
+  });
   return {
     windowHours: 24,
     estimates: count,
     hybridSharePct: share(rows, (row) => row.engine_kind === "hybrid_lightgbm"),
-    actionableSharePct: share(rows, (row) => row.actionable),
-    averageConfidenceScore: average(rows.map((row) => row.confidence_score)),
+    actionableSharePct,
+    averageConfidenceScore,
     averageComparableCount: average(rows.map((row) => row.comparable_count)),
-    averageLatencyMs: average(rows.map((row) => row.latency_ms)),
+    averageLatencyMs,
     bySegment,
+    status: count === 0 ? "unknown" : driftSignals.length ? "degraded" : "healthy",
+    driftSignals,
   };
+}
+
+export function evaluateValuationPromotionGate(metrics: {
+  testMapePct: number | null;
+  testMedianApePct: number | null;
+  intervalCoveragePct: number | null;
+  intervalMeanWidthPct: number | null;
+  testRows: number | null;
+}): { passes: boolean; failures: string[] } {
+  const failures: string[] = [];
+  if (metrics.testRows == null || metrics.testRows < 50)
+    failures.push("moins de 50 lignes de test");
+  if (metrics.testMedianApePct == null || metrics.testMedianApePct > 30) {
+    failures.push("erreur médiane > 30 % ou absente");
+  }
+  if (metrics.testMapePct == null || metrics.testMapePct > 40) {
+    failures.push("MAPE > 40 % ou absente");
+  }
+  if (metrics.intervalCoveragePct == null || metrics.intervalCoveragePct < 72) {
+    failures.push("couverture < 72 % ou absente");
+  }
+  if (metrics.intervalMeanWidthPct == null || metrics.intervalMeanWidthPct > 110) {
+    failures.push("intervalle > 110 % ou absent");
+  }
+  return { passes: failures.length === 0, failures };
 }
 
 function summarizeModel(row: {
@@ -127,6 +171,13 @@ function summarizeModel(row: {
   created_at: string;
 }): ValuationModelSummary {
   const metrics = jsonObject(row.training_metrics);
+  const summarizedMetrics = {
+    testMapePct: numberValue(metrics.test_mape_pct),
+    testMedianApePct: numberValue(metrics.test_median_ape_pct),
+    intervalCoveragePct: numberValue(metrics.interval_coverage_pct),
+    intervalMeanWidthPct: numberValue(metrics.interval_mean_width_pct),
+    testRows: numberValue(metrics.test_rows),
+  };
   return {
     id: row.id,
     version: row.version,
@@ -139,12 +190,34 @@ function summarizeModel(row: {
     trained_at: row.trained_at,
     activated_at: row.activated_at,
     created_at: row.created_at,
-    metrics: {
-      testMedianApePct: numberValue(metrics.test_median_ape_pct),
-      intervalCoveragePct: numberValue(metrics.interval_coverage_pct),
-      testRows: numberValue(metrics.test_rows),
-    },
+    metrics: summarizedMetrics,
+    promotionGate: evaluateValuationPromotionGate(summarizedMetrics),
   };
+}
+
+function runtimeDriftSignals({
+  count,
+  actionableSharePct,
+  averageConfidenceScore,
+  averageLatencyMs,
+}: {
+  count: number;
+  actionableSharePct: number | null;
+  averageConfidenceScore: number | null;
+  averageLatencyMs: number | null;
+}): string[] {
+  if (count === 0) return ["Aucune estimation sur les dernières 24 h."];
+  const signals: string[] = [];
+  if (actionableSharePct != null && actionableSharePct < 50) {
+    signals.push("Moins de 50 % des estimations sont actionnables.");
+  }
+  if (averageConfidenceScore != null && averageConfidenceScore < 55) {
+    signals.push("La confiance moyenne est inférieure à 55.");
+  }
+  if (averageLatencyMs != null && averageLatencyMs > 1_500) {
+    signals.push("La latence moyenne dépasse 1,5 seconde.");
+  }
+  return signals;
 }
 
 function share<T>(rows: T[], predicate: (row: T) => boolean): number | null {

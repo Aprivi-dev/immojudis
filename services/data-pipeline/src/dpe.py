@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
@@ -10,8 +11,9 @@ from typing import Any
 import httpx
 
 from src.config import load_settings
+from src.geocode import coordinates_are_verified
 from src.models import AuctionSale
-from src.normalize import clean_text
+from src.normalize import clean_text, strip_accents
 
 LOGGER = logging.getLogger(__name__)
 SOURCE_API_NAME = "ADEME DPE Open Data"
@@ -161,7 +163,7 @@ def dpe_query_params_for_sale(
         "size": max(1, max_results),
         "select": ",".join(DPE_SELECT_FIELDS),
     }
-    if sale.latitude is not None and sale.longitude is not None:
+    if sale.latitude is not None and sale.longitude is not None and coordinates_are_verified(sale):
         params["geo_distance"] = f"{float(sale.longitude)}:{float(sale.latitude)}:{max(10, geo_radius_m)}"
         if sale.department:
             params["code_departement_ban_eq"] = sale.department
@@ -218,7 +220,15 @@ def dpe_diagnostic_from_result(
 
     latitude, longitude = geopoint(result.get("_geopoint"))
     match_kind = "geo_distance" if "geo_distance" in request_params else "address_query"
-    confidence = match_confidence(sale, result, latitude=latitude, longitude=longitude, match_kind=match_kind)
+    address_matches = strong_address_match(sale, result)
+    confidence = match_confidence(
+        sale,
+        result,
+        latitude=latitude,
+        longitude=longitude,
+        match_kind=match_kind,
+        address_matches=address_matches,
+    )
     return DpeDiagnostic(
         source_url=sale.source_url,
         diagnostic_number=diagnostic_number,
@@ -246,6 +256,7 @@ def dpe_diagnostic_from_result(
         raw_payload={
             "request": request_params,
             "result": result,
+            "address_match": address_matches,
         },
     )
 
@@ -257,6 +268,7 @@ def match_confidence(
     latitude: float | None,
     longitude: float | None,
     match_kind: str,
+    address_matches: bool,
 ) -> float:
     confidence = 0.62 if match_kind == "address_query" else 0.72
     if sale.department and text_value(result.get("code_departement_ban")) == sale.department:
@@ -279,7 +291,51 @@ def match_confidence(
         else:
             confidence -= 0.12
 
+    if address_matches:
+        confidence += 0.08
+    else:
+        confidence = min(confidence, 0.69)
+
     return round(min(0.95, max(0.35, confidence)), 2)
+
+
+def strong_address_match(sale: AuctionSale, result: dict[str, Any]) -> bool:
+    source_address = clean_text(sale.address)
+    candidate_address = clean_text(result.get("adresse_ban")) or clean_text(result.get("adresse_complete_brut"))
+    if not source_address or not candidate_address:
+        return False
+
+    source_number = _street_number(source_address)
+    candidate_number = _street_number(candidate_address)
+    if source_number and source_number != candidate_number:
+        return False
+
+    excluded = set(_address_tokens(sale.city or ""))
+    source_terms = _address_terms(source_address, excluded=excluded)
+    candidate_terms = _address_terms(candidate_address, excluded=excluded)
+    shared_terms = source_terms & candidate_terms
+    if source_number:
+        return bool(shared_terms)
+    return len(shared_terms) >= 2 and len(shared_terms) >= math.ceil(len(source_terms) * 0.6)
+
+
+def _street_number(value: str) -> str | None:
+    match = re.search(r"(?<!\d)(\d{1,4})(?!\d)", value)
+    return match.group(1).lstrip("0") or "0" if match else None
+
+
+def _address_terms(value: str, *, excluded: set[str]) -> set[str]:
+    ignored = {"de", "des", "du", "la", "le", "les", "a", "au", "aux", "france"}
+    return {
+        token
+        for token in _address_tokens(value)
+        if len(token) >= 3 and not token.isdigit() and token not in ignored and token not in excluded
+    }
+
+
+def _address_tokens(value: str) -> list[str]:
+    normalized = strip_accents(clean_text(value) or "").casefold()
+    return re.findall(r"[a-z0-9]+", normalized)
 
 
 def geopoint(value: object) -> tuple[float | None, float | None]:
@@ -348,8 +404,5 @@ def haversine_m(first_lat: float, first_lng: float, second_lat: float, second_ln
     phi2 = math.radians(second_lat)
     delta_phi = math.radians(second_lat - first_lat)
     delta_lambda = math.radians(second_lng - first_lng)
-    a = (
-        math.sin(delta_phi / 2) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
-    )
+    a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
     return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))

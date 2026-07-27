@@ -19,27 +19,30 @@ npm run dev        # http://localhost:3000
 
 ## 2. Variables d'environnement
 
-| Variable                        | Requis  | Description                                                                                                                 |
-| ------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `VITE_SUPABASE_URL`             | ✅      | URL du projet Supabase (`https://xxx.supabase.co`)                                                                          |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅      | Clé `anon` / `publishable` (publique, safe côté client)                                                                     |
-| `SUPABASE_URL`                  | ✅ prod | URL Supabase côté serveur. Repli possible sur `NEXT_PUBLIC_SUPABASE_URL`, mais il est préférable de la poser explicitement. |
-| `SUPABASE_SECRET_KEY`           | ✅ prod | Clé serveur Supabase nouvelle génération, ou utiliser `SUPABASE_SERVICE_ROLE_KEY` pour les projets legacy.                  |
-| `SUPABASE_SERVICE_ROLE_KEY`     | ✅ prod | Clé serveur legacy Supabase, acceptée en repli de `SUPABASE_SECRET_KEY`.                                                    |
-| `SUPABASE_DB_URL`               | ✅ ops  | URL Postgres directe pour appliquer les migrations. Repli accepté : `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`.           |
-| `NEXT_PUBLIC_OSM_TILE_URL`      | ❌      | Template de tuiles OSM compatible `{z}/{x}/{y}`. Défaut : `https://tile.openstreetmap.org/{z}/{x}/{y}.png`.                 |
-| `GITHUB_SCROLL_TOKEN`           | ❌      | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.                            |
-| `GITHUB_SCROLL_REPOSITORY`      | ❌      | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                                    |
-| `GITHUB_SCROLL_WORKFLOW`        | ❌      | Workflow cible. Défaut : `data-pipeline.yml`.                                                                               |
-| `GITHUB_SCROLL_REF`             | ❌      | Branche cible. Défaut : `main`.                                                                                             |
-| `CRON_SECRET`                   | ✅ prod | Secret Vercel Cron envoyé en `Authorization: Bearer <secret>` pour `/api/cron/smart-alerts`.                                |
-| `SMART_ALERT_CRON_USER_LIMIT`   | ❌      | Nombre max d'utilisateurs Analyse évalués par exécution. Défaut : `25`.                                                     |
-| `SMART_ALERT_CRON_SALE_LIMIT`   | ❌      | Nombre max de ventes actives/à venir évaluées par utilisateur. Défaut : `160`.                                              |
-| `ALERT_NOTIFICATION_CRON_LIMIT` | ❌      | Nombre max de notifications d'alertes planifiées libérées par exécution. Défaut : `200`.                                    |
-| `STRIPE_SECRET_KEY`             | ✅ prod | Clé serveur Stripe utilisée pour le paiement unique Analyse à 29 €.                                                         |
-| `STRIPE_WEBHOOK_SECRET`         | ✅ prod | Secret de signature du webhook qui attribue les 30 jours d'accès.                                                           |
-| `RESEND_API_KEY`                | ✅ prod | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés.                          |
-| `ALERT_EMAIL_FROM`              | ✅ prod | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`.                                                  |
+| Variable                             | Requis  | Description                                                                                                                 |
+| ------------------------------------ | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`                  | ✅      | URL du projet Supabase (`https://xxx.supabase.co`)                                                                          |
+| `VITE_SUPABASE_PUBLISHABLE_KEY`      | ✅      | Clé `anon` / `publishable` (publique, safe côté client)                                                                     |
+| `SUPABASE_URL`                       | ✅ prod | URL Supabase côté serveur. Repli possible sur `NEXT_PUBLIC_SUPABASE_URL`, mais il est préférable de la poser explicitement. |
+| `SUPABASE_SECRET_KEY`                | ✅ prod | Clé serveur Supabase nouvelle génération, ou utiliser `SUPABASE_SERVICE_ROLE_KEY` pour les projets legacy.                  |
+| `SUPABASE_SERVICE_ROLE_KEY`          | ✅ prod | Clé serveur legacy Supabase, acceptée en repli de `SUPABASE_SECRET_KEY`.                                                    |
+| `SUPABASE_DB_URL`                    | ✅ ops  | URL Postgres directe pour appliquer les migrations. Repli accepté : `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`.           |
+| `NEXT_PUBLIC_OSM_TILE_URL`           | ❌      | Template de tuiles OSM compatible `{z}/{x}/{y}`. Défaut : `https://tile.openstreetmap.org/{z}/{x}/{y}.png`.                 |
+| `GITHUB_SCROLL_TOKEN`                | ❌      | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.                            |
+| `GITHUB_SCROLL_REPOSITORY`           | ❌      | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                                    |
+| `GITHUB_SCROLL_WORKFLOW`             | ❌      | Workflow cible. Défaut : `data-pipeline.yml`.                                                                               |
+| `GITHUB_SCROLL_REF`                  | ❌      | Branche cible. Défaut : `main`.                                                                                             |
+| `CRON_SECRET`                        | ✅ prod | Secret Vercel Cron envoyé en `Authorization: Bearer <secret>` pour `/api/cron/smart-alerts`.                                |
+| `OPERATIONS_ALERT_WEBHOOK_URL`       | ❌      | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                                         |
+| `OPERATIONS_ALERT_WEBHOOK_SECRET`    | ❌      | Bearer token associé au webhook opérationnel.                                                                               |
+| `OPERATIONS_ALERT_GITHUB_REPOSITORY` | ❌      | Repo du workflow d'alerte. Défaut : `Aprivi-dev/immojudis`.                                                                 |
+| `SMART_ALERT_CRON_USER_LIMIT`        | ❌      | Nombre max d'utilisateurs Analyse évalués par exécution. Défaut : `25`.                                                     |
+| `SMART_ALERT_CRON_SALE_LIMIT`        | ❌      | Nombre max de ventes actives/à venir évaluées par utilisateur. Défaut : `160`.                                              |
+| `ALERT_NOTIFICATION_CRON_LIMIT`      | ❌      | Nombre max de notifications d'alertes planifiées libérées par exécution. Défaut : `200`.                                    |
+| `STRIPE_SECRET_KEY`                  | ✅ prod | Clé serveur Stripe utilisée pour le paiement unique Analyse à 29 €.                                                         |
+| `STRIPE_WEBHOOK_SECRET`              | ✅ prod | Secret de signature du webhook qui attribue les 30 jours d'accès.                                                           |
+| `RESEND_API_KEY`                     | ✅ prod | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés.                          |
+| `ALERT_EMAIL_FROM`                   | ✅ prod | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`.                                                  |
 
 Avant un déploiement production complet, vérifier les variables serveur :
 
@@ -61,7 +64,7 @@ La page `/admin` crée une ligne `auction_runs` en statut `queued`.
 Deux mécanismes peuvent ensuite lancer le vrai pipeline :
 
 1. **Déclenchement immédiat** : si `GITHUB_SCROLL_TOKEN` est configuré dans Vercel, le serveur déclenche le workflow GitHub Actions `data-pipeline.yml` avec l'identifiant du run.
-2. **Fallback automatique** : le workflow GitHub Actions est planifié toutes les 10 minutes et traite le plus ancien run `queued`.
+2. **Fallback automatique** : le workflow GitHub Actions est planifié toutes les 30 minutes et traite le plus ancien run `queued`.
 
 Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans Supabase :
 
@@ -72,8 +75,11 @@ Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅     | Clé serveur legacy si `SUPABASE_SECRET_KEY` n'est pas encore utilisée.                                                         |
 | `SUPABASE_DB_URL`           | ✅     | URL Postgres utilisée par le workflow de migrations. Replis acceptés côté script : `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL`. |
 | `REPLICATE_API_TOKEN`       | ❌     | Token LLM pour l'enrichissement premium, si disponible.                                                                        |
+| `CRON_SECRET`               | ✅ ops | Même secret que Vercel, utilisé pour provisionner le callback Supabase Cron sans l'inscrire dans les migrations.               |
 
 Le token `GITHUB_SCROLL_TOKEN` côté Vercel doit être un fine-grained PAT GitHub limité au repo `Aprivi-dev/immojudis` avec accès Actions en écriture.
+Il sert aussi de canal externe par défaut pour `operational-alert.yml`; un webhook HTTPS dédié peut
+le remplacer avec `OPERATIONS_ALERT_WEBHOOK_URL`.
 
 ### Offre payante Stripe
 
@@ -108,6 +114,20 @@ est planifié à `06:30 UTC` et `/api/cron/sale-change-monitor` à `06:45 UTC`.
 Sur un plan Vercel Pro, ces deux derniers crons peuvent repasser à `*/15 * * * *`
 pour se rapprocher du temps réel. Les routes refusent toute requête sans
 `Authorization: Bearer $CRON_SECRET`.
+
+### Contrôle de santé opérationnelle
+
+Le plan Vercel Hobby ne permettant qu'une exécution quotidienne, `vercel.json` conserve le passage
+de secours à `07:00 UTC`. Le contrôle primaire est lancé toutes les 15 minutes par Supabase Cron ;
+son URL et son Bearer token sont chiffrés dans Supabase Vault par :
+
+```bash
+npm run ops:health-scheduler:configure
+```
+
+Le workflow `Apply Supabase Migrations` exécute automatiquement cette étape, puis vérifie l'absence
+de dérive du schéma distant. Voir [`operations-phase-3.md`](operations-phase-3.md) pour les SLO,
+tableaux de bord et runbooks.
 
 Le cron `/api/cron/smart-alerts` évalue les alertes avancées des utilisateurs ayant un accès
 Analyse actif, persiste les lignes dans `user_alert_matches`, puis met à jour

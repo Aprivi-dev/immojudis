@@ -34,8 +34,8 @@ export async function fetchSearchResults({
 
   const page = search.page ?? 1;
   const perPage = search.limit ?? DEFAULT_SEARCH_LIMIT;
-  const limit = page * perPage;
-  return getSales(dataFiltersFromSearch(search), limit, dataSortFromSearch(search.sort), 0, {
+  const offset = (page - 1) * perPage;
+  return getSales(dataFiltersFromSearch(search), perPage, dataSortFromSearch(search.sort), offset, {
     discovery,
   });
 }
@@ -86,24 +86,26 @@ async function fetchPreviewSearch(search: SalesSearchParams): Promise<PreviewSea
     p_city: filters.city ?? null,
     p_postal_code: filters.postal_code ?? null,
     p_tribunal: filters.tribunal ?? null,
-    p_keywords: filters.keywords ? frenchSearchTerms(filters.keywords).slice(0, 12) : null,
+    p_keywords: filters.keywords ? frenchSearchTerms(filters.keywords).slice(0, 5) : null,
     p_property_types: propertyTypes,
     p_min_price: filters.min_price ?? null,
     p_max_price: filters.max_price ?? null,
-    p_min_surface: filters.min_surface ?? null,
-    p_max_surface: filters.max_surface ?? null,
-    p_min_bedrooms: filters.min_bedrooms ?? null,
-    p_min_bathrooms: filters.min_bathrooms ?? null,
-    p_occupancy_status: filters.occupancy_status ?? null,
-    p_min_score: filters.min_score ?? null,
+    // Anonymous preview results must not become a yes/no oracle for protected
+    // attributes that are only disclosed after authentication.
+    p_min_surface: null,
+    p_max_surface: null,
+    p_min_bedrooms: null,
+    p_min_bathrooms: null,
+    p_occupancy_status: null,
+    p_min_score: null,
     p_statuses: filters.status_in ?? null,
-    p_north: filters.viewport?.north ?? null,
-    p_south: filters.viewport?.south ?? null,
-    p_east: filters.viewport?.east ?? null,
-    p_west: filters.viewport?.west ?? null,
+    p_north: null,
+    p_south: null,
+    p_east: null,
+    p_west: null,
     p_sort: dataSortFromSearch(search.sort),
-    p_limit: page * perPage,
-    p_offset: 0,
+    p_limit: perPage,
+    p_offset: (page - 1) * perPage,
   };
   const requestKey = JSON.stringify(args);
   const currentRequest = inFlightPreviewSearches.get(requestKey);

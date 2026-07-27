@@ -2,6 +2,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { cleanSaleTitle } from "@/lib/sale-title";
+import { resolveSiteOrigin } from "@/lib/site-url";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 
@@ -56,7 +57,7 @@ export function resolveEmailAlertDeliveryConfig(
 ): EmailAlertDeliveryConfig {
   const apiKey = firstFilledEnv(env.RESEND_API_KEY);
   const from = firstFilledEnv(env.ALERT_EMAIL_FROM, env.RESEND_FROM_EMAIL);
-  const appUrl = appOrigin(env);
+  const appUrl = resolveSiteOrigin(env);
   const missing = [
     ...(!apiKey ? ["RESEND_API_KEY"] : []),
     ...(!from ? ["ALERT_EMAIL_FROM"] : []),
@@ -468,14 +469,6 @@ function buildAlertEmailHtml({
     </div>
   </body>
 </html>`;
-}
-
-function appOrigin(env: Pick<NodeJS.ProcessEnv, string>): string | null {
-  const rawOrigin =
-    env.NEXT_PUBLIC_APP_URL || env.APP_URL || env.NEXT_PUBLIC_SITE_URL || env.VERCEL_URL;
-  if (!rawOrigin) return null;
-  const origin = /^https?:\/\//i.test(rawOrigin) ? rawOrigin : `https://${rawOrigin}`;
-  return origin.replace(/\/+$/, "");
 }
 
 function firstFilledEnv(...values: Array<string | undefined>) {

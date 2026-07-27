@@ -93,6 +93,7 @@ import {
   fetchSearchResults,
 } from "@/lib/search/search-service";
 import type { MapViewportChange } from "./MapPanel";
+import { SearchPagination } from "./SearchPagination";
 
 const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPanel), {
   ssr: false,
@@ -134,7 +135,6 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const reduceMotion = useReducedMotion();
   const searchRef = useRef(search);
   const viewportTimerRef = useRef<number | null>(null);
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const [hoveredSaleId, setHoveredSaleId] = useState<string | null>(null);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [mapViewport, setMapViewport] = useState<MapViewportChange | null>(null);
@@ -154,6 +154,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const page = search.page ?? 1;
   const pageSize = search.limit ?? DEFAULT_SEARCH_LIMIT;
+  const pageOffset = (page - 1) * pageSize;
 
   useEffect(() => {
     searchRef.current = search;
@@ -224,6 +225,10 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   const searchKey = useMemo(() => salesSearchToUrlRecord(search), [search]);
   const searchKeySignature = useMemo(() => stableUrlRecord(searchKey), [searchKey]);
+  const mapSearchKeySignature = useMemo(
+    () => stableUrlRecord(salesSearchToUrlRecord({ ...search, page: undefined, limit: undefined })),
+    [search],
+  );
   const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
     queryKey: ["feature-entitlements", user?.id ?? "anonymous"],
     queryFn: fetchFeatureEntitlements,
@@ -253,7 +258,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   });
 
   const { data: rawMapSales = [], isLoading: isMapLoading } = useQuery({
-    queryKey: ["sales-search-map", searchKeySignature, isDiscovery],
+    queryKey: ["sales-search-map", mapSearchKeySignature, isDiscovery],
     queryFn: () => fetchSearchMapResults(search, { discovery: isDiscovery }),
     enabled: catalogReady && !isPreview,
     staleTime: 60_000,
@@ -308,8 +313,9 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     !mapListFollowsViewport &&
     !hasLocalFilters &&
     totalCount != null &&
-    rawSales.length < totalCount &&
-    rawSales.length >= page * pageSize;
+    pageOffset + rawSales.length < totalCount &&
+    rawSales.length >= pageSize;
+  const hasPrevious = !mapListFollowsViewport && page > 1;
   const splitClass = wideMap
     ? "lg:grid-cols-[minmax(0,1.7fr)_minmax(390px,30vw)]"
     : "lg:grid-cols-[minmax(0,1.25fr)_minmax(430px,36vw)]";
@@ -378,25 +384,15 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     });
   }, [navigate, search.sort]);
 
-  const loadMore = useCallback(() => {
+  const loadNextPage = useCallback(() => {
     if (!hasMore || isFetching) return;
     updateSearch({ page: page + 1 });
   }, [hasMore, isFetching, page, updateSearch]);
 
-  useEffect(() => {
-    const node = loadMoreRef.current;
-    if (!node || !hasMore || isFetching || isInitialLoading) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting) loadMore();
-      },
-      { rootMargin: "680px 0px" },
-    );
-
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [hasMore, isFetching, isInitialLoading, loadMore]);
+  const loadPreviousPage = useCallback(() => {
+    if (!hasPrevious || isFetching) return;
+    updateSearch({ page: page - 1 });
+  }, [hasPrevious, isFetching, page, updateSearch]);
 
   const handleMapSelect = useCallback((saleId: string) => {
     setSelectedSaleId(saleId);
@@ -589,15 +585,17 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
             onSelect={setSelectedSaleId}
           />
 
-          <div ref={loadMoreRef} className="h-1" aria-hidden />
-
-          <PaginationControls
+          <SearchPagination
             hasMore={hasMore}
+            hasPrevious={hasPrevious}
             isFetching={isFetching}
             loadedCount={filteredCount}
             totalCount={mapListFollowsViewport ? displayCount : totalCount}
             mapListFollowsViewport={mapListFollowsViewport}
-            onLoadMore={loadMore}
+            page={page}
+            pageSize={pageSize}
+            onNext={loadNextPage}
+            onPrevious={loadPreviousPage}
           />
 
           <Footer />
@@ -2399,52 +2397,6 @@ function MobileMapToggle({
   );
 }
 
-function PaginationControls({
-  hasMore,
-  isFetching,
-  loadedCount,
-  totalCount,
-  mapListFollowsViewport,
-  onLoadMore,
-}: {
-  hasMore: boolean;
-  isFetching: boolean;
-  loadedCount: number;
-  totalCount: number | undefined;
-  mapListFollowsViewport: boolean;
-  onLoadMore: () => void;
-}) {
-  if (!hasMore && loadedCount === 0) return null;
-
-  return (
-    <div className="px-4 pb-10 pt-2 text-center sm:px-5">
-      {hasMore ? (
-        <button
-          type="button"
-          onClick={onLoadMore}
-          disabled={isFetching}
-          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#cbd5df] bg-white px-4 text-sm font-bold text-[#132238] transition-colors hover:border-[#0f766e] hover:text-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isFetching ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-          {isFetching ? "Chargement..." : "Charger plus"}
-        </button>
-      ) : (
-        <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#8b949e]">
-          {mapListFollowsViewport && totalCount != null && loadedCount < totalCount
-            ? `${loadedCount.toLocaleString("fr-FR")} affichés / ${totalCount.toLocaleString(
-                "fr-FR",
-              )} dans la carte`
-            : totalCount != null
-              ? `${loadedCount.toLocaleString("fr-FR")} / ${totalCount.toLocaleString(
-                  "fr-FR",
-                )} dossiers`
-              : "Tous les dossiers chargés"}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function NoResultsState() {
   return (
     <div className="rounded-md border border-[#d8dee4] bg-white p-10 text-center shadow-sm">
@@ -2803,10 +2755,10 @@ function clampZoneName(value: string): string {
 
 function fallbackImageForSale(id: string) {
   const images = [
-    "/media/landing/auction-lyon.jpg",
-    "/media/landing/auction-nantes.jpg",
-    "/media/landing/auction-bordeaux.jpg",
-    "/media/landing/auction-toulouse.jpg",
+    "/media/landing/auction-lyon.webp",
+    "/media/landing/auction-nantes.webp",
+    "/media/landing/auction-bordeaux.webp",
+    "/media/landing/auction-toulouse.webp",
   ];
   const index = [...id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % images.length;
   return images[index] ?? images[0];

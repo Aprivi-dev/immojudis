@@ -40,4 +40,14 @@ describe("sale source links", () => {
     expect(sourceLabelFromUrl("https://cabinet.example.test/vente/1")).toBe("cabinet.example.test");
     expect(sourceLabel("cabinet_local", null)).toBe("cabinet_local");
   });
+
+  it("rejects active and credentialed source URLs", () => {
+    const sale = {
+      source_name: "avoventes",
+      source_url: "javascript:alert(1)",
+      source_urls: ["https://user:secret@example.test/private"],
+    } as AuctionSale;
+
+    expect(saleSourceLinks(sale)).toEqual([]);
+  });
 });

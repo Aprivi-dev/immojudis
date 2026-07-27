@@ -38,14 +38,19 @@ class GeocodeResult:
 
 def geocode_sale(sale: AuctionSale) -> AuctionSale:
     """Fill latitude/longitude using the BAN geocoding service."""
-    if sale.latitude is not None and sale.longitude is not None and _coordinates_match_department(sale):
+    if coordinates_are_verified(sale) and _coordinates_match_department(sale):
         return sale
     if sale.latitude is not None and sale.longitude is not None:
-        LOGGER.warning("Ignoring implausible coordinates for %s", sale.source_url)
-        sale.latitude = None
-        sale.longitude = None
-        if "implausible_coordinates" not in sale.quality_flags:
-            sale.quality_flags.append("implausible_coordinates")
+        if not _coordinates_match_department(sale):
+            LOGGER.warning("Ignoring implausible coordinates for %s", sale.source_url)
+            sale.latitude = None
+            sale.longitude = None
+            if "implausible_coordinates" not in sale.quality_flags:
+                sale.quality_flags.append("implausible_coordinates")
+        else:
+            LOGGER.info("Validating source coordinates against BAN for %s", sale.source_url)
+            if "unverified_source_coordinates" not in sale.quality_flags:
+                sale.quality_flags.append("unverified_source_coordinates")
 
     settings = load_settings()
     if not settings["geocode_enabled"]:
@@ -90,6 +95,25 @@ def geocode_sale(sale: AuctionSale) -> AuctionSale:
     sale.longitude = result.longitude
     _store_geocode_evidence(sale, query=query, result=result, accepted=True)
     return sale
+
+
+def coordinates_are_verified(sale: AuctionSale) -> bool:
+    if sale.latitude is None or sale.longitude is None or not isinstance(sale.raw_payload, dict):
+        return False
+    evidence = sale.raw_payload.get("geocode")
+    if not isinstance(evidence, dict):
+        return False
+    if evidence.get("provider") != "ban_geoplateforme" or evidence.get("accepted") is not True:
+        return False
+    try:
+        evidence_latitude = float(evidence["latitude"])
+        evidence_longitude = float(evidence["longitude"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (
+        abs(float(sale.latitude) - evidence_latitude) <= 0.000001
+        and abs(float(sale.longitude) - evidence_longitude) <= 0.000001
+    )
 
 
 def geocode_address(

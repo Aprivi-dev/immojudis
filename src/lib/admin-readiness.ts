@@ -1,9 +1,17 @@
 import postgres from "postgres";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
+import { resolveSiteOrigin } from "@/lib/site-url";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
-export type ReadinessArea = "billing" | "cron" | "database" | "access" | "email" | "pipeline";
+export type ReadinessArea =
+  | "billing"
+  | "cron"
+  | "database"
+  | "access"
+  | "email"
+  | "pipeline"
+  | "operations";
 
 export type ReadinessItem = {
   key: string;
@@ -33,16 +41,39 @@ export type AiDescriptionReadiness = {
   detail: string;
 };
 
+export type OperationalAlertSummary = {
+  key: string;
+  category: string;
+  severity: "warning" | "critical";
+  status: "open" | "resolved";
+  deliveryStatus: "pending" | "processing" | "delivered" | "failed";
+  lastSeenAt: string;
+};
+
+export type OperationalHealthReadiness = {
+  status: ReadinessStatus;
+  schedulerActive: boolean;
+  schedulerSchedule: string | null;
+  openAlertCount: number | null;
+  criticalOpenAlertCount: number | null;
+  pendingDeliveryCount: number | null;
+  failedDeliveryCount: number | null;
+  lastHealthRunAt: string | null;
+  alerts: OperationalAlertSummary[];
+  detail: string;
+};
+
 export type AdminOperationalReadinessResponse = {
   checkedAt: string;
   status: ReadinessStatus;
   items: ReadinessItem[];
   migrations: MigrationReadiness;
   aiDescriptions: AiDescriptionReadiness;
+  operations: OperationalHealthReadiness;
   webhookUrl: string | null;
 };
 
-export const EXPECTED_LATEST_MIGRATION_VERSION = "20260713164324";
+export const EXPECTED_LATEST_MIGRATION_VERSION = "20260727185139";
 export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v6_display";
 
 const EXPECTED_CRONS = [
@@ -50,6 +81,9 @@ const EXPECTED_CRONS = [
   "/api/cron/alert-notifications",
   "/api/cron/sale-change-monitor",
   "/api/cron/precompute-valuations",
+  "/api/cron/data-retention",
+  "/api/cron/operational-health",
+  "/api/cron/cnb-lawyer-directory",
 ] as const;
 
 export async function getAdminOperationalReadiness(
@@ -57,12 +91,18 @@ export async function getAdminOperationalReadiness(
 ): Promise<AdminOperationalReadinessResponse> {
   await assertAdminAuth(authToken);
   const envItems = buildEnvironmentReadiness(process.env);
-  const [migrations, aiDescriptions] = await Promise.all([
+  const [migrations, aiDescriptions, operations] = await Promise.all([
     readMigrationReadiness(process.env),
     readAiDescriptionReadiness(process.env),
+    readOperationalHealthReadiness(process.env),
   ]);
-  const items = [...envItems, migrationItem(migrations), aiDescriptionItem(aiDescriptions)];
-  const origin = appOrigin(process.env);
+  const items = [
+    ...envItems,
+    migrationItem(migrations),
+    aiDescriptionItem(aiDescriptions),
+    operationalHealthItem(operations),
+  ];
+  const origin = resolveSiteOrigin(process.env);
 
   return {
     checkedAt: new Date().toISOString(),
@@ -70,12 +110,13 @@ export async function getAdminOperationalReadiness(
     items,
     migrations,
     aiDescriptions,
+    operations,
     webhookUrl: origin ? `${origin}/api/stripe/webhook` : null,
   };
 }
 
 export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>): ReadinessItem[] {
-  const appUrl = appOrigin(env);
+  const appUrl = resolveSiteOrigin(env);
   const stripeSecret = env.STRIPE_SECRET_KEY;
   const webhookSecret = env.STRIPE_WEBHOOK_SECRET;
   const emailConfig = resolveEmailAlertDeliveryConfig(env);
@@ -87,6 +128,12 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
     env.IMMOJUDIS_SCROLL_WEBHOOK_URL,
   );
   const replicateToken = firstFilledEnv(env.REPLICATE_API_TOKEN);
+  const externalAlertChannel = firstFilledEnv(
+    env.OPERATIONS_ALERT_WEBHOOK_URL,
+    env.GITHUB_SCROLL_TOKEN,
+    env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN,
+    env.GITHUB_ACTIONS_DISPATCH_TOKEN,
+  );
 
   return [
     {
@@ -165,6 +212,18 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       action: replicateToken
         ? null
         : "Configurer REPLICATE_API_TOKEN dans l'environnement du runner qui exécute le backfill.",
+    },
+    {
+      key: "operations.external_alerts",
+      area: "operations",
+      label: "Alertes opérationnelles externes",
+      status: externalAlertChannel ? "ready" : "blocked",
+      detail: externalAlertChannel
+        ? "Les incidents opérationnels peuvent sortir de Supabase vers un canal externe."
+        : "Les incidents restent en base sans canal externe actif.",
+      action: externalAlertChannel
+        ? null
+        : "Configurer OPERATIONS_ALERT_WEBHOOK_URL ou GITHUB_SCROLL_TOKEN.",
     },
   ];
 }
@@ -340,6 +399,123 @@ async function readAiDescriptionReadiness(
   }
 }
 
+async function readOperationalHealthReadiness(
+  env: Pick<NodeJS.ProcessEnv, string>,
+): Promise<OperationalHealthReadiness> {
+  const dbUrl = databaseUrl(env);
+  if (!dbUrl) return unavailableOperationalHealth("URL Postgres absente au runtime.");
+
+  const sql = postgres(dbUrl, {
+    max: 1,
+    ssl: env.POSTGRES_SSL === "disable" ? false : "require",
+  });
+
+  try {
+    const [scheduler] = await sql<{ schedule: string; active: boolean }[]>`
+      select schedule, active
+      from cron.job
+      where jobname = 'immojudis-operational-health'
+      limit 1
+    `;
+    const [counts] = await sql<
+      Array<{
+        open_alert_count: number;
+        critical_open_alert_count: number;
+        pending_delivery_count: number;
+        failed_delivery_count: number;
+      }>
+    >`
+      select
+        count(*) filter (where status = 'open')::int as open_alert_count,
+        count(*) filter (where status = 'open' and severity = 'critical')::int
+          as critical_open_alert_count,
+        count(*) filter (where notification_status in ('pending', 'processing'))::int
+          as pending_delivery_count,
+        count(*) filter (where notification_status = 'failed')::int
+          as failed_delivery_count
+      from public.operational_alerts
+    `;
+    const [latestRun] = await sql<{ latest_at: string | null }[]>`
+      select max(coalesce(finished_at, started_at))::text as latest_at
+      from public.operational_job_runs
+      where job_name = 'operational-health'
+    `;
+    const alertRows = await sql<
+      Array<{
+        alert_key: string;
+        category: string;
+        severity: "warning" | "critical";
+        status: "open" | "resolved";
+        notification_status: "pending" | "processing" | "delivered" | "failed";
+        last_seen_at: string;
+      }>
+    >`
+      select
+        alert_key,
+        category,
+        severity,
+        status,
+        notification_status,
+        last_seen_at::text
+      from public.operational_alerts
+      where status = 'open' or notification_status in ('pending', 'processing', 'failed')
+      order by
+        case severity when 'critical' then 0 else 1 end,
+        last_seen_at desc
+      limit 20
+    `;
+
+    const schedulerActive = Boolean(scheduler?.active && scheduler.schedule === "*/15 * * * *");
+    const openAlertCount = counts?.open_alert_count ?? 0;
+    const criticalOpenAlertCount = counts?.critical_open_alert_count ?? 0;
+    const pendingDeliveryCount = counts?.pending_delivery_count ?? 0;
+    const failedDeliveryCount = counts?.failed_delivery_count ?? 0;
+    const lastHealthRunAt = latestRun?.latest_at ?? null;
+    const lastRunFresh = Boolean(
+      lastHealthRunAt && Date.now() - new Date(lastHealthRunAt).getTime() <= 30 * 60 * 1000,
+    );
+    const status: ReadinessStatus =
+      !schedulerActive || failedDeliveryCount > 0 || criticalOpenAlertCount > 0
+        ? "blocked"
+        : openAlertCount > 0 || pendingDeliveryCount > 0 || !lastRunFresh
+          ? "warning"
+          : "ready";
+
+    return {
+      status,
+      schedulerActive,
+      schedulerSchedule: scheduler?.schedule ?? null,
+      openAlertCount,
+      criticalOpenAlertCount,
+      pendingDeliveryCount,
+      failedDeliveryCount,
+      lastHealthRunAt,
+      alerts: alertRows.map((alert) => ({
+        key: alert.alert_key,
+        category: alert.category,
+        severity: alert.severity,
+        status: alert.status,
+        deliveryStatus: alert.notification_status,
+        lastSeenAt: alert.last_seen_at,
+      })),
+      detail: operationalHealthDetail({
+        schedulerActive,
+        openAlertCount,
+        criticalOpenAlertCount,
+        pendingDeliveryCount,
+        failedDeliveryCount,
+        lastRunFresh,
+      }),
+    };
+  } catch (error) {
+    return unavailableOperationalHealth(
+      error instanceof Error ? error.message : "Diagnostic opérationnel indisponible.",
+    );
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 function migrationItem(migrations: MigrationReadiness): ReadinessItem {
   return {
     key: "database.migrations",
@@ -369,6 +545,24 @@ export function aiDescriptionItem(readiness: AiDescriptionReadiness): ReadinessI
           : readiness.missingCurrentCount && readiness.missingCurrentCount > 0
             ? "Lancer un backfill IA depuis l'admin ou GitHub Actions, puis vérifier les erreurs récentes."
             : "Vérifier qu'il existe des annonces actives ou à venir à auditer.",
+  };
+}
+
+export function operationalHealthItem(readiness: OperationalHealthReadiness): ReadinessItem {
+  return {
+    key: "operations.health",
+    area: "operations",
+    label: "Santé et SLO",
+    status: readiness.status,
+    detail: readiness.detail,
+    action:
+      readiness.status === "ready"
+        ? null
+        : readiness.failedDeliveryCount
+          ? "Réparer le canal externe puis relancer /api/cron/operational-health."
+          : readiness.criticalOpenAlertCount
+            ? "Consulter les incidents ouverts et appliquer le runbook correspondant."
+            : "Vérifier le scheduler Supabase et la dernière exécution du contrôle de santé.",
   };
 }
 
@@ -417,18 +611,55 @@ function databaseUrl(env: Pick<NodeJS.ProcessEnv, string>): string | null {
   );
 }
 
+function unavailableOperationalHealth(detail: string): OperationalHealthReadiness {
+  return {
+    status: "warning",
+    schedulerActive: false,
+    schedulerSchedule: null,
+    openAlertCount: null,
+    criticalOpenAlertCount: null,
+    pendingDeliveryCount: null,
+    failedDeliveryCount: null,
+    lastHealthRunAt: null,
+    alerts: [],
+    detail,
+  };
+}
+
+function operationalHealthDetail({
+  schedulerActive,
+  openAlertCount,
+  criticalOpenAlertCount,
+  pendingDeliveryCount,
+  failedDeliveryCount,
+  lastRunFresh,
+}: {
+  schedulerActive: boolean;
+  openAlertCount: number;
+  criticalOpenAlertCount: number;
+  pendingDeliveryCount: number;
+  failedDeliveryCount: number;
+  lastRunFresh: boolean;
+}): string {
+  if (!schedulerActive) return "Le contrôle de santé toutes les 15 minutes est absent ou inactif.";
+  if (failedDeliveryCount > 0) {
+    return `${failedDeliveryCount} notification(s) externe(s) sont en échec et seront retentées.`;
+  }
+  if (criticalOpenAlertCount > 0) {
+    return `${criticalOpenAlertCount} incident(s) critique(s) sur ${openAlertCount} alerte(s) ouverte(s).`;
+  }
+  if (openAlertCount > 0) return `${openAlertCount} alerte(s) opérationnelle(s) restent ouvertes.`;
+  if (pendingDeliveryCount > 0) {
+    return `${pendingDeliveryCount} notification(s) externe(s) attendent leur livraison.`;
+  }
+  if (!lastRunFresh) return "La dernière mesure de santé date de plus de 30 minutes.";
+  return "Le scheduler, les SLO et le canal externe sont opérationnels.";
+}
+
 function overallStatus(items: ReadinessItem[]): ReadinessStatus {
   if (items.some((item) => item.status === "blocked")) return "blocked";
   if (items.some((item) => item.status === "warning")) return "warning";
   return "ready";
-}
-
-function appOrigin(env: Pick<NodeJS.ProcessEnv, string>): string | null {
-  const rawOrigin =
-    env.NEXT_PUBLIC_APP_URL || env.APP_URL || env.NEXT_PUBLIC_SITE_URL || env.VERCEL_URL;
-  if (!rawOrigin) return null;
-  const origin = /^https?:\/\//i.test(rawOrigin) ? rawOrigin : `https://${rawOrigin}`;
-  return origin.replace(/\/+$/, "");
 }
 
 function firstFilledEnv(...values: Array<string | undefined>) {

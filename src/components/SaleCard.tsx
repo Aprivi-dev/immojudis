@@ -34,7 +34,7 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
         : "chip-neutral";
   const propertyLabel = locked ? "Annonce réservée" : propertyTypeLabel(sale.property_type);
   const title = locked ? "Détail réservé aux membres" : saleDisplayTitle(sale, propertyLabel);
-  const fallbackImage = "/media/landing/auction-bordeaux.jpg";
+  const fallbackImage = "/media/landing/auction-bordeaux.webp";
   const imageUrl = locked ? fallbackImage : firstPropertyImage(sale.media);
   const dpe = locked ? null : extractDpe(sale);
   const dpeTheme = dpeColor(dpe?.class);

@@ -1,19 +1,36 @@
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded, type PlanCode } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 type AuctionSaleRow = Database["public"]["Tables"]["auction_sales"]["Row"];
 type DataRefreshRequestRow = Database["public"]["Tables"]["data_refresh_requests"]["Row"];
-type DataRefreshRequestInsert = Database["public"]["Tables"]["data_refresh_requests"]["Insert"];
 type RefreshSaleRow = Pick<AuctionSaleRow, "id" | "title" | "city" | "department"> & {
   source_url: string;
 };
 
+type DataRefreshAdmissionRpcClient = {
+  rpc(
+    name: "enqueue_data_refresh_bounded",
+    args: {
+      p_force: boolean;
+      p_request_kind: DataRefreshKind;
+      p_sale_id: string;
+      p_user_id: string;
+    },
+  ): Promise<{
+    data: Array<{ request_id: string; reused: boolean }> | null;
+    error: { message?: string } | null;
+  }>;
+};
+
 export const DATA_REFRESH_KINDS = ["cadastre", "dpe", "full"] as const;
 export type DataRefreshKind = (typeof DATA_REFRESH_KINDS)[number];
+export const DATA_REFRESH_REQUESTS_PER_MINUTE = 5;
 
 export const dataRefreshRequestSchema = z.object({
   saleId: z.string().uuid(),
@@ -82,24 +99,26 @@ export async function requestDataRefresh({
     throw new Error("Le refresh DPE/cadastre à la demande est réservé aux plans Analyse.");
   }
 
+  await enforceUserRateLimit({
+    userId: auth.userId,
+    bucketKey: "data.refresh",
+    limit: DATA_REFRESH_REQUESTS_PER_MINUTE,
+    windowSeconds: 60,
+  });
+
   const sale = await loadRefreshSale(auth, input.saleId);
   const kinds = normalizeRequestedKinds(input.kinds);
   const requests: DataRefreshRequestItem[] = [];
 
   for (const kind of kinds) {
-    const existing = await findActiveRefreshRequest({ auth, sourceUrl: sale.source_url, kind });
-    if (existing) {
-      requests.push(rowToRefreshItem(existing, true));
-      continue;
-    }
-
-    const created = await insertRefreshRequest({
+    const admission = await admitRefreshRequest({
       auth,
-      sale,
+      saleId: sale.id,
       kind,
       force: input.force,
     });
-    requests.push(rowToRefreshItem(created, false));
+    const request = await loadRefreshRequest(auth, admission.requestId);
+    requests.push(rowToRefreshItem(request, admission.reused));
   }
 
   await recordFeatureUsageEvent({
@@ -187,59 +206,52 @@ async function loadRefreshSale(auth: SupabaseAuthContext, saleId: string): Promi
   return { ...data, source_url: data.source_url };
 }
 
-async function findActiveRefreshRequest({
+async function admitRefreshRequest({
   auth,
-  sourceUrl,
-  kind,
-}: {
-  auth: SupabaseAuthContext;
-  sourceUrl: string;
-  kind: DataRefreshKind;
-}): Promise<DataRefreshRequestRow | null> {
-  const { data, error } = await auth.supabase
-    .from("data_refresh_requests")
-    .select("*")
-    .eq("user_id", auth.userId)
-    .eq("source_url", sourceUrl)
-    .eq("request_kind", kind)
-    .in("status", ["queued", "running"])
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ?? null;
-}
-
-async function insertRefreshRequest({
-  auth,
-  sale,
+  saleId,
   kind,
   force,
 }: {
   auth: SupabaseAuthContext;
-  sale: Pick<RefreshSaleRow, "id" | "source_url">;
+  saleId: string;
   kind: DataRefreshKind;
   force: boolean;
-}): Promise<DataRefreshRequestRow> {
-  const payload: DataRefreshRequestInsert = {
-    user_id: auth.userId,
-    sale_id: sale.id,
-    source_url: sale.source_url,
-    request_kind: kind,
-    requested_payload: {
-      force,
-      requested_from: "app",
-    } as Json,
-    priority: kind === "full" ? 70 : 60,
-  };
-  const { data, error } = await auth.supabase
+}): Promise<{ requestId: string; reused: boolean }> {
+  const client = supabaseAdmin as unknown as DataRefreshAdmissionRpcClient;
+  const { data, error } = await client.rpc("enqueue_data_refresh_bounded", {
+    p_force: force,
+    p_request_kind: kind,
+    p_sale_id: saleId,
+    p_user_id: auth.userId,
+  });
+
+  if (error) {
+    if (error.message?.includes("DATA_REFRESH_")) {
+      throw new Error("Trop de demandes de rafraîchissement. Réessayez dans une minute.");
+    }
+    throw new Error(error.message || "Admission du rafraîchissement indisponible.");
+  }
+
+  const admission = data?.[0];
+  if (!admission?.request_id) {
+    throw new Error("Admission du rafraîchissement indisponible.");
+  }
+  return { requestId: admission.request_id, reused: admission.reused };
+}
+
+async function loadRefreshRequest(
+  auth: SupabaseAuthContext,
+  requestId: string,
+): Promise<DataRefreshRequestRow> {
+  const { data, error } = await supabaseAdmin
     .from("data_refresh_requests")
-    .insert(payload)
     .select("*")
+    .eq("id", requestId)
+    .eq("user_id", auth.userId)
     .single();
 
   if (error) throw error;
+  if (!data) throw new Error("Demande de rafraîchissement introuvable après admission.");
   return data;
 }
 

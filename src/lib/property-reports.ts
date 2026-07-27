@@ -304,7 +304,7 @@ export async function savePropertyReport({
   });
   const title = input.title?.trim() || defaultReportTitle(sale);
 
-  const { data, error } = await auth.supabase
+  const { data, error } = await supabaseAdmin
     .from("saved_property_reports")
     .upsert(
       {
@@ -364,7 +364,7 @@ export async function updatePropertyReport({
   if (input.title !== undefined) patch.title = input.title;
   if (input.userNotes !== undefined) patch.user_notes = emptyToNull(input.userNotes ?? undefined);
 
-  const { data, error } = await auth.supabase
+  const { data, error } = await supabaseAdmin
     .from("saved_property_reports")
     .update(patch)
     .eq("id", reportId)
@@ -387,7 +387,7 @@ export async function deletePropertyReport({
   auth: SupabaseAuthContext;
   reportId: string;
 }): Promise<{ ok: true }> {
-  const { error } = await auth.supabase
+  const { error } = await supabaseAdmin
     .from("saved_property_reports")
     .delete()
     .eq("id", reportId)
@@ -439,11 +439,11 @@ export async function enablePropertyReportShare({
   const plan = await resolvePlanEntitlements(auth);
   assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé au plan Analyse.");
   const report = await getReport(auth.supabase, auth.userId, reportId);
-  const shareToken = report.share_token || createShareToken();
+  const shareToken = createShareToken();
   const shareExpiresAt = normalizeShareExpiresAt(expiresAt);
   const now = new Date().toISOString();
 
-  const { data, error } = await auth.supabase
+  const { data, error } = await supabaseAdmin
     .from("saved_property_reports")
     .update({
       share_enabled: true,
@@ -477,10 +477,11 @@ export async function disablePropertyReportShare({
   const plan = await resolvePlanEntitlements(auth);
   assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé au plan Analyse.");
 
-  const { data, error } = await auth.supabase
+  const { data, error } = await supabaseAdmin
     .from("saved_property_reports")
     .update({
       share_enabled: false,
+      share_token: null,
       share_expires_at: null,
     })
     .eq("id", reportId)
@@ -1188,14 +1189,14 @@ async function getExistingReportId(
 
 async function recordPdfExport(auth: SupabaseAuthContext, report: SavedReportRow) {
   const now = new Date().toISOString();
-  const { error: insertError } = await auth.supabase.from("property_report_exports").insert({
+  const { error: insertError } = await supabaseAdmin.from("property_report_exports").insert({
     report_id: report.id,
     user_id: auth.userId,
     export_format: "pdf",
   });
   if (insertError) throw insertError;
 
-  const { error: updateError } = await auth.supabase
+  const { error: updateError } = await supabaseAdmin
     .from("saved_property_reports")
     .update({
       export_count: report.export_count + 1,
@@ -2513,9 +2514,13 @@ function normalizeShareToken(value: string): string | null {
 }
 
 function normalizeShareExpiresAt(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const date = new Date(value);
+  const now = new Date();
+  const date = value ? new Date(value) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1_000);
   if (!Number.isFinite(date.getTime())) throw new Error("Date d'expiration invalide.");
+  if (date <= now) throw new Error("La date d'expiration doit être future.");
+  if (date.getTime() > now.getTime() + 90 * 24 * 60 * 60 * 1_000) {
+    throw new Error("La durée maximale d'un partage est de 90 jours.");
+  }
   return date.toISOString();
 }
 

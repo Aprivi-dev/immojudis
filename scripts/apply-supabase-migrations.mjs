@@ -30,26 +30,12 @@ for (const file of [
 
 const runOnlyIfEnabled = process.argv.includes("--if-enabled");
 const dryRun = process.argv.includes("--dry-run");
+const checkOnly = process.argv.includes("--check");
 
 if (runOnlyIfEnabled && !isTruthy(process.env.RUN_SUPABASE_MIGRATIONS_ON_BUILD)) {
   console.log("[supabase-migrations] Skipped; RUN_SUPABASE_MIGRATIONS_ON_BUILD is not enabled.");
   process.exit(0);
 }
-
-const dbUrl = firstFilledEnv(
-  process.env.SUPABASE_DB_URL,
-  process.env.POSTGRES_URL_NON_POOLING,
-  process.env.POSTGRES_URL,
-);
-
-if (!dbUrl) {
-  console.error(
-    "[supabase-migrations] SUPABASE_DB_URL, POSTGRES_URL_NON_POOLING or POSTGRES_URL is required.",
-  );
-  process.exit(1);
-}
-
-const runner = await createRunner(dbUrl);
 
 const migrations = readdirSync(migrationsDir)
   .map((file) => {
@@ -69,6 +55,42 @@ if (!migrations.length) {
   console.error("[supabase-migrations] No migration files found.");
   process.exit(1);
 }
+
+const migrationsByVersion = Map.groupBy(migrations, (migration) => migration.version);
+const duplicateVersions = [...migrationsByVersion.entries()].filter(
+  ([, versionMigrations]) => versionMigrations.length > 1,
+);
+
+if (duplicateVersions.length) {
+  console.error("[supabase-migrations] Duplicate local migration versions detected:");
+  for (const [version, versionMigrations] of duplicateVersions) {
+    console.error(`  - ${version}: ${versionMigrations.map(({ file }) => file).join(", ")}`);
+  }
+  console.error("[supabase-migrations] Assign one unique timestamp to every migration.");
+  process.exit(1);
+}
+
+if (checkOnly) {
+  console.log(
+    `[supabase-migrations] ${migrations.length} migration files have unique local versions.`,
+  );
+  process.exit(0);
+}
+
+const dbUrl = firstFilledEnv(
+  process.env.SUPABASE_DB_URL,
+  process.env.POSTGRES_URL_NON_POOLING,
+  process.env.POSTGRES_URL,
+);
+
+if (!dbUrl) {
+  console.error(
+    "[supabase-migrations] SUPABASE_DB_URL, POSTGRES_URL_NON_POOLING or POSTGRES_URL is required.",
+  );
+  process.exit(1);
+}
+
+const runner = await createRunner(dbUrl);
 
 const remoteVersions = new Set(await runner.listAppliedVersions());
 
@@ -126,7 +148,7 @@ function unquote(value) {
 }
 
 function firstFilledEnv(...values) {
-  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
+  return values.find((value) => !isMissing(value))?.trim();
 }
 
 function isMissing(value) {
@@ -136,7 +158,7 @@ function isMissing(value) {
   return (
     !normalized ||
     normalized.startsWith("your-") ||
-    ["changeme", "todo", "null", "undefined"].includes(normalized)
+    ["changeme", "placeholder", "todo", "null", "undefined"].includes(normalized)
   );
 }
 

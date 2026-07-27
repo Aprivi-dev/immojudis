@@ -7,6 +7,9 @@ import {
   resolveBillingOrigin,
   resolveCheckoutPlanCode,
   resolveStripePlanCode,
+  stripeDisputeStatusToPaymentState,
+  stripeDisputeStatusToPlanStatus,
+  stripeRefundRequiresAccessRevocation,
   stripeCurrentPeriodEndIso,
   stripeSubscriptionStatusToPlanStatus,
 } from "@/lib/billing";
@@ -34,7 +37,13 @@ describe("billing helpers", () => {
   });
 
   it("normalizes configured billing origins", () => {
-    const keys = ["NEXT_PUBLIC_APP_URL", "APP_URL", "NEXT_PUBLIC_SITE_URL", "VERCEL_URL"] as const;
+    const keys = [
+      "SITE_URL",
+      "NEXT_PUBLIC_APP_URL",
+      "APP_URL",
+      "NEXT_PUBLIC_SITE_URL",
+      "VERCEL_URL",
+    ] as const;
     const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 
     try {
@@ -71,6 +80,26 @@ describe("billing helpers", () => {
   it("defines the commercial offer as 29 EUR for exactly 30 days", () => {
     expect(ANALYSIS_PRICE_CENTS).toBe(2_900);
     expect(ANALYSIS_ACCESS_DAYS).toBe(30);
+  });
+
+  it("revokes one-time access only after a full refund", () => {
+    expect(stripeRefundRequiresAccessRevocation(2_900, 1_000)).toBe(false);
+    expect(stripeRefundRequiresAccessRevocation(2_900, 2_900)).toBe(true);
+  });
+
+  it("pauses disputed access and restores only a still-valid won dispute", () => {
+    const now = new Date("2026-07-14T12:00:00.000Z");
+    expect(stripeDisputeStatusToPlanStatus("under_review", "2026-08-01T00:00:00.000Z", now)).toBe(
+      "paused",
+    );
+    expect(stripeDisputeStatusToPlanStatus("lost", "2026-08-01T00:00:00.000Z", now)).toBe(
+      "cancelled",
+    );
+    expect(stripeDisputeStatusToPlanStatus("won", "2026-08-01T00:00:00.000Z", now)).toBe("active");
+    expect(stripeDisputeStatusToPlanStatus("won", "2026-07-01T00:00:00.000Z", now)).toBe("expired");
+    expect(stripeDisputeStatusToPaymentState("under_review")).toBe("disputed");
+    expect(stripeDisputeStatusToPaymentState("lost")).toBe("dispute_lost");
+    expect(stripeDisputeStatusToPaymentState("won")).toBe("cleared");
   });
 
   it("builds a one-time checkout without recurring subscription data", () => {

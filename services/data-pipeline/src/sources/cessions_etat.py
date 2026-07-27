@@ -47,8 +47,6 @@ def scrape_cessions_etat_aquitaine_result(
         timeout_seconds=float(settings["request_timeout_seconds"]),
         accept="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         extra_headers={"Upgrade-Insecure-Requests": "1"},
-        # ponytail: the public site currently serves an incomplete cert chain to Python/httpx.
-        verify=False,
     )
     max_pages = max_pages or int(settings["cessions_etat_max_pages"])
 
@@ -126,8 +124,7 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
                 "mise_a_prix": starting_price,
                 "date_vente": sale_date,
                 "visites": " | ".join(visit_dates) if visit_dates else None,
-                "documents": "; ".join(document["label"] for document in documents if document.get("label"))
-                or None,
+                "documents": "; ".join(document["label"] for document in documents if document.get("label")) or None,
                 "page_text": raw_text,
             }.items()
             if value
@@ -214,7 +211,9 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
         elif key == "raw_text":
             sale["raw_text"] = _join_unique_lines(sale.get("raw_text"), value)
         elif key == "source_images":
-            sale["source_images"] = _unique_text_values([*_as_text_list(sale.get("source_images")), *_as_text_list(value)])
+            sale["source_images"] = _unique_text_values(
+                [*_as_text_list(sale.get("source_images")), *_as_text_list(value)]
+            )
             if not sale.get("raw_image_url") and sale["source_images"]:
                 sale["raw_image_url"] = sale["source_images"][0]
         elif key == "raw_image_url" and not sale.get("raw_image_url"):

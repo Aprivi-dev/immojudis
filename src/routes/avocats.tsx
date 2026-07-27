@@ -3,9 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
+import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import Info from "lucide-react/dist/esm/icons/info.js";
 import Mail from "lucide-react/dist/esm/icons/mail.js";
+import Languages from "lucide-react/dist/esm/icons/languages.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Megaphone from "lucide-react/dist/esm/icons/megaphone.js";
 import Phone from "lucide-react/dist/esm/icons/phone.js";
@@ -14,7 +16,7 @@ import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { fetchLawyerDirectory } from "@/lib/client-api";
-import type { LawyerDirectoryProfile } from "@/lib/lawyer-directory";
+import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { createFileRoute, Link } from "@/lib/router-compat";
 
 type DirectorySearch = {
@@ -23,6 +25,13 @@ type DirectorySearch = {
   city?: string;
   department?: string;
 };
+
+const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
+  day: "2-digit",
+  month: "long",
+  year: "numeric",
+  timeZone: "Europe/Paris",
+});
 
 export const Route = createFileRoute("/avocats")({
   validateSearch: (search: Record<string, unknown>): DirectorySearch => ({
@@ -118,6 +127,9 @@ function LawyerDirectoryPage() {
         ) : (
           <DirectoryResults
             lawyers={directoryQuery.data?.lawyers ?? []}
+            barAssociation={
+              directoryQuery.data?.barAssociation ?? search.bar ?? search.city ?? null
+            }
             sectorLabel={
               directoryQuery.data?.sectorLabel ??
               search.bar ??
@@ -127,6 +139,7 @@ function LawyerDirectoryPage() {
             }
             saleId={search.saleId}
             isDemo={directoryQuery.data?.isDemo ?? false}
+            officialSource={directoryQuery.data?.officialSource ?? null}
           />
         )}
       </section>
@@ -136,14 +149,18 @@ function LawyerDirectoryPage() {
 
 function DirectoryResults({
   lawyers,
+  barAssociation,
   sectorLabel,
   saleId,
   isDemo,
+  officialSource,
 }: {
   lawyers: LawyerDirectoryProfile[];
+  barAssociation: string | null;
   sectorLabel: string | null;
   saleId?: string;
   isDemo: boolean;
+  officialSource: LawyerDirectoryOfficialSource | null;
 }) {
   if (!lawyers.length) {
     return (
@@ -156,7 +173,10 @@ function DirectoryResults({
           Vérifiez le nom du barreau ou revenez au dossier. Si une annonce est sélectionnée,
           Immojudis peut aussi rechercher manuellement un avocat disponible sur ce secteur.
         </p>
-        {saleId ? <LawyerReferralButton saleId={saleId} className="mx-auto mt-6 min-h-11" /> : null}
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          {saleId ? <LawyerReferralButton saleId={saleId} className="min-h-11" /> : null}
+          <CnbDirectoryLink barAssociation={barAssociation} />
+        </div>
       </div>
     );
   }
@@ -224,13 +244,41 @@ function DirectoryResults({
               id="directory-lawyers-title"
               className="mt-2 font-display text-3xl font-semibold text-brand-navy"
             >
-              Annuaire du barreau
+              Spécialistes en droit immobilier
             </h3>
           </div>
           <p className="text-sm text-brand-navy/55">
             {directoryLawyers.length} fiche{directoryLawyers.length > 1 ? "s" : ""} standard
           </p>
         </div>
+
+        {officialSource ? (
+          <div className="mb-5 flex flex-col gap-2 rounded-lg border border-blue-200 bg-blue-50/80 p-4 text-xs leading-relaxed text-blue-950 sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              Source :{" "}
+              <a
+                href={officialSource.datasetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold underline decoration-blue-950/30 underline-offset-2"
+              >
+                {officialSource.label}
+              </a>
+              {" · "}
+              <a
+                href={officialSource.licenseUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold underline decoration-blue-950/30 underline-offset-2"
+              >
+                {officialSource.licenseLabel}
+              </a>
+            </p>
+            <p className="shrink-0 font-medium">
+              Mise à jour le {formatFrenchDate(officialSource.updatedAt)}
+            </p>
+          </div>
+        ) : null}
 
         {directoryLawyers.length ? (
           <div className="grid gap-3 lg:grid-cols-2">
@@ -246,13 +294,16 @@ function DirectoryResults({
         )}
       </section>
 
-      <div className="mt-10 flex gap-3 rounded-lg border border-brand-navy/12 bg-white p-5 text-sm leading-relaxed text-brand-navy/65">
-        <Info className="mt-0.5 h-5 w-5 shrink-0 text-gold-soft" aria-hidden />
-        <p>
-          La mise en avant payante ne constitue ni une notation, ni une recommandation juridique, ni
-          une garantie de résultat. Vérifiez directement auprès de l'avocat son inscription, sa
-          disponibilité et les conditions de son intervention.
-        </p>
+      <div className="mt-10 flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white p-5 text-sm leading-relaxed text-brand-navy/65 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-3">
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-gold-soft" aria-hidden />
+          <p>
+            La mise en avant payante ne constitue ni une notation, ni une recommandation juridique,
+            ni une garantie de résultat. Vérifiez directement auprès de l'avocat sa disponibilité et
+            les conditions de son intervention.
+          </p>
+        </div>
+        <CnbDirectoryLink barAssociation={barAssociation} />
       </div>
     </>
   );
@@ -269,7 +320,7 @@ function LawyerCard({
 }) {
   return (
     <article
-      className={`relative flex flex-col overflow-hidden rounded-lg bg-white ${
+      className={`relative flex flex-col overflow-hidden rounded-lg bg-white [contain-intrinsic-size:auto_22rem] [content-visibility:auto] ${
         sponsored
           ? "border border-gold/45 p-5 shadow-[0_18px_45px_rgba(19,44,72,0.10)] sm:p-6"
           : "border border-brand-navy/12 p-5 shadow-sm"
@@ -292,6 +343,10 @@ function LawyerCard({
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-gold-soft">
               Profil sponsorisé
             </p>
+          ) : lawyer.source === "cnb" ? (
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">
+              Annuaire officiel CNB
+            </p>
           ) : null}
           <h3 className="font-display text-2xl font-semibold leading-tight text-brand-navy">
             {lawyer.displayName}
@@ -309,12 +364,16 @@ function LawyerCard({
         </p>
       ) : null}
 
-      {sponsored && lawyer.practiceTags.length ? (
+      {lawyer.practiceTags.length ? (
         <ul className="mt-4 flex flex-wrap gap-2" aria-label="Domaines d'intervention">
           {lawyer.practiceTags.slice(0, 4).map((tag) => (
             <li
               key={tag}
-              className="rounded-full border border-gold/25 bg-gold/[0.07] px-2.5 py-1 text-[11px] font-semibold text-brand-navy/70"
+              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold text-brand-navy/70 ${
+                sponsored
+                  ? "border border-gold/25 bg-gold/[0.07]"
+                  : "border border-brand-navy/10 bg-brand-navy/[0.04]"
+              }`}
             >
               {practiceTagLabel(tag)}
             </li>
@@ -331,6 +390,16 @@ function LawyerCard({
         <DirectoryFact icon={<Building2 className="h-4 w-4" />} label="Intervention">
           {lawyer.coverageLabels.slice(0, 3).join(" · ") || lawyer.matchingLabel || "À distance"}
         </DirectoryFact>
+        {lawyer.oathDate ? (
+          <DirectoryFact icon={<CalendarDays className="h-4 w-4" />} label="Serment">
+            {formatFrenchDate(lawyer.oathDate)}
+          </DirectoryFact>
+        ) : null}
+        {lawyer.languages.length ? (
+          <DirectoryFact icon={<Languages className="h-4 w-4" />} label="Langues">
+            {lawyer.languages.slice(0, 4).join(" · ")}
+          </DirectoryFact>
+        ) : null}
         {sponsored ? (
           <DirectoryFact icon={<ShieldCheck className="h-4 w-4" />} label="Enchères">
             Accepte les ventes judiciaires
@@ -377,8 +446,35 @@ function LawyerCard({
             <ExternalLink className="h-4 w-4" aria-hidden />
           </a>
         ) : null}
+        {lawyer.source === "cnb" ? (
+          <a
+            href={cnbDirectoryHref(lawyer.barAssociation)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold"
+          >
+            Vérifier sur le CNB
+            <ExternalLink className="h-4 w-4" aria-hidden />
+          </a>
+        ) : null}
       </div>
     </article>
+  );
+}
+
+function CnbDirectoryLink({ barAssociation }: { barAssociation: string | null }) {
+  const href = cnbDirectoryHref(barAssociation);
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+    >
+      Résultats officiels du CNB
+      <ExternalLink className="h-4 w-4" aria-hidden />
+    </a>
   );
 }
 
@@ -442,4 +538,16 @@ function lawyerInitials(displayName: string) {
 
 function practiceTagLabel(tag: string) {
   return tag.replace(/[-_]+/g, " ").replace(/^./, (character) => character.toLocaleUpperCase("fr"));
+}
+
+function cnbDirectoryHref(barAssociation: string | null) {
+  return barAssociation
+    ? `/api/lawyers/cnb-redirect?${new URLSearchParams({ bar: barAssociation }).toString()}`
+    : "https://cnb.avocat.fr/annuaire-des-avocats-de-france";
+}
+
+function formatFrenchDate(value: string) {
+  const date = new Date(value.length === 10 ? `${value}T00:00:00.000Z` : value);
+  if (!Number.isFinite(date.getTime())) return value;
+  return FRENCH_DATE_FORMATTER.format(date);
 }

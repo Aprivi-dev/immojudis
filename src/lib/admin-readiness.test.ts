@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { aiDescriptionItem, buildEnvironmentReadiness } from "@/lib/admin-readiness";
+import {
+  aiDescriptionItem,
+  buildEnvironmentReadiness,
+  operationalHealthItem,
+} from "@/lib/admin-readiness";
 
 describe("admin readiness", () => {
   it("marks commercial launch blockers when Stripe envs are missing", () => {
@@ -28,6 +32,9 @@ describe("admin readiness", () => {
     });
     expect(items.find((item) => item.key === "pipeline.llm_backfill")).toMatchObject({
       status: "warning",
+    });
+    expect(items.find((item) => item.key === "operations.external_alerts")).toMatchObject({
+      status: "blocked",
     });
   });
 
@@ -82,6 +89,27 @@ describe("admin readiness", () => {
     ).toMatchObject({
       status: "ready",
       action: null,
+    });
+  });
+
+  it("turns a failed external delivery into an operator action", () => {
+    expect(
+      operationalHealthItem({
+        status: "blocked",
+        schedulerActive: true,
+        schedulerSchedule: "*/15 * * * *",
+        openAlertCount: 1,
+        criticalOpenAlertCount: 0,
+        pendingDeliveryCount: 0,
+        failedDeliveryCount: 1,
+        lastHealthRunAt: "2026-07-27T10:00:00.000Z",
+        alerts: [],
+        detail: "1 notification externe est en échec.",
+      }),
+    ).toMatchObject({
+      key: "operations.health",
+      status: "blocked",
+      action: expect.stringContaining("canal externe"),
     });
   });
 });
