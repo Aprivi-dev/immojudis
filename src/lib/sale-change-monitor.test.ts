@@ -3,6 +3,7 @@ import {
   buildSaleChangeSnapshot,
   detectSaleChanges,
   saleChangeEventActionSchema,
+  systemAuthForInvestorUser,
 } from "@/lib/sale-change-monitor";
 import type { AuctionSale } from "@/lib/types";
 
@@ -120,6 +121,24 @@ describe("sale change monitor", () => {
         action: "delete",
       }),
     ).toThrow();
+  });
+
+  it("preserves investor and admin entitlements in system monitoring contexts", () => {
+    const investor = systemAuthForInvestorUser({ userId: "investor-id", userRole: "user" });
+    const admin = systemAuthForInvestorUser({ userId: "admin-id", userRole: "admin" });
+
+    expect(investor).toMatchObject({
+      userId: "investor-id",
+      accountTier: "premium",
+      userRole: "user",
+      isAdmin: false,
+    });
+    expect(admin).toMatchObject({
+      userId: "admin-id",
+      accountTier: "premium",
+      userRole: "admin",
+      isAdmin: true,
+    });
   });
 });
 
