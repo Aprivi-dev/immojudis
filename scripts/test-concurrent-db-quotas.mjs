@@ -2,10 +2,12 @@ import postgres from "postgres";
 
 const databaseUrl =
   process.env.SUPABASE_DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+const authenticatorDatabaseUrl = new URL(databaseUrl);
+authenticatorDatabaseUrl.username = "authenticator";
 const userId = "75000000-0000-4000-8000-000000000001";
 const admin = postgres(databaseUrl, { max: 1 });
-const first = postgres(databaseUrl, { max: 1 });
-const second = postgres(databaseUrl, { max: 1 });
+const first = postgres(authenticatorDatabaseUrl.toString(), { max: 1 });
+const second = postgres(authenticatorDatabaseUrl.toString(), { max: 1 });
 
 try {
   await admin.begin(async (sql) => {
@@ -33,7 +35,6 @@ try {
 
   const insertAsServiceRole = (client, name) =>
     client.begin(async (sql) => {
-      await sql.unsafe("set local session authorization authenticator");
       await sql.unsafe("set local role service_role");
       await sql`
         insert into public.user_alerts (user_id, name, is_active)
@@ -54,8 +55,11 @@ try {
   `;
 
   if (fulfilled !== 1 || rejected !== 1 || count !== 25) {
+    const rejectionReasons = outcomes
+      .filter((outcome) => outcome.status === "rejected")
+      .map((outcome) => outcome.reason?.message ?? String(outcome.reason));
     throw new Error(
-      `Concurrent quota invariant failed: fulfilled=${fulfilled}, rejected=${rejected}, count=${count}`,
+      `Concurrent quota invariant failed: fulfilled=${fulfilled}, rejected=${rejected}, count=${count}, reasons=${JSON.stringify(rejectionReasons)}`,
     );
   }
 

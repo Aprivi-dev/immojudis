@@ -20,6 +20,7 @@ create table if not exists public.auction_sales_app_read (
   investment_score numeric,
   score_confidence numeric,
   score_version text,
+  status text,
   deal_memo jsonb not null default '{}'::jsonb,
   quality_summary jsonb not null default '{}'::jsonb,
   risks jsonb not null default '[]'::jsonb,
@@ -50,7 +51,7 @@ grant select (
   source_url, id, title, city, department, postal_code, property_type,
   starting_price_eur, sale_date, latitude, longitude, occupancy_status,
   app_surface_m2, investment_score, score_confidence, score_version,
-  deal_memo, quality_summary, risks, score_factors, documents_rich,
+  status, deal_memo, quality_summary, risks, score_factors, documents_rich,
   created_at, updated_at
 ) on table public.auction_sales_app_read to anon, authenticated;
 
