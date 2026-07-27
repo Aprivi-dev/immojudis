@@ -178,7 +178,7 @@
     overflow-x: clip;
     background:
       linear-gradient(180deg, rgb(238 247 255 / 74%) 0%, rgb(255 250 242 / 96%) 54%, #ffffff 100%),
-      url("/media/landing/cloud-background.jpg") center top / cover no-repeat;
+      url("/media/landing/cloud-background.webp") center top / cover no-repeat;
   }
 
   .liquid-page::before {
@@ -2138,7 +2138,7 @@
   isolation: isolate;
   min-height: 100vh;
   overflow-x: clip;
-  background: #eef7ff url("/media/landing/cloud-background.jpg") center top / cover no-repeat;
+  background: #eef7ff url("/media/landing/cloud-background.webp") center top / cover no-repeat;
   color: var(--ij-navy);
 }
 

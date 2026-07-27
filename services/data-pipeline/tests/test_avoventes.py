@@ -18,7 +18,9 @@ def test_parse_avoventes_html_extracts_public_sale_fields() -> None:
     </article>
     """
 
-    sales = parse_avoventes_html(html, page_url="https://avoventes.fr/recherche?departement=33", fallback_department="33")
+    sales = parse_avoventes_html(
+        html, page_url="https://avoventes.fr/recherche?departement=33", fallback_department="33"
+    )
 
     assert len(sales) == 1
     assert sales[0]["source_url"] == "https://avoventes.fr/enchere/maison-bordeaux-123"
@@ -31,6 +33,19 @@ def test_parse_avoventes_html_extracts_public_sale_fields() -> None:
     assert sales[0]["source_blocks"]["cabinet"] == "Me Test"
     assert sales[0]["documents"][0]["url"] == "https://avoventes.fr/docs/vente.pdf"
     assert sales[0]["documents"][0]["type"] == "pdf"
+
+
+def test_parse_avoventes_html_rejects_cross_origin_sale_and_document_urls() -> None:
+    html = """
+    <article data-link="https://evil.example/enchere/replace-existing-sale">
+      <h2>Maison à Bordeaux</h2>
+      <p>Mise à prix : 100 000 €</p>
+      <p>Date de la vente : 10 septembre 2026</p>
+      <a href="https://evil.example/cahier.pdf">Cahier des conditions de vente</a>
+    </article>
+    """
+
+    assert parse_avoventes_html(html) == []
 
 
 def test_parse_avoventes_html_extracts_adjudication_without_polluting_title() -> None:

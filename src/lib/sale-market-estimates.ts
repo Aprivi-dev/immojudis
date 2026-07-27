@@ -193,7 +193,7 @@ export async function runSaleValuationPrecomputeBatch({
         auctionSaleId: sale.id,
       });
       if (!context.estimate) {
-        await updateStoredEstimate(sale.id, {
+        const published = await publishStoredEstimateForClaim(sale.id, fingerprint, {
           status: "insufficient_data",
           input_fingerprint: fingerprint,
           source_updated_at: sale.updated_at,
@@ -207,13 +207,13 @@ export async function runSaleValuationPrecomputeBatch({
           actionable: false,
           next_refresh_at: addMilliseconds(now, 24 * 60 * 60 * 1000).toISOString(),
         });
-        result.insufficientData += 1;
+        if (published) result.insufficientData += 1;
         continue;
       }
 
       const estimate = context.estimate;
       if (!estimate.estimatedValueEur || estimate.estimatedValueEur <= 0) {
-        await updateStoredEstimate(sale.id, {
+        const published = await publishStoredEstimateForClaim(sale.id, fingerprint, {
           status: "insufficient_data",
           input_fingerprint: fingerprint,
           source_updated_at: sale.updated_at,
@@ -229,11 +229,11 @@ export async function runSaleValuationPrecomputeBatch({
           actionable: false,
           next_refresh_at: addMilliseconds(now, 24 * 60 * 60 * 1000).toISOString(),
         });
-        result.insufficientData += 1;
+        if (published) result.insufficientData += 1;
         continue;
       }
 
-      await updateStoredEstimate(sale.id, {
+      const published = await publishStoredEstimateForClaim(sale.id, fingerprint, {
         status: "ready",
         input_fingerprint: fingerprint,
         source_updated_at: sale.updated_at,
@@ -253,30 +253,41 @@ export async function runSaleValuationPrecomputeBatch({
         computed_at: new Date().toISOString(),
         next_refresh_at: addMilliseconds(now, 7 * 24 * 60 * 60 * 1000).toISOString(),
       });
-      result.ready += 1;
+      if (published) result.ready += 1;
     } catch (error) {
       const message = errorMessage(error);
-      await updateStoredEstimate(sale.id, {
+      const published = await publishStoredEstimateForClaim(sale.id, fingerprint, {
         status: "failed",
         input_fingerprint: fingerprint,
         source_updated_at: sale.updated_at,
         error_message: message,
         next_refresh_at: addMilliseconds(now, 60 * 60 * 1000).toISOString(),
       });
-      result.failed += 1;
-      result.errors.push({ saleId: sale.id, error: message });
+      if (published) {
+        result.failed += 1;
+        result.errors.push({ saleId: sale.id, error: message });
+      }
     }
   }
 
   return result;
 }
 
-async function updateStoredEstimate(saleId: string, update: StoredEstimateUpdate) {
-  const { error } = await supabaseAdmin
+export async function publishStoredEstimateForClaim(
+  saleId: string,
+  claimedFingerprint: string,
+  update: StoredEstimateUpdate,
+): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
     .from("auction_sale_market_estimates")
     .update(update)
-    .eq("auction_sale_id", saleId);
+    .eq("auction_sale_id", saleId)
+    .eq("input_fingerprint", claimedFingerprint)
+    .eq("status", "processing")
+    .select("auction_sale_id")
+    .maybeSingle();
   if (error) throw error;
+  return Boolean(data);
 }
 
 function storedEstimate(value: Json | null): MarketEstimate | null {

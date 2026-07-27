@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { inferBarAssociation, isSponsoredLawyerPlacement } from "@/lib/lawyer-directory";
+import {
+  inferBarAssociation,
+  isSponsoredLawyerPlacement,
+  resolveCnbDatasetBarKey,
+} from "@/lib/lawyer-directory";
 
 describe("lawyer directory", () => {
   it("déduit le barreau depuis le tribunal de l'annonce", () => {
@@ -10,6 +14,12 @@ describe("lawyer directory", () => {
   it("utilise la ville lorsque le tribunal ne permet pas de déduire le barreau", () => {
     expect(inferBarAssociation("Cour d'appel", "Lyon")).toBe("Lyon");
     expect(inferBarAssociation(null, "Barreau de Lille")).toBe("Lille");
+  });
+
+  it("résout les barreaux dont le nom officiel diffère de la ville du tribunal", () => {
+    expect(resolveCnbDatasetBarKey("Bobigny")).toBe("seine saint denis");
+    expect(resolveCnbDatasetBarKey("Angoulême")).toBe("charente");
+    expect(resolveCnbDatasetBarKey("Niort")).toBe("deux sevres");
   });
 
   it("ne sponsorise que les placements payants dans leur fenêtre de diffusion", () => {

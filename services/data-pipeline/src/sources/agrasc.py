@@ -41,8 +41,6 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
         user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
-        # The public site can present a certificate chain Python/httpx cannot validate.
-        verify=False,
     )
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = []

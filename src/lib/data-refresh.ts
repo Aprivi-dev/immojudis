@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded, type PlanCode } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
@@ -196,7 +197,7 @@ async function findActiveRefreshRequest({
   sourceUrl: string;
   kind: DataRefreshKind;
 }): Promise<DataRefreshRequestRow | null> {
-  const { data, error } = await auth.supabase
+  const { data, error } = await supabaseAdmin
     .from("data_refresh_requests")
     .select("*")
     .eq("user_id", auth.userId)
@@ -233,7 +234,7 @@ async function insertRefreshRequest({
     } as Json,
     priority: kind === "full" ? 70 : 60,
   };
-  const { data, error } = await auth.supabase
+  const { data, error } = await supabaseAdmin
     .from("data_refresh_requests")
     .insert(payload)
     .select("*")

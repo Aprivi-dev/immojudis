@@ -1311,10 +1311,6 @@ grant select on auction_risk_occurrences to authenticated;
 grant select on auction_score_factors to authenticated;
 grant select on tribunals to authenticated;
 grant select on auction_scoring_versions to authenticated;
-grant select on public_auction_sales to authenticated;
-grant select on auction_sales_quality_issues to authenticated;
-grant select on auction_sales_investment_candidates to authenticated;
-grant select on auction_source_coverage to authenticated;
 grant select on v_auction_sales_app to authenticated;
 grant select (
   source_url, id, title, city, department, postal_code, property_type,
@@ -1323,7 +1319,6 @@ grant select (
   deal_memo, quality_summary, risks, score_factors, documents_rich,
   created_at, updated_at
 ) on auction_sales_app_read to authenticated;
-grant select on v_auction_map_pins to authenticated;
 
 drop policy if exists auction_sales_public_read on auction_sales;
 drop policy if exists auction_sales_public_preview_read on auction_sales;
@@ -1333,38 +1328,38 @@ create policy auction_sales_public_preview_read on auction_sales for select to a
   and latitude is not null
   and longitude is not null
 );
-create policy auction_sales_authenticated_read on auction_sales for select to authenticated using (true);
+create policy auction_sales_authenticated_read on auction_sales for select to authenticated using (public.has_analysis_access());
 drop policy if exists properties_authenticated_read on properties;
-create policy properties_authenticated_read on properties for select to authenticated using (true);
+create policy properties_authenticated_read on properties for select to authenticated using (public.has_analysis_access());
 drop policy if exists judicial_sales_authenticated_read on judicial_sales;
-create policy judicial_sales_authenticated_read on judicial_sales for select to authenticated using (true);
+create policy judicial_sales_authenticated_read on judicial_sales for select to authenticated using (public.has_analysis_access());
 drop policy if exists auction_features_public_read on auction_features;
 drop policy if exists auction_features_authenticated_read on auction_features;
-create policy auction_features_authenticated_read on auction_features for select to authenticated using (true);
+create policy auction_features_authenticated_read on auction_features for select to authenticated using (public.has_analysis_access());
 drop policy if exists auction_surfaces_public_read on auction_surfaces;
 drop policy if exists auction_surfaces_authenticated_read on auction_surfaces;
-create policy auction_surfaces_authenticated_read on auction_surfaces for select to authenticated using (true);
+create policy auction_surfaces_authenticated_read on auction_surfaces for select to authenticated using (public.has_analysis_access());
 drop policy if exists auction_risks_public_read on auction_risks;
 drop policy if exists auction_risks_authenticated_read on auction_risks;
-create policy auction_risks_authenticated_read on auction_risks for select to authenticated using (true);
+create policy auction_risks_authenticated_read on auction_risks for select to authenticated using (public.has_analysis_access());
 drop policy if exists auction_documents_public_read on auction_documents;
 drop policy if exists auction_documents_authenticated_read on auction_documents;
-create policy auction_documents_authenticated_read on auction_documents for select to authenticated using (true);
+create policy auction_documents_authenticated_read on auction_documents for select to authenticated using (public.has_analysis_access());
 drop policy if exists auction_risk_occurrences_public_read on auction_risk_occurrences;
 drop policy if exists auction_risk_occurrences_authenticated_read on auction_risk_occurrences;
-create policy auction_risk_occurrences_authenticated_read on auction_risk_occurrences for select to authenticated using (true);
+create policy auction_risk_occurrences_authenticated_read on auction_risk_occurrences for select to authenticated using (public.has_analysis_access());
 drop policy if exists auction_score_factors_public_read on auction_score_factors;
 drop policy if exists auction_score_factors_authenticated_read on auction_score_factors;
-create policy auction_score_factors_authenticated_read on auction_score_factors for select to authenticated using (true);
+create policy auction_score_factors_authenticated_read on auction_score_factors for select to authenticated using (public.has_analysis_access());
 drop policy if exists tribunals_public_read on tribunals;
 drop policy if exists tribunals_authenticated_read on tribunals;
 create policy tribunals_authenticated_read on tribunals for select to authenticated using (true);
 drop policy if exists auction_scoring_versions_public_read on auction_scoring_versions;
 drop policy if exists auction_scoring_versions_authenticated_read on auction_scoring_versions;
-create policy auction_scoring_versions_authenticated_read on auction_scoring_versions for select to authenticated using (true);
+create policy auction_scoring_versions_authenticated_read on auction_scoring_versions for select to authenticated using (public.has_analysis_access());
 drop policy if exists auction_sales_app_read_public_read on auction_sales_app_read;
 drop policy if exists auction_sales_app_read_authenticated_read on auction_sales_app_read;
-create policy auction_sales_app_read_authenticated_read on auction_sales_app_read for select to authenticated using (true);
+create policy auction_sales_app_read_authenticated_read on auction_sales_app_read for select to authenticated using (public.has_analysis_access());
 do $$
 begin
   if exists (

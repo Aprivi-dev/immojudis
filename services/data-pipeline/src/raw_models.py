@@ -4,6 +4,26 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from src.sources.common import is_allowed_origin_url
+
+SOURCE_ORIGINS: dict[str, tuple[str, ...]] = {
+    "avoventes": ("https://avoventes.fr", "https://www.avoventes.fr"),
+    "licitor": ("https://www.licitor.com", "https://licitor.com"),
+    "vench": ("https://www.vench.fr", "https://vench.fr"),
+    "info_encheres": ("https://www.info-encheres.com", "https://info-encheres.com"),
+    "encheres_publiques": ("https://www.encheres-publiques.com", "https://encheres-publiques.com"),
+    "petites_affiches": ("https://www.petitesaffiches.fr", "https://petitesaffiches.fr"),
+    "cessions_etat": ("https://cessions.immobilier-etat.gouv.fr",),
+    "agrasc": ("https://agrasc.gouv.fr",),
+    "encheres_immobilieres": ("https://encheresimmobilieres.fr", "https://www.encheresimmobilieres.fr"),
+    "notaires": (
+        "https://www.immobilier.notaires.fr",
+        "https://immobilier.notaires.fr",
+        "https://www.immo-interactif.fr",
+        "https://immo-interactif.fr",
+    ),
+}
+
 
 class RawAuctionSale(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -35,6 +55,9 @@ class RawAuctionSale(BaseModel):
     def require_content_signal(self) -> RawAuctionSale:
         if not any(_has_text(value) for value in (self.title, self.description, self.raw_text)):
             raise ValueError("missing title, description or raw_text")
+        allowed_origins = SOURCE_ORIGINS.get(self.source_name)
+        if allowed_origins and not is_allowed_origin_url(self.source_url, allowed_origins):
+            raise ValueError(f"source_url does not belong to source {self.source_name}")
         return self
 
 

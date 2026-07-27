@@ -72,6 +72,7 @@ import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import type { SaleHistoryResponse } from "@/lib/sale-history";
 import type { ValuationBacktestResponse } from "@/lib/valuation-backtest";
+import type { ValuationAdminResponse } from "@/lib/valuation-admin";
 import type {
   SaleChangeEventListResponse,
   SaleChangeEventSummary,
@@ -140,6 +141,13 @@ export async function fetchPrecomputedMarketEstimate(args: {
   });
 
   return readJson<MarketContext>(response);
+}
+
+export async function fetchValuationAdminOverview(): Promise<ValuationAdminResponse> {
+  const response = await fetch("/api/admin/valuation-models", {
+    headers: await authHeaders(),
+  });
+  return readJson<ValuationAdminResponse>(response);
 }
 
 export async function fetchEnvironmentalContext(args: {

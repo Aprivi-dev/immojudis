@@ -150,6 +150,12 @@ def load_settings() -> dict[str, str | float | None]:
         "pdf_docling_chunk_pages": int(os.getenv("PDF_DOCLING_CHUNK_PAGES", "10")),
         "pdf_docling_ocr_chunk_pages": int(os.getenv("PDF_DOCLING_OCR_CHUNK_PAGES", "2")),
         "pdf_max_documents_per_sale": int(os.getenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")),
+        "pdf_max_download_mb": max(1, int(os.getenv("PDF_MAX_DOWNLOAD_MB", "25"))),
+        "pdf_max_extract_pages": max(1, int(os.getenv("PDF_MAX_EXTRACT_PAGES", "75"))),
+        "document_max_extracted_text_chars": max(
+            10_000,
+            int(os.getenv("DOCUMENT_MAX_EXTRACTED_TEXT_CHARS", "2000000")),
+        ),
         "enable_licitor_benchmark": os.getenv("ENABLE_LICITOR_BENCHMARK", "true").lower()
         in {"1", "true", "yes", "on"},
         "licitor_max_pages": int(os.getenv("LICITOR_MAX_PAGES", "5")),

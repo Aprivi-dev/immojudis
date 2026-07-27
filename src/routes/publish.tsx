@@ -234,7 +234,6 @@ function PublishPage() {
         document_types: draft.selectedDocuments,
         promotion_options: draft.selectedPromotions,
         submitted_documents: uploadedDocuments as unknown as Json,
-        status: "pending",
       });
 
       if (error) throw error;

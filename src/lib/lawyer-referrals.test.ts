@@ -8,6 +8,12 @@ import {
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
+const { serverFrom } = vi.hoisted(() => ({ serverFrom: vi.fn() }));
+
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { from: serverFrom },
+}));
+
 vi.mock("@/lib/property-reports", () => ({
   resolvePlanEntitlements: vi.fn(),
 }));
@@ -198,6 +204,9 @@ describe("lawyer referrals", () => {
 
   it("lists buyer referral status without exposing source-site lawyer contacts", async () => {
     const auth = fakeReferralListAuth();
+    serverFrom.mockImplementation((table: string) =>
+      (auth.supabase as unknown as { from: (name: string) => unknown }).from(table),
+    );
 
     const response = await listLawyerReferralRequests({
       auth,
@@ -371,6 +380,8 @@ function fakeReferralAuth(
       },
     },
   };
+
+  serverFrom.mockImplementation((table: string) => auth.supabase.from(table));
 
   return auth as unknown as SupabaseAuthContext & {
     calls: Array<{ table: string; selected: string | null; filters: Record<string, unknown> }>;

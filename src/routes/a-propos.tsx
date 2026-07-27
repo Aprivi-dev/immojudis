@@ -52,7 +52,7 @@ function AboutPage() {
 
             <div className="relative min-h-[24rem] overflow-hidden rounded-lg bg-[#eef7ff]">
               <img
-                src="/media/landing/justice-goddess.png"
+                src="/media/landing/justice-goddess.webp"
                 alt=""
                 width={1600}
                 height={2400}

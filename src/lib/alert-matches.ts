@@ -181,7 +181,7 @@ export async function evaluateUserAlertMatches({
 
   if (persist) {
     if (rows.length) {
-      const { data, error } = await auth.supabase
+      const { data, error } = await supabaseAdmin
         .from("user_alert_matches")
         .upsert(rows, { onConflict: "alert_id,sale_id" })
         .select("*");
