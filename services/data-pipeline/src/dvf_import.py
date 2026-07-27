@@ -120,13 +120,12 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
                 payload.append(transaction)
                 _record_period(summary, transaction["sale_date"])
                 if len(payload) >= options.batch_size:
-                    _upsert_transactions(connection, payload)
-                    summary.upserted_rows += len(payload)
+                    _commit_transaction_batch(connection, batch_id, payload, summary)
                     payload = []
             if payload:
-                _upsert_transactions(connection, payload)
-                summary.upserted_rows += len(payload)
+                _commit_transaction_batch(connection, batch_id, payload, summary)
             _finish_import_batch(connection, summary)
+            connection.commit()
         except Exception as exc:
             summary.errors.append(str(exc))
             connection.rollback()
@@ -463,6 +462,31 @@ def _fail_import_batch(connection: Any, batch_id: str, error_message: str) -> No
             """,
             (error_message[:2_000], batch_id),
         )
+
+
+def _commit_transaction_batch(
+    connection: Any,
+    batch_id: str,
+    payload: list[dict[str, object]],
+    summary: DvfImportSummary,
+) -> None:
+    _upsert_transactions(connection, payload)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            update public.dvf_import_batches
+            set imported_rows = imported_rows + %s,
+                metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+                  'parsed_rows', %s,
+                  'skipped_rows', %s
+                ),
+                updated_at = now()
+            where id = %s
+            """,
+            (len(payload), summary.parsed_rows, summary.skipped_rows, batch_id),
+        )
+    connection.commit()
+    summary.upserted_rows += len(payload)
 
 
 def _upsert_transactions(connection: Any, payload: list[dict[str, object]]) -> None:

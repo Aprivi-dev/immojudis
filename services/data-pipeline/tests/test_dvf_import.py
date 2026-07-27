@@ -165,6 +165,30 @@ def test_upsert_transactions_uses_one_multi_row_statement() -> None:
     assert cursor.calls[0][1][-1] == "second-updated_at"
 
 
+def test_commit_transaction_batch_persists_progress_before_commit(monkeypatch) -> None:
+    cursor = RecordingCursor()
+    connection = RecordingConnection(cursor)
+    summary = dvf_import.DvfImportSummary(
+        file_name="dvf.csv.gz",
+        parsed_rows=4,
+        skipped_rows=2,
+    )
+    payload = [{"source_mutation_id": "2026-1"}, {"source_mutation_id": "2026-2"}]
+    upserted: list[list[dict[str, object]]] = []
+    monkeypatch.setattr(
+        dvf_import,
+        "_upsert_transactions",
+        lambda received_connection, received_payload: upserted.append(received_payload),
+    )
+
+    dvf_import._commit_transaction_batch(connection, "batch-id", payload, summary)
+
+    assert upserted == [payload]
+    assert connection.commits == 1
+    assert cursor.calls[0][1] == (2, 4, 2, "batch-id")
+    assert summary.upserted_rows == 2
+
+
 def test_import_dvf_file_dry_run_counts_valid_and_skipped_rows(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(dvf_import, "load_settings", lambda: {"supabase_db_url": None})
     path = tmp_path / "valeursfoncieres-2024.txt"
@@ -206,6 +230,10 @@ class RecordingCursor:
 class RecordingConnection:
     def __init__(self, cursor: RecordingCursor) -> None:
         self._cursor = cursor
+        self.commits = 0
 
     def cursor(self) -> RecordingCursor:
         return self._cursor
+
+    def commit(self) -> None:
+        self.commits += 1
