@@ -50,7 +50,7 @@ function isMissing(value) {
   return (
     !normalized ||
     normalized.startsWith("your-") ||
-    ["changeme", "todo", "null"].includes(normalized)
+    ["changeme", "placeholder", "todo", "null", "undefined"].includes(normalized)
   );
 }
 

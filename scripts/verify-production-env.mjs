@@ -151,7 +151,7 @@ function isMissing(value) {
   return (
     !normalized ||
     normalized.startsWith("your-") ||
-    ["changeme", "todo", "null", "undefined"].includes(normalized)
+    ["changeme", "placeholder", "todo", "null", "undefined"].includes(normalized)
   );
 }
 

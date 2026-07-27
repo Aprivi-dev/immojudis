@@ -148,7 +148,7 @@ function unquote(value) {
 }
 
 function firstFilledEnv(...values) {
-  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
+  return values.find((value) => !isMissing(value))?.trim();
 }
 
 function isMissing(value) {
@@ -158,7 +158,7 @@ function isMissing(value) {
   return (
     !normalized ||
     normalized.startsWith("your-") ||
-    ["changeme", "todo", "null", "undefined"].includes(normalized)
+    ["changeme", "placeholder", "todo", "null", "undefined"].includes(normalized)
   );
 }
 
