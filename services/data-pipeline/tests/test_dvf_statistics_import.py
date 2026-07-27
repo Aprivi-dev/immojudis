@@ -1,5 +1,6 @@
 from datetime import date
 
+from src import dvf_statistics_import
 from src.dvf_statistics_import import normalize_statistics_row
 
 
@@ -65,3 +66,44 @@ def test_normalize_statistics_row_drops_ambiguous_epci_department_parent() -> No
 
     assert len(rows) == 1
     assert rows[0]["parent_code"] is None
+
+
+def test_upsert_statistics_uses_one_multi_row_statement() -> None:
+    cursor = RecordingCursor()
+    connection = RecordingConnection(cursor)
+    payload = [
+        {column: f"first-{column}" for column in dvf_statistics_import.STATISTICS_COLUMNS},
+        {column: f"second-{column}" for column in dvf_statistics_import.STATISTICS_COLUMNS},
+    ]
+
+    dvf_statistics_import._upsert_statistics(connection, payload)
+
+    assert len(cursor.calls) == 1
+    assert len(cursor.calls[0][1]) == 2 * len(dvf_statistics_import.STATISTICS_COLUMNS)
+    assert cursor.calls[0][1][0] == "first-geography_level"
+    assert cursor.calls[0][1][-1] == "second-imported_at"
+
+
+class RecordingCursor:
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, list[object]]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+    def execute(self, statement: object, values: list[object]) -> None:
+        self.calls.append((statement, values))
+
+    def executemany(self, statement: object, values: object) -> None:
+        raise AssertionError("DVF imports must not use psycopg pipeline mode")
+
+
+class RecordingConnection:
+    def __init__(self, cursor: RecordingCursor) -> None:
+        self._cursor = cursor
+
+    def cursor(self) -> RecordingCursor:
+        return self._cursor
