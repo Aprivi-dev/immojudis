@@ -34,7 +34,8 @@ import {
   saleStatusLabel,
 } from "@/lib/format";
 import { getDisplaySurface, getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
-import { parseDocs } from "@/lib/documents";
+import { isEmbeddableDocumentUrl, parseDocs } from "@/lib/documents";
+import { safeExternalHttpUrl } from "@/lib/external-url";
 import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { FeaturedLawyerPlacement } from "@/components/FeaturedLawyerPlacement";
@@ -1309,6 +1310,7 @@ function averageKnownProductMetric(values: Array<number | null>): number | null 
 }
 
 function RedfinPendingBlock({ sale, product }: { sale: AuctionSale; product: SaleProductSources }) {
+  const sourceHref = safeExternalHttpUrl(sale.source_url);
   return (
     <div className="mb-5 rounded-lg border border-border bg-white p-5 shadow-sm">
       <div className="grid gap-5 lg:grid-cols-[1fr_240px] lg:items-start">
@@ -1323,9 +1325,9 @@ function RedfinPendingBlock({ sale, product }: { sale: AuctionSale; product: Sal
           <RedfinFactList facts={product.agentFacts} />
         </div>
         <a
-          href={sale.source_url ?? "#public-record"}
-          target={sale.source_url ? "_blank" : undefined}
-          rel={sale.source_url ? "noopener noreferrer" : undefined}
+          href={sourceHref ?? "#public-record"}
+          target={sourceHref ? "_blank" : undefined}
+          rel={sourceHref ? "noopener noreferrer" : undefined}
           className="inline-flex items-center justify-center rounded-md bg-gold-soft px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-gold"
         >
           Contacter / vérifier la source
@@ -3875,6 +3877,9 @@ function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                         <iframe
                           title={`Lecteur ${name}`}
                           src={document.url}
+                          sandbox=""
+                          referrerPolicy="no-referrer"
+                          loading="lazy"
                           className="h-[420px] w-full bg-white"
                         />
                       </div>
@@ -6443,6 +6448,7 @@ function DecisionRail({
   acquisitionCost: AcquisitionCost;
 }) {
   const documentCount = countDocuments(sale);
+  const sourceHref = safeExternalHttpUrl(sale.source_url);
   const ceilingLabel = decision.ceiling.available
     ? formatPrice(decision.ceiling.maxBid)
     : "À compléter";
@@ -6575,9 +6581,9 @@ function DecisionRail({
               </DialogContent>
             </Dialog>
           </div>
-          {sale.source_url && (
+          {sourceHref && (
             <a
-              href={sale.source_url}
+              href={sourceHref}
               target="_blank"
               rel="noopener noreferrer"
               className="group flex w-full items-center justify-between rounded-lg border border-border bg-white px-4 py-3 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
@@ -7167,15 +7173,11 @@ function saleVisitDates(sale: AuctionSale): string[] {
 }
 
 function cleanHref(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+  return safeExternalHttpUrl(value);
 }
 
 function isExternalHref(href: string): boolean {
   return /^https?:\/\//i.test(href);
-}
-
-function isEmbeddableDocumentUrl(href: string): boolean {
-  return /\.(pdf|png|jpe?g|webp)(?:[?#].*)?$/i.test(href);
 }
 
 function cleanContactValue(value: string | null | undefined): string | null {

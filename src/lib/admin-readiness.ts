@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
+import { resolveSiteOrigin } from "@/lib/site-url";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
 export type ReadinessArea = "billing" | "cron" | "database" | "access" | "email" | "pipeline";
@@ -62,7 +63,7 @@ export async function getAdminOperationalReadiness(
     readAiDescriptionReadiness(process.env),
   ]);
   const items = [...envItems, migrationItem(migrations), aiDescriptionItem(aiDescriptions)];
-  const origin = appOrigin(process.env);
+  const origin = resolveSiteOrigin(process.env);
 
   return {
     checkedAt: new Date().toISOString(),
@@ -75,7 +76,7 @@ export async function getAdminOperationalReadiness(
 }
 
 export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>): ReadinessItem[] {
-  const appUrl = appOrigin(env);
+  const appUrl = resolveSiteOrigin(env);
   const stripeSecret = env.STRIPE_SECRET_KEY;
   const webhookSecret = env.STRIPE_WEBHOOK_SECRET;
   const emailConfig = resolveEmailAlertDeliveryConfig(env);
@@ -421,14 +422,6 @@ function overallStatus(items: ReadinessItem[]): ReadinessStatus {
   if (items.some((item) => item.status === "blocked")) return "blocked";
   if (items.some((item) => item.status === "warning")) return "warning";
   return "ready";
-}
-
-function appOrigin(env: Pick<NodeJS.ProcessEnv, string>): string | null {
-  const rawOrigin =
-    env.NEXT_PUBLIC_APP_URL || env.APP_URL || env.NEXT_PUBLIC_SITE_URL || env.VERCEL_URL;
-  if (!rawOrigin) return null;
-  const origin = /^https?:\/\//i.test(rawOrigin) ? rawOrigin : `https://${rawOrigin}`;
-  return origin.replace(/\/+$/, "");
 }
 
 function firstFilledEnv(...values: Array<string | undefined>) {

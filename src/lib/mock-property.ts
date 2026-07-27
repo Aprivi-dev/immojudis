@@ -1,10 +1,10 @@
 import type { Property } from "@/lib/property-types";
 
 const LOCAL_PHOTOS = [
-  "/media/landing/auction-bordeaux.jpg",
-  "/media/landing/auction-toulouse.jpg",
-  "/media/landing/auction-nantes.jpg",
-  "/media/landing/auction-lyon.jpg",
+  "/media/landing/auction-bordeaux.webp",
+  "/media/landing/auction-toulouse.webp",
+  "/media/landing/auction-nantes.webp",
+  "/media/landing/auction-lyon.webp",
 ];
 
 export const MOCK_PROPERTIES: Property[] = [
@@ -101,7 +101,7 @@ export const MOCK_PROPERTIES: Property[] = [
         beds: 2,
         baths: 1,
         sqft: 645,
-        photoUrl: "/media/landing/auction-lyon.jpg",
+        photoUrl: "/media/landing/auction-lyon.webp",
       },
       {
         id: "demo-talence-t2",
@@ -113,7 +113,7 @@ export const MOCK_PROPERTIES: Property[] = [
         beds: 1,
         baths: 1,
         sqft: 430,
-        photoUrl: "/media/landing/auction-toulouse.jpg",
+        photoUrl: "/media/landing/auction-toulouse.webp",
       },
       {
         id: "demo-merignac-maison",
@@ -125,7 +125,7 @@ export const MOCK_PROPERTIES: Property[] = [
         beds: 3,
         baths: 2,
         sqft: 1033,
-        photoUrl: "/media/landing/auction-nantes.jpg",
+        photoUrl: "/media/landing/auction-nantes.webp",
       },
     ],
   },

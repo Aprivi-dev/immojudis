@@ -1,4 +1,5 @@
 import type { AuctionSale } from "@/lib/types";
+import { safeExternalHttpUrl } from "@/lib/external-url";
 
 export type SaleSourceLink = { label: string; href: string };
 
@@ -72,7 +73,7 @@ export function sourceLabelFromUrl(href: string): string | null {
 }
 
 function cleanHref(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+  return safeExternalHttpUrl(value);
 }
 
 function cleanLabel(value: unknown): string | null {

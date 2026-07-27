@@ -10,6 +10,30 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 LOGGER = logging.getLogger(__name__)
+REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+MAX_SAFE_REDIRECTS = 5
+
+
+def is_allowed_origin_url(url: str, allowed_origins: tuple[str, ...]) -> bool:
+    """Return whether an absolute HTTP(S) URL belongs to an exact trusted origin."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.username is not None or parsed.password is not None:
+        return False
+    target_origin = _origin(parsed)
+    return any(target_origin == _origin(urlparse(origin)) for origin in allowed_origins)
+
+
+def _origin(parsed: Any) -> tuple[str, str, int] | None:
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    default_port = 443 if parsed.scheme == "https" else 80
+    try:
+        port = parsed.port or default_port
+    except ValueError:
+        return None
+    return parsed.scheme.lower(), parsed.hostname.rstrip(".").lower(), port
 
 
 @dataclass
@@ -85,7 +109,6 @@ class PoliteHttpClient:
     delay_seconds: float
     timeout_seconds: float
     accept: str = "text/html,application/xhtml+xml"
-    verify: bool = True
     extra_headers: dict[str, str] | None = None
 
     def __post_init__(self) -> None:
@@ -100,8 +123,8 @@ class PoliteHttpClient:
         self._client = httpx.Client(
             headers=headers,
             timeout=self.timeout_seconds,
-            follow_redirects=True,
-            verify=self.verify,
+            follow_redirects=False,
+            verify=True,
         )
         self._robots = RobotsRules()
         try:
@@ -122,6 +145,8 @@ class PoliteHttpClient:
         return response.text
 
     def _guard(self, url: str) -> None:
+        if not is_allowed_origin_url(url, (self.base_url,)):
+            raise RuntimeError(f"refusing URL outside configured source origin: {url}")
         if not self._robots.can_fetch(url):
             raise RuntimeError(f"robots.txt does not allow fetching {url}")
 
@@ -130,12 +155,30 @@ class PoliteHttpClient:
         if elapsed < self.delay_seconds:
             time.sleep(self.delay_seconds - elapsed)
         LOGGER.info("Fetching %s", url)
+        current_url = url
+        current_method = method
         try:
-            response = self._client.request(method, url, **kwargs)
+            for redirect_count in range(MAX_SAFE_REDIRECTS + 1):
+                self._guard(current_url)
+                response = self._client.request(current_method, current_url, **kwargs)
+                if response.status_code not in REDIRECT_STATUS_CODES:
+                    response.raise_for_status()
+                    return response
+                if redirect_count >= MAX_SAFE_REDIRECTS:
+                    raise RuntimeError(f"too many redirects while fetching {url}")
+                location = response.headers.get("location")
+                if not location:
+                    response.raise_for_status()
+                    return response
+                current_url = urljoin(current_url, location)
+                if response.status_code == 303 or (
+                    response.status_code in {301, 302} and current_method.upper() == "POST"
+                ):
+                    current_method = "GET"
+                    kwargs.pop("data", None)
+            raise RuntimeError(f"too many redirects while fetching {url}")
         finally:
             self._last_request_at = time.monotonic()
-        response.raise_for_status()
-        return response
 
 
 def listing_signature(sale: dict[str, Any]) -> str | None:

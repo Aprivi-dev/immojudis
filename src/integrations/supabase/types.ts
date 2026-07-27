@@ -2401,6 +2401,113 @@ export type Database = {
           },
         ];
       };
+      cnb_lawyer_directory: {
+        Row: {
+          address_line_1: string | null;
+          address_line_2: string | null;
+          bar_association: string;
+          bar_key: string;
+          city: string | null;
+          display_name: string;
+          firm_name: string | null;
+          firm_siret_siren: string | null;
+          first_name: string | null;
+          imported_at: string;
+          languages: string[];
+          last_name: string;
+          oath_date: string | null;
+          postal_code: string | null;
+          source_key: string;
+          source_resource_id: string;
+          source_updated_at: string;
+          specializations: string[];
+        };
+        Insert: {
+          address_line_1?: string | null;
+          address_line_2?: string | null;
+          bar_association: string;
+          bar_key: string;
+          city?: string | null;
+          display_name: string;
+          firm_name?: string | null;
+          firm_siret_siren?: string | null;
+          first_name?: string | null;
+          imported_at?: string;
+          languages?: string[];
+          last_name: string;
+          oath_date?: string | null;
+          postal_code?: string | null;
+          source_key: string;
+          source_resource_id: string;
+          source_updated_at: string;
+          specializations: string[];
+        };
+        Update: {
+          address_line_1?: string | null;
+          address_line_2?: string | null;
+          bar_association?: string;
+          bar_key?: string;
+          city?: string | null;
+          display_name?: string;
+          firm_name?: string | null;
+          firm_siret_siren?: string | null;
+          first_name?: string | null;
+          imported_at?: string;
+          languages?: string[];
+          last_name?: string;
+          oath_date?: string | null;
+          postal_code?: string | null;
+          source_key?: string;
+          source_resource_id?: string;
+          source_updated_at?: string;
+          specializations?: string[];
+        };
+        Relationships: [
+          {
+            foreignKeyName: "cnb_lawyer_directory_source_resource_id_fkey";
+            columns: ["source_resource_id"];
+            isOneToOne: false;
+            referencedRelation: "cnb_lawyer_directory_imports";
+            referencedColumns: ["resource_id"];
+          },
+        ];
+      };
+      cnb_lawyer_directory_imports: {
+        Row: {
+          completed_at: string | null;
+          error_message: string | null;
+          record_count: number;
+          resource_id: string;
+          resource_title: string;
+          resource_url: string;
+          source_published_at: string;
+          started_at: string;
+          status: string;
+        };
+        Insert: {
+          completed_at?: string | null;
+          error_message?: string | null;
+          record_count?: number;
+          resource_id: string;
+          resource_title: string;
+          resource_url: string;
+          source_published_at: string;
+          started_at?: string;
+          status: string;
+        };
+        Update: {
+          completed_at?: string | null;
+          error_message?: string | null;
+          record_count?: number;
+          resource_id?: string;
+          resource_title?: string;
+          resource_url?: string;
+          source_published_at?: string;
+          started_at?: string;
+          status?: string;
+        };
+        Relationships: [];
+      };
       referenced_lawyers: {
         Row: {
           accepts_judicial_auctions: boolean;

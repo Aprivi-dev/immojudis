@@ -1,4 +1,5 @@
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
 import { extractDpe } from "@/lib/dpe";
 import { formatDate } from "@/lib/format";
@@ -7,6 +8,7 @@ import { featureIncluded } from "@/lib/plans";
 import { computeRentabilityScore } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import {
   applyClientSearchFilters,
@@ -165,6 +167,12 @@ export async function exportSalesCsv({
   if (!featureIncluded(plan.plan, "sales.csvExport")) {
     throw new Error("Export CSV réservé au plan Analyse.");
   }
+  await enforceUserRateLimit({
+    userId: auth.userId,
+    bucketKey: "sales.csv_export",
+    limit: 6,
+    windowSeconds: 60,
+  });
 
   const sales = await resolveFilteredSales({ auth, search, sourceLimit: EXPORT_SOURCE_LIMIT });
   const rows = sales.slice(0, EXPORT_ROW_LIMIT);
@@ -197,6 +205,12 @@ export async function exportSalesApiFeed({
   if (!featureIncluded(plan.plan, "sales.apiAccess")) {
     throw new Error("API ventes réservée au plan Analyse.");
   }
+  await enforceUserRateLimit({
+    userId: auth.userId,
+    bucketKey: "sales.api_feed",
+    limit: 60,
+    windowSeconds: 60,
+  });
 
   const requestedLimit = search.limit ?? API_ROW_LIMIT;
   const limit = Math.min(Math.max(1, requestedLimit), API_ROW_LIMIT);
@@ -302,7 +316,7 @@ async function recordSalesDataExport({
   exportKind: "sales_csv" | "sales_api";
 }) {
   const searchSnapshot = salesSearchToUrlRecord(search);
-  const { error } = await auth.supabase.from("sale_data_exports").insert({
+  const { error } = await supabaseAdmin.from("sale_data_exports").insert({
     user_id: auth.userId,
     export_kind: exportKind,
     search_snapshot: asJson(searchSnapshot),
@@ -582,7 +596,9 @@ function saleToCsvRow(sale: AuctionSale, origin?: string | null): Array<string |
 
 function csvCell(value: string | number | null | undefined): string {
   if (value == null) return "";
-  const text = String(value).replace(/\r?\n/g, " ").trim();
+  const normalized = String(value).replace(/\r?\n/g, " ").trim();
+  const text =
+    typeof value === "string" && /^[=+\-@]/.test(normalized) ? `'${normalized}` : normalized;
   if (!/[",\n;]/.test(text)) return text;
   return `"${text.replace(/"/g, '""')}"`;
 }

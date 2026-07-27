@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, IBM_Plex_Sans } from "next/font/google";
-import "mapbox-gl/dist/mapbox-gl.css";
 import "./../styles.css";
 import { AppProviders } from "./providers";
+import { resolveSiteOrigin } from "@/lib/site-url";
 
 const cormorantGaramond = Cormorant_Garamond({
   subsets: ["latin"],
@@ -19,8 +19,10 @@ const ibmPlexSans = IBM_Plex_Sans({
   variable: "--font-ibm-plex-sans",
 });
 
+const siteOrigin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://immojudis-dezt.vercel.app"),
+  metadataBase: new URL(siteOrigin),
   title: {
     default: "Immojudis - Rapports d'opportunite pour ventes judiciaires",
     template: "%s - Immojudis",
@@ -37,7 +39,7 @@ export const metadata: Metadata = {
     description:
       "Annonces analysees, comparables DVF, alertes et mise maximale pour les encheres immobilieres judiciaires.",
     type: "website",
-    url: "https://immojudis-dezt.vercel.app",
+    url: siteOrigin,
   },
   twitter: {
     card: "summary",

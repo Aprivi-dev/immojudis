@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import ipaddress
 import json
 import logging
 import os
@@ -17,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import quote, unquote, urlparse, urlsplit, urlunsplit
+from urllib.parse import quote, unquote, urljoin, urlparse, urlsplit, urlunsplit
 from xml.etree import ElementTree
 
 import fitz
@@ -41,6 +42,8 @@ from src.normalize import (
 )
 
 LOGGER = logging.getLogger(__name__)
+DOCUMENT_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+MAX_DOCUMENT_REDIRECTS = 5
 PDF_TEXT_CACHE_VERSION = "pdf_text_v3_surface_calibration"
 DOCUMENT_FACTS_VERSION = "document_facts_v1_starting_price"
 DOCUMENT_TYPE_ALIASES = {
@@ -78,7 +81,9 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     for document in _select_documents_for_extraction(downloaded_documents, sale=sale):
         file_path = Path(document["file_path"])
         try:
-            cached_payload = _read_document_text_cache(document, file_path) if load_settings()["incremental_enrichment"] else None
+            cached_payload = (
+                _read_document_text_cache(document, file_path) if load_settings()["incremental_enrichment"] else None
+            )
             if cached_payload:
                 stats.document_cache_hits += 1
                 pdf_texts.append(cached_payload)
@@ -151,11 +156,15 @@ def download_documents(
 
         filename = _document_filename(document)
         file_path = sale_dir / filename
-        if file_path.exists() and _document_file_format(
-            file_path.read_bytes(),
-            url=url,
-            content_type=None,
-        ) is None:
+        if (
+            file_path.exists()
+            and _document_file_format(
+                file_path.read_bytes(),
+                url=url,
+                content_type=None,
+            )
+            is None
+        ):
             LOGGER.info("Discarding unsupported document cache entry %s", file_path)
             file_path.unlink(missing_ok=True)
         if not file_path.exists():
@@ -163,18 +172,20 @@ def download_documents(
             try:
                 for candidate_url in _document_url_variants(url):
                     try:
-                        response = httpx.get(
+                        response = _download_document_response(
                             candidate_url,
                             headers=headers,
-                            timeout=float(settings["request_timeout_seconds"]),
-                            verify=_verify_tls(candidate_url),
-                            follow_redirects=True,
+                            timeout_seconds=float(settings["request_timeout_seconds"]),
                         )
                         response.raise_for_status()
                         response_headers = getattr(response, "headers", {})
                         content_type = response_headers.get("content-type", "")
+                        content = _bounded_document_content(
+                            response,
+                            max_bytes=int(settings["pdf_max_download_mb"]) * 1024 * 1024,
+                        )
                         file_format = _document_file_format(
-                            response.content,
+                            content,
                             url=candidate_url,
                             content_type=content_type,
                         )
@@ -187,7 +198,7 @@ def download_documents(
                         continue
                     if candidate_url != url:
                         LOGGER.info("PDF URL Unicode variant succeeded for %s", url)
-                    file_path.write_bytes(response.content)
+                    file_path.write_bytes(content)
                     if stats:
                         stats.downloaded += 1
                     download_error = None
@@ -201,11 +212,14 @@ def download_documents(
                 continue
 
         enriched_document = dict(document)
-        file_format = _document_file_format(
-            file_path.read_bytes(),
-            url=url,
-            content_type=None,
-        ) or "unknown"
+        file_format = (
+            _document_file_format(
+                file_path.read_bytes(),
+                url=url,
+                content_type=None,
+            )
+            or "unknown"
+        )
         enriched_document["type"] = file_format
         enriched_document["file_format"] = file_format
         enriched_document["document_type"] = document_type
@@ -216,6 +230,22 @@ def download_documents(
 
 def _looks_like_pdf_bytes(content: bytes) -> bool:
     return b"%PDF-" in content[:1024]
+
+
+def _bounded_document_content(response: object, *, max_bytes: int) -> bytes:
+    headers = getattr(response, "headers", {}) or {}
+    raw_length = headers.get("content-length") if hasattr(headers, "get") else None
+    if raw_length:
+        try:
+            if int(raw_length) > max_bytes:
+                raise ValueError(f"document exceeds the {max_bytes}-byte download limit")
+        except ValueError as exc:
+            if "exceeds" in str(exc):
+                raise
+    content = bytes(getattr(response, "content", b""))
+    if len(content) > max_bytes:
+        raise ValueError(f"document exceeds the {max_bytes}-byte download limit")
+    return content
 
 
 def _document_file_format(content: bytes, *, url: str, content_type: str | None) -> str | None:
@@ -229,8 +259,7 @@ def _document_file_format(content: bytes, *, url: str, content_type: str | None)
         return "doc"
     if content.startswith(b"PK\x03\x04") and (
         suffix == ".docx"
-        or normalized_content_type
-        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        or normalized_content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ):
         return "docx"
     return None
@@ -272,9 +301,49 @@ def _is_robots_disallowed_licitor_document(url: str) -> bool:
     return path.startswith("/data/pub/doc/") or path.startswith("/data/pub/media/")
 
 
-def _verify_tls(url: str) -> bool:
-    # ponytail: public Cessions Etat PDFs currently ship an incomplete cert chain to Python/httpx.
-    return urlparse(url).netloc.lower() != "cessions.immobilier-etat.gouv.fr"
+def _download_document_response(
+    url: str,
+    *,
+    headers: dict[str, str],
+    timeout_seconds: float,
+) -> httpx.Response:
+    current_url = url
+    for redirect_count in range(MAX_DOCUMENT_REDIRECTS + 1):
+        if not _is_safe_public_document_url(current_url):
+            raise ValueError(f"unsafe document URL: {current_url}")
+        response = httpx.get(
+            current_url,
+            headers=headers,
+            timeout=timeout_seconds,
+            verify=True,
+            follow_redirects=False,
+        )
+        status_code = int(getattr(response, "status_code", 200))
+        if status_code not in DOCUMENT_REDIRECT_STATUS_CODES:
+            return response
+        if redirect_count >= MAX_DOCUMENT_REDIRECTS:
+            raise ValueError(f"too many document redirects: {url}")
+        location = response.headers.get("location")
+        if not location:
+            return response
+        current_url = urljoin(current_url, location)
+    raise ValueError(f"too many document redirects: {url}")
+
+
+def _is_safe_public_document_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.username is not None or parsed.password is not None:
+        return False
+    hostname = parsed.hostname.rstrip(".").lower()
+    if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal")):
+        return False
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        return True
+    return address.is_global
 
 
 def extract_attached_document(
@@ -320,12 +389,18 @@ def _extract_legacy_word_document(path: Path) -> dict[str, object]:
 
 
 def _extract_docx_document(path: Path) -> dict[str, object]:
+    max_chars = int(load_settings()["document_max_extracted_text_chars"])
     with zipfile.ZipFile(path) as archive:
+        info = archive.getinfo("word/document.xml")
+        if info.file_size > max_chars * 4:
+            raise ValueError("DOCX XML exceeds the extraction limit")
         xml = archive.read("word/document.xml")
     root = ElementTree.fromstring(xml)
     text = clean_text(" ".join(node.text or "" for node in root.iter() if node.tag.endswith("}t"))) or ""
     if not text:
         raise ValueError("DOCX document contains no extractable text")
+    if len(text) > max_chars:
+        raise ValueError("DOCX text exceeds the extraction limit")
     return _single_page_document_payload(path, text, extraction_method="docx_xml")
 
 
@@ -365,6 +440,9 @@ def extract_pdf_text(file: str | Path, document: dict[str, str] | None = None) -
 def extract_pdf_document(file: str | Path, document: dict[str, str] | None = None) -> dict[str, object]:
     path = Path(file)
     settings = load_settings()
+    max_bytes = int(settings["pdf_max_download_mb"]) * 1024 * 1024
+    if path.stat().st_size > max_bytes:
+        raise ValueError(f"document exceeds the {max_bytes}-byte extraction limit")
     pages = extract_pdf_pages(path)
     page_text = clean_text("\n".join(str(page["text"]) for page in pages if page.get("text"))) or ""
     text = page_text
@@ -379,7 +457,11 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
                 text = docling_text
         else:
             LOGGER.warning("Docling returned no text for %s; falling back to PyMuPDF/Tesseract", path)
-    if settings["pdf_docling_enabled"] and str(settings["pdf_extractor"]) == "auto" and len(text) < int(settings["pdf_docling_threshold_chars"]):
+    if (
+        settings["pdf_docling_enabled"]
+        and str(settings["pdf_extractor"]) == "auto"
+        and len(text) < int(settings["pdf_docling_threshold_chars"])
+    ):
         docling_text = extract_pdf_text_with_docling(path)
         if len(docling_text) > len(text):
             text = docling_text
@@ -538,7 +620,10 @@ def _extract_pdf_text_with_docling_subprocess(path: Path, timeout: float) -> str
 
 def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
     pages: list[dict[str, object]] = []
+    max_pages = int(load_settings()["pdf_max_extract_pages"])
     with fitz.open(file) as document:
+        if document.page_count > max_pages:
+            raise ValueError(f"PDF exceeds the {max_pages}-page extraction limit")
         for index, page in enumerate(document, start=1):
             raw_text = page.get_text("text") or ""
             method = "pymupdf_text"
@@ -691,7 +776,17 @@ def classify_document_type(label: str | None, url: str | None = None) -> str:
         return "proces_verbal"
     if any(
         pattern in text
-        for pattern in ("avis", "simplifie", "simplifié", "affiche", "insertion", "annonce", "placard", "publicite", "publicité")
+        for pattern in (
+            "avis",
+            "simplifie",
+            "simplifié",
+            "affiche",
+            "insertion",
+            "annonce",
+            "placard",
+            "publicite",
+            "publicité",
+        )
     ):
         return "annonce_vente"
     if "bail" in text or "location" in text:
@@ -936,7 +1031,14 @@ def _store_document_analysis_status(
         "extracted_document_types": dict(extracted_type_counts),
         "missing_core_documents": missing_core_documents,
         "official_documents_found": bool(
-            {"pv_huissier", "pv_notaire", "proces_verbal", "cahier_conditions_vente", "conditions_vente", "diagnostics_techniques"}
+            {
+                "pv_huissier",
+                "pv_notaire",
+                "proces_verbal",
+                "cahier_conditions_vente",
+                "conditions_vente",
+                "diagnostics_techniques",
+            }
             & (available_types | extracted_types)
         ),
         "profiles": extracted_profiles or typed_documents,
@@ -946,7 +1048,9 @@ def _store_document_analysis_status(
 def _document_profile(document: dict[str, str]) -> dict[str, object]:
     label = str(document.get("label") or "")
     url = str(document.get("url") or "")
-    document_type = _canonical_document_type(document.get("document_type") or document.get("type"), label=label, url=url)
+    document_type = _canonical_document_type(
+        document.get("document_type") or document.get("type"), label=label, url=url
+    )
     return {
         "label": label or None,
         "url": url or None,
@@ -1055,7 +1159,9 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     if not sale.description:
         sale.description = _extract_description(combined)
 
-    energy_diagnostics = _extract_energy_diagnostics_from_documents(pdf_texts) or _extract_energy_diagnostics_with_evidence(combined)
+    energy_diagnostics = _extract_energy_diagnostics_from_documents(
+        pdf_texts
+    ) or _extract_energy_diagnostics_with_evidence(combined)
     if energy_diagnostics:
         sale.raw_payload["pdf_energy_diagnostics"] = energy_diagnostics
 
@@ -1295,7 +1401,9 @@ def _document_land_surface_candidates(item: dict[str, object], text: str) -> lis
     return candidates
 
 
-def _extract_energy_diagnostics_from_documents(pdf_texts: list[dict[str, object]] | list[str]) -> dict[str, object] | None:
+def _extract_energy_diagnostics_from_documents(
+    pdf_texts: list[dict[str, object]] | list[str],
+) -> dict[str, object] | None:
     candidates: list[dict[str, object]] = []
     for item in pdf_texts:
         if not isinstance(item, dict):
@@ -1785,7 +1893,11 @@ def _land_unit_candidate_rank(text: str, start: int, end: int) -> int:
 def _extract_energy_diagnostics_with_evidence(text: str) -> dict[str, object] | None:
     if not clean_text(text):
         return None
-    if not re.search(r"\b(?:dpe|diagnostic\s+de\s+performance\s+energetique|diagnostic\s+de\s+performance\s+[ée]nerg[ée]tique|ges|gaz\s+a\s+effet\s+de\s+serre|gaz\s+à\s+effet\s+de\s+serre|kwh|co2)\b", text, re.I):
+    if not re.search(
+        r"\b(?:dpe|diagnostic\s+de\s+performance\s+energetique|diagnostic\s+de\s+performance\s+[ée]nerg[ée]tique|ges|gaz\s+a\s+effet\s+de\s+serre|gaz\s+à\s+effet\s+de\s+serre|kwh|co2)\b",
+        text,
+        re.I,
+    ):
         return None
     dpe_match = _first_energy_class_match(
         text,
@@ -1830,8 +1942,12 @@ def _extract_energy_diagnostics_with_evidence(text: str) -> dict[str, object] | 
     return {
         "dpe_class": dpe_match.group(1).upper() if dpe_match else None,
         "ges_class": ges_match.group(1).upper() if ges_match else None,
-        "energy_consumption_kwh_m2_year": _decimal_to_int_or_float(_parse_decimal_number(consumption_match.group(1)) if consumption_match else None),
-        "emissions_kg_co2_m2_year": _decimal_to_int_or_float(_parse_decimal_number(emissions_match.group(1)) if emissions_match else None),
+        "energy_consumption_kwh_m2_year": _decimal_to_int_or_float(
+            _parse_decimal_number(consumption_match.group(1)) if consumption_match else None
+        ),
+        "emissions_kg_co2_m2_year": _decimal_to_int_or_float(
+            _parse_decimal_number(emissions_match.group(1)) if emissions_match else None
+        ),
         "evidence": evidence,
     }
 
@@ -1914,9 +2030,7 @@ def _sale_date_candidate_phrases(text: str) -> list[str]:
 
 def _has_sale_date_signal(text: str) -> bool:
     normalized = _normalize_document_classifier_text(text)
-    month_pattern = (
-        r"janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre"
-    )
+    month_pattern = r"janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre"
     return bool(
         re.search(rf"\b\d{{1,2}}\s+(?:{month_pattern})\s+\d{{4}}\b", normalized)
         or re.search(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", normalized)
@@ -2023,7 +2137,10 @@ def _has_land_surface_context(text: str, start: int, end: int) -> bool:
 
 def _is_land_surface_evidence(evidence: str) -> bool:
     text = _normalize_document_classifier_text(evidence)
-    if re.search(r"\b(?:habitable|habitables|carrez|loi\s+carrez|surface\s+privative|surface\s+de\s+reference|batie|bati)\b", text):
+    if re.search(
+        r"\b(?:habitable|habitables|carrez|loi\s+carrez|surface\s+privative|surface\s+de\s+reference|batie|bati)\b",
+        text,
+    ):
         return False
     return bool(
         re.search(
@@ -2134,7 +2251,9 @@ def _extract_property_type(text: str) -> str | None:
 
 
 def _extract_description(text: str) -> str | None:
-    match = re.search(r"(?:description|désignation)\s*:?\s*(.{80,1200}?)(?:\n[A-ZÉÈÀÂÎÔÛÇ ]{5,}\s*:|\Z)", text, re.I | re.S)
+    match = re.search(
+        r"(?:description|désignation)\s*:?\s*(.{80,1200}?)(?:\n[A-ZÉÈÀÂÎÔÛÇ ]{5,}\s*:|\Z)", text, re.I | re.S
+    )
     if match:
         return clean_text(match.group(1))
     return clean_text(text[:800])

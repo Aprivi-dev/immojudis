@@ -19,9 +19,10 @@ from src.normalize import (
     no_lease_occupancy_status,
 )
 from src.raw_models import validate_raw_sales
-from src.sources.common import ScrapeResult
+from src.sources.common import MAX_SAFE_REDIRECTS, REDIRECT_STATUS_CODES, ScrapeResult, is_allowed_origin_url
 
 BASE_URL = "https://www.licitor.com"
+ALLOWED_ORIGINS = (BASE_URL, "https://licitor.com")
 LICITOR_ZONE_URLS = (
     f"{BASE_URL}/ventes-aux-encheres-immobilieres/paris-et-ile-de-france/prochaines-ventes.html",
     f"{BASE_URL}/ventes-aux-encheres-immobilieres/regions-du-nord-est/prochaines-ventes.html",
@@ -45,7 +46,7 @@ class LicitorClient:
         self._client = httpx.Client(
             headers={"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml"},
             timeout=self.timeout_seconds,
-            follow_redirects=True,
+            follow_redirects=False,
         )
         self._robots = RobotsRules()
         try:
@@ -56,6 +57,8 @@ class LicitorClient:
             LOGGER.warning("Could not read Licitor robots.txt: %s", exc)
 
     def get(self, url: str) -> str:
+        if not is_allowed_origin_url(url, ALLOWED_ORIGINS):
+            raise RuntimeError(f"refusing URL outside Licitor origins: {url}")
         if not self._robots.can_fetch(url):
             raise RuntimeError(f"robots.txt does not allow fetching {url}")
         elapsed = time.monotonic() - self._last_request_at
@@ -63,7 +66,19 @@ class LicitorClient:
             time.sleep(self.delay_seconds - elapsed)
         LOGGER.info("Fetching %s", url)
         try:
-            response = self._client.get(url)
+            current_url = url
+            for redirect_count in range(MAX_SAFE_REDIRECTS + 1):
+                if not is_allowed_origin_url(current_url, ALLOWED_ORIGINS):
+                    raise RuntimeError(f"refusing Licitor redirect outside trusted origins: {current_url}")
+                response = self._client.get(current_url)
+                if response.status_code not in REDIRECT_STATUS_CODES:
+                    break
+                if redirect_count >= MAX_SAFE_REDIRECTS:
+                    raise RuntimeError(f"too many redirects while fetching {url}")
+                location = response.headers.get("location")
+                if not location:
+                    break
+                current_url = urljoin(current_url, location)
         finally:
             self._last_request_at = time.monotonic()
         response.raise_for_status()
@@ -170,6 +185,8 @@ def parse_licitor_list_html(html: str, page_url: str = AQUITAINE_URL) -> tuple[l
     for link in soup.find_all("a", href=True):
         href = str(link.get("href"))
         absolute = urljoin(page_url, href)
+        if not is_allowed_origin_url(absolute, ALLOWED_ORIGINS):
+            continue
         if re.search(r"/annonce/.+/\d+\.html$", href):
             detail_urls.append(absolute)
         elif re.search(r"/ventes-aux-encheres-immobilieres/.+/prochaines-ventes\.html\?p=", href):
@@ -186,6 +203,8 @@ def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[d
         if not re.search(r"/annonce/.+/\d+\.html$", href):
             continue
         source_url = urljoin(page_url, href)
+        if not is_allowed_origin_url(source_url, ALLOWED_ORIGINS):
+            continue
         if source_url in seen:
             continue
         seen.add(source_url)

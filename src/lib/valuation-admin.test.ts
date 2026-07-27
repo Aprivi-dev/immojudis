@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeValuationRuntime } from "@/lib/valuation-admin";
+import { evaluateValuationPromotionGate, summarizeValuationRuntime } from "@/lib/valuation-admin";
 
 describe("valuation admin runtime summary", () => {
   it("summarizes model adoption and runtime quality without exposing inputs", () => {
@@ -33,6 +33,30 @@ describe("valuation admin runtime summary", () => {
       averageComparableCount: 8,
       averageLatencyMs: 200,
       bySegment: { apartment: 1, house: 1 },
+      status: "healthy",
+      driftSignals: [],
     });
+  });
+
+  it("mirrors the training promotion gates in the admin cockpit", () => {
+    expect(
+      evaluateValuationPromotionGate({
+        testMapePct: 31,
+        testMedianApePct: 22,
+        intervalCoveragePct: 80,
+        intervalMeanWidthPct: 90,
+        testRows: 120,
+      }),
+    ).toEqual({ passes: true, failures: [] });
+
+    const rejected = evaluateValuationPromotionGate({
+      testMapePct: 45,
+      testMedianApePct: 35,
+      intervalCoveragePct: 65,
+      intervalMeanWidthPct: 130,
+      testRows: 20,
+    });
+    expect(rejected.passes).toBe(false);
+    expect(rejected.failures).toHaveLength(5);
   });
 });

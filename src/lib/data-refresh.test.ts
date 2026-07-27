@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import {
   dataRefreshRequestSchema,
@@ -6,6 +6,12 @@ import {
   requestDataRefresh,
 } from "@/lib/data-refresh";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+
+const { serverFrom } = vi.hoisted(() => ({ serverFrom: vi.fn() }));
+
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { from: serverFrom },
+}));
 
 vi.mock("@/lib/property-reports", () => ({
   resolvePlanEntitlements: vi.fn(async () => ({
@@ -21,6 +27,10 @@ vi.mock("@/lib/usage", () => ({
 }));
 
 describe("data refresh requests", () => {
+  beforeEach(() => {
+    serverFrom.mockReset();
+  });
+
   it("normalizes refresh scopes and collapses full refreshes", () => {
     expect(normalizeDataRefreshKindList("cadastre,dpe")).toEqual(["cadastre", "dpe"]);
     expect(normalizeDataRefreshKindList(["dpe", "full", "cadastre"])).toEqual(["full"]);
@@ -33,6 +43,9 @@ describe("data refresh requests", () => {
 
   it("creates missing refresh requests and reuses an active request for the same sale", async () => {
     const auth = fakeRefreshAuth();
+    serverFrom.mockImplementation((table: string) =>
+      (auth.supabase as unknown as { from: (name: string) => unknown }).from(table),
+    );
 
     const response = await requestDataRefresh({
       auth,

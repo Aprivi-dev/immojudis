@@ -32,3 +32,22 @@ def test_validate_raw_sales_reports_missing_source_url_at_source_boundary() -> N
 
     assert valid == []
     assert "source_url" in errors[0]
+
+
+def test_validate_raw_sales_rejects_cross_source_url() -> None:
+    errors: list[str] = []
+
+    valid = validate_raw_sales(
+        "avoventes",
+        [
+            {
+                "source_name": "avoventes",
+                "source_url": "https://www.licitor.com/annonce/123.html",
+                "title": "Tentative de remplacement",
+            }
+        ],
+        errors,
+    )
+
+    assert valid == []
+    assert "source_url does not belong to source avoventes" in errors[0]

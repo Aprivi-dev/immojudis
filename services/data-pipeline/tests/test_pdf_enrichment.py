@@ -10,10 +10,10 @@ from src.normalize import normalize_sale
 from src.pdf_enrichment import (
     PdfEnrichmentStats,
     _adaptive_docling_timeout,
+    _bounded_document_content,
     _read_document_text_cache,
     _select_documents_for_extraction,
     _store_document_analysis_status,
-    _verify_tls,
     _write_document_text_cache,
     classify_document_type,
     download_documents,
@@ -21,6 +21,23 @@ from src.pdf_enrichment import (
     extract_attached_document,
     extract_pdf_document,
 )
+
+
+def test_bounded_document_content_rejects_declared_and_actual_oversize_payloads() -> None:
+    declared = SimpleNamespace(headers={"content-length": "11"}, content=b"%PDF")
+    actual = SimpleNamespace(headers={}, content=b"x" * 11)
+
+    try:
+        _bounded_document_content(declared, max_bytes=10)
+        raise AssertionError("declared oversize payload should be rejected")
+    except ValueError as exc:
+        assert "download limit" in str(exc)
+
+    try:
+        _bounded_document_content(actual, max_bytes=10)
+        raise AssertionError("actual oversize payload should be rejected")
+    except ValueError as exc:
+        assert "download limit" in str(exc)
 
 
 def test_classify_document_type_prioritizes_known_pdf_labels() -> None:
@@ -40,12 +57,9 @@ def test_classify_document_type_prioritizes_known_pdf_labels() -> None:
 def test_classify_document_type_normalizes_common_non_pdf_french_labels() -> None:
     assert classify_document_type("Procès verbal", "https://example.test/download?id=1") == "proces_verbal"
     assert classify_document_type("Proces verbal de description", "https://example.test/download?id=2") == "pv_huissier"
-    assert classify_document_type("Procès verbal descriptif", "https://example.test/telechargement?id=3") == "pv_huissier"
-
-
-def test_verify_tls_only_skips_broken_cessions_etat_chain() -> None:
-    assert _verify_tls("https://cessions.immobilier-etat.gouv.fr/sites/default/files/doc.pdf") is False
-    assert _verify_tls("https://avoventes.fr/doc.pdf") is True
+    assert (
+        classify_document_type("Procès verbal descriptif", "https://example.test/telechargement?id=3") == "pv_huissier"
+    )
 
 
 def test_enrich_sale_from_pdf_text_extracts_fields() -> None:
@@ -99,10 +113,7 @@ def test_enrich_sale_from_ccv_replaces_implausible_source_starting_price() -> No
         "pages": [
             {
                 "page": 4,
-                "text": (
-                    "Le chèque représente 10% du montant de la mise à prix, "
-                    "avec un minimum de 3.000 euros."
-                ),
+                "text": ("Le chèque représente 10% du montant de la mise à prix, avec un minimum de 3.000 euros."),
                 "confidence": 0.99,
                 "method": "pymupdf",
             },
@@ -322,7 +333,12 @@ def test_enrich_sale_from_pdf_text_extracts_visit_dates_with_provenance() -> Non
                 "Visite sur place le mardi 26 mai 2026 de 10h à 12h."
             ),
             "pages": [
-                {"page": 1, "text": "Sommaire. Aucune visite virtuelle disponible.", "confidence": 0.88, "method": "pymupdf_text"},
+                {
+                    "page": 1,
+                    "text": "Sommaire. Aucune visite virtuelle disponible.",
+                    "confidence": 0.88,
+                    "method": "pymupdf_text",
+                },
                 {
                     "page": 2,
                     "text": "Conditions de visite. Visite sur place le mardi 26 mai 2026 de 10h à 12h.",
@@ -364,12 +380,16 @@ def test_enrich_sale_from_pdf_text_extracts_sale_date_with_provenance() -> None:
                 "Audience d'adjudication le jeudi 15 octobre 2026 à 15h00 au tribunal judiciaire de Bordeaux."
             ),
             "pages": [
-                {"page": 1, "text": "Sommaire du cahier sans calendrier.", "confidence": 0.87, "method": "pymupdf_text"},
+                {
+                    "page": 1,
+                    "text": "Sommaire du cahier sans calendrier.",
+                    "confidence": 0.87,
+                    "method": "pymupdf_text",
+                },
                 {
                     "page": 2,
                     "text": (
-                        "Audience d'adjudication le jeudi 15 octobre 2026 à 15h00 "
-                        "au tribunal judiciaire de Bordeaux."
+                        "Audience d'adjudication le jeudi 15 octobre 2026 à 15h00 au tribunal judiciaire de Bordeaux."
                     ),
                     "confidence": 0.94,
                     "method": "pymupdf_text",
@@ -998,9 +1018,7 @@ def test_document_analysis_does_not_count_empty_pdf_payload_as_extracted() -> No
             "source_url": "https://www.info-encheres.com/scanned-empty-pdf.html",
         }
     )
-    documents = [
-        {"label": "PV descriptif", "url": "https://example.test/pv.pdf", "document_type": "pv_huissier"}
-    ]
+    documents = [{"label": "PV descriptif", "url": "https://example.test/pv.pdf", "document_type": "pv_huissier"}]
     pdf_texts = [
         {
             "label": "PV descriptif",
@@ -1345,9 +1363,34 @@ def test_download_documents_rejects_html_response_and_uses_source_referer(tmp_pa
 
     assert download_documents(sale, output_root=tmp_path, stats=stats) == []
     assert stats.errors == 1
-    assert captured["follow_redirects"] is True
+    assert captured["follow_redirects"] is False
+    assert captured["verify"] is True
     assert captured["headers"]["Referer"] == sale.source_url
     assert list(tmp_path.rglob("*.pdf")) == []
+
+
+def test_download_documents_rejects_private_network_urls(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "src.pdf_enrichment.httpx.get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("private URL must not be fetched")),
+    )
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-privee.html",
+            "documents": [
+                {
+                    "label": "Document interne",
+                    "url": "http://127.0.0.1:54321/admin.pdf",
+                    "type": "pdf",
+                }
+            ],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 1
 
 
 def test_download_documents_fetches_duplicate_url_only_once(tmp_path, monkeypatch) -> None:
@@ -1598,7 +1641,11 @@ def test_adaptive_docling_timeout_shortens_signed_documents(tmp_path, monkeypatc
 
     timeout = _adaptive_docling_timeout(
         file_path,
-        {"label": "CCV sign.pdf", "url": "https://example.test/CCV-sign.pdf", "document_type": "cahier_conditions_vente"},
+        {
+            "label": "CCV sign.pdf",
+            "url": "https://example.test/CCV-sign.pdf",
+            "document_type": "cahier_conditions_vente",
+        },
         settings,
     )
 
@@ -1611,7 +1658,14 @@ def test_document_text_cache_roundtrip(tmp_path, monkeypatch) -> None:
     file_path = tmp_path / "pv.pdf"
     file_path.write_bytes(b"pdf bytes")
     document = {"url": "https://example.test/pv.pdf", "label": "PV", "document_type": "pv_huissier"}
-    payload = {"label": "PV", "url": document["url"], "type": "pdf", "document_type": "pv_huissier", "file_path": str(file_path), "text": "Surface 80 m2"}
+    payload = {
+        "label": "PV",
+        "url": document["url"],
+        "type": "pdf",
+        "document_type": "pv_huissier",
+        "file_path": str(file_path),
+        "text": "Surface 80 m2",
+    }
 
     _write_document_text_cache(document, file_path, payload)
 

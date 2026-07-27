@@ -617,7 +617,7 @@ async function loadSalesByIds(
 async function upsertWatchSnapshots(auth: SupabaseAuthContext, rows: SaleWatchSnapshotInsert[]) {
   if (!rows.length) return;
 
-  const { error } = await auth.supabase
+  const { error } = await supabaseAdmin
     .from("user_sale_watch_snapshots")
     .upsert(rows, { onConflict: "user_id,sale_id,watch_kind,watch_id" });
 
@@ -630,7 +630,7 @@ async function insertChangeEvents(
 ): Promise<SaleChangeEventRow[]> {
   if (!rows.length) return [];
 
-  const { data, error } = await auth.supabase
+  const { data, error } = await supabaseAdmin
     .from("user_sale_change_events")
     .upsert(rows, {
       onConflict: "user_id,sale_id,event_kind,fingerprint",

@@ -10,6 +10,7 @@ import type { ReactElement } from "react";
 import { getSales } from "@/lib/queries";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import type { AuctionSale } from "@/lib/types";
+import { fetchValuationAdminOverview } from "@/lib/client-api";
 
 export const Route = createFileRoute("/admin/quality")({
   head: () => ({
@@ -31,6 +32,11 @@ function AdminQualityPage() {
     staleTime: 60_000,
   });
   const sales = data ?? [];
+  const { data: valuationOverview, isLoading: valuationLoading } = useQuery({
+    queryKey: ["admin-valuation-overview"],
+    queryFn: fetchValuationAdminOverview,
+    staleTime: 60_000,
+  });
   const metrics = buildQualityMetrics(sales);
   const weakSales = sales
     .filter(
@@ -183,9 +189,81 @@ function AdminQualityPage() {
             </div>
           </div>
         </section>
+
+        <section className="liquid-panel mt-6 rounded-lg p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Modèles, promotion & dérive
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Les seuils affichés sont identiques aux garde-fous du pipeline d’entraînement.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-foreground">
+              {valuationLoading
+                ? "Chargement…"
+                : valuationOverview?.runtime.status === "healthy"
+                  ? "Runtime sain"
+                  : valuationOverview?.runtime.status === "degraded"
+                    ? "Dérive à examiner"
+                    : "Activité inconnue"}
+            </span>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <QualityMetric
+              icon={<Activity />}
+              label="Estimations 24 h"
+              value={valuationLoading ? "…" : String(valuationOverview?.runtime.estimates ?? 0)}
+            />
+            <QualityMetric
+              icon={<Sparkles />}
+              label="Hybride LightGBM"
+              value={formatOptionalPct(valuationOverview?.runtime.hybridSharePct)}
+            />
+            <QualityMetric
+              icon={<ShieldCheck />}
+              label="Actionnables"
+              value={formatOptionalPct(valuationOverview?.runtime.actionableSharePct)}
+            />
+          </div>
+          {valuationOverview?.runtime.driftSignals.length ? (
+            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-amber-100">
+              {valuationOverview.runtime.driftSignals.map((signal) => (
+                <li key={signal}>{signal}</li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {(valuationOverview?.activeModels ?? []).map((model) => (
+              <article
+                key={model.id}
+                className="rounded-lg border border-white/10 bg-white/[0.03] p-4"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <strong className="text-sm text-foreground">{model.segment}</strong>
+                  <span
+                    className={model.promotionGate.passes ? "text-emerald-200" : "text-red-200"}
+                  >
+                    {model.promotionGate.passes ? "Seuils validés" : "Seuils non validés"}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {model.version} · erreur médiane{" "}
+                  {formatOptionalPct(model.metrics.testMedianApePct)} · couverture{" "}
+                  {formatOptionalPct(model.metrics.intervalCoveragePct)}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
       </div>
     </main>
   );
+}
+
+function formatOptionalPct(value: number | null | undefined): string {
+  return value == null ? "—" : `${value.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}%`;
 }
 
 function QualityMetric({

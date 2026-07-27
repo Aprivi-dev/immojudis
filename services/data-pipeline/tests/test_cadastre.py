@@ -118,3 +118,33 @@ def test_fetch_cadastre_parcels_uses_geojson_point_query(monkeypatch) -> None:
     assert captured["params"]["source_ign"] == "PCI"
     assert captured["headers"] == {"User-Agent": "immojudis-test"}
     assert captured["timeout"] == 7
+
+
+def test_fetch_cadastre_parcels_enforces_limit_on_oversized_api_response(monkeypatch) -> None:
+    sale = AuctionSale(
+        source_name="unit",
+        source_url="https://example.test/oversized-cadastre",
+        latitude=Decimal("44.8"),
+        longitude=Decimal("-0.5"),
+    )
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return {
+                "features": [
+                    {
+                        "properties": {"idu": f"parcel-{index}"},
+                        "geometry": {"type": "Point", "coordinates": [-0.5, 44.8]},
+                    }
+                    for index in range(20)
+                ]
+            }
+
+    monkeypatch.setattr("src.cadastre.httpx.get", lambda *args, **kwargs: Response())
+
+    parcels = fetch_cadastre_parcels_for_sale(sale, max_parcels=2)
+
+    assert [parcel.parcel_id for parcel in parcels] == ["parcel-0", "parcel-1"]

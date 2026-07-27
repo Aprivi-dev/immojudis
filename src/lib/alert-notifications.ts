@@ -138,7 +138,7 @@ export async function createAlertNotificationsForMatches({
 
   if (!rows.length) return { notificationCount: 0 };
 
-  const { data, error } = await auth.supabase
+  const { data, error } = await supabaseAdmin
     .from("user_alert_notifications")
     .upsert(rows, {
       onConflict: "user_id,match_id,notification_kind,delivery_channel",

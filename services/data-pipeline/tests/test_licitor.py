@@ -47,6 +47,16 @@ def test_parse_licitor_list_html_extracts_detail_and_next_urls() -> None:
     ]
 
 
+def test_parse_licitor_list_html_rejects_cross_origin_links() -> None:
+    html = """
+    <a href="https://evil.example/annonce/10/86/25/vente/108625.html">Annonce</a>
+    <a href="https://evil.example/ventes-aux-encheres-immobilieres/test/prochaines-ventes.html?p=2">2</a>
+    """
+
+    assert parse_licitor_list_html(html) == ([], [])
+    assert parse_licitor_list_sales(html) == []
+
+
 def test_parse_licitor_list_sales_extracts_light_listing() -> None:
     html = """
     <div class="Result">

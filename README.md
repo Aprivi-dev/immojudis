@@ -58,6 +58,7 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 | `SUPABASE_SECRET_KEY`             |   ✅   | Clé serveur Supabase pour les API routes, ou `SUPABASE_SERVICE_ROLE_KEY` sur les projets legacy        |
 | `SUPABASE_DB_URL`                 |   ✅   | URL Postgres directe pour les migrations. Replis acceptés : `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL` |
 | `CRON_SECRET`                     |   ✅   | Secret utilisé par les routes Vercel Cron                                                              |
+| `SITE_URL`                        |   ✅   | Origine canonique publique (`https://immojudis.fr`), utilisée par les métadonnées, emails et paiements |
 | `RESEND_API_KEY`                  |   ✅   | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés      |
 | `ALERT_EMAIL_FROM`                |   ✅   | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`                              |
 | `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` |   ➖   | Token public Mapbox utilisé par Mapbox GL JS et les mini-cartes statiques.                             |
@@ -96,17 +97,19 @@ qui utilisent encore une tuile statique compatible OSM lorsque Mapbox est absent
 
 ## Scripts
 
-| Script                   | Effet                                                                                                         |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`            | Serveur de dev Next.js (HMR)                                                                                  |
-| `npm run dev:ready`      | Dev + attente que le client et le SSR répondent                                                               |
-| `npm run build`          | Build de production                                                                                           |
-| `npm run preview`        | Smoke-test du build                                                                                           |
-| `npm run test`           | Tests unitaires Vitest                                                                                        |
-| `npm run lint`           | ESLint (flat config)                                                                                          |
-| `npm run env:check:prod` | Vérifie les variables nécessaires aux API prod + migrations                                                   |
-| `npm run db:migrate`     | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`) |
-| `npm run format`         | Prettier (écriture)                                                                                           |
+| Script                      | Effet                                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`               | Serveur de dev Next.js (HMR)                                                                                  |
+| `npm run dev:ready`         | Dev + attente que le client et le SSR répondent                                                               |
+| `npm run build`             | Build de production pur (validation des variables puis compilation Next.js)                                   |
+| `npm run preview`           | Smoke-test du build                                                                                           |
+| `npm run test`              | Tests unitaires Vitest                                                                                        |
+| `npm run lint`              | ESLint (flat config)                                                                                          |
+| `npm run env:check:prod`    | Vérifie les variables nécessaires aux API prod + migrations                                                   |
+| `npm run db:migrate`        | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`) |
+| `npm run valuation:publish` | Publie explicitement les modèles de valorisation                                                              |
+| `npm run release:prepare`   | Vérifie l'environnement puis applique migrations et modèles avant une release                                 |
+| `npm run format`            | Prettier (écriture)                                                                                           |
 
 ## Structure du dépôt
 
@@ -152,6 +155,10 @@ installation : [`services/data-pipeline/README.md`](services/data-pipeline/READM
 Cible : **Vercel** (preset Next.js). Renseigner les variables
 d'environnement dans le projet Vercel puis déployer. Procédure complète (Auth
 Supabase, secrets CI, runner de scroll admin) : [`docs/vercel_setup.md`](docs/vercel_setup.md).
+
+Le build ne modifie plus la base et ne publie plus de modèle. Exécuter
+`npm run release:prepare` dans une étape de release explicitement autorisée,
+puis `npm run build` dans l'étape de compilation.
 
 ## Intégration continue
 

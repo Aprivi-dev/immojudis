@@ -15,11 +15,60 @@ def test_geocode_sale_does_not_call_api_when_coordinates_exist() -> None:
     )
     sale.latitude = Decimal("44.84")
     sale.longitude = Decimal("-0.57")
+    sale.raw_payload["geocode"] = {
+        "provider": "ban_geoplateforme",
+        "accepted": True,
+        "latitude": 44.84,
+        "longitude": -0.57,
+    }
 
     result = geocode_sale(sale)
 
     assert result.latitude == Decimal("44.84")
     assert result.longitude == Decimal("-0.57")
+
+
+def test_geocode_sale_revalidates_unverified_source_coordinates(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/unverified-coords",
+            "address": "10 rue Exemple 33000 Bordeaux",
+            "postal_code": "33000",
+            "department": "33",
+        }
+    )
+    sale.latitude = Decimal("44.84")
+    sale.longitude = Decimal("-0.57")
+
+    monkeypatch.setattr(
+        "src.geocode.load_settings",
+        lambda: {
+            "geocode_enabled": True,
+            "geocode_api_url": "https://data.geopf.test/search",
+            "geocode_min_score": 0.45,
+        },
+    )
+    monkeypatch.setattr(
+        "src.geocode.geocode_address",
+        lambda **kwargs: GeocodeResult(
+            latitude=Decimal("44.839"),
+            longitude=Decimal("-0.573"),
+            score=0.92,
+            label="10 rue Exemple 33000 Bordeaux",
+            result_type="housenumber",
+            city="Bordeaux",
+            citycode="33063",
+            postcode="33000",
+        ),
+    )
+
+    result = geocode_sale(sale)
+
+    assert result.latitude == Decimal("44.839")
+    assert result.longitude == Decimal("-0.573")
+    assert "unverified_source_coordinates" in result.quality_flags
+    assert result.raw_payload["geocode"]["accepted"] is True
 
 
 def test_geocode_sale_replaces_coordinates_outside_department(monkeypatch) -> None:

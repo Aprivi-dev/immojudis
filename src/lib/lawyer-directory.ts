@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
+import { findCnbBarAssociation } from "@/lib/cnb-directory";
+import { CNB_DATASET_PAGE_URL, normalizeBarKey, OPEN_LICENSE_URL } from "@/lib/cnb-open-data";
 
 type LawyerRow = Pick<
   Database["public"]["Tables"]["referenced_lawyers"]["Row"],
@@ -27,6 +29,22 @@ type LawyerRow = Pick<
 type CoverageRow = Pick<
   Database["public"]["Tables"]["referenced_lawyer_coverage"]["Row"],
   "lawyer_id" | "tribunal_code" | "tribunal_name" | "city" | "department" | "postal_code_prefix"
+>;
+
+type CnbLawyerRow = Pick<
+  Database["public"]["Tables"]["cnb_lawyer_directory"]["Row"],
+  | "source_key"
+  | "display_name"
+  | "firm_name"
+  | "address_line_1"
+  | "address_line_2"
+  | "postal_code"
+  | "city"
+  | "bar_association"
+  | "specializations"
+  | "oath_date"
+  | "languages"
+  | "source_updated_at"
 >;
 
 type SaleSector = Pick<
@@ -61,6 +79,17 @@ export type LawyerDirectoryProfile = {
   coverageLabels: string[];
   matchingLabel: string | null;
   isSponsored: boolean;
+  source: "immojudis" | "cnb";
+  oathDate: string | null;
+  languages: string[];
+};
+
+export type LawyerDirectoryOfficialSource = {
+  label: string;
+  datasetUrl: string;
+  licenseLabel: string;
+  licenseUrl: string;
+  updatedAt: string;
 };
 
 export type LawyerDirectoryResponse = {
@@ -68,11 +97,14 @@ export type LawyerDirectoryResponse = {
   sectorLabel: string | null;
   barAssociation: string | null;
   isDemo: boolean;
+  officialSource: LawyerDirectoryOfficialSource | null;
 };
 
 const LAWYER_COLUMNS =
   "id,display_name,firm_name,email,phone,website_url,bar_association,bar_number,city,department,address,profile_summary,practice_tags,accepts_remote_contact,priority_weight,paid_placement_status,paid_placement_starts_at,paid_placement_ends_at";
 const COVERAGE_COLUMNS = "lawyer_id,tribunal_code,tribunal_name,city,department,postal_code_prefix";
+const CNB_LAWYER_COLUMNS =
+  "source_key,display_name,firm_name,address_line_1,address_line_2,postal_code,city,bar_association,specializations,oath_date,languages,source_updated_at";
 
 export async function listLawyerDirectory(
   query: LawyerDirectoryQuery,
@@ -107,9 +139,12 @@ export async function listLawyerDirectory(
   }
 
   const activeLawyers = (data ?? []) as LawyerRow[];
-  const coverage = await getCoverage(activeLawyers.map((lawyer) => lawyer.id));
   const criteria = buildCriteria(sale, query);
   const resolvedBarAssociation = resolveBarAssociation(sale, query);
+  const [coverage, cnbLawyers] = await Promise.all([
+    getCoverage(activeLawyers.map((lawyer) => lawyer.id)),
+    getCnbLawyers(resolvedBarAssociation),
+  ]);
   const matched = activeLawyers
     .map((lawyer) => {
       const lawyerCoverage = coverage.get(lawyer.id) ?? [];
@@ -134,15 +169,31 @@ export async function listLawyerDirectory(
       });
     });
 
+  const referencedProfiles = matched.map(({ lawyer, lawyerCoverage, match, isSponsored }) =>
+    toDirectoryProfile(lawyer, lawyerCoverage, match?.label ?? null, isSponsored),
+  );
+  const referencedIdentities = new Set(referencedProfiles.map(directoryIdentityKey));
+  const officialProfiles = cnbLawyers
+    .map(toCnbDirectoryProfile)
+    .filter((profile) => !referencedIdentities.has(directoryIdentityKey(profile)));
+  const sourceUpdatedAt = cnbLawyers[0]?.source_updated_at ?? null;
+
   return {
-    lawyers: matched.map(({ lawyer, lawyerCoverage, match, isSponsored }) =>
-      toDirectoryProfile(lawyer, lawyerCoverage, match?.label ?? null, isSponsored),
-    ),
+    lawyers: [...referencedProfiles, ...officialProfiles],
     sectorLabel: resolvedBarAssociation
       ? `Barreau de ${resolvedBarAssociation}`
       : (clean(sale?.department) ?? clean(query.department)),
     barAssociation: resolvedBarAssociation,
     isDemo: false,
+    officialSource: sourceUpdatedAt
+      ? {
+          label: "Conseil national des barreaux via data.gouv.fr",
+          datasetUrl: CNB_DATASET_PAGE_URL,
+          licenseLabel: "Licence Ouverte 2.0",
+          licenseUrl: OPEN_LICENSE_URL,
+          updatedAt: sourceUpdatedAt,
+        }
+      : null,
   };
 }
 
@@ -163,6 +214,9 @@ function demoLawyerDirectory(
     acceptsRemoteContact: true,
     coverageLabels,
     matchingLabel: `Barreau de ${barAssociation}`,
+    source: "immojudis",
+    oathDate: null,
+    languages: ["Français"],
   } satisfies Omit<
     LawyerDirectoryProfile,
     "id" | "displayName" | "firmName" | "email" | "profileSummary" | "practiceTags" | "isSponsored"
@@ -216,6 +270,7 @@ function demoLawyerDirectory(
     sectorLabel: `Barreau de ${barAssociation}`,
     barAssociation,
     isDemo: true,
+    officialSource: null,
   };
 }
 
@@ -247,6 +302,29 @@ async function getCoverage(lawyerIds: string[]): Promise<Map<string, CoverageRow
     rowsByLawyer.set(row.lawyer_id, rows);
   }
   return rowsByLawyer;
+}
+
+async function getCnbLawyers(barAssociation: string | null): Promise<CnbLawyerRow[]> {
+  const barKey = resolveCnbDatasetBarKey(barAssociation);
+  let request = supabaseAdmin.from("cnb_lawyer_directory").select(CNB_LAWYER_COLUMNS);
+  if (barKey) request = request.eq("bar_key", barKey);
+  else request = request.order("bar_association", { ascending: true });
+
+  const { data, error } = await request
+    .order("display_name", { ascending: true })
+    .limit(barKey ? 500 : 1_000);
+  if (error) throw error;
+  return (data ?? []) as CnbLawyerRow[];
+}
+
+export function resolveCnbDatasetBarKey(value: string | null | undefined): string | null {
+  const officialBar = findCnbBarAssociation(value);
+  const datasetLabel = officialBar?.label.replace(/\s*\([^)]+\)\s*/g, " ") ?? value;
+  const normalized = normalizeBarKey(datasetLabel);
+  if (normalized === "thonon les bains du leman et du genevois") {
+    return "thonon les bains leman et genevois";
+  }
+  return normalized;
 }
 
 type Criterion = {
@@ -357,7 +435,55 @@ function toDirectoryProfile(
     ),
     matchingLabel,
     isSponsored,
+    source: "immojudis",
+    oathDate: null,
+    languages: [],
   };
+}
+
+function toCnbDirectoryProfile(lawyer: CnbLawyerRow): LawyerDirectoryProfile {
+  return {
+    id: `cnb:${lawyer.source_key}`,
+    displayName: `Maître ${lawyer.display_name}`,
+    firmName: lawyer.firm_name,
+    email: null,
+    phone: null,
+    websiteUrl: null,
+    barAssociation: lawyer.bar_association,
+    barNumber: null,
+    city: lawyer.city,
+    department: null,
+    address:
+      [lawyer.address_line_1, lawyer.address_line_2, lawyer.postal_code]
+        .map(clean)
+        .filter((value): value is string => Boolean(value))
+        .join(", ") || null,
+    profileSummary: null,
+    practiceTags: lawyer.specializations,
+    acceptsRemoteContact: false,
+    coverageLabels: [`Barreau de ${lawyer.bar_association}`],
+    matchingLabel: `Barreau de ${lawyer.bar_association}`,
+    isSponsored: false,
+    source: "cnb",
+    oathDate: lawyer.oath_date,
+    languages: lawyer.languages,
+  };
+}
+
+function directoryIdentityKey(profile: LawyerDirectoryProfile) {
+  return [
+    normalizeDirectoryIdentity(profile.displayName.replace(/^(?:me|ma[iî]tre)\s+/i, "")),
+    resolveCnbDatasetBarKey(profile.barAssociation) ?? "",
+  ].join("|");
+}
+
+function normalizeDirectoryIdentity(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("fr")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 export function isSponsoredLawyerPlacement(
@@ -432,15 +558,7 @@ function cleanBarLabel(value: string | null | undefined): string | null {
 }
 
 function normalizedBarKey(value: string | null | undefined): string | null {
-  const cleaned = cleanBarLabel(value);
-  if (!cleaned) return null;
-  const key = cleaned
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("fr")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-  return key || null;
+  return normalizeBarKey(value);
 }
 
 function safeWebsiteUrl(value: string | null): string | null {

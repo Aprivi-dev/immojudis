@@ -22,6 +22,8 @@ tsconfig.tsbuildinfo
 supabase/.temp
 output/
 .playwright-cli/
+playwright-report/
+test-results/
 *.local
 
 # Generated valuation model bundles
