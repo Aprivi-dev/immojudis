@@ -1,7 +1,11 @@
 from datetime import date
 
 from src import dvf_statistics_import
-from src.dvf_statistics_import import normalize_statistics_row
+from src.dvf_statistics_import import (
+    DvfStatisticsImportOptions,
+    import_dvf_statistics,
+    normalize_statistics_row,
+)
 
 
 def test_normalize_statistics_row_expands_supported_segments() -> None:
@@ -84,6 +88,33 @@ def test_upsert_statistics_uses_one_multi_row_statement() -> None:
     assert cursor.calls[0][1][-1] == "second-imported_at"
 
 
+def test_import_statistics_commits_each_batch(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "statistics.csv"
+    path.write_text(
+        "code_geo,libelle_geo,echelle_geo,nb_ventes_whole_maison,med_prix_m2_whole_maison\n"
+        "65099,Bordères-Louron,commune,2,2250\n",
+        encoding="utf-8",
+    )
+    cursor = RecordingCursor()
+    connection = RecordingConnection(cursor)
+    monkeypatch.setattr(
+        dvf_statistics_import,
+        "load_settings",
+        lambda: {"supabase_db_url": "postgresql://example"},
+    )
+    monkeypatch.setattr(
+        dvf_statistics_import,
+        "_postgres_connect",
+        lambda db_url: connection,
+    )
+    monkeypatch.setattr(dvf_statistics_import, "_upsert_statistics", lambda conn, rows: None)
+
+    summary = import_dvf_statistics(DvfStatisticsImportOptions(path=path, batch_size=1))
+
+    assert summary.upserted_rows == 1
+    assert connection.commits == 1
+
+
 class RecordingCursor:
     def __init__(self) -> None:
         self.calls: list[tuple[object, list[object]]] = []
@@ -104,6 +135,16 @@ class RecordingCursor:
 class RecordingConnection:
     def __init__(self, cursor: RecordingCursor) -> None:
         self._cursor = cursor
+        self.commits = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
 
     def cursor(self) -> RecordingCursor:
         return self._cursor
+
+    def commit(self) -> None:
+        self.commits += 1

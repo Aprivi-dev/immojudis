@@ -82,12 +82,13 @@ def import_dvf_statistics(options: DvfStatisticsImportOptions) -> DvfStatisticsI
             payload.append(row)
             if len(payload) >= options.batch_size:
                 _upsert_statistics(connection, payload)
+                connection.commit()
                 summary.upserted_rows += len(payload)
                 payload = []
         if payload:
             _upsert_statistics(connection, payload)
+            connection.commit()
             summary.upserted_rows += len(payload)
-        connection.commit()
     return summary
 
 
