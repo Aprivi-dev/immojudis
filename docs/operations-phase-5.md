@@ -1,4 +1,7 @@
-# Exploitation — phase 5
+# Exploitation applicative — phase 5
+
+La supervision des données, les SLO, les alertes externes et les runbooks sont détaillés dans
+[`operations-phase-3.md`](operations-phase-3.md).
 
 ## Corrélation des requêtes
 
@@ -13,16 +16,18 @@ pour les erreurs serveur.
 
 ## Santé opérationnelle
 
-Vercel appelle `/api/cron/operational-health` toutes les 15 minutes. L'accès exige `CRON_SECRET`.
+Supabase Cron appelle `/api/cron/operational-health` toutes les 15 minutes et Vercel conserve un
+passage quotidien de secours compatible Hobby. L'accès exige `CRON_SECRET`.
 La fonction `public.evaluate_operational_health` est exécutable uniquement par `service_role` et
 maintient des alertes dédupliquées dans `public.operational_alerts`.
 
-| Clé                         | Condition                                                              |
-| --------------------------- | ---------------------------------------------------------------------- |
-| `cron.stale`                | aucun succès récent pour un cron attendu                               |
-| `stripe.webhook.unhealthy`  | webhook échoué depuis moins d'une heure ou bloqué plus de 15 min       |
-| `pipeline.import.unhealthy` | import échoué, actif depuis plus de 3 h ou file âgée de plus de 30 min |
-| `refresh_queue.stale`       | requête de rafraîchissement en attente depuis plus de 30 min           |
+| Clé                         | Condition                                                               |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `cron.stale`                | aucun succès récent pour un cron attendu                                |
+| `stripe.webhook.unhealthy`  | webhook échoué depuis moins d'une heure ou bloqué plus de 15 min        |
+| `pipeline.import.unhealthy` | import échoué, actif depuis plus de 3 h ou file âgée de plus de 30 min  |
+| `refresh_queue.stale`       | requête de rafraîchissement en attente depuis plus de 30 min            |
+| `dvf.freshness`             | données absentes, import DVF en échec, bloqué ou vieux de plus de 220 j |
 
 Une file âgée de plus de deux heures ou un import bloqué produit une sévérité `critical`. Pour
 inspecter l'état courant avec un rôle opérateur :

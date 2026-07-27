@@ -17,6 +17,7 @@
     "build:budgets": "node scripts/check-build-budgets.mjs",
     "test:security-invariants": "node scripts/check-security-invariants.mjs",
     "test:db-concurrency": "node scripts/test-concurrent-db-quotas.mjs && node scripts/test-phase-2-db-concurrency.mjs",
+    "check:schema-drift": "node scripts/check-supabase-schema-drift.mjs",
     "test:e2e": "playwright test",
     "start": "next start",
     "preview": "next start",
@@ -26,8 +27,9 @@
     "env:check:prod": "node scripts/verify-production-env.mjs",
     "check:migrations": "node scripts/apply-supabase-migrations.mjs --check",
     "db:migrate": "node scripts/apply-supabase-migrations.mjs",
+    "ops:health-scheduler:configure": "node scripts/configure-operational-health-scheduler.mjs",
     "valuation:publish": "node scripts/publish-valuation-models.mjs",
-    "release:prepare": "npm run env:check:prod && npm run db:migrate && npm run valuation:publish",
+    "release:prepare": "npm run env:check:prod && npm run db:migrate && npm run ops:health-scheduler:configure && npm run check:schema-drift -- --remote && npm run valuation:publish",
     "format": "prettier --write ."
   },
   "dependencies": {

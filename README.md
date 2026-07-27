@@ -65,6 +65,7 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 | `NEXT_PUBLIC_MAPBOX_STYLE`        |   ➖   | Style Mapbox, par exemple `mapbox/streets-v12` ou `mapbox://styles/<user>/<style>`.                    |
 | `NEXT_PUBLIC_OSM_TILE_URL`        |   ➖   | Fallback legacy de tuiles OSM compatible `{z}/{x}/{y}` si Mapbox est absent ou indisponible.           |
 | `GITHUB_SCROLL_TOKEN`             |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.               |
+| `OPERATIONS_ALERT_WEBHOOK_URL`    |   ➖   | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                    |
 
 > Les variables `VITE_*` sont **inlinées au moment du build**. En production
 > (Vercel) elles doivent être présentes dans _Project Settings → Environment
@@ -97,19 +98,21 @@ qui utilisent encore une tuile statique compatible OSM lorsque Mapbox est absent
 
 ## Scripts
 
-| Script                      | Effet                                                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`               | Serveur de dev Next.js (HMR)                                                                                  |
-| `npm run dev:ready`         | Dev + attente que le client et le SSR répondent                                                               |
-| `npm run build`             | Build de production pur (validation des variables puis compilation Next.js)                                   |
-| `npm run preview`           | Smoke-test du build                                                                                           |
-| `npm run test`              | Tests unitaires Vitest                                                                                        |
-| `npm run lint`              | ESLint (flat config)                                                                                          |
-| `npm run env:check:prod`    | Vérifie les variables nécessaires aux API prod + migrations                                                   |
-| `npm run db:migrate`        | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`) |
-| `npm run valuation:publish` | Publie explicitement les modèles de valorisation                                                              |
-| `npm run release:prepare`   | Vérifie l'environnement puis applique migrations et modèles avant une release                                 |
-| `npm run format`            | Prettier (écriture)                                                                                           |
+| Script                                   | Effet                                                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                            | Serveur de dev Next.js (HMR)                                                                                  |
+| `npm run dev:ready`                      | Dev + attente que le client et le SSR répondent                                                               |
+| `npm run build`                          | Build de production pur (validation des variables puis compilation Next.js)                                   |
+| `npm run preview`                        | Smoke-test du build                                                                                           |
+| `npm run test`                           | Tests unitaires Vitest                                                                                        |
+| `npm run lint`                           | ESLint (flat config)                                                                                          |
+| `npm run env:check:prod`                 | Vérifie les variables nécessaires aux API prod + migrations                                                   |
+| `npm run db:migrate`                     | Applique les migrations Supabase en attente (`SUPABASE_DB_URL`, `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`) |
+| `npm run check:schema-drift`             | Vérifie que le schéma Supabase correspond exactement aux migrations versionnées                               |
+| `npm run ops:health-scheduler:configure` | Chiffre dans Vault l'URL et le secret du contrôle de santé toutes les 15 minutes                              |
+| `npm run valuation:publish`              | Publie explicitement les modèles de valorisation                                                              |
+| `npm run release:prepare`                | Vérifie l'environnement puis applique migrations et modèles avant une release                                 |
+| `npm run format`                         | Prettier (écriture)                                                                                           |
 
 ## Structure du dépôt
 
@@ -155,6 +158,9 @@ installation : [`services/data-pipeline/README.md`](services/data-pipeline/READM
 Cible : **Vercel** (preset Next.js). Renseigner les variables
 d'environnement dans le projet Vercel puis déployer. Procédure complète (Auth
 Supabase, secrets CI, runner de scroll admin) : [`docs/vercel_setup.md`](docs/vercel_setup.md).
+
+Les SLO, dashboards et runbooks d'exploitation sont dans
+[`docs/operations-phase-3.md`](docs/operations-phase-3.md).
 
 Le build ne modifie plus la base et ne publie plus de modèle. Exécuter
 `npm run release:prepare` dans une étape de release explicitement autorisée,

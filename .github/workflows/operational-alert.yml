@@ -1,0 +1,92 @@
+name: Immojudis Operational Alert
+
+on:
+  workflow_dispatch:
+    inputs:
+      alert_key:
+        description: "Stable operational alert key"
+        required: true
+        type: string
+      category:
+        description: "Operational area"
+        required: true
+        type: string
+      severity:
+        description: "warning or critical"
+        required: true
+        type: string
+      event_type:
+        description: "opened, updated or resolved"
+        required: true
+        type: string
+      details:
+        description: "Bounded JSON diagnostic payload"
+        required: true
+        type: string
+      first_seen_at:
+        description: "First occurrence timestamp"
+        required: true
+        type: string
+      last_seen_at:
+        description: "Latest occurrence timestamp"
+        required: true
+        type: string
+      resolved_at:
+        description: "Resolution timestamp when applicable"
+        required: false
+        type: string
+      environment:
+        description: "Runtime environment"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operational-alert-${{ inputs.alert_key }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    name: ${{ inputs.event_type }} · ${{ inputs.severity }} · ${{ inputs.alert_key }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ALERT_KEY: ${{ inputs.alert_key }}
+      ALERT_CATEGORY: ${{ inputs.category }}
+      ALERT_SEVERITY: ${{ inputs.severity }}
+      ALERT_EVENT: ${{ inputs.event_type }}
+      ALERT_DETAILS: ${{ inputs.details }}
+      ALERT_FIRST_SEEN_AT: ${{ inputs.first_seen_at }}
+      ALERT_LAST_SEEN_AT: ${{ inputs.last_seen_at }}
+      ALERT_RESOLVED_AT: ${{ inputs.resolved_at }}
+      ALERT_ENVIRONMENT: ${{ inputs.environment }}
+    steps:
+      - name: Publish incident summary
+        run: |
+          set -euo pipefail
+          {
+            printf '## ImmoJudis · %s\n\n' "$ALERT_EVENT"
+            printf '| Champ | Valeur |\n| --- | --- |\n'
+            printf '| Alerte | `%s` |\n' "$ALERT_KEY"
+            printf '| Catégorie | `%s` |\n' "$ALERT_CATEGORY"
+            printf '| Sévérité | `%s` |\n' "$ALERT_SEVERITY"
+            printf '| Environnement | `%s` |\n' "$ALERT_ENVIRONMENT"
+            printf '| Première occurrence | `%s` |\n' "$ALERT_FIRST_SEEN_AT"
+            printf '| Dernière occurrence | `%s` |\n' "$ALERT_LAST_SEEN_AT"
+            if [ -n "$ALERT_RESOLVED_AT" ]; then
+              printf '| Résolution | `%s` |\n' "$ALERT_RESOLVED_AT"
+            fi
+            printf '\n### Diagnostic\n\n```json\n%s\n```\n' "$ALERT_DETAILS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Raise external incident signal
+        if: inputs.event_type != 'resolved'
+        run: |
+          echo "::error title=ImmoJudis ${ALERT_SEVERITY}::Operational alert ${ALERT_KEY} is ${ALERT_EVENT}."
+          exit 1
+
+      - name: Confirm recovery signal
+        if: inputs.event_type == 'resolved'
+        run: echo "::notice title=ImmoJudis recovery::Operational alert ${ALERT_KEY} is resolved."

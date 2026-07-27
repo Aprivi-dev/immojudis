@@ -85,14 +85,18 @@ jobs:
       - name: Validate migration versions
         run: npm run check:migrations
       - name: Start local Supabase
-        run: npx --yes supabase@2.109.1 start
+        run: npx --yes supabase@2.110.0 start
+      - name: Replay migrations from zero
+        run: npx --yes supabase@2.110.0 db reset --local --no-seed --log-level error
+      - name: Detect migration drift
+        run: npm run check:schema-drift
       - name: Run concurrent quota test
         run: npm run test:db-concurrency
       - name: Run database tests
-        run: npx --yes supabase@2.109.1 test db
+        run: npx --yes supabase@2.110.0 test db
       - name: Stop local Supabase
         if: always()
-        run: npx --yes supabase@2.109.1 stop --no-backup
+        run: npx --yes supabase@2.110.0 stop --no-backup
 
   e2e:
     name: Investor journey (Playwright)

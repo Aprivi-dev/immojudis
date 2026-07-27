@@ -1,6 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { deliverOperationalAlertNotifications } from "@/lib/operational-alerts";
 
 type CronRpcClient = {
   rpc(
@@ -84,7 +85,8 @@ export async function evaluateOperationalHealth(
     p_now: now.toISOString(),
   });
   if (error) throw new Error(error.message || "Operational health evaluation failed.");
-  return { health: data ?? {} };
+  const delivery = await deliverOperationalAlertNotifications();
+  return { health: data ?? {}, externalAlerts: delivery };
 }
 
 export function positiveNumberFromEnv(name: string): number | undefined {
