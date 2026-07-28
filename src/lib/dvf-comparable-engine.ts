@@ -15,6 +15,9 @@ export type DvfComparableCandidate = {
   sourceUrl?: string | null;
 };
 
+export const DVF_PUBLIC_SOURCE_URL =
+  "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees/";
+
 export type DvfComparableSubject = {
   surfaceM2: number | null;
   landSurfaceM2?: number | null;

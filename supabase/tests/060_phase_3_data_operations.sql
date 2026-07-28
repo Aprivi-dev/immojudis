@@ -91,15 +91,13 @@ insert into public.dvf_transactions (
   source,
   source_mutation_id,
   sale_date,
-  total_price_eur,
-  source_last_seen_at
+  total_price_eur
 ) values (
   '76000000-0000-4000-8000-000000000001',
   'DVF',
   'phase-3-test',
   '2026-06-30',
-  150000,
-  '2026-07-27T09:00:00Z'::timestamptz
+  150000
 );
 
 select lives_ok(
