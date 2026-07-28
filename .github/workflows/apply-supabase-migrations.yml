@@ -47,6 +47,9 @@ jobs:
           node-version-file: .node-version
           cache: npm
 
+      - name: Pin npm
+        run: npm install --global npm@11.18.0
+
       - name: Install project tooling
         run: npm ci --ignore-scripts
 
