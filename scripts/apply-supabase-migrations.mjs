@@ -290,6 +290,8 @@ function isTransientConnectionError(error) {
     code.startsWith("08") ||
     ["53300", "57P03", "ECONNRESET", "ETIMEDOUT"].includes(code) ||
     message.includes("authentication query failed") ||
+    message.includes("echeckouttimeout") ||
+    message.includes("unable to check out connection from the pool") ||
     message.includes("connection to database not available") ||
     message.includes("connection terminated due to connection timeout") ||
     message.includes("circuit breaker open")
