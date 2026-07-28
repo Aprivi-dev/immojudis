@@ -76,6 +76,9 @@ class DvfImportSummary:
     parsed_rows: int = 0
     valid_rows: int = 0
     skipped_rows: int = 0
+    collapsed_rows: int = 0
+    skipped_complex_mutations: int = 0
+    canonical_rows: int = 0
     upserted_rows: int = 0
     batch_id: str | None = None
     period_start: date | None = None
@@ -92,8 +95,13 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
     if not options.dry_run and not db_url:
         raise RuntimeError("SUPABASE_DB_URL is required to import DVF transactions.")
 
+    transactions = _iter_canonical_transactions(
+        _iter_normalized_transactions(rows, options, summary),
+        summary,
+    )
+
     if options.dry_run:
-        for transaction in _iter_normalized_transactions(rows, options, summary):
+        for transaction in transactions:
             _record_period(summary, transaction["sale_date"])
         return summary
 
@@ -113,7 +121,7 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
         connection.commit()
         try:
             payload: list[dict[str, object]] = []
-            for transaction in _iter_normalized_transactions(rows, options, summary):
+            for transaction in transactions:
                 transaction["import_batch_id"] = batch_id
                 transaction["source_last_seen_at"] = now
                 transaction["updated_at"] = now
@@ -184,11 +192,12 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
         ]
     )
     postal_code = clean_text(first_value(row, "code_postal", "postal_code"))
-    department = clean_text(first_value(row, "code_departement", "department")) or department_from_postal_code(postal_code)
+    department = clean_text(first_value(row, "code_departement", "department")) or department_from_postal_code(
+        postal_code
+    )
     raw_payload = {
         key: row[key]
         for key in (
-            "id_mutation",
             "numero_disposition",
             "code_nature_culture",
             "nature_culture",
@@ -196,6 +205,13 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
         )
         if row.get(key) not in ("", None)
     }
+    lot_numbers = [
+        lot_number
+        for index in range(1, 6)
+        if (lot_number := clean_text(first_value(row, f"lot{index}_numero"))) is not None
+    ]
+    if lot_numbers:
+        raw_payload["lot_numbers"] = lot_numbers
 
     return {
         "import_batch_id": None,
@@ -209,9 +225,7 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
         "land_surface_m2": land_surface,
         "property_type": property_type,
         "dvf_property_type_code": property_type_code,
-        "rooms_count": nonnegative_int_value(
-            first_value(row, "nombre_pieces_principales", "nb_pieces_principales")
-        ),
+        "rooms_count": nonnegative_int_value(first_value(row, "nombre_pieces_principales", "nb_pieces_principales")),
         "lots_count": nonnegative_int_value(first_value(row, "nombre_lots", "nb_lots")),
         "address": address,
         "city": clean_text(first_value(row, "nom_commune", "commune", "city")),
@@ -236,6 +250,14 @@ def _iter_normalized_transactions(
         if options.limit is not None and summary.parsed_rows >= options.limit:
             break
         summary.parsed_rows += 1
+        if summary.parsed_rows % 250_000 == 0:
+            LOGGER.info(
+                "DVF progress: parsed=%s valid=%s canonical=%s skipped=%s",
+                summary.parsed_rows,
+                summary.valid_rows,
+                summary.canonical_rows,
+                summary.skipped_rows,
+            )
         try:
             transaction = normalize_dvf_row(row, source_url=options.source_url)
         except Exception as exc:
@@ -247,6 +269,146 @@ def _iter_normalized_transactions(
             continue
         summary.valid_rows += 1
         yield transaction
+
+
+def _iter_canonical_transactions(
+    transactions: Iterator[dict[str, object]],
+    summary: DvfImportSummary,
+) -> Iterator[dict[str, object]]:
+    """Collapse the source's repeated local/parcel lines to one mutation row.
+
+    The official geolocated DVF resource is ordered by mutation identifier and
+    repeats the mutation price for every local and parcel line. Keeping those
+    rows separately both inflates storage and gives complex sales excessive
+    statistical weight. Mutations containing more than one distinct built
+    property are deliberately excluded because the shared price cannot be
+    allocated reliably between them.
+    """
+
+    group: list[dict[str, object]] = []
+    current_mutation_id: str | None = None
+
+    for transaction in transactions:
+        mutation_id = str(transaction["source_mutation_id"])
+        if group and mutation_id != current_mutation_id:
+            canonical = canonicalize_dvf_transaction_group(group)
+            if canonical is None:
+                summary.skipped_complex_mutations += 1
+                summary.collapsed_rows += len(group)
+            else:
+                summary.collapsed_rows += len(group) - 1
+                summary.canonical_rows += 1
+                yield canonical
+            group = []
+        group.append(transaction)
+        current_mutation_id = mutation_id
+
+    if not group:
+        return
+    canonical = canonicalize_dvf_transaction_group(group)
+    if canonical is None:
+        summary.skipped_complex_mutations += 1
+        summary.collapsed_rows += len(group)
+        return
+    summary.collapsed_rows += len(group) - 1
+    summary.canonical_rows += 1
+    yield canonical
+
+
+def canonicalize_dvf_transaction_group(
+    transactions: list[dict[str, object]],
+) -> dict[str, object] | None:
+    if not transactions:
+        return None
+
+    sale_dates = {transaction.get("sale_date") for transaction in transactions}
+    prices = {transaction.get("total_price_eur") for transaction in transactions}
+    if len(sale_dates) != 1 or len(prices) != 1:
+        return None
+
+    built_transactions: dict[tuple[object, ...], dict[str, object]] = {}
+    land_transactions: list[dict[str, object]] = []
+    for transaction in transactions:
+        code = transaction.get("dvf_property_type_code")
+        if code == "211":
+            land_transactions.append(transaction)
+            continue
+        if transaction.get("built_surface_m2") is None:
+            continue
+        raw_payload = transaction.get("raw_payload")
+        lots = ()
+        if isinstance(raw_payload, dict):
+            raw_lots = raw_payload.get("lot_numbers")
+            if isinstance(raw_lots, list):
+                lots = tuple(str(value) for value in raw_lots)
+        signature = (
+            code,
+            transaction.get("parcel_id"),
+            transaction.get("built_surface_m2"),
+            transaction.get("rooms_count"),
+            transaction.get("address"),
+            lots,
+        )
+        built_transactions.setdefault(signature, transaction)
+
+    if len(built_transactions) > 1:
+        return None
+    if built_transactions:
+        representative = next(iter(built_transactions.values()))
+    elif land_transactions:
+        representative = max(
+            land_transactions,
+            key=lambda transaction: transaction.get("land_surface_m2") or Decimal(0),
+        )
+    else:
+        return None
+
+    canonical = dict(representative)
+    parcel_ids = sorted({str(parcel_id) for transaction in transactions if (parcel_id := transaction.get("parcel_id"))})
+    canonical["parcel_id"] = representative.get("parcel_id") or (parcel_ids[0] if parcel_ids else None)
+    canonical["land_surface_m2"] = _aggregate_land_surface(transactions)
+    latitude, longitude = _aggregate_coordinates(transactions)
+    canonical["latitude"] = latitude
+    canonical["longitude"] = longitude
+    canonical["lots_count"] = max(
+        (int(value) for transaction in transactions if (value := transaction.get("lots_count")) is not None),
+        default=None,
+    )
+
+    raw_payload = dict(canonical.get("raw_payload") or {})
+    if len(transactions) > 1:
+        raw_payload["source_row_count"] = len(transactions)
+    if len(parcel_ids) > 1:
+        raw_payload["parcel_ids"] = parcel_ids
+    canonical["raw_payload"] = raw_payload
+    return canonical
+
+
+def _aggregate_land_surface(transactions: list[dict[str, object]]) -> Decimal | None:
+    surfaces_by_parcel: dict[str, Decimal] = {}
+    for transaction in transactions:
+        surface = transaction.get("land_surface_m2")
+        if not isinstance(surface, Decimal):
+            continue
+        parcel_key = str(transaction.get("parcel_id") or "__unidentified__")
+        surfaces_by_parcel[parcel_key] = max(surfaces_by_parcel.get(parcel_key, Decimal(0)), surface)
+    return sum(surfaces_by_parcel.values(), Decimal(0)) if surfaces_by_parcel else None
+
+
+def _aggregate_coordinates(
+    transactions: list[dict[str, object]],
+) -> tuple[Decimal | None, Decimal | None]:
+    coordinates = {
+        (latitude, longitude)
+        for transaction in transactions
+        if isinstance((latitude := transaction.get("latitude")), Decimal)
+        and isinstance((longitude := transaction.get("longitude")), Decimal)
+    }
+    if not coordinates:
+        return None, None
+    latitude = sum((coordinate[0] for coordinate in coordinates), Decimal(0)) / len(coordinates)
+    longitude = sum((coordinate[1] for coordinate in coordinates), Decimal(0)) / len(coordinates)
+    return latitude, longitude
 
 
 def _iter_zip_rows(path: Path) -> Iterator[dict[str, str]]:
@@ -361,9 +523,7 @@ def normalized_property_type_code(
         return "111" if built_surface is not None else None
     if code == "2" or any(token in text for token in ("appartement", "studio", "apartment")):
         return "121" if built_surface is not None else None
-    if code == "4" or any(
-        token in text for token in ("local industriel", "local commercial", "commerce", "bureau")
-    ):
+    if code == "4" or any(token in text for token in ("local industriel", "local commercial", "commerce", "bureau")):
         return "141" if built_surface is not None else None
     if code is None and not text and built_surface is None and land_surface is not None and land_surface > 0:
         return "211"
@@ -446,7 +606,16 @@ def _finish_import_batch(connection: Any, summary: DvfImportSummary) -> None:
                 summary.upserted_rows,
                 summary.period_start,
                 summary.period_end,
-                Jsonb({"parsed_rows": summary.parsed_rows, "skipped_rows": summary.skipped_rows}),
+                Jsonb(
+                    {
+                        "parsed_rows": summary.parsed_rows,
+                        "valid_rows": summary.valid_rows,
+                        "skipped_rows": summary.skipped_rows,
+                        "collapsed_rows": summary.collapsed_rows,
+                        "skipped_complex_mutations": summary.skipped_complex_mutations,
+                        "canonical_rows": summary.canonical_rows,
+                    }
+                ),
                 summary.batch_id,
             ),
         )
@@ -478,12 +647,25 @@ def _commit_transaction_batch(
             set imported_rows = imported_rows + %s,
                 metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
                   'parsed_rows', %s,
-                  'skipped_rows', %s
+                  'valid_rows', %s,
+                  'skipped_rows', %s,
+                  'collapsed_rows', %s,
+                  'skipped_complex_mutations', %s,
+                  'canonical_rows', %s
                 ),
                 updated_at = now()
             where id = %s
             """,
-            (len(payload), summary.parsed_rows, summary.skipped_rows, batch_id),
+            (
+                len(payload),
+                summary.parsed_rows,
+                summary.valid_rows,
+                summary.skipped_rows,
+                summary.collapsed_rows,
+                summary.skipped_complex_mutations,
+                summary.canonical_rows,
+                batch_id,
+            ),
         )
     connection.commit()
     summary.upserted_rows += len(payload)
@@ -499,27 +681,20 @@ def _upsert_transactions(connection: Any, payload: list[dict[str, object]]) -> N
         """
         insert into public.dvf_transactions ({columns})
         values {values}
-        on conflict (source, source_mutation_id, coalesce(parcel_id, '')) do update set {updates}
+        on conflict (source, source_mutation_id) do update set {updates}
         """
     ).format(
         columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
         values=sql.SQL(", ").join(
-            sql.SQL("({})").format(
-                sql.SQL(", ").join(sql.Placeholder() for _ in columns)
-            )
-            for _ in payload
+            sql.SQL("({})").format(sql.SQL(", ").join(sql.Placeholder() for _ in columns)) for _ in payload
         ),
         updates=sql.SQL(", ").join(
             sql.SQL("{} = excluded.{}").format(sql.Identifier(column), sql.Identifier(column))
             for column in columns
-            if column not in {"source", "source_mutation_id", "parcel_id"}
+            if column not in {"source", "source_mutation_id"}
         ),
     )
-    values = [
-        postgres_value(row.get(column))
-        for row in payload
-        for column in columns
-    ]
+    values = [postgres_value(row.get(column)) for row in payload for column in columns]
     with connection.cursor() as cursor:
         cursor.execute(insert_statement, values)
 
@@ -537,6 +712,9 @@ def print_summary(summary: DvfImportSummary) -> None:
     print(f"- parsed_rows: {summary.parsed_rows}")
     print(f"- valid_rows: {summary.valid_rows}")
     print(f"- skipped_rows: {summary.skipped_rows}")
+    print(f"- collapsed_rows: {summary.collapsed_rows}")
+    print(f"- skipped_complex_mutations: {summary.skipped_complex_mutations}")
+    print(f"- canonical_rows: {summary.canonical_rows}")
     print(f"- upserted_rows: {summary.upserted_rows}")
     print(f"- period: {summary.period_start or 'n/a'} -> {summary.period_end or 'n/a'}")
     if summary.errors:
