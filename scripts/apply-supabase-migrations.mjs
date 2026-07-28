@@ -238,7 +238,7 @@ function createPsqlRunner(dbUrl, psqlBin) {
 
 async function createPostgresJsRunner(dbUrl) {
   const { default: postgres } = await import("postgres");
-  const sql = postgres(withSessionPooler(dbUrl), {
+  const sql = postgres(withMigrationSessionSettings(dbUrl), {
     max: 1,
     connect_timeout: databaseConnectTimeoutSeconds,
     ssl: process.env.POSTGRES_SSL === "disable" ? false : "require",
@@ -248,14 +248,13 @@ async function createPostgresJsRunner(dbUrl) {
 
   return {
     async listAppliedVersions() {
-      const rows = await retryTransientConnection(async () => {
-        await sql`set statement_timeout = 0`;
-        return sql`
+      const rows = await retryTransientConnection(
+        () => sql`
           select version
           from supabase_migrations.schema_migrations
           order by version
-        `;
-      });
+        `,
+      );
       return rows.map((row) => String(row.version).trim()).filter(Boolean);
     },
     async applyFile(path) {
@@ -299,10 +298,18 @@ function isTransientConnectionError(error) {
   );
 }
 
-function withSessionPooler(dbUrl) {
+function withMigrationSessionSettings(dbUrl) {
   const url = new URL(dbUrl);
   if (url.hostname.endsWith(".pooler.supabase.com")) {
     url.port = "5432";
+  }
+  const existingOptions = url.searchParams.get("options")?.trim();
+  const statementTimeoutOption = "-c statement_timeout=0";
+  if (!existingOptions?.includes("statement_timeout")) {
+    url.searchParams.set(
+      "options",
+      [existingOptions, statementTimeoutOption].filter(Boolean).join(" "),
+    );
   }
   return url.toString();
 }
