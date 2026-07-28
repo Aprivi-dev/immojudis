@@ -248,13 +248,14 @@ async function createPostgresJsRunner(dbUrl) {
 
   return {
     async listAppliedVersions() {
-      const rows = await retryTransientConnection(
-        () => sql`
+      const rows = await retryTransientConnection(async () => {
+        await sql`set statement_timeout = 0`;
+        return sql`
           select version
           from supabase_migrations.schema_migrations
           order by version
-        `,
-      );
+        `;
+      });
       return rows.map((row) => String(row.version).trim()).filter(Boolean);
     },
     async applyFile(path) {
