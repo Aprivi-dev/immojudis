@@ -24,6 +24,8 @@ jobs:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       SUPABASE_MIGRATION_RUNNER: postgres-js
       PGCONNECT_TIMEOUT: "600"
+      SUPABASE_MIGRATION_CONNECT_RETRIES: "40"
+      SUPABASE_MIGRATION_RETRY_DELAY: "30"
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
       OPERATIONS_HEALTH_URL: https://immojudis-dezt.vercel.app
     steps:
