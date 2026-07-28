@@ -9,7 +9,7 @@ import logging
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from itertools import chain
 from pathlib import Path
@@ -29,6 +29,7 @@ LOGGER = logging.getLogger(__name__)
 
 DVF_SOURCE = "DVF"
 DEFAULT_BATCH_SIZE = 1_000
+DEFAULT_REPLACEMENT_BATCH_SIZE = 25_000
 TEXT_EXTENSIONS = {".csv", ".txt"}
 GZIP_EXTENSION = ".gz"
 CSV_DELIMITERS = ("|", ";", ",", "\t")
@@ -37,7 +38,6 @@ DVF_TRANSACTION_COLUMNS = (
     "import_batch_id",
     "source",
     "source_mutation_id",
-    "source_url",
     "sale_date",
     "mutation_nature",
     "total_price_eur",
@@ -55,9 +55,6 @@ DVF_TRANSACTION_COLUMNS = (
     "parcel_id",
     "latitude",
     "longitude",
-    "raw_payload",
-    "source_last_seen_at",
-    "updated_at",
 )
 
 
@@ -67,6 +64,7 @@ class DvfImportOptions:
     source_url: str | None = None
     batch_size: int = DEFAULT_BATCH_SIZE
     limit: int | None = None
+    replace_existing: bool = False
     dry_run: bool = False
 
 
@@ -88,6 +86,8 @@ class DvfImportSummary:
 
 def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
     path = options.path
+    if options.replace_existing and options.limit is not None:
+        raise ValueError("A replacement DVF import cannot be combined with a row limit.")
     summary = DvfImportSummary(file_name=path.name)
     rows = iter_dvf_rows(path)
     settings = load_settings()
@@ -105,7 +105,6 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
             _record_period(summary, transaction["sale_date"])
         return summary
 
-    now = datetime.now(UTC).isoformat()
     with _postgres_connect(str(db_url)) as connection:
         batch_id = _create_import_batch(
             connection,
@@ -115,28 +114,51 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
                 "path": str(path),
                 "limit": options.limit,
                 "batch_size": options.batch_size,
+                "replace_existing": options.replace_existing,
             },
         )
         summary.batch_id = batch_id
         connection.commit()
         try:
+            if options.replace_existing:
+                _prepare_replacement_import(connection)
             payload: list[dict[str, object]] = []
             for transaction in transactions:
                 transaction["import_batch_id"] = batch_id
-                transaction["source_last_seen_at"] = now
-                transaction["updated_at"] = now
                 payload.append(transaction)
                 _record_period(summary, transaction["sale_date"])
                 if len(payload) >= options.batch_size:
-                    _commit_transaction_batch(connection, batch_id, payload, summary)
+                    _commit_transaction_batch(
+                        connection,
+                        batch_id,
+                        payload,
+                        summary,
+                        replace_existing=options.replace_existing,
+                    )
                     payload = []
             if payload:
-                _commit_transaction_batch(connection, batch_id, payload, summary)
+                _commit_transaction_batch(
+                    connection,
+                    batch_id,
+                    payload,
+                    summary,
+                    replace_existing=options.replace_existing,
+                )
+            if options.replace_existing:
+                _restore_dvf_indexes(connection)
             _finish_import_batch(connection, summary)
             connection.commit()
         except Exception as exc:
             summary.errors.append(str(exc))
             connection.rollback()
+            if options.replace_existing:
+                try:
+                    _restore_dvf_indexes(connection)
+                    connection.commit()
+                except Exception as restore_exc:
+                    connection.rollback()
+                    summary.errors.append(f"index restoration failed: {restore_exc}")
+                    LOGGER.exception("DVF index restoration failed after import error")
             _fail_import_batch(connection, batch_id, str(exc))
             connection.commit()
             raise
@@ -236,8 +258,6 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
         "latitude": decimal_value(first_value(row, "latitude", "lat")),
         "longitude": decimal_value(first_value(row, "longitude", "lon")),
         "raw_payload": raw_payload,
-        "source_last_seen_at": None,
-        "updated_at": None,
     }
 
 
@@ -633,13 +653,68 @@ def _fail_import_batch(connection: Any, batch_id: str, error_message: str) -> No
         )
 
 
+def _prepare_replacement_import(connection: Any) -> None:
+    """Reset the DVF-only table before a fast, explicitly requested full reload."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select exists(select 1 from public.dvf_transactions where source <> %s limit 1)",
+            (DVF_SOURCE,),
+        )
+        row = cursor.fetchone()
+        if row and bool(row[0]):
+            raise RuntimeError("DVF replacement refused because the table contains another source.")
+        cursor.execute("truncate table public.dvf_transactions")
+        cursor.execute("drop index if exists public.dvf_transactions_source_mutation_uidx")
+        cursor.execute("drop index if exists public.dvf_transactions_sale_date_idx")
+        cursor.execute("drop index if exists public.dvf_transactions_department_sale_date_idx")
+        cursor.execute("drop index if exists public.dvf_transactions_lat_lng_idx")
+        cursor.execute("set synchronous_commit = off")
+        cursor.execute("set statement_timeout = 0")
+    connection.commit()
+
+
+def _restore_dvf_indexes(connection: Any) -> None:
+    """Build query and integrity indexes once, after the sequential COPY."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            create unique index if not exists dvf_transactions_source_mutation_uidx
+              on public.dvf_transactions (source, source_mutation_id)
+            """
+        )
+        cursor.execute(
+            """
+            create index if not exists dvf_transactions_sale_date_idx
+              on public.dvf_transactions (sale_date desc)
+            """
+        )
+        cursor.execute(
+            """
+            create index if not exists dvf_transactions_department_sale_date_idx
+              on public.dvf_transactions (department, sale_date desc)
+            """
+        )
+        cursor.execute(
+            """
+            create index if not exists dvf_transactions_lat_lng_idx
+              on public.dvf_transactions (latitude, longitude)
+              where latitude is not null and longitude is not null
+            """
+        )
+
+
 def _commit_transaction_batch(
     connection: Any,
     batch_id: str,
     payload: list[dict[str, object]],
     summary: DvfImportSummary,
+    *,
+    replace_existing: bool = False,
 ) -> None:
-    _upsert_transactions(connection, payload)
+    if replace_existing:
+        _copy_transactions(connection, payload)
+    else:
+        _upsert_transactions(connection, payload)
     with connection.cursor() as cursor:
         cursor.execute(
             """
@@ -669,6 +744,21 @@ def _commit_transaction_batch(
         )
     connection.commit()
     summary.upserted_rows += len(payload)
+
+
+def _copy_transactions(connection: Any, payload: list[dict[str, object]]) -> None:
+    if not payload:
+        return
+    if sql is None:
+        raise RuntimeError("psycopg is required for direct Postgres writes")
+    columns = list(DVF_TRANSACTION_COLUMNS)
+    copy_statement = sql.SQL("copy public.dvf_transactions ({columns}) from stdin").format(
+        columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
+    )
+    with connection.cursor() as cursor:
+        with cursor.copy(copy_statement) as copy:
+            for row in payload:
+                copy.write_row([postgres_value(row.get(column)) for column in columns])
 
 
 def _upsert_transactions(connection: Any, payload: list[dict[str, object]]) -> None:
@@ -732,6 +822,11 @@ def parse_args() -> argparse.Namespace:
         help="Taille des lots d'upsert. Défaut: DVF_IMPORT_BATCH_SIZE ou 1000.",
     )
     parser.add_argument("--limit", type=int, default=None, help="Nombre maximum de lignes lues pour un test.")
+    parser.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help="Recharge intégralement la table DVF avec COPY (incompatible avec --limit).",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Parse et valide sans écrire dans Supabase.")
     return parser.parse_args()
 
@@ -740,12 +835,15 @@ def main() -> int:
     args = parse_args()
     settings = load_settings()
     batch_size = args.batch_size or int(settings.get("dvf_import_batch_size") or DEFAULT_BATCH_SIZE)
+    if args.replace_existing and args.batch_size is None:
+        batch_size = max(batch_size, DEFAULT_REPLACEMENT_BATCH_SIZE)
     summary = import_dvf_file(
         DvfImportOptions(
             path=args.path,
             source_url=args.source_url,
             batch_size=max(1, batch_size),
             limit=args.limit,
+            replace_existing=args.replace_existing,
             dry_run=args.dry_run,
         )
     )

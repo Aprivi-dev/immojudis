@@ -995,7 +995,6 @@ export type Database = {
           address: string | null;
           built_surface_m2: number | null;
           city: string | null;
-          created_at: string;
           department: string | null;
           dvf_property_type_code: string | null;
           id: string;
@@ -1010,21 +1009,16 @@ export type Database = {
           postal_code: string | null;
           price_per_m2: number | null;
           property_type: string | null;
-          raw_payload: Json;
           rooms_count: number | null;
           sale_date: string;
           source: string;
-          source_last_seen_at: string | null;
           source_mutation_id: string;
-          source_url: string | null;
           total_price_eur: number;
-          updated_at: string;
         };
         Insert: {
           address?: string | null;
           built_surface_m2?: number | null;
           city?: string | null;
-          created_at?: string;
           department?: string | null;
           dvf_property_type_code?: string | null;
           id?: string;
@@ -1039,21 +1033,16 @@ export type Database = {
           postal_code?: string | null;
           price_per_m2?: number | null;
           property_type?: string | null;
-          raw_payload?: Json;
           rooms_count?: number | null;
           sale_date: string;
           source?: string;
-          source_last_seen_at?: string | null;
           source_mutation_id: string;
-          source_url?: string | null;
           total_price_eur: number;
-          updated_at?: string;
         };
         Update: {
           address?: string | null;
           built_surface_m2?: number | null;
           city?: string | null;
-          created_at?: string;
           department?: string | null;
           dvf_property_type_code?: string | null;
           id?: string;
@@ -1068,15 +1057,11 @@ export type Database = {
           postal_code?: string | null;
           price_per_m2?: number | null;
           property_type?: string | null;
-          raw_payload?: Json;
           rooms_count?: number | null;
           sale_date?: string;
           source?: string;
-          source_last_seen_at?: string | null;
           source_mutation_id?: string;
-          source_url?: string | null;
           total_price_eur?: number;
-          updated_at?: string;
         };
         Relationships: [
           {

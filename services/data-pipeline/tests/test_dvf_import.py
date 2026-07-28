@@ -5,6 +5,8 @@ import zipfile
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from src import dvf_import
 from src.dvf_import import DvfImportOptions, import_dvf_file, iter_dvf_rows, normalize_dvf_row
 
@@ -236,7 +238,23 @@ def test_upsert_transactions_uses_one_multi_row_statement() -> None:
     assert len(cursor.calls) == 1
     assert len(cursor.calls[0][1]) == 2 * len(dvf_import.DVF_TRANSACTION_COLUMNS)
     assert cursor.calls[0][1][0] == "first-import_batch_id"
-    assert cursor.calls[0][1][-1] == "second-updated_at"
+    assert cursor.calls[0][1][-1] == "second-longitude"
+
+
+def test_copy_transactions_streams_rows_through_postgres_copy() -> None:
+    cursor = RecordingCursor()
+    connection = RecordingConnection(cursor)
+    payload = [
+        {column: f"first-{column}" for column in dvf_import.DVF_TRANSACTION_COLUMNS},
+        {column: f"second-{column}" for column in dvf_import.DVF_TRANSACTION_COLUMNS},
+    ]
+
+    dvf_import._copy_transactions(connection, payload)
+
+    assert len(cursor.copy_calls) == 1
+    assert len(cursor.copy_calls[0].rows) == 2
+    assert cursor.copy_calls[0].rows[0][0] == "first-import_batch_id"
+    assert cursor.copy_calls[0].rows[1][-1] == "second-longitude"
 
 
 def test_commit_transaction_batch_persists_progress_before_commit(monkeypatch) -> None:
@@ -261,6 +279,71 @@ def test_commit_transaction_batch_persists_progress_before_commit(monkeypatch) -
     assert connection.commits == 1
     assert cursor.calls[0][1] == (2, 4, 0, 2, 0, 0, 0, "batch-id")
     assert summary.upserted_rows == 2
+
+
+def test_commit_transaction_batch_uses_copy_for_replacement(monkeypatch) -> None:
+    cursor = RecordingCursor()
+    connection = RecordingConnection(cursor)
+    summary = dvf_import.DvfImportSummary(file_name="dvf.csv.gz")
+    payload = [{"source_mutation_id": "2026-1"}]
+    copied: list[list[dict[str, object]]] = []
+    monkeypatch.setattr(
+        dvf_import,
+        "_copy_transactions",
+        lambda received_connection, received_payload: copied.append(received_payload),
+    )
+    monkeypatch.setattr(
+        dvf_import,
+        "_upsert_transactions",
+        lambda received_connection, received_payload: (_ for _ in ()).throw(
+            AssertionError("replacement imports must not use ON CONFLICT")
+        ),
+    )
+
+    dvf_import._commit_transaction_batch(
+        connection,
+        "batch-id",
+        payload,
+        summary,
+        replace_existing=True,
+    )
+
+    assert copied == [payload]
+    assert connection.commits == 1
+    assert summary.upserted_rows == 1
+
+
+def test_prepare_replacement_import_refuses_other_sources() -> None:
+    cursor = RecordingCursor(fetchone_row=(True,))
+    connection = RecordingConnection(cursor)
+
+    with pytest.raises(RuntimeError, match="another source"):
+        dvf_import._prepare_replacement_import(connection)
+
+    assert len(cursor.calls) == 1
+    assert connection.commits == 0
+
+
+def test_prepare_replacement_import_truncates_dvf_only_table() -> None:
+    cursor = RecordingCursor(fetchone_row=(False,))
+    connection = RecordingConnection(cursor)
+
+    dvf_import._prepare_replacement_import(connection)
+
+    assert len(cursor.calls) == 8
+    assert connection.commits == 1
+
+
+def test_restore_dvf_indexes_builds_integrity_and_query_indexes() -> None:
+    cursor = RecordingCursor()
+    connection = RecordingConnection(cursor)
+
+    dvf_import._restore_dvf_indexes(connection)
+
+    assert len(cursor.calls) == 4
+    statements = " ".join(str(statement) for statement, _ in cursor.calls)
+    assert "create unique index" in statements.lower()
+    assert "dvf_transactions_lat_lng_idx" in statements
 
 
 def test_import_dvf_file_dry_run_counts_valid_and_skipped_rows(tmp_path, monkeypatch) -> None:
@@ -288,8 +371,10 @@ def test_import_dvf_file_dry_run_counts_valid_and_skipped_rows(tmp_path, monkeyp
 
 
 class RecordingCursor:
-    def __init__(self) -> None:
-        self.calls: list[tuple[object, list[object]]] = []
+    def __init__(self, *, fetchone_row: tuple[object, ...] | None = None) -> None:
+        self.calls: list[tuple[object, object]] = []
+        self.copy_calls: list[RecordingCopy] = []
+        self.fetchone_row = fetchone_row
 
     def __enter__(self):
         return self
@@ -297,11 +382,34 @@ class RecordingCursor:
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         return None
 
-    def execute(self, statement: object, values: list[object]) -> None:
+    def execute(self, statement: object, values: object = None) -> None:
         self.calls.append((statement, values))
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self.fetchone_row
 
     def executemany(self, statement: object, values: object) -> None:
         raise AssertionError("DVF imports must not use psycopg pipeline mode")
+
+    def copy(self, statement: object) -> RecordingCopy:
+        copy = RecordingCopy(statement)
+        self.copy_calls.append(copy)
+        return copy
+
+
+class RecordingCopy:
+    def __init__(self, statement: object) -> None:
+        self.statement = statement
+        self.rows: list[list[object]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+    def write_row(self, row: list[object]) -> None:
+        self.rows.append(row)
 
 
 class RecordingConnection:
