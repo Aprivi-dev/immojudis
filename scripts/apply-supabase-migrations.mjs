@@ -28,6 +28,11 @@ for (const file of [
   }
 }
 
+const databaseConnectTimeoutSeconds = Math.min(
+  300,
+  Math.max(15, Number.parseInt(process.env.PGCONNECT_TIMEOUT || "60", 10) || 60),
+);
+
 const runOnlyIfEnabled = process.argv.includes("--if-enabled");
 const dryRun = process.argv.includes("--dry-run");
 const checkOnly = process.argv.includes("--check");
@@ -177,11 +182,12 @@ async function createRunner(dbUrl) {
 }
 
 function createPsqlRunner(dbUrl, psqlBin) {
+  const connectionUrl = withDatabaseConnectTimeout(dbUrl);
   console.log(`[supabase-migrations] Using psql runner: ${psqlBin}`);
   return {
     listAppliedVersions() {
       return Promise.resolve(
-        psql(dbUrl, psqlBin, [
+        psql(connectionUrl, psqlBin, [
           "--tuples-only",
           "--no-align",
           "--command",
@@ -194,11 +200,11 @@ function createPsqlRunner(dbUrl, psqlBin) {
       );
     },
     applyFile(path) {
-      psql(dbUrl, psqlBin, ["--set=ON_ERROR_STOP=1", "--file", path], { inherit: true });
+      psql(connectionUrl, psqlBin, ["--set=ON_ERROR_STOP=1", "--file", path], { inherit: true });
       return Promise.resolve();
     },
     command(statement) {
-      psql(dbUrl, psqlBin, ["--set=ON_ERROR_STOP=1", "--command", statement]);
+      psql(connectionUrl, psqlBin, ["--set=ON_ERROR_STOP=1", "--command", statement]);
       return Promise.resolve();
     },
     close() {
@@ -211,6 +217,7 @@ async function createPostgresJsRunner(dbUrl) {
   const { default: postgres } = await import("postgres");
   const sql = postgres(dbUrl, {
     max: 1,
+    connect_timeout: databaseConnectTimeoutSeconds,
     ssl: process.env.POSTGRES_SSL === "disable" ? false : "require",
   });
 
@@ -241,6 +248,10 @@ function psql(dbUrl, psqlBin, args, options = {}) {
   const result = spawnSync(psqlBin, [dbUrl, ...args], {
     cwd: root,
     encoding: "utf8",
+    env: {
+      ...process.env,
+      PGCONNECT_TIMEOUT: String(databaseConnectTimeoutSeconds),
+    },
     stdio: options.inherit ? "inherit" : ["ignore", "pipe", "pipe"],
   });
 
@@ -253,6 +264,12 @@ function psql(dbUrl, psqlBin, args, options = {}) {
   }
 
   return result;
+}
+
+function withDatabaseConnectTimeout(dbUrl) {
+  const url = new URL(dbUrl);
+  url.searchParams.set("connect_timeout", String(databaseConnectTimeoutSeconds));
+  return url.toString();
 }
 
 function resolvePsqlBin() {
