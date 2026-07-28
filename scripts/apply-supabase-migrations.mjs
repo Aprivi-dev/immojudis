@@ -29,7 +29,7 @@ for (const file of [
 }
 
 const databaseConnectTimeoutSeconds = Math.min(
-  300,
+  900,
   Math.max(15, Number.parseInt(process.env.PGCONNECT_TIMEOUT || "60", 10) || 60),
 );
 
@@ -176,8 +176,23 @@ function isTruthy(value) {
 }
 
 async function createRunner(dbUrl) {
+  const requestedRunner = String(process.env.SUPABASE_MIGRATION_RUNNER || "auto")
+    .trim()
+    .toLowerCase();
+
+  if (requestedRunner === "postgres-js") return createPostgresJsRunner(dbUrl);
+
+  if (!["auto", "psql"].includes(requestedRunner)) {
+    throw new Error(
+      `[supabase-migrations] Unsupported SUPABASE_MIGRATION_RUNNER: ${requestedRunner}`,
+    );
+  }
+
   const psqlBin = resolvePsqlBin();
   if (psqlBin) return createPsqlRunner(dbUrl, psqlBin);
+  if (requestedRunner === "psql") {
+    throw new Error("[supabase-migrations] psql runner requested but psql is unavailable.");
+  }
   return createPostgresJsRunner(dbUrl);
 }
 
