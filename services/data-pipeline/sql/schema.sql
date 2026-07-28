@@ -393,7 +393,6 @@ create table if not exists dvf_transactions (
   import_batch_id uuid references dvf_import_batches(id) on delete set null,
   source text not null default 'DVF',
   source_mutation_id text not null,
-  source_url text,
   sale_date date not null,
   mutation_nature text,
   total_price_eur numeric not null check (total_price_eur > 0),
@@ -417,18 +416,7 @@ create table if not exists dvf_transactions (
   department text,
   parcel_id text,
   latitude double precision check (latitude is null or latitude between -90 and 90),
-  longitude double precision check (longitude is null or longitude between -180 and 180),
-  location geography(Point, 4326) generated always as (
-    case
-      when latitude is not null and longitude is not null
-      then st_setsrid(st_makepoint(longitude, latitude), 4326)::geography
-      else null
-    end
-  ) stored,
-  raw_payload jsonb not null default '{}'::jsonb,
-  source_last_seen_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  longitude double precision check (longitude is null or longitude between -180 and 180)
 );
 
 create table if not exists auction_cadastre_parcels (
