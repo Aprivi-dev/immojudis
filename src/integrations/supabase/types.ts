@@ -1003,7 +1003,6 @@ export type Database = {
           insee_code: string | null;
           land_surface_m2: number | null;
           latitude: number | null;
-          location: unknown | null;
           longitude: number | null;
           lots_count: number | null;
           mutation_nature: string | null;
@@ -1033,7 +1032,6 @@ export type Database = {
           insee_code?: string | null;
           land_surface_m2?: number | null;
           latitude?: number | null;
-          location?: unknown | null;
           longitude?: number | null;
           lots_count?: number | null;
           mutation_nature?: string | null;
@@ -1063,7 +1061,6 @@ export type Database = {
           insee_code?: string | null;
           land_surface_m2?: number | null;
           latitude?: number | null;
-          location?: unknown | null;
           longitude?: number | null;
           lots_count?: number | null;
           mutation_nature?: string | null;
