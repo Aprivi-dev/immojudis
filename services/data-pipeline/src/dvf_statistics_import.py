@@ -44,6 +44,7 @@ STATISTICS_COLUMNS = (
     "source_updated_at",
     "imported_at",
 )
+STATISTICS_KEY_COLUMNS = ("geography_level", "geography_code", "segment")
 
 
 @dataclass(frozen=True)
@@ -81,14 +82,14 @@ def import_dvf_statistics(options: DvfStatisticsImportOptions) -> DvfStatisticsI
         for row in normalized:
             payload.append(row)
             if len(payload) >= options.batch_size:
-                _upsert_statistics(connection, payload)
+                upserted_rows = _upsert_statistics(connection, payload)
                 connection.commit()
-                summary.upserted_rows += len(payload)
+                summary.upserted_rows += upserted_rows
                 payload = []
         if payload:
-            _upsert_statistics(connection, payload)
+            upserted_rows = _upsert_statistics(connection, payload)
             connection.commit()
-            summary.upserted_rows += len(payload)
+            summary.upserted_rows += upserted_rows
     return summary
 
 
@@ -157,11 +158,12 @@ def _iter_normalized_statistics(
         yield from normalized
 
 
-def _upsert_statistics(connection: Any, payload: list[dict[str, object]]) -> None:
+def _upsert_statistics(connection: Any, payload: list[dict[str, object]]) -> int:
     if not payload:
-        return
+        return 0
     if sql is None:
         raise RuntimeError("psycopg is required for direct Postgres writes")
+    unique_payload = _deduplicate_statistics_payload(payload)
     columns = list(STATISTICS_COLUMNS)
     statement = sql.SQL(
         """
@@ -183,12 +185,24 @@ def _upsert_statistics(connection: Any, payload: list[dict[str, object]]) -> Non
             sql.SQL("({})").format(
                 sql.SQL(", ").join(sql.Placeholder() for _ in columns)
             )
-            for _ in payload
+            for _ in unique_payload
         ),
     )
-    values = [row.get(column) for row in payload for column in columns]
+    values = [row.get(column) for row in unique_payload for column in columns]
     with connection.cursor() as cursor:
         cursor.execute(statement, values)
+    return len(unique_payload)
+
+
+def _deduplicate_statistics_payload(
+    payload: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Keep the last source row for each unique database key in a batch."""
+    unique_rows: dict[tuple[object, ...], dict[str, object]] = {}
+    for row in payload:
+        key = tuple(row.get(column) for column in STATISTICS_KEY_COLUMNS)
+        unique_rows[key] = row
+    return list(unique_rows.values())
 
 
 def clean_text(value: str | None) -> str | None:

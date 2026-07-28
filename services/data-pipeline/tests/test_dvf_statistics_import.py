@@ -80,12 +80,34 @@ def test_upsert_statistics_uses_one_multi_row_statement() -> None:
         {column: f"second-{column}" for column in dvf_statistics_import.STATISTICS_COLUMNS},
     ]
 
-    dvf_statistics_import._upsert_statistics(connection, payload)
+    upserted_rows = dvf_statistics_import._upsert_statistics(connection, payload)
 
+    assert upserted_rows == 2
     assert len(cursor.calls) == 1
     assert len(cursor.calls[0][1]) == 2 * len(dvf_statistics_import.STATISTICS_COLUMNS)
     assert cursor.calls[0][1][0] == "first-geography_level"
     assert cursor.calls[0][1][-1] == "second-imported_at"
+
+
+def test_upsert_statistics_deduplicates_conflicting_keys_within_batch() -> None:
+    cursor = RecordingCursor()
+    connection = RecordingConnection(cursor)
+    first = {column: f"first-{column}" for column in dvf_statistics_import.STATISTICS_COLUMNS}
+    second = {column: f"second-{column}" for column in dvf_statistics_import.STATISTICS_COLUMNS}
+    for column, value in {
+        "geography_level": "epci",
+        "geography_code": "200006682",
+        "segment": "house",
+    }.items():
+        first[column] = value
+        second[column] = value
+
+    upserted_rows = dvf_statistics_import._upsert_statistics(connection, [first, second])
+
+    assert upserted_rows == 1
+    assert len(cursor.calls) == 1
+    assert len(cursor.calls[0][1]) == len(dvf_statistics_import.STATISTICS_COLUMNS)
+    assert cursor.calls[0][1][2] == "second-geography_label"
 
 
 def test_import_statistics_commits_each_batch(tmp_path, monkeypatch) -> None:
@@ -107,7 +129,7 @@ def test_import_statistics_commits_each_batch(tmp_path, monkeypatch) -> None:
         "_postgres_connect",
         lambda db_url: connection,
     )
-    monkeypatch.setattr(dvf_statistics_import, "_upsert_statistics", lambda conn, rows: None)
+    monkeypatch.setattr(dvf_statistics_import, "_upsert_statistics", lambda conn, rows: len(rows))
 
     summary = import_dvf_statistics(DvfStatisticsImportOptions(path=path, batch_size=1))
 
