@@ -66,8 +66,7 @@ def test_normalize_dvf_row_skips_non_sale_mutations() -> None:
 def test_iter_dvf_rows_reads_pipe_delimited_file(tmp_path) -> None:
     path = tmp_path / "valeursfoncieres-2024.txt"
     path.write_text(
-        "id_mutation|date_mutation|nature_mutation|valeur_fonciere\n"
-        "2024-1|2024-02-15|Vente|200000\n",
+        "id_mutation|date_mutation|nature_mutation|valeur_fonciere\n2024-1|2024-02-15|Vente|200000\n",
         encoding="utf-8",
     )
 
@@ -88,8 +87,7 @@ def test_iter_dvf_rows_reads_zip_archives(tmp_path) -> None:
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr(
             "nested/valeursfoncieres.csv",
-            "id_mutation;date_mutation;nature_mutation;valeur_fonciere\n"
-            "2024-2;2024-03-20;Vente;180000\n",
+            "id_mutation;date_mutation;nature_mutation;valeur_fonciere\n2024-2;2024-03-20;Vente;180000\n",
         )
 
     rows = list(iter_dvf_rows(archive_path))
@@ -149,6 +147,82 @@ def test_normalize_dvf_row_maps_land_only_sale() -> None:
     assert transaction["land_surface_m2"] == Decimal("720")
 
 
+def test_canonicalize_mutation_collapses_repeated_parcel_rows() -> None:
+    house = normalize_dvf_row(
+        {
+            "id_mutation": "2026-1",
+            "date_mutation": "2026-01-10",
+            "nature_mutation": "Vente",
+            "valeur_fonciere": "320000",
+            "code_type_local": "1",
+            "type_local": "Maison",
+            "surface_reelle_bati": "110",
+            "surface_terrain": "400",
+            "id_parcelle": "33063000AB0001",
+            "longitude": "-0.579",
+            "latitude": "44.837",
+        }
+    )
+    second_parcel = normalize_dvf_row(
+        {
+            "id_mutation": "2026-1",
+            "date_mutation": "2026-01-10",
+            "nature_mutation": "Vente",
+            "valeur_fonciere": "320000",
+            "surface_terrain": "200",
+            "id_parcelle": "33063000AB0002",
+            "longitude": "-0.578",
+            "latitude": "44.838",
+        }
+    )
+
+    assert house is not None
+    assert second_parcel is not None
+    canonical = dvf_import.canonicalize_dvf_transaction_group([house, second_parcel])
+
+    assert canonical is not None
+    assert canonical["source_mutation_id"] == "2026-1"
+    assert canonical["dvf_property_type_code"] == "111"
+    assert canonical["built_surface_m2"] == Decimal("110")
+    assert canonical["land_surface_m2"] == Decimal("600")
+    assert canonical["latitude"] == Decimal("44.8375")
+    assert canonical["longitude"] == Decimal("-0.5785")
+    assert canonical["raw_payload"]["parcel_ids"] == ["33063000AB0001", "33063000AB0002"]
+
+
+def test_canonicalize_mutation_excludes_multi_property_sale() -> None:
+    apartment = normalize_dvf_row(
+        {
+            "id_mutation": "2026-complex",
+            "date_mutation": "2026-02-10",
+            "nature_mutation": "Vente",
+            "valeur_fonciere": "500000",
+            "code_type_local": "2",
+            "type_local": "Appartement",
+            "surface_reelle_bati": "55",
+            "id_parcelle": "75056000AB0001",
+            "lot1_numero": "10",
+        }
+    )
+    second_apartment = normalize_dvf_row(
+        {
+            "id_mutation": "2026-complex",
+            "date_mutation": "2026-02-10",
+            "nature_mutation": "Vente",
+            "valeur_fonciere": "500000",
+            "code_type_local": "2",
+            "type_local": "Appartement",
+            "surface_reelle_bati": "42",
+            "id_parcelle": "75056000AB0001",
+            "lot1_numero": "11",
+        }
+    )
+
+    assert apartment is not None
+    assert second_apartment is not None
+    assert dvf_import.canonicalize_dvf_transaction_group([apartment, second_apartment]) is None
+
+
 def test_upsert_transactions_uses_one_multi_row_statement() -> None:
     cursor = RecordingCursor()
     connection = RecordingConnection(cursor)
@@ -185,7 +259,7 @@ def test_commit_transaction_batch_persists_progress_before_commit(monkeypatch) -
 
     assert upserted == [payload]
     assert connection.commits == 1
-    assert cursor.calls[0][1] == (2, 4, 2, "batch-id")
+    assert cursor.calls[0][1] == (2, 4, 0, 2, 0, 0, 0, "batch-id")
     assert summary.upserted_rows == 2
 
 
@@ -205,6 +279,9 @@ def test_import_dvf_file_dry_run_counts_valid_and_skipped_rows(tmp_path, monkeyp
     assert summary.parsed_rows == 3
     assert summary.valid_rows == 1
     assert summary.skipped_rows == 2
+    assert summary.collapsed_rows == 0
+    assert summary.skipped_complex_mutations == 0
+    assert summary.canonical_rows == 1
     assert summary.upserted_rows == 0
     assert summary.period_start == date(2024, 2, 15)
     assert summary.period_end == date(2024, 2, 15)

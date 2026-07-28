@@ -210,13 +210,6 @@ create table if not exists properties (
   occupancy_status text,
   latitude double precision check (latitude is null or latitude between -90 and 90),
   longitude double precision check (longitude is null or longitude between -180 and 180),
-  location geography(Point, 4326) generated always as (
-    case
-      when latitude is not null and longitude is not null
-      then st_setsrid(st_makepoint(longitude, latitude), 4326)::geography
-      else null
-    end
-  ) stored,
   raw_payload jsonb not null default '{}'::jsonb,
   first_seen_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now(),
@@ -736,25 +729,17 @@ create index if not exists idx_auction_sales_starting_price on auction_sales(sta
 create index if not exists idx_auction_sales_latlng on auction_sales(latitude, longitude);
 create index if not exists idx_auction_sales_location on auction_sales using gist(location);
 create index if not exists idx_auction_sales_tribunal_code on auction_sales(tribunal_code);
-create unique index if not exists idx_dvf_transactions_source_mutation_parcel
-  on dvf_transactions (source, source_mutation_id, coalesce(parcel_id, ''));
+create unique index if not exists idx_dvf_transactions_source_mutation
+  on dvf_transactions (source, source_mutation_id);
 create index if not exists idx_dvf_import_batches_source_created
   on dvf_import_batches(source, created_at desc);
-create index if not exists idx_dvf_transactions_import_batch
-  on dvf_transactions(import_batch_id);
 create index if not exists idx_dvf_transactions_sale_date
   on dvf_transactions(sale_date desc);
-create index if not exists idx_dvf_transactions_department_city_type
-  on dvf_transactions(department, city, property_type);
-create index if not exists idx_dvf_transactions_price_per_m2
-  on dvf_transactions(price_per_m2)
-  where price_per_m2 is not null;
+create index if not exists idx_dvf_transactions_department_sale_date
+  on dvf_transactions(department, sale_date desc);
 create index if not exists idx_dvf_transactions_lat_lng
   on dvf_transactions(latitude, longitude)
   where latitude is not null and longitude is not null;
-create index if not exists idx_dvf_transactions_location
-  on dvf_transactions using gist(location)
-  where location is not null;
 create unique index if not exists idx_auction_cadastre_parcels_source_key
   on auction_cadastre_parcels(source_url, parcel_key);
 create index if not exists idx_auction_cadastre_parcels_source_url
