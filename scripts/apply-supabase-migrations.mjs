@@ -32,6 +32,14 @@ const databaseConnectTimeoutSeconds = Math.min(
   900,
   Math.max(15, Number.parseInt(process.env.PGCONNECT_TIMEOUT || "60", 10) || 60),
 );
+const databaseConnectRetries = Math.min(
+  60,
+  Math.max(1, Number.parseInt(process.env.SUPABASE_MIGRATION_CONNECT_RETRIES || "1", 10) || 1),
+);
+const databaseRetryDelaySeconds = Math.min(
+  60,
+  Math.max(5, Number.parseInt(process.env.SUPABASE_MIGRATION_RETRY_DELAY || "15", 10) || 15),
+);
 
 const runOnlyIfEnabled = process.argv.includes("--if-enabled");
 const dryRun = process.argv.includes("--dry-run");
@@ -230,7 +238,7 @@ function createPsqlRunner(dbUrl, psqlBin) {
 
 async function createPostgresJsRunner(dbUrl) {
   const { default: postgres } = await import("postgres");
-  const sql = postgres(dbUrl, {
+  const sql = postgres(withSessionPooler(dbUrl), {
     max: 1,
     connect_timeout: databaseConnectTimeoutSeconds,
     ssl: process.env.POSTGRES_SSL === "disable" ? false : "require",
@@ -240,11 +248,13 @@ async function createPostgresJsRunner(dbUrl) {
 
   return {
     async listAppliedVersions() {
-      const rows = await sql`
-        select version
-        from supabase_migrations.schema_migrations
-        order by version
-      `;
+      const rows = await retryTransientConnection(
+        () => sql`
+          select version
+          from supabase_migrations.schema_migrations
+          order by version
+        `,
+      );
       return rows.map((row) => String(row.version).trim()).filter(Boolean);
     },
     async applyFile(path) {
@@ -257,6 +267,41 @@ async function createPostgresJsRunner(dbUrl) {
       await sql.end({ timeout: 5 });
     },
   };
+}
+
+async function retryTransientConnection(operation) {
+  for (let attempt = 1; attempt <= databaseConnectRetries; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt >= databaseConnectRetries || !isTransientConnectionError(error)) throw error;
+      console.warn(
+        `[supabase-migrations] Database unavailable; retrying connection in ${databaseRetryDelaySeconds}s (${attempt}/${databaseConnectRetries}).`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, databaseRetryDelaySeconds * 1000));
+    }
+  }
+}
+
+function isTransientConnectionError(error) {
+  const code = String(error?.code || "").toUpperCase();
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    code.startsWith("08") ||
+    ["53300", "57P03", "ECONNRESET", "ETIMEDOUT"].includes(code) ||
+    message.includes("authentication query failed") ||
+    message.includes("connection to database not available") ||
+    message.includes("connection terminated due to connection timeout") ||
+    message.includes("circuit breaker open")
+  );
+}
+
+function withSessionPooler(dbUrl) {
+  const url = new URL(dbUrl);
+  if (url.hostname.endsWith(".pooler.supabase.com")) {
+    url.port = "5432";
+  }
+  return url.toString();
 }
 
 function psql(dbUrl, psqlBin, args, options = {}) {
