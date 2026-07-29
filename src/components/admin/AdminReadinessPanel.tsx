@@ -92,6 +92,10 @@ export function AdminReadinessPanel() {
               }
             />
             <DiagnosticLine
+              label="SLO santé (30 j)"
+              value={formatOperationalSlo(readiness?.operations ?? null)}
+            />
+            <DiagnosticLine
               label="Alertes ouvertes"
               value={
                 readiness?.operations.openAlertCount == null
@@ -256,4 +260,11 @@ function formatAiCoverage(
     return "Non vérifié";
   }
   return `${aiDescriptions.coveredCurrentCount}/${aiDescriptions.activeUpcomingCount}`;
+}
+
+function formatOperationalSlo(
+  operations: NonNullable<Awaited<ReturnType<typeof fetchAdminReadiness>>>["operations"] | null,
+): string {
+  if (!operations || operations.successRatePercent == null) return "Non calculé";
+  return `${operations.successRatePercent.toFixed(3)} % / ${operations.sloTargetPercent} %`;
 }

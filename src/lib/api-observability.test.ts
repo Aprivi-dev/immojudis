@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiError, createApiRequestContext } from "./api-observability";
+import { apiError, apiJson, createApiRequestContext } from "./api-observability";
 
 describe("API observability", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -14,7 +14,7 @@ describe("API observability", () => {
   });
 
   it("replaces unsafe request ids and redacts internal errors", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const context = createApiRequestContext(
       new Request("https://example.test/api", { headers: { "x-request-id": "bad id value" } }),
       "api.test",
@@ -35,6 +35,35 @@ describe("API observability", () => {
       requestId: context.requestId,
     });
     expect(JSON.stringify(body)).not.toContain("password");
+    expect(errorLog).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(errorLog.mock.calls[0]?.[0]))).toMatchObject({
+      scope: "api.test",
+      requestId: context.requestId,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      error: "database password=secret",
+    });
+  });
+
+  it("logs successful responses once with the correlation fields", () => {
+    const infoLog = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const context = createApiRequestContext(
+      new Request("https://example.test/api", { headers: { "x-request-id": "client-12345678" } }),
+      "api.test",
+    );
+
+    const response = apiJson({ ok: true }, context, { status: 201 });
+    const log = JSON.parse(String(infoLog.mock.calls[0]?.[0]));
+
+    expect(response.status).toBe(201);
+    expect(infoLog).toHaveBeenCalledTimes(1);
+    expect(log).toMatchObject({
+      scope: "api.test",
+      requestId: "client-12345678",
+      status: 201,
+    });
+    expect(log.timestamp).toEqual(expect.any(String));
+    expect(log.durationMs).toEqual(expect.any(Number));
   });
 
   it("returns a stable code and retry hint for rate limits", async () => {

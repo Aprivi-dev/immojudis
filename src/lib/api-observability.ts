@@ -16,6 +16,8 @@ export type ApiRequestContext = {
   startedAt: number;
 };
 
+const completedRequests = new WeakSet<ApiRequestContext>();
+
 type ApiErrorOptions = {
   fallbackMessage: string;
   fallbackStatus?: number;
@@ -33,6 +35,7 @@ export function createApiRequestContext(request: Request, scope: string): ApiReq
 export function withApiHeaders<T extends Response>(response: T, context: ApiRequestContext): T {
   response.headers.set("x-request-id", context.requestId);
   if (!response.headers.has("cache-control")) response.headers.set("cache-control", "no-store");
+  logApiCompletion(context, response.status);
   return response;
 }
 
@@ -46,17 +49,10 @@ export function apiJson<T>(
 
 export function apiError(error: unknown, context: ApiRequestContext, options: ApiErrorOptions) {
   const classified = classifyApiError(error, options);
-  const log = JSON.stringify({
-    scope: context.scope,
-    requestId: context.requestId,
-    timestamp: new Date().toISOString(),
-    durationMs: Date.now() - context.startedAt,
-    status: classified.status,
+  logApiCompletion(context, classified.status, {
     code: classified.code,
     error: error instanceof Error ? error.message : String(error),
   });
-  if (classified.status >= 500) console.error(log);
-  else console.warn(log);
 
   return apiJson(
     {
@@ -106,4 +102,26 @@ function classifyApiError(error: unknown, options: ApiErrorOptions) {
     status,
     message: options.fallbackMessage,
   };
+}
+
+function logApiCompletion(
+  context: ApiRequestContext,
+  status: number,
+  fields: Record<string, unknown> = {},
+): void {
+  if (completedRequests.has(context)) return;
+  completedRequests.add(context);
+
+  const line = JSON.stringify({
+    scope: context.scope,
+    requestId: context.requestId,
+    timestamp: new Date().toISOString(),
+    status,
+    durationMs: Date.now() - context.startedAt,
+    ...fields,
+  });
+
+  if (status >= 500) console.error(line);
+  else if (status >= 400) console.warn(line);
+  else console.info(line);
 }
