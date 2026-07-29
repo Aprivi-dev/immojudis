@@ -778,6 +778,12 @@ def _restore_dvf_indexes(connection: Any) -> None:
         )
         cursor.execute(
             """
+            comment on index public.dvf_transactions_source_mutation_uidx is
+              'One canonical DVF transaction per source mutation; local and parcel source rows are aggregated by the importer.'
+            """
+        )
+        cursor.execute(
+            """
             create index if not exists dvf_transactions_sale_date_idx
               on public.dvf_transactions (sale_date desc)
             """

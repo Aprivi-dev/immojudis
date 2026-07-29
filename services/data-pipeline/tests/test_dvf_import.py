@@ -340,9 +340,10 @@ def test_restore_dvf_indexes_builds_integrity_and_query_indexes() -> None:
 
     dvf_import._restore_dvf_indexes(connection)
 
-    assert len(cursor.calls) == 4
+    assert len(cursor.calls) == 5
     statements = " ".join(str(statement) for statement, _ in cursor.calls)
     assert "create unique index" in statements.lower()
+    assert "one canonical dvf transaction" in statements.lower()
     assert "dvf_transactions_lat_lng_idx" in statements
 
 

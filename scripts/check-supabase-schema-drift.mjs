@@ -64,7 +64,8 @@ try {
     process.exit(result.status ?? 1);
   }
 
-  const diff = existsSync(outputPath) ? readFileSync(outputPath, "utf8").trim() : "";
+  const rawDiff = existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "";
+  const diff = normalizeDiff(rawDiff);
   if (diff) {
     console.error(
       `[schema-drift] ${remote ? "Production" : "Local database"} differs from committed migrations.`,
@@ -118,6 +119,31 @@ function withMaintenanceSessionSettings(databaseUrl) {
     );
   }
   return url.toString();
+}
+
+function normalizeDiff(value) {
+  return value
+    .split(/\r?\n/)
+    .filter((line) => {
+      const normalized = line.trim();
+      if (!normalized) return false;
+
+      // Supabase installs pg_net in a non-relocatable platform-selected schema.
+      // Its presence and behavior are covered by pgTAP, so schema placement is
+      // intentionally outside the application-owned drift boundary.
+      if (/^CREATE EXTENSION pg_net WITH SCHEMA public;$/i.test(normalized)) return false;
+
+      // This read-only connector role is managed outside migrations. Ignore its
+      // grants without masking changes to application roles or objects.
+      if (/\blovable_readonly\b/i.test(normalized)) return false;
+
+      return !(
+        /^-- (Migration unit|Transaction mode|Boundary reason):/i.test(normalized) ||
+        /^SET check_function_bodies = false;$/i.test(normalized)
+      );
+    })
+    .join("\n")
+    .trim();
 }
 
 function isMissing(value) {
