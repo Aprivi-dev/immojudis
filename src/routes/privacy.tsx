@@ -97,7 +97,12 @@ export function PrivacyPage() {
           </PrivacySection>
 
           <PrivacySection title="Traitements, bases juridiques et durées">
-            <div className="overflow-x-auto">
+            <div
+              className="overflow-x-auto"
+              tabIndex={0}
+              role="region"
+              aria-label="Tableau des traitements, bases juridiques et durées de conservation"
+            >
               <table className="min-w-[760px] border-collapse text-left text-xs">
                 <thead>
                   <tr className="border-b border-white/15 text-foreground">

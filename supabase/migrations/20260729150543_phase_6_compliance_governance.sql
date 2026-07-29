@@ -108,6 +108,21 @@ create trigger protect_commercial_acceptance
 before insert or update or delete on public.commercial_acceptances
 for each row execute function app_private.protect_commercial_acceptance();
 
+create or replace function app_private.set_phase_6_updated_at()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  new.updated_at := statement_timestamp();
+  return new;
+end;
+$$;
+
+revoke all on function app_private.set_phase_6_updated_at()
+  from public, anon, authenticated;
+
 create table public.commercial_confirmation_deliveries (
   id uuid primary key default gen_random_uuid(),
   acceptance_id uuid not null unique references public.commercial_acceptances(id) on delete cascade,
@@ -129,7 +144,7 @@ grant select, insert, update on table public.commercial_confirmation_deliveries 
 
 create trigger commercial_confirmation_deliveries_updated_at
 before update on public.commercial_confirmation_deliveries
-for each row execute function public.set_updated_at();
+for each row execute function app_private.set_phase_6_updated_at();
 
 create table public.data_subject_requests (
   id uuid primary key default gen_random_uuid(),
@@ -189,7 +204,7 @@ grant select, insert, update, delete on table public.data_subject_requests to se
 
 create trigger data_subject_requests_updated_at
 before update on public.data_subject_requests
-for each row execute function public.set_updated_at();
+for each row execute function app_private.set_phase_6_updated_at();
 
 -- Extend the already scheduled retention job with the two Phase 6 evidence stores.
 create or replace function app_private.purge_expired_operational_data(
