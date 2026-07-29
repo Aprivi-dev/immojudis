@@ -26,9 +26,7 @@ create table public.commercial_acceptances (
   checkout_session_id text unique,
   checkout_created_at timestamptz,
   accepted_at timestamptz not null default statement_timestamp(),
-  archived_until timestamptz generated always as (
-    accepted_at + interval '10 years'
-  ) stored,
+  archived_until timestamptz not null default statement_timestamp() + interval '10 years',
   evidence jsonb not null default '{}'::jsonb check (pg_column_size(evidence) <= 16384),
   constraint commercial_acceptances_checkout_attachment_check check (
     (checkout_session_id is null and checkout_created_at is null)
@@ -57,6 +55,14 @@ security invoker
 set search_path = ''
 as $$
 begin
+  if tg_op = 'INSERT' then
+    new.archived_until := pg_catalog.timezone(
+      'UTC',
+      pg_catalog.timezone('UTC', new.accepted_at) + interval '10 years'
+    );
+    return new;
+  end if;
+
   if tg_op = 'DELETE' then
     if current_user in ('postgres', 'supabase_admin')
       and old.archived_until <= statement_timestamp() then
@@ -86,6 +92,7 @@ begin
     and new.request_id is not distinct from old.request_id
     and new.user_agent_hash is not distinct from old.user_agent_hash
     and new.accepted_at = old.accepted_at
+    and new.archived_until = old.archived_until
     and new.evidence = old.evidence then
     return new;
   end if;
@@ -98,7 +105,7 @@ revoke all on function app_private.protect_commercial_acceptance()
   from public, anon, authenticated;
 
 create trigger protect_commercial_acceptance
-before update or delete on public.commercial_acceptances
+before insert or update or delete on public.commercial_acceptances
 for each row execute function app_private.protect_commercial_acceptance();
 
 create table public.commercial_confirmation_deliveries (
