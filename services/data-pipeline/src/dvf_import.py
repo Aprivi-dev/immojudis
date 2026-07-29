@@ -6,6 +6,7 @@ import gzip
 import hashlib
 import json
 import logging
+import time
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ LOGGER = logging.getLogger(__name__)
 DVF_SOURCE = "DVF"
 DEFAULT_BATCH_SIZE = 1_000
 DEFAULT_REPLACEMENT_BATCH_SIZE = 25_000
+FAILURE_FINALIZATION_RETRY_DELAYS_SECONDS = (0, 2, 4, 8, 16, 30)
 TEXT_EXTENSIONS = {".csv", ".txt"}
 GZIP_EXTENSION = ".gz"
 CSV_DELIMITERS = ("|", ";", ",", "\t")
@@ -105,7 +107,8 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
             _record_period(summary, transaction["sale_date"])
         return summary
 
-    with _postgres_connect(str(db_url)) as connection:
+    connection = _postgres_connect(str(db_url))
+    try:
         batch_id = _create_import_batch(
             connection,
             file_name=path.name,
@@ -150,18 +153,20 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
             connection.commit()
         except Exception as exc:
             summary.errors.append(str(exc))
-            connection.rollback()
-            if options.replace_existing:
-                try:
-                    _restore_dvf_indexes(connection)
-                    connection.commit()
-                except Exception as restore_exc:
-                    connection.rollback()
-                    summary.errors.append(f"index restoration failed: {restore_exc}")
-                    LOGGER.exception("DVF index restoration failed after import error")
-            _fail_import_batch(connection, batch_id, str(exc))
-            connection.commit()
+            try:
+                _finalize_failed_import(
+                    str(db_url),
+                    connection,
+                    batch_id,
+                    str(exc),
+                    restore_indexes=options.replace_existing,
+                )
+            except Exception as finalization_exc:
+                summary.errors.append(f"failure finalization failed: {finalization_exc}")
+                LOGGER.exception("DVF import failure could not be finalized")
             raise
+    finally:
+        _close_connection(connection)
     return summary
 
 
@@ -651,6 +656,95 @@ def _fail_import_batch(connection: Any, batch_id: str, error_message: str) -> No
             """,
             (error_message[:2_000], batch_id),
         )
+
+
+def _finalize_failed_import(
+    db_url: str,
+    connection: Any,
+    batch_id: str,
+    error_message: str,
+    *,
+    restore_indexes: bool,
+) -> None:
+    """Persist a failed batch even when Supabase restarted the original session."""
+    working_connection: Any | None = connection
+    last_error: Exception | None = None
+
+    for attempt, delay_seconds in enumerate(FAILURE_FINALIZATION_RETRY_DELAYS_SECONDS, start=1):
+        if delay_seconds:
+            time.sleep(delay_seconds)
+        try:
+            if working_connection is None:
+                working_connection = _postgres_connect(db_url)
+            else:
+                try:
+                    working_connection.rollback()
+                except Exception:
+                    _close_connection(working_connection)
+                    working_connection = _postgres_connect(db_url)
+
+            if restore_indexes:
+                try:
+                    _restore_dvf_indexes(working_connection)
+                    working_connection.commit()
+                except Exception as restore_exc:
+                    try:
+                        working_connection.rollback()
+                    except Exception as rollback_exc:
+                        raise restore_exc from rollback_exc
+                    if _is_transient_postgres_error(restore_exc):
+                        raise
+                    LOGGER.exception("DVF index restoration failed after import error")
+
+            _fail_import_batch(working_connection, batch_id, error_message)
+            working_connection.commit()
+            if working_connection is not connection:
+                _close_connection(working_connection)
+            return
+        except Exception as exc:
+            last_error = exc
+            if working_connection is not None:
+                _close_connection(working_connection)
+            working_connection = None
+            if (
+                attempt >= len(FAILURE_FINALIZATION_RETRY_DELAYS_SECONDS)
+                or not _is_transient_postgres_error(exc)
+            ):
+                break
+            LOGGER.warning(
+                "DVF failure finalization lost its database session; retrying (%s/%s): %s",
+                attempt,
+                len(FAILURE_FINALIZATION_RETRY_DELAYS_SECONDS),
+                exc,
+            )
+
+    if last_error is not None:
+        raise last_error
+
+
+def _is_transient_postgres_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "administrator command",
+            "cannot connect now",
+            "connection has been closed",
+            "connection is lost",
+            "connection refused",
+            "closed unexpectedly",
+            "database system is starting up",
+            "server closed the connection",
+            "timeout expired",
+        )
+    )
+
+
+def _close_connection(connection: Any) -> None:
+    try:
+        connection.close()
+    except Exception:
+        pass
 
 
 def _prepare_replacement_import(connection: Any) -> None:
