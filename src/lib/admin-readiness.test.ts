@@ -48,6 +48,16 @@ describe("admin readiness", () => {
       CRON_SECRET: "cron-secret",
       GITHUB_SCROLL_TOKEN: "ghp_test",
       REPLICATE_API_TOKEN: "replicate-token-test",
+      NEXT_PUBLIC_LEGAL_ENTITY_NAME: "ImmoJudis SAS",
+      NEXT_PUBLIC_LEGAL_ENTITY_FORM: "SAS",
+      NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS: "1 rue de Paris, 75001 Paris",
+      NEXT_PUBLIC_LEGAL_REGISTRATION: "RCS Paris 000 000 000",
+      NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR: "Direction ImmoJudis",
+      NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "contact@immojudis.fr",
+      NEXT_PUBLIC_LEGAL_CONTACT_PHONE: "+33 1 00 00 00 00",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_NAME: "Médiateur de la consommation",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_ADDRESS: "1 rue de la Médiation, 75001 Paris",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_WEBSITE: "https://mediateur.example",
     });
 
     expect(items.every((item) => item.status === "ready")).toBe(true);

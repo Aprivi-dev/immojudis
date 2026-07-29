@@ -103,6 +103,14 @@ import type {
   WatchedZonesResponse,
   WatchedZoneUpdateInput,
 } from "@/lib/watched-zones";
+import type {
+  PrivacyRequestAdminListResponse,
+  PrivacyRequestAdminSummary,
+  PrivacyRequestAdminUpdate,
+  PrivacyRequestInput,
+  PrivacyRequestListResponse,
+  PrivacyRequestSummary,
+} from "@/lib/privacy-requests";
 
 async function authHeaders(): Promise<HeadersInit> {
   const {
@@ -960,19 +968,59 @@ export async function exportSalesCsv(args: {
   };
 }
 
-export async function startAnalyseCheckout(
-  plan: Exclude<PlanCode, "decouverte"> = "analyse",
-): Promise<BillingSessionResponse> {
+export async function startAnalyseCheckout(args: {
+  plan?: Exclude<PlanCode, "decouverte">;
+  consent: {
+    termsAccepted: true;
+    termsVersion: string;
+    privacyVersion: string;
+    paymentObligationAcknowledged: true;
+    immediatePerformanceRequested: true;
+    withdrawalInformationAcknowledged: true;
+  };
+}): Promise<BillingSessionResponse> {
   const response = await fetch("/api/billing/checkout", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(await authHeaders()),
     },
-    body: JSON.stringify({ plan }),
+    body: JSON.stringify({ plan: args.plan ?? "analyse", consent: args.consent }),
   });
 
   return readJson<BillingSessionResponse>(response);
+}
+
+export async function fetchPrivacyRequests(): Promise<PrivacyRequestListResponse> {
+  const response = await fetch("/api/privacy/requests", { headers: await authHeaders() });
+  return readJson<PrivacyRequestListResponse>(response);
+}
+
+export async function createPrivacyRequestClient(
+  data: PrivacyRequestInput,
+): Promise<PrivacyRequestSummary> {
+  const response = await fetch("/api/privacy/requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<PrivacyRequestSummary>(response);
+}
+
+export async function fetchAdminPrivacyRequests(): Promise<PrivacyRequestAdminListResponse> {
+  const response = await fetch("/api/admin/privacy-requests", { headers: await authHeaders() });
+  return readJson<PrivacyRequestAdminListResponse>(response);
+}
+
+export async function updateAdminPrivacyRequest(
+  data: PrivacyRequestAdminUpdate,
+): Promise<PrivacyRequestAdminSummary> {
+  const response = await fetch("/api/admin/privacy-requests", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<PrivacyRequestAdminSummary>(response);
 }
 
 export async function openBillingPortal(): Promise<BillingSessionResponse> {

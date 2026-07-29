@@ -130,7 +130,17 @@ describe("critical API route contracts", () => {
       new Request("https://example.test/api/billing/checkout", {
         method: "POST",
         headers: { "x-request-id": "checkout-12345678" },
-        body: JSON.stringify({ plan: "analysis" }),
+        body: JSON.stringify({
+          plan: "analysis",
+          consent: {
+            termsAccepted: true,
+            termsVersion: "2026-07-29.1",
+            privacyVersion: "2026-07-29.1",
+            paymentObligationAcknowledged: true,
+            immediatePerformanceRequested: true,
+            withdrawalInformationAcknowledged: true,
+          },
+        }),
       }),
     );
     const body = await response.json();
