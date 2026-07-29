@@ -476,7 +476,7 @@ function AnalysisDecisionPanel({
         <dl className="grid grid-cols-3 gap-2 text-center">
           {markers.map((marker) => (
             <div key={marker.label}>
-              <dt className="text-[11px] font-semibold text-brand-navy/54 sm:text-xs">
+              <dt className="text-[11px] font-semibold text-brand-navy/70 sm:text-xs">
                 {marker.label}
               </dt>
               <dd
@@ -835,9 +835,13 @@ function MarketEvidence({
       </dl>
 
       {comparables.length ? (
-        <div className="mt-7 overflow-x-auto border-y border-brand-navy/14">
+        <div
+          className="mt-7 overflow-x-auto border-y border-brand-navy/14"
+          tabIndex={0}
+          aria-label="Comparables de marché"
+        >
           <table className="w-full min-w-[540px] text-left text-sm">
-            <thead className="text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-navy/52">
+            <thead className="text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-navy/70">
               <tr>
                 <th className="py-3 pr-4">Date</th>
                 <th className="px-4 py-3">Surface</th>
@@ -1006,7 +1010,7 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
               <p className="font-display text-2xl font-semibold text-brand-navy">
                 {sale.city ?? sale.tribunal_city ?? "Barreau compétent"}
               </p>
-              <p className="mt-1 text-sm text-brand-navy/60">Avocats référencés par Immojudis</p>
+              <p className="mt-1 text-sm text-brand-navy/70">Avocats référencés par Immojudis</p>
             </div>
             <a
               href={directoryHref}

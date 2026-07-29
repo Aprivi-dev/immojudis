@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute } from "@/lib/router-compat";
 
 export const Route = createFileRoute("/legal")({
@@ -13,7 +15,7 @@ export const Route = createFileRoute("/legal")({
   component: LegalPage,
 });
 
-function LegalPage() {
+export function LegalPage() {
   return (
     <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <div className="mx-auto max-w-4xl">

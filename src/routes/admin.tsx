@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute, Link } from "@/lib/router-compat";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
@@ -71,7 +73,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminDashboardPage,
 });
 
-function AdminDashboardPage() {
+export function AdminDashboardPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [source, setSource] = useState<AdminScrollSource>("all");

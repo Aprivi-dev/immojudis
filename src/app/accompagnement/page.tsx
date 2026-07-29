@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AccompagnementRouteClient } from "../_route-clients/AccompagnementRouteClient";
+import { AccompagnementPage } from "@/routes/accompagnement";
 
 export const metadata: Metadata = {
   title: "Offres Découverte et Analyse",
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <AccompagnementRouteClient />;
+  return <AccompagnementPage />;
 }

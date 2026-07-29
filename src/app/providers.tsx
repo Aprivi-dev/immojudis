@@ -3,7 +3,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, useState } from "react";
 import { Toaster } from "sonner";
-import { AuthGate } from "@/components/AuthGate";
 import { Navbar } from "@/components/Navbar";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
@@ -15,9 +14,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         <Suspense fallback={<NavigationFallback />}>
           <Navbar />
         </Suspense>
-        <Suspense fallback={children}>
-          <AuthGate>{children}</AuthGate>
-        </Suspense>
+        {children}
         <Toaster position="top-right" richColors />
       </div>
     </QueryClientProvider>

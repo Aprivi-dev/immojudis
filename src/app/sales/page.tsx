@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { SalesRouteClient } from "../_route-clients/SalesRouteClient";
+import { SalesPage } from "@/routes/sales.index";
 
 export const metadata: Metadata = {
   title: "Annonces",
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default function Page() {
   return (
     <Suspense fallback={<SalesCatalogFallback />}>
-      <SalesRouteClient />
+      <SalesPage />
     </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { ExampleSaleRouteClient } from "../_route-clients/ExampleSaleRouteClient";
+import { ExampleSalePage } from "@/routes/annonce-exemple";
 
 export const metadata: Metadata = {
   title: "Annonce exemple",
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default function Page() {
   return (
     <Suspense fallback={<ExampleFallback />}>
-      <ExampleSaleRouteClient />
+      <ExampleSalePage />
     </Suspense>
   );
 }

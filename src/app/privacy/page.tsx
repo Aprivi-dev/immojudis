@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PrivacyRouteClient } from "../_route-clients/PrivacyRouteClient";
+import { PrivacyPage } from "@/routes/privacy";
 
 export const metadata: Metadata = {
   title: "Confidentialite",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <PrivacyRouteClient />;
+  return <PrivacyPage />;
 }

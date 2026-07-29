@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { LoginRouteClient } from "../_route-clients/LoginRouteClient";
+import { LoginPage } from "@/routes/login";
 
 export const metadata: Metadata = {
   title: "Connexion",
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <LoginRouteClient />;
+  return <LoginPage />;
 }

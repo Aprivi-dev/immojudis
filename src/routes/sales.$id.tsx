@@ -1,11 +1,9 @@
+"use client";
+
 import { useEffect } from "react";
-import { createFileRoute, Link } from "@/lib/router-compat";
+import { Link, useSearch } from "@/lib/router-compat";
 import { useQuery } from "@tanstack/react-query";
-import {
-  SaleDetailSkeleton,
-  SaleErrorComponent,
-  SaleNotFoundComponent,
-} from "@/components/SaleDetailView";
+import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailView";
 import { DiscoverySaleDetailView } from "@/components/DiscoverySaleDetailView";
 import { AnalysisSaleDetailView } from "@/components/SimplifiedSaleDetailView";
 import { useAuth } from "@/hooks/use-auth";
@@ -14,7 +12,6 @@ import { formatPrice } from "@/lib/format";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { fetchFeatureEntitlements } from "@/lib/client-api";
 import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
-import { saleSeoTitle } from "@/lib/seo";
 import type { AuctionSale } from "@/lib/types";
 
 type SaleDetailRouteData = {
@@ -31,47 +28,15 @@ async function loadSaleDetailRouteData(
   return { sale: null, preview: await getSalePreviewById(id) };
 }
 
-export const Route = createFileRoute("/sales/$id")({
-  validateSearch: (search: Record<string, unknown>) => {
-    const from = safeSalesReturnTo(search.from);
-    return from ? { from } : {};
-  },
-  // The route loader cannot know the viewer's paid entitlement. It therefore
-  // fetches only the public teaser; the component selects the curated
-  // Découverte or Analyse view after the entitlement request completes.
-  loader: async ({ params }) => ({
-    sale: null,
-    preview: await getSalePreviewById(params.id),
-  }),
-  head: ({ loaderData }) => {
-    const visibleSale = loaderData?.sale ?? loaderData?.preview ?? null;
-    const title = saleSeoTitle(visibleSale);
-    return {
-      meta: [
-        { title },
-        { property: "og:title", content: title },
-        {
-          name: "description",
-          content:
-            visibleSale?.starting_price_eur != null
-              ? `Vente immobilière judiciaire Immojudis avec mise à prix ${formatPrice(
-                  visibleSale.starting_price_eur,
-                )}. Connectez-vous pour consulter l'analyse complète du dossier.`
-              : "Vente immobilière judiciaire Immojudis : consultez l'analyse complète du dossier après connexion.",
-        },
-      ],
-    };
-  },
-  component: SaleDetailPage,
-  errorComponent: SaleErrorComponent,
-  notFoundComponent: SaleNotFoundComponent,
-});
-
-function SaleDetailPage() {
-  const { id } = Route.useParams();
-  const { from } = Route.useSearch<{ from?: string }>();
-  const returnTo = from ?? "/sales";
-  const initialData = Route.useLoaderData<SaleDetailRouteData | undefined>();
+export function SaleDetailPage({
+  id,
+  initialData,
+}: {
+  id: string;
+  initialData?: SaleDetailRouteData;
+}) {
+  const search = useSearch() as { from?: unknown };
+  const returnTo = safeSalesReturnTo(search.from) ?? "/sales";
   const { session, loading: authLoading } = useAuth();
   const sessionKey = session?.user.id ?? "anonymous";
   const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({

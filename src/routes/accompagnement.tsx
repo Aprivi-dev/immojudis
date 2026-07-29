@@ -1,3 +1,5 @@
+"use client";
+
 import type { ReactNode } from "react";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
@@ -8,6 +10,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Target from "lucide-react/dist/esm/icons/target.js";
 import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
+
 import { createFileRoute, Link } from "@/lib/router-compat";
 
 export const Route = createFileRoute("/accompagnement")({
@@ -39,7 +42,7 @@ const analysisFeatures = [
   "Mise en relation avec un avocat depuis le dossier",
 ] as const;
 
-function AccompagnementPage() {
+export function AccompagnementPage() {
   return (
     <main className="min-h-screen bg-white text-brand-navy">
       <section className="border-b border-brand-navy/10 bg-[#eef7ff]">
@@ -97,7 +100,7 @@ function AccompagnementPage() {
             features={analysisFeatures}
             highlighted
           >
-            <p className="mb-3 text-center text-xs font-medium text-brand-navy/55">
+            <p className="mb-3 text-center text-xs font-medium text-brand-navy/70">
               Paiement unique · sans abonnement
             </p>
             <BillingActions hideHelper className="[&>button]:w-full" />

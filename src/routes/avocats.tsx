@@ -53,7 +53,7 @@ export const Route = createFileRoute("/avocats")({
   component: LawyerDirectoryPage,
 });
 
-function LawyerDirectoryPage() {
+export function LawyerDirectoryPage() {
   const search = Route.useSearch<DirectorySearch>();
   const directoryQuery = useQuery({
     queryKey: ["lawyer-directory", search.saleId, search.bar, search.city, search.department],
