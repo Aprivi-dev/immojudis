@@ -1,6 +1,6 @@
 begin;
 
-select plan(26);
+select plan(28);
 
 select has_extension('pg_cron', 'pg_cron is available for the 15-minute health scheduler');
 select has_extension('pg_net', 'pg_net is available for the authenticated health callback');
@@ -67,6 +67,21 @@ select is(
   obj_description('public.dvf_transactions_source_mutation_uidx'::regclass, 'pg_class'),
   'One canonical DVF transaction per source mutation; local and parcel source rows are aggregated by the importer.',
   'the DVF replacement index keeps its canonical metadata'
+);
+
+select ok(
+  has_table_privilege(
+    'service_role',
+    'public.auction_sales_investment_candidates',
+    'SELECT'
+  ),
+  'the trusted worker can read investment candidates'
+);
+
+select ok(
+  has_table_privilege('authenticated', 'public.v_auction_map_pins', 'SELECT')
+  and not has_table_privilege('authenticated', 'public.v_auction_map_pins', 'TRUNCATE'),
+  'authenticated map access is strictly read-only'
 );
 
 set local role service_role;
