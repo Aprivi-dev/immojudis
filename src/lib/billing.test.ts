@@ -105,6 +105,7 @@ describe("billing helpers", () => {
   it("builds a one-time checkout without recurring subscription data", () => {
     const params = buildAnalysisCheckoutSessionParams({
       appOrigin: "https://immojudis.test",
+      acceptanceId: "22222222-2222-4222-8222-222222222222",
       customerId: "cus_test",
       userId: "11111111-1111-4111-8111-111111111111",
     });
@@ -123,9 +124,13 @@ describe("billing helpers", () => {
         },
       ],
       metadata: {
+        commercial_acceptance_id: "22222222-2222-4222-8222-222222222222",
         access_duration_days: "30",
         billing_model: "one_time_30_days",
         plan_code: "analyse",
+      },
+      invoice_creation: {
+        enabled: true,
       },
     });
     expect(params).not.toHaveProperty("subscription_data");

@@ -132,6 +132,17 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
 
   await page.goto("/accompagnement");
   await page.getByRole("button", { name: /Débloquer Analyse/ }).click();
+  await expect(page.getByRole("heading", { name: "Récapitulatif avant paiement" })).toBeVisible();
+  const consentCheckboxes = page.getByRole("checkbox");
+  await expect(consentCheckboxes).toHaveCount(2);
+  const orderButton = page.getByRole("button", {
+    name: "Commander avec obligation de paiement",
+  });
+  await expect(orderButton).toBeDisabled();
+  await consentCheckboxes.nth(0).check();
+  await consentCheckboxes.nth(1).check();
+  await expect(orderButton).toBeEnabled();
+  await orderButton.click();
   await expect(page).toHaveURL(/checkout=success/);
 
   const shareUrl = await page.evaluate(async () => {

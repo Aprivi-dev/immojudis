@@ -11,6 +11,9 @@ const PUBLIC_ROUTES = [
   ["/ventes-immobilieres-judiciaires", "monthly", 0.7],
   ["/a-propos", "monthly", 0.55],
   ["/contact", "monthly", 0.5],
+  ["/legal", "yearly", 0.35],
+  ["/conditions-generales", "yearly", 0.35],
+  ["/privacy", "yearly", 0.35],
 ] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {

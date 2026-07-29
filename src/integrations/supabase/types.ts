@@ -560,6 +560,188 @@ export type Database = {
           },
         ];
       };
+      commercial_acceptances: {
+        Row: {
+          accepted_at: string;
+          amount_cents: number;
+          archived_until: string | null;
+          checkout_created_at: string | null;
+          checkout_session_id: string | null;
+          currency: string;
+          evidence: Json;
+          id: string;
+          immediate_performance_requested: boolean;
+          offer_code: string;
+          payment_obligation_acknowledged: boolean;
+          privacy_sha256: string;
+          privacy_version: string;
+          purpose: string;
+          request_id: string | null;
+          requester_email_hash: string | null;
+          terms_accepted: boolean;
+          terms_sha256: string;
+          terms_version: string;
+          user_agent_hash: string | null;
+          user_id: string | null;
+          withdrawal_information_acknowledged: boolean;
+        };
+        Insert: {
+          accepted_at?: string;
+          amount_cents: number;
+          archived_until?: string | null;
+          checkout_created_at?: string | null;
+          checkout_session_id?: string | null;
+          currency: string;
+          evidence?: Json;
+          id?: string;
+          immediate_performance_requested: boolean;
+          offer_code: string;
+          payment_obligation_acknowledged: boolean;
+          privacy_sha256: string;
+          privacy_version: string;
+          purpose?: string;
+          request_id?: string | null;
+          requester_email_hash?: string | null;
+          terms_accepted: boolean;
+          terms_sha256: string;
+          terms_version: string;
+          user_agent_hash?: string | null;
+          user_id?: string | null;
+          withdrawal_information_acknowledged: boolean;
+        };
+        Update: {
+          accepted_at?: string;
+          amount_cents?: number;
+          archived_until?: string | null;
+          checkout_created_at?: string | null;
+          checkout_session_id?: string | null;
+          currency?: string;
+          evidence?: Json;
+          id?: string;
+          immediate_performance_requested?: boolean;
+          offer_code?: string;
+          payment_obligation_acknowledged?: boolean;
+          privacy_sha256?: string;
+          privacy_version?: string;
+          purpose?: string;
+          request_id?: string | null;
+          requester_email_hash?: string | null;
+          terms_accepted?: boolean;
+          terms_sha256?: string;
+          terms_version?: string;
+          user_agent_hash?: string | null;
+          user_id?: string | null;
+          withdrawal_information_acknowledged?: boolean;
+        };
+        Relationships: [];
+      };
+      commercial_confirmation_deliveries: {
+        Row: {
+          acceptance_id: string;
+          attempt_count: number;
+          checkout_session_id: string;
+          created_at: string;
+          error_message: string | null;
+          id: string;
+          paid_at: string;
+          provider_message_id: string | null;
+          recipient_hash: string | null;
+          sent_at: string | null;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          acceptance_id: string;
+          attempt_count?: number;
+          checkout_session_id: string;
+          created_at?: string;
+          error_message?: string | null;
+          id?: string;
+          paid_at: string;
+          provider_message_id?: string | null;
+          recipient_hash?: string | null;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        Update: {
+          acceptance_id?: string;
+          attempt_count?: number;
+          checkout_session_id?: string;
+          created_at?: string;
+          error_message?: string | null;
+          id?: string;
+          paid_at?: string;
+          provider_message_id?: string | null;
+          recipient_hash?: string | null;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "commercial_confirmation_deliveries_acceptance_id_fkey";
+            columns: ["acceptance_id"];
+            isOneToOne: true;
+            referencedRelation: "commercial_acceptances";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      data_subject_requests: {
+        Row: {
+          acknowledged_at: string;
+          completed_at: string | null;
+          due_at: string;
+          id: string;
+          identity_status: string;
+          message: string | null;
+          metadata: Json;
+          operator_notes: string | null;
+          request_type: string;
+          requester_email: string;
+          resolution_code: string | null;
+          status: string;
+          submitted_at: string;
+          updated_at: string;
+          user_id: string | null;
+        };
+        Insert: {
+          acknowledged_at?: string;
+          completed_at?: string | null;
+          due_at?: string;
+          id?: string;
+          identity_status?: string;
+          message?: string | null;
+          metadata?: Json;
+          operator_notes?: string | null;
+          request_type: string;
+          requester_email: string;
+          resolution_code?: string | null;
+          status?: string;
+          submitted_at?: string;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          acknowledged_at?: string;
+          completed_at?: string | null;
+          due_at?: string;
+          id?: string;
+          identity_status?: string;
+          message?: string | null;
+          metadata?: Json;
+          operator_notes?: string | null;
+          request_type?: string;
+          requester_email?: string;
+          resolution_code?: string | null;
+          status?: string;
+          submitted_at?: string;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Relationships: [];
+      };
       data_refresh_requests: {
         Row: {
           completed_at: string | null;

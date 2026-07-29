@@ -691,7 +691,9 @@ function HomeFooter() {
         <div className="ij-footer-legal">
           <span>© 2026 ImmoJudis</span>
           <Link to="/legal">Mentions légales</Link>
+          <Link to="/conditions-generales">Conditions générales</Link>
           <Link to="/privacy">Confidentialité</Link>
+          <Link to="/mes-droits">Mes droits</Link>
         </div>
       </div>
     </footer>

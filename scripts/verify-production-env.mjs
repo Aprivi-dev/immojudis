@@ -97,6 +97,23 @@ const configuredMapboxToken = firstValue([
 ]);
 const invalidMapboxToken =
   configuredMapboxToken && !isValidMapboxPublicToken(configuredMapboxToken);
+const stripeEnabled = Boolean(firstPresent(["STRIPE_SECRET_KEY"]));
+const legalNames = [
+  "NEXT_PUBLIC_LEGAL_ENTITY_NAME",
+  "NEXT_PUBLIC_LEGAL_ENTITY_FORM",
+  "NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS",
+  "NEXT_PUBLIC_LEGAL_REGISTRATION",
+  "NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR",
+  "NEXT_PUBLIC_LEGAL_CONTACT_EMAIL",
+  "NEXT_PUBLIC_LEGAL_CONTACT_PHONE",
+  "NEXT_PUBLIC_LEGAL_MEDIATOR_NAME",
+  "NEXT_PUBLIC_LEGAL_MEDIATOR_ADDRESS",
+  "NEXT_PUBLIC_LEGAL_MEDIATOR_WEBSITE",
+];
+const missingLegal = stripeEnabled ? legalNames.filter((name) => isMissing(process.env[name])) : [];
+const missingTransactionalEmail = stripeEnabled
+  ? ["RESEND_API_KEY", "ALERT_EMAIL_FROM"].filter((name) => isMissing(process.env[name]))
+  : [];
 
 if (missing.length) {
   console.error("[env:prod] Missing required production environment groups:");
@@ -120,7 +137,24 @@ if (invalidMapboxToken) {
   console.error("[env:prod] Invalid Mapbox token: expected a public token beginning with pk.");
 }
 
-if (missing.length || invalidSiteUrl || invalidMapboxToken) process.exit(1);
+if (missingLegal.length) {
+  console.error("[env:prod] Paid checkout requires complete legal identity and mediation:");
+  for (const name of missingLegal) console.error(`  - ${name}`);
+}
+
+if (missingTransactionalEmail.length) {
+  console.error("[env:prod] Paid checkout requires durable contractual email confirmation:");
+  for (const name of missingTransactionalEmail) console.error(`  - ${name}`);
+}
+
+if (
+  missing.length ||
+  invalidSiteUrl ||
+  invalidMapboxToken ||
+  missingLegal.length ||
+  missingTransactionalEmail.length
+)
+  process.exit(1);
 
 console.log("[env:prod] Required production environment groups are configured.");
 const declaredOnly = requiredGroups

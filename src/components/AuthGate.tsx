@@ -24,6 +24,7 @@ const PUBLIC_PATHS = new Set([
   "/ressources",
   "/ventes-immobilieres-judiciaires",
   "/legal",
+  "/conditions-generales",
   "/privacy",
   "/properties",
 ]);

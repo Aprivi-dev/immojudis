@@ -19,6 +19,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { AdminReadinessPanel } from "@/components/admin/AdminReadinessPanel";
 import { AdminLawyerReferralRequestsPanel } from "@/components/admin/AdminLawyerReferralRequestsPanel";
+import { AdminPrivacyRequestsPanel } from "@/components/admin/AdminPrivacyRequestsPanel";
 import { AdminReferencedLawyersPanel } from "@/components/admin/AdminReferencedLawyersPanel";
 import { AdminSubscriptionsPanel } from "@/components/admin/AdminSubscriptionsPanel";
 import { useAuth } from "@/hooks/use-auth";
@@ -423,6 +424,7 @@ export function AdminDashboardPage() {
         <AdminReferencedLawyersPanel />
 
         <AdminLawyerReferralRequestsPanel />
+        <AdminPrivacyRequestsPanel />
 
         <section className="mt-6 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
           <div className="liquid-panel rounded-lg p-5">

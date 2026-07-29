@@ -162,6 +162,10 @@ Supabase, secrets CI, runner de scroll admin) : [`docs/vercel_setup.md`](docs/ve
 Les SLO, dashboards et runbooks d'exploitation sont dans
 [`docs/operations-phase-3.md`](docs/operations-phase-3.md). La corrélation, la télémétrie Vercel et
 la sonde de production sont détaillées dans [`docs/operations-phase-5.md`](docs/operations-phase-5.md).
+La gouvernance Phase 6 est décrite dans
+[`docs/compliance-phase-6.md`](docs/compliance-phase-6.md), avec le
+[`registre RGPD`](docs/rgpd-processing-register.md) et la
+[`matrice de conservation`](docs/data-retention-matrix.md).
 
 Le build ne modifie plus la base et ne publie plus de modèle. Exécuter
 `npm run release:prepare` dans une étape de release explicitement autorisée,

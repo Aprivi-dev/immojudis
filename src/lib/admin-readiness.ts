@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import { legalConfigurationStatus } from "@/lib/legal-documents";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
 export type ReadinessArea =
@@ -11,7 +12,8 @@ export type ReadinessArea =
   | "access"
   | "email"
   | "pipeline"
-  | "operations";
+  | "operations"
+  | "compliance";
 
 export type ReadinessItem = {
   key: string;
@@ -79,7 +81,7 @@ export type AdminOperationalReadinessResponse = {
   webhookUrl: string | null;
 };
 
-export const EXPECTED_LATEST_MIGRATION_VERSION = "20260729143903";
+export const EXPECTED_LATEST_MIGRATION_VERSION = "20260729150543";
 export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v6_display";
 export const OPERATIONAL_HEALTH_SLO_TARGET_PERCENT = 99.5;
 export const OPERATIONAL_HEALTH_SLO_WINDOW_DAYS = 30;
@@ -142,19 +144,33 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
     env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN,
     env.GITHUB_ACTIONS_DISPATCH_TOKEN,
   );
+  const legalStatus = legalConfigurationStatus(env);
 
   return [
+    {
+      key: "compliance.publisher",
+      area: "compliance",
+      label: "Identité légale et médiation",
+      status: legalStatus.ready ? "ready" : "blocked",
+      detail: legalStatus.ready
+        ? "L’éditeur, les contacts et le médiateur sont publiables dans les documents contractuels."
+        : `${legalStatus.missing.length} mention(s) obligatoire(s) restent à configurer ; le checkout est suspendu.`,
+      action: legalStatus.ready ? null : `Configurer ${legalStatus.missing.join(", ")}.`,
+    },
     {
       key: "billing.checkout.analyse",
       area: "billing",
       label: "Checkout Analyse",
-      status: stripeSecret && appUrl ? "ready" : "blocked",
+      status:
+        stripeSecret && appUrl && legalStatus.ready && emailConfig.configured ? "ready" : "blocked",
       detail:
-        stripeSecret && appUrl
-          ? "Le checkout Analyse peut encaisser 29 € et ouvrir 30 jours d'accès."
-          : "Le checkout Analyse attend encore sa clé Stripe et l'URL canonique.",
+        stripeSecret && appUrl && legalStatus.ready && emailConfig.configured
+          ? "Le checkout Analyse peut encaisser 29 €, conserver la preuve contractuelle et ouvrir 30 jours d'accès."
+          : "Le checkout Analyse attend Stripe, son URL canonique, ses mentions juridiques ou le canal de confirmation contractuelle.",
       action:
-        stripeSecret && appUrl ? null : "Configurer STRIPE_SECRET_KEY et NEXT_PUBLIC_APP_URL.",
+        stripeSecret && appUrl && legalStatus.ready && emailConfig.configured
+          ? null
+          : "Configurer Stripe, Resend, NEXT_PUBLIC_APP_URL et les variables NEXT_PUBLIC_LEGAL_*.",
     },
     {
       key: "billing.webhook",
