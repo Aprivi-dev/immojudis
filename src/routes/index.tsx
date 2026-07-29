@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute, Link } from "@/lib/router-compat";
 import Image from "next/image";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
@@ -188,7 +190,7 @@ const searchGhostCities = [
   "Hérault",
 ] as const;
 
-function HomePage() {
+export function HomePage() {
   return (
     <main className="ij-page">
       <HeroSection />

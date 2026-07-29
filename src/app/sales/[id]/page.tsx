@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { SaleDetailRouteClient } from "@/app/_route-clients/SaleDetailRouteClient";
 import { formatPrice } from "@/lib/format";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { saleSeoTitle } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import { SaleDetailPage } from "@/routes/sales.$id";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -84,7 +84,7 @@ export default async function Page({ params }: PageProps) {
         />
       ) : null}
       <Suspense fallback={<SaleDetailFallback sale={visibleSale} />}>
-        <SaleDetailRouteClient id={id} loaderData={data} />
+        <SaleDetailPage id={id} initialData={data} />
       </Suspense>
     </>
   );

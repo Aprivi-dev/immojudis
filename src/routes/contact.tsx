@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute, Link } from "@/lib/router-compat";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
@@ -16,7 +18,7 @@ export const Route = createFileRoute("/contact")({
   component: ContactPage,
 });
 
-function ContactPage() {
+export function ContactPage() {
   return (
     <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_24rem] lg:items-stretch">
