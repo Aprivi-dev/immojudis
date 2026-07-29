@@ -346,6 +346,41 @@ def test_restore_dvf_indexes_builds_integrity_and_query_indexes() -> None:
     assert "dvf_transactions_lat_lng_idx" in statements
 
 
+def test_finalize_failed_import_reconnects_after_administrator_restart(monkeypatch) -> None:
+    original_connection = BrokenConnection()
+    recovered_cursor = RecordingCursor()
+    recovered_connection = RecordingConnection(recovered_cursor)
+    restored: list[RecordingConnection] = []
+
+    monkeypatch.setattr(
+        dvf_import,
+        "_postgres_connect",
+        lambda _db_url: recovered_connection,
+    )
+    monkeypatch.setattr(
+        dvf_import,
+        "_restore_dvf_indexes",
+        lambda connection: restored.append(connection),
+    )
+
+    dvf_import._finalize_failed_import(
+        "postgresql://database",
+        original_connection,
+        "batch-id",
+        "terminating connection due to administrator command",
+        restore_indexes=True,
+    )
+
+    assert original_connection.closed
+    assert restored == [recovered_connection]
+    assert recovered_connection.commits == 2
+    assert recovered_connection.closed
+    assert recovered_cursor.calls[-1][1] == (
+        "terminating connection due to administrator command",
+        "batch-id",
+    )
+
+
 def test_import_dvf_file_dry_run_counts_valid_and_skipped_rows(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(dvf_import, "load_settings", lambda: {"supabase_db_url": None})
     path = tmp_path / "valeursfoncieres-2024.txt"
@@ -416,9 +451,28 @@ class RecordingConnection:
     def __init__(self, cursor: RecordingCursor) -> None:
         self._cursor = cursor
         self.commits = 0
+        self.rollbacks = 0
+        self.closed = False
 
     def cursor(self) -> RecordingCursor:
         return self._cursor
 
     def commit(self) -> None:
         self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class BrokenConnection:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def rollback(self) -> None:
+        raise RuntimeError("connection is lost")
+
+    def close(self) -> None:
+        self.closed = True
