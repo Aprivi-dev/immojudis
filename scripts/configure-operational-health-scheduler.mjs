@@ -19,6 +19,10 @@ const originValue = firstFilledEnv(
   process.env.NEXT_PUBLIC_APP_URL,
   process.env.SITE_URL,
 );
+const databaseConnectTimeoutSeconds = Math.min(
+  900,
+  Math.max(15, Number.parseInt(process.env.PGCONNECT_TIMEOUT || "60", 10) || 60),
+);
 
 if (!databaseUrl || !cronSecret || !originValue) {
   console.error(
@@ -35,8 +39,9 @@ if (origin.protocol !== "https:" || origin.username || origin.password || origin
   process.exit(1);
 }
 
-const sql = postgres(databaseUrl, {
+const sql = postgres(withMaintenanceSessionSettings(databaseUrl), {
   max: 1,
+  connect_timeout: databaseConnectTimeoutSeconds,
   ssl: process.env.POSTGRES_SSL === "disable" ? false : "require",
 });
 
@@ -126,6 +131,19 @@ function loadEnvironmentFiles(directory) {
 
 function firstFilledEnv(...values) {
   return values.find((value) => !isMissing(value))?.trim();
+}
+
+function withMaintenanceSessionSettings(databaseUrl) {
+  const url = new URL(databaseUrl);
+  if (url.hostname.endsWith(".pooler.supabase.com")) url.port = "5432";
+  const existingOptions = url.searchParams.get("options")?.trim();
+  if (!existingOptions?.includes("statement_timeout")) {
+    url.searchParams.set(
+      "options",
+      [existingOptions, "-c statement_timeout=0 -c lock_timeout=0"].filter(Boolean).join(" "),
+    );
+  }
+  return url.toString();
 }
 
 function isMissing(value) {
