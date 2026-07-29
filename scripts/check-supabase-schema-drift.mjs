@@ -10,7 +10,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvironmentFiles(root);
 
 const remote = process.argv.includes("--remote");
-const target = remote
+const configuredTarget = remote
   ? firstFilledEnv(
       process.env.SUPABASE_DB_URL,
       process.env.POSTGRES_URL_NON_POOLING,
@@ -18,10 +18,12 @@ const target = remote
     )
   : "local";
 
-if (!target) {
+if (!configuredTarget) {
   console.error("[schema-drift] A direct Postgres URL is required for --remote.");
   process.exit(1);
 }
+
+const target = remote ? withMaintenanceSessionSettings(configuredTarget) : configuredTarget;
 
 const temporaryDirectory = mkdtempSync(join(tmpdir(), "immojudis-schema-drift-"));
 const outputPath = join(temporaryDirectory, "drift.sql");
@@ -48,6 +50,10 @@ try {
     {
       cwd: root,
       encoding: "utf8",
+      env: {
+        ...process.env,
+        PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || "600",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -98,6 +104,20 @@ function loadEnvironmentFiles(directory) {
 
 function firstFilledEnv(...values) {
   return values.find((value) => !isMissing(value))?.trim();
+}
+
+function withMaintenanceSessionSettings(databaseUrl) {
+  const url = new URL(databaseUrl);
+  if (url.hostname.endsWith(".pooler.supabase.com")) url.port = "5432";
+  url.searchParams.set("connect_timeout", process.env.PGCONNECT_TIMEOUT || "600");
+  const existingOptions = url.searchParams.get("options")?.trim();
+  if (!existingOptions?.includes("statement_timeout")) {
+    url.searchParams.set(
+      "options",
+      [existingOptions, "-c statement_timeout=0 -c lock_timeout=0"].filter(Boolean).join(" "),
+    );
+  }
+  return url.toString();
 }
 
 function isMissing(value) {
