@@ -27,7 +27,7 @@ Les versions et empreintes sont centralisées dans `src/lib/legal-documents.ts` 
 | ---------------- | ----------------------- | ------------------------ |
 | Mentions légales | `/legal`                | `2026-07-29.1`           |
 | CGVU             | `/conditions-generales` | `2026-07-29.1`           |
-| Confidentialité  | `/privacy`              | `2026-07-29.1`           |
+| Confidentialité  | `/privacy`              | `2026-07-29.2`           |
 
 Toute modification substantielle crée une nouvelle version, une nouvelle empreinte et une date
 d’effet. Les empreintes correspondent aux sources des pages publiées et sont contrôlées par un test

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -134,8 +135,8 @@ describe("critical API route contracts", () => {
           plan: "analysis",
           consent: {
             termsAccepted: true,
-            termsVersion: "2026-07-29.1",
-            privacyVersion: "2026-07-29.1",
+            termsVersion: LEGAL_DOCUMENTS.terms.version,
+            privacyVersion: LEGAL_DOCUMENTS.privacy.version,
             paymentObligationAcknowledged: true,
             immediatePerformanceRequested: true,
             withdrawalInformationAcknowledged: true,
