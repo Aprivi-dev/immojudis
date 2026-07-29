@@ -1,7 +1,8 @@
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { deliverOperationalAlertNotifications } from "@/lib/operational-alerts";
+import { resolveRequestId } from "@/lib/request-id";
 
 type CronRpcClient = {
   rpc(
@@ -32,22 +33,36 @@ export async function runMonitoredCron(
   jobName: string,
   handler: () => Promise<Record<string, unknown>>,
 ) {
-  const requestId = request.headers.get("x-request-id") || randomUUID();
+  const startedAt = Date.now();
+  const requestId = resolveRequestId(request.headers.get("x-request-id"));
   if (!cronRequestAuthorized(request)) {
+    logCron("warn", {
+      requestId,
+      jobName,
+      durationMs: Date.now() - startedAt,
+      status: 401,
+      outcome: "unauthorized",
+    });
     return NextResponse.json(
       { ok: false, error: "Unauthorized", code: "AUTH_REQUIRED", requestId },
       { status: 401, headers: { "cache-control": "no-store", "x-request-id": requestId } },
     );
   }
 
-  const startedAt = Date.now();
   const runId = await beginRun(jobName);
 
   try {
     const result = await handler();
     const durationMs = Date.now() - startedAt;
     await finishRun(runId, "success", result, null);
-    logCron("info", { requestId, runId, jobName, durationMs, status: "success" });
+    logCron("info", {
+      requestId,
+      runId,
+      jobName,
+      durationMs,
+      status: 200,
+      outcome: "success",
+    });
     return NextResponse.json(
       {
         ok: true,
@@ -62,7 +77,15 @@ export async function runMonitoredCron(
     const message = operationalErrorMessage(error);
     const durationMs = Date.now() - startedAt;
     await finishRun(runId, "failed", {}, message);
-    logCron("error", { requestId, runId, jobName, durationMs, status: "failed", message });
+    logCron("error", {
+      requestId,
+      runId,
+      jobName,
+      durationMs,
+      status: 500,
+      outcome: "failed",
+      message,
+    });
     return NextResponse.json(
       { ok: false, error: "Scheduled job failed", code: "JOB_FAILED", requestId, runId },
       { status: 500, headers: { "cache-control": "no-store", "x-request-id": requestId } },
@@ -161,8 +184,9 @@ async function finishRun(
   }
 }
 
-function logCron(level: "info" | "error", fields: Record<string, unknown>) {
+function logCron(level: "info" | "warn" | "error", fields: Record<string, unknown>) {
   const line = JSON.stringify({ scope: "cron", timestamp: new Date().toISOString(), ...fields });
   if (level === "error") console.error(line);
+  else if (level === "warn") console.warn(line);
   else console.info(line);
 }

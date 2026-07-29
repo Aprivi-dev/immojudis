@@ -51,21 +51,21 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 
 ## Variables d'environnement
 
-| Variable                          | Requis | Description                                                                                            |
-| --------------------------------- | :----: | ------------------------------------------------------------------------------------------------------ |
-| `VITE_SUPABASE_URL`               |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                     |
-| `VITE_SUPABASE_PUBLISHABLE_KEY`   |   ✅   | Clé `anon` / publishable (publique, côté client)                                                       |
-| `SUPABASE_SECRET_KEY`             |   ✅   | Clé serveur Supabase pour les API routes, ou `SUPABASE_SERVICE_ROLE_KEY` sur les projets legacy        |
-| `SUPABASE_DB_URL`                 |   ✅   | URL Postgres directe pour les migrations. Replis acceptés : `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL` |
-| `CRON_SECRET`                     |   ✅   | Secret utilisé par les routes Vercel Cron                                                              |
-| `SITE_URL`                        |   ✅   | Origine canonique publique (`https://immojudis.fr`), utilisée par les métadonnées, emails et paiements |
-| `RESEND_API_KEY`                  |   ✅   | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés      |
-| `ALERT_EMAIL_FROM`                |   ✅   | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`                              |
-| `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` |   ➖   | Token public Mapbox utilisé par Mapbox GL JS et les mini-cartes statiques.                             |
-| `NEXT_PUBLIC_MAPBOX_STYLE`        |   ➖   | Style Mapbox, par exemple `mapbox/streets-v12` ou `mapbox://styles/<user>/<style>`.                    |
-| `NEXT_PUBLIC_OSM_TILE_URL`        |   ➖   | Fallback legacy de tuiles OSM compatible `{z}/{x}/{y}` si Mapbox est absent ou indisponible.           |
-| `GITHUB_SCROLL_TOKEN`             |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.               |
-| `OPERATIONS_ALERT_WEBHOOK_URL`    |   ➖   | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                    |
+| Variable                          | Requis | Description                                                                                             |
+| --------------------------------- | :----: | ------------------------------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`               |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                      |
+| `VITE_SUPABASE_PUBLISHABLE_KEY`   |   ✅   | Clé `anon` / publishable (publique, côté client)                                                        |
+| `SUPABASE_SECRET_KEY`             |   ✅   | Clé serveur Supabase pour les API routes, ou `SUPABASE_SERVICE_ROLE_KEY` sur les projets legacy         |
+| `SUPABASE_DB_URL`                 |   ✅   | URL Postgres directe pour les migrations. Replis acceptés : `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL`  |
+| `CRON_SECRET`                     |   ✅   | Secret utilisé par les routes Vercel Cron                                                               |
+| `SITE_URL`                        |   ✅   | Origine canonique publique (`https://immojudis.com`), utilisée par les métadonnées, emails et paiements |
+| `RESEND_API_KEY`                  |   ✅   | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés       |
+| `ALERT_EMAIL_FROM`                |   ✅   | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`                               |
+| `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` |   ➖   | Token public Mapbox utilisé par Mapbox GL JS et les mini-cartes statiques.                              |
+| `NEXT_PUBLIC_MAPBOX_STYLE`        |   ➖   | Style Mapbox, par exemple `mapbox/streets-v12` ou `mapbox://styles/<user>/<style>`.                     |
+| `NEXT_PUBLIC_OSM_TILE_URL`        |   ➖   | Fallback legacy de tuiles OSM compatible `{z}/{x}/{y}` si Mapbox est absent ou indisponible.            |
+| `GITHUB_SCROLL_TOKEN`             |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                |
+| `OPERATIONS_ALERT_WEBHOOK_URL`    |   ➖   | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                     |
 
 > Les variables `VITE_*` sont **inlinées au moment du build**. En production
 > (Vercel) elles doivent être présentes dans _Project Settings → Environment
@@ -160,7 +160,8 @@ d'environnement dans le projet Vercel puis déployer. Procédure complète (Auth
 Supabase, secrets CI, runner de scroll admin) : [`docs/vercel_setup.md`](docs/vercel_setup.md).
 
 Les SLO, dashboards et runbooks d'exploitation sont dans
-[`docs/operations-phase-3.md`](docs/operations-phase-3.md).
+[`docs/operations-phase-3.md`](docs/operations-phase-3.md). La corrélation, la télémétrie Vercel et
+la sonde de production sont détaillées dans [`docs/operations-phase-5.md`](docs/operations-phase-5.md).
 
 Le build ne modifie plus la base et ne publie plus de modèle. Exécuter
 `npm run release:prepare` dans une étape de release explicitement autorisée,

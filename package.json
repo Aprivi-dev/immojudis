@@ -28,6 +28,7 @@
     "check:migrations": "node scripts/apply-supabase-migrations.mjs --check",
     "db:migrate": "node scripts/apply-supabase-migrations.mjs",
     "ops:health-scheduler:configure": "node scripts/configure-operational-health-scheduler.mjs",
+    "ops:smoke": "node scripts/check-production-smoke.mjs",
     "valuation:publish": "node scripts/publish-valuation-models.mjs",
     "release:prepare": "npm run env:check:prod && npm run db:migrate && npm run ops:health-scheduler:configure && npm run check:schema-drift -- --remote && npm run valuation:publish",
     "format": "prettier --write ."
@@ -40,6 +41,8 @@
     "@supabase/supabase-js": "^2.105.4",
     "@tailwindcss/postcss": "^4.3.3",
     "@tanstack/react-query": "^5.83.0",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",

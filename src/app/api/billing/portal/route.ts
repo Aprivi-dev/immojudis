@@ -1,25 +1,23 @@
-import { NextResponse } from "next/server";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { createBillingPortalSession } from "@/lib/billing";
+import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const context = createApiRequestContext(request, "api.billing.portal");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const response = await createBillingPortalSession({ auth, origin: url.origin });
-    return NextResponse.json(response);
+    return apiJson(response, context);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Portail de paiement indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("configur")
-        ? 503
-        : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiError(error, context, {
+      fallbackMessage: "Portail de paiement indisponible.",
+      fallbackStatus: 400,
+    });
   }
 }
