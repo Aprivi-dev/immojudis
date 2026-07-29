@@ -1,6 +1,6 @@
 begin;
 
-select plan(20);
+select plan(21);
 
 select has_extension('pg_cron', 'pg_cron is available for the 15-minute health scheduler');
 select has_extension('pg_net', 'pg_net is available for the authenticated health callback');
@@ -109,6 +109,12 @@ select is(
   (public.evaluate_operational_health('2026-07-27T10:15:00Z'::timestamptz)->>'ok')::boolean,
   true,
   'the baseline meets every operational health objective'
+);
+
+select is(
+  (public.evaluate_operational_health('2026-07-27T10:15:00Z'::timestamptz)->>'dvf_transactions')::bigint,
+  1::bigint,
+  'the DVF health signal detects data without an exact table scan'
 );
 
 delete from public.operational_job_runs where job_name = 'sale-change-monitor';
