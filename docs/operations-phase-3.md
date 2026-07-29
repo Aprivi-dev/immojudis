@@ -23,30 +23,34 @@ un run vert distinct. Les payloads sont bornés et ne contiennent ni secret ni d
 
 ## Objectifs de niveau de service
 
-| Signal               | Objectif                                                                            | Alerte warning             | Alerte critical                                             |
-| -------------------- | ----------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------------------------- |
-| Contrôle de santé    | au moins un passage réussi par fenêtre de 30 min ; disponibilité mensuelle ≥ 99,5 % | dernière mesure > 30 min   | scheduler absent/inactif ou contrôle durablement impossible |
-| Crons quotidiens     | dernier succès < 30 h                                                               | —                          | aucun succès dans la fenêtre                                |
-| Crons hebdomadaires  | dernier succès < 8 jours                                                            | —                          | aucun succès dans la fenêtre                                |
-| Webhook Stripe       | 99,9 % traités, aucun événement `processing` > 15 min                               | —                          | échec dans l’heure ou traitement > 15 min                   |
-| Pipeline d’import    | démarrage de la file < 30 min, run < 3 h                                            | attente > 30 min           | attente > 2 h ou run > 3 h                                  |
-| Refresh utilisateur  | démarrage < 30 min                                                                  | attente > 30 min           | attente > 2 h                                               |
-| DVF                  | au moins une transaction et un import terminé dans les 220 jours                    | dernier import > 220 jours | aucune donnée, import bloqué > 6 h ou échec dans les 24 h   |
-| Notification externe | 99 % des transitions livrées dans les 20 min                                        | livraison en attente       | livraison en échec après tentative                          |
+| Signal               | Objectif                                                                            | Alerte warning             | Alerte critical                                                          |
+| -------------------- | ----------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------ |
+| Contrôle de santé    | au moins un passage réussi par fenêtre de 30 min ; disponibilité mensuelle ≥ 99,5 % | dernière mesure > 30 min   | scheduler absent/inactif ou contrôle durablement impossible              |
+| Crons quotidiens     | dernier succès < 30 h                                                               | —                          | aucun succès dans la fenêtre                                             |
+| Crons hebdomadaires  | dernier succès < 8 jours                                                            | —                          | aucun succès dans la fenêtre                                             |
+| Webhook Stripe       | 99,9 % traités, aucun événement `processing` > 15 min                               | —                          | échec dans l’heure ou traitement > 15 min                                |
+| Pipeline d’import    | démarrage de la file < 30 min, run < 3 h                                            | attente > 30 min           | attente > 2 h ou run > 3 h                                               |
+| Refresh utilisateur  | démarrage < 30 min                                                                  | attente > 30 min           | attente > 2 h                                                            |
+| DVF                  | au moins une transaction et un import terminé dans les 220 jours                    | dernier import > 220 jours | aucune donnée, import bloqué > 6 h ou échec postérieur au dernier succès |
+| Notification externe | 99 % des transitions livrées dans les 20 min                                        | livraison en attente       | livraison en échec après tentative                                       |
 
-Les seuils applicatifs sont versionnés dans
-`supabase/migrations/20260727185139_phase_3_data_operations.sql`. Toute modification de seuil doit
-mettre à jour ce document et ses tests pgTAP dans le même changement.
+Les seuils applicatifs ont été introduits dans
+`supabase/migrations/20260727185139_phase_3_data_operations.sql` et la sémantique de récupération
+DVF est corrigée dans `20260729143903_phase_5_observability.sql` : un échec historique reste auditable
+mais ne maintient pas l'incident ouvert lorsqu'un import complet plus récent l'a remplacé. Toute
+modification de seuil doit mettre à jour ce document et ses tests pgTAP dans le même changement.
 
 ## Tableaux de bord
 
-- `/admin` → panneau **Readiness offre** : scheduler, dernière mesure, alertes ouvertes, sévérité et
-  état de livraison externe.
+- `/admin` → panneau **Readiness offre** : scheduler, dernière mesure, taux de succès sur 30 jours,
+  cible SLO, alertes ouvertes, sévérité et état de livraison externe.
 - Vercel → Observability / Runtime Logs, filtre
   `requestPath:/api/cron/operational-health` ou `scope:operational-alert-delivery`.
 - Supabase → Integrations / Cron / `immojudis-operational-health` pour l’historique du scheduler.
 - GitHub Actions → workflow **Immojudis Operational Alert** pour l’historique externe des incidents
   et résolutions.
+- GitHub Actions → workflow **Production smoke** pour la disponibilité des parcours publics toutes
+  les 30 minutes.
 
 Requêtes de diagnostic :
 
@@ -107,8 +111,10 @@ where jobname like 'immojudis-operational%';
 ### `dvf.freshness`
 
 1. Contrôler `dvf_import_batches` et le workflow `dvf-import.yml`.
-2. Vérifier la disponibilité et le checksum de la ressource officielle data.gouv.fr.
-3. Relancer l’import semestriel, puis confirmer un batch `completed` et un nombre de transactions
+2. Comparer l'échec actif au dernier batch `completed` : un échec antérieur est déjà remplacé et ne
+   doit pas entraîner une nouvelle relance.
+3. Vérifier la disponibilité et le checksum de la ressource officielle data.gouv.fr.
+4. Relancer l’import semestriel, puis confirmer un batch `completed` et un nombre de transactions
    strictement positif.
 
 ### Notification externe en échec

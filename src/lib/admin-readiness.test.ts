@@ -98,6 +98,12 @@ describe("admin readiness", () => {
         status: "blocked",
         schedulerActive: true,
         schedulerSchedule: "*/15 * * * *",
+        sloTargetPercent: 99.5,
+        sloWindowDays: 30,
+        successfulRunCount: 98,
+        failedRunCount: 2,
+        totalRunCount: 100,
+        successRatePercent: 98,
         openAlertCount: 1,
         criticalOpenAlertCount: 0,
         pendingDeliveryCount: 0,
@@ -110,6 +116,33 @@ describe("admin readiness", () => {
       key: "operations.health",
       status: "blocked",
       action: expect.stringContaining("canal externe"),
+    });
+  });
+
+  it("surfaces an unmet health SLO without inventing an operational incident", () => {
+    expect(
+      operationalHealthItem({
+        status: "warning",
+        schedulerActive: true,
+        schedulerSchedule: "*/15 * * * *",
+        sloTargetPercent: 99.5,
+        sloWindowDays: 30,
+        successfulRunCount: 98,
+        failedRunCount: 2,
+        totalRunCount: 100,
+        successRatePercent: 98,
+        openAlertCount: 0,
+        criticalOpenAlertCount: 0,
+        pendingDeliveryCount: 0,
+        failedDeliveryCount: 0,
+        lastHealthRunAt: "2026-07-29T14:15:00.000Z",
+        alerts: [],
+        detail: "Le contrôle de santé atteint 98.000 % sur 30 jours, sous le SLO de 99.5 %.",
+      }),
+    ).toMatchObject({
+      key: "operations.health",
+      status: "warning",
+      action: expect.stringContaining("exécutions en échec"),
     });
   });
 });
