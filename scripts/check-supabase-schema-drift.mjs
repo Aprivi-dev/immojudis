@@ -138,7 +138,8 @@ function normalizeDiff(value) {
       if (/\blovable_readonly\b/i.test(normalized)) return false;
 
       return !(
-        /^-- (Migration unit|Transaction mode|Boundary reason):/i.test(normalized) ||
+        /^-- Migration unit \d+:/i.test(normalized) ||
+        /^-- (Transaction mode|Boundary reason):/i.test(normalized) ||
         /^SET check_function_bodies = false;$/i.test(normalized)
       );
     })
