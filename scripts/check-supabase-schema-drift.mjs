@@ -69,7 +69,7 @@ try {
     console.error(
       `[schema-drift] ${remote ? "Production" : "Local database"} differs from committed migrations.`,
     );
-    console.error(diff.slice(0, 4_000));
+    console.error(diff.slice(0, 40_000));
     process.exit(1);
   }
 
