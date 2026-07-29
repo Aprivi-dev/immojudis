@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute, Link } from "@/lib/router-compat";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
@@ -202,7 +204,7 @@ export const Route = createFileRoute("/ventes-immobilieres-judiciaires")({
   component: ResourcesPage,
 });
 
-function ResourcesPage() {
+export function ResourcesPage() {
   return (
     <main className="liquid-page min-h-screen bg-background pb-24 text-foreground">
       <script

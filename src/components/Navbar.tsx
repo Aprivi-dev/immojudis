@@ -74,7 +74,7 @@ export function Navbar() {
             >
               <BrandMark variant="transparent" className="h-7 w-7" />
               <span>
-                Immo<span className="text-gold">Judis</span>
+                Immo<span className="text-[#8a5b24]">Judis</span>
               </span>
             </Link>
 
@@ -466,8 +466,8 @@ function NavLink({
     <Link
       to={to}
       activeOptions={{ exact: true }}
-      className="rounded-full px-3 py-2 transition-colors hover:bg-[#c98d45]/10 hover:text-[#9c642b]"
-      activeProps={{ className: "bg-[#c98d45]/10 text-[#9c642b]" }}
+      className="rounded-full px-3 py-2 transition-colors hover:bg-[#c98d45]/10 hover:text-[#8a5b24]"
+      activeProps={{ className: "bg-[#c98d45]/10 text-[#8a5b24]" }}
     >
       {children}
       {chevron ? <ChevronDown aria-hidden className="h-4 w-4" /> : null}
@@ -489,8 +489,8 @@ function MobileNavLink({
       to={to}
       onClick={onClick}
       activeOptions={{ exact: true }}
-      className="border-b border-[rgb(19_34_56_/_8%)] py-4 transition-colors hover:text-[#9c642b]"
-      activeProps={{ className: "text-[#9c642b]" }}
+      className="border-b border-[rgb(19_34_56_/_8%)] py-4 transition-colors hover:text-[#8a5b24]"
+      activeProps={{ className: "text-[#8a5b24]" }}
     >
       {children}
     </Link>

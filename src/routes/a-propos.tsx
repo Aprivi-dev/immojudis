@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute, Link } from "@/lib/router-compat";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Landmark from "lucide-react/dist/esm/icons/landmark.js";
@@ -19,7 +21,7 @@ export const Route = createFileRoute("/a-propos")({
   component: AboutPage,
 });
 
-function AboutPage() {
+export function AboutPage() {
   return (
     <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <div className="mx-auto max-w-6xl">

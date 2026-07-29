@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute } from "@/lib/router-compat";
 import { AnalysisSaleDetailView, FreeSaleDetailView } from "@/components/SimplifiedSaleDetailView";
 import { EXAMPLE_MARKET_ESTIMATE, EXAMPLE_SALE } from "@/lib/example-sale";
@@ -21,7 +23,7 @@ export const Route = createFileRoute("/annonce-exemple")({
   component: ExampleSalePage,
 });
 
-function ExampleSalePage() {
+export function ExampleSalePage() {
   const { offre } = Route.useSearch<{ offre: "decouverte" | "analyse" }>();
   if (offre === "decouverte") {
     return <FreeSaleDetailView sale={EXAMPLE_SALE} />;

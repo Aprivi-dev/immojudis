@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ResourcesRouteClient } from "../_route-clients/ResourcesRouteClient";
+import { ResourcesPage } from "@/routes/ventes-immobilieres-judiciaires";
 
 export const metadata: Metadata = {
   title: "Ventes immobilieres judiciaires",
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <ResourcesRouteClient />;
+  return <ResourcesPage />;
 }
