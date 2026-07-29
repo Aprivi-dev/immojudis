@@ -90,7 +90,7 @@ SUPABASE_SERVICE_ROLE_KEY=...
 
 Si ces variables sont absentes, le pipeline collecte, normalise, déduplique et exporte seulement les fichiers locaux.
 
-Pour appliquer automatiquement le schéma SQL depuis la machine locale, ajouter aussi l'URL Postgres Supabase :
+Pour les écritures directes du pipeline, ajouter aussi l'URL Postgres Supabase :
 
 ```bash
 SUPABASE_DB_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
@@ -175,19 +175,12 @@ NOTAIRES_MAX_PAGES=2
 Tous les scrapers respectent `robots.txt`. Si une source refuse une URL ou masque une partie des documents, le pipeline journalise l'erreur et continue avec les autres sources, sans tentative de contournement.
 `encheres-domaine.gouv.fr` et `immonotairesencheres.com` ne sont pas intégrés tant qu'ils ne publient pas de page/API de listings exploitable sans session JS/cookies.
 
-Créer la table dans Supabase automatiquement avec :
+Initialisation du schéma :
 
-```bash
-python -m src.storage.setup_supabase
-```
-
-Ou manuellement dans le SQL Editor avec :
-
-```sql
--- sql/schema.sql
-```
-
-Le fichier active `pgcrypto`, crée `auction_sales`, les index demandés, active RLS et donne les droits nécessaires au rôle `service_role`.
+`python -m src.storage.setup_supabase` et `sql/schema.sql` sont réservés aux bases
+locales jetables. Une base Supabase hébergée doit être créée et mise à jour
+exclusivement par les migrations versionnées du dossier `supabase/migrations`,
+afin que le contrôle de dérive de la phase 3 reste fiable.
 
 ## Import DVF semestriel
 
