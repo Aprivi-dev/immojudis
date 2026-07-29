@@ -64,8 +64,9 @@ begin
   end if;
 
   if tg_op = 'DELETE' then
-    if current_user in ('postgres', 'supabase_admin')
-      and old.archived_until <= statement_timestamp() then
+    -- DELETE is not granted to application roles. The trigger adds the temporal
+    -- invariant so even an authorised retention worker cannot purge evidence early.
+    if old.archived_until <= statement_timestamp() then
       return old;
     end if;
     raise exception using errcode = '55000', message = 'Commercial acceptance evidence is immutable until its retention period expires.';

@@ -45,8 +45,8 @@ insert into public.commercial_acceptances (
   '90000000-0000-4000-8000-000000000001',
   '2026-07-29.1',
   '3b46da5f455e9420656e5269ee45749907f6fc01f9fe25a78bcd81e769560378',
-  '2026-07-29.1',
-  '4359b4a452946d2f2e09d87ea23e61c08f7292cdb365685e4deb95673f622b97',
+  '2026-07-29.2',
+  'da21dbb05f14cf0e497942a569d16b8a78f0beb2582ab7955d3a90dc19f33ac3',
   'analyse_30_days',
   2900,
   'eur',
@@ -55,13 +55,13 @@ insert into public.commercial_acceptances (
   true,
   true,
   'cs_phase_6',
-  '2026-07-29T15:00:00Z',
-  '2026-07-29T15:00:00Z'
+  '2010-07-29T15:00:00Z',
+  '2010-07-29T15:00:00Z'
 );
 
 select is(
   (select archived_until from public.commercial_acceptances where id = '90000000-0000-4000-8000-000000000001'),
-  '2036-07-29T15:00:00Z'::timestamptz,
+  '2020-07-29T15:00:00Z'::timestamptz,
   'commercial evidence receives a ten-year archive deadline'
 );
 
@@ -83,14 +83,17 @@ insert into public.data_subject_requests (
   '90000000-0000-4000-8000-000000000002',
   'phase6@example.test',
   'access',
-  '2026-07-29T15:00:00Z',
-  '2026-07-29T15:00:00Z',
-  '2026-08-29T15:00:00Z'
+  '2020-07-29T15:00:00Z',
+  '2020-07-29T15:00:00Z',
+  '2020-08-29T15:00:00Z'
 );
 
-select is(
-  (select due_at - submitted_at from public.data_subject_requests where id = '90000000-0000-4000-8000-000000000002'),
-  interval '1 month',
+select ok(
+  (
+    select due_at = submitted_at + interval '1 month'
+    from public.data_subject_requests
+    where id = '90000000-0000-4000-8000-000000000002'
+  ),
   'data-subject requests carry the one-month response deadline'
 );
 
@@ -104,7 +107,7 @@ select throws_ok(
 update public.data_subject_requests
 set
   status = 'completed',
-  completed_at = '2026-07-30T15:00:00Z',
+  completed_at = '2020-07-30T15:00:00Z',
   resolution_code = 'access_copy_delivered'
 where id = '90000000-0000-4000-8000-000000000002';
 
@@ -115,7 +118,7 @@ select is(
 );
 
 select lives_ok(
-  $$select public.run_data_retention('2040-08-01T00:00:00Z'::timestamptz)$$,
+  $$select public.run_data_retention('2026-08-01T00:00:00Z'::timestamptz)$$,
   'the scheduled retention procedure covers Phase 6 data'
 );
 
