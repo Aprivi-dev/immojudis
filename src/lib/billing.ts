@@ -1,9 +1,17 @@
 import Stripe from "stripe";
+import { randomUUID } from "node:crypto";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import {
+  assertCommercialConfirmationReadiness,
+  type CheckoutConsent,
+  recordCommercialAcceptance,
+  sendCommercialConfirmation,
+} from "@/lib/commercial-acceptance";
+import { assertPaidOfferLegalReadiness } from "@/lib/legal-documents";
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
 
@@ -110,35 +118,67 @@ export function resolveBillingOrigin(requestOrigin?: string | null): string {
 export async function createAnalyseCheckoutSession({
   auth,
   origin,
+  consent,
+  requestId,
+  userAgent,
 }: {
   auth: SupabaseAuthContext;
   origin?: string | null;
+  consent: CheckoutConsent;
+  requestId?: string | null;
+  userAgent?: string | null;
 }): Promise<BillingSessionResponse> {
-  return createPlanCheckoutSession({ auth, origin, plan: "analyse" });
+  return createPlanCheckoutSession({
+    auth,
+    origin,
+    plan: "analyse",
+    consent,
+    requestId,
+    userAgent,
+  });
 }
 
 export async function createPlanCheckoutSession({
   auth,
   origin,
   plan,
+  consent,
+  requestId,
+  userAgent,
 }: {
   auth: SupabaseAuthContext;
   origin?: string | null;
   plan: Exclude<PlanCode, "decouverte">;
+  consent: CheckoutConsent;
+  requestId?: string | null;
+  userAgent?: string | null;
 }): Promise<BillingSessionResponse> {
+  assertPaidOfferLegalReadiness();
+  assertCommercialConfirmationReadiness();
   const stripe = getStripe();
   const appOrigin = resolveBillingOrigin(origin);
   const customerId = await ensureStripeCustomer(auth);
+  const acceptanceId = randomUUID();
 
   const session = await stripe.checkout.sessions.create(
     buildAnalysisCheckoutSessionParams({
       appOrigin,
       customerId,
       userId: auth.userId,
+      acceptanceId,
     }),
   );
 
   if (!session.url) throw new Error("Session de paiement Stripe indisponible.");
+  await recordCommercialAcceptance({
+    acceptanceId,
+    auth,
+    consent,
+    checkoutSessionId: session.id,
+    checkoutCreatedAt: new Date(session.created * 1000).toISOString(),
+    requestId: requestId ?? null,
+    userAgent: userAgent ?? null,
+  });
   return { url: session.url };
 }
 
@@ -146,10 +186,12 @@ export function buildAnalysisCheckoutSessionParams({
   appOrigin,
   customerId,
   userId,
+  acceptanceId,
 }: {
   appOrigin: string;
   customerId: string;
   userId: string;
+  acceptanceId?: string;
 }): Stripe.Checkout.SessionCreateParams {
   return {
     mode: "payment",
@@ -171,6 +213,12 @@ export function buildAnalysisCheckoutSessionParams({
       },
     ],
     locale: "fr",
+    invoice_creation: {
+      enabled: true,
+      invoice_data: {
+        description: "ImmoJudis Analyse — accès 30 jours, paiement unique",
+      },
+    },
     success_url: `${appOrigin}/accompagnement?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appOrigin}/accompagnement?checkout=cancelled`,
     metadata: {
@@ -178,12 +226,14 @@ export function buildAnalysisCheckoutSessionParams({
       plan_code: "analyse",
       access_duration_days: String(ANALYSIS_ACCESS_DAYS),
       billing_model: "one_time_30_days",
+      ...(acceptanceId ? { commercial_acceptance_id: acceptanceId } : {}),
     },
     payment_intent_data: {
       metadata: {
         user_id: userId,
         plan_code: "analyse",
         access_duration_days: String(ANALYSIS_ACCESS_DAYS),
+        ...(acceptanceId ? { commercial_acceptance_id: acceptanceId } : {}),
       },
     },
   };
@@ -400,7 +450,19 @@ async function handleCheckoutCompleted(
     });
 
     if (error) throw error;
-    return Boolean(data?.[0]?.granted);
+    const granted = Boolean(data?.[0]?.granted);
+    const acceptanceId = session.metadata?.commercial_acceptance_id;
+    if (granted && acceptanceId) {
+      await sendCommercialConfirmation({
+        acceptanceId,
+        checkoutSessionId: session.id,
+        userId,
+        paidAt: new Date(event.created * 1000).toISOString(),
+      }).catch((confirmationError) => {
+        console.error("[billing] durable confirmation failed", confirmationError);
+      });
+    }
+    return granted;
   }
 
   if (session.mode !== "subscription") return false;

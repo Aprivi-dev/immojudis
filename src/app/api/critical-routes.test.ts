@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -130,7 +131,17 @@ describe("critical API route contracts", () => {
       new Request("https://example.test/api/billing/checkout", {
         method: "POST",
         headers: { "x-request-id": "checkout-12345678" },
-        body: JSON.stringify({ plan: "analysis" }),
+        body: JSON.stringify({
+          plan: "analysis",
+          consent: {
+            termsAccepted: true,
+            termsVersion: LEGAL_DOCUMENTS.terms.version,
+            privacyVersion: LEGAL_DOCUMENTS.privacy.version,
+            paymentObligationAcknowledged: true,
+            immediatePerformanceRequested: true,
+            withdrawalInformationAcknowledged: true,
+          },
+        }),
       }),
     );
     const body = await response.json();
