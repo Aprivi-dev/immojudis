@@ -125,6 +125,12 @@ l’absence de dérive `public,app_private`, exécute les tests de concurrence p
 pgTAP. Le workflow de migration applique les changements en production, provisionne les secrets
 Vault du scheduler et lance le même contrôle de dérive contre la base distante.
 
+Le contrôle compare uniquement les objets applicatifs. Il ignore le schéma d’installation non
+relocalisable de `pg_net` et les droits du connecteur externe `lovable_readonly`, tous deux gérés
+hors migrations. Toute autre différence reste bloquante. Le bootstrap historique
+`services/data-pipeline/sql/schema.sql` est limité aux bases locales jetables et refuse les URL
+Supabase hébergées.
+
 Commandes locales :
 
 ```bash

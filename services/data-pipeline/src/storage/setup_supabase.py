@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 import psycopg
 
@@ -13,12 +14,22 @@ def apply_schema(schema_path: Path | None = None) -> None:
     db_url = settings["supabase_db_url"]
     if not db_url:
         raise RuntimeError("SUPABASE_DB_URL is missing from .env")
+    if _is_hosted_supabase_url(str(db_url)):
+        raise RuntimeError(
+            "Hosted Supabase schemas must be changed through versioned supabase/migrations, "
+            "not services/data-pipeline/sql/schema.sql"
+        )
 
     schema_sql = (schema_path or ROOT_DIR / "sql" / "schema.sql").read_text(encoding="utf-8")
     with psycopg.connect(str(db_url)) as connection:
         with connection.cursor() as cursor:
             cursor.execute(schema_sql)
         connection.commit()
+
+
+def _is_hosted_supabase_url(db_url: str) -> bool:
+    hostname = (urlparse(db_url).hostname or "").lower()
+    return hostname.endswith((".supabase.com", ".supabase.co"))
 
 
 def main() -> int:
