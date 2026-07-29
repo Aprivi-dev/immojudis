@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute, Link } from "@/lib/router-compat";
 import { useQuery } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
@@ -25,7 +27,7 @@ export const Route = createFileRoute("/admin/quality")({
   component: AdminQualityPage,
 });
 
-function AdminQualityPage() {
+export function AdminQualityPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-quality-sales"],
     queryFn: () => getSales({}, 500, "date_asc"),
