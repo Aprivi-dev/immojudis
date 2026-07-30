@@ -5,6 +5,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Major upgrades require an explicit migration plan. Let Dependabot keep
+    # delivering security updates plus routine minor and patch maintenance
+    # without creating predictably broken Vercel previews.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
     groups:
       production-dependencies:
         dependency-type: production
