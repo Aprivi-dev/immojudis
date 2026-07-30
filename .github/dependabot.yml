@@ -12,6 +12,10 @@ updates:
       - dependency-name: "*"
         update-types:
           - version-update:semver-major
+      # These minor releases deliberately change generated formatting or the
+      # pinned Stripe API version. Upgrade them in dedicated migration PRs.
+      - dependency-name: prettier
+      - dependency-name: stripe
     groups:
       production-dependencies:
         dependency-type: production
