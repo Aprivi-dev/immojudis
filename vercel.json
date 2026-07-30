@@ -1,5 +1,9 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
+  "github": {
+    "silent": true
+  },
   "installCommand": "npx --yes --package=npm@11.18.0 -c 'npm ci'",
   "buildCommand": "npm run build",
   "regions": ["cdg1"],
