@@ -1,6 +1,6 @@
 begin;
 
-select plan(28);
+select plan(30);
 
 select has_extension('pg_cron', 'pg_cron is available for the 15-minute health scheduler');
 select has_extension('pg_net', 'pg_net is available for the authenticated health callback');
@@ -223,15 +223,44 @@ insert into public.operational_job_runs (
   finished_at,
   duration_ms
 ) values (
-  'sale-change-monitor',
+  'operational-health',
   'success',
-  '2026-07-27T10:18:00Z'::timestamptz,
-  '2026-07-27T10:19:00Z'::timestamptz,
+  '2026-07-27T16:18:00Z'::timestamptz,
+  '2026-07-27T16:19:00Z'::timestamptz,
   60000
 );
 
 select lives_ok(
-  $$select public.evaluate_operational_health('2026-07-27T10:20:00Z'::timestamptz)$$,
+  $$select public.evaluate_operational_health('2026-07-27T16:20:00Z'::timestamptz)$$,
+  'an unchanged open incident can be reevaluated after six hours'
+);
+
+select is(
+  (
+    select status || ':' || notification_event || ':' || notification_status
+    from public.operational_alerts
+    where alert_key = 'cron.stale'
+  ),
+  'open:opened:delivered',
+  'an unchanged incident does not queue a repetitive reminder'
+);
+
+insert into public.operational_job_runs (
+  job_name,
+  status,
+  started_at,
+  finished_at,
+  duration_ms
+) values (
+  'sale-change-monitor',
+  'success',
+  '2026-07-27T16:20:00Z'::timestamptz,
+  '2026-07-27T16:21:00Z'::timestamptz,
+  60000
+);
+
+select lives_ok(
+  $$select public.evaluate_operational_health('2026-07-27T16:22:00Z'::timestamptz)$$,
   'recovery is evaluated'
 );
 
