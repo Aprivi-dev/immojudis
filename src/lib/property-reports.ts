@@ -174,6 +174,7 @@ export type PlanEntitlements = {
     soldComparables: FeatureAccess;
     activeComparables: FeatureAccess;
     neighborhoodAnalysis: FeatureAccess;
+    outcomeGraph: FeatureAccess;
     bidCeiling: FeatureAccess;
     advancedBidScenarios: FeatureAccess;
     dpeMap: FeatureAccess;

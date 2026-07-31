@@ -41,7 +41,10 @@ permissions:
   actions: read
 
 concurrency:
-  group: immojudis-data-pipeline-${{ github.event_name == 'schedule' && 'schedule' || 'worker' }}
+  # Catalogue preservation and cleanup are deliberately single-writer. A
+  # scheduled run and a manually dispatched worker must never overlap between
+  # the bridge scan and the destructive cleanup phase.
+  group: immojudis-data-pipeline
   cancel-in-progress: false
 
 jobs:

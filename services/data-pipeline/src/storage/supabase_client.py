@@ -245,7 +245,6 @@ def upsert_sales_to_supabase(
     if db_url:
         try:
             _postgres_upsert(str(db_url), "auction_sales", payload, on_conflict="source_url")
-            _delete_secondary_sale_rows_with_postgres(str(db_url), sales)
             _sync_normalized_sale_tables_with_rest(
                 str(url),
                 str(key),
@@ -258,7 +257,6 @@ def upsert_sales_to_supabase(
         except Exception as exc:
             LOGGER.warning("Direct Postgres auction_sales sync failed; falling back to REST: %s", exc)
     _upsert_with_rest(str(url), str(key), payload)
-    _delete_secondary_sale_rows(str(url), str(key), sales)
     _sync_normalized_sale_tables_with_rest(
         str(url),
         str(key),
@@ -268,6 +266,31 @@ def upsert_sales_to_supabase(
     )
     _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
     return len(payload)
+
+
+def delete_secondary_sales_in_supabase(sales: list[AuctionSale]) -> int:
+    """Delete merged source rows only from the post-bridge cleanup phase.
+
+    ``upsert_sales_to_supabase`` deliberately performs no deletion: callers
+    must first preserve every catalogue row in the Outcome Graph. The database
+    deletion guard remains the final fail-closed protection.
+    """
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    db_url = settings.get("supabase_db_url")
+    if not url or not key or not _secondary_source_urls(sales):
+        return 0
+
+    if db_url:
+        try:
+            return _delete_secondary_sale_rows_with_postgres(str(db_url), sales)
+        except Exception as exc:
+            LOGGER.warning(
+                "Direct Postgres secondary sale cleanup failed; falling back to REST: %s",
+                exc,
+            )
+    return _delete_secondary_sale_rows(str(url), str(key), sales)
 
 
 def upsert_cadastre_parcels_to_supabase(rows: list[dict[str, object]]) -> int:
