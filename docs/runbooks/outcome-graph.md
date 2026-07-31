@@ -1,6 +1,6 @@
 # Outcome Graph — runbook exploitation
 
-_Version 0.1 — 30 juillet 2026. Ce runbook couvre la tranche actuelle : lecture premium, fondation SQL et baseline descriptive. Le worker, l’upload de preuves, le portail cabinet et les alertes dédiées ne sont pas encore opérationnels._
+_Version 0.2 — 31 juillet 2026. Ce runbook couvre la tranche actuelle : lecture premium, fondation SQL et baseline descriptive. Le worker, l’upload de preuves, le portail cabinet et les alertes dédiées ne sont pas encore opérationnels._
 
 ## Résumé opérateur
 
@@ -51,33 +51,33 @@ Ne pas collecter : jeton Bearer, secret Supabase, contenu intégral d’une preu
 
 ## Refus HTTP
 
-| HTTP / code | Sens | Action |
-|---|---|---|
-| `401 AUTH_REQUIRED` | Session absente ou jeton invalide | Faire renouveler la session; ne pas contourner l’auth |
-| `403 FORBIDDEN` | Compte sans `property.outcomeGraph` | Vérifier le résolveur d’offre et l’abonnement; ne pas modifier directement le tier utilisateur |
-| `400 INVALID_REQUEST` | UUID ou requête invalide | Corriger l’appel client; surveiller un volume anormal |
-| `429 RATE_LIMITED` | Limite générique atteinte si un contrôle amont la déclenche | Respecter le délai; aucun rate limit spécifique Outcome n’est livré |
-| `503 CONFIGURATION_ERROR` | Configuration serveur indisponible | Vérifier les variables serveur sans les journaliser |
-| `500 INTERNAL_ERROR` | Repository, usage event ou base en erreur | Corréler le `requestId`, vérifier logs et santé Supabase; couper si la donnée servie peut être fausse |
+| HTTP / code               | Sens                                                        | Action                                                                                                |
+| ------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `401 AUTH_REQUIRED`       | Session absente ou jeton invalide                           | Faire renouveler la session; ne pas contourner l’auth                                                 |
+| `403 FORBIDDEN`           | Compte sans `property.outcomeGraph`                         | Vérifier le résolveur d’offre et l’abonnement; ne pas modifier directement le tier utilisateur        |
+| `400 INVALID_REQUEST`     | UUID ou requête invalide                                    | Corriger l’appel client; surveiller un volume anormal                                                 |
+| `429 RATE_LIMITED`        | Limite générique atteinte si un contrôle amont la déclenche | Respecter le délai; aucun rate limit spécifique Outcome n’est livré                                   |
+| `503 CONFIGURATION_ERROR` | Configuration serveur indisponible                          | Vérifier les variables serveur sans les journaliser                                                   |
+| `500 INTERNAL_ERROR`      | Repository, usage event ou base en erreur                   | Corréler le `requestId`, vérifier logs et santé Supabase; couper si la donnée servie peut être fausse |
 
 ## Refus métier
 
 Un refus fonctionnel normal renvoie HTTP 200 avec `forecast.status = insufficient_data`. Le DTO actuel expose un `refusalReason` en texte libre; les codes `OUTCOME_GRAPH_*` du dictionnaire sont une cible, pas encore le contrat runtime.
 
-| Motif observé | Vérification | Remédiation sûre |
-|---|---|---|
-| Vente non reliée | Pont `auction_lots.auction_sale_id` | Créer/valider le lot et son lien; ne pas inférer un résultat depuis l’annonce |
-| Aucune audience | `auction_rounds` du lot | Créer un round versionné avec le bon tribunal et la bonne séquence |
-| Audience à corriger après snapshot | Entrées prédictives du round et présence d’un snapshot | Créer un nouveau round relié au précédent; ne pas modifier le round déjà snapshoté |
-| Lot inactif / audience hors phase | `auction_lots.active`, puis `auction_rounds.current_status` | Ne publier `ready` que pour un lot actif et un état `scheduled`, `confirmed`, `surenchere_round_scheduled` ou `reiteration_round_scheduled` |
-| Aucune prédiction vérifiée | Prédictions du dernier round | Attendre/relancer le producteur futur; ne pas fabriquer une probabilité côté API |
-| Traçabilité incomplète | Snapshot, modèle, cohorte et IDs | Insérer une nouvelle prédiction complète; ne pas réécrire l’ancienne ni inventer ses champs de provenance |
-| Taille d’échantillon incohérente | `prediction.sample_size` et `cohort_statistics.sample_size` | Corriger le producteur puis insérer une nouvelle prédiction; ne jamais recopier une taille différente |
-| Snapshot non admissible | Cutoff, manifeste, `retrospective`, leakage | Reconstruire une nouvelle ligne; toute reconstruction post-audience reste rétrospective/non-training |
-| Modèle non actif / type incohérent | Statut et approbation de `model_versions`, `prediction_kind` | Promouvoir depuis un brouillon avec approbateur; réserver `outcome_graph` à un modèle actif et `shadow` à un modèle shadow |
-| Cohorte non éligible/conflit | `training_eligible`, conflit, période | Résoudre preuves/revues puis produire une nouvelle statistique |
-| Échantillon `< 10` | `sample_size` réellement éligible | Appliquer le fallback hiérarchique ou refuser; jamais compléter artificiellement |
-| Probabilités/quantiles invalides | JSON et provenance de la prédiction | Mettre le producteur en quarantaine, insérer une correction versionnée |
+| Motif observé                      | Vérification                                                 | Remédiation sûre                                                                                                                            |
+| ---------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vente non reliée                   | Pont `auction_lots.auction_sale_id`                          | Créer/valider le lot et son lien; ne pas inférer un résultat depuis l’annonce                                                               |
+| Aucune audience                    | `auction_rounds` du lot                                      | Créer un round versionné avec le bon tribunal et la bonne séquence                                                                          |
+| Audience à corriger après snapshot | Entrées prédictives du round et présence d’un snapshot       | Créer un nouveau round relié au précédent; ne pas modifier le round déjà snapshoté                                                          |
+| Lot inactif / audience hors phase  | `auction_lots.active`, puis `auction_rounds.current_status`  | Ne publier `ready` que pour un lot actif et un état `scheduled`, `confirmed`, `surenchere_round_scheduled` ou `reiteration_round_scheduled` |
+| Aucune prédiction vérifiée         | Prédictions du dernier round                                 | Attendre/relancer le producteur futur; ne pas fabriquer une probabilité côté API                                                            |
+| Traçabilité incomplète             | Snapshot, modèle, cohorte et IDs                             | Insérer une nouvelle prédiction complète; ne pas réécrire l’ancienne ni inventer ses champs de provenance                                   |
+| Taille d’échantillon incohérente   | `prediction.sample_size` et `cohort_statistics.sample_size`  | Corriger le producteur puis insérer une nouvelle prédiction; ne jamais recopier une taille différente                                       |
+| Snapshot non admissible            | Cutoff, manifeste, `retrospective`, leakage                  | Reconstruire une nouvelle ligne; toute reconstruction post-audience reste rétrospective/non-training                                        |
+| Modèle non actif / type incohérent | Statut et approbation de `model_versions`, `prediction_kind` | Promouvoir depuis un brouillon avec approbateur; réserver `outcome_graph` à un modèle actif et `shadow` à un modèle shadow                  |
+| Cohorte non éligible/conflit       | `training_eligible`, conflit, période                        | Résoudre preuves/revues puis produire une nouvelle statistique                                                                              |
+| Échantillon `< 10`                 | `sample_size` réellement éligible                            | Appliquer le fallback hiérarchique ou refuser; jamais compléter artificiellement                                                            |
+| Probabilités/quantiles invalides   | JSON et provenance de la prédiction                          | Mettre le producteur en quarantaine, insérer une correction versionnée                                                                      |
 
 `unknown` n’est pas un incident et ne doit jamais devenir automatiquement annulation, report, no-bid ou absence de surenchère.
 
@@ -188,7 +188,7 @@ npm run build
 npx --yes supabase@2.110.0 stop --no-backup
 ```
 
-`npm run check:migrations` vérifie les versions de fichiers, pas la validité SQL. Dans l’état documenté, TypeScript, ESLint, le build Next de développement, 41 tests ciblés (25 moteur, 12 repository, 4 route) et la suite complète de 95 fichiers/387 tests passent. Le replay Docker et les plans pgTAP de 46 assertions de fondation et 75 d'ingestion restent à confirmer.
+`npm run check:migrations` vérifie les versions de fichiers, pas la validité SQL. Au 31 juillet 2026, TypeScript, ESLint, le build Next, 41 tests ciblés (25 moteur, 12 repository, 4 route) et la suite complète de 95 fichiers/387 tests passent. Les 84 migrations ont été rejouées depuis zéro et les 12 plans pgTAP totalisent 274 assertions réussies, dont 166 pour Outcome Graph, ingestion et pont catalogue.
 
 Ne jamais exécuter `supabase db reset --linked` sur une base distante.
 

@@ -1,6 +1,6 @@
 # Outcome Graph — model card de la baseline
 
-_Version documentaire 0.1 — 30 juillet 2026. Cette fiche décrit le code réellement présent dans le dépôt. Elle ne vaut ni validation statistique, ni autorisation de lancement commercial._
+_Version documentaire 0.2 — 31 juillet 2026. Cette fiche décrit le code réellement présent dans le dépôt et le socle déployé. Elle ne vaut ni validation statistique, ni autorisation de lancement commercial._
 
 ## Identification
 
@@ -161,7 +161,7 @@ Les données réelles inspectées ou préparées ne changent pas ce constat :
 - DVF 2025 fournit 1 604 candidats dont la nature de mutation est `Adjudication`; ils restent tous non entraînables tant qu’un rattachement dossier/lot/round, une preuve et une revue ne les ont pas qualifiés;
 - Judilibre dispose d’un bootstrap borné sur quatre profils (`saisie immobilière`, `vente forcée`, `adjudication`, `surenchère`) puis d’un suivi limité aux décisions déjà enregistrées; aucun appel live n’a été effectué faute de credentials PISTE;
 - le catalogue Supabase distant contient 413 lignes, dont 4 avec un prix d’adjudication affiché, mais ces prix ne sont pas des preuves de résultat final et ne doivent pas devenir des labels;
-- le pont catalogue local transforme tous les statuts en simple annonce avec résultat `unknown`, sans prix et non entraînable. Sa migration et son backfill ne sont pas encore appliqués au Supabase distant.
+- le pont catalogue de production transforme les 413 statuts en simples annonces avec résultat `unknown`, sans prix et non entraînables. Le backfill du 31 juillet 2026 est complet et son second passage a réutilisé les 413 ponts sans créer de doublon.
 
 Les biais à surveiller avant toute activation commerciale sont :
 
@@ -177,7 +177,7 @@ Aucune identité de magistrat ou de membre du greffe ne doit entrer dans les fea
 
 ## Évaluation disponible
 
-Vérifications exécutées le 30 juillet 2026 :
+Vérifications exécutées le 31 juillet 2026 :
 
 - suite Vitest complète : 95 fichiers et 387 tests réussis;
 - TypeScript avec `npx tsc --noEmit` et build Next de développement réussis;
@@ -185,7 +185,7 @@ Vérifications exécutées le 30 juillet 2026 :
 - `npm run check:migrations` et les invariants de sécurité réussis;
 - suite Python : 609 tests réussis hors `test_valuation_training.py`.
 
-`test_valuation_training.py` ne peut pas être collecté sous l’interpréteur local Python 3.14; le projet cible Python 3.12 et ce fichier doit y être rejoué. Ces résultats vérifient le logiciel et ses garde-fous, pas la précision, la calibration ni la représentativité statistique du système.
+`test_valuation_training.py` ne peut pas être collecté sous l’interpréteur local Python 3.14, mais la suite complète a réussi dans la CI cible sous Python 3.11 et 3.12. Ces résultats vérifient le logiciel et ses garde-fous, pas la précision, la calibration ni la représentativité statistique du système.
 
 Ne sont pas encore mesurés :
 
@@ -213,7 +213,7 @@ Le registre impose 300 observations pour un modèle `statistical`, 1 000 pour `m
 5. Refus encore exprimés en texte libre dans le DTO prototype.
 6. Fixtures de scénarios utiles au contrat, mais insuffisantes comme preuve de performance métier.
 7. Pas de publication commerciale avant shadow mode et seuils validés.
-8. Migrations et backfill Outcome Graph non déployés sur le Supabase distant; le code pipeline et les migrations doivent être déployés de façon coordonnée.
+8. Migrations et backfill Outcome Graph déployés sur le Supabase distant; aucune donnée de ce pont ne constitue toutefois un label judiciaire vérifié ni une statistique prédictive.
 9. Aucun sync Judilibre live avant fourniture des credentials PISTE et activation explicite du bootstrap ciblé.
 
 En cas de doute, le comportement attendu est le refus `insufficient_data`, jamais une probabilité par défaut.

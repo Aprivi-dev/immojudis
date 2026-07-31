@@ -1,6 +1,6 @@
 # Outcome Graph — ingestion des sources d'enrichissement
 
-_Version 0.1 — 30 juillet 2026._
+_Version 0.2 — 31 juillet 2026._
 
 ## État réel
 
@@ -223,8 +223,9 @@ relié à ses extractions afin que la reproductibilité ne dépende pas du cache
 Le fichier de migration d'ingestion prévoit de créer ce bucket comme privé, de limiter chaque objet à
 100 Mio et de borner les types MIME admis. Il ne crée aucune policy Storage `anon` ou
 `authenticated` et accorde au `service_role` seulement les opérations nécessaires à la capture
-immuable. Cette migration n'a pas été rejouée sur une base distante dans cette tranche. Après
-application, confirmer ces propriétés puis tester upload et lecture avec le seul rôle de service. Ne
+immuable. Cette migration a été appliquée sur la base de production le 31 juillet 2026; le bucket est
+privé et aucun grant direct `anon` ou `authenticated` n'existe sur les tables Outcome. Avant la
+première ingestion réelle, tester upload et lecture avec le seul rôle de service. Ne
 jamais rendre le texte brut Judilibre public par URL signée longue durée. Le futur worker de purge
 devra recevoir un mécanisme de suppression serveur dédié et aussi étroit que possible ; ce chemin de
 suppression n'est pas livré dans cette tranche.
