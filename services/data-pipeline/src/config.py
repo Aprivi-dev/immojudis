@@ -57,6 +57,49 @@ def load_settings() -> dict[str, str | float | None]:
         "supabase_url": os.getenv("SUPABASE_URL"),
         "supabase_service_role_key": os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
         "supabase_db_url": os.getenv("SUPABASE_DB_URL"),
+        # Judilibre is fail-closed: credentials alone never enable network calls.
+        # JUDILIBRE_ENABLED is the runtime projection of the approved source policy.
+        "judilibre_enabled": os.getenv("JUDILIBRE_ENABLED", "false").lower()
+        in {"1", "true", "yes", "on"},
+        "judilibre_dry_run": os.getenv("JUDILIBRE_DRY_RUN", "false").lower()
+        in {"1", "true", "yes", "on"},
+        "judilibre_base_url": os.getenv(
+            "JUDILIBRE_BASE_URL",
+            "https://api.piste.gouv.fr/cassation/judilibre/v1.0",
+        ),
+        "judilibre_transactional_history_path": os.getenv(
+            "JUDILIBRE_TRANSACTIONAL_HISTORY_PATH",
+            "/transactionalhistory",
+        ),
+        "judilibre_auth_mode": os.getenv("JUDILIBRE_AUTH_MODE", "auto").lower(),
+        "judilibre_key_id": os.getenv("JUDILIBRE_KEY_ID"),
+        "judilibre_oauth_token_url": os.getenv("JUDILIBRE_OAUTH_TOKEN_URL"),
+        "judilibre_oauth_client_id": os.getenv("JUDILIBRE_OAUTH_CLIENT_ID"),
+        "judilibre_oauth_client_secret": os.getenv("JUDILIBRE_OAUTH_CLIENT_SECRET"),
+        "judilibre_oauth_scope": os.getenv("JUDILIBRE_OAUTH_SCOPE"),
+        "judilibre_oauth_client_auth_method": os.getenv(
+            "JUDILIBRE_OAUTH_CLIENT_AUTH_METHOD",
+            "basic",
+        ).lower(),
+        "judilibre_timeout_seconds": float(os.getenv("JUDILIBRE_TIMEOUT_SECONDS", "20")),
+        "judilibre_page_size": max(1, min(50, int(os.getenv("JUDILIBRE_PAGE_SIZE", "25")))),
+        "judilibre_history_page_size": max(
+            10,
+            min(500, int(os.getenv("JUDILIBRE_HISTORY_PAGE_SIZE", "100"))),
+        ),
+        "judilibre_max_results": max(
+            1,
+            min(10_000, int(os.getenv("JUDILIBRE_MAX_RESULTS", "10000"))),
+        ),
+        "judilibre_max_retries": max(0, int(os.getenv("JUDILIBRE_MAX_RETRIES", "4"))),
+        "judilibre_retry_backoff_seconds": max(
+            0.0,
+            float(os.getenv("JUDILIBRE_RETRY_BACKOFF_SECONDS", "1")),
+        ),
+        "judilibre_retry_max_sleep_seconds": max(
+            0.0,
+            float(os.getenv("JUDILIBRE_RETRY_MAX_SLEEP_SECONDS", "30")),
+        ),
         "dvf_import_batch_size": int(os.getenv("DVF_IMPORT_BATCH_SIZE", "1000")),
         "user_agent": os.getenv("AUCTION_USER_AGENT", "immojudis-data-pipeline/1.0 (+https://example.com/contact)"),
         "browser_user_agent": os.getenv(

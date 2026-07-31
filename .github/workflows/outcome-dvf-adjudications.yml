@@ -1,0 +1,360 @@
+name: Outcome Graph - DVF adjudications
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Validate only, or persist bounded adjudication candidates"
+        required: true
+        default: validate
+        type: choice
+        options:
+          - validate
+          - ingest
+      resource_year:
+        description: "Optional four-digit DVF vintage; empty selects the latest official main resource"
+        required: false
+        type: string
+      max_candidates:
+        description: "Maximum adjudication candidates parsed and, when enabled, ingested"
+        required: true
+        default: "5000"
+        type: string
+      confirm_ingestion:
+        description: "Type INGEST-DVF when mode=ingest"
+        required: false
+        type: string
+      matching_after_source_record_id:
+        description: "Optional source-record UUID emitted by a truncated prior matching run"
+        required: false
+        type: string
+  schedule:
+    # The scheduled run validates the latest official archive by default.
+    # It ingests only when repository variable DVF_ADJUDICATION_INGESTION_ENABLED=true.
+    - cron: "45 4 12 4,10 *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-outcome-dvf-adjudications
+  cancel-in-progress: false
+
+jobs:
+  adjudications:
+    name: Validate and optionally ingest official DVF adjudications
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      DVF_DATASET_API_URL: https://www.data.gouv.fr/api/1/datasets/demandes-de-valeurs-foncieres/
+      REQUESTED_MODE: ${{ github.event_name == 'schedule' && (vars.DVF_ADJUDICATION_INGESTION_ENABLED == 'true' && 'ingest' || 'validate') || inputs.mode }}
+      REQUESTED_YEAR: ${{ github.event_name == 'schedule' && '' || inputs.resource_year }}
+      REQUESTED_LIMIT: ${{ github.event_name == 'schedule' && (vars.DVF_ADJUDICATION_MAX_CANDIDATES || '5000') || inputs.max_candidates }}
+      REQUESTED_CONFIRMATION: ${{ inputs.confirm_ingestion }}
+      REQUESTED_MATCH_CURSOR: ${{ github.event_name == 'schedule' && '' || inputs.matching_after_source_record_id }}
+    steps:
+      - name: Validate bounded execution request
+        run: |
+          set -euo pipefail
+
+          if [ "$REQUESTED_MODE" != "validate" ] && [ "$REQUESTED_MODE" != "ingest" ]; then
+            echo "mode must be validate or ingest" >&2
+            exit 1
+          fi
+          if ! [[ "$REQUESTED_LIMIT" =~ ^[0-9]+$ ]] || [ "$REQUESTED_LIMIT" -lt 1 ] || [ "$REQUESTED_LIMIT" -gt 20000 ]; then
+            echo "max_candidates must be an integer between 1 and 20000" >&2
+            exit 1
+          fi
+          if [ -n "$REQUESTED_YEAR" ]; then
+            current_year="$(date -u +%Y)"
+            if ! [[ "$REQUESTED_YEAR" =~ ^[0-9]{4}$ ]] || [ "$REQUESTED_YEAR" -lt 2014 ] || [ "$REQUESTED_YEAR" -gt "$current_year" ]; then
+              echo "resource_year must be a four-digit year between 2014 and the current year" >&2
+              exit 1
+            fi
+          fi
+          if [ -n "$REQUESTED_MATCH_CURSOR" ] && ! [[ "$REQUESTED_MATCH_CURSOR" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ ]]; then
+            echo "matching_after_source_record_id must be a UUID" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$REQUESTED_MODE" = "ingest" ] && [ "$REQUESTED_CONFIRMATION" != "INGEST-DVF" ]; then
+            echo "confirm_ingestion must be exactly INGEST-DVF when mode=ingest" >&2
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.txt
+
+      - name: Install pipeline dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Resolve one official DVF main resource
+        id: resource
+        run: |
+          set -euo pipefail
+
+          metadata_path="$RUNNER_TEMP/dvf-dataset.json"
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --proto '=https' \
+            --tlsv1.2 \
+            --connect-timeout 20 \
+            --max-time 120 \
+            --max-filesize 10485760 \
+            --retry 4 \
+            --retry-all-errors \
+            "$DVF_DATASET_API_URL" \
+            --output "$metadata_path"
+
+          if ! jq -e '
+            .id == "5c4ae55a634f4117716d5656"
+            and .organization.id == "534fff8ea3a7292c64a77f02"
+            and .license == "lov2"
+            and .access_type == "open"
+          ' "$metadata_path" >/dev/null; then
+            echo "DVF dataset identity, publisher, access type or licence changed; review required" >&2
+            exit 1
+          fi
+
+          resource="$(
+            jq -c --arg requested_year "$REQUESTED_YEAR" '
+              [
+                .resources[]
+                | select(.type == "main")
+                | select(((.format // "") | ascii_downcase) == "txt.zip")
+                | select(
+                    (.url // "")
+                    | startswith(
+                        "https://static.data.gouv.fr/resources/demandes-de-valeurs-foncieres/"
+                      )
+                  )
+                | select((.title // "") | test("20[0-9]{2}"))
+                | . + {
+                    outcome_year: (
+                      (.title | capture("(?<year>20[0-9]{2})").year) | tonumber
+                    )
+                  }
+              ]
+              | if $requested_year == "" then
+                  max_by([.outcome_year, (.last_modified // .created_at // "")])
+                else
+                  map(select(.outcome_year == ($requested_year | tonumber)))
+                  | max_by(.last_modified // .created_at // "")
+                end
+            ' "$metadata_path"
+          )"
+
+          if [ -z "$resource" ] || [ "$resource" = "null" ]; then
+            echo "No matching official DVF txt.zip main resource was found" >&2
+            exit 1
+          fi
+
+          resource_url="$(jq -r '.url' <<< "$resource")"
+          resource_year="$(jq -r '.outcome_year' <<< "$resource")"
+          checksum_type="$(jq -r '.checksum.type // empty' <<< "$resource" | tr '[:upper:]' '[:lower:]')"
+          checksum_value="$(jq -r '.checksum.value // empty' <<< "$resource" | tr '[:upper:]' '[:lower:]')"
+          filename="$(basename "${resource_url%%\?*}")"
+
+          if [[ "$resource_url" == *$'\n'* ]] || [[ "$resource_url" == *$'\r'* ]] || ! [[ "$resource_url" =~ ^https://static\.data\.gouv\.fr/resources/demandes-de-valeurs-foncieres/[A-Za-z0-9._/-]+$ ]]; then
+            echo "Resolved DVF URL is outside the approved data.gouv.fr resource prefix" >&2
+            exit 1
+          fi
+          if ! [[ "$filename" =~ ^[A-Za-z0-9._-]+\.zip$ ]]; then
+            echo "Resolved DVF filename is unsafe or unsupported" >&2
+            exit 1
+          fi
+          case "$checksum_type" in
+            sha1)
+              [[ "$checksum_value" =~ ^[0-9a-f]{40}$ ]] || {
+                echo "Official DVF SHA-1 checksum is malformed" >&2
+                exit 1
+              }
+              ;;
+            sha256)
+              [[ "$checksum_value" =~ ^[0-9a-f]{64}$ ]] || {
+                echo "Official DVF SHA-256 checksum is malformed" >&2
+                exit 1
+              }
+              ;;
+            *)
+              echo "Official DVF resource must publish a SHA-1 or SHA-256 checksum" >&2
+              exit 1
+              ;;
+          esac
+
+          archive_path="$RUNNER_TEMP/$filename"
+          {
+            echo "url=$resource_url"
+            echo "year=$resource_year"
+            echo "checksum_type=$checksum_type"
+            echo "checksum_value=$checksum_value"
+            echo "archive_path=$archive_path"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download and verify the official archive
+        env:
+          RESOURCE_URL: ${{ steps.resource.outputs.url }}
+          CHECKSUM_TYPE: ${{ steps.resource.outputs.checksum_type }}
+          CHECKSUM_VALUE: ${{ steps.resource.outputs.checksum_value }}
+          ARCHIVE_PATH: ${{ steps.resource.outputs.archive_path }}
+        run: |
+          set -euo pipefail
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --proto '=https' \
+            --tlsv1.2 \
+            --connect-timeout 30 \
+            --max-time 3600 \
+            --max-filesize 2147483648 \
+            --retry 4 \
+            --retry-all-errors \
+            "$RESOURCE_URL" \
+            --output "$ARCHIVE_PATH"
+
+          case "$CHECKSUM_TYPE" in
+            sha1) actual_checksum="$(sha1sum "$ARCHIVE_PATH" | cut -d ' ' -f 1)" ;;
+            sha256) actual_checksum="$(sha256sum "$ARCHIVE_PATH" | cut -d ' ' -f 1)" ;;
+            *) echo "Unsupported checksum type" >&2; exit 1 ;;
+          esac
+          if [ "$actual_checksum" != "$CHECKSUM_VALUE" ]; then
+            echo "DVF archive checksum mismatch" >&2
+            exit 1
+          fi
+          unzip -tq "$ARCHIVE_PATH"
+
+      - name: Validate bounded adjudication candidates without writes
+        env:
+          ARCHIVE_PATH: ${{ steps.resource.outputs.archive_path }}
+        run: |
+          set -euo pipefail
+          python -m src.outcome_sources_cli validate-local \
+            dvf-adjudications \
+            "$ARCHIVE_PATH" \
+            --limit "$REQUESTED_LIMIT"
+
+      - name: Persist bounded adjudication candidates
+        if: env.REQUESTED_MODE == 'ingest'
+        env:
+          ARCHIVE_PATH: ${{ steps.resource.outputs.archive_path }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          required_variables=(SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY)
+          for variable_name in "${required_variables[@]}"; do
+            if [ -z "${!variable_name:-}" ]; then
+              echo "$variable_name is required for DVF adjudication ingestion" >&2
+              exit 1
+            fi
+          done
+
+          python -m src.outcome_sources_cli ingest-local \
+            dvf-adjudications \
+            "$ARCHIVE_PATH" \
+            --limit "$REQUESTED_LIMIT"
+
+      - name: Queue bounded DVF-to-lot review candidates
+        id: match
+        if: env.REQUESTED_MODE == 'ingest'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          match_args=(
+            match-dvf
+            --limit "$REQUESTED_LIMIT"
+            --page-size 500
+            --context-limit 250
+            --persist
+          )
+          if [ -n "$REQUESTED_MATCH_CURSOR" ]; then
+            match_args+=(--after-source-record-id "$REQUESTED_MATCH_CURSOR")
+          fi
+
+          match_summary_path="$RUNNER_TEMP/dvf-match-summary.json"
+          python -m src.outcome_sources_cli "${match_args[@]}" > "$match_summary_path"
+          jq . "$match_summary_path"
+
+          if ! jq -e '
+            .mode == "match-dvf"
+            and .persist_requested == true
+            and (.source_records_loaded | type) == "number"
+            and (.pages_loaded | type) == "number"
+            and (.writes | type) == "number"
+            and (.context_limits_reached | type) == "number"
+            and (.truncated | type) == "boolean"
+          ' "$match_summary_path" >/dev/null; then
+            echo "match-dvf returned an invalid aggregate summary" >&2
+            exit 1
+          fi
+
+          source_records_loaded="$(jq -r '.source_records_loaded' "$match_summary_path")"
+          pages_loaded="$(jq -r '.pages_loaded' "$match_summary_path")"
+          writes="$(jq -r '.writes' "$match_summary_path")"
+          context_limit_hits="$(jq -r '.context_limits_reached' "$match_summary_path")"
+          source_scan_truncated="$(jq -r '.truncated' "$match_summary_path")"
+          resume_cursor="$(jq -r '.last_source_record_id // ""' "$match_summary_path")"
+
+          if [ -n "$resume_cursor" ] && ! [[ "$resume_cursor" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ ]]; then
+            echo "match-dvf returned an invalid resume cursor" >&2
+            exit 1
+          fi
+          {
+            echo "source_records_loaded=$source_records_loaded"
+            echo "pages_loaded=$pages_loaded"
+            echo "writes=$writes"
+            echo "context_limit_hits=$context_limit_hits"
+            echo "source_scan_truncated=$source_scan_truncated"
+            echo "resume_cursor=$resume_cursor"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$source_scan_truncated" = "true" ]; then
+            echo "::warning::DVF source matching reached its global ceiling; resume after $resume_cursor"
+          fi
+          if [ "$context_limit_hits" -gt 0 ]; then
+            echo "::warning::$context_limit_hits DVF records reached the per-record context ceiling"
+          fi
+
+      - name: Publish bounded run summary
+        if: always()
+        env:
+          RESOURCE_YEAR: ${{ steps.resource.outputs.year }}
+          MATCH_PAGES: ${{ steps.match.outputs.pages_loaded }}
+          MATCH_RECORDS: ${{ steps.match.outputs.source_records_loaded }}
+          MATCH_WRITES: ${{ steps.match.outputs.writes }}
+          MATCH_TRUNCATED: ${{ steps.match.outputs.source_scan_truncated }}
+          MATCH_CURSOR: ${{ steps.match.outputs.resume_cursor }}
+          MATCH_CONTEXT_LIMIT_HITS: ${{ steps.match.outputs.context_limit_hits }}
+        run: |
+          {
+            echo "## Outcome Graph - DVF adjudications"
+            echo
+            echo "- Mode: \`$REQUESTED_MODE\`"
+            echo "- Official vintage: \`${RESOURCE_YEAR:-unresolved}\`"
+            echo "- Candidate ceiling: \`$REQUESTED_LIMIT\`"
+            echo "- Matching pages: \`${MATCH_PAGES:-not-run}\` (500 records/page)"
+            echo "- Matching records scanned: \`${MATCH_RECORDS:-not-run}\`"
+            echo "- Review candidates written: \`${MATCH_WRITES:-not-run}\`"
+            echo "- Source scan truncated: \`${MATCH_TRUNCATED:-not-run}\`"
+            echo "- Resume after source record: \`${MATCH_CURSOR:-none}\`"
+            echo "- Context ceilings reached: \`${MATCH_CONTEXT_LIMIT_HITS:-not-run}\`"
+            echo "- Raw archive retained by Actions: no"
+            echo "- Training eligibility: false"
+          } >> "$GITHUB_STEP_SUMMARY"

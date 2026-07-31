@@ -27,6 +27,7 @@ import { BillingActions } from "@/components/BillingActions";
 import { DocumentsList } from "@/components/DocumentsList";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
+import { OutcomeForecast } from "@/components/OutcomeForecast";
 import { RotatingCamera360 } from "@/components/RotatingCamera360";
 import { fetchPrecomputedMarketEstimate } from "@/lib/client-api";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
@@ -639,6 +640,7 @@ function AnalysisContent({
         <div className="mx-auto flex max-w-5xl justify-between overflow-x-auto px-4 sm:px-6">
           {[
             ["#summary", "Synthèse"],
+            ["#outcome-forecast", "Prévision"],
             ["#market", "Marché local"],
             ["#risks", "Risques & pièces"],
             ["#lawyer", "Avocat"],
@@ -660,6 +662,8 @@ function AnalysisContent({
           <MarketEvidence marketEstimate={marketEstimate} marketLoading={marketLoading} />
         </div>
       </section>
+
+      <OutcomeForecast saleId={sale.id} />
 
       <RisksAndDocuments sale={sale} />
       <LawyerSection sale={sale} />

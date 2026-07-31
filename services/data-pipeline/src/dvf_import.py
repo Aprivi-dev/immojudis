@@ -29,6 +29,8 @@ from src.storage.supabase_client import _postgres_connect
 LOGGER = logging.getLogger(__name__)
 
 DVF_SOURCE = "DVF"
+DVF_MARKET_MUTATION_MARKERS = ("vente",)
+DVF_ADJUDICATION_MUTATION_MARKERS = ("adjudication",)
 DEFAULT_BATCH_SIZE = 1_000
 DEFAULT_REPLACEMENT_BATCH_SIZE = 25_000
 FAILURE_FINALIZATION_RETRY_DELAYS_SECONDS = (0, 2, 4, 8, 16, 30)
@@ -70,9 +72,18 @@ class DvfImportOptions:
     dry_run: bool = False
 
 
+@dataclass(frozen=True)
+class DvfSourceArtifact:
+    file_name: str
+    sha256: str
+    members: tuple[str, ...]
+
+
 @dataclass
 class DvfImportSummary:
     file_name: str
+    source_artifact_sha256: str | None = None
+    source_members: tuple[str, ...] = ()
     parsed_rows: int = 0
     valid_rows: int = 0
     skipped_rows: int = 0
@@ -90,7 +101,12 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
     path = options.path
     if options.replace_existing and options.limit is not None:
         raise ValueError("A replacement DVF import cannot be combined with a row limit.")
-    summary = DvfImportSummary(file_name=path.name)
+    artifact = inspect_dvf_source(path)
+    summary = DvfImportSummary(
+        file_name=path.name,
+        source_artifact_sha256=artifact.sha256,
+        source_members=artifact.members,
+    )
     rows = iter_dvf_rows(path)
     settings = load_settings()
     db_url = settings.get("supabase_db_url")
@@ -115,6 +131,8 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
             source_url=options.source_url,
             metadata={
                 "path": str(path),
+                "source_artifact_sha256": artifact.sha256,
+                "source_members": list(artifact.members),
                 "limit": options.limit,
                 "batch_size": options.batch_size,
                 "replace_existing": options.replace_existing,
@@ -184,9 +202,64 @@ def iter_dvf_rows(path: Path) -> Iterator[dict[str, str]]:
         yield from _iter_text_rows(handle)
 
 
-def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> dict[str, object] | None:
+def iter_dvf_market_comparables(
+    path: Path,
+    *,
+    source_url: str | None = None,
+    limit: int | None = None,
+) -> Iterator[dict[str, object]]:
+    """Yield canonical free-market ``Vente`` rows without any database write.
+
+    This is deliberately separate from the adjudication candidate stream.
+    Unsupported mutation natures, including VEFA, never enter this iterator.
+    """
+    options = DvfImportOptions(
+        path=path,
+        source_url=source_url,
+        limit=limit,
+        dry_run=True,
+    )
+    summary = DvfImportSummary(file_name=path.name)
+    yield from _iter_canonical_transactions(
+        _iter_normalized_transactions(iter_dvf_rows(path), options, summary),
+        summary,
+    )
+
+
+def inspect_dvf_source(path: Path) -> DvfSourceArtifact:
+    """Content-address a local DVF source and list its data members."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+
+    if path.suffix.lower() == ".zip":
+        with zipfile.ZipFile(path) as archive:
+            members = tuple(
+                sorted(
+                    name
+                    for name in archive.namelist()
+                    if not name.endswith("/") and Path(name).suffix.lower() in TEXT_EXTENSIONS
+                )
+            )
+    else:
+        members = (path.name,)
+    return DvfSourceArtifact(
+        file_name=path.name,
+        sha256=digest.hexdigest(),
+        members=members,
+    )
+
+
+def normalize_dvf_row(
+    row: dict[str, str],
+    *,
+    source_url: str | None = None,
+    mutation_markers: tuple[str, ...] = DVF_MARKET_MUTATION_MARKERS,
+) -> dict[str, object] | None:
     mutation_nature = clean_text(first_value(row, "nature_mutation", "libnatmut"))
-    if mutation_nature and "vente" not in mutation_nature.lower():
+    accepted_natures = {marker.casefold() for marker in mutation_markers}
+    if not mutation_nature or mutation_nature.casefold() not in accepted_natures:
         return None
 
     sale_date = parse_date(first_value(row, "date_mutation", "datemut"))
@@ -207,15 +280,15 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
         return None
 
     source_mutation_id = clean_text(first_value(row, "id_mutation", "idmutinvar"))
-    parcel_id = clean_text(first_value(row, "id_parcelle", "l_idpar"))
+    parcel_id = clean_text(first_value(row, "id_parcelle", "l_idpar")) or build_official_dvf_parcel_id(row)
     if not source_mutation_id:
         source_mutation_id = stable_mutation_id(row)
 
     address = compact_address(
         [
-            first_value(row, "adresse_numero", "numero_voie"),
-            first_value(row, "adresse_suffixe", "suffixe"),
-            first_value(row, "adresse_nom_voie", "voie"),
+            first_value(row, "adresse_numero", "numero_voie", "no_voie"),
+            first_value(row, "adresse_suffixe", "suffixe", "b/t/q"),
+            official_dvf_street_name(row),
         ]
     )
     postal_code = clean_text(first_value(row, "code_postal", "postal_code"))
@@ -226,16 +299,24 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
         key: row[key]
         for key in (
             "numero_disposition",
+            "no_disposition",
             "code_nature_culture",
             "nature_culture",
             "ancien_id_parcelle",
         )
         if row.get(key) not in ("", None)
     }
+    lot_aliases = (
+        ("lot1_numero", "1er_lot"),
+        ("lot2_numero", "2eme_lot"),
+        ("lot3_numero", "3eme_lot"),
+        ("lot4_numero", "4eme_lot"),
+        ("lot5_numero", "5eme_lot"),
+    )
     lot_numbers = [
         lot_number
-        for index in range(1, 6)
-        if (lot_number := clean_text(first_value(row, f"lot{index}_numero"))) is not None
+        for aliases in lot_aliases
+        if (lot_number := clean_text(first_value(row, *aliases))) is not None
     ]
     if lot_numbers:
         raw_payload["lot_numbers"] = lot_numbers
@@ -253,11 +334,11 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
         "property_type": property_type,
         "dvf_property_type_code": property_type_code,
         "rooms_count": nonnegative_int_value(first_value(row, "nombre_pieces_principales", "nb_pieces_principales")),
-        "lots_count": nonnegative_int_value(first_value(row, "nombre_lots", "nb_lots")),
+        "lots_count": nonnegative_int_value(first_value(row, "nombre_lots", "nombre_de_lots", "nb_lots")),
         "address": address,
         "city": clean_text(first_value(row, "nom_commune", "commune", "city")),
         "postal_code": postal_code,
-        "insee_code": clean_text(first_value(row, "code_commune", "insee_code")),
+        "insee_code": build_official_dvf_insee_code(row),
         "department": department,
         "parcel_id": parcel_id,
         "latitude": decimal_value(first_value(row, "latitude", "lat")),
@@ -271,10 +352,32 @@ def _iter_normalized_transactions(
     options: DvfImportOptions,
     summary: DvfImportSummary,
 ) -> Iterator[dict[str, object]]:
+    current_group_signature: tuple[str, ...] | None = None
+    current_derived_mutation_id: str | None = None
+
     for row in rows:
         if options.limit is not None and summary.parsed_rows >= options.limit:
             break
         summary.parsed_rows += 1
+        explicit_mutation_id = clean_text(first_value(row, "id_mutation", "idmutinvar"))
+        if explicit_mutation_id is None:
+            group_signature = raw_dvf_mutation_group_signature(row)
+            if group_signature != current_group_signature:
+                # The raw annual export has no durable mutation id. The
+                # 1-based source record anchor prevents distinct contiguous
+                # groups from colliding while keeping memory bounded.
+                identity_signature = (
+                    *raw_dvf_mutation_identity_signature(row),
+                    f"source_record:{summary.parsed_rows}",
+                )
+                current_derived_mutation_id = derived_dvf_mutation_id(
+                    identity_signature,
+                    occurrence=1,
+                )
+                current_group_signature = group_signature
+        else:
+            current_group_signature = None
+            current_derived_mutation_id = None
         if summary.parsed_rows % 250_000 == 0:
             LOGGER.info(
                 "DVF progress: parsed=%s valid=%s canonical=%s skipped=%s",
@@ -292,6 +395,8 @@ def _iter_normalized_transactions(
         if transaction is None:
             summary.skipped_rows += 1
             continue
+        if explicit_mutation_id is None:
+            transaction["source_mutation_id"] = current_derived_mutation_id
         summary.valid_rows += 1
         yield transaction
 
@@ -500,6 +605,76 @@ def compact_address(parts: list[str | None]) -> str | None:
     return clean_text(" ".join(part for part in cleaned if part))
 
 
+def official_dvf_street_name(row: dict[str, str]) -> str | None:
+    explicit = clean_text(first_value(row, "adresse_nom_voie"))
+    if explicit:
+        return explicit
+    return compact_address(
+        [
+            first_value(row, "type_de_voie"),
+            first_value(row, "voie"),
+        ]
+    )
+
+
+def raw_dvf_mutation_group_signature(row: dict[str, str]) -> tuple[str, ...]:
+    """Best available contiguous grouping key for raw DGFiP exports.
+
+    Raw annual DVF archives do not expose a durable mutation identifier. The
+    signature therefore remains explicitly derived and must only be used while
+    rows are in their official source order.
+    """
+    price = decimal_value(first_value(row, "valeur_fonciere", "valeurfonc"))
+    return (
+        clean_text(first_value(row, "date_mutation", "datemut")) or "",
+        format(price, "f") if price is not None else "",
+        clean_text(first_value(row, "nature_mutation", "libnatmut")) or "",
+        clean_text(first_value(row, "no_disposition", "numero_disposition")) or "",
+        clean_text(first_value(row, "identifiant_de_document", "identifiant_document")) or "",
+        clean_text(first_value(row, "reference_document")) or "",
+        clean_text(first_value(row, "code_departement")) or "",
+        clean_text(first_value(row, "code_commune", "insee_code")) or "",
+    )
+
+
+def raw_dvf_mutation_identity_signature(row: dict[str, str]) -> tuple[str, ...]:
+    """Return the price-free part of the derived source identity.
+
+    Keeping price out lets a corrected official amount version the same source
+    candidate instead of manufacturing a new identity.
+    """
+    group_signature = raw_dvf_mutation_group_signature(row)
+    return (
+        group_signature[0],
+        *group_signature[2:],
+        build_official_dvf_parcel_id(row) or "",
+        clean_text(first_value(row, "no_voie", "adresse_numero", "numero_voie")) or "",
+        clean_text(first_value(row, "b/t/q", "adresse_suffixe", "suffixe")) or "",
+        official_dvf_street_name(row) or "",
+        clean_text(first_value(row, "1er_lot", "lot1_numero")) or "",
+        clean_text(first_value(row, "identifiant_local")) or "",
+    )
+
+
+def derived_dvf_mutation_id(
+    identity_signature: tuple[str, ...],
+    *,
+    occurrence: int,
+) -> str:
+    if occurrence < 1:
+        raise ValueError("DVF mutation occurrence must be positive")
+    payload = json.dumps(
+        {
+            "identity_signature": identity_signature,
+            "occurrence": occurrence,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return f"dvf-derived:{hashlib.sha256(payload.encode()).hexdigest()[:32]}"
+
+
 def decimal_value(value: str | None) -> Decimal | None:
     if value is None:
         return None
@@ -573,6 +748,30 @@ def department_from_postal_code(postal_code: str | None) -> str | None:
     if postal_code.startswith("97") or postal_code.startswith("98"):
         return postal_code[:3]
     return postal_code[:2] if len(postal_code) >= 2 else None
+
+
+def build_official_dvf_insee_code(row: dict[str, str]) -> str | None:
+    explicit = clean_text(first_value(row, "insee_code", "code_insee"))
+    if explicit:
+        return explicit
+    commune = clean_text(first_value(row, "code_commune"))
+    department = clean_text(first_value(row, "code_departement"))
+    if not commune:
+        return None
+    if len(commune) >= 5 or not department:
+        return commune
+    return f"{department}{commune.zfill(3)}"
+
+
+def build_official_dvf_parcel_id(row: dict[str, str]) -> str | None:
+    department = clean_text(first_value(row, "code_departement"))
+    commune = clean_text(first_value(row, "code_commune"))
+    section = clean_text(first_value(row, "section"))
+    plan = clean_text(first_value(row, "no_plan", "numero_plan"))
+    if not department or not commune or not section or not plan:
+        return None
+    prefix = clean_text(first_value(row, "prefixe_de_section", "prefixe_section")) or "000"
+    return f"{department}{commune.zfill(3)}{prefix.zfill(3)}{section.zfill(2)}{plan.zfill(4)}".upper()
 
 
 def stable_mutation_id(row: dict[str, str]) -> str:
@@ -898,6 +1097,8 @@ def postgres_value(value: object) -> object:
 def print_summary(summary: DvfImportSummary) -> None:
     print("DVF import summary")
     print(f"- file: {summary.file_name}")
+    print(f"- source_artifact_sha256: {summary.source_artifact_sha256 or 'n/a'}")
+    print(f"- source_members: {', '.join(summary.source_members) or 'n/a'}")
     print(f"- batch_id: {summary.batch_id or 'dry-run'}")
     print(f"- parsed_rows: {summary.parsed_rows}")
     print(f"- valid_rows: {summary.valid_rows}")

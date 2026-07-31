@@ -38,6 +38,7 @@ export type FeatureKey =
   | "property.soldComparables"
   | "property.activeComparables"
   | "property.neighborhoodAnalysis"
+  | "property.outcomeGraph"
   | "data.onDemandRefresh"
   | "lawyers.directory"
   | "lawyers.referrals"
@@ -103,6 +104,7 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "property.soldComparables": "locked",
     "property.activeComparables": "locked",
     "property.neighborhoodAnalysis": "locked",
+    "property.outcomeGraph": "locked",
     "data.onDemandRefresh": "locked",
     "lawyers.directory": "included",
     "lawyers.referrals": "locked",
@@ -145,6 +147,7 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "property.soldComparables": "included",
     "property.activeComparables": "included",
     "property.neighborhoodAnalysis": "included",
+    "property.outcomeGraph": "included",
     "data.onDemandRefresh": "included",
     "lawyers.directory": "included",
     "lawyers.referrals": "included",

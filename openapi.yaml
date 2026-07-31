@@ -1,0 +1,332 @@
+openapi: 3.1.0
+info:
+  title: ImmoJudis Outcome Graph API
+  version: 1.0.0
+  description: >-
+    Contrat de lecture de la prévision pré-audience Outcome Graph. Cette tranche
+    expose uniquement la projection premium d'une vente; le registre opérateur
+    et ses commandes restent hors de cette version publique.
+servers:
+  - url: /api/v1
+paths:
+  /sales/{saleId}/outcome-graph:
+    get:
+      operationId: getSaleOutcomeGraph
+      summary: Lire la dernière prévision Outcome Graph admissible
+      description: >-
+        Réservé au plan Analyse. Le serveur refuse les prédictions sans snapshot
+        pré-audience validé, cohorte éligible ou provenance complète. Le plafond
+        personnel n'est pas envoyé à cette route et se calcule dans le navigateur.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: saleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Prévision prête ou refus explicite pour données insuffisantes
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Toujours `private, no-store`.
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [forecast]
+                properties:
+                  forecast:
+                    $ref: "#/components/schemas/OutcomeGraphForecast"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Supabase JWT
+  responses:
+    InvalidRequest:
+      description: Identifiant ou requête invalide
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    AuthRequired:
+      description: Authentification Supabase requise
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Forbidden:
+      description: Fonctionnalité réservée au plan Analyse
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    InternalError:
+      description: Registre temporairement indisponible
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+  schemas:
+    ApiError:
+      type: object
+      required: [ok, error, code, requestId]
+      properties:
+        ok:
+          const: false
+        error:
+          type: string
+        code:
+          type: string
+          enum: [AUTH_REQUIRED, FORBIDDEN, INVALID_REQUEST, INTERNAL_ERROR]
+        requestId:
+          type: string
+    NullableProbability:
+      oneOf:
+        - type: number
+          minimum: 0
+          maximum: 1
+        - type: "null"
+    MoneyCents:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 9007199254740991
+      description: Montant exact en centimes d'euro, jamais un flottant en euros.
+    NullableMoneyCents:
+      oneOf:
+        - $ref: "#/components/schemas/MoneyCents"
+        - type: "null"
+    Quantiles:
+      type: object
+      required: [p10Cents, p50Cents, p90Cents]
+      properties:
+        p10Cents:
+          $ref: "#/components/schemas/MoneyCents"
+        p50Cents:
+          $ref: "#/components/schemas/MoneyCents"
+        p90Cents:
+          $ref: "#/components/schemas/MoneyCents"
+    OutcomeGraphForecast:
+      type: object
+      required:
+        - saleId
+        - roundId
+        - predictionId
+        - snapshotId
+        - status
+        - generatedAt
+        - horizon
+        - modelVersion
+        - cohort
+        - marketValueCents
+        - startingPriceCents
+        - effectiveStartingPriceCents
+        - flow
+        - initialPrice
+        - surenchereProbability
+        - finalPrice
+        - ceiling
+        - pressure
+        - confidence
+        - delays
+        - explanationFactors
+        - limitations
+        - refusalReason
+      properties:
+        saleId:
+          type: string
+          format: uuid
+        roundId:
+          type: [string, "null"]
+          format: uuid
+        predictionId:
+          type: [string, "null"]
+          format: uuid
+        snapshotId:
+          type: [string, "null"]
+          format: uuid
+        status:
+          type: string
+          enum: [ready, insufficient_data]
+        generatedAt:
+          type: [string, "null"]
+          format: date-time
+        horizon:
+          type: [string, "null"]
+          enum: [T-30, T-14, T-7, T-1, T-2h, null]
+        modelVersion:
+          type: [string, "null"]
+        cohort:
+          oneOf:
+            - type: object
+              required: [id, label, level, periodStart, periodEnd]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                label:
+                  type: string
+                level:
+                  type: string
+                  enum:
+                    - tribunal_procedure_type_occupation_discount
+                    - tribunal_procedure_type
+                    - region_procedure_type
+                    - national_procedure_type
+                    - national_property_type
+                    - national
+                periodStart:
+                  type: string
+                  format: date-time
+                periodEnd:
+                  type: string
+                  format: date-time
+            - type: "null"
+        marketValueCents:
+          $ref: "#/components/schemas/NullableMoneyCents"
+        startingPriceCents:
+          $ref: "#/components/schemas/NullableMoneyCents"
+        effectiveStartingPriceCents:
+          $ref: "#/components/schemas/NullableMoneyCents"
+        flow:
+          type: object
+          required:
+            - heldProbability
+            - postponedProbability
+            - cancelledOrNotRequestedProbability
+            - adjudicatedIfHeldProbability
+            - noBidIfHeldProbability
+          properties:
+            heldProbability:
+              $ref: "#/components/schemas/NullableProbability"
+            postponedProbability:
+              $ref: "#/components/schemas/NullableProbability"
+            cancelledOrNotRequestedProbability:
+              $ref: "#/components/schemas/NullableProbability"
+            adjudicatedIfHeldProbability:
+              $ref: "#/components/schemas/NullableProbability"
+            noBidIfHeldProbability:
+              $ref: "#/components/schemas/NullableProbability"
+        initialPrice:
+          oneOf:
+            - $ref: "#/components/schemas/Quantiles"
+            - type: "null"
+        surenchereProbability:
+          $ref: "#/components/schemas/NullableProbability"
+        finalPrice:
+          oneOf:
+            - $ref: "#/components/schemas/Quantiles"
+            - type: "null"
+        ceiling:
+          oneOf:
+            - type: object
+              required:
+                - amountCents
+                - finalPriceBelowOrEqualIfAdjudicatedProbability
+                - adjudicationAndFinalPriceBelowOrEqualProbability
+              properties:
+                amountCents:
+                  $ref: "#/components/schemas/MoneyCents"
+                finalPriceBelowOrEqualIfAdjudicatedProbability:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                adjudicationAndFinalPriceBelowOrEqualProbability:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+            - type: "null"
+        pressure:
+          oneOf:
+            - type: object
+              required: [score, label, coverage, components]
+              properties:
+                score:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                label:
+                  type: string
+                  enum: [faible, modérée, élevée]
+                coverage:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                components:
+                  type: array
+                  items:
+                    type: object
+                    required: [key, label, score, weight]
+                    properties:
+                      key:
+                        type: string
+                        enum: [discount, adjudication, qualified_demand, history, liquidity]
+                      label:
+                        type: string
+                      score:
+                        type: [number, "null"]
+                      weight:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+            - type: "null"
+        confidence:
+          oneOf:
+            - type: object
+              required: [label, score, sampleSize, tribunalSampleSize]
+              properties:
+                label:
+                  type: string
+                  enum: [faible, moyen, élevé]
+                score:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                sampleSize:
+                  type: integer
+                  minimum: 10
+                tribunalSampleSize:
+                  type: integer
+                  minimum: 0
+            - type: "null"
+        delays:
+          type: [object, "null"]
+          additionalProperties:
+            $ref: "#/components/schemas/NullableProbability"
+        explanationFactors:
+          type: array
+          items:
+            type: object
+            required: [label, detail, direction]
+            properties:
+              label:
+                type: string
+              detail:
+                type: string
+              direction:
+                type: string
+                enum: [up, down, neutral]
+        limitations:
+          type: array
+          items:
+            type: string
+        refusalReason:
+          type: [string, "null"]

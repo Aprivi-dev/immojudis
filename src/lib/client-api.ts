@@ -49,6 +49,7 @@ import type {
 } from "@/lib/lawyer-referrals";
 import type { MarketAnalyticsResponse } from "@/lib/market-analytics";
 import type { MarketContext } from "@/lib/market.functions";
+import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
 import type {
   NotificationPreferencesResponse,
   NotificationPreferenceUpdateInput,
@@ -149,6 +150,17 @@ export async function fetchPrecomputedMarketEstimate(args: {
   });
 
   return readJson<MarketContext>(response);
+}
+
+export async function fetchOutcomeGraphForecast(args: {
+  saleId: string;
+}): Promise<{ forecast: OutcomeGraphForecast }> {
+  const response = await fetch(`/api/v1/sales/${encodeURIComponent(args.saleId)}/outcome-graph`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+
+  return readJson<{ forecast: OutcomeGraphForecast }>(response);
 }
 
 export async function fetchValuationAdminOverview(): Promise<ValuationAdminResponse> {

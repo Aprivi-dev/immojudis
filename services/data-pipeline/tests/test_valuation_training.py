@@ -6,6 +6,7 @@ from src.valuation_training import (
     FEATURE_NAMES,
     chronological_split,
     feature_frame,
+    fetch_training_transactions,
     load_local_training_transactions,
     prepare_training_frame,
 )
@@ -64,6 +65,7 @@ def test_load_local_training_transactions_maps_and_keeps_recent_single_asset_sal
             {
                 "id_mutation": f"apartment-{index}",
                 "id_parcelle": f"parcel-{index}",
+                "nature_mutation": "Vente",
                 "date_mutation": f"2025-{index + 1:02d}-15",
                 "valeur_fonciere": 200_000 + index * 1_000,
                 "surface_reelle_bati": 60 + index,
@@ -87,3 +89,53 @@ def test_load_local_training_transactions_maps_and_keeps_recent_single_asset_sal
     assert len(frames["apartment"]) == 5
     assert frames["apartment"]["sale_date"].min().month == 8
     assert set(frames["apartment"]["segment"]) == {"apartment"}
+
+
+def test_load_local_training_transactions_excludes_adjudications(tmp_path) -> None:
+    path = tmp_path / "dvf.csv.gz"
+    rows = []
+    for index, nature in enumerate(("Vente", "Adjudication")):
+        rows.append(
+            {
+                "id_mutation": f"mutation-{index}",
+                "id_parcelle": f"parcel-{index}",
+                "nature_mutation": nature,
+                "date_mutation": f"2025-01-{index + 1:02d}",
+                "valeur_fonciere": 200_000,
+                "surface_reelle_bati": 50,
+                "surface_terrain": None,
+                "type_local": "Appartement",
+                "code_type_local": "2",
+                "nombre_pieces_principales": 2,
+                "latitude": 44.84,
+                "longitude": -0.58,
+            }
+        )
+    pd.DataFrame(rows).to_csv(path, index=False, compression="gzip")
+
+    frame = load_local_training_transactions(
+        path,
+        segments=("apartment",),
+        limit=None,
+        chunk_size=10,
+    )["apartment"]
+
+    assert len(frame) == 1
+    assert frame.iloc[0]["source_mutation_id"] == "mutation-0"
+
+
+def test_postgres_training_query_excludes_adjudications(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def read_sql_query(query: str, connection: object, params: tuple[object, ...]) -> pd.DataFrame:
+        captured.update(query=query, connection=connection, params=params)
+        return sample_frame()
+
+    monkeypatch.setattr(pd, "read_sql_query", read_sql_query)
+    connection = object()
+
+    frame = fetch_training_transactions(connection)
+
+    assert "mutation_nature = 'Vente'" in str(captured["query"])
+    assert captured["connection"] is connection
+    assert len(frame) == 12
