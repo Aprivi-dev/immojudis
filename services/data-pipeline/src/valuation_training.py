@@ -49,6 +49,7 @@ DEFAULT_MODEL_OUTPUT_DIR = ROOT_DIR / "data" / "processed" / "valuation_models"
 LOCAL_SOURCE_COLUMNS = {
     "id_mutation": "source_mutation_id",
     "id_parcelle": "source_parcel_id",
+    "nature_mutation": "mutation_nature",
     "date_mutation": "sale_date",
     "valeur_fonciere": "total_price_eur",
     "surface_reelle_bati": "built_surface_m2",
@@ -201,6 +202,7 @@ def load_local_training_transactions(
         for column in (
             "source_mutation_id",
             "source_parcel_id",
+            "mutation_nature",
             "sale_date",
             "total_price_eur",
             "built_surface_m2",
@@ -213,6 +215,11 @@ def load_local_training_transactions(
         ):
             if column not in chunk:
                 chunk[column] = None
+        # The market-value model is trained only on arm's-length DVF sales.
+        # Adjudications are reserved for Outcome Graph label candidates.
+        chunk = chunk.loc[
+            chunk["mutation_nature"].astype("string").str.strip().str.casefold() == "vente"
+        ].copy()
         chunk["price_per_m2"] = None
         prepared = prepare_training_frame(chunk)
         for segment in segments:
@@ -284,6 +291,7 @@ def fetch_training_transactions(
             end as resolved_segment
           from public.dvf_transactions
           where sale_date is not null
+            and mutation_nature = 'Vente'
             and total_price_eur > 0
             and latitude is not null
             and longitude is not null

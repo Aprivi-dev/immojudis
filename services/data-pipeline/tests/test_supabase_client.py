@@ -497,7 +497,9 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     monkeypatch.setattr(
         supabase_client,
         "_delete_secondary_sale_rows_with_postgres",
-        lambda db_url, sales: calls.append((db_url, "delete_secondary", len(sales))) or 0,
+        lambda *args: (_ for _ in ()).throw(
+            AssertionError("upsert must not delete secondary rows before the Outcome Graph bridge")
+        ),
     )
     monkeypatch.setattr(
         supabase_client,
@@ -520,10 +522,94 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     assert supabase_client.upsert_sales_to_supabase([sale]) == 1
     assert calls == [
         ("postgresql://example", "auction_sales", 1),
-        ("postgresql://example", "delete_secondary", 1),
         ("https://supabase.test", "normalized_tables", 1),
         ("https://supabase.test", "asset_tables", 1),
     ]
+
+
+def test_upsert_sales_via_rest_does_not_delete_secondary_rows(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/primary",
+            "source_urls": [
+                "https://example.test/primary",
+                "https://example.test/secondary",
+            ],
+        }
+    )
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_with_rest",
+        lambda *args, **kwargs: calls.append("upsert"),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_delete_secondary_sale_rows",
+        lambda *args: (_ for _ in ()).throw(
+            AssertionError("upsert must not delete secondary rows before the Outcome Graph bridge")
+        ),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_sync_normalized_sale_tables_with_rest",
+        lambda *args, **kwargs: calls.append("normalized"),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_asset_tables_with_rest",
+        lambda *args, **kwargs: calls.append("assets"),
+    )
+
+    assert supabase_client.upsert_sales_to_supabase([sale]) == 1
+    assert calls == ["upsert", "normalized", "assets"]
+
+
+def test_secondary_sale_cleanup_is_explicit_and_uses_postgres(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/primary",
+            "source_urls": [
+                "https://example.test/primary",
+                "https://example.test/secondary",
+            ],
+        }
+    )
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://example",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_delete_secondary_sale_rows_with_postgres",
+        lambda db_url, sales: calls.append("delete_secondary") or 1,
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_delete_secondary_sale_rows",
+        lambda *args: (_ for _ in ()).throw(AssertionError("REST fallback should not run")),
+    )
+
+    assert supabase_client.delete_secondary_sales_in_supabase([sale]) == 1
+    assert calls == ["delete_secondary"]
 
 
 def test_upsert_sales_can_preserve_last_seen_during_recompute(monkeypatch) -> None:

@@ -18,6 +18,7 @@ export type UsageEventKey =
   | "dvf.comparables_viewed"
   | "valuation.backtest_viewed"
   | "valuation.estimated"
+  | "outcome_graph.viewed"
   | "workspace.audience_tracking_viewed"
   | "sale_changes.monitored"
   | "lawyer.referral_requested"

@@ -28,6 +28,7 @@ from src.geocode import geocode_sale
 from src.lifecycle import mark_past_sales
 from src.models import AuctionSale
 from src.normalize import normalize_sale, parse_price
+from src.outcome_ingestion.catalogue_bridge import bridge_auction_sales_before_cleanup
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
     PdfEnrichmentStats,
@@ -54,6 +55,7 @@ from src.sources.vench import scrape_vench_aquitaine_result
 from src.storage.supabase_client import (
     create_run_in_supabase,
     delete_expired_sales_in_supabase,
+    delete_secondary_sales_in_supabase,
     delete_vench_sales_without_surface_in_supabase,
     fetch_enriched_content_hashes,
     fetch_known_sale_details,
@@ -485,9 +487,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     cadastre_upserted = 0
     dpe_upserted = 0
     supabase_cleaned_past = 0
+    supabase_deleted_secondary = 0
     supabase_reconciled_duplicates = 0
     supabase_deleted_expired = 0
     supabase_deleted_vench_without_surface = 0
+    outcome_bridge_scanned = 0
+    outcome_bridge_created = 0
+    outcome_bridge_reused = 0
     publication_failed = False
     summary = {
         "collected": len(raw_sales),
@@ -525,6 +531,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                         errors.setdefault("dpe", []).append(str(exc))
             upserted = max(early_upserted, final_upserted)
             observations_upserted = max(early_observations_upserted, final_observations_upserted)
+            # Fail closed before every path below that can delete catalogue
+            # rows. The database also rejects deletion of any unbridged sale.
+            outcome_bridge = bridge_auction_sales_before_cleanup(settings)
+            outcome_bridge_scanned = outcome_bridge.scanned_count
+            outcome_bridge_created = outcome_bridge.created_count
+            outcome_bridge_reused = outcome_bridge.reused_count
+            supabase_deleted_secondary = delete_secondary_sales_in_supabase(app_ready)
             if settings.get("dedupe_reconcile_enabled", True):
                 supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase(
                     limit=int(settings.get("dedupe_reconcile_max_rows") or 2000)
@@ -543,7 +556,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                     "final_observations_upserted": final_observations_upserted,
                     "cadastre_upserted": cadastre_upserted,
                     "dpe_upserted": dpe_upserted,
+                    "outcome_bridge_scanned": outcome_bridge_scanned,
+                    "outcome_bridge_created": outcome_bridge_created,
+                    "outcome_bridge_reused": outcome_bridge_reused,
                     "marked_past_in_run": lifecycle_stats.marked_past,
+                    "deleted_secondary_sales": supabase_deleted_secondary,
                     "reconciled_duplicate_sales": supabase_reconciled_duplicates,
                     "marked_past_in_supabase": supabase_cleaned_past,
                     "deleted_expired_sales": supabase_deleted_expired,
@@ -571,7 +588,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print(f"- final_upserted: {final_upserted}")
     print(f"- cadastre_upserted: {cadastre_upserted}")
     print(f"- dpe_upserted: {dpe_upserted}")
+    print(f"- outcome_bridge_scanned: {outcome_bridge_scanned}")
+    print(f"- outcome_bridge_created: {outcome_bridge_created}")
+    print(f"- outcome_bridge_reused: {outcome_bridge_reused}")
     print(f"- marked_past_in_run: {lifecycle_stats.marked_past}")
+    print(f"- deleted_secondary_sales: {supabase_deleted_secondary}")
     print(f"- reconciled_duplicate_sales: {supabase_reconciled_duplicates}")
     print(f"- marked_past_in_supabase: {supabase_cleaned_past}")
     print(f"- deleted_expired_sales: {supabase_deleted_expired}")
