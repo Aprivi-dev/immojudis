@@ -17,7 +17,10 @@ from src.official_sources.encheres_publiques_open_data import (
     parse_encheres_publiques_csv,
 )
 from src.official_sources.judilibre import JudilibreClient
-from src.official_sources.justice_open_data import parse_justice_open_data_csv
+from src.official_sources.justice_open_data import (
+    parse_justice_open_data_csv,
+    validate_justice_competence_semantics,
+)
 from src.outcome_ingestion.adapters import (
     dvf_adjudication_to_json_record,
     encheres_publiques_to_json_record,
@@ -412,6 +415,8 @@ def _local_records(source: LocalSource, path: Path) -> Iterator[JsonSourceRecord
         return
     if source == "justice":
         parsed = parse_justice_open_data_csv(path)
+        if parsed.quality.dataset_kind == "justice_court_competence":
+            validate_justice_competence_semantics(parsed)
         for record in parsed.records:
             yield justice_open_data_to_json_record(record)
         return

@@ -1,6 +1,6 @@
 # Statistiques par tribunal — runbook d’exploitation
 
-_Version 0.3 — 1er août 2026. Cette fonctionnalité est une restitution descriptive expérimentale. Elle ne constitue ni une prédiction individuelle, ni une garantie de prix ou d’issue._
+_Version 0.4 — 17 août 2026. Cette fonctionnalité est une restitution descriptive expérimentale. Elle ne constitue ni une prédiction individuelle, ni une garantie de prix ou d’issue._
 
 ## Résumé opérateur
 
@@ -22,6 +22,25 @@ En cas de doute sur la provenance, les dénominateurs, la revue ou le cutoff :
 4. identifier le dernier build et son triplet de versions méthodologiques;
 5. corriger en produisant un nouveau snapshot, jamais en modifiant l’ancien;
 6. vérifier en dry-run et en staging avant réactivation.
+
+### Diagnostic d'une page vide
+
+Une absence générale de statistiques est attendue tant qu'une des portes suivantes reste fermée :
+
+1. `TRIBUNAL_STATISTICS_ENABLED` n'est pas exactement égal à `true` dans l'API ;
+2. aucun snapshot national publiable n'a été persisté pour la fenêtre demandée ;
+3. les audiences catalogue n'ont pas de tribunal compétent prouvé par la chaîne BAN code INSEE exact
+   → référentiel territorial Justice ;
+4. les rounds matures n'ont pas de snapshot pré-audience non rétrospectif avec contrôle anti-fuite
+   réussi ;
+5. les résultats et claims ne disposent pas des preuves A/B, revues humaines et décisions
+   d'éligibilité requises ;
+6. les seuils de taille, couverture ou qualité ne sont pas atteints.
+
+Corriger le tribunal est donc le premier prérequis de segmentation, mais ne crée aucune observation
+de résultat et n'autorise aucune probabilité. L'interface d'une annonce ne doit afficher la rubrique
+« Prévision » que lorsqu'un enregistrement `auction_predictions` au statut `ready` a lui-même franchi
+toutes les portes de publication.
 
 ## Ce que le service mesure
 

@@ -19,18 +19,24 @@ const outcomeEvaluationMigrationUrl = new URL(
   "../supabase/migrations/20260801133817_outcome_evaluation_gate.sql",
   import.meta.url,
 );
+const competentCourtMigrationUrl = new URL(
+  "../supabase/migrations/20260817103041_competent_court_reconciliation.sql",
+  import.meta.url,
+);
 const [
   outcomeMigration,
   outcomeRoute,
   outcomeRepository,
   outcomeIngestionMigration,
   outcomeEvaluationMigration,
+  competentCourtMigration,
 ] = await Promise.all([
   readFile(outcomeMigrationUrl, "utf8"),
   readFile(outcomeRouteUrl, "utf8"),
   readFile(outcomeRepositoryUrl, "utf8"),
   readFile(outcomeIngestionMigrationUrl, "utf8"),
   readFile(outcomeEvaluationMigrationUrl, "utf8"),
+  readFile(competentCourtMigrationUrl, "utf8"),
 ]);
 
 const failures = [];
@@ -358,6 +364,64 @@ if (
   );
 }
 
+const competentCourtRelations = [
+  "auction_sale_competent_court_assignments",
+  "catalogue_court_reconciliation_events",
+];
+const competentCourtStatements = competentCourtMigration
+  .split(";")
+  .map((statement) => statement.trim())
+  .filter(Boolean);
+for (const relation of competentCourtRelations) {
+  if (
+    !new RegExp(
+      `alter\\s+table\\s+public\\.${relation}\\s+enable\\s+row\\s+level\\s+security`,
+      "i",
+    ).test(competentCourtMigration)
+  ) {
+    failures.push(`Competent-court reconciliation does not enable RLS on ${relation}`);
+  }
+  if (
+    competentCourtStatements.some(
+      (statement) =>
+        /^grant\s/i.test(statement) &&
+        new RegExp(`\\bpublic\\.${relation}\\b`, "i").test(statement) &&
+        /\bto\s+(?:public|anon|authenticated)\b/i.test(statement),
+    )
+  ) {
+    failures.push(`Competent-court reconciliation exposes ${relation} to a browser role`);
+  }
+}
+if (
+  competentCourtRelations.some(
+    (relation) =>
+      !new RegExp(
+        `grant\\s+select\\s*,\\s*insert\\s+on\\s+table\\s+public\\.${relation}\\s+to\\s+service_role`,
+        "i",
+      ).test(competentCourtMigration),
+  )
+) {
+  failures.push("Competent-court audit tables do not grant service_role append/read only");
+}
+if (
+  !/revoke\s+all\s+on\s+function\s+public\.reconcile_catalogue_competent_courts\(\)\s+from\s+public\s*,\s*anon\s*,\s*authenticated/i.test(
+    competentCourtMigration,
+  ) ||
+  !/grant\s+execute\s+on\s+function\s+public\.reconcile_catalogue_competent_courts\(\)\s+to\s+service_role/i.test(
+    competentCourtMigration,
+  )
+) {
+  failures.push("Competent-court reconciliation RPC is not restricted to service_role");
+}
+if (
+  !/mapping_method'\s*,\s*'justice_competence_insee_exact'[\s\S]{0,500}?'reference_sha256'/i.test(
+    competentCourtMigration,
+  ) ||
+  !/new\.court_mapping_input\s*=\s*expected_input/i.test(competentCourtMigration)
+) {
+  failures.push("Competent-court bridge reconciliation does not require exact evidence");
+}
+
 for (const relation of [
   "public_auction_sales",
   "auction_sales_quality_issues",
@@ -396,6 +460,8 @@ console.log(
       "outcome-source-purge-after-disable",
       "outcome-source-fail-closed-policies",
       "outcome-model-evaluation-promotion-gate",
+      "competent-court-reconciliation-rls",
+      "competent-court-reconciliation-exact-evidence",
     ],
   }),
 );

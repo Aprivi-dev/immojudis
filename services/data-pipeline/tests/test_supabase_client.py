@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from src.court_competence import CompetentCourtAssignment
 from src.normalize import normalize_sale
 from src.storage import supabase_client
 from src.storage.supabase_client import _sanitize_postgrest_payload, _secondary_source_urls
@@ -573,6 +574,68 @@ def test_upsert_sales_via_rest_does_not_delete_secondary_rows(monkeypatch) -> No
 
     assert supabase_client.upsert_sales_to_supabase([sale]) == 1
     assert calls == ["upsert", "normalized", "assets"]
+
+
+def test_upsert_sales_registers_verified_competent_court_before_sale(monkeypatch) -> None:
+    assignment = CompetentCourtAssignment(
+        insee_code="01187",
+        commune_name="HAUT VALROMEY",
+        court_code="justice_tj_1_39",
+        court_name="TJ Bourg-en-Bresse",
+        official_court_name="Tribunal judiciaire de Bourg-en-Bresse",
+        court_origin_code="1",
+        court_srj_code="39",
+        court_department="01",
+        court_city="Bourg-en-Bresse",
+        reference_sha256="c" * 64,
+    )
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/haut-valromey",
+            "tribunal": assignment.court_name,
+            "tribunal_code": assignment.court_code,
+            "raw_payload": {"tribunal_assignment": assignment.evidence()},
+        }
+    )
+    sale.raw_payload["tribunal_assignment"] = assignment.evidence()
+    calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda _url, _key, table, payload, on_conflict: calls.append((table, (payload, on_conflict))),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_with_rest",
+        lambda *_args, **_kwargs: calls.append(("auction_sales", None)),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_sync_normalized_sale_tables_with_rest",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_asset_tables_with_rest",
+        lambda *args, **kwargs: None,
+    )
+
+    assert supabase_client.upsert_sales_to_supabase([sale]) == 1
+
+    assert calls[0][0] == "tribunals"
+    tribunal_payload, on_conflict = calls[0][1]
+    assert on_conflict == "code"
+    assert tribunal_payload[0]["code"] == "justice_tj_1_39"
+    assert calls[1] == ("auction_sales", None)
 
 
 def test_secondary_sale_cleanup_is_explicit_and_uses_postgres(monkeypatch) -> None:

@@ -28,6 +28,7 @@ from src.asset_normalization import (
     extract_risk_occurrences_from_text,
 )
 from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
+from src.court_competence import tribunal_reference_rows
 from src.dedupe import merge_duplicate_sales
 from src.models import AuctionSale
 from src.normalize import make_sale_signature
@@ -242,6 +243,17 @@ def upsert_sales_to_supabase(
         payload.append(row)
     if not payload:
         return 0
+    tribunal_rows = [{**row, "updated_at": now} for row in tribunal_reference_rows(sales)]
+    if tribunal_rows:
+        # The FK target must exist before auction_sales and judicial_sales are
+        # written. Only evidence-gated Ministry assignments produce rows here.
+        _postgrest_upsert(
+            str(url),
+            str(key),
+            "tribunals",
+            tribunal_rows,
+            on_conflict="code",
+        )
     if db_url:
         try:
             _postgres_upsert(str(db_url), "auction_sales", payload, on_conflict="source_url")
