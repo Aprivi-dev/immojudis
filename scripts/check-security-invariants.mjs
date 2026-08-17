@@ -15,13 +15,23 @@ const outcomeIngestionMigrationUrl = new URL(
   "../supabase/migrations/20260730141957_outcome_source_ingestion.sql",
   import.meta.url,
 );
-const [outcomeMigration, outcomeRoute, outcomeRepository, outcomeIngestionMigration] =
-  await Promise.all([
-    readFile(outcomeMigrationUrl, "utf8"),
-    readFile(outcomeRouteUrl, "utf8"),
-    readFile(outcomeRepositoryUrl, "utf8"),
-    readFile(outcomeIngestionMigrationUrl, "utf8"),
-  ]);
+const outcomeEvaluationMigrationUrl = new URL(
+  "../supabase/migrations/20260801133817_outcome_evaluation_gate.sql",
+  import.meta.url,
+);
+const [
+  outcomeMigration,
+  outcomeRoute,
+  outcomeRepository,
+  outcomeIngestionMigration,
+  outcomeEvaluationMigration,
+] = await Promise.all([
+  readFile(outcomeMigrationUrl, "utf8"),
+  readFile(outcomeRouteUrl, "utf8"),
+  readFile(outcomeRepositoryUrl, "utf8"),
+  readFile(outcomeIngestionMigrationUrl, "utf8"),
+  readFile(outcomeEvaluationMigrationUrl, "utf8"),
+]);
 
 const failures = [];
 for (const relation of [
@@ -276,6 +286,78 @@ if (
   failures.push("DVF is not registered as a source that can contain personal data");
 }
 
+if (
+  !/alter\s+table\s+public\.outcome_model_evaluations\s+enable\s+row\s+level\s+security/i.test(
+    outcomeEvaluationMigration,
+  )
+) {
+  failures.push("Outcome model evaluations do not enable RLS");
+}
+const outcomeEvaluationStatements = outcomeEvaluationMigration
+  .split(";")
+  .map((statement) => statement.trim())
+  .filter(Boolean);
+if (
+  outcomeEvaluationStatements.some(
+    (statement) =>
+      /^grant\s/i.test(statement) &&
+      /\bpublic\.outcome_model_evaluations\b/i.test(statement) &&
+      /\bto\s+(?:public|anon|authenticated)\b/i.test(statement),
+  )
+) {
+  failures.push("Outcome model evaluations expose a browser-facing table grant");
+}
+const evaluationServiceGrants = outcomeEvaluationStatements.filter(
+  (statement) =>
+    /^grant\s/i.test(statement) &&
+    /\bpublic\.outcome_model_evaluations\b/i.test(statement) &&
+    /\bto\s+service_role\b/i.test(statement),
+);
+if (
+  evaluationServiceGrants.length !== 1 ||
+  !/^grant\s+select\s*,\s*insert\s+on\s+table\s+public\.outcome_model_evaluations\s+to\s+service_role$/i.test(
+    evaluationServiceGrants[0] ?? "",
+  )
+) {
+  failures.push("Outcome model evaluations do not grant service_role append/read only");
+}
+if (
+  !/old\.status\s*=\s*'validated'\s+and\s+new\.status\s*=\s*'active'[\s\S]{0,180}?cannot\s+bypass\s+shadow\s+mode/i.test(
+    outcomeEvaluationMigration,
+  )
+) {
+  failures.push("Outcome models can bypass shadow mode during activation");
+}
+if (
+  (
+    outcomeEvaluationMigration.match(
+      /order\s+by\s+evaluation_row\.created_at\s+desc\s*,\s*evaluation_row\.id\s+desc/gi,
+    ) ?? []
+  ).length < 2
+) {
+  failures.push(
+    "Outcome promotion gates do not select latest evaluations by server ingestion order",
+  );
+}
+if (
+  !/evaluation_mode\s*=\s*'prospective_shadow'[\s\S]{0,240}?known_outcome_count\s*>=\s*300[\s\S]{0,120}?scored_observation_count\s*>=\s*300/i.test(
+    outcomeEvaluationMigration,
+  ) ||
+  !/new\.shadow_started_at\s*:=\s*pg_catalog\.clock_timestamp\(\)/i.test(
+    outcomeEvaluationMigration,
+  ) ||
+  !/new\.feature_cutoff_at\s*<\s*linked_model\.shadow_started_at/i.test(
+    outcomeEvaluationMigration,
+  ) ||
+  !/outcome_model_evaluation_is_fresh[\s\S]{0,1200}?interval\s+'30 days'/i.test(
+    outcomeEvaluationMigration,
+  )
+) {
+  failures.push(
+    "Outcome prospective promotion lacks the 300-result, shadow-start, or freshness gate",
+  );
+}
+
 for (const relation of [
   "public_auction_sales",
   "auction_sales_quality_issues",
@@ -313,6 +395,7 @@ console.log(
       "outcome-source-checkpoint-cas",
       "outcome-source-purge-after-disable",
       "outcome-source-fail-closed-policies",
+      "outcome-model-evaluation-promotion-gate",
     ],
   }),
 );
