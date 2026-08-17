@@ -65,18 +65,46 @@ def test_match_dvf_requires_explicit_bound_and_defaults_to_dry_run() -> None:
         parser.parse_args(["match-dvf", "--limit", "10", "--page-size", "5001"])
 
 
-def test_judilibre_search_sync_requires_a_closed_profile_window_and_result_cap() -> None:
+def test_judilibre_search_sync_requires_a_closed_profile_window_and_result_caps() -> None:
     parser = build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
                 "judilibre-search-sync",
                 "--profile",
-                "adjudication_v1",
+                "adjudication_v2",
                 "--date-start",
                 "2025-05-01",
                 "--date-end",
                 "2025-05-31",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "judilibre-search-sync",
+                "--profile",
+                "adjudication_v2",
+                "--date-start",
+                "2025-05-01",
+                "--date-end",
+                "2025-05-31",
+                "--max-total-results",
+                "501",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "judilibre-search-sync",
+                "--profile",
+                "adjudication_v2",
+                "--date-start",
+                "2025-05-01",
+                "--date-end",
+                "2025-05-31",
+                "--max-results-per-window",
+                "500",
             ]
         )
     with pytest.raises(SystemExit):
@@ -89,8 +117,10 @@ def test_judilibre_search_sync_requires_a_closed_profile_window_and_result_cap()
                 "2025-05-01",
                 "--date-end",
                 "2025-05-31",
-                "--max-results",
-                "10",
+                "--max-results-per-window",
+                "500",
+                "--max-total-results",
+                "501",
             ]
         )
     with pytest.raises(SystemExit):
@@ -98,13 +128,31 @@ def test_judilibre_search_sync_requires_a_closed_profile_window_and_result_cap()
             [
                 "judilibre-search-sync",
                 "--profile",
-                "adjudication_v1",
+                "adjudication_v2",
                 "--date-start",
                 "2025-05-01",
                 "--date-end",
                 "2025-05-31",
-                "--max-results",
+                "--max-results-per-window",
                 "501",
+                "--max-total-results",
+                "501",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "judilibre-search-sync",
+                "--profile",
+                "adjudication_v2",
+                "--date-start",
+                "2025-05-01",
+                "--date-end",
+                "2025-05-31",
+                "--max-results-per-window",
+                "500",
+                "--max-total-results",
+                "10001",
             ]
         )
 
@@ -112,20 +160,40 @@ def test_judilibre_search_sync_requires_a_closed_profile_window_and_result_cap()
         [
             "judilibre-search-sync",
             "--profile",
-            "adjudication_v1",
+            "adjudication_v2",
             "--date-start",
             "2025-05-01",
             "--date-end",
             "2025-05-31",
-            "--max-results",
-            "10",
+            "--max-results-per-window",
+            "500",
+            "--max-total-results",
+            "501",
         ]
     )
-    assert args.profile == "adjudication_v1"
-    assert args.max_results == 10
+    assert args.profile == "adjudication_v2"
+    assert args.max_results_per_window == 500
+    assert args.max_total_results == 501
     assert not hasattr(args, "query")
     assert not hasattr(args, "stream_key")
     assert not hasattr(args, "all")
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "judilibre-search-sync",
+                "--profile",
+                "adjudication_v2",
+                "--date-start",
+                "2025-05-01",
+                "--date-end",
+                "2025-05-31",
+                "--max-results-per-window",
+                "500",
+                "--max-results",
+                "501",
+            ]
+        )
 
 
 def test_judilibre_search_sync_validates_window_before_live_setup(
@@ -145,12 +213,34 @@ def test_judilibre_search_sync_validates_window_before_live_setup(
             [
                 "judilibre-search-sync",
                 "--profile",
-                "adjudication_v1",
+                "adjudication_v2",
                 "--date-start",
                 "2099-01-01",
                 "--date-end",
                 "2099-01-01",
-                "--max-results",
+                "--max-results-per-window",
+                "10",
+                "--max-total-results",
+                "10",
+            ]
+        )
+        == 2
+    )
+    assert setup_calls == 0
+
+    assert (
+        main(
+            [
+                "judilibre-search-sync",
+                "--profile",
+                "adjudication_v2",
+                "--date-start",
+                "2025-05-01",
+                "--date-end",
+                "2025-05-31",
+                "--max-results-per-window",
+                "11",
+                "--max-total-results",
                 "10",
             ]
         )
@@ -201,13 +291,15 @@ def test_judilibre_search_sync_closes_client_and_emits_only_aggregate_data(
             [
                 "judilibre-search-sync",
                 "--profile",
-                "saisie_immobiliere_v1",
+                "saisie_immobiliere_v2",
                 "--date-start",
                 "2025-05-01",
                 "--date-end",
                 "2025-05-31",
-                "--max-results",
-                "10",
+                "--max-results-per-window",
+                "500",
+                "--max-total-results",
+                "501",
             ]
         )
         == 0
@@ -215,11 +307,16 @@ def test_judilibre_search_sync_closes_client_and_emits_only_aggregate_data(
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["mode"] == "judilibre-search-sync"
-    assert payload["profile"] == "saisie_immobiliere_v1"
+    assert payload["profile"] == "saisie_immobiliere_v2"
+    assert payload["max_results_per_window"] == 500
+    assert payload["max_total_results"] == 501
     assert payload["selected_decisions"] == 3
     assert payload["checkpoint_advanced"] is True
     assert client.closed is True
-    assert ingestor.calls[0]["profile"].profile_id == "saisie_immobiliere_v1"
+    assert ingestor.calls[0]["profile"].profile_id == "saisie_immobiliere_v2"
+    assert ingestor.calls[0]["max_results_per_window"] == 500
+    assert ingestor.calls[0]["max_total_results"] == 501
+    assert "max_results" not in ingestor.calls[0]
     serialized = json.dumps(payload, ensure_ascii=False)
     assert "Mme Exemple" not in serialized
     assert "highlights" not in serialized

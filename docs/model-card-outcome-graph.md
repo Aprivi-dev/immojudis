@@ -159,7 +159,7 @@ Aucun dataset d’entraînement national n’est livré avec cette tranche. Les 
 Les données réelles inspectées ou préparées ne changent pas ce constat :
 
 - DVF 2025 fournit 1 604 candidats dont la nature de mutation est `Adjudication`; ils restent tous non entraînables tant qu’un rattachement dossier/lot/round, une preuve et une revue ne les ont pas qualifiés;
-- Judilibre dispose d’un bootstrap borné sur quatre profils (`saisie immobilière`, `vente forcée`, `adjudication`, `surenchère`) puis d’un suivi limité aux décisions déjà enregistrées; aucun appel live n’a été effectué faute de credentials PISTE;
+- Judilibre dispose d'un bootstrap fail-closed sur six profils v2, avec plafond par fenêtre, plafond global, subdivision adaptative et double lecture stable des métadonnées, puis d'un suivi limité aux décisions déjà enregistrées. Le canary et des audits PISTE bornés en lecture seule ont exécuté le contrat et l'extracteur sans écriture distante. Sur un échantillon de 20 décisions du profil `adjudication`, 12 mises à prix mais aucun prix final ont été retenus ; le profil exact `adjuge`, plus discriminant, a produit 5 prix d'adjudication et 5 événements candidats sur ses 11 résultats récents. Ces sondes valident le potentiel technique, pas la couverture nationale, le rappel ni la représentativité;
 - le catalogue Supabase distant contient 413 lignes, dont 4 avec un prix d’adjudication affiché, mais ces prix ne sont pas des preuves de résultat final et ne doivent pas devenir des labels;
 - le pont catalogue de production transforme les 413 statuts en simples annonces avec résultat `unknown`, sans prix et non entraînables. Le backfill du 31 juillet 2026 est complet et son second passage a réutilisé les 413 ponts sans créer de doublon.
 
@@ -183,7 +183,7 @@ Vérifications exécutées le 31 juillet 2026 :
 - TypeScript avec `npx tsc --noEmit` et build Next de développement réussis;
 - 84 migrations locales rejouées depuis zéro, puis 274/274 assertions pgTAP réussies;
 - `npm run check:migrations` et les invariants de sécurité réussis;
-- suite Python : 609 tests réussis hors `test_valuation_training.py`.
+- suite Python : 694 tests réussis hors `test_valuation_training.py`.
 
 `test_valuation_training.py` ne peut pas être collecté sous l’interpréteur local Python 3.14, mais la suite complète a réussi dans la CI cible sous Python 3.11 et 3.12. Ces résultats vérifient le logiciel et ses garde-fous, pas la précision, la calibration ni la représentativité statistique du système.
 
@@ -214,7 +214,7 @@ Le registre impose 300 observations pour un modèle `statistical`, 1 000 pour `m
 6. Fixtures de scénarios utiles au contrat, mais insuffisantes comme preuve de performance métier.
 7. Pas de publication commerciale avant shadow mode et seuils validés.
 8. Migrations et backfill Outcome Graph déployés sur le Supabase distant; aucune donnée de ce pont ne constitue toutefois un label judiciaire vérifié ni une statistique prédictive.
-9. Aucun sync Judilibre live avant fourniture des credentials PISTE et activation explicite du bootstrap ciblé.
+9. Le canary live en lecture seule n'autorise aucune ingestion : bootstrap et synchronisation restent interdits avant approbation de la politique source et activation explicite.
 
 En cas de doute, le comportement attendu est le refus `insufficient_data`, jamais une probabilité par défaut.
 

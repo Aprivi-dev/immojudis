@@ -12,15 +12,23 @@ from src.outcome_ingestion.artifact_store import (
     SupabaseRawArtifactStore,
     raw_artifact_object_path,
 )
-from src.outcome_ingestion.judilibre_ingestion import normalized_judilibre_decision
+from src.outcome_ingestion.judilibre_ingestion import (
+    JUDILIBRE_CONNECTOR_VERSION,
+    JUDILIBRE_EXTRACTOR_VERSION,
+    JUDILIBRE_NORMALIZED_SCHEMA,
+    normalized_judilibre_decision,
+)
 from src.outcome_ingestion.repository import (
+    OutcomeIngestionError,
     OutcomeIngestionRepository,
     SourcePolicy,
     SourcePolicyError,
     SourceRecordProjection,
     SuccessfulCapture,
+    _insert_or_get_extraction,
     request_fingerprint,
 )
+from src.outcome_ingestion.service import JsonSourceRecord, OutcomeSourceIngestionService
 
 
 class FakeBucket:
@@ -81,6 +89,20 @@ class RecordingConnection:
 
     def commit(self) -> None:
         self.commits += 1
+
+
+class RecordingRepository:
+    def __init__(self) -> None:
+        self.projections: list[SourceRecordProjection] = []
+
+    def require_source_policy(self, _source_name: str, _channel: str) -> None:
+        return None
+
+    def persist_successful_record(self, **kwargs: object) -> object:
+        projection = kwargs["projection"]
+        assert isinstance(projection, SourceRecordProjection)
+        self.projections.append(projection)
+        return object()
 
 
 def test_policy_is_fail_closed_and_channel_specific() -> None:
@@ -172,6 +194,51 @@ def test_request_fingerprint_is_deterministic_and_stored_url_can_drop_query() ->
     assert len(first) == 64
 
 
+def test_service_passes_field_provenance_and_keeps_empty_default() -> None:
+    repository = RecordingRepository()
+    service = OutcomeSourceIngestionService(
+        repository=repository,  # type: ignore[arg-type]
+        artifact_store=SupabaseRawArtifactStore(FakeClient()),
+    )
+    provenance = {
+        "final_price": {
+            "pointer": "/zones/3",
+            "start_offset_utf8": 24,
+            "end_offset_utf8": 38,
+            "raw_artifact_sha256": "a" * 64,
+            "evidence_sha256": "b" * 64,
+            "hash_version": "sha256-v1",
+        }
+    }
+
+    def record(identifier: str, **overrides: object) -> JsonSourceRecord:
+        values: dict[str, object] = {
+            "source_name": "dvf_dgfip",
+            "external_record_id": identifier,
+            "requested_url": "https://example.test/dvf",
+            "canonical_url": "https://example.test/dvf",
+            "record_kind": "auction_result_candidate",
+            "raw_payload": {
+                "external_record_id": identifier,
+                "text": "raw judicial text kept only in the private artifact",
+            },
+            "normalized_data": {"training_eligible": False},
+            "connector_version": "test/1",
+            "extractor_name": "test_projection",
+            "extractor_version": "1",
+            "schema_version": "test_v1",
+        }
+        values.update(overrides)
+        return JsonSourceRecord(**values)  # type: ignore[arg-type]
+
+    service.ingest_json_record(record("with-provenance", field_provenance=provenance), channel="automated")
+    service.ingest_json_record(record("without-provenance"), channel="automated")
+
+    assert repository.projections[0].field_provenance == provenance
+    assert repository.projections[1].field_provenance == {}
+    assert "raw judicial text" not in repr(repository.projections[0].field_provenance)
+
+
 def test_repository_persists_the_full_provenance_chain_in_one_transaction() -> None:
     cursor = RecordingCursor(
         [
@@ -194,6 +261,16 @@ def test_repository_persists_the_full_provenance_chain_in_one_transaction() -> N
         mime_type="application/json",
     )
 
+    field_provenance = {
+        "final_price": {
+            "pointer": "/zones/3",
+            "start_offset_utf8": 24,
+            "end_offset_utf8": 38,
+            "raw_artifact_sha256": "a" * 64,
+            "evidence_sha256": "b" * 64,
+            "hash_version": "sha256-v1",
+        }
+    }
     persisted = repository.persist_successful_record(
         source_name="dvf_dgfip",
         channel="automated",
@@ -212,6 +289,7 @@ def test_repository_persists_the_full_provenance_chain_in_one_transaction() -> N
             extractor_name="dvf_adjudication",
             extractor_version="1",
             schema_version="dvf_adjudication_candidate_v1",
+            field_provenance=field_provenance,
         ),
     )
 
@@ -230,6 +308,10 @@ def test_repository_persists_the_full_provenance_chain_in_one_transaction() -> N
     )
     assert fetch_parameters[2:5] == ("succeeded", "http", "GET")
     assert "?token=" not in fetch_parameters[5]
+    extraction_parameters = next(
+        parameters for statement, parameters in cursor.calls if "insert into public.artifact_extractions" in statement
+    )
+    assert extraction_parameters[6].obj == field_provenance
 
 
 def test_judilibre_raw_correction_versions_and_purge_targets_latest_artifact() -> None:
@@ -266,7 +348,7 @@ def test_judilibre_raw_correction_versions_and_purge_targets_latest_artifact() -
             ("artifact-1",),
             ("fetch-duplicate",),
             None,
-            ("extraction-1",),
+            ("extraction-1", first_output_hash, {}),
             ("record-1", 1, first_output_hash),
         ]
     )
@@ -286,7 +368,7 @@ def test_judilibre_raw_correction_versions_and_purge_targets_latest_artifact() -
             ("artifact-1",),
             ("fetch-3",),
             None,
-            ("extraction-1",),
+            ("extraction-1", first_output_hash, {}),
             ("record-2", 2, corrected_output_hash),
             ("record-3",),
         ]
@@ -333,7 +415,7 @@ def test_judilibre_raw_correction_versions_and_purge_targets_latest_artifact() -
                 external_record_id=decision.id,
                 canonical_url=f"https://www.courdecassation.fr/decision/{decision.id}",
                 stored_artifact=stored,
-                connector_version="judilibre-outcome/4",
+                connector_version=JUDILIBRE_CONNECTOR_VERSION,
                 started_at=now,
                 completed_at=now,
                 request_parameters={"id": decision.id},
@@ -341,9 +423,9 @@ def test_judilibre_raw_correction_versions_and_purge_targets_latest_artifact() -
             projection=SourceRecordProjection(
                 record_kind="judicial_decision_candidate",
                 normalized_data=normalized_data,
-                extractor_name="judilibre_metadata_projection",
-                extractor_version="2",
-                schema_version="judilibre_decision_candidate_v2",
+                extractor_name="judilibre_candidate_extraction",
+                extractor_version=JUDILIBRE_EXTRACTOR_VERSION,
+                schema_version=JUDILIBRE_NORMALIZED_SCHEMA,
                 decision_date=decision.decision_date,
             ),
         )
@@ -357,7 +439,7 @@ def test_judilibre_raw_correction_versions_and_purge_targets_latest_artifact() -
         external_record_id="decision-1",
         event_at=now,
         reason_code="judilibre_transaction_deleted",
-        connector_version="judilibre-outcome/4",
+        connector_version=JUDILIBRE_CONNECTOR_VERSION,
     )
 
     assert first_persisted.record_version == 1
@@ -368,6 +450,12 @@ def test_judilibre_raw_correction_versions_and_purge_targets_latest_artifact() -
     assert reverted_persisted.record_version == 3
     assert reverted_persisted.inserted_new_version is True
     assert purge_id == "purge-1"
+    first_extraction_parameters = next(
+        parameters
+        for statement, parameters in first_cursor.calls
+        if "insert into public.artifact_extractions" in statement
+    )
+    assert first_extraction_parameters[6].obj == {}
     corrected_record_parameters = next(
         parameters
         for statement, parameters in corrected_cursor.calls
@@ -395,6 +483,138 @@ def test_judilibre_raw_correction_versions_and_purge_targets_latest_artifact() -
     )
     assert purge_parameters[1:4] == ("fetch-3", "artifact-1", "record-3")
     assert purge_parameters[4] == "decision-1"
+
+
+def test_repository_rejects_non_deterministic_extraction_output() -> None:
+    cursor = RecordingCursor(
+        [
+            ("source-1", "dvf_dgfip", True, "approved", "allowed_automated", True),
+            ("artifact-1",),
+            ("fetch-1",),
+            None,
+            ("extraction-1", "0" * 64, {}),
+        ]
+    )
+    connection = RecordingConnection(cursor)
+    repository = OutcomeIngestionRepository("postgresql://example", connect=lambda _url: connection)
+    now = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
+    stored = SupabaseRawArtifactStore(FakeClient()).put_bytes(
+        source_name="dvf_dgfip",
+        external_record_id="dvf-adjudication-1",
+        payload=b'{"mutation_nature":"Adjudication"}',
+        mime_type="application/json",
+    )
+
+    with pytest.raises(OutcomeIngestionError, match="non-deterministic"):
+        repository.persist_successful_record(
+            source_name="dvf_dgfip",
+            channel="automated",
+            capture=SuccessfulCapture(
+                requested_url="https://example.test/dvf",
+                external_record_id="dvf-adjudication-1",
+                canonical_url="https://example.test/dvf",
+                stored_artifact=stored,
+                connector_version="test/1",
+                started_at=now,
+                completed_at=now,
+            ),
+            projection=SourceRecordProjection(
+                record_kind="auction_result_candidate",
+                normalized_data={"schema_version": "test_v1", "training_eligible": False},
+                extractor_name="test_projection",
+                extractor_version="1",
+                schema_version="test_v1",
+            ),
+        )
+
+    assert connection.commits == 0
+
+
+def test_extraction_conflict_rejects_changed_provenance_with_same_output_hash() -> None:
+    normalized_data = {"schema_version": "test_v1", "training_eligible": False}
+    output_hash = canonical_sha256(normalized_data)
+    projection = SourceRecordProjection(
+        record_kind="auction_result_candidate",
+        normalized_data=normalized_data,
+        extractor_name="test_projection",
+        extractor_version="1",
+        schema_version="test_v1",
+        field_provenance={
+            "final_price": {
+                "pointer": "/zones/3",
+                "evidence_sha256": "a" * 64,
+            }
+        },
+    )
+    cursor = RecordingCursor(
+        [
+            None,
+            (
+                "extraction-1",
+                output_hash,
+                {
+                    "final_price": {
+                        "pointer": "/zones/4",
+                        "evidence_sha256": "b" * 64,
+                    }
+                },
+            ),
+        ]
+    )
+
+    with pytest.raises(OutcomeIngestionError, match="provenance is non-deterministic"):
+        _insert_or_get_extraction(
+            cursor,
+            raw_artifact_id="artifact-1",
+            source_fetch_id="fetch-1",
+            projection=projection,
+            normalized_data=normalized_data,
+            output_hash=output_hash,
+        )
+
+
+def test_extraction_conflict_compares_provenance_canonically() -> None:
+    normalized_data = {"schema_version": "test_v1", "training_eligible": False}
+    output_hash = canonical_sha256(normalized_data)
+    projection = SourceRecordProjection(
+        record_kind="auction_result_candidate",
+        normalized_data=normalized_data,
+        extractor_name="test_projection",
+        extractor_version="1",
+        schema_version="test_v1",
+        field_provenance={
+            "final_price": {
+                "evidence_sha256": "a" * 64,
+                "pointer": "/zones/3",
+            }
+        },
+    )
+    cursor = RecordingCursor(
+        [
+            None,
+            (
+                "extraction-1",
+                output_hash,
+                {
+                    "final_price": {
+                        "pointer": "/zones/3",
+                        "evidence_sha256": "a" * 64,
+                    }
+                },
+            ),
+        ]
+    )
+
+    extraction_id = _insert_or_get_extraction(
+        cursor,
+        raw_artifact_id="artifact-1",
+        source_fetch_id="fetch-1",
+        projection=projection,
+        normalized_data=normalized_data,
+        output_hash=output_hash,
+    )
+
+    assert extraction_id == "extraction-1"
 
 
 def test_checkpoint_advance_uses_revision_guarded_rpc() -> None:

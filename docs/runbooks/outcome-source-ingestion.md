@@ -4,12 +4,14 @@ _Version 0.2 — 31 juillet 2026._
 
 ## État réel
 
-Les connecteurs, parseurs et garde-fous de provenance sont préparés, et quatre jeux de données ont
-été téléchargés ou intégrés au code. Ce travail **n'a pas encore entraîné ni réentraîné le modèle**.
-Il n'y a eu ni appel réel à Judilibre, ni import dans une base Supabase distante dans l'environnement
-de développement courant : les identifiants PISTE et les variables Supabase nécessaires n'y sont pas
-configurés. La migration d'ingestion n'a pas non plus été rejouée sur une base distante dans cette
-tranche.
+Les connecteurs, parseurs, extracteurs structurés et garde-fous de provenance sont préparés. Ce
+travail **n'a pas encore entraîné ni réentraîné le modèle**. Le canary et des audits PISTE bornés en
+lecture seule ont validé schémas, textes, zones et extraction, sans écriture Supabase ou Storage. Un
+échantillon de 20 décisions du profil `adjudication` a produit 12 mises à prix mais aucun prix final ;
+le profil exact `adjuge` a produit 5 prix d'adjudication et 5 événements candidats sur ses 11
+résultats récents. Ces sondes ne mesurent ni la couverture nationale, ni le rappel, ni la
+représentativité. La migration d'ingestion est déployée, mais aucun artefact ou enregistrement
+DVF/Judilibre n'a été envoyé au Supabase distant.
 
 Les fichiers locaux décrits plus bas servent à valider les schémas et à construire des candidats. Ils
 ne constituent pas un jeu d'entraînement approuvé. Toute ligne issue de ces sources entre dans le
@@ -125,6 +127,8 @@ avec :
 ```bash
 .venv/bin/python -m pytest \
   tests/test_judilibre.py \
+  tests/test_judilibre_contract_canary.py \
+  tests/test_judilibre_extraction.py \
   tests/test_judilibre_ingestion.py \
   tests/test_dvf_adjudication.py \
   tests/test_justice_open_data.py \
@@ -261,10 +265,13 @@ fabriquer un prix ou un statut d'adjudication absent du fichier.
 
 ### Judilibre
 
-La projection normalisée conserve uniquement des métadonnées utiles — juridiction, lieu, chambre,
-formation, numéros, ECLI, NAC, dates, type, solution, publication et thèmes — avec grade C et revue
-en attente. Le texte, les zones, le sommaire et les autres champs libres restent dans l'artefact brut
-privé. Aucun matching automatique entre décision et vente n'est livré dans cette tranche.
+La projection normalisée conserve les métadonnées utiles — juridiction, lieu, chambre, formation,
+numéros, ECLI, NAC, dates, type, solution, publication et thèmes — ainsi que des **claims candidats**
+strictement structurés (événement procédural, mise à prix ou prix d'adjudication) avec grade C et
+revue en attente. Le texte, les zones, le sommaire et toute citation restent dans l'artefact brut
+privé. La provenance analytique contient seulement le pointeur `/text`, les offsets UTF-8 et des hashes
+SHA-256 ; elle ne contient ni extrait, ni nom. Une mise à prix n'est jamais promue comme prix final et
+aucun matching automatique entre décision et vente n'est effectué à ce stade.
 
 ### Référentiels Justice
 
@@ -304,13 +311,20 @@ pas à déclencher un appel.
 | `SUPABASE_SERVICE_ROLE_KEY`                                                                     | Upload brut privé ; secret serveur uniquement                          |
 | `JUDILIBRE_ENABLED`                                                                             | Interrupteur réseau explicite ; laisser `false` avant approbation      |
 | `JUDILIBRE_DRY_RUN`                                                                             | Force l'absence de requête réseau                                      |
-| `JUDILIBRE_BASE_URL`                                                                            | Endpoint PISTE exact, production par défaut ; sandbox autorisée        |
+| `JUDILIBRE_BASE_URL`                                                                            | Endpoint PISTE exact et obligatoire dans le workflow ; sandbox d'abord |
 | `JUDILIBRE_AUTH_MODE`                                                                           | `auto`, `keyid`, `oauth2` ou `keyid+oauth2`                            |
 | `JUDILIBRE_KEY_ID`                                                                              | Identifiant d'application PISTE lorsque le mode KeyId est utilisé      |
 | `JUDILIBRE_OAUTH_TOKEN_URL`                                                                     | Endpoint de jeton PISTE du même environnement                          |
 | `JUDILIBRE_OAUTH_CLIENT_ID`, `JUDILIBRE_OAUTH_CLIENT_SECRET`, `JUDILIBRE_OAUTH_SCOPE`           | Client credentials OAuth 2.0 lorsque ce mode est requis                |
-| `JUDILIBRE_PAGE_SIZE`, `JUDILIBRE_HISTORY_PAGE_SIZE`, `JUDILIBRE_MAX_RESULTS`                   | Pagination bornée ; recherche limitée à 10 000 résultats               |
+| `JUDILIBRE_PAGE_SIZE`, `JUDILIBRE_HISTORY_PAGE_SIZE`                                            | Tailles de page bornées du client                                      |
+| `JUDILIBRE_MAX_RESULTS`                                                                         | Plafond absolu client/API, distinct des plafonds du bootstrap           |
 | `JUDILIBRE_MAX_RETRIES`, `JUDILIBRE_RETRY_BACKOFF_SECONDS`, `JUDILIBRE_RETRY_MAX_SLEEP_SECONDS` | Reprises bornées et respect de `Retry-After`                           |
+
+Les plafonds du bootstrap sont des paramètres explicites de la CLI et du workflow :
+`--max-results-per-window` accepte 1 à 500 résultats et `--max-total-results` 1 à 10 000, le premier
+ne pouvant dépasser le second. Les profils autorisés sont exclusivement les six profils v2 :
+`saisie_immobiliere_v2`, `vente_forcee_v2`, `adjudication_v2`, `adjuge_v2`,
+`mise_a_prix_v2` et `surenchere_v2`.
 
 Le client n'accepte que les origines PISTE sandbox/production prévues, refuse les redirections et
 borne les retries sur verrouillage, quota et erreurs serveur. Les erreurs remontées sont nettoyées et
@@ -318,7 +332,7 @@ ne contiennent ni headers d'authentification, ni corps de réponse, ni URL compl
 
 ### État attendu de la politique
 
-Avant la première requête de production, une migration revue — pas une modification improvisée en
+Avant la première ingestion de production, une migration revue — pas une modification improvisée en
 console — doit faire passer `judilibre` à :
 
 ```text
@@ -342,9 +356,22 @@ where name in (
 order by name;
 ```
 
-Les commandes live sont :
+Le preflight live sans écriture est :
 
 ```bash
+.venv/bin/python scripts/check_judilibre_contract.py
+```
+
+Il tente au maximum quatre fenêtres historiques contiguës de 31 jours, avec une page d'un résultat
+par fenêtre et sans retry HTTP, ignore les réponses relâchées ou vides, puis lit au plus une
+décision. Il échoue si aucune réponse exacte exploitable n'est trouvée et ne persiste aucune donnée.
+
+Les commandes d'ingestion live sont :
+
+```bash
+.venv/bin/python -m src.outcome_sources_cli judilibre-search-sync \
+  --profile adjudication_v2 --date-start 2026-07-01 --date-end 2026-07-07 \
+  --max-results-per-window 250 --max-total-results 500
 .venv/bin/python -m src.outcome_sources_cli judilibre-fetch '<DECISION_ID>'
 .venv/bin/python -m src.outcome_sources_cli judilibre-sync \
   --since '2026-07-01T00:00:00+00:00' --max-pages 1 --max-records 10

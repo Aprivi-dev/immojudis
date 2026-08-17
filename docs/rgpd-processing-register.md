@@ -19,8 +19,9 @@ minimale : annuelle et avant toute nouvelle finalité, catégorie sensible, four
 ## Garde spécifique aux sources Outcome
 
 Le traitement est encore préparatoire : des fichiers publics ont été téléchargés localement et des
-parseurs/connecteurs ont été testés, mais aucun appel live Judilibre, aucun import dans la base
-Supabase distante et aucun réentraînement du modèle n'ont été réalisés dans cette tranche.
+parseurs/connecteurs ont été testés. Un canary et des audits Judilibre bornés ont interrogé l'API et
+traité en mémoire un échantillon limité, sans persistance ; aucun artefact ou enregistrement de source n'a été importé dans le Supabase
+distant et aucun réentraînement du modèle n'a été réalisé dans cette tranche.
 
 Avant activation, le responsable de traitement doit :
 

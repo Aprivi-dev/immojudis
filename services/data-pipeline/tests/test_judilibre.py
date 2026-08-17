@@ -350,6 +350,55 @@ def test_conditional_decision_fetch_represents_304_without_parsing_json() -> Non
     assert result.etag == '"version-1"'
 
 
+def test_tj_decision_accepts_null_timeline_and_list_titles_and_summaries() -> None:
+    titles_and_summaries = [
+        {
+            "title": "Synthetic title",
+            "summary": "Synthetic summary",
+            "future_nested_field": {"kept": True},
+        }
+    ]
+
+    decision = JudilibreDecision.model_validate(
+        {
+            "id": "synthetic-tj-decision",
+            "jurisdiction": "tj",
+            "timeline": None,
+            "titlesAndSummaries": titles_and_summaries,
+            "future_decision_field": {"kept": True},
+        }
+    )
+
+    assert decision.timeline is None
+    assert decision.titles_and_summaries == titles_and_summaries
+    assert decision.model_extra == {"future_decision_field": {"kept": True}}
+    assert decision.model_dump(by_alias=True)["titlesAndSummaries"] == titles_and_summaries
+
+
+def test_cc_decision_preserves_list_timeline_and_object_titles_and_summaries() -> None:
+    timeline = [{"event": "synthetic-event", "future_event_field": {"kept": True}}]
+    titles_and_summaries = {
+        "title": "Synthetic title",
+        "summary": "Synthetic summary",
+        "future_nested_field": {"kept": True},
+    }
+
+    decision = JudilibreDecision.model_validate(
+        {
+            "id": "synthetic-cc-decision",
+            "jurisdiction": "cc",
+            "timeline": timeline,
+            "titlesAndSummaries": titles_and_summaries,
+            "future_decision_field": {"kept": True},
+        }
+    )
+
+    assert decision.timeline == timeline
+    assert decision.titles_and_summaries == titles_and_summaries
+    assert decision.model_extra == {"future_decision_field": {"kept": True}}
+    assert decision.model_dump(by_alias=True)["titlesAndSummaries"] == titles_and_summaries
+
+
 def test_conditional_headers_reject_line_breaks_before_network() -> None:
     calls = 0
 
