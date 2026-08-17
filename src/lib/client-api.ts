@@ -80,6 +80,11 @@ import type {
   SaleChangeMonitorResponse,
 } from "@/lib/sale-change-monitor";
 import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
+import {
+  tribunalStatisticsResponseSchema,
+  type TribunalStatisticsResponse,
+  type TribunalStatisticsWindowMonths,
+} from "@/lib/tribunal-statistics";
 import type {
   CollaboratorAcceptInput,
   CollaboratorInviteInput,
@@ -949,6 +954,20 @@ export async function fetchSalesStatistics(args: {
   );
 
   return readJson<SalesStatisticsResponse>(response);
+}
+
+export async function fetchTribunalStatistics(args: {
+  windowMonths: TribunalStatisticsWindowMonths;
+  courtCode?: string;
+}): Promise<TribunalStatisticsResponse> {
+  const params = new URLSearchParams({ windowMonths: String(args.windowMonths) });
+  if (args.courtCode?.trim()) params.set("courtCode", args.courtCode.trim());
+  const response = await fetch(`/api/v1/tribunals/statistics?${params.toString()}`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+
+  return tribunalStatisticsResponseSchema.parse(await readJson<unknown>(response));
 }
 
 export async function exportSalesCsv(args: {
