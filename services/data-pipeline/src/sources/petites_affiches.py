@@ -68,6 +68,7 @@ def scrape_petites_affiches_aquitaine_result(
     return ScrapeResult(
         validate_raw_sales("petites_affiches", unique_dicts(raw_sales, "source_url"), errors),
         errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
     )
 
 

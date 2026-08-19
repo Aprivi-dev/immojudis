@@ -14,6 +14,7 @@ export type UsageEventKey =
   | "sales.favorite_added"
   | "sales.favorite_removed"
   | "sales.statistics_viewed"
+  | "tribunal.statistics_viewed"
   | "bid_ceiling.calculated"
   | "dvf.comparables_viewed"
   | "valuation.backtest_viewed"

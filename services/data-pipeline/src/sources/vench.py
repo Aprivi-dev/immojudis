@@ -87,7 +87,11 @@ def scrape_vench_aquitaine_result(
             raw_sales.append(sale)
 
     catalog_sales = _filter_catalog_sales(unique_dicts(raw_sales, "source_url"), known_details)
-    return ScrapeResult(validate_raw_sales("vench", catalog_sales, errors), errors)
+    return ScrapeResult(
+        validate_raw_sales("vench", catalog_sales, errors),
+        errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
+    )
 
 
 def _department_filters() -> tuple[str | None, ...]:

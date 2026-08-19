@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -40,6 +40,13 @@ def _origin(parsed: Any) -> tuple[str, str, int] | None:
 class ScrapeResult:
     sales: list[dict[str, Any]]
     errors: list[str]
+    coverage: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.coverage.setdefault("listings_emitted", len(self.sales))
+        self.coverage.setdefault("errors", len(self.errors))
+        self.coverage.setdefault("coverage_complete", None)
+        self.coverage.setdefault("stop_reason", "source_finished")
 
 
 @dataclass
@@ -113,6 +120,10 @@ class PoliteHttpClient:
 
     def __post_init__(self) -> None:
         self._last_request_at = 0.0
+        self._requests_attempted = 0
+        self._requests_succeeded = 0
+        self._requests_failed = 0
+        self._visited_urls: list[str] = []
         headers = {
             "User-Agent": self.user_agent,
             "Accept": self.accept,
@@ -157,12 +168,15 @@ class PoliteHttpClient:
         LOGGER.info("Fetching %s", url)
         current_url = url
         current_method = method
+        self._requests_attempted += 1
         try:
             for redirect_count in range(MAX_SAFE_REDIRECTS + 1):
                 self._guard(current_url)
                 response = self._client.request(current_method, current_url, **kwargs)
                 if response.status_code not in REDIRECT_STATUS_CODES:
                     response.raise_for_status()
+                    self._requests_succeeded += 1
+                    self._visited_urls.append(current_url)
                     return response
                 if redirect_count >= MAX_SAFE_REDIRECTS:
                     raise RuntimeError(f"too many redirects while fetching {url}")
@@ -177,8 +191,19 @@ class PoliteHttpClient:
                     current_method = "GET"
                     kwargs.pop("data", None)
             raise RuntimeError(f"too many redirects while fetching {url}")
+        except Exception:
+            self._requests_failed += 1
+            raise
         finally:
             self._last_request_at = time.monotonic()
+
+    def coverage_metrics(self) -> dict[str, Any]:
+        return {
+            "requests_attempted": self._requests_attempted,
+            "requests_succeeded": self._requests_succeeded,
+            "requests_failed": self._requests_failed,
+            "unique_urls_visited": len(set(self._visited_urls)),
+        }
 
 
 def listing_signature(sale: dict[str, Any]) -> str | None:

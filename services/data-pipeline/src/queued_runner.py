@@ -2,22 +2,30 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections import defaultdict
 
+from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.config import load_settings
 from src.dpe import enrich_dpe_sales
+from src.enrichment.extract_structured import enrich_sale_with_llm
+from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
 from src.main import SOURCE_NAMES, PipelineOptions, run_llm_description_backfill, run_pipeline
+from src.pdf_enrichment import enrich_sale_from_pdfs
 from src.storage.supabase_client import (
+    claim_auction_enrichment_jobs_from_supabase,
     fail_stale_running_runs_in_supabase,
     fetch_next_data_refresh_request_from_supabase,
     fetch_next_queued_run_from_supabase,
     fetch_sale_for_data_refresh,
+    finish_auction_enrichment_job_in_supabase,
     finish_data_refresh_request_in_supabase,
     finish_run_in_supabase,
     has_active_running_run_in_supabase,
     mark_past_sales_in_supabase,
     upsert_cadastre_parcels_to_supabase,
     upsert_dpe_diagnostics_to_supabase,
+    upsert_sales_to_supabase,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -40,6 +48,17 @@ def main() -> int:
         if refresh_request:
             return run_data_refresh_request(refresh_request)
         settings = load_settings()
+        if settings.get("pipeline_enrichment_queue_enabled"):
+            processed = run_enrichment_queue_batch(
+                limit=int(settings.get("pipeline_enrichment_queue_batch_size") or 10)
+            )
+            if processed:
+                cleaned = mark_past_sales_in_supabase()
+                print(
+                    f"Processed enrichment queue jobs: {processed}. "
+                    f"Marked past sales: {cleaned}. Marked stale runs failed: {stale_failed}."
+                )
+                return 0
         if settings.get("pipeline_idle_llm_backfill_enabled"):
             backfill_result = run_llm_description_backfill(
                 PipelineOptions(
@@ -162,6 +181,73 @@ def run_data_refresh_request(request: dict[str, object]) -> int:
     finish_data_refresh_request_in_supabase(request_id, "completed", summary)
     print(f"Completed Immojudis data refresh: {request_id}")
     return 0
+
+
+def run_enrichment_queue_batch(*, limit: int) -> int:
+    jobs = claim_auction_enrichment_jobs_from_supabase(limit=limit)
+    if not jobs:
+        return 0
+    jobs_by_sale: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for job in jobs:
+        source_url = str(job.get("source_url") or "")
+        if source_url:
+            jobs_by_sale[source_url].append(job)
+
+    needs_llm = any(
+        str(job.get("job_type") or "") in {"fact_extraction", "display_description"}
+        for job in jobs
+    )
+    llm_client = None
+    if needs_llm:
+        try:
+            llm_client = create_llm_client()
+        except LLMClientUnavailable as exc:
+            for job in jobs:
+                finish_auction_enrichment_job_in_supabase(
+                    str(job.get("id") or ""),
+                    succeeded=False,
+                    error_message=str(exc),
+                )
+            return len(jobs)
+
+    for source_url, sale_jobs in jobs_by_sale.items():
+        sale = fetch_sale_for_data_refresh(source_url)
+        if sale is None:
+            for job in sale_jobs:
+                finish_auction_enrichment_job_in_supabase(
+                    str(job.get("id") or ""),
+                    succeeded=False,
+                    error_message="sale not found",
+                )
+            continue
+        job_types = {str(job.get("job_type") or "") for job in sale_jobs}
+        try:
+            if "pdf" in job_types and sale.documents:
+                enrich_sale_from_pdfs(sale)
+            if job_types & {"fact_extraction", "display_description"}:
+                if llm_client is None:
+                    raise RuntimeError("LLM client unavailable")
+                llm_stats = enrich_sale_with_llm(sale, client=llm_client)
+                if llm_stats.unavailable or not llm_stats.valid_json:
+                    detail = llm_stats.error_messages[-1] if llm_stats.error_messages else "LLM extraction incomplete"
+                    raise RuntimeError(detail)
+            normalize_asset_features(sale)
+            upsert_sales_to_supabase([sale], refresh_last_seen=False)
+        except Exception as exc:
+            LOGGER.exception("Enrichment queue failed for %s: %s", source_url, exc)
+            for job in sale_jobs:
+                finish_auction_enrichment_job_in_supabase(
+                    str(job.get("id") or ""),
+                    succeeded=False,
+                    error_message=str(exc),
+                )
+            continue
+        for job in sale_jobs:
+            finish_auction_enrichment_job_in_supabase(
+                str(job.get("id") or ""),
+                succeeded=True,
+            )
+    return len(jobs)
 
 
 if __name__ == "__main__":

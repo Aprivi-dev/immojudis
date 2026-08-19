@@ -39,7 +39,7 @@ MAX_DOCUMENT_REDIRECTS = 5
 
 PDF_TEXT_CACHE_VERSION = "pdf_text_v3_surface_calibration"
 
-DOCUMENT_FACTS_VERSION = "document_facts_v1_starting_price"
+DOCUMENT_FACTS_VERSION = "document_facts_v2_surface_reasoning"
 
 DOCUMENT_TYPE_ALIASES = {
     "pv_descriptif": "pv_huissier",

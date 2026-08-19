@@ -15,6 +15,7 @@ import { RESOURCES_PATH } from "@/lib/navigation";
 
 const AUTH_NAV_ITEMS = [
   { to: "/sales", label: "Annonces" },
+  { to: "/tribunaux", label: "Tribunaux" },
   { to: "/avocats", label: "Avocats" },
 ] as const;
 

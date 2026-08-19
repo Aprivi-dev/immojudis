@@ -17,7 +17,10 @@ from src.official_sources.encheres_publiques_open_data import (
     parse_encheres_publiques_csv,
 )
 from src.official_sources.judilibre import JudilibreClient
-from src.official_sources.justice_open_data import parse_justice_open_data_csv
+from src.official_sources.justice_open_data import (
+    parse_justice_open_data_csv,
+    validate_justice_competence_semantics,
+)
 from src.outcome_ingestion.adapters import (
     dvf_adjudication_to_json_record,
     encheres_publiques_to_json_record,
@@ -32,6 +35,7 @@ from src.outcome_ingestion.dvf_matching import (
 )
 from src.outcome_ingestion.judilibre_ingestion import (
     JUDILIBRE_SEARCH_MAX_RESULTS,
+    JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW,
     JUDILIBRE_SEARCH_PROFILES,
     JudilibreOutcomeIngestor,
     validate_judilibre_search_request,
@@ -99,7 +103,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     search_sync.add_argument("--date-start", type=_iso_calendar_date, required=True)
     search_sync.add_argument("--date-end", type=_iso_calendar_date, required=True)
-    search_sync.add_argument("--max-results", type=_judilibre_max_results, required=True)
+    search_sync.add_argument(
+        "--max-results-per-window",
+        type=_judilibre_max_results_per_window,
+        required=True,
+        help=f"Maximum results accepted for one adaptive window (1..{JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW}).",
+    )
+    search_sync.add_argument(
+        "--max-total-results",
+        dest="max_total_results",
+        type=_judilibre_max_total_results,
+        required=True,
+        help=f"Maximum results accepted across the complete search (1..{JUDILIBRE_SEARCH_MAX_RESULTS}).",
+    )
     search_sync.set_defaults(handler=_run_judilibre_search_sync)
 
     match_dvf = commands.add_parser(
@@ -172,7 +188,14 @@ def _iso_calendar_date(value: str) -> date:
         raise argparse.ArgumentTypeError("value must be an ISO calendar date (YYYY-MM-DD)") from exc
 
 
-def _judilibre_max_results(value: str) -> int:
+def _judilibre_max_results_per_window(value: str) -> int:
+    parsed = _positive_int(value)
+    if parsed > JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW:
+        raise argparse.ArgumentTypeError(f"value must not exceed {JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW}")
+    return parsed
+
+
+def _judilibre_max_total_results(value: str) -> int:
     parsed = _positive_int(value)
     if parsed > JUDILIBRE_SEARCH_MAX_RESULTS:
         raise argparse.ArgumentTypeError(f"value must not exceed {JUDILIBRE_SEARCH_MAX_RESULTS}")
@@ -313,11 +336,13 @@ def _run_judilibre_sync(args: argparse.Namespace) -> int:
 def _run_judilibre_search_sync(args: argparse.Namespace) -> int:
     # Validate every load bound before reading credentials, opening Storage or
     # constructing a network-capable client.
+    if args.max_results_per_window > args.max_total_results:
+        raise ValueError("max_results_per_window must not exceed max_total_results")
     profile = validate_judilibre_search_request(
         profile=args.profile,
         date_start=args.date_start,
         date_end=args.date_end,
-        max_results=args.max_results,
+        max_results=args.max_total_results,
     )
     ingestor, client = _live_judilibre_ingestor()
     try:
@@ -325,7 +350,8 @@ def _run_judilibre_search_sync(args: argparse.Namespace) -> int:
             profile=profile,
             date_start=args.date_start,
             date_end=args.date_end,
-            max_results=args.max_results,
+            max_results_per_window=args.max_results_per_window,
+            max_total_results=args.max_total_results,
         )
     finally:
         client.close()
@@ -335,7 +361,8 @@ def _run_judilibre_search_sync(args: argparse.Namespace) -> int:
             "profile": profile.profile_id,
             "date_start": args.date_start,
             "date_end": args.date_end,
-            "max_results": args.max_results,
+            "max_results_per_window": args.max_results_per_window,
+            "max_total_results": args.max_total_results,
             **summary.__dict__,
         }
     )
@@ -388,6 +415,8 @@ def _local_records(source: LocalSource, path: Path) -> Iterator[JsonSourceRecord
         return
     if source == "justice":
         parsed = parse_justice_open_data_csv(path)
+        if parsed.quality.dataset_kind == "justice_court_competence":
+            validate_justice_competence_semantics(parsed)
         for record in parsed.records:
             yield justice_open_data_to_json_record(record)
         return

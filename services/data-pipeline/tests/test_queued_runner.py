@@ -1,9 +1,11 @@
 import sys
 import types
+from types import SimpleNamespace
 
 import pytest
 
 from src.models import AuctionSale
+from src.normalize import normalize_sale
 
 try:
     from src import queued_runner
@@ -220,3 +222,88 @@ def test_queued_runner_processes_data_refresh_when_no_full_run(monkeypatch, caps
         )
     ]
     assert "Completed Immojudis data refresh: refresh-1" in capsys.readouterr().out
+
+
+def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/enrichment-success",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    calls: list[str] = []
+    finished: list[tuple[str, bool, str | None]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [
+            {"id": "job-pdf", "source_url": sale.source_url, "job_type": "pdf"},
+            {"id": "job-facts", "source_url": sale.source_url, "job_type": "fact_extraction"},
+        ],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
+    monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", lambda current: calls.append("pdf"))
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_with_llm",
+        lambda current, client: calls.append("facts_then_display")
+        or SimpleNamespace(unavailable=False, valid_json=1, error_messages=[]),
+    )
+    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: calls.append("normalize"))
+    monkeypatch.setattr(
+        queued_runner,
+        "upsert_sales_to_supabase",
+        lambda sales, refresh_last_seen: calls.append("upsert") or len(sales),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, succeeded, error_message=None: finished.append((job_id, succeeded, error_message)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=10) == 2
+    assert calls == ["pdf", "facts_then_display", "normalize", "upsert"]
+    assert finished == [("job-pdf", True, None), ("job-facts", True, None)]
+
+
+def test_enrichment_queue_marks_every_sale_job_failed_on_extraction_error(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/enrichment-failure",
+        }
+    )
+    finished: list[tuple[str, bool, str | None]] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [
+            {"id": "job-facts", "source_url": sale.source_url, "job_type": "fact_extraction"},
+            {"id": "job-display", "source_url": sale.source_url, "job_type": "display_description"},
+        ],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_with_llm",
+        lambda current, client: SimpleNamespace(
+            unavailable=False,
+            valid_json=0,
+            error_messages=["invalid structured response"],
+        ),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, succeeded, error_message=None: finished.append((job_id, succeeded, error_message)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=10) == 2
+    assert finished == [
+        ("job-facts", False, "invalid structured response"),
+        ("job-display", False, "invalid structured response"),
+    ]

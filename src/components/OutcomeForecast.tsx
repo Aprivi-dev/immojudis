@@ -22,33 +22,23 @@ import {
   type OutcomeGraphQuantiles,
 } from "@/lib/outcome-graph";
 
-export function OutcomeForecast({ saleId }: { saleId: string }) {
-  const [ceilingDraft, setCeilingDraft] = useState("");
-  const forecastQuery = useQuery({
+export function useOutcomeGraphForecast(saleId: string) {
+  return useQuery({
     queryKey: ["outcome-graph", saleId],
     queryFn: () => fetchOutcomeGraphForecast({ saleId }),
     staleTime: 5 * 60_000,
     retry: false,
   });
+}
 
-  if (forecastQuery.isLoading) return <OutcomeForecastSkeleton />;
-  if (forecastQuery.error) {
-    return (
-      <OutcomeForecastUnavailable reason="La prévision n’a pas pu être chargée. Réessayez dans quelques instants." />
-    );
-  }
+export type OutcomeGraphForecastQuery = ReturnType<typeof useOutcomeGraphForecast>;
+
+export function OutcomeForecast({ forecastQuery }: { forecastQuery: OutcomeGraphForecastQuery }) {
+  const [ceilingDraft, setCeilingDraft] = useState("");
 
   const forecast = forecastQuery.data?.forecast;
   if (!forecast || forecast.status !== "ready") {
-    return (
-      <OutcomeForecastUnavailable
-        reason={
-          forecast?.refusalReason ??
-          "Les résultats vérifiés sont encore insuffisants pour publier une prévision fiable."
-        }
-        sampleSize={forecast?.confidence?.sampleSize ?? null}
-      />
-    );
+    return null;
   }
 
   return (
@@ -489,78 +479,6 @@ function ForecastMeta({ forecast }: { forecast: OutcomeGraphForecast }) {
         </div>
       ))}
     </div>
-  );
-}
-
-function OutcomeForecastUnavailable({
-  reason,
-  sampleSize,
-}: {
-  reason: string;
-  sampleSize?: number | null;
-}) {
-  return (
-    <section
-      id="outcome-forecast"
-      aria-labelledby="outcome-forecast-title"
-      className="scroll-mt-36 border-b border-brand-navy/10 bg-[#eef7ff]"
-    >
-      <div className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-        <div className="grid gap-7 border-y border-brand-navy/16 py-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] lg:items-center">
-          <div>
-            <h2
-              id="outcome-forecast-title"
-              className="font-display text-4xl font-medium text-brand-navy sm:text-5xl"
-            >
-              Prévision de l’audience
-            </h2>
-            <p className="mt-5 max-w-2xl text-base leading-relaxed text-brand-navy/72 sm:text-lg">
-              {reason}
-            </p>
-            <p className="mt-4 text-sm leading-relaxed text-brand-navy/58">
-              ImmoJudis refuse d’afficher des probabilités lorsque l’échantillon vérifié, le
-              snapshot pré-audience ou la cohérence des preuves ne satisfait pas les seuils du
-              registre.
-            </p>
-          </div>
-          <div className="flex items-center gap-5 border-t border-brand-navy/12 pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full border border-gold/35 bg-white text-gold-soft">
-              <ShieldCheck className="h-7 w-7" aria-hidden />
-            </span>
-            <div>
-              <p className="font-display text-2xl font-semibold text-brand-navy">
-                Données en consolidation
-              </p>
-              <p className="mt-1 text-sm text-brand-navy/62">
-                {sampleSize == null
-                  ? "Aucune probabilité non vérifiée n’est publiée."
-                  : `${sampleSize} résultat${sampleSize > 1 ? "s" : ""} éligible${sampleSize > 1 ? "s" : ""} à ce jour.`}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function OutcomeForecastSkeleton() {
-  return (
-    <section
-      id="outcome-forecast"
-      aria-label="Chargement de la prévision de l’audience"
-      className="border-b border-brand-navy/10 bg-[#eef7ff]"
-    >
-      <div className="mx-auto max-w-[1260px] animate-pulse px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-        <div className="h-12 w-72 max-w-full rounded bg-brand-navy/10" />
-        <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }, (_, index) => (
-            <div key={index} className="h-24 rounded-md bg-white/70" />
-          ))}
-        </div>
-        <div className="mt-8 h-72 rounded-lg border border-brand-navy/10 bg-white/70" />
-      </div>
-    </section>
   );
 }
 

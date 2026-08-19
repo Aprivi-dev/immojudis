@@ -67,7 +67,7 @@ describe("admin readiness", () => {
     expect(
       aiDescriptionItem({
         status: "blocked",
-        promptVersion: "auction_llm_v6_display",
+        promptVersion: "auction_llm_v8_qwen37_structured_display",
         activeUpcomingCount: 149,
         coveredCurrentCount: 145,
         missingCurrentCount: 4,
@@ -88,7 +88,7 @@ describe("admin readiness", () => {
     expect(
       aiDescriptionItem({
         status: "ready",
-        promptVersion: "auction_llm_v6_display",
+        promptVersion: "auction_llm_v8_qwen37_structured_display",
         activeUpcomingCount: 149,
         coveredCurrentCount: 149,
         missingCurrentCount: 0,

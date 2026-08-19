@@ -1,15 +1,17 @@
 # Outcome Graph — ingestion des sources d'enrichissement
 
-_Version 0.2 — 31 juillet 2026._
+_Version 0.3 — 17 août 2026._
 
 ## État réel
 
-Les connecteurs, parseurs et garde-fous de provenance sont préparés, et quatre jeux de données ont
-été téléchargés ou intégrés au code. Ce travail **n'a pas encore entraîné ni réentraîné le modèle**.
-Il n'y a eu ni appel réel à Judilibre, ni import dans une base Supabase distante dans l'environnement
-de développement courant : les identifiants PISTE et les variables Supabase nécessaires n'y sont pas
-configurés. La migration d'ingestion n'a pas non plus été rejouée sur une base distante dans cette
-tranche.
+Les connecteurs, parseurs, extracteurs structurés et garde-fous de provenance sont préparés. Ce
+travail **n'a pas encore entraîné ni réentraîné le modèle**. Le canary et des audits PISTE bornés en
+lecture seule ont validé schémas, textes, zones et extraction, sans écriture Supabase ou Storage. Un
+échantillon de 20 décisions du profil `adjudication` a produit 12 mises à prix mais aucun prix final ;
+le profil exact `adjuge` a produit 5 prix d'adjudication et 5 événements candidats sur ses 11
+résultats récents. Ces sondes ne mesurent ni la couverture nationale, ni le rappel, ni la
+représentativité. La migration d'ingestion est déployée, mais aucun artefact ou enregistrement
+DVF/Judilibre n'a été envoyé au Supabase distant.
 
 Les fichiers locaux décrits plus bas servent à valider les schémas et à construire des candidats. Ils
 ne constituent pas un jeu d'entraînement approuvé. Toute ligne issue de ces sources entre dans le
@@ -75,7 +77,7 @@ Aucune de ces sources, prise isolément ou ensemble, ne fournit aujourd'hui un f
 et exhaustif de tout le cycle d'une vente judiciaire : annonce, audience, adjudication, surenchère,
 paiement, réitération et caractère définitif.
 
-## Manifeste des téléchargements du 30 juillet 2026
+## Manifeste des téléchargements
 
 Le répertoire `services/data-pipeline/data/raw/outcome_sources/` est ignoré par Git. Il s'agit d'un
 cache de travail local, pas d'un stockage de production ni d'une sauvegarde. Les SHA-256 identifient
@@ -85,19 +87,62 @@ validation de schéma.
 | Fichier local                                               |            Taille | SHA-256                                                            | Résultat observé                                                                                                                                                                   |
 | ----------------------------------------------------------- | ----------------: | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dvf/valeursfoncieres-2025.txt.zip`                         | 69 665 132 octets | `ef03b7230a6cfea53cebb369069657fda56e9f7ba8fe58282e148a3b171fa107` | 5 019 lignes brutes `Adjudication`, 4 938 lignes normalisables, regroupées en 1 604 candidats ; 574 candidats multi-biens ; dates du 3 janvier au 18 décembre 2025 ; 0 entraînable |
-| `justice_courts/resource-e2a1941b-observed-competences.csv` |  4 910 649 octets | `04c482cbd640a2463cfd989933c62bebf8eba1008ada2e24d3e85e1b5db88fb7` | 35 029 lignes de compétence territoriale valides, 0 rejet                                                                                                                          |
+| `justice_courts/resource-e2a1941b-observed-competences.csv` |  4 910 684 octets | `fdd570c31b4f7de9e1670abe5831e63653abf9a1bf0c8e09c730cdf25d406807` | Ressource officielle du 28 juillet 2026 : 35 029 lignes valides, 0 rejet et canaris sémantiques conformes                                                                          |
 | `justice_courts/2026-domaine-juridique-adresse.csv`         |    206 384 octets | `6c8a9e6792e4f7a71f5839a69fd64ec2163ed88e2bfd361a68d500dc8b3d0d5a` | 1 470 structures valides, 0 rejet ; 3 voies, 8 téléphones et 788 emails absents                                                                                                    |
 | `encheres_publiques/resultats-vente-2006-2024.csv`          |  3 402 609 octets | `547f4f797ca4e54a5d55fc078c3af21545f66870707e37b015bc489846e4a500` | 14 550 audiences candidates, 0 rejet ; 245 adresses et 3 catégories absentes, 2 dates antérieures à 2006 ; aucune colonne prix/résultat                                            |
 | `encheres_publiques/tribunaux-judiciaires.csv`              |     31 680 octets | `f33417461e7e81ac92e2b67d65bcdc5541062a353d434ba0354020b5618d5f73` | 167 références d'organisateurs valides ; 14 473 audiences jointes, 77 non jointes ; aucun rattachement canonique automatique                                                       |
 | `justice_courts/resource-88bda661-download-failed.html`     |        146 octets | `55f7d9e99b8e2d4e0e193b2f0275501e6d9c1ebd29cadbea6a0da48a8587e3e0` | Réponse HTML/404 conservée comme preuve d'un lien de ressource défaillant ; doit être rejetée par le parseur et ne jamais être ingérée comme CSV                                   |
 
-Le fichier `resource-e2a1941b-observed-competences.csv` était décrit comme une ressource de structures
-géocodées, mais son schéma observé correspond à la compétence territoriale. Le parseur choisit le
-schéma à partir des en-têtes réellement reçus et refuse HTML, colonnes inattendues et schémas ambigus.
+Le cache de compétence téléchargé le 30 juillet 2026, de taille 4 910 649 octets et de SHA-256
+`04c482cbd640a2463cfd989933c62bebf8eba1008ada2e24d3e85e1b5db88fb7`, était structurellement valide
+mais sémantiquement corrompu : il attribuait notamment Bordeaux à Carcassonne et Haut-Valromey à
+Saintes. Il est interdit d'ingestion. Le fichier local portant le même nom a été remplacé le 17 août
+par la ressource officielle courante du 28 juillet 2026, identifiée dans le tableau ci-dessus.
+
+Le parseur choisit le schéma à partir des en-têtes réellement reçus et refuse HTML, colonnes
+inattendues et schémas ambigus. La validation de production exige en plus au moins 34 000 lignes sans
+rejet et des canaris géographiquement dispersés — Bourg-en-Bresse, Marseille, Bordeaux, Lyon et
+Paris — afin qu'un CSV bien formé mais décalé ne puisse plus attribuer de faux ressorts.
+
+### Affectation du tribunal compétent
+
+Le pipeline détermine désormais le tribunal dans cet ordre strict :
+
+```text
+adresse du bien → géocodage BAN accepté → code INSEE exact
+                → compétence territoriale Justice → structure Justice → tribunal applicatif
+```
+
+Une valeur issue de l'annonce, une liste de villes ou le département ne peut pas remplacer cette
+preuve. Si BAN fournit un code INSEE accepté mais que le référentiel Justice est absent, incomplet ou
+incohérent, `tribunal` et `tribunal_code` restent nuls et la vente reçoit
+`tribunal_competence_unresolved`. Les correspondances historiques sans code INSEE restent marquées
+`tribunal_competence_unverified` et sont retirées de la lignée statistique jusqu'à vérification.
+
+Chaque affectation vérifiée conserve dans `raw_payload.tribunal_assignment` le code INSEE, les codes
+Justice de la structure, le hash canonique de la ligne de référence et la méthode
+`justice_competence_insee_exact`. Après l'upsert du catalogue, la RPC
+`reconcile_catalogue_competent_courts()` corrige uniquement les ponts catalogue encore inconnus et
+non utilisés par un snapshot, une prédiction, une preuve ou une statistique. Toute lignée déjà
+consommée est bloquée et doit faire l'objet d'une correction gouvernée distincte.
 
 ## Vérification locale reproductible
 
 Depuis `services/data-pipeline` :
+
+Sur un worker neuf, créer le dossier de cache puis télécharger les deux ressources par leurs URL
+data.gouv stables. Une mise à jour amont est acceptée uniquement si les validations ci-dessous
+réussissent ; conserver ensuite taille, SHA-256 et date dans le manifeste d'exploitation :
+
+```bash
+mkdir -p data/raw/outcome_sources/justice_courts
+curl --fail --location \
+  --output data/raw/outcome_sources/justice_courts/resource-e2a1941b-observed-competences.csv \
+  https://www.data.gouv.fr/api/1/datasets/r/56423a8b-be50-4e96-acf1-23283e44bf85
+curl --fail --location \
+  --output data/raw/outcome_sources/justice_courts/2026-domaine-juridique-adresse.csv \
+  https://www.data.gouv.fr/api/1/datasets/r/9204b2e2-9f20-4a36-86ce-83493303d987
+```
 
 ```bash
 shasum -a 256 \
@@ -125,9 +170,12 @@ avec :
 ```bash
 .venv/bin/python -m pytest \
   tests/test_judilibre.py \
+  tests/test_judilibre_contract_canary.py \
+  tests/test_judilibre_extraction.py \
   tests/test_judilibre_ingestion.py \
   tests/test_dvf_adjudication.py \
   tests/test_justice_open_data.py \
+  tests/test_court_competence.py \
   tests/test_encheres_publiques_open_data.py \
   tests/test_outcome_ingestion_adapters.py \
   tests/test_outcome_sources_cli.py \
@@ -261,16 +309,39 @@ fabriquer un prix ou un statut d'adjudication absent du fichier.
 
 ### Judilibre
 
-La projection normalisée conserve uniquement des métadonnées utiles — juridiction, lieu, chambre,
-formation, numéros, ECLI, NAC, dates, type, solution, publication et thèmes — avec grade C et revue
-en attente. Le texte, les zones, le sommaire et les autres champs libres restent dans l'artefact brut
-privé. Aucun matching automatique entre décision et vente n'est livré dans cette tranche.
+La projection normalisée conserve les métadonnées utiles — juridiction, lieu, chambre, formation,
+numéros, ECLI, NAC, dates, type, solution, publication et thèmes — ainsi que des **claims candidats**
+strictement structurés (événement procédural, mise à prix ou prix d'adjudication) avec grade C et
+revue en attente. Le texte, les zones, le sommaire et toute citation restent dans l'artefact brut
+privé. La provenance analytique contient seulement le pointeur `/text`, les offsets UTF-8 et des hashes
+SHA-256 ; elle ne contient ni extrait, ni nom. Une mise à prix n'est jamais promue comme prix final et
+aucun matching automatique entre décision et vente n'est effectué à ce stade.
 
 ### Référentiels Justice
 
 Les lignes officielles sont de grade source A pour établir la compétence d'une commune ou identifier
 une structure. Elles ne sont pas des preuves A d'un résultat de vente. Téléphone et email peuvent
 rester dans le brut privé, mais les adapters les retirent de la projection analytique.
+
+Pour réattribuer le catalogue existant, le worker doit disposer des deux fichiers Justice validés,
+relancer le pipeline avec le géocodage BAN actif, puis exécuter le pont catalogue. La réconciliation
+est appelée automatiquement après `bridge_auction_sales_to_outcome_graph()` et doit retourner
+`complete = true`, `blocked_count = 0` et des compteurs cohérents avant toute purge de catalogue.
+
+Pour un backfill de toutes les annonces déjà stockées, commencer sans écriture, contrôler les
+drapeaux `tribunal_competence_unresolved` et `tribunal_competence_unverified`, puis reprendre
+exactement le même périmètre avec écriture et réconcilier l'Outcome Graph :
+
+```bash
+.venv/bin/python -m src.recompute_scoring --dry-run
+.venv/bin/python -m src.recompute_scoring
+.venv/bin/python -m src.outcome_ingestion.catalogue_bridge
+```
+
+Les annonces sans preuve BAN acceptée doivent d'abord repasser par le pipeline avec
+`GEOCODE_ENABLED=true`. Ne pas activer les statistiques tant que le dernier appel ne s'achève pas
+avec `complete = true`; une lignée déjà utilisée par une preuve ou un agrégat et réellement à
+corriger retourne un blocage au lieu d'être réécrite.
 
 ## Activation de Judilibre via PISTE
 
@@ -304,13 +375,20 @@ pas à déclencher un appel.
 | `SUPABASE_SERVICE_ROLE_KEY`                                                                     | Upload brut privé ; secret serveur uniquement                          |
 | `JUDILIBRE_ENABLED`                                                                             | Interrupteur réseau explicite ; laisser `false` avant approbation      |
 | `JUDILIBRE_DRY_RUN`                                                                             | Force l'absence de requête réseau                                      |
-| `JUDILIBRE_BASE_URL`                                                                            | Endpoint PISTE exact, production par défaut ; sandbox autorisée        |
+| `JUDILIBRE_BASE_URL`                                                                            | Endpoint PISTE exact et obligatoire dans le workflow ; sandbox d'abord |
 | `JUDILIBRE_AUTH_MODE`                                                                           | `auto`, `keyid`, `oauth2` ou `keyid+oauth2`                            |
 | `JUDILIBRE_KEY_ID`                                                                              | Identifiant d'application PISTE lorsque le mode KeyId est utilisé      |
 | `JUDILIBRE_OAUTH_TOKEN_URL`                                                                     | Endpoint de jeton PISTE du même environnement                          |
 | `JUDILIBRE_OAUTH_CLIENT_ID`, `JUDILIBRE_OAUTH_CLIENT_SECRET`, `JUDILIBRE_OAUTH_SCOPE`           | Client credentials OAuth 2.0 lorsque ce mode est requis                |
-| `JUDILIBRE_PAGE_SIZE`, `JUDILIBRE_HISTORY_PAGE_SIZE`, `JUDILIBRE_MAX_RESULTS`                   | Pagination bornée ; recherche limitée à 10 000 résultats               |
+| `JUDILIBRE_PAGE_SIZE`, `JUDILIBRE_HISTORY_PAGE_SIZE`                                            | Tailles de page bornées du client                                      |
+| `JUDILIBRE_MAX_RESULTS`                                                                         | Plafond absolu client/API, distinct des plafonds du bootstrap          |
 | `JUDILIBRE_MAX_RETRIES`, `JUDILIBRE_RETRY_BACKOFF_SECONDS`, `JUDILIBRE_RETRY_MAX_SLEEP_SECONDS` | Reprises bornées et respect de `Retry-After`                           |
+
+Les plafonds du bootstrap sont des paramètres explicites de la CLI et du workflow :
+`--max-results-per-window` accepte 1 à 500 résultats et `--max-total-results` 1 à 10 000, le premier
+ne pouvant dépasser le second. Les profils autorisés sont exclusivement les six profils v2 :
+`saisie_immobiliere_v2`, `vente_forcee_v2`, `adjudication_v2`, `adjuge_v2`,
+`mise_a_prix_v2` et `surenchere_v2`.
 
 Le client n'accepte que les origines PISTE sandbox/production prévues, refuse les redirections et
 borne les retries sur verrouillage, quota et erreurs serveur. Les erreurs remontées sont nettoyées et
@@ -318,7 +396,7 @@ ne contiennent ni headers d'authentification, ni corps de réponse, ni URL compl
 
 ### État attendu de la politique
 
-Avant la première requête de production, une migration revue — pas une modification improvisée en
+Avant la première ingestion de production, une migration revue — pas une modification improvisée en
 console — doit faire passer `judilibre` à :
 
 ```text
@@ -342,9 +420,22 @@ where name in (
 order by name;
 ```
 
-Les commandes live sont :
+Le preflight live sans écriture est :
 
 ```bash
+.venv/bin/python scripts/check_judilibre_contract.py
+```
+
+Il tente au maximum quatre fenêtres historiques contiguës de 31 jours, avec une page d'un résultat
+par fenêtre et sans retry HTTP, ignore les réponses relâchées ou vides, puis lit au plus une
+décision. Il échoue si aucune réponse exacte exploitable n'est trouvée et ne persiste aucune donnée.
+
+Les commandes d'ingestion live sont :
+
+```bash
+.venv/bin/python -m src.outcome_sources_cli judilibre-search-sync \
+  --profile adjudication_v2 --date-start 2026-07-01 --date-end 2026-07-07 \
+  --max-results-per-window 250 --max-total-results 500
 .venv/bin/python -m src.outcome_sources_cli judilibre-fetch '<DECISION_ID>'
 .venv/bin/python -m src.outcome_sources_cli judilibre-sync \
   --since '2026-07-01T00:00:00+00:00' --max-pages 1 --max-records 10

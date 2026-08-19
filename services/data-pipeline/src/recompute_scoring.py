@@ -145,6 +145,9 @@ def _print_summary(sales: list[Any], *, dry_run: bool, upserted: int = 0) -> Non
     pretri = 0
     works = 0
     non_judicial = 0
+    court_verified = 0
+    court_unresolved = 0
+    court_unverified = 0
     for sale in sales:
         by_source[sale.source_name] = by_source.get(sale.source_name, 0) + 1
         analysis = sale.raw_payload.get("investment_analysis") if isinstance(sale.raw_payload, dict) else {}
@@ -155,6 +158,13 @@ def _print_summary(sales: list[Any], *, dry_run: bool, upserted: int = 0) -> Non
             works += 1
         if "non_judicial_sale_context" in sale.quality_flags:
             non_judicial += 1
+        assignment = sale.raw_payload.get("tribunal_assignment")
+        if isinstance(assignment, dict) and assignment.get("status") == "verified":
+            court_verified += 1
+        if "tribunal_competence_unresolved" in sale.quality_flags:
+            court_unresolved += 1
+        if "tribunal_competence_unverified" in sale.quality_flags:
+            court_unverified += 1
     print("Scoring recompute summary")
     print(f"- mode: {'dry-run' if dry_run else 'upsert'}")
     print(f"- sales: {len(sales)}")
@@ -163,6 +173,9 @@ def _print_summary(sales: list[Any], *, dry_run: bool, upserted: int = 0) -> Non
     print(f"- pretri_only: {pretri}")
     print(f"- works_to_quantify: {works}")
     print(f"- non_judicial_context: {non_judicial}")
+    print(f"- tribunal_competence_verified: {court_verified}")
+    print(f"- tribunal_competence_unresolved: {court_unresolved}")
+    print(f"- tribunal_competence_unverified: {court_unverified}")
 
 
 def parse_args() -> argparse.Namespace:

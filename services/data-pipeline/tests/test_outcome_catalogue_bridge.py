@@ -5,6 +5,7 @@ import pytest
 
 from src.outcome_ingestion.catalogue_bridge import (
     BRIDGE_RPC_NAME,
+    COURT_RECONCILIATION_RPC_NAME,
     OutcomeCatalogueBridgeError,
     bridge_auction_sales_before_cleanup,
 )
@@ -25,11 +26,25 @@ def _settings() -> dict[str, object]:
     }
 
 
+def _reconciliation_payload(count: int | str = 413) -> list[dict[str, object]]:
+    return [
+        {
+            "scanned_count": count,
+            "corrected_count": 0,
+            "already_correct_count": count,
+            "blocked_count": 0,
+            "complete": True,
+        }
+    ]
+
+
 def test_bridge_calls_the_service_role_rpc_without_serializing_sale_money() -> None:
     calls: list[dict[str, object]] = []
 
     def post(url: str, **kwargs: object) -> httpx.Response:
         calls.append({"url": url, **kwargs})
+        if url.endswith(f"/{COURT_RECONCILIATION_RPC_NAME}"):
+            return _response(_reconciliation_payload())
         return _response(
             [
                 {
@@ -46,10 +61,10 @@ def test_bridge_calls_the_service_role_rpc_without_serializing_sale_money() -> N
 
     assert result.scanned_count == 413
     assert result.remaining_unlinked == 0
-    assert calls[0]["url"] == (
-        f"https://example.supabase.co/rest/v1/rpc/{BRIDGE_RPC_NAME}"
-    )
+    assert len(calls) == 2
+    assert calls[0]["url"] == (f"https://example.supabase.co/rest/v1/rpc/{BRIDGE_RPC_NAME}")
     assert calls[0]["json"] == {}
+    assert calls[1]["url"] == (f"https://example.supabase.co/rest/v1/rpc/{COURT_RECONCILIATION_RPC_NAME}")
     headers = calls[0]["headers"]
     assert isinstance(headers, dict)
     assert headers["apikey"] == "service-role-secret"
@@ -57,9 +72,10 @@ def test_bridge_calls_the_service_role_rpc_without_serializing_sale_money() -> N
 
 
 def test_bridge_accepts_an_idempotent_replay() -> None:
-    result = bridge_auction_sales_before_cleanup(
-        _settings(),
-        post=lambda *_args, **_kwargs: _response(
+    def post(url: str, **_kwargs: object) -> httpx.Response:
+        if url.endswith(f"/{COURT_RECONCILIATION_RPC_NAME}"):
+            return _response(_reconciliation_payload("413"))
+        return _response(
             [
                 {
                     "scanned_count": "413",
@@ -69,11 +85,45 @@ def test_bridge_accepts_an_idempotent_replay() -> None:
                     "complete": True,
                 }
             ]
-        ),
+        )
+
+    result = bridge_auction_sales_before_cleanup(
+        _settings(),
+        post=post,
     )
 
     assert result.created_count == 0
     assert result.reused_count == 413
+
+
+def test_bridge_blocks_cleanup_when_court_reconciliation_is_incomplete() -> None:
+    def post(url: str, **_kwargs: object) -> httpx.Response:
+        if url.endswith(f"/{COURT_RECONCILIATION_RPC_NAME}"):
+            return _response(
+                [
+                    {
+                        "scanned_count": 2,
+                        "corrected_count": 1,
+                        "already_correct_count": 0,
+                        "blocked_count": 1,
+                        "complete": False,
+                    }
+                ]
+            )
+        return _response(
+            [
+                {
+                    "scanned_count": 2,
+                    "created_count": 2,
+                    "reused_count": 0,
+                    "linked_count": 2,
+                    "complete": True,
+                }
+            ]
+        )
+
+    with pytest.raises(OutcomeCatalogueBridgeError, match="reconciliation is incomplete"):
+        bridge_auction_sales_before_cleanup(_settings(), post=post)
 
 
 @pytest.mark.parametrize(
