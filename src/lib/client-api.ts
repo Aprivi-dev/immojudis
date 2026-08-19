@@ -149,7 +149,11 @@ export async function fetchPrecomputedMarketEstimate(args: {
     body: JSON.stringify({ saleId: args.saleId }),
   });
 
-  return readJson<MarketContext>(response);
+  const payload = (await response.json().catch(() => null)) as MarketContext | null;
+  if (response.status === 401 || response.status === 403 || !payload) {
+    throw new Error(payload?.error ?? `Erreur HTTP ${response.status}`);
+  }
+  return payload;
 }
 
 export async function fetchOutcomeGraphForecast(args: {

@@ -174,6 +174,8 @@ export function BidCeilingAssistant({
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
     enabled: !hasMarketEstimateOverride,
     staleTime: 24 * 60 * 60_000,
+    refetchInterval: (query) =>
+      query.state.data?.status === "queued" && !query.state.data.estimate ? 15_000 : false,
   });
 
   const estimate = data?.estimate ?? null;

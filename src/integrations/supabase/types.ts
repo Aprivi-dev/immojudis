@@ -852,10 +852,15 @@ export type Database = {
           error_message: string | null;
           estimate: Json | null;
           input_fingerprint: string;
+          last_error_code: string | null;
+          last_finished_at: string | null;
           last_started_at: string | null;
           model_version: string | null;
           model_version_id: string | null;
           next_refresh_at: string;
+          priority: number;
+          refresh_reason: string;
+          requested_at: string | null;
           segment: "apartment" | "house" | "building" | "commercial" | "land" | "parking" | null;
           source_updated_at: string | null;
           status: "pending" | "processing" | "ready" | "insufficient_data" | "failed";
@@ -877,10 +882,15 @@ export type Database = {
           error_message?: string | null;
           estimate?: Json | null;
           input_fingerprint: string;
+          last_error_code?: string | null;
+          last_finished_at?: string | null;
           last_started_at?: string | null;
           model_version?: string | null;
           model_version_id?: string | null;
           next_refresh_at?: string;
+          priority?: number;
+          refresh_reason?: string;
+          requested_at?: string | null;
           segment?: "apartment" | "house" | "building" | "commercial" | "land" | "parking" | null;
           source_updated_at?: string | null;
           status?: "pending" | "processing" | "ready" | "insufficient_data" | "failed";
@@ -902,10 +912,15 @@ export type Database = {
           error_message?: string | null;
           estimate?: Json | null;
           input_fingerprint?: string;
+          last_error_code?: string | null;
+          last_finished_at?: string | null;
           last_started_at?: string | null;
           model_version?: string | null;
           model_version_id?: string | null;
           next_refresh_at?: string;
+          priority?: number;
+          refresh_reason?: string;
+          requested_at?: string | null;
           segment?: "apartment" | "house" | "building" | "commercial" | "land" | "parking" | null;
           source_updated_at?: string | null;
           status?: "pending" | "processing" | "ready" | "insufficient_data" | "failed";
@@ -1251,6 +1266,71 @@ export type Database = {
             columns: ["import_batch_id"];
             isOneToOne: false;
             referencedRelation: "dvf_import_batches";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      valuation_estimate_attempts: {
+        Row: {
+          actionable: boolean | null;
+          attempt_number: number;
+          auction_sale_id: string;
+          comparable_count: number | null;
+          confidence_score: number | null;
+          created_at: string;
+          details: Json;
+          engine_kind: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          id: string;
+          input_fingerprint: string;
+          latency_ms: number;
+          outcome: "ready" | "insufficient_data" | "failed" | "superseded";
+          request_source: string;
+          segment: string | null;
+        };
+        Insert: {
+          actionable?: boolean | null;
+          attempt_number: number;
+          auction_sale_id: string;
+          comparable_count?: number | null;
+          confidence_score?: number | null;
+          created_at?: string;
+          details?: Json;
+          engine_kind?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          id?: string;
+          input_fingerprint: string;
+          latency_ms: number;
+          outcome: "ready" | "insufficient_data" | "failed" | "superseded";
+          request_source: string;
+          segment?: string | null;
+        };
+        Update: {
+          actionable?: boolean | null;
+          attempt_number?: number;
+          auction_sale_id?: string;
+          comparable_count?: number | null;
+          confidence_score?: number | null;
+          created_at?: string;
+          details?: Json;
+          engine_kind?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          id?: string;
+          input_fingerprint?: string;
+          latency_ms?: number;
+          outcome?: "ready" | "insufficient_data" | "failed" | "superseded";
+          request_source?: string;
+          segment?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "valuation_estimate_attempts_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
             referencedColumns: ["id"];
           },
         ];
@@ -3148,6 +3228,35 @@ export type Database = {
       };
     };
     Functions: {
+      claim_auction_sale_market_estimate: {
+        Args: {
+          p_auction_sale_id: string;
+          p_lease_seconds?: number;
+          p_now?: string;
+        };
+        Returns: Json;
+      };
+      claim_auction_sale_market_estimates: {
+        Args: {
+          p_lease_seconds?: number;
+          p_limit?: number;
+          p_now?: string;
+        };
+        Returns: Json;
+      };
+      enqueue_auction_sale_market_estimate: {
+        Args: {
+          p_auction_sale_id: string;
+          p_now?: string;
+          p_priority?: number;
+          p_reason?: string;
+        };
+        Returns: Json;
+      };
+      evaluate_market_valuation_health: {
+        Args: { p_now?: string };
+        Returns: Json;
+      };
       grant_analysis_access_from_checkout: {
         Args: {
           p_amount_total: number | null;
@@ -3192,6 +3301,32 @@ export type Database = {
           id: string;
           starting_price_eur: number | null;
           total_count: number;
+        }[];
+      };
+      search_dvf_market_comparables: {
+        Args: {
+          p_latitude: number;
+          p_limit?: number;
+          p_longitude: number;
+          p_minimum_date: string;
+          p_radius_m: number;
+          p_segment: string;
+        };
+        Returns: {
+          built_surface_m2: number | null;
+          distance_m: number;
+          dvf_property_type_code: string | null;
+          id: string;
+          land_surface_m2: number | null;
+          latitude: number;
+          longitude: number;
+          mutation_nature: string | null;
+          parcel_id: string | null;
+          price_per_m2: number | null;
+          property_type: string | null;
+          sale_date: string;
+          source_mutation_id: string;
+          total_price_eur: number;
         }[];
       };
     };

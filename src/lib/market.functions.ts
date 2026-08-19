@@ -104,7 +104,7 @@ type StoredDvfRow = Pick<
   | "parcel_id"
   | "latitude"
   | "longitude"
->;
+> & { distance_m?: number | null };
 
 export type MarketAddressSale = {
   date: string;
@@ -212,7 +212,20 @@ export type MarketContext = {
   ok: boolean;
   error: string | null;
   estimate: MarketEstimate | null;
+  status?: "ready" | "refreshing" | "queued" | "insufficient_data" | "failed";
+  code?: MarketEstimateErrorCode | null;
+  retryAfterSeconds?: number | null;
+  computedAt?: string | null;
 };
+
+export type MarketEstimateErrorCode =
+  | "INVALID_INPUT"
+  | "MISSING_LOCATION"
+  | "MISSING_SURFACE"
+  | "UNSUPPORTED_SEGMENT"
+  | "NO_COMPARABLES"
+  | "UPSTREAM_UNAVAILABLE"
+  | "INTERNAL_ERROR";
 
 const inputSchema = z.object({
   saleId: z.string().uuid().nullable().optional(),
@@ -361,7 +374,10 @@ async function fetchCommune(lat: number, lng: number): Promise<CommuneInfo | nul
   } catch {
     value = null;
   }
-  communeCache.set(key, { expiresAt: Date.now() + COMMUNE_CACHE_TTL_MS, value });
+  communeCache.set(key, {
+    expiresAt: Date.now() + (value ? COMMUNE_CACHE_TTL_MS : 5 * 60 * 1000),
+    value,
+  });
   return value;
 }
 
@@ -750,24 +766,49 @@ async function analyzeStoredDvfAtRadius(
       return null;
     }
 
-    const bbox = bboxAround(lat, lng, radiusM);
     const minimumDate = new Date();
     minimumDate.setUTCFullYear(minimumDate.getUTCFullYear() - HISTORY_YEARS);
-    const { data, error } = await supabaseAdmin
-      .from("dvf_transactions")
-      .select(
-        "id,source_mutation_id,sale_date,mutation_nature,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,parcel_id,latitude,longitude",
-      )
-      .gte("sale_date", minimumDate.toISOString().slice(0, 10))
-      .gte("latitude", bbox.ymin)
-      .lte("latitude", bbox.ymax)
-      .gte("longitude", bbox.xmin)
-      .lte("longitude", bbox.xmax)
-      .order("sale_date", { ascending: false })
-      .limit(STORED_DVF_LIMIT);
+    const rpcClient = supabaseAdmin as unknown as {
+      rpc?: (
+        functionName: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: { message?: string } | null }>;
+    };
+    let data: unknown;
+    let error: { message?: string } | null = null;
+    if (typeof rpcClient.rpc === "function") {
+      const result = await rpcClient.rpc("search_dvf_market_comparables", {
+        p_latitude: lat,
+        p_longitude: lng,
+        p_radius_m: radiusM,
+        p_minimum_date: minimumDate.toISOString().slice(0, 10),
+        p_segment: segment,
+        p_limit: STORED_DVF_LIMIT,
+      });
+      data = result.data;
+      error = result.error;
+    } else {
+      // Fallback retained for local tests and during a rolling deployment where
+      // application code can briefly precede the database migration.
+      const bbox = bboxAround(lat, lng, radiusM);
+      const result = await supabaseAdmin
+        .from("dvf_transactions")
+        .select(
+          "id,source_mutation_id,sale_date,mutation_nature,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,parcel_id,latitude,longitude",
+        )
+        .gte("sale_date", minimumDate.toISOString().slice(0, 10))
+        .gte("latitude", bbox.ymin)
+        .lte("latitude", bbox.ymax)
+        .gte("longitude", bbox.xmin)
+        .lte("longitude", bbox.xmax)
+        .order("sale_date", { ascending: false })
+        .limit(STORED_DVF_LIMIT);
+      data = result.data;
+      error = result.error;
+    }
     if (error) throw error;
     const rows = (data ?? []) as StoredDvfRow[];
-    if (!rows.length || rows.length >= STORED_DVF_LIMIT) {
+    if (!rows.length) {
       storedDvfCache.set(cacheKey, { expiresAt: Date.now() + 60_000, value: null });
       return null;
     }
@@ -804,7 +845,7 @@ async function analyzeStoredDvfAtRadius(
       candidates: [...latestByParcel.values()],
       addressMutations,
       totalNearby: normalized.length,
-      collectionComplete: true,
+      collectionComplete: rows.length < STORED_DVF_LIMIT,
       missingYears: [],
     };
     storedDvfCache.set(cacheKey, { expiresAt: Date.now() + PAGE_CACHE_TTL_MS, value });
@@ -847,6 +888,7 @@ function storedDvfCandidate(
     return null;
   }
   const pricePerM2 = totalPrice / primarySurface;
+  const rpcDistance = finiteNumber(row.distance_m);
   return {
     id: row.source_mutation_id || row.id,
     parcelId: row.parcel_id || row.id,
@@ -857,7 +899,10 @@ function storedDvfCandidate(
     pricePerM2,
     propertyType: row.property_type ?? row.dvf_property_type_code ?? "—",
     segment: reference.segment,
-    distanceM: Math.round(haversineMeters(reference.lat, reference.lng, latitude, longitude)),
+    distanceM:
+      rpcDistance == null
+        ? Math.round(haversineMeters(reference.lat, reference.lng, latitude, longitude))
+        : Math.round(rpcDistance),
     latitude,
     longitude,
   };
@@ -966,7 +1011,7 @@ async function buildEstimate(input: BuildEstimateInput): Promise<MarketEstimate>
       candidates: analysis.candidates,
     });
   }
-  if ((!engineResult || engineResult.sampleSize < 4) && commune && subjectSurface) {
+  if ((!engineResult || !engineResult.actionable) && commune && subjectSurface) {
     const statisticsFallback = await getDvfMarketStatisticsFallback({
       location: {
         code: commune.code,
@@ -1522,9 +1567,9 @@ export async function getMarketEstimate(
   audit?: { userId: string | null; auctionSaleId?: string | null },
 ): Promise<MarketContext> {
   const startedAt = Date.now();
-  const data = inputSchema.parse(input);
 
   try {
+    const data = inputSchema.parse(input);
     const location = await resolveMarketLocation({
       lat: data.lat,
       lng: data.lng,
@@ -1551,7 +1596,15 @@ export async function getMarketEstimate(
       pricePerM2Ref: data.pricePerM2Ref,
     });
 
-    const context = { ok: true, error: null, estimate } satisfies MarketContext;
+    const context = {
+      ok: true,
+      error: null,
+      estimate,
+      status: "ready",
+      code: null,
+      retryAfterSeconds: null,
+      computedAt: new Date().toISOString(),
+    } satisfies MarketContext;
     if (audit) {
       await recordValuationEstimate({
         userId: audit.userId,
@@ -1575,15 +1628,37 @@ export async function getMarketEstimate(
     return context;
   } catch (err) {
     const message = err instanceof Error ? err.message : "erreur inconnue";
+    const code = marketEstimateErrorCode(err);
     console.error("DVF fetch failed", err);
     return {
       ok: false,
-      error: /segment de bien|surface compatible|adresse|coordonnées/.test(message)
-        ? `Estimation automatique indisponible : ${message}.`
-        : "Estimation de marché temporairement indisponible.",
+      error:
+        code !== "UPSTREAM_UNAVAILABLE" && code !== "INTERNAL_ERROR"
+          ? `Estimation automatique indisponible : ${message}.`
+          : "Estimation de marché temporairement indisponible.",
       estimate: null,
+      status:
+        code === "UPSTREAM_UNAVAILABLE" || code === "INTERNAL_ERROR"
+          ? "failed"
+          : "insufficient_data",
+      code,
+      retryAfterSeconds: code === "UPSTREAM_UNAVAILABLE" ? 3600 : null,
+      computedAt: null,
     };
   }
+}
+
+export function marketEstimateErrorCode(error: unknown): MarketEstimateErrorCode {
+  if (error instanceof z.ZodError) return "INVALID_INPUT";
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (/segment de bien|non pris en charge/.test(message)) return "UNSUPPORTED_SEGMENT";
+  if (/surface compatible|surface.*manquante/.test(message)) return "MISSING_SURFACE";
+  if (/adresse|coordonn|géocod|geocod/.test(message)) return "MISSING_LOCATION";
+  if (/aucune vente|comparable|échantillon|echantillon/.test(message)) return "NO_COMPARABLES";
+  if (/timeout|fetch|http |réseau|network|indisponible/.test(message))
+    return "UPSTREAM_UNAVAILABLE";
+  return "INTERNAL_ERROR";
 }
 
 function finiteFloat(value: string | undefined): number | null {

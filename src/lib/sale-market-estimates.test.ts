@@ -26,12 +26,9 @@ const input: SaleValuationInput = {
 
 describe("sale market estimates", () => {
   it("produces a stable fingerprint and invalidates it when valuation input changes", () => {
-    const first = saleValuationFingerprint(input, "2026-07-13T10:00:00.000Z");
-    const same = saleValuationFingerprint({ ...input }, "2026-07-13T10:00:00.000Z");
-    const changed = saleValuationFingerprint(
-      { ...input, surfaceM2: 65 },
-      "2026-07-13T10:00:00.000Z",
-    );
+    const first = saleValuationFingerprint(input);
+    const same = saleValuationFingerprint({ ...input });
+    const changed = saleValuationFingerprint({ ...input, surfaceM2: 65 });
 
     expect(same).toBe(first);
     expect(changed).not.toBe(first);
@@ -65,7 +62,13 @@ describe("sale market estimates", () => {
     } satisfies MarketEstimate;
     const context = marketContextFromStoredRow(storedRow({ status: "processing", estimate }));
 
-    expect(context).toEqual({ ok: true, error: null, estimate });
+    expect(context).toMatchObject({
+      ok: true,
+      error: null,
+      estimate,
+      status: "refreshing",
+      code: null,
+    });
   });
 
   it("reports a pending precompute without calculating on demand", () => {

@@ -90,4 +90,61 @@ describe("market estimate normalized DVF corpus", () => {
     });
     expect(requestedUrls.every((url) => !url.includes("cerema.fr"))).toBe(true);
   });
+
+  it("keeps a capped dense-zone corpus instead of discarding all local comparables", async () => {
+    const rows = Array.from({ length: 2_500 }, (_, index) => {
+      const surface = 45 + (index % 35);
+      return {
+        id: `dense-row-${index}`,
+        source_mutation_id: `dense-mutation-${index}`,
+        sale_date: `2025-${String((index % 12) + 1).padStart(2, "0")}-15`,
+        mutation_nature: "Vente",
+        total_price_eur: surface * (7_000 + (index % 200)),
+        built_surface_m2: surface,
+        land_surface_m2: null,
+        price_per_m2: 7_000 + (index % 200),
+        property_type: "Appartement",
+        dvf_property_type_code: "121",
+        parcel_id: `dense-parcel-${index}`,
+        latitude: 48.8566 + (index % 20) * 0.000001,
+        longitude: 2.3522 + (index % 20) * 0.000001,
+      };
+    });
+    adminMock.from.mockImplementation((table: string) => {
+      if (table === "dvf_import_batches") {
+        return queryBuilder({
+          data: { status: "completed", imported_rows: rows.length, period_end: "2026-06-30" },
+          error: null,
+        });
+      }
+      if (table === "dvf_transactions") return queryBuilder({ data: rows, error: null });
+      if (table === "valuation_model_versions") return queryBuilder({ data: null, error: null });
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const requestedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        requestedUrls.push(url);
+        if (url.includes("geo.api.gouv.fr")) return Response.json([]);
+        throw new Error(`External DVF fallback should not be queried: ${url}`);
+      }),
+    );
+
+    const { getMarketEstimate } = await import("@/lib/market.functions");
+    const response = await getMarketEstimate({
+      lat: 48.8566,
+      lng: 2.3522,
+      propertyType: "apartment",
+      surfaceM2: 60,
+    });
+
+    expect(response.estimate).toMatchObject({
+      source: "DVF normalisé",
+      estimatedValueEur: expect.any(Number),
+    });
+    expect(requestedUrls.every((url) => !url.includes("cerema.fr"))).toBe(true);
+  });
 });
