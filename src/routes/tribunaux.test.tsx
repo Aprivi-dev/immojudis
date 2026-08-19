@@ -16,6 +16,9 @@ vi.mock("@/hooks/use-auth", () => ({
 
 vi.mock("@/lib/client-api", () => ({
   fetchFeatureEntitlements: mocks.fetchEntitlements,
+}));
+
+vi.mock("@/lib/tribunal-statistics-client", () => ({
   fetchTribunalStatistics: mocks.fetchStatistics,
 }));
 

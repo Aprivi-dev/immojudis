@@ -13,8 +13,9 @@ import {
 } from "@/components/TribunalStatisticsDashboard";
 import { PremiumPreview } from "@/components/PremiumPreview";
 import { useAuth } from "@/hooks/use-auth";
-import { fetchFeatureEntitlements, fetchTribunalStatistics } from "@/lib/client-api";
+import { fetchFeatureEntitlements } from "@/lib/client-api";
 import { createFileRoute } from "@/lib/router-compat";
+import { fetchTribunalStatistics } from "@/lib/tribunal-statistics-client";
 
 export const Route = createFileRoute("/tribunaux")({
   head: () => ({
