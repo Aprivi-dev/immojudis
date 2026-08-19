@@ -140,10 +140,18 @@ select is(
 select is(
   (
     select count(*)::integer
-    from public.claim_auction_sale_market_estimates(1, statement_timestamp(), 300)
+    from public.claim_auction_sale_market_estimate(
+      (
+        select sale.id
+        from public.auction_sales sale
+        where sale.source_url = 'https://example.test/valuation-queue'
+      ),
+      statement_timestamp(),
+      300
+    )
   ),
   1,
-  'the atomic claim returns one due valuation'
+  'the targeted atomic claim returns the requested due valuation'
 );
 
 select is(
