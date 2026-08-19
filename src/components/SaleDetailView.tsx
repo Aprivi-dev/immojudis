@@ -148,6 +148,8 @@ export function SaleDetailView({
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
     enabled: marketEstimateOverride == null,
     staleTime: 24 * 60 * 60_000,
+    refetchInterval: (query) =>
+      query.state.data?.status === "queued" && !query.state.data.estimate ? 15_000 : false,
   });
   const marketEstimate = marketEstimateOverride ?? marketQuery.data?.estimate ?? null;
   const marketLoading = marketEstimateOverride == null && marketQuery.isLoading;
@@ -222,6 +224,39 @@ export function SaleDetailView({
         decision={decision}
         acquisitionCost={acquisitionCost}
       />
+
+      {marketEstimateOverride == null &&
+      !marketEstimate &&
+      (marketQuery.data?.error || marketQuery.error) ? (
+        <div className="mx-auto max-w-[1360px] px-4 pt-6 sm:px-6 lg:px-8">
+          <div
+            className="flex flex-col gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-start gap-2">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <div>
+                <p className="font-semibold">Estimation de marché à compléter</p>
+                <p className="mt-0.5">
+                  {marketQuery.data?.error ??
+                    (marketQuery.error instanceof Error
+                      ? marketQuery.error.message
+                      : "L’estimation est momentanément indisponible.")}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void marketQuery.refetch()}
+              disabled={marketQuery.isFetching}
+              className="min-h-10 shrink-0 rounded-lg border border-amber-400 bg-white px-3 font-semibold transition-colors hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              {marketQuery.isFetching ? "Calcul en cours…" : "Relancer l’estimation"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mx-auto grid max-w-[1360px] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8">
         <div className="min-w-0 space-y-6">

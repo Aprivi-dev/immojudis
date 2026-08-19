@@ -94,6 +94,8 @@ function SimplifiedSaleDetailView({
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
     enabled: access === "analysis" && marketEstimateOverride == null,
     staleTime: 24 * 60 * 60_000,
+    refetchInterval: (query) =>
+      query.state.data?.status === "queued" && !query.state.data.estimate ? 15_000 : false,
   });
   const marketEstimate = marketEstimateOverride ?? marketQuery.data?.estimate ?? null;
   const recommendations = useMemo(
@@ -122,6 +124,38 @@ function SimplifiedSaleDetailView({
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Retour aux ventes
         </Link>
+
+        {access === "analysis" &&
+        marketEstimateOverride == null &&
+        !marketEstimate &&
+        (marketQuery.data?.error || marketQuery.error) ? (
+          <div
+            className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-start gap-2">
+              <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <div>
+                <p className="font-semibold">Estimation de marché à compléter</p>
+                <p className="mt-0.5">
+                  {marketQuery.data?.error ??
+                    (marketQuery.error instanceof Error
+                      ? marketQuery.error.message
+                      : "L’estimation est momentanément indisponible.")}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void marketQuery.refetch()}
+              disabled={marketQuery.isFetching}
+              className="min-h-10 shrink-0 rounded-lg border border-amber-400 bg-white px-3 font-semibold transition-colors hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              {marketQuery.isFetching ? "Calcul en cours…" : "Relancer l’estimation"}
+            </button>
+          </div>
+        ) : null}
 
         <section className="mt-4 grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(430px,0.92fr)] xl:items-start">
           <PropertyIdentity sale={sale} />
