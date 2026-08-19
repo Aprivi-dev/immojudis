@@ -115,7 +115,9 @@ PIPELINE_PDF_WORKERS=2
 PIPELINE_PDF_MAX_TARGETS=10
 PIPELINE_LLM_MAX_TARGETS=10
 PIPELINE_LLM_BACKFILL_MAX_TARGETS=10
-PIPELINE_IDLE_LLM_BACKFILL_ENABLED=false
+PIPELINE_IDLE_LLM_BACKFILL_ENABLED=true
+PIPELINE_ENRICHMENT_QUEUE_ENABLED=true
+PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE=10
 DEDUPE_RECONCILE_ENABLED=true
 DEDUPE_RECONCILE_MAX_ROWS=2000
 ```
@@ -419,7 +421,9 @@ PDF_OCR_LANGUAGE=fra+eng
 ## Enrichissement LLM Replicate
 
 Le module `src/enrichment/` utilise Replicate pour extraire une lecture structurée des textes PDF.
-Le modèle par défaut est `google/gemini-2.5-flash`, choisi pour le rapport qualité/prix.
+Le modèle par défaut est `qwen/qwen3-7-plus`. Son contexte d'un million de
+jetons permet de conserver l'ensemble des pages collectées, tandis que son
+tarif Replicate reste adapté au traitement systématique des annonces.
 
 Configuration :
 
@@ -427,28 +431,37 @@ Configuration :
 LLM_ENABLED=true
 LLM_PROVIDER=replicate
 REPLICATE_API_TOKEN=your-replicate-token
-REPLICATE_MODEL=google/gemini-2.5-flash
+REPLICATE_MODEL=qwen/qwen3-7-plus
 REPLICATE_TEMPERATURE=0
-REPLICATE_MAX_TOKENS=1024
+REPLICATE_MAX_TOKENS=8192
 REPLICATE_TIMEOUT_SECONDS=180
 REPLICATE_WAIT_SECONDS=60
 REPLICATE_CANCEL_AFTER=5m
 REPLICATE_MAX_RETRIES=4
 REPLICATE_RETRY_BACKOFF_SECONDS=30
 REPLICATE_RETRY_MAX_SLEEP_SECONDS=60
-REPLICATE_MIN_INTERVAL_SECONDS=5
+REPLICATE_MIN_INTERVAL_SECONDS=15
+# Contrôles utilisés uniquement si REPLICATE_MODEL désigne un modèle Gemini
 REPLICATE_THINKING_BUDGET=0
 REPLICATE_DYNAMIC_THINKING=false
-LLM_PROMPT_VERSION=auction_llm_v6_display
-LLM_EXTRACTION_MODE=display_description
-LLM_PDF_MAX_CHARS=6000
+REPLICATE_THINKING_LEVEL=low
+LLM_PROMPT_VERSION=auction_llm_v8_qwen37_structured_display
+LLM_FACT_PROMPT_VERSION=auction_facts_v1
+LLM_DISPLAY_PROMPT_VERSION=auction_display_v7
+LLM_EXTRACTION_MODE=structured_then_display
+LLM_PDF_MAX_CHARS=12000
+LLM_FACT_CHUNK_CHARS=12000
+LLM_FACT_MAX_CHUNKS=0
+LLM_DISPLAY_CONTEXT_CHARS=12000
 INCREMENTAL_ENRICHMENT=true
 PDF_DOCLING_FAST_TIMEOUT_SECONDS=60
-PDF_MAX_DOCUMENTS_PER_SALE=2
+PDF_MAX_DOCUMENTS_PER_SALE=6
 PIPELINE_PDF_MAX_TARGETS=10
 PIPELINE_LLM_MAX_TARGETS=10
 PIPELINE_LLM_BACKFILL_MAX_TARGETS=20
-PIPELINE_IDLE_LLM_BACKFILL_ENABLED=false
+PIPELINE_IDLE_LLM_BACKFILL_ENABLED=true
+PIPELINE_ENRICHMENT_QUEUE_ENABLED=true
+PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE=10
 ```
 
 Le provider Replicate appelle l'API HTTP officielle avec `Authorization: Bearer $REPLICATE_API_TOKEN` et l'endpoint `/v1/models/{owner}/{model}/predictions`.
@@ -457,29 +470,50 @@ Les erreurs temporaires Replicate, dont `429 Too Many Requests`, sont retentées
 Les textes PDF et les extractions LLM sont mis en cache par empreinte de document/contexte. Le run suivant réutilise les résultats inchangés, limite les documents transmis aux plus utiles et applique un timeout Docling plus court sur les PDF signés ou très lourds avant fallback.
 
 Le pipeline tente l'enrichissement LLM sur les annonces sélectionnées par les
-garde-fous `PIPELINE_LLM_MAX_TARGETS` et le cache incrémental. Il conserve le
-descriptif source dans `raw_payload.source_description`, puis demande au LLM une
-version d'affichage uniforme `display_description` stockée en
-`raw_payload.llm_display_description`. En mode courant
-`LLM_EXTRACTION_MODE=display_description`, le prompt est volontairement plus
-court et centré sur cette synthèse publique. Il continue sans LLM si le provider
-configuré n'est pas disponible. Les réponses doivent être du JSON valide,
-validé par Pydantic, puis sauvegardé dans
+garde-fous `PIPELINE_LLM_MAX_TARGETS` et le cache incrémental. Le mode courant
+`structured_then_display` effectue deux passes distinctes :
+
+1. extraction factuelle de tous les blocs de l'annonce et de toutes les pages
+   PDF déjà collectées, découpés en segments traçables ;
+2. rédaction de la synthèse publique uniquement à partir des faits consolidés
+   et validés.
+
+Chaque pièce ou lot est extrait séparément avec valeur, catégorie, document,
+page et citation. Le LLM ne réalise pas l'addition : le module déterministe
+`surface_reasoning_v1` vérifie que chaque valeur figure dans sa preuve, exclut
+les garages, caves, balcons, terrasses et terrains de la surface habitable,
+additionne les pièces avec une arithmétique décimale, puis rapproche le résultat
+des surfaces Carrez, habitables ou totales explicitement annoncées. Une somme
+incomplète reste marquée `partial` et les contradictions sont conservées au
+lieu d'être masquées.
+
+Le résultat détaillé est stocké dans `raw_payload.surface_analysis`, puis dans
+`auction_surface_measurements` et `auction_surface_derivations`. La synthèse
+d'affichage reste dans `raw_payload.llm_display_description`. Les réponses LLM
+doivent être du JSON validé par Pydantic, puis sont sauvegardées dans
 `data/processed/llm_extractions/{sale_id}.json`.
 
 Le mode `--backfill-llm-descriptions` traite les annonces déjà présentes dans
-Supabase qui n'ont pas encore de synthèse publique courante. Il est séparé du
-scrape principal pour éviter d'allonger les runs planifiés ; son volume est
-borné par `PIPELINE_LLM_BACKFILL_MAX_TARGETS` ou `--limit`. En CI, il doit être
-déclenché explicitement afin de garder les schedules courts et prévisibles.
+Supabase qui n'ont pas encore de synthèse publique courante. Son volume est
+borné par `PIPELINE_LLM_BACKFILL_MAX_TARGETS` ou `--limit`. En CI, la file
+`auction_enrichment_jobs` reprend automatiquement les analyses après la
+collecte. Les jobs échoués sont retentés et un verrou abandonné depuis plus de
+30 minutes peut être réclamé par un autre worker.
 
-Un cache évite de rappeler Replicate quand le triplet `modèle + version de prompt + contexte réduit` n'a pas changé. Cela limite le coût, accélère les relances et stabilise les extractions. Une annonce déjà publiée avec une ancienne version de prompt est réenrichie afin de régénérer la description d'affichage. À chaque scroll avec LLM actif, le skip incrémental exige désormais `raw_payload.llm_display_description` et `raw_payload.llm_prompt_version = LLM_PROMPT_VERSION` : une annonce scorée mais sans synthèse IA publique repasse donc automatiquement dans l'enrichissement.
+La migration `20260819105011_add_structured_surface_reasoning_queue.sql` doit
+être appliquée avant de déployer le worker. Les trois nouvelles tables activent
+RLS explicitement : seules les lectures abonnées passent par
+`has_analysis_access()`, tandis que la file et sa fonction de claim restent
+réservées au `service_role`.
 
-Avant l'appel LLM, le contexte PDF est réduit à environ 6 000 caractères par
-défaut : premières sections des PV descriptifs et cahiers des conditions, puis
-fenêtres autour des mots-clés utiles comme surface, pièces, chambres,
-occupation, bail, servitude, diagnostics, amiante, plomb, DPE, travaux,
-désignation, lots et mise à prix.
+Un cache évite de rappeler Replicate quand le triplet `modèle + versions de prompts + contexte factuel complet` n'a pas changé. Cela limite le coût, accélère les relances et stabilise les extractions. Une annonce déjà publiée avec une ancienne version de prompt est réenrichie afin de régénérer la description d'affichage. À chaque collecte avec LLM actif, le skip incrémental exige désormais `raw_payload.llm_display_description` et `raw_payload.llm_prompt_version = LLM_PROMPT_VERSION` : une annonce scorée mais sans synthèse IA publique repasse donc automatiquement dans l'enrichissement.
+
+La passe factuelle couvre toutes les pages extraites. `LLM_FACT_CHUNK_CHARS`
+limite la taille d'un segment, tandis que `LLM_FACT_MAX_CHUNKS=0` signifie
+qu'aucune page n'est volontairement écartée. La passe d'affichage utilise un
+contexte consolidé plus court. Les métriques `llm_fact_context_coverage` et
+`llm_fact_coverage` signalent explicitement toute troncature ou tout segment en
+échec.
 
 Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiable. Il complète surtout les champs absents : `surface_m2`, `rooms_count`, `bedrooms_count`, `occupancy_status`, certains risques, `summary` et `raw_payload.llm_extraction`.
 

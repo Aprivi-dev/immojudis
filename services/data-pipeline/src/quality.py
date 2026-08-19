@@ -162,6 +162,21 @@ def build_quality_report(
         "pdf_documents_processed": pdf_stats.documents_processed,
         "llm_analyzed": llm_stats.analyzed,
         "llm_valid_json": llm_stats.valid_json,
+        "llm_fact_chunks_analyzed": llm_stats.fact_chunks_analyzed,
+        "llm_structured_surface_verified": llm_stats.structured_surface_verified,
+        "llm_calculated_surface_verified": llm_stats.calculated_surface_verified,
+        "with_explicit_surface_pct": _pct(
+            sum(_surface_analysis_kind(sale).startswith("explicit_") for sale in sales),
+            total,
+        ),
+        "with_calculated_surface_pct": _pct(
+            sum(_surface_analysis_kind(sale).startswith("calculated_") for sale in sales),
+            total,
+        ),
+        "with_surface_contradiction_pct": _pct(
+            sum(bool(_surface_analysis(sale).get("contradictions")) for sale in sales),
+            total,
+        ),
         "llm_surface_detected_pct": _pct(llm_stats.surface_detected, llm_stats.valid_json),
         "llm_surface_extracted_pct": _pct(llm_stats.surface_extracted, llm_stats.valid_json),
         "llm_rooms_detected_pct": _pct(llm_stats.rooms_detected, llm_stats.valid_json),
@@ -174,6 +189,23 @@ def build_quality_report(
         "llm_errors": llm_stats.errors,
         "llm_unavailable": int(llm_stats.unavailable),
     }
+
+
+def _surface_analysis(sale: AuctionSale) -> dict[str, object]:
+    payload = sale.raw_payload.get("surface_analysis") if isinstance(sale.raw_payload, dict) else None
+    return payload if isinstance(payload, dict) else {}
+
+
+def _surface_analysis_kind(sale: AuctionSale) -> str:
+    analysis = _surface_analysis(sale)
+    selected_id = analysis.get("selected_derivation_id")
+    derivations = analysis.get("derivations")
+    if not isinstance(derivations, list):
+        return ""
+    for derivation in derivations:
+        if isinstance(derivation, dict) and derivation.get("derivation_id") == selected_id:
+            return str(derivation.get("kind") or "")
+    return ""
 
 
 def build_source_quality_report(sales: list[AuctionSale]) -> dict[str, dict[str, float | int]]:

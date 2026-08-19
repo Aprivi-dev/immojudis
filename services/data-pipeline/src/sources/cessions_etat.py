@@ -69,6 +69,7 @@ def scrape_cessions_etat_aquitaine_result(
     return ScrapeResult(
         validate_raw_sales("cessions_etat", unique_dicts(raw_sales, "source_url"), errors),
         errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
     )
 
 

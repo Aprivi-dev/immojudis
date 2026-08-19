@@ -112,7 +112,11 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
             # always refresh the detail page after filtering to the target territory.
             _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
-    return ScrapeResult(validate_raw_sales("avoventes", raw_sales, errors), errors)
+    return ScrapeResult(
+        validate_raw_sales("avoventes", raw_sales, errors),
+        errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
+    )
 
 
 def parse_avoventes_html(

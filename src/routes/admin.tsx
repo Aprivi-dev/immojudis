@@ -112,7 +112,7 @@ export function AdminDashboardPage() {
       await queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Impossible de lancer le scroll");
+      toast.error(err instanceof Error ? err.message : "Impossible de lancer la collecte");
     },
   });
   const backfillMutation = useMutation({
@@ -182,8 +182,8 @@ export function AdminDashboardPage() {
                 Pilotage Immojudis
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-                Supervision des runs de scroll, de la base Supabase et des traitements
-                d'enrichissement utilisés par le scoring.
+                Supervision des collectes, de la base Supabase et des traitements d'enrichissement
+                utilisés par le scoring.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -246,7 +246,7 @@ export function AdminDashboardPage() {
               <div>
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
                   <Play className="h-4 w-4" />
-                  Nouveau scroll
+                  Nouvelle collecte
                 </div>
                 <h2 className="mt-3 font-display text-2xl">Lancer une collecte</h2>
               </div>

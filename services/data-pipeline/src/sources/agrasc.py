@@ -54,7 +54,11 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
             if sale.get("department") in TARGET_DEPARTMENTS:
                 raw_sales.append(sale)
 
-    return ScrapeResult(validate_raw_sales("agrasc", unique_dicts(raw_sales, "source_url"), errors), errors)
+    return ScrapeResult(
+        validate_raw_sales("agrasc", unique_dicts(raw_sales, "source_url"), errors),
+        errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
+    )
 
 
 def parse_agrasc_html(html: str, page_url: str = LIST_URL) -> list[dict[str, Any]]:

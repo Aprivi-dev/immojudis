@@ -23,11 +23,12 @@ from src.enrichment.extract_structured import (
     extract_source_description,
 )
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
+from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
 from src.geocode import geocode_sale
 from src.lifecycle import mark_past_sales
 from src.models import AuctionSale
-from src.normalize import normalize_sale, parse_price
+from src.normalize import clean_text, normalize_sale, parse_price
 from src.outcome_ingestion.catalogue_bridge import bridge_auction_sales_before_cleanup
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
@@ -151,11 +152,17 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "raw_image_url",
     "source_description",
     "llm_extraction",
+    "llm_fact_extraction",
+    "llm_fact_prompt_version",
+    "llm_display_prompt_version",
+    "llm_fact_coverage",
+    "llm_fact_context_coverage",
     "llm_display_description",
     "llm_display_description_word_count",
     "llm_prompt_version",
     "document_analysis",
     "surface_extraction",
+    "surface_analysis",
     "land_surface_extraction",
     "investment_analysis",
     "llm_due_diligence",
@@ -196,6 +203,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     errors: dict[str, list[str]] = {source: [] for source in SOURCE_NAMES}
     raw_sales: list[dict[str, object]] = []
     raw_by_source = {source: 0 for source in SOURCE_NAMES}
+    scrape_coverage: dict[str, dict[str, object]] = {}
     timings: dict[str, float] = {}
 
     # Données connues en base : Vench s'en sert comme fallback quand la page est
@@ -242,6 +250,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             timings[f"scrape_{name}_seconds"] = seconds
             errors.setdefault(name, []).extend(result.errors)
             raw_by_source[name] = len(result.sales)
+            scrape_coverage[name] = {
+                **result.coverage,
+                "duration_seconds": seconds,
+                "configured_page_limit": _configured_page_limit(name, settings),
+            }
             raw_sales.extend(result.sales)
     timings["scrape_total_seconds"] = round(time.perf_counter() - scrape_overall_started, 2)
 
@@ -498,6 +511,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     summary = {
         "collected": len(raw_sales),
         "collected_by_source": raw_by_source,
+        "scrape_coverage": scrape_coverage,
         "normalized": len(normalized_observations),
         "deduplicated": len(canonical_sales),
         "skipped_detail": skipped_detail,
@@ -577,6 +591,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print("Immojudis data pipeline summary")
     print(f"- collected: {len(raw_sales)}")
     print(f"- collected_by_source: {raw_by_source}")
+    print(f"- scrape_coverage: {scrape_coverage}")
     print(f"- normalized: {len(normalized_observations)}")
     print(f"- deduplicated: {len(canonical_sales)}")
     print(f"- skipped_detail: {skipped_detail}")
@@ -927,7 +942,10 @@ def _backfill_document_price_from_known(
     if not isinstance(known_payload, dict):
         return 0
     extraction = known_payload.get("starting_price_extraction")
-    if not isinstance(extraction, dict) or extraction.get("version") != DOCUMENT_FACTS_VERSION:
+    if not isinstance(extraction, dict) or extraction.get("version") not in {
+        DOCUMENT_FACTS_VERSION,
+        "document_facts_v1_starting_price",
+    }:
         return 0
 
     known_price = parse_price(known.get("starting_price_eur"))
@@ -949,8 +967,12 @@ def _backfill_document_price_from_known(
     if sale.get("starting_price_extraction") != extraction:
         sale["starting_price_extraction"] = extraction
         copied += 1
-    if sale.get("document_facts_version") != DOCUMENT_FACTS_VERSION:
-        sale["document_facts_version"] = DOCUMENT_FACTS_VERSION
+    known_facts_version = known_payload.get("document_facts_version") or extraction.get("version")
+    if sale.get("document_facts_version") != known_facts_version:
+        # Preserve the last version that actually analyzed the document. Do not
+        # mark it current here: the version check must still schedule the new
+        # surface-reasoning pass while the verified price remains protected.
+        sale["document_facts_version"] = known_facts_version
         copied += 1
     return copied
 
@@ -1070,6 +1092,25 @@ def _enabled_scrapers(
     return enabled
 
 
+def _configured_page_limit(source_name: str, settings: dict[str, object]) -> int | None:
+    key_by_source = {
+        "licitor": "licitor_max_pages",
+        "vench": "vench_max_pages",
+        "info_encheres": "info_encheres_max_pages",
+        "encheres_publiques": "encheres_publiques_max_pages",
+        "cessions_etat": "cessions_etat_max_pages",
+        "encheres_immobilieres": "encheres_immobilieres_max_pages",
+        "notaires": "notaires_max_pages",
+    }
+    key = key_by_source.get(source_name)
+    if not key:
+        return None
+    try:
+        return int(settings[key])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _timed_scrape(name: str, fn: Callable[[], ScrapeResult]) -> tuple[ScrapeResult, float]:
     started = time.perf_counter()
     result = fn()
@@ -1083,7 +1124,18 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     if geocode:
         geocode_sale(sale)
     fill_tribunal(sale)
+    surface_context = _surface_reasoning_context_for_sale(sale)
+    if surface_context:
+        extract_and_apply_deterministic_surface_reasoning(sale, surface_context)
     normalize_asset_features(sale)
+
+
+def _surface_reasoning_context_for_sale(sale: AuctionSale) -> str:
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    source_blocks = payload.get("source_blocks")
+    block_values = list(source_blocks.values()) if isinstance(source_blocks, dict) else []
+    values: list[object] = [sale.title, sale.description, sale.raw_text, payload.get("source_description"), *block_values]
+    return clean_text("\n".join(str(value) for value in values if value)) or ""
 
 
 def _needs_heavy_enrichment(
@@ -1286,6 +1338,9 @@ def _add_llm_stats(total: LLMEnrichmentStats, item: LLMEnrichmentStats) -> None:
     total.occupancy_extracted += item.occupancy_extracted
     total.occupancy_detected += item.occupancy_detected
     total.risks_detected += item.risks_detected
+    total.fact_chunks_analyzed += item.fact_chunks_analyzed
+    total.structured_surface_verified += item.structured_surface_verified
+    total.calculated_surface_verified += item.calculated_surface_verified
     total.error_messages.extend(item.error_messages)
     total.unavailable = total.unavailable or item.unavailable
 

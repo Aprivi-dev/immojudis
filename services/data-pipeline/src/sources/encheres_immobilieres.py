@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 from src.config import TARGET_DEPARTMENTS, load_settings
+from src.enrichment.surface_reasoning import extract_surface_facts_from_text
 from src.normalize import clean_text, has_rented_occupancy_signal, no_lease_occupancy_status, strip_accents
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
@@ -105,6 +106,7 @@ def scrape_encheres_immobilieres_aquitaine_result(
     return ScrapeResult(
         validate_raw_sales("encheres_immobilieres", unique_dicts(raw_sales, "source_url"), errors),
         errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
     )
 
 
@@ -891,7 +893,29 @@ def _extract_rooms(title: Any) -> int | None:
 
 def _extract_surface(*values: str | None) -> str | None:
     text = " ".join(value for value in (clean_text(v) for v in values) if value)
-    match = re.search(r"([0-9][0-9\s.,]+)\s*m(?:2|²)\b", text, flags=re.I)
+    asset = extract_surface_facts_from_text(text)
+    if asset and asset.explicit_surfaces:
+        ranked = {
+            "explicit_carrez": 4,
+            "explicit_habitable": 3,
+            "explicit_total": 2,
+            "explicit_built": 1,
+        }
+        candidate = max(
+            asset.explicit_surfaces,
+            key=lambda item: (ranked.get(item.kind, 0), item.confidence),
+        )
+        if candidate.kind in ranked:
+            normalized = str(candidate.value_m2.normalize())
+            quote = candidate.evidence.quote or ""
+            return normalized if normalized in quote else normalized.replace(".", ",")
+    # A bare room/annex measurement must never become the property's surface.
+    match = re.search(
+        r"\b(?:appartement|maison|villa|immeuble|b[âa]timent|local|logement)\b.{0,60}?"
+        r"\b(?:de|surface\s+(?:de\s+)?)\s*([0-9][0-9\s.,]+)\s*m(?:2|²)\b",
+        text,
+        flags=re.I,
+    )
     return clean_text(match.group(1)) if match else None
 
 

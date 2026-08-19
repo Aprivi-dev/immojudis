@@ -155,7 +155,11 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
     raw_sales: list[dict[str, Any]] = []
     if not fetch_details:
         raw_sales = _collect_list_sales(client, max_pages=max_pages, errors=errors)
-        return ScrapeResult(validate_raw_sales("licitor", raw_sales, errors), errors)
+        return ScrapeResult(
+            validate_raw_sales("licitor", raw_sales, errors),
+            errors,
+            getattr(client, "coverage_metrics", lambda: {})(),
+        )
 
     detail_urls = _collect_detail_urls(client, max_pages=max_pages, errors=errors)
     seen: set[str] = set()
@@ -175,7 +179,11 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
         if department and department not in TARGET_DEPARTMENTS:
             continue
         raw_sales.append(sale)
-    return ScrapeResult(validate_raw_sales("licitor", raw_sales, errors), errors)
+    return ScrapeResult(
+        validate_raw_sales("licitor", raw_sales, errors),
+        errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
+    )
 
 
 def parse_licitor_list_html(html: str, page_url: str = AQUITAINE_URL) -> tuple[list[str], list[str]]:

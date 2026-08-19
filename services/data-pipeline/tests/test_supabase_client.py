@@ -1095,6 +1095,10 @@ def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
     )
 
     assert [table for table, _filter in delete_calls] == [
+        "auction_surface_derivations",
+        "auction_surface_derivations",
+        "auction_surface_measurements",
+        "auction_surface_measurements",
         "auction_risks",
         "auction_risks",
         "auction_risk_occurrences",
@@ -1106,6 +1110,60 @@ def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
     ]
     assert delete_calls[0][1].count("https://example.test") == supabase_client.POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE
     assert delete_calls[1][1].count("https://example.test") == 1
+
+
+def test_surface_reasoning_rows_preserve_evidence_and_formula() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_immobilieres",
+            "source_url": "https://example.test/surface-persistence",
+        }
+    )
+    sale.raw_payload["surface_analysis"] = {
+        "version": "surface_reasoning_v1",
+        "selected_derivation_id": "derivation-1",
+        "measurements": [
+            {
+                "measurement_id": "measurement-1",
+                "asset_id": "asset-main",
+                "space_label": "séjour",
+                "category": "habitable",
+                "value_m2": "19.56",
+                "included_in_habitable_sum": True,
+                "confidence": 0.93,
+                "extraction_method": "llm",
+                "evidence": {
+                    "quote": "séjour (19,56 m²)",
+                    "document_label": "PV descriptif",
+                    "page_number": 3,
+                },
+            }
+        ],
+        "candidates": [],
+        "derivations": [
+            {
+                "derivation_id": "derivation-1",
+                "asset_id": "asset-main",
+                "kind": "calculated_room_sum",
+                "value_m2": "19.56",
+                "operand_measurement_ids": ["measurement-1"],
+                "formula": "19.56 = 19.56 m²",
+                "validation_status": "partial",
+                "confidence": 0.68,
+                "warnings": ["room_measurement_set_may_be_incomplete"],
+            }
+        ],
+    }
+
+    measurements = supabase_client._surface_measurement_rows_for_sale(sale)
+    derivations = supabase_client._surface_derivation_rows_for_sale(sale)
+
+    assert measurements[0]["evidence_quote"] == "séjour (19,56 m²)"
+    assert measurements[0]["page_number"] == 3
+    assert measurements[0]["reasoning_version"] == "surface_reasoning_v1"
+    assert derivations[0]["formula"] == "19.56 = 19.56 m²"
+    assert derivations[0]["is_selected"] is True
+    assert derivations[0]["operand_measurement_keys"] == [measurements[0]["measurement_key"]]
 
 
 def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:

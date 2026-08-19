@@ -100,6 +100,7 @@ def scrape_encheres_publiques_aquitaine_result(
     return ScrapeResult(
         validate_raw_sales("encheres_publiques", unique_dicts(raw_sales, "source_url"), errors),
         errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
     )
 
 

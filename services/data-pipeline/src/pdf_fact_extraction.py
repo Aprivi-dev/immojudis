@@ -9,6 +9,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from src.config import PDF_TEXTS_DIR
+from src.enrichment.surface_reasoning import (
+    ExtractedAsset,
+    apply_surface_reasoning_to_sale,
+    extract_surface_facts_from_text,
+)
 from src.models import AuctionSale
 from src.normalize import (
     SURFACE_VALUE_PATTERN,
@@ -81,6 +86,15 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     if risk_notes:
         sale.risk_notes = clean_text(" | ".join(filter(None, [sale.risk_notes, risk_notes])))
 
+    surface_assets = _extract_document_surface_assets(pdf_texts)
+    if surface_assets:
+        apply_surface_reasoning_to_sale(
+            sale,
+            surface_assets,
+            context=combined,
+            source="pdf",
+        )
+
     enriched_marker = "\n\n--- PDF TEXT ENRICHMENT ---\n"
     current_raw = sale.raw_text or ""
     if enriched_marker.strip() in current_raw:
@@ -88,6 +102,45 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     sale.raw_text = clean_text(f"{current_raw}{enriched_marker}{combined[:15000]}")
     sale.raw_payload["document_facts_version"] = DOCUMENT_FACTS_VERSION
     return sale
+
+
+def _extract_document_surface_assets(
+    pdf_texts: list[dict[str, object]] | list[str],
+) -> list[ExtractedAsset]:
+    """Preserve document and page provenance for deterministic surface facts."""
+    assets: list[ExtractedAsset] = []
+    for item in pdf_texts:
+        if not isinstance(item, dict):
+            asset = extract_surface_facts_from_text(str(item), source_kind="pdf")
+            if asset is not None:
+                assets.append(asset)
+            continue
+        label = clean_text(item.get("label"))
+        document_url = clean_text(item.get("url"))
+        pages = item.get("pages")
+        if isinstance(pages, list) and pages:
+            for page in pages:
+                if not isinstance(page, dict):
+                    continue
+                asset = extract_surface_facts_from_text(
+                    clean_text(page.get("text")),
+                    document_url=document_url,
+                    document_label=label,
+                    page_number=page.get("page") if isinstance(page.get("page"), int) else None,
+                    source_kind="pdf",
+                )
+                if asset is not None:
+                    assets.append(asset)
+            continue
+        asset = extract_surface_facts_from_text(
+            clean_text(item.get("text")),
+            document_url=document_url,
+            document_label=label,
+            source_kind="pdf",
+        )
+        if asset is not None:
+            assets.append(asset)
+    return assets
 
 
 def _extract_surface_from_documents(pdf_texts: list[dict[str, object]] | list[str]) -> dict[str, object] | None:
