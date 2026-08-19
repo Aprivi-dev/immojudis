@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 from src.official_sources.base import canonical_json
@@ -29,6 +29,7 @@ class JsonSourceRecord:
     extractor_name: str
     extractor_version: str
     schema_version: str
+    field_provenance: Mapping[str, object] = field(default_factory=dict)
     decision_date: date | None = None
     source_updated_at: datetime | None = None
     published_at: datetime | None = None
@@ -92,6 +93,7 @@ class OutcomeSourceIngestionService:
                 extractor_name=record.extractor_name,
                 extractor_version=record.extractor_version,
                 schema_version=record.schema_version,
+                field_provenance=record.field_provenance,
                 decision_date=record.decision_date,
                 source_updated_at=record.source_updated_at,
             ),

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.official_sources.base import OfficialSourceConfigurationError
+from src.official_sources.base import OfficialSourceConfigurationError, canonical_sha256
 from src.official_sources.judilibre import (
     JudilibreDecision,
     JudilibreHistoryPage,
@@ -48,6 +48,10 @@ def _search_page(
     total: int,
     next_page: str | None = None,
     relaxed: bool = False,
+    decision_date: str = "2025-05-14",
+    jurisdiction: str = "tj",
+    location: str | None = "tj33063",
+    number: str | None = None,
 ) -> JudilibreSearchPage:
     return JudilibreSearchPage.model_validate(
         {
@@ -59,8 +63,10 @@ def _search_page(
             "results": [
                 {
                     "id": identifier,
-                    "jurisdiction": "tj",
-                    "decision_date": "2025-05-14",
+                    "jurisdiction": jurisdiction,
+                    "location": location,
+                    "number": number,
+                    "decision_date": decision_date,
                     "summary": "Donnée sensible qui ne doit pas entrer dans la provenance.",
                     "highlights": {"text": ["Mme Exemple"]},
                 }
@@ -81,10 +87,19 @@ class FakeClient:
         decision: JudilibreDecision,
         pages: list[JudilibreHistoryPage] | None = None,
         search_pages: list[JudilibreSearchPage] | None = None,
+        search_pages_by_window: dict[
+            tuple[date, date, int],
+            JudilibreSearchPage | list[JudilibreSearchPage],
+        ]
+        | None = None,
+        decision_metadata_overrides: dict[str, object] | None = None,
     ) -> None:
         self.returned_decision = decision
         self.pages = pages or []
         self.search_pages = search_pages or []
+        self.search_pages_by_window = search_pages_by_window
+        self.decision_metadata_overrides = decision_metadata_overrides or {}
+        self.search_metadata_by_id: dict[str, dict[str, object]] = {}
         self.decision_ids: list[str] = []
         self.search_queries: list[JudilibreSearchQuery] = []
         self.history_cursors: list[object] = []
@@ -94,7 +109,13 @@ class FakeClient:
         self.events.append(f"decision:{decision_id}")
         self.decision_ids.append(decision_id)
         assert resolve_references is False
-        return self.returned_decision.model_copy(update={"id": decision_id})
+        return self.returned_decision.model_copy(
+            update={
+                "id": decision_id,
+                **self.search_metadata_by_id.get(decision_id, {}),
+                **self.decision_metadata_overrides,
+            }
+        )
 
     def iter_transactional_history(self, cursor: object, *, max_pages: int) -> object:
         self.history_cursors.append(cursor)
@@ -111,7 +132,24 @@ class FakeClient:
     def search(self, query: JudilibreSearchQuery) -> JudilibreSearchPage:
         self.events.append(f"search:{query.page}")
         self.search_queries.append(query)
-        return self.search_pages[query.page]
+        if self.search_pages_by_window is not None:
+            assert query.date_start is not None
+            assert query.date_end is not None
+            response = self.search_pages_by_window[(query.date_start, query.date_end, query.page)]
+            if isinstance(response, list):
+                page = response.pop(0)
+            else:
+                page = response
+        else:
+            page = self.search_pages[query.page]
+        for result in page.results:
+            self.search_metadata_by_id[result.id] = {
+                "decision_date": result.decision_date,
+                "jurisdiction": result.jurisdiction,
+                "location": result.location,
+                "number": result.number,
+            }
+        return page
 
 
 class FakeRepository:
@@ -191,6 +229,29 @@ def test_normalized_projection_excludes_text_summary_zones_and_personal_identiti
     }
 
 
+def test_normalized_projection_exposes_only_hash_anchored_candidate_claims() -> None:
+    decision = _decision(
+        text=(
+            "Mme Exemple ne doit pas être projetée. "
+            "PAR CES MOTIFS Le juge adjuge le bien au prix de 185 000 euros."
+        )
+    )
+
+    projection = normalized_judilibre_decision(decision)
+    serialized = str(projection)
+
+    assert projection["schema_version"] == "judilibre_decision_candidate_v3"
+    assert projection["extraction_status"] == "candidate_facts_extracted"
+    assert projection["training_eligible"] is False
+    assert projection["review_status"] == "pending"
+    assert projection["candidate_grade"] == "C"
+    assert projection["claims"][0]["claim_type"] == "hammer_price_eur"
+    assert projection["claims"][0]["normalized_value"] == "185000.00"
+    assert len(projection["claims"][0]["evidence_hash"]) == 64
+    assert "Mme Exemple" not in serialized
+    assert "adjuge le bien" not in serialized
+
+
 def test_fetch_checks_policy_before_network_and_persists_private_raw_decision() -> None:
     repository = FakeRepository()
     service = FakeService()
@@ -206,9 +267,41 @@ def test_fetch_checks_policy_before_network_and_persists_private_raw_decision() 
     assert record.record_kind == "judicial_decision_candidate"
     assert record.raw_payload["text"].startswith("Mme Exemple")
     assert "text" not in record.normalized_data
+    assert record.extractor_name == "judilibre_candidate_extraction"
+    assert record.extractor_version == "3"
+    assert record.schema_version == "judilibre_decision_candidate_v3"
+    assert record.field_provenance["claims"] == {}
     assert record.decision_date == date(2025, 5, 14)
     assert record.published_at is None
     assert record.request_parameters == {"id": "decision-1", "resolve_references": False}
+
+
+def test_fetch_persists_hash_only_claim_provenance_separately_from_projection() -> None:
+    decision = _decision(
+        text=(
+            "Mme Exemple reste dans le brut privé. "
+            "PAR CES MOTIFS Le juge adjuge le bien pour la somme de 185 000 euros."
+        )
+    )
+    service = FakeService()
+    ingestor = JudilibreOutcomeIngestor(
+        client=FakeClient(decision),
+        repository=FakeRepository(),
+        service=service,
+    )
+
+    assert ingestor.fetch_decision("decision-1") is not None
+
+    record = service.records[0]
+    claim = record.normalized_data["claims"][0]
+    anchor = record.field_provenance["claims"][claim["claim_id"]]
+    assert claim["evidence_hash"] == anchor["evidence_sha256"]
+    assert anchor["raw_artifact_sha256"] == record.normalized_data["raw_representation_sha256"]
+    serialized = str(record.field_provenance)
+    assert "Mme Exemple" not in serialized
+    assert "adjuge le bien" not in serialized
+    assert "quote" not in serialized
+    assert "snippet" not in serialized
 
 
 def test_to_be_deleted_decision_is_tombstoned_without_storage() -> None:
@@ -888,44 +981,75 @@ def test_sync_can_checkpoint_a_terminal_chain_containing_only_untracked_ids() ->
 
 def test_targeted_search_profiles_and_bounds_are_closed() -> None:
     assert set(JUDILIBRE_SEARCH_PROFILES) == {
-        "saisie_immobiliere_v1",
-        "vente_forcee_v1",
-        "adjudication_v1",
-        "surenchere_v1",
+        "saisie_immobiliere_v2",
+        "vente_forcee_v2",
+        "adjudication_v2",
+        "adjuge_v2",
+        "mise_a_prix_v2",
+        "surenchere_v2",
+    }
+    expected_fields = ("dispositif", "motivations", "expose", "summary")
+    assert {
+        profile_id: profile.fields
+        for profile_id, profile in JUDILIBRE_SEARCH_PROFILES.items()
+    } == {
+        "saisie_immobiliere_v2": expected_fields,
+        "vente_forcee_v2": expected_fields,
+        "adjudication_v2": expected_fields,
+        "adjuge_v2": ("dispositif",),
+        "mise_a_prix_v2": expected_fields,
+        "surenchere_v2": expected_fields,
     }
     profile = validate_judilibre_search_request(
-        profile="saisie_immobiliere_v1",
+        profile="saisie_immobiliere_v2",
         date_start=date(2025, 5, 1),
         date_end=date(2025, 5, 31),
         max_results=500,
         today=date(2025, 6, 1),
     )
     assert profile.query == "saisie immobilière"
+    assert profile.definition() == {
+        "profile_id": "saisie_immobiliere_v2",
+        "version": "2",
+        "query": "saisie immobilière",
+        "field": ["dispositif", "motivations", "expose", "summary"],
+        "operator": "exact",
+        "jurisdiction": ["tj"],
+    }
     assert profile.jurisdictions == ("tj",)
     assert profile.operator == "exact"
+    assert JUDILIBRE_SEARCH_PROFILES["adjuge_v2"].definition() == {
+        "profile_id": "adjuge_v2",
+        "version": "2",
+        "query": "adjuge",
+        "field": ["dispositif"],
+        "operator": "exact",
+        "jurisdiction": ["tj"],
+    }
+    assert JUDILIBRE_SEARCH_PROFILES["mise_a_prix_v2"].query == "mise à prix"
 
     invalid_requests = [
         {"profile": "unknown", "date_start": date(2025, 5, 1), "date_end": date(2025, 5, 1), "max_results": 1},
         {
-            "profile": "adjudication_v1",
+            "profile": "adjudication_v2",
             "date_start": date(2025, 5, 2),
             "date_end": date(2025, 5, 1),
             "max_results": 1,
         },
         {
-            "profile": "adjudication_v1",
+            "profile": "adjudication_v2",
             "date_start": date(2025, 3, 31),
             "date_end": date(2025, 5, 1),
             "max_results": 1,
         },
         {
-            "profile": "adjudication_v1",
+            "profile": "adjudication_v2",
             "date_start": date(2025, 5, 1),
             "date_end": date(2025, 5, 2),
-            "max_results": 501,
+            "max_results": 10_001,
         },
         {
-            "profile": "adjudication_v1",
+            "profile": "adjudication_v2",
             "date_start": date(2025, 5, 1),
             "date_end": date(2025, 6, 2),
             "max_results": 1,
@@ -944,12 +1068,16 @@ def test_targeted_search_buffers_complete_metadata_then_persists_with_provenance
             identifiers=("decision-a", "decision-b"),
             total=3,
             next_page="opaque-next-page",
+            location="private-court-code",
+            number="private-case-number",
         ),
         _search_page(
             page=1,
             page_size=2,
             identifiers=("decision-c",),
             total=3,
+            location="private-court-code",
+            number="private-case-number",
         ),
     ]
     repository = FakeRepository()
@@ -958,13 +1086,13 @@ def test_targeted_search_buffers_complete_metadata_then_persists_with_provenance
     ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
 
     summary = ingestor.sync_targeted_search(
-        profile="adjudication_v1",
+        profile="adjudication_v2",
         date_start=date(2025, 5, 1),
         date_end=date(2025, 5, 31),
         max_results=10,
     )
 
-    assert summary.pages == 2
+    assert summary.pages == 4
     assert summary.metadata_examined == 3
     assert summary.reported_total == 3
     assert summary.selected_decisions == 3
@@ -972,6 +1100,8 @@ def test_targeted_search_buffers_complete_metadata_then_persists_with_provenance
     assert summary.truncated is False
     assert summary.checkpoint_advanced is True
     assert client.events == [
+        "search:0",
+        "search:1",
         "search:0",
         "search:1",
         "decision:decision-a",
@@ -982,23 +1112,415 @@ def test_targeted_search_buffers_complete_metadata_then_persists_with_provenance
     assert first_query.query == "adjudication"
     assert first_query.operator == "exact"
     assert first_query.jurisdiction == ["tj"]
-    assert first_query.field == ["dispositif", "motivations", "expose", "sommaire"]
+    assert first_query.field == ["dispositif", "motivations", "expose", "summary"]
     first_record = service.records[0]
-    assert first_record.source_cursor["profile_id"] == "adjudication_v1"
-    assert first_record.source_cursor["result_rank"] == 0
-    assert first_record.source_cursor["reported_total"] == 3
-    assert first_record.request_parameters["discovery_query"]["query"] == "adjudication"
-    assert first_record.request_parameters["id"] == "decision-a"
+    expected_profile = {
+        "profile_id": "adjudication_v2",
+        "version": "2",
+        "query": "adjudication",
+        "field": ["dispositif", "motivations", "expose", "summary"],
+        "operator": "exact",
+        "jurisdiction": ["tj"],
+    }
+    expected_query = {
+        "query": "adjudication",
+        "field": ["dispositif", "motivations", "expose", "summary"],
+        "operator": "exact",
+        "jurisdiction": ["tj"],
+        "date_start": "2025-05-01",
+        "date_end": "2025-05-31",
+        "sort": "date",
+        "order": "asc",
+        "resolve_references": False,
+    }
+    expected_profile_hash = JUDILIBRE_SEARCH_PROFILES["adjudication_v2"].fingerprint
+    expected_window = {"date_start": "2025-05-01", "date_end": "2025-05-31"}
+    expected_metadata_hash = canonical_sha256(
+        {"ordered_decision_ids": ["decision-a", "decision-b", "decision-c"]}
+    )
+    expected_plan = [
+        {
+            "leaf_window": expected_window,
+            "split_path": [],
+            "leaf_reported_total": 3,
+            "metadata_count": 3,
+            "metadata_ids_sha256": expected_metadata_hash,
+            "metadata_stability_passes": 2,
+        }
+    ]
+    expected_plan_hash = canonical_sha256(
+        {
+            "root_window": expected_window,
+            "root_reported_total": 3,
+            "leaves": expected_plan,
+        }
+    )
+    assert first_record.source_cursor == {
+        "discovery_mode": "targeted_search",
+        "profile_id": "adjudication_v2",
+        "profile_version": "2",
+        "profile_hash": expected_profile_hash,
+        "resolved_query": expected_query,
+        "root_window": expected_window,
+        "leaf_window": expected_window,
+        "split_path": [],
+        "root_reported_total": 3,
+        "leaf_reported_total": 3,
+        "split_plan_hash": expected_plan_hash,
+        "metadata_count": 3,
+        "metadata_ids_sha256": expected_metadata_hash,
+        "metadata_stability_passes": 2,
+        "result_page": 0,
+        "page_rank": 0,
+        "result_rank": 0,
+        "reported_total": 3,
+    }
+    assert first_record.request_parameters == {
+        "discovery_profile": expected_profile,
+        "discovery_profile_hash": expected_profile_hash,
+        "discovery_query": expected_query,
+        "discovery_root_window": expected_window,
+        "discovery_leaf_window": expected_window,
+        "discovery_split_path": [],
+        "discovery_root_reported_total": 3,
+        "discovery_leaf_reported_total": 3,
+        "discovery_split_plan_hash": expected_plan_hash,
+        "discovery_metadata_count": 3,
+        "discovery_metadata_ids_sha256": expected_metadata_hash,
+        "discovery_metadata_stability_passes": 2,
+        "id": "decision-a",
+        "resolve_references": False,
+    }
     serialized_provenance = str((first_record.source_cursor, first_record.request_parameters))
     assert "Mme Exemple" not in serialized_provenance
     assert "Donnée sensible" not in serialized_provenance
+    assert "private-court-code" not in serialized_provenance
+    assert "private-case-number" not in serialized_provenance
     checkpoint = repository.checkpoints[0]
-    assert checkpoint["stream_key"] == ("targeted_search:adjudication_v1:2025-05-01:2025-05-31")
+    assert checkpoint["stream_key"] == (
+        f"targeted_search:adjudication_v2:2:{expected_profile_hash}:"
+        "2025-05-01:2025-05-31"
+    )
     assert checkpoint["source_cursor"]["metadata_complete"] is True
+    assert checkpoint["source_cursor"]["root_window"] == expected_window
+    assert checkpoint["source_cursor"]["split_plan"] == expected_plan
+    assert checkpoint["source_cursor"]["split_plan_hash"] == expected_plan_hash
+    assert checkpoint["source_cursor"]["metadata_stability_passes"] == 2
+    assert "decision-a" not in str(checkpoint["source_cursor"])
     assert checkpoint["watermark_at"] == datetime(2025, 6, 1, tzinfo=UTC)
 
 
-def test_targeted_search_refuses_truncation_without_decision_fetch_or_checkpoint() -> None:
+def test_targeted_search_rejects_an_ordered_id_change_between_metadata_passes() -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    client = FakeClient(
+        _decision(),
+        search_pages_by_window={
+            (date(2025, 5, 1), date(2025, 5, 31), 0): [
+                _search_page(
+                    page=0,
+                    page_size=2,
+                    identifiers=("decision-a", "decision-b"),
+                    total=2,
+                ),
+                _search_page(
+                    page=0,
+                    page_size=2,
+                    identifiers=("decision-b", "decision-a"),
+                    total=2,
+                ),
+            ]
+        },
+    )
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    with pytest.raises(OfficialSourceConfigurationError, match="metadata changed"):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 1),
+            date_end=date(2025, 5, 31),
+            max_results=2,
+        )
+
+    assert len(client.search_queries) == 2
+    assert client.decision_ids == []
+    assert service.records == []
+    assert repository.checkpoints == []
+
+
+@pytest.mark.parametrize(
+    ("changed_field", "changed_value"),
+    [
+        ("decision_date", "2025-05-15"),
+        ("jurisdiction", "TJ"),
+        ("location", "tj75056"),
+        ("number", "changed-case-number"),
+    ],
+)
+def test_targeted_search_rejects_metadata_field_drift_between_stability_passes(
+    changed_field: str,
+    changed_value: str,
+) -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    changed_metadata = {changed_field: changed_value}
+    client = FakeClient(
+        _decision(),
+        search_pages_by_window={
+            (date(2025, 5, 1), date(2025, 5, 31), 0): [
+                _search_page(
+                    page=0,
+                    page_size=1,
+                    identifiers=("decision-a",),
+                    total=1,
+                ),
+                _search_page(
+                    page=0,
+                    page_size=1,
+                    identifiers=("decision-a",),
+                    total=1,
+                    **changed_metadata,
+                ),
+            ]
+        },
+    )
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    with pytest.raises(OfficialSourceConfigurationError, match="metadata changed"):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 1),
+            date_end=date(2025, 5, 31),
+            max_results=1,
+        )
+
+    assert len(client.search_queries) == 2
+    assert client.decision_ids == []
+    assert service.records == []
+    assert repository.checkpoints == []
+
+
+@pytest.mark.parametrize(
+    ("changed_field", "changed_value"),
+    [
+        ("decision_date", date(2025, 5, 15)),
+        ("jurisdiction", "ca"),
+        ("location", "tj75056"),
+        ("number", "changed-case-number"),
+    ],
+)
+def test_targeted_search_rejects_decision_metadata_drift_before_persistence(
+    changed_field: str,
+    changed_value: object,
+) -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    search_metadata = {"number": "original-case-number"} if changed_field == "number" else {}
+    client = FakeClient(
+        _decision(),
+        search_pages=[
+            _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=1,
+                **search_metadata,
+            )
+        ],
+        decision_metadata_overrides={changed_field: changed_value},
+    )
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    with pytest.raises(OfficialSourceConfigurationError, match="metadata changed"):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 1),
+            date_end=date(2025, 5, 31),
+            max_results=1,
+        )
+
+    assert client.decision_ids == ["decision-a"]
+    assert service.records == []
+    assert repository.deletions == []
+    assert repository.checkpoints == []
+
+
+def test_targeted_search_rejects_decision_identifier_drift_before_persistence() -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    client = FakeClient(
+        _decision(),
+        search_pages=[
+            _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=1,
+            )
+        ],
+        decision_metadata_overrides={"id": "different-decision"},
+    )
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    with pytest.raises(OfficialSourceConfigurationError, match="unexpected decision identifier"):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 1),
+            date_end=date(2025, 5, 31),
+            max_results=1,
+        )
+
+    assert client.decision_ids == ["decision-a"]
+    assert service.records == []
+    assert repository.deletions == []
+    assert repository.checkpoints == []
+
+
+def test_targeted_search_allows_decision_number_when_search_did_not_supply_one() -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    client = FakeClient(
+        _decision(),
+        search_pages=[
+            _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=1,
+                number=None,
+            )
+        ],
+        decision_metadata_overrides={"number": "decision-only-case-number"},
+    )
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    summary = ingestor.sync_targeted_search(
+        profile="adjudication_v2",
+        date_start=date(2025, 5, 1),
+        date_end=date(2025, 5, 31),
+        max_results=1,
+    )
+
+    assert summary.stored_versions == 1
+    assert len(service.records) == 1
+    assert repository.checkpoints
+
+
+def test_targeted_search_rejects_a_total_change_between_metadata_passes() -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    client = FakeClient(
+        _decision(),
+        search_pages_by_window={
+            (date(2025, 5, 1), date(2025, 5, 31), 0): [
+                _search_page(
+                    page=0,
+                    page_size=2,
+                    identifiers=("decision-a",),
+                    total=1,
+                ),
+                _search_page(
+                    page=0,
+                    page_size=2,
+                    identifiers=("decision-a", "decision-b"),
+                    total=2,
+                ),
+            ]
+        },
+    )
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    with pytest.raises(OfficialSourceConfigurationError, match="total changed"):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 1),
+            date_end=date(2025, 5, 31),
+            max_results=2,
+        )
+
+    assert len(client.search_queries) == 2
+    assert client.decision_ids == []
+    assert service.records == []
+    assert repository.checkpoints == []
+
+
+def test_targeted_search_adaptively_bisects_and_persists_the_complete_window() -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    identifiers = tuple(f"decision-{index:03d}" for index in range(501))
+    search_pages_by_window = {
+        (date(2025, 5, 1), date(2025, 5, 2), 0): _search_page(
+            page=0,
+            page_size=50,
+            identifiers=identifiers[:50],
+            total=501,
+            next_page="opaque-next-page",
+            decision_date="2025-05-01",
+        )
+    }
+    for window_date, window_identifiers in (
+        (date(2025, 5, 1), identifiers[:250]),
+        (date(2025, 5, 2), identifiers[250:]),
+    ):
+        for page_index, offset in enumerate(range(0, len(window_identifiers), 50)):
+            page_identifiers = window_identifiers[offset : offset + 50]
+            search_pages_by_window[(window_date, window_date, page_index)] = _search_page(
+                page=page_index,
+                page_size=50,
+                identifiers=page_identifiers,
+                total=len(window_identifiers),
+                next_page=(
+                    "opaque-next-page"
+                    if offset + len(page_identifiers) < len(window_identifiers)
+                    else None
+                ),
+                decision_date=window_date.isoformat(),
+            )
+    client = FakeClient(
+        _decision(),
+        search_pages_by_window=search_pages_by_window,
+    )
+    client.page_size = 50
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    summary = ingestor.sync_targeted_search(
+        profile="adjudication_v2",
+        date_start=date(2025, 5, 1),
+        date_end=date(2025, 5, 2),
+        max_results_per_window=500,
+        max_total_results=501,
+    )
+
+    assert summary.pages == 23
+    assert summary.truncated is False
+    assert summary.reported_total == 501
+    assert summary.metadata_examined == 501
+    assert summary.selected_decisions == 501
+    assert client.decision_ids == list(identifiers)
+    queried_windows = [(query.date_start, query.date_end) for query in client.search_queries]
+    assert queried_windows[0] == (date(2025, 5, 1), date(2025, 5, 2))
+    assert queried_windows[1:11] == [(date(2025, 5, 1), date(2025, 5, 1))] * 10
+    assert queried_windows[11:] == [(date(2025, 5, 2), date(2025, 5, 2))] * 12
+    assert service.records[0].source_cursor["root_window"] == {
+        "date_start": "2025-05-01",
+        "date_end": "2025-05-02",
+    }
+    assert service.records[0].source_cursor["leaf_window"] == {
+        "date_start": "2025-05-01",
+        "date_end": "2025-05-01",
+    }
+    assert service.records[0].source_cursor["split_path"] == ["left"]
+    assert service.records[250].source_cursor["split_path"] == ["right"]
+    assert service.records[0].source_cursor["root_reported_total"] == 501
+    assert service.records[0].source_cursor["leaf_reported_total"] == 250
+    assert len(service.records[0].source_cursor["split_plan_hash"]) == 64
+    assert len(repository.checkpoints) == 1
+    assert repository.checkpoints[0]["source_cursor"]["reported_total"] == 501
+    assert repository.checkpoints[0]["source_cursor"]["max_results_per_window"] == 500
+    assert repository.checkpoints[0]["source_cursor"]["max_total_results"] == 501
+
+
+def test_targeted_search_rejects_a_root_total_above_the_global_limit_before_fetching() -> None:
     repository = FakeRepository()
     service = FakeService()
     client = FakeClient(
@@ -1008,24 +1530,240 @@ def test_targeted_search_refuses_truncation_without_decision_fetch_or_checkpoint
                 page=0,
                 page_size=2,
                 identifiers=("decision-a", "decision-b"),
-                total=11,
+                total=4,
+                next_page="next",
+                decision_date="2025-05-01",
+            )
+        ],
+    )
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    with pytest.raises(OfficialSourceConfigurationError, match="max_total_results"):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 1),
+            date_end=date(2025, 5, 2),
+            max_results_per_window=2,
+            max_total_results=3,
+        )
+
+    assert len(client.search_queries) == 1
+    assert client.decision_ids == []
+    assert service.records == []
+    assert repository.checkpoints == []
+
+
+def test_targeted_search_recursively_bisects_in_chronological_order() -> None:
+    repository = FakeRepository()
+    client = FakeClient(
+        _decision(),
+        search_pages_by_window={
+            (date(2025, 5, 1), date(2025, 5, 3), 0): _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=3,
+                next_page="next",
+                decision_date="2025-05-01",
+            ),
+            (date(2025, 5, 1), date(2025, 5, 2), 0): _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=2,
+                next_page="next",
+                decision_date="2025-05-01",
+            ),
+            (date(2025, 5, 1), date(2025, 5, 1), 0): _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=1,
+                decision_date="2025-05-01",
+            ),
+            (date(2025, 5, 2), date(2025, 5, 2), 0): _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-b",),
+                total=1,
+                decision_date="2025-05-02",
+            ),
+            (date(2025, 5, 3), date(2025, 5, 3), 0): _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-c",),
+                total=1,
+                decision_date="2025-05-03",
+            ),
+        },
+    )
+    ingestor = JudilibreOutcomeIngestor(
+        client=client,
+        repository=repository,
+        service=FakeService(),
+    )
+
+    summary = ingestor.sync_targeted_search(
+        profile="adjudication_v2",
+        date_start=date(2025, 5, 1),
+        date_end=date(2025, 5, 3),
+        max_results_per_window=1,
+        max_total_results=3,
+    )
+
+    assert summary.pages == 8
+    assert summary.selected_decisions == 3
+    assert client.decision_ids == ["decision-a", "decision-b", "decision-c"]
+    assert [(query.date_start, query.date_end) for query in client.search_queries] == [
+        (date(2025, 5, 1), date(2025, 5, 3)),
+        (date(2025, 5, 1), date(2025, 5, 2)),
+        (date(2025, 5, 1), date(2025, 5, 1)),
+        (date(2025, 5, 1), date(2025, 5, 1)),
+        (date(2025, 5, 2), date(2025, 5, 2)),
+        (date(2025, 5, 2), date(2025, 5, 2)),
+        (date(2025, 5, 3), date(2025, 5, 3)),
+        (date(2025, 5, 3), date(2025, 5, 3)),
+    ]
+
+
+def test_targeted_search_fails_closed_when_one_day_exceeds_the_result_ceiling() -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    client = FakeClient(
+        _decision(),
+        search_pages=[
+            _search_page(
+                page=0,
+                page_size=2,
+                identifiers=("decision-a", "decision-b"),
+                total=3,
                 next_page="opaque-next-page",
             )
         ],
     )
     ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
 
-    summary = ingestor.sync_targeted_search(
-        profile="adjudication_v1",
-        date_start=date(2025, 5, 1),
-        date_end=date(2025, 5, 31),
-        max_results=10,
-    )
+    with pytest.raises(OfficialSourceConfigurationError, match="single day"):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 14),
+            date_end=date(2025, 5, 14),
+            max_results_per_window=2,
+            max_total_results=3,
+        )
 
-    assert summary.truncated is True
-    assert summary.reported_total == 11
-    assert summary.metadata_examined == 2
-    assert summary.selected_decisions == 0
+    assert client.decision_ids == []
+    assert service.records == []
+    assert repository.checkpoints == []
+
+
+def test_targeted_search_rejects_duplicate_decisions_before_fetching() -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    client = FakeClient(
+        _decision(),
+        search_pages=[
+            _search_page(
+                page=0,
+                page_size=2,
+                identifiers=("decision-a", "decision-a"),
+                total=2,
+            )
+        ],
+    )
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    with pytest.raises(OfficialSourceConfigurationError, match="duplicate decision"):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 1),
+            date_end=date(2025, 5, 31),
+            max_results=2,
+        )
+
+    assert client.decision_ids == []
+    assert service.records == []
+    assert repository.checkpoints == []
+
+
+def test_targeted_search_rejects_a_duplicate_decision_across_pages() -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    client = FakeClient(
+        _decision(),
+        search_pages=[
+            _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=2,
+                next_page="next",
+            ),
+            _search_page(
+                page=1,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=2,
+            ),
+        ],
+    )
+    client.page_size = 1
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    with pytest.raises(OfficialSourceConfigurationError, match="duplicate decision"):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 1),
+            date_end=date(2025, 5, 31),
+            max_results=2,
+        )
+
+    assert client.decision_ids == []
+    assert service.records == []
+    assert repository.checkpoints == []
+
+
+def test_targeted_search_rejects_a_duplicate_decision_across_leaf_windows() -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    client = FakeClient(
+        _decision(),
+        search_pages_by_window={
+            (date(2025, 5, 1), date(2025, 5, 2), 0): _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=2,
+                next_page="next",
+                decision_date="2025-05-01",
+            ),
+            (date(2025, 5, 1), date(2025, 5, 1), 0): _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=1,
+                decision_date="2025-05-01",
+            ),
+            (date(2025, 5, 2), date(2025, 5, 2), 0): _search_page(
+                page=0,
+                page_size=1,
+                identifiers=("decision-a",),
+                total=1,
+                decision_date="2025-05-02",
+            ),
+        },
+    )
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    with pytest.raises(OfficialSourceConfigurationError, match="duplicate decision"):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 1),
+            date_end=date(2025, 5, 2),
+            max_results_per_window=1,
+            max_total_results=2,
+        )
+
     assert client.decision_ids == []
     assert service.records == []
     assert repository.checkpoints == []
@@ -1053,7 +1791,7 @@ def test_targeted_search_rejects_relaxed_results_without_checkpoint() -> None:
 
     with pytest.raises(OfficialSourceConfigurationError, match="relaxed"):
         ingestor.sync_targeted_search(
-            profile="adjudication_v1",
+            profile="adjudication_v2",
             date_start=date(2025, 5, 1),
             date_end=date(2025, 5, 31),
             max_results=1,
@@ -1084,7 +1822,7 @@ def test_targeted_search_does_not_checkpoint_after_persistence_failure() -> None
 
     with pytest.raises(RuntimeError, match="persistence failed"):
         ingestor.sync_targeted_search(
-            profile="adjudication_v1",
+            profile="adjudication_v2",
             date_start=date(2025, 5, 1),
             date_end=date(2025, 5, 31),
             max_results=1,
@@ -1106,7 +1844,7 @@ def test_targeted_search_can_checkpoint_an_empty_complete_window() -> None:
     )
 
     summary = ingestor.sync_targeted_search(
-        profile="surenchere_v1",
+        profile="surenchere_v2",
         date_start=date(2025, 5, 1),
         date_end=date(2025, 5, 1),
         max_results=1,
@@ -1129,10 +1867,45 @@ def test_targeted_search_rejects_bounds_before_policy_or_network() -> None:
 
     with pytest.raises(ValueError, match="31 days"):
         ingestor.sync_targeted_search(
-            profile="adjudication_v1",
+            profile="adjudication_v2",
             date_start=date(2025, 1, 1),
             date_end=date(2025, 2, 1),
             max_results=10,
+        )
+
+    assert repository.policies == []
+    assert client.events == []
+
+
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {},
+        {"max_results_per_window": 1},
+        {"max_total_results": 1},
+        {"max_results": 1, "max_results_per_window": 1, "max_total_results": 1},
+        {"max_results_per_window": 501, "max_total_results": 501},
+        {"max_results_per_window": 2, "max_total_results": 1},
+        {"max_results_per_window": 1, "max_total_results": 10_001},
+    ],
+)
+def test_targeted_search_rejects_invalid_limit_combinations_before_policy_or_network(
+    limits: dict[str, int],
+) -> None:
+    repository = FakeRepository()
+    client = FakeClient(_decision())
+    ingestor = JudilibreOutcomeIngestor(
+        client=client,
+        repository=repository,
+        service=FakeService(),
+    )
+
+    with pytest.raises(ValueError):
+        ingestor.sync_targeted_search(
+            profile="adjudication_v2",
+            date_start=date(2025, 5, 1),
+            date_end=date(2025, 5, 1),
+            **limits,
         )
 
     assert repository.policies == []

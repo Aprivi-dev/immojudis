@@ -13,15 +13,17 @@ on:
           - bootstrap
           - sync
       profile:
-        description: "Reviewed judicial-sale search profile; only used for bootstrap"
+        description: "Allow-listed judicial-sale search profile; only used for bootstrap"
         required: true
-        default: saisie_immobiliere_v1
+        default: saisie_immobiliere_v2
         type: choice
         options:
-          - saisie_immobiliere_v1
-          - vente_forcee_v1
-          - adjudication_v1
-          - surenchere_v1
+          - saisie_immobiliere_v2
+          - vente_forcee_v2
+          - adjudication_v2
+          - adjuge_v2
+          - mise_a_prix_v2
+          - surenchere_v2
       date_start:
         description: "Bootstrap start date (YYYY-MM-DD); required for bootstrap"
         required: false
@@ -30,10 +32,15 @@ on:
         description: "Bootstrap end date (YYYY-MM-DD); required for bootstrap"
         required: false
         type: string
-      max_results:
-        description: "Maximum targeted-search results (1..500)"
+      max_results_per_window:
+        description: "Maximum results in one adaptive date window (1..500)"
         required: true
-        default: "100"
+        default: "250"
+        type: string
+      max_total_results:
+        description: "Maximum results fetched across the complete bootstrap (1..10000)"
+        required: true
+        default: "500"
         type: string
       since:
         description: "Tracked-sync ISO-8601 boundary; only used when no checkpoint exists"
@@ -80,7 +87,8 @@ jobs:
       REQUESTED_PROFILE: ${{ inputs.profile }}
       REQUESTED_DATE_START: ${{ inputs.date_start }}
       REQUESTED_DATE_END: ${{ inputs.date_end }}
-      REQUESTED_MAX_RESULTS: ${{ inputs.max_results }}
+      REQUESTED_MAX_RESULTS_PER_WINDOW: ${{ inputs.max_results_per_window }}
+      REQUESTED_MAX_TOTAL_RESULTS: ${{ inputs.max_total_results }}
       REQUESTED_MAX_PAGES: ${{ inputs.max_pages }}
       REQUESTED_MAX_RECORDS: ${{ inputs.max_records }}
       REQUESTED_BOOTSTRAP_CONFIRMATION: ${{ inputs.confirm_bootstrap }}
@@ -119,7 +127,7 @@ jobs:
               exit 1
             fi
             case "$REQUESTED_PROFILE" in
-              saisie_immobiliere_v1|vente_forcee_v1|adjudication_v1|surenchere_v1) ;;
+              saisie_immobiliere_v2|vente_forcee_v2|adjudication_v2|adjuge_v2|mise_a_prix_v2|surenchere_v2) ;;
               *)
                 echo "profile is not an approved targeted-search profile" >&2
                 exit 1
@@ -144,9 +152,20 @@ jobs:
               echo "bootstrap date window must contain between 1 and 31 calendar days" >&2
               exit 1
             fi
-            if ! [[ "$REQUESTED_MAX_RESULTS" =~ ^[0-9]+$ ]] ||
-              [ "$REQUESTED_MAX_RESULTS" -lt 1 ] || [ "$REQUESTED_MAX_RESULTS" -gt 500 ]; then
-              echo "max_results must be an integer between 1 and 500" >&2
+            if ! [[ "$REQUESTED_MAX_RESULTS_PER_WINDOW" =~ ^[0-9]+$ ]] ||
+              [ "$REQUESTED_MAX_RESULTS_PER_WINDOW" -lt 1 ] ||
+              [ "$REQUESTED_MAX_RESULTS_PER_WINDOW" -gt 500 ]; then
+              echo "max_results_per_window must be an integer between 1 and 500" >&2
+              exit 1
+            fi
+            if ! [[ "$REQUESTED_MAX_TOTAL_RESULTS" =~ ^[0-9]+$ ]] ||
+              [ "$REQUESTED_MAX_TOTAL_RESULTS" -lt 1 ] ||
+              [ "$REQUESTED_MAX_TOTAL_RESULTS" -gt 10000 ]; then
+              echo "max_total_results must be an integer between 1 and 10000" >&2
+              exit 1
+            fi
+            if [ "$REQUESTED_MAX_RESULTS_PER_WINDOW" -gt "$REQUESTED_MAX_TOTAL_RESULTS" ]; then
+              echo "max_results_per_window must not exceed max_total_results" >&2
               exit 1
             fi
 
@@ -212,17 +231,11 @@ jobs:
       run:
         working-directory: services/data-pipeline
     env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       JUDILIBRE_ENABLED: ${{ vars.JUDILIBRE_ENABLED }}
       JUDILIBRE_DRY_RUN: "false"
-      JUDILIBRE_BASE_URL: ${{ vars.JUDILIBRE_BASE_URL || 'https://api.piste.gouv.fr/cassation/judilibre/v1.0' }}
+      JUDILIBRE_BASE_URL: ${{ vars.JUDILIBRE_BASE_URL }}
       JUDILIBRE_AUTH_MODE: ${{ vars.JUDILIBRE_AUTH_MODE || 'auto' }}
-      JUDILIBRE_KEY_ID: ${{ secrets.JUDILIBRE_KEY_ID }}
       JUDILIBRE_OAUTH_TOKEN_URL: ${{ vars.JUDILIBRE_OAUTH_TOKEN_URL }}
-      JUDILIBRE_OAUTH_CLIENT_ID: ${{ secrets.JUDILIBRE_OAUTH_CLIENT_ID }}
-      JUDILIBRE_OAUTH_CLIENT_SECRET: ${{ secrets.JUDILIBRE_OAUTH_CLIENT_SECRET }}
       JUDILIBRE_OAUTH_SCOPE: ${{ vars.JUDILIBRE_OAUTH_SCOPE || 'openid' }}
       JUDILIBRE_OAUTH_CLIENT_AUTH_METHOD: ${{ vars.JUDILIBRE_OAUTH_CLIENT_AUTH_METHOD || 'basic' }}
       JUDILIBRE_HISTORY_PAGE_SIZE: ${{ vars.JUDILIBRE_HISTORY_PAGE_SIZE || '100' }}
@@ -233,7 +246,8 @@ jobs:
       REQUESTED_PROFILE: ${{ inputs.profile }}
       REQUESTED_DATE_START: ${{ inputs.date_start }}
       REQUESTED_DATE_END: ${{ inputs.date_end }}
-      REQUESTED_MAX_RESULTS: ${{ inputs.max_results }}
+      REQUESTED_MAX_RESULTS_PER_WINDOW: ${{ inputs.max_results_per_window }}
+      REQUESTED_MAX_TOTAL_RESULTS: ${{ inputs.max_total_results }}
       REQUESTED_SINCE: ${{ inputs.since }}
       REQUESTED_MAX_PAGES: ${{ inputs.max_pages }}
       REQUESTED_MAX_RECORDS: ${{ inputs.max_records }}
@@ -252,10 +266,17 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Validate server and PISTE credentials
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          JUDILIBRE_KEY_ID: ${{ secrets.JUDILIBRE_KEY_ID }}
+          JUDILIBRE_OAUTH_CLIENT_ID: ${{ secrets.JUDILIBRE_OAUTH_CLIENT_ID }}
+          JUDILIBRE_OAUTH_CLIENT_SECRET: ${{ secrets.JUDILIBRE_OAUTH_CLIENT_SECRET }}
         run: |
           set -euo pipefail
 
-          required_variables=(SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY)
+          required_variables=(SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY JUDILIBRE_BASE_URL)
           for variable_name in "${required_variables[@]}"; do
             if [ -z "${!variable_name:-}" ]; then
               echo "$variable_name is required for Judilibre synchronization" >&2
@@ -301,8 +322,22 @@ jobs:
               ;;
           esac
 
+      - name: Verify the live Judilibre contract without writing data
+        env:
+          JUDILIBRE_KEY_ID: ${{ secrets.JUDILIBRE_KEY_ID }}
+          JUDILIBRE_OAUTH_CLIENT_ID: ${{ secrets.JUDILIBRE_OAUTH_CLIENT_ID }}
+          JUDILIBRE_OAUTH_CLIENT_SECRET: ${{ secrets.JUDILIBRE_OAUTH_CLIENT_SECRET }}
+        run: python scripts/check_judilibre_contract.py
+
       - name: Bootstrap one bounded targeted-search profile
         if: needs.gate.outputs.should_bootstrap == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          JUDILIBRE_KEY_ID: ${{ secrets.JUDILIBRE_KEY_ID }}
+          JUDILIBRE_OAUTH_CLIENT_ID: ${{ secrets.JUDILIBRE_OAUTH_CLIENT_ID }}
+          JUDILIBRE_OAUTH_CLIENT_SECRET: ${{ secrets.JUDILIBRE_OAUTH_CLIENT_SECRET }}
         run: |
           set -euo pipefail
 
@@ -310,10 +345,18 @@ jobs:
             --profile "$REQUESTED_PROFILE" \
             --date-start "$REQUESTED_DATE_START" \
             --date-end "$REQUESTED_DATE_END" \
-            --max-results "$REQUESTED_MAX_RESULTS"
+            --max-results-per-window "$REQUESTED_MAX_RESULTS_PER_WINDOW" \
+            --max-total-results "$REQUESTED_MAX_TOTAL_RESULTS"
 
       - name: Refresh tracked decisions from the durable checkpoint
         if: needs.gate.outputs.should_sync == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          JUDILIBRE_KEY_ID: ${{ secrets.JUDILIBRE_KEY_ID }}
+          JUDILIBRE_OAUTH_CLIENT_ID: ${{ secrets.JUDILIBRE_OAUTH_CLIENT_ID }}
+          JUDILIBRE_OAUTH_CLIENT_SECRET: ${{ secrets.JUDILIBRE_OAUTH_CLIENT_SECRET }}
         run: |
           set -euo pipefail
 
@@ -340,7 +383,8 @@ jobs:
               echo "- Operation: targeted-search bootstrap"
               echo "- Profile: \`$REQUESTED_PROFILE\`"
               echo "- Date window: \`$REQUESTED_DATE_START\` through \`$REQUESTED_DATE_END\`"
-              echo "- Result ceiling: \`$REQUESTED_MAX_RESULTS\`"
+              echo "- Per-window result ceiling: \`$REQUESTED_MAX_RESULTS_PER_WINDOW\`"
+              echo "- Global result ceiling: \`$REQUESTED_MAX_TOTAL_RESULTS\`"
             else
               echo "- Operation: bounded transactional refresh of tracked decisions only"
               echo "- Stream key: \`transactional_history\`"

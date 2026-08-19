@@ -24,7 +24,7 @@ const startScrollSchema = z.object({
 });
 const AUTOMATIC_LLM_ENRICHMENT = true;
 const LLM_BACKFILL_SOURCE = "llm-description-backfill";
-const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v6_display";
+const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v8_qwen37_structured_display";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -477,7 +477,7 @@ export async function startAdminScroll(
     .limit(1);
 
   if (inserted.error) {
-    throw new Error(inserted.error.message ?? "Impossible de créer la demande de scroll.");
+    throw new Error(inserted.error.message ?? "Impossible de créer la demande de collecte.");
   }
 
   const run = normalizeRun((inserted.data ?? [])[0] ?? {});
@@ -602,7 +602,7 @@ export async function startAdminScroll(
         errors: webhookErrors,
       },
       message: response.ok
-        ? "Demande envoyée au runner de scroll."
+        ? "Demande envoyée au runner de collecte."
         : `Demande enregistrée, mais le webhook a répondu HTTP ${response.status}.`,
     };
   } catch (error) {

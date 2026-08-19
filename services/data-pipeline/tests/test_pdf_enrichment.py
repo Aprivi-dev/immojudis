@@ -11,6 +11,7 @@ import pytest
 from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
 from src.pdf_enrichment import (
+    DOCUMENT_FACTS_VERSION,
     PdfEnrichmentStats,
     PublicDocumentTarget,
     _adaptive_docling_timeout,
@@ -224,9 +225,9 @@ def test_enrich_sale_from_ccv_replaces_implausible_source_starting_price() -> No
 
     assert sale.starting_price_eur == Decimal("10500")
     assert "starting_price_conflict_resolved" in sale.quality_flags
-    assert sale.raw_payload["document_facts_version"] == "document_facts_v1_starting_price"
+    assert sale.raw_payload["document_facts_version"] == DOCUMENT_FACTS_VERSION
     assert sale.raw_payload["starting_price_extraction"] == {
-        "version": "document_facts_v1_starting_price",
+        "version": DOCUMENT_FACTS_VERSION,
         "source": "pdf",
         "status": "resolved",
         "value_eur": 10500.0,
@@ -267,7 +268,7 @@ def test_enrich_sale_from_ccv_ignores_bid_guarantee_minimum() -> None:
 
     assert sale.starting_price_eur == Decimal("11")
     assert "starting_price_extraction" not in sale.raw_payload
-    assert sale.raw_payload["document_facts_version"] == "document_facts_v1_starting_price"
+    assert sale.raw_payload["document_facts_version"] == DOCUMENT_FACTS_VERSION
 
 
 def test_enrich_sale_from_ccv_keeps_plausible_current_price_on_conflict() -> None:

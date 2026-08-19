@@ -77,6 +77,7 @@ def scrape_info_encheres_aquitaine_result(
     return ScrapeResult(
         validate_raw_sales("info_encheres", unique_dicts(raw_sales, "source_url"), errors),
         errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
     )
 
 

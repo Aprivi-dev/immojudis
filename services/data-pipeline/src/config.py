@@ -132,9 +132,9 @@ def load_settings() -> dict[str, str | float | None]:
         "llm_enabled": os.getenv("LLM_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
         "llm_provider": os.getenv("LLM_PROVIDER", "replicate").lower(),
         "replicate_api_token": os.getenv("REPLICATE_API_TOKEN"),
-        "replicate_model": os.getenv("REPLICATE_MODEL", "google/gemini-2.5-flash"),
+        "replicate_model": os.getenv("REPLICATE_MODEL", "qwen/qwen3-7-plus"),
         "replicate_temperature": float(os.getenv("REPLICATE_TEMPERATURE", "0")),
-        "replicate_max_tokens": int(os.getenv("REPLICATE_MAX_TOKENS", "1024")),
+        "replicate_max_tokens": int(os.getenv("REPLICATE_MAX_TOKENS", "8192")),
         "replicate_timeout_seconds": float(os.getenv("REPLICATE_TIMEOUT_SECONDS", "180")),
         "replicate_wait_seconds": int(os.getenv("REPLICATE_WAIT_SECONDS", "60")),
         "replicate_cancel_after": os.getenv("REPLICATE_CANCEL_AFTER", "5m"),
@@ -166,14 +166,30 @@ def load_settings() -> dict[str, str | float | None]:
             0,
             float(os.getenv("PIPELINE_LLM_FAILURE_COOLDOWN_HOURS", "24")),
         ),
-        "pipeline_idle_llm_backfill_enabled": os.getenv("PIPELINE_IDLE_LLM_BACKFILL_ENABLED", "false").lower()
+        "pipeline_idle_llm_backfill_enabled": os.getenv("PIPELINE_IDLE_LLM_BACKFILL_ENABLED", "true").lower()
         in {"1", "true", "yes", "on"},
+        "pipeline_enrichment_queue_enabled": os.getenv("PIPELINE_ENRICHMENT_QUEUE_ENABLED", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "pipeline_enrichment_queue_batch_size": max(
+            1,
+            min(100, int(os.getenv("PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE", "10"))),
+        ),
         "replicate_thinking_budget": int(os.getenv("REPLICATE_THINKING_BUDGET", "0")),
+        "replicate_thinking_level": os.getenv("REPLICATE_THINKING_LEVEL", "low").lower(),
         "replicate_dynamic_thinking": os.getenv("REPLICATE_DYNAMIC_THINKING", "false").lower()
         in {"1", "true", "yes", "on"},
-        "llm_prompt_version": os.getenv("LLM_PROMPT_VERSION", "auction_llm_v6_display"),
-        "llm_extraction_mode": os.getenv("LLM_EXTRACTION_MODE", "display_description").lower(),
-        "llm_pdf_max_chars": int(os.getenv("LLM_PDF_MAX_CHARS", "6000")),
+        "llm_prompt_version": os.getenv(
+            "LLM_PROMPT_VERSION",
+            "auction_llm_v8_qwen37_structured_display",
+        ),
+        "llm_fact_prompt_version": os.getenv("LLM_FACT_PROMPT_VERSION", "auction_facts_v1"),
+        "llm_display_prompt_version": os.getenv("LLM_DISPLAY_PROMPT_VERSION", "auction_display_v7"),
+        "llm_extraction_mode": os.getenv("LLM_EXTRACTION_MODE", "structured_then_display").lower(),
+        "llm_pdf_max_chars": int(os.getenv("LLM_PDF_MAX_CHARS", "12000")),
+        "llm_fact_chunk_chars": max(3000, int(os.getenv("LLM_FACT_CHUNK_CHARS", "12000"))),
+        # 0 means every collected source block and extracted PDF page is analyzed.
+        "llm_fact_max_chunks": max(0, int(os.getenv("LLM_FACT_MAX_CHUNKS", "0"))),
+        "llm_display_context_chars": max(4000, int(os.getenv("LLM_DISPLAY_CONTEXT_CHARS", "12000"))),
         "incremental_enrichment": os.getenv("INCREMENTAL_ENRICHMENT", "true").lower()
         in {"1", "true", "yes", "on"},
         "dedupe_reconcile_enabled": os.getenv("DEDUPE_RECONCILE_ENABLED", "true").lower()
@@ -192,7 +208,7 @@ def load_settings() -> dict[str, str | float | None]:
         "pdf_docling_ocr_max_size_mb": float(os.getenv("PDF_DOCLING_OCR_MAX_SIZE_MB", "15")),
         "pdf_docling_chunk_pages": int(os.getenv("PDF_DOCLING_CHUNK_PAGES", "10")),
         "pdf_docling_ocr_chunk_pages": int(os.getenv("PDF_DOCLING_OCR_CHUNK_PAGES", "2")),
-        "pdf_max_documents_per_sale": int(os.getenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")),
+        "pdf_max_documents_per_sale": int(os.getenv("PDF_MAX_DOCUMENTS_PER_SALE", "6")),
         "pdf_max_download_mb": max(1, int(os.getenv("PDF_MAX_DOWNLOAD_MB", "25"))),
         "pdf_max_extract_pages": max(1, int(os.getenv("PDF_MAX_EXTRACT_PAGES", "75"))),
         "document_max_extracted_text_chars": max(

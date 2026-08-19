@@ -2,3 +2,11 @@
 .next/
 .playwright-cli/
 output/
+services/data-pipeline/.venv/
+services/data-pipeline/data/
+services/data-pipeline/.pytest_cache/
+services/data-pipeline/.ruff_cache/
+services/data-pipeline/**/__pycache__/
+supabase/.temp/
+test-results/
+tsconfig.tsbuildinfo

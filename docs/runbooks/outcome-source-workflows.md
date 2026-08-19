@@ -56,13 +56,27 @@ secrets ou requête réseau. Le mode `plan`, sélectionné par défaut, reste sa
 Il n'existe volontairement aucun `schedule` Judilibre : le bootstrap comme le suivi sont uniquement
 manuels.
 
+Après validation des credentials et avant tout bootstrap ou suivi, le workflow exécute
+`scripts/check_judilibre_contract.py`. Ce canary tente au maximum quatre fenêtres historiques
+contiguës de 31 jours, avec une seule page d'un résultat par fenêtre et sans nouvelle tentative HTTP.
+Il ignore toute réponse relâchée, s'arrête au premier résultat exact et lit au maximum une décision ;
+il contrôle le schéma, le texte, les zones et la sortie d'extraction sans écrire dans Supabase ou
+Storage. Le canary échoue si aucune réponse exacte exploitable n'est trouvée après les quatre
+fenêtres. Tout échec interrompt le workflow avant l'ingestion.
+
 Deux opérations d'ingestion séparées sont disponibles :
 
 1. `bootstrap` lance une recherche ciblée avec
-   `judilibre-search-sync --profile … --date-start … --date-end … --max-results …`. Le profil doit
-   être l'un de `saisie_immobiliere_v1`, `vente_forcee_v1`, `adjudication_v1` ou
-   `surenchere_v1`. Les deux dates sont obligatoires, la fenêtre contient au plus 31 jours
-   calendaires et `max_results` doit être compris entre 1 et 500. L'opérateur doit saisir exactement
+   `judilibre-search-sync --profile … --date-start … --date-end … --max-results-per-window …
+   --max-total-results …`. Le profil doit
+   être l'un de `saisie_immobiliere_v2`, `vente_forcee_v2`, `adjudication_v2`, `adjuge_v2`,
+   `mise_a_prix_v2` ou `surenchere_v2`. Les deux dates sont obligatoires, la fenêtre contient au plus 31 jours
+   calendaires, le plafond par sous-fenêtre doit être compris entre 1 et 500 et le plafond global
+   entre 1 et 10 000. Une fenêtre trop dense est divisée en intervalles calendaires disjoints ; le
+   bootstrap échoue sans écriture si une seule journée reste trop dense, si le total global est
+   dépassé ou si l'API relâche la requête. Chaque sous-fenêtre terminale est lue deux fois ; le
+   bootstrap échoue aussi sans écriture si le total ou la liste ordonnée des identifiants change
+   entre ces deux lectures. L'opérateur doit saisir exactement
    `BOOTSTRAP-JUDILIBRE-TARGETED` dans `confirm_bootstrap`.
 2. `sync` lance `judilibre-sync` avec des plafonds de pages et d'événements. Cette synchronisation
    transactionnelle est **tracked-only** : elle recharge ou marque supprimés uniquement les
@@ -74,6 +88,8 @@ L'activation effective nécessite simultanément :
 
 - une ligne `data_sources.judilibre` active, juridiquement approuvée et autorisée en ingestion
   automatisée ;
+- une variable de dépôt `JUDILIBRE_BASE_URL` explicite, pointant d'abord vers la sandbox puis vers
+  la production seulement après validation ;
 - les trois secrets Supabase serveur ;
 - soit `JUDILIBRE_KEY_ID`, soit le couple
   `JUDILIBRE_OAUTH_CLIENT_ID` / `JUDILIBRE_OAUTH_CLIENT_SECRET`, selon

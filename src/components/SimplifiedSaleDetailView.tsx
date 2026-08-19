@@ -27,7 +27,7 @@ import { BillingActions } from "@/components/BillingActions";
 import { DocumentsList } from "@/components/DocumentsList";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
-import { OutcomeForecast } from "@/components/OutcomeForecast";
+import { OutcomeForecast, useOutcomeGraphForecast } from "@/components/OutcomeForecast";
 import { RotatingCamera360 } from "@/components/RotatingCamera360";
 import { fetchPrecomputedMarketEstimate } from "@/lib/client-api";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
@@ -634,17 +634,21 @@ function AnalysisContent({
   calculationOpen: boolean;
   onCalculationOpenChange: (open: boolean) => void;
 }) {
+  const forecastQuery = useOutcomeGraphForecast(sale.id);
+  const hasVerifiedForecast = forecastQuery.data?.forecast.status === "ready";
+  const navigationItems = [
+    ["#summary", "Synthèse"],
+    ...(hasVerifiedForecast ? [["#outcome-forecast", "Prévision"]] : []),
+    ["#market", "Marché local"],
+    ["#risks", "Risques & pièces"],
+    ["#lawyer", "Avocat"],
+  ];
+
   return (
     <>
       <nav className="sticky top-16 z-30 border-y border-brand-navy/10 bg-white/95 shadow-sm backdrop-blur">
         <div className="mx-auto flex max-w-5xl justify-between overflow-x-auto px-4 sm:px-6">
-          {[
-            ["#summary", "Synthèse"],
-            ["#outcome-forecast", "Prévision"],
-            ["#market", "Marché local"],
-            ["#risks", "Risques & pièces"],
-            ["#lawyer", "Avocat"],
-          ].map(([href, label]) => (
+          {navigationItems.map(([href, label]) => (
             <a
               key={href}
               href={href}
@@ -663,7 +667,7 @@ function AnalysisContent({
         </div>
       </section>
 
-      <OutcomeForecast saleId={sale.id} />
+      <OutcomeForecast forecastQuery={forecastQuery} />
 
       <RisksAndDocuments sale={sale} />
       <LawyerSection sale={sale} />

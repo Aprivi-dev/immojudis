@@ -10,24 +10,31 @@ from src.official_sources.judilibre import (
     HISTORY_MAX_PAGE_SIZE,
     HISTORY_MIN_PAGE_SIZE,
     SEARCH_MAX_PAGE_SIZE,
+    SEARCH_MAX_RESULTS,
     JudilibreClient,
     JudilibreDecision,
     JudilibreHistoryCursor,
     JudilibreHistoryPage,
+    JudilibreSearchPage,
     JudilibreSearchQuery,
     JudilibreTransaction,
+)
+from src.outcome_ingestion.judilibre_extraction import (
+    JudilibreExtractionResult,
+    extract_judilibre_candidate_facts,
 )
 from src.outcome_ingestion.repository import OutcomeIngestionRepository, PersistedSourceRecord
 from src.outcome_ingestion.service import JsonSourceRecord, OutcomeSourceIngestionService
 
 JUDILIBRE_SOURCE_NAME = "judilibre"
-JUDILIBRE_CONNECTOR_VERSION = "judilibre-outcome/4"
-JUDILIBRE_EXTRACTOR_VERSION = "2"
-JUDILIBRE_NORMALIZED_SCHEMA = "judilibre_decision_candidate_v2"
+JUDILIBRE_CONNECTOR_VERSION = "judilibre-outcome/5"
+JUDILIBRE_EXTRACTOR_VERSION = "3"
+JUDILIBRE_NORMALIZED_SCHEMA = "judilibre_decision_candidate_v3"
 JUDILIBRE_DECISION_PAGE_BASE_URL = "https://www.courdecassation.fr/decision"
-JUDILIBRE_SEARCH_MAX_RESULTS = 500
+JUDILIBRE_SEARCH_MAX_RESULTS = SEARCH_MAX_RESULTS
+JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW = 500
 JUDILIBRE_SEARCH_MAX_WINDOW_DAYS = 31
-JUDILIBRE_SEARCH_PROFILE_VERSION = "1"
+JUDILIBRE_SEARCH_PROFILE_VERSION = "2"
 JUDILIBRE_HISTORY_COHORT_EXTENSION_PAGES_BEFORE_TERMINAL_DRAIN = 100
 
 
@@ -36,7 +43,7 @@ class JudilibreSearchProfile:
     profile_id: str
     query: str
     version: str = JUDILIBRE_SEARCH_PROFILE_VERSION
-    fields: tuple[str, ...] = ("dispositif", "motivations", "expose", "sommaire")
+    fields: tuple[str, ...] = ("dispositif", "motivations", "expose", "summary")
     jurisdictions: tuple[str, ...] = ("tj",)
     operator: str = "exact"
 
@@ -59,19 +66,28 @@ JUDILIBRE_SEARCH_PROFILES: dict[str, JudilibreSearchProfile] = {
     profile.profile_id: profile
     for profile in (
         JudilibreSearchProfile(
-            profile_id="saisie_immobiliere_v1",
+            profile_id="saisie_immobiliere_v2",
             query="saisie immobilière",
         ),
         JudilibreSearchProfile(
-            profile_id="vente_forcee_v1",
+            profile_id="vente_forcee_v2",
             query="vente forcée",
         ),
         JudilibreSearchProfile(
-            profile_id="adjudication_v1",
+            profile_id="adjudication_v2",
             query="adjudication",
         ),
         JudilibreSearchProfile(
-            profile_id="surenchere_v1",
+            profile_id="adjuge_v2",
+            query="adjuge",
+            fields=("dispositif",),
+        ),
+        JudilibreSearchProfile(
+            profile_id="mise_a_prix_v2",
+            query="mise à prix",
+        ),
+        JudilibreSearchProfile(
+            profile_id="surenchere_v2",
             query="surenchère",
         ),
     )
@@ -112,6 +128,32 @@ class _JudilibreHistorySegment:
     committed_through_event_at: str | None = None
 
 
+@dataclass(frozen=True)
+class _JudilibreSearchSelection:
+    decision_id: str
+    metadata_sha256: str
+    metadata_includes_number: bool
+    resolved_query: dict[str, object]
+    leaf_window: dict[str, str]
+    split_path: tuple[str, ...]
+    result_page: int
+    page_rank: int
+    reported_total: int
+    metadata_count: int
+    metadata_ids_sha256: str
+
+
+@dataclass(frozen=True)
+class _JudilibreSearchScan:
+    pages: int
+    metadata_examined: int
+    reported_total: int
+    root_window: dict[str, str]
+    split_plan: tuple[dict[str, object], ...]
+    split_plan_hash: str
+    selections: tuple[_JudilibreSearchSelection, ...]
+
+
 def validate_judilibre_search_request(
     *,
     profile: str | JudilibreSearchProfile,
@@ -149,9 +191,53 @@ def validate_judilibre_search_request(
     return resolved_profile
 
 
-def normalized_judilibre_decision(decision: JudilibreDecision) -> dict[str, object]:
+def _resolve_targeted_search_limits(
+    *,
+    max_results: int | None,
+    max_results_per_window: int | None,
+    max_total_results: int | None,
+) -> tuple[int, int]:
+    if max_results is not None:
+        if max_results_per_window is not None or max_total_results is not None:
+            raise ValueError("max_results cannot be combined with explicit Judilibre search limits")
+        _validate_search_limit(
+            name="max_results",
+            value=max_results,
+            upper_bound=JUDILIBRE_SEARCH_MAX_RESULTS,
+        )
+        return min(max_results, JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW), max_results
+    if max_results_per_window is None or max_total_results is None:
+        raise ValueError("max_results_per_window and max_total_results are both required")
+    _validate_search_limit(
+        name="max_results_per_window",
+        value=max_results_per_window,
+        upper_bound=JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW,
+    )
+    _validate_search_limit(
+        name="max_total_results",
+        value=max_total_results,
+        upper_bound=JUDILIBRE_SEARCH_MAX_RESULTS,
+    )
+    if max_results_per_window > max_total_results:
+        raise ValueError("max_results_per_window must not exceed max_total_results")
+    return max_results_per_window, max_total_results
+
+
+def _validate_search_limit(*, name: str, value: int, upper_bound: int) -> None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    if not 1 <= value <= upper_bound:
+        raise ValueError(f"{name} must be between 1 and {upper_bound}")
+
+
+def normalized_judilibre_decision(
+    decision: JudilibreDecision,
+    *,
+    extraction: JudilibreExtractionResult | None = None,
+) -> dict[str, object]:
     """Minimized analytical projection; the full text stays in private Storage."""
-    return {
+    resolved_extraction = extraction or extract_judilibre_candidate_facts(decision)
+    projection: dict[str, object] = {
         "schema_version": JUDILIBRE_NORMALIZED_SCHEMA,
         "record_type": "judicial_decision_candidate",
         "judilibre_id": decision.id,
@@ -180,8 +266,9 @@ def normalized_judilibre_decision(decision: JudilibreDecision) -> dict[str, obje
         "training_eligible": False,
         "text_storage": "private_raw_artifact",
         "personal_identity_features_allowed": False,
-        "extraction_status": "pending",
     }
+    projection.update(resolved_extraction.normalized_fields())
+    return projection
 
 
 class JudilibreOutcomeIngestor:
@@ -201,6 +288,8 @@ class JudilibreOutcomeIngestor:
         decision_id: str,
         *,
         policy_checked: bool = False,
+        expected_search_metadata_sha256: str | None = None,
+        expected_search_metadata_includes_number: bool = False,
         source_event_at: datetime | None = None,
         source_cursor: Mapping[str, object] | None = None,
         request_provenance: Mapping[str, object] | None = None,
@@ -211,6 +300,17 @@ class JudilibreOutcomeIngestor:
         decision = self.client.decision(decision_id, resolve_references=False)
         if decision.id != decision_id.strip():
             raise OfficialSourceConfigurationError("Judilibre returned an unexpected decision identifier")
+        if (
+            expected_search_metadata_sha256 is not None
+            and _decision_metadata_sha256(
+                decision,
+                include_number=expected_search_metadata_includes_number,
+            )
+            != expected_search_metadata_sha256
+        ):
+            raise OfficialSourceConfigurationError(
+                "Judilibre decision metadata changed after the targeted search"
+            )
         if decision.is_deletion:
             self.repository.record_source_deletion(
                 source_name=JUDILIBRE_SOURCE_NAME,
@@ -226,6 +326,7 @@ class JudilibreOutcomeIngestor:
             return None
 
         raw_payload = decision.model_dump(mode="json", by_alias=True, exclude_none=False)
+        extraction = extract_judilibre_candidate_facts(decision)
         request_parameters = dict(request_provenance or {})
         request_parameters.update({"id": decision.id, "resolve_references": False})
         return self.service.ingest_json_record(
@@ -236,11 +337,12 @@ class JudilibreOutcomeIngestor:
                 canonical_url=f"{JUDILIBRE_DECISION_PAGE_BASE_URL}/{quote(decision.id, safe='')}",
                 record_kind="judicial_decision_candidate",
                 raw_payload=raw_payload,
-                normalized_data=normalized_judilibre_decision(decision),
+                normalized_data=normalized_judilibre_decision(decision, extraction=extraction),
                 connector_version=JUDILIBRE_CONNECTOR_VERSION,
-                extractor_name="judilibre_metadata_projection",
+                extractor_name="judilibre_candidate_extraction",
                 extractor_version=JUDILIBRE_EXTRACTOR_VERSION,
                 schema_version=JUDILIBRE_NORMALIZED_SCHEMA,
+                field_provenance=extraction.field_provenance(),
                 decision_date=decision.decision_date,
                 source_updated_at=_decision_update_datetime(decision),
                 # A decision date is not proof of first public availability.
@@ -259,13 +361,20 @@ class JudilibreOutcomeIngestor:
         profile: str | JudilibreSearchProfile,
         date_start: date,
         date_end: date,
-        max_results: int,
+        max_results: int | None = None,
+        max_results_per_window: int | None = None,
+        max_total_results: int | None = None,
     ) -> JudilibreSearchSyncSummary:
+        resolved_per_window_limit, resolved_total_limit = _resolve_targeted_search_limits(
+            max_results=max_results,
+            max_results_per_window=max_results_per_window,
+            max_total_results=max_total_results,
+        )
         resolved_profile = validate_judilibre_search_request(
             profile=profile,
             date_start=date_start,
             date_end=date_end,
-            max_results=max_results,
+            max_results=resolved_total_limit,
         )
         self.repository.require_source_policy(JUDILIBRE_SOURCE_NAME, "automated")
         resolved_query = _resolved_search_query(
@@ -282,106 +391,64 @@ class JudilibreOutcomeIngestor:
             source_name=JUDILIBRE_SOURCE_NAME,
             stream_key=stream_key,
         )
-        page_size = min(getattr(self.client, "page_size", SEARCH_MAX_PAGE_SIZE), max_results)
+        page_size = min(
+            getattr(self.client, "page_size", SEARCH_MAX_PAGE_SIZE),
+            resolved_per_window_limit,
+        )
         if not 1 <= page_size <= SEARCH_MAX_PAGE_SIZE:
             raise OfficialSourceConfigurationError("Judilibre client search page size is invalid")
-
-        pages = 0
-        reported_total: int | None = None
-        selected: list[tuple[str, int, int]] = []
-        seen_ids: set[str] = set()
-        page_index = 0
-        while True:
-            query = JudilibreSearchQuery(
-                query=resolved_profile.query,
-                field=list(resolved_profile.fields),
-                operator="exact",
-                jurisdiction=list(resolved_profile.jurisdictions),
-                date_start=date_start,
-                date_end=date_end,
-                sort="date",
-                order="asc",
-                page=page_index,
-                page_size=page_size,
-                resolve_references=False,
-            )
-            page = self.client.search(query)
-            pages += 1
-            if page.page != page_index or page.page_size != page_size:
-                raise OfficialSourceConfigurationError("Judilibre search response changed the requested pagination")
-            if page.relaxed:
-                raise OfficialSourceConfigurationError(
-                    "Judilibre relaxed the targeted search; refusing imprecise results"
-                )
-            if reported_total is None:
-                reported_total = page.total
-            elif page.total != reported_total:
-                raise OfficialSourceConfigurationError("Judilibre search total changed during pagination")
-            if len(page.results) > page_size:
-                raise OfficialSourceConfigurationError("Judilibre search returned more metadata than requested")
-            if page.next_page and not page.results:
-                raise OfficialSourceConfigurationError("Judilibre search continued after an empty metadata page")
-
-            if reported_total > max_results:
-                return JudilibreSearchSyncSummary(
-                    pages=pages,
-                    metadata_examined=len(page.results),
-                    reported_total=reported_total,
-                    truncated=True,
-                )
-
-            for page_rank, result in enumerate(page.results):
-                if result.id in seen_ids:
-                    raise OfficialSourceConfigurationError("Judilibre search returned a duplicate decision identifier")
-                if result.decision_date is None or not date_start <= result.decision_date <= date_end:
-                    raise OfficialSourceConfigurationError(
-                        "Judilibre search returned a decision outside the requested date window"
-                    )
-                if result.jurisdiction is None or result.jurisdiction.lower() not in resolved_profile.jurisdictions:
-                    raise OfficialSourceConfigurationError(
-                        "Judilibre search returned a decision outside the profile jurisdiction"
-                    )
-                seen_ids.add(result.id)
-                selected.append((result.id, page_index, page_rank))
-
-            if len(selected) > reported_total:
-                raise OfficialSourceConfigurationError(
-                    "Judilibre search returned more metadata than its reported total"
-                )
-            if len(selected) == reported_total:
-                if page.next_page:
-                    raise OfficialSourceConfigurationError(
-                        "Judilibre search cursor continued beyond its reported total"
-                    )
-                break
-            if not page.next_page:
-                raise OfficialSourceConfigurationError(
-                    "Judilibre search ended before all reported metadata was examined"
-                )
-            page_index += 1
+        scan = _collect_targeted_search_metadata(
+            client=self.client,
+            profile=resolved_profile,
+            date_start=date_start,
+            date_end=date_end,
+            max_results_per_window=resolved_per_window_limit,
+            max_total_results=resolved_total_limit,
+            page_size=page_size,
+        )
 
         stored = unchanged = deletions = 0
         last_fetch_id: str | None = None
-        for result_rank, (decision_id, result_page, page_rank) in enumerate(selected):
+        for result_rank, selection in enumerate(scan.selections):
             provenance = {
                 "discovery_mode": "targeted_search",
                 "profile_id": resolved_profile.profile_id,
                 "profile_version": resolved_profile.version,
                 "profile_hash": resolved_profile.fingerprint,
-                "resolved_query": resolved_query,
-                "result_page": result_page,
-                "page_rank": page_rank,
+                "resolved_query": selection.resolved_query,
+                "root_window": scan.root_window,
+                "leaf_window": selection.leaf_window,
+                "split_path": list(selection.split_path),
+                "root_reported_total": scan.reported_total,
+                "leaf_reported_total": selection.reported_total,
+                "split_plan_hash": scan.split_plan_hash,
+                "metadata_count": selection.metadata_count,
+                "metadata_ids_sha256": selection.metadata_ids_sha256,
+                "metadata_stability_passes": 2,
+                "result_page": selection.result_page,
+                "page_rank": selection.page_rank,
                 "result_rank": result_rank,
-                "reported_total": reported_total,
+                "reported_total": selection.reported_total,
             }
             persisted = self.fetch_decision(
-                decision_id,
+                selection.decision_id,
                 policy_checked=True,
+                expected_search_metadata_sha256=selection.metadata_sha256,
+                expected_search_metadata_includes_number=selection.metadata_includes_number,
                 source_cursor=provenance,
                 request_provenance={
                     "discovery_profile": resolved_profile.definition(),
                     "discovery_profile_hash": resolved_profile.fingerprint,
-                    "discovery_query": resolved_query,
+                    "discovery_query": selection.resolved_query,
+                    "discovery_root_window": scan.root_window,
+                    "discovery_leaf_window": selection.leaf_window,
+                    "discovery_split_path": list(selection.split_path),
+                    "discovery_root_reported_total": scan.reported_total,
+                    "discovery_leaf_reported_total": selection.reported_total,
+                    "discovery_split_plan_hash": scan.split_plan_hash,
+                    "discovery_metadata_count": selection.metadata_count,
+                    "discovery_metadata_ids_sha256": selection.metadata_ids_sha256,
+                    "discovery_metadata_stability_passes": 2,
                 },
             )
             if persisted is None:
@@ -407,8 +474,14 @@ class JudilibreOutcomeIngestor:
                 "profile_version": resolved_profile.version,
                 "profile_hash": resolved_profile.fingerprint,
                 "resolved_query": resolved_query,
-                "reported_total": reported_total,
-                "max_results": max_results,
+                "root_window": scan.root_window,
+                "split_plan": list(scan.split_plan),
+                "split_plan_hash": scan.split_plan_hash,
+                "root_reported_total": scan.reported_total,
+                "reported_total": scan.reported_total,
+                "max_results_per_window": resolved_per_window_limit,
+                "max_total_results": resolved_total_limit,
+                "metadata_stability_passes": 2,
                 "metadata_complete": True,
             },
             watermark_at=watermark,
@@ -416,10 +489,10 @@ class JudilibreOutcomeIngestor:
             last_successful_fetch_id=last_fetch_id,
         )
         return JudilibreSearchSyncSummary(
-            pages=pages,
-            metadata_examined=len(selected),
-            reported_total=reported_total,
-            selected_decisions=len(selected),
+            pages=scan.pages,
+            metadata_examined=scan.metadata_examined,
+            reported_total=scan.reported_total,
+            selected_decisions=len(scan.selections),
             deletions=deletions,
             stored_versions=stored,
             unchanged_versions=unchanged,
@@ -622,7 +695,296 @@ def _targeted_search_stream_key(
     date_start: date,
     date_end: date,
 ) -> str:
-    return f"targeted_search:{profile.profile_id}:{date_start.isoformat()}:{date_end.isoformat()}"
+    return (
+        f"targeted_search:{profile.profile_id}:{profile.version}:"
+        f"{profile.fingerprint}:{date_start.isoformat()}:{date_end.isoformat()}"
+    )
+
+
+def _collect_targeted_search_metadata(
+    *,
+    client: JudilibreClient,
+    profile: JudilibreSearchProfile,
+    date_start: date,
+    date_end: date,
+    max_results_per_window: int,
+    max_total_results: int,
+    page_size: int,
+) -> _JudilibreSearchScan:
+    pages = 0
+    metadata_examined = 0
+    leaf_reported_total = 0
+    root_reported_total: int | None = None
+    selections: list[_JudilibreSearchSelection] = []
+    seen_ids: set[str] = set()
+    split_plan: list[dict[str, object]] = []
+    root_window = _search_window(date_start, date_end)
+
+    def collect_window(
+        window_start: date,
+        window_end: date,
+        *,
+        split_path: tuple[str, ...],
+        root: bool = False,
+    ) -> None:
+        nonlocal pages, metadata_examined, leaf_reported_total, root_reported_total
+        resolved_query = _resolved_search_query(
+            profile=profile,
+            date_start=window_start,
+            date_end=window_end,
+        )
+        page_index = 0
+        page = search_page(
+            window_start=window_start,
+            window_end=window_end,
+            page_index=page_index,
+        )
+        reported_total = page.total
+        if root:
+            root_reported_total = reported_total
+            if reported_total > max_total_results:
+                raise OfficialSourceConfigurationError(
+                    "Judilibre targeted search exceeds max_total_results; refusing incomplete results"
+                )
+
+        if reported_total > max_results_per_window:
+            if window_start == window_end:
+                raise OfficialSourceConfigurationError(
+                    "Judilibre targeted search exceeds max_results_per_window for a single day; "
+                    "refusing incomplete results"
+                )
+            midpoint = window_start + timedelta(days=(window_end - window_start).days // 2)
+            collect_window(window_start, midpoint, split_path=(*split_path, "left"))
+            collect_window(
+                midpoint + timedelta(days=1),
+                window_end,
+                split_path=(*split_path, "right"),
+            )
+            return
+
+        leaf_reported_total += reported_total
+        leaf_window = _search_window(window_start, window_end)
+        if leaf_reported_total > max_total_results:
+            raise OfficialSourceConfigurationError(
+                "Judilibre adaptive search exceeds max_total_results; refusing incomplete results"
+            )
+
+        def scan_leaf(
+            first_page: JudilibreSearchPage | None = None,
+        ) -> tuple[list[str], list[str], list[tuple[str, str, bool, int, int]]]:
+            current_page_index = 0
+            current_page = first_page or search_page(
+                window_start=window_start,
+                window_end=window_end,
+                page_index=0,
+                expected_total=reported_total,
+            )
+            ordered_ids: list[str] = []
+            ordered_metadata_sha256: list[str] = []
+            positions: list[tuple[str, str, bool, int, int]] = []
+            while True:
+                for page_rank, result in enumerate(current_page.results):
+                    metadata_sha256 = _decision_metadata_sha256(result)
+                    ordered_ids.append(result.id)
+                    ordered_metadata_sha256.append(metadata_sha256)
+                    positions.append(
+                        (
+                            result.id,
+                            metadata_sha256,
+                            result.number is not None,
+                            current_page_index,
+                            page_rank,
+                        )
+                    )
+
+                if len(ordered_ids) > reported_total:
+                    raise OfficialSourceConfigurationError(
+                        "Judilibre search returned more metadata than its reported total"
+                    )
+                if len(ordered_ids) == reported_total:
+                    if current_page.next_page:
+                        raise OfficialSourceConfigurationError(
+                            "Judilibre search cursor continued beyond its reported total"
+                        )
+                    return ordered_ids, ordered_metadata_sha256, positions
+                if not current_page.next_page:
+                    raise OfficialSourceConfigurationError(
+                        "Judilibre search ended before all reported metadata was examined"
+                    )
+                current_page_index += 1
+                current_page = search_page(
+                    window_start=window_start,
+                    window_end=window_end,
+                    page_index=current_page_index,
+                    expected_total=reported_total,
+                )
+
+        first_pass_ids, first_pass_metadata_sha256, first_pass_positions = scan_leaf(page)
+        second_pass_ids, second_pass_metadata_sha256, _ = scan_leaf()
+        if (
+            second_pass_ids != first_pass_ids
+            or second_pass_metadata_sha256 != first_pass_metadata_sha256
+        ):
+            raise OfficialSourceConfigurationError(
+                "Judilibre leaf metadata changed between stability passes"
+            )
+
+        metadata_ids_sha256 = canonical_sha256({"ordered_decision_ids": first_pass_ids})
+        metadata_count = len(first_pass_ids)
+        split_plan.append(
+            {
+                "leaf_window": leaf_window,
+                "split_path": list(split_path),
+                "leaf_reported_total": reported_total,
+                "metadata_count": metadata_count,
+                "metadata_ids_sha256": metadata_ids_sha256,
+                "metadata_stability_passes": 2,
+            }
+        )
+        for (
+            decision_id,
+            metadata_sha256,
+            metadata_includes_number,
+            result_page,
+            page_rank,
+        ) in first_pass_positions:
+            if decision_id in seen_ids:
+                raise OfficialSourceConfigurationError(
+                    "Judilibre search returned a duplicate decision identifier"
+                )
+            seen_ids.add(decision_id)
+            selections.append(
+                _JudilibreSearchSelection(
+                    decision_id=decision_id,
+                    metadata_sha256=metadata_sha256,
+                    metadata_includes_number=metadata_includes_number,
+                    resolved_query=resolved_query,
+                    leaf_window=leaf_window,
+                    split_path=split_path,
+                    result_page=result_page,
+                    page_rank=page_rank,
+                    reported_total=reported_total,
+                    metadata_count=metadata_count,
+                    metadata_ids_sha256=metadata_ids_sha256,
+                )
+            )
+        metadata_examined += metadata_count
+
+    def search_page(
+        *,
+        window_start: date,
+        window_end: date,
+        page_index: int,
+        expected_total: int | None = None,
+    ) -> JudilibreSearchPage:
+        nonlocal pages
+        query = JudilibreSearchQuery(
+            query=profile.query,
+            field=list(profile.fields),
+            operator=profile.operator,
+            jurisdiction=list(profile.jurisdictions),
+            date_start=window_start,
+            date_end=window_end,
+            sort="date",
+            order="asc",
+            page=page_index,
+            page_size=page_size,
+            resolve_references=False,
+        )
+        page = client.search(query)
+        pages += 1
+        if page.page != page_index or page.page_size != page_size:
+            raise OfficialSourceConfigurationError("Judilibre search response changed the requested pagination")
+        if page.relaxed:
+            raise OfficialSourceConfigurationError(
+                "Judilibre relaxed the targeted search; refusing imprecise results"
+            )
+        if expected_total is not None and page.total != expected_total:
+            raise OfficialSourceConfigurationError("Judilibre search total changed during pagination")
+        if len(page.results) > page_size:
+            raise OfficialSourceConfigurationError("Judilibre search returned more metadata than requested")
+        if page.next_page and not page.results:
+            raise OfficialSourceConfigurationError("Judilibre search continued after an empty metadata page")
+        if page_index * page_size + len(page.results) < page.total and not page.next_page:
+            raise OfficialSourceConfigurationError(
+                "Judilibre search ended before all reported metadata was examined"
+            )
+        for result in page.results:
+            _validate_targeted_search_result(
+                result_decision_date=result.decision_date,
+                result_jurisdiction=result.jurisdiction,
+                window_start=window_start,
+                window_end=window_end,
+                jurisdictions=profile.jurisdictions,
+            )
+        return page
+
+    collect_window(date_start, date_end, split_path=(), root=True)
+    if root_reported_total is None:  # pragma: no cover - the root always issues one request.
+        raise OfficialSourceConfigurationError("Judilibre targeted search did not report a total")
+    if leaf_reported_total != root_reported_total:
+        raise OfficialSourceConfigurationError(
+            "Judilibre search totals changed across adaptive date windows"
+        )
+    split_plan_definition = {
+        "root_window": root_window,
+        "root_reported_total": root_reported_total,
+        "leaves": split_plan,
+    }
+    return _JudilibreSearchScan(
+        pages=pages,
+        metadata_examined=metadata_examined,
+        reported_total=root_reported_total,
+        root_window=root_window,
+        split_plan=tuple(split_plan),
+        split_plan_hash=canonical_sha256(split_plan_definition),
+        selections=tuple(selections),
+    )
+
+
+def _validate_targeted_search_result(
+    *,
+    result_decision_date: date | None,
+    result_jurisdiction: str | None,
+    window_start: date,
+    window_end: date,
+    jurisdictions: tuple[str, ...],
+) -> None:
+    if result_decision_date is None or not window_start <= result_decision_date <= window_end:
+        raise OfficialSourceConfigurationError(
+            "Judilibre search returned a decision outside the requested date window"
+        )
+    if result_jurisdiction is None or result_jurisdiction.lower() not in jurisdictions:
+        raise OfficialSourceConfigurationError(
+            "Judilibre search returned a decision outside the profile jurisdiction"
+        )
+
+
+def _decision_metadata_sha256(
+    decision: object,
+    *,
+    include_number: bool | None = None,
+) -> str:
+    """Hash the minimal public contract shared by /search and /decision."""
+
+    number = getattr(decision, "number", None)
+    metadata: dict[str, object] = {
+        "schema_version": "judilibre_search_decision_metadata_v1",
+        "id": getattr(decision, "id", None),
+        "decision_date": getattr(decision, "decision_date", None),
+        "jurisdiction": getattr(decision, "jurisdiction", None),
+        "location": getattr(decision, "location", None),
+    }
+    if include_number is True or (include_number is None and number is not None):
+        metadata["number"] = number
+    return canonical_sha256(metadata)
+
+
+def _search_window(date_start: date, date_end: date) -> dict[str, str]:
+    return {
+        "date_start": date_start.isoformat(),
+        "date_end": date_end.isoformat(),
+    }
 
 
 def _collect_history_segment(

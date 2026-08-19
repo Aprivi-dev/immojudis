@@ -10,10 +10,13 @@ from src.official_sources.justice_open_data import (
     JUSTICE_COMPETENCES_DATASET_URL,
     JUSTICE_STRUCTURES_DATASET_URL,
     STRUCTURE_SCHEMA,
+    JusticeOpenDataParseResult,
     JusticeOpenDataSchemaError,
+    ParseQualityStats,
     parse_justice_competences_csv,
     parse_justice_open_data_csv,
     parse_justice_structures_csv,
+    validate_justice_competence_semantics,
 )
 
 RAW_ROOT = Path(__file__).parents[1] / "data" / "raw" / "outcome_sources" / "justice_courts"
@@ -114,6 +117,45 @@ def test_parse_competence_accepts_corsican_insee_and_optional_tprx(tmp_path: Pat
     assert result.records[0]["insee_code"] == "2A001"
     assert result.records[0]["tprx_srj_code"] is None
     assert result.quality.null_counts["N° TPRX"] == 1
+
+
+def test_parse_competence_accepts_current_proximity_header(tmp_path: Path) -> None:
+    path = tmp_path / "current-competences.csv"
+    current_header = "Tribunal de proximité compétent (hors communes exclusives aux TJ)"
+    headers = tuple(
+        current_header if value == "Tribunal de proximité compétent" else value for value in COMPETENCE_SCHEMA
+    )
+    row = _competence_row()
+    row[current_header] = row.pop("Tribunal de proximité compétent")
+    _write_csv(path, headers, [row])
+
+    result = parse_justice_competences_csv(path)
+
+    assert result.records[0]["tprx_name"] == "Tribunal de proximité de Trévoux"
+
+
+def test_semantic_validation_rejects_shifted_commune_court_mapping() -> None:
+    records = [
+        {"insee_code": "01187", "tj_name": "Tribunal judiciaire de Saintes"},
+        {"insee_code": "13201", "tj_name": "Tribunal judiciaire de Marseille"},
+        {"insee_code": "33063", "tj_name": "Tribunal judiciaire de Carcassonne"},
+        {"insee_code": "69381", "tj_name": "Tribunal judiciaire de Lyon"},
+        {"insee_code": "75056", "tj_name": "Tribunal judiciaire de Paris"},
+    ]
+    result = JusticeOpenDataParseResult(
+        records=records,
+        quality=ParseQualityStats(
+            dataset_kind="justice_court_competence",
+            source_url=JUSTICE_COMPETENCES_DATASET_URL,
+            detected_encoding="utf-8",
+            detected_delimiter=";",
+            total_rows=35_000,
+            valid_rows=35_000,
+        ),
+    )
+
+    with pytest.raises(JusticeOpenDataSchemaError, match="semantic canaries: 01187, 33063"):
+        validate_justice_competence_semantics(result)
 
 
 def test_parse_structures_detects_cp1252_and_builds_address(tmp_path: Path) -> None:

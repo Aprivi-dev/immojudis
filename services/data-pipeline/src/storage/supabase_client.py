@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -28,6 +29,7 @@ from src.asset_normalization import (
     extract_risk_occurrences_from_text,
 )
 from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
+from src.court_competence import tribunal_reference_rows
 from src.dedupe import merge_duplicate_sales
 from src.models import AuctionSale
 from src.normalize import make_sale_signature
@@ -42,6 +44,9 @@ POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE = 50
 POSTGRES_CONNECT_TIMEOUT = 15
 EXPIRED_SALE_DELETE_TABLES = (
     "auction_observations",
+    "auction_enrichment_jobs",
+    "auction_surface_derivations",
+    "auction_surface_measurements",
     "auction_documents",
     "auction_extractions",
     "auction_cadastre_parcels",
@@ -242,6 +247,17 @@ def upsert_sales_to_supabase(
         payload.append(row)
     if not payload:
         return 0
+    tribunal_rows = [{**row, "updated_at": now} for row in tribunal_reference_rows(sales)]
+    if tribunal_rows:
+        # The FK target must exist before auction_sales and judicial_sales are
+        # written. Only evidence-gated Ministry assignments produce rows here.
+        _postgrest_upsert(
+            str(url),
+            str(key),
+            "tribunals",
+            tribunal_rows,
+            on_conflict="code",
+        )
     if db_url:
         try:
             _postgres_upsert(str(db_url), "auction_sales", payload, on_conflict="source_url")
@@ -425,6 +441,57 @@ def fetch_next_queued_run_from_supabase() -> dict[str, Any] | None:
     if not rows:
         return None
     return rows[0]
+
+
+def claim_auction_enrichment_jobs_from_supabase(limit: int = 10) -> list[dict[str, Any]]:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return []
+    response = httpx.post(
+        f"{str(url).rstrip('/')}/rest/v1/rpc/claim_auction_enrichment_jobs",
+        headers=_rest_headers(str(key), prefer="return=representation"),
+        json={"p_limit": max(1, min(100, int(limit)))},
+        timeout=30,
+    )
+    if response.is_error:
+        LOGGER.warning("Supabase enrichment job claim failed: %s", response.text[:500])
+        return []
+    rows = response.json()
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def finish_auction_enrichment_job_in_supabase(
+    job_id: str,
+    *,
+    succeeded: bool,
+    error_message: str | None = None,
+) -> None:
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key or not job_id:
+        return
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "status": "completed" if succeeded else "failed",
+        "completed_at": now.isoformat() if succeeded else None,
+        "locked_at": None,
+        "last_error": None if succeeded else (error_message or "enrichment failed")[:1000],
+        "updated_at": now.isoformat(),
+    }
+    if not succeeded:
+        payload["next_attempt_at"] = (now + timedelta(minutes=30)).isoformat()
+    response = httpx.patch(
+        f"{str(url).rstrip('/')}/rest/v1/auction_enrichment_jobs",
+        params={"id": f"eq.{job_id}", "status": "eq.running"},
+        headers=_rest_headers(str(key), prefer="return=minimal"),
+        json=payload,
+        timeout=30,
+    )
+    if response.is_error:
+        LOGGER.warning("Supabase enrichment job finish failed for %s: %s", job_id, response.text[:500])
 
 
 def fetch_next_data_refresh_request_from_supabase() -> dict[str, Any] | None:
@@ -1538,6 +1605,8 @@ def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[
         _postgrest_upsert(supabase_url, api_key, "auction_surfaces", surfaces, on_conflict="source_url")
     source_urls = [sale.source_url for sale in sales]
     if source_urls:
+        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_surface_derivations", source_urls)
+        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_surface_measurements", source_urls)
         _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_risks", source_urls)
         _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_risk_occurrences", source_urls)
         _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_urban_planning_signals", source_urls)
@@ -1567,6 +1636,30 @@ def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[
             api_key,
             "auction_urban_planning_signals",
             urban_planning_signals,
+        )
+    surface_measurements = [
+        _timestamped(row, now)
+        for sale in sales
+        for row in _surface_measurement_rows_for_sale(sale)
+    ]
+    if surface_measurements:
+        _postgrest_insert(
+            supabase_url,
+            api_key,
+            "auction_surface_measurements",
+            surface_measurements,
+        )
+    surface_derivations = [
+        _timestamped(row, now)
+        for sale in sales
+        for row in _surface_derivation_rows_for_sale(sale)
+    ]
+    if surface_derivations:
+        _postgrest_insert(
+            supabase_url,
+            api_key,
+            "auction_surface_derivations",
+            surface_derivations,
         )
     score_factors = [
         _timestamped(row, now)
@@ -1945,15 +2038,107 @@ def _extraction_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
             {
                 "source_url": sale.source_url,
                 "provider": "replicate",
-                "model": str(cache.get("_cache", {}).get("model") or "google/gemini-2.5-flash"),
+                "model": str(cache.get("_cache", {}).get("model") or "qwen/qwen3-7-plus"),
                 "input_hash": input_hash,
-                "schema_version": "llm_extraction_v1",
+                "schema_version": "llm_extraction_v2_structured_assets",
                 "result": llm_payload,
                 "confidence": llm_payload.get("confidence") or {},
                 "updated_at": datetime.now(UTC).isoformat(),
             }
         )
     return rows
+
+
+def _surface_measurement_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
+    analysis = sale.raw_payload.get("surface_analysis") if isinstance(sale.raw_payload, dict) else None
+    if not isinstance(analysis, dict):
+        return []
+    version = str(analysis.get("version") or "surface_reasoning_v1")
+    measurements = analysis.get("measurements")
+    if not isinstance(measurements, list):
+        return []
+    rows: list[dict[str, object]] = []
+    for index, measurement in enumerate(measurements):
+        if not isinstance(measurement, dict):
+            continue
+        evidence = measurement.get("evidence") if isinstance(measurement.get("evidence"), dict) else {}
+        quote = str(evidence.get("quote") or "").strip()
+        value = measurement.get("value_m2")
+        if not quote or value is None:
+            continue
+        local_key = str(measurement.get("measurement_id") or index)
+        rows.append(
+            {
+                "measurement_key": _surface_row_key(sale.source_url, local_key),
+                "source_url": sale.source_url,
+                "asset_id": str(measurement.get("asset_id") or "asset-main"),
+                "lot_label": measurement.get("lot_label"),
+                "level_label": measurement.get("level"),
+                "space_label": str(measurement.get("space_label") or "pièce"),
+                "category": str(measurement.get("category") or "unknown"),
+                "value_m2": value,
+                "included_in_habitable_sum": measurement.get("included_in_habitable_sum"),
+                "confidence": measurement.get("confidence") or 0,
+                "evidence_quote": quote,
+                "document_url": evidence.get("document_url"),
+                "document_label": evidence.get("document_label"),
+                "page_number": evidence.get("page_number"),
+                "extraction_method": str(measurement.get("extraction_method") or "unknown"),
+                "reasoning_version": version,
+            }
+        )
+    return rows
+
+
+def _surface_derivation_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
+    analysis = sale.raw_payload.get("surface_analysis") if isinstance(sale.raw_payload, dict) else None
+    if not isinstance(analysis, dict):
+        return []
+    version = str(analysis.get("version") or "surface_reasoning_v1")
+    selected_id = str(analysis.get("selected_derivation_id") or "")
+    derivations = analysis.get("derivations")
+    candidates = analysis.get("candidates") if isinstance(analysis.get("candidates"), list) else []
+    candidates_by_id = {
+        str(item.get("candidate_id")): item
+        for item in candidates
+        if isinstance(item, dict) and item.get("candidate_id")
+    }
+    if not isinstance(derivations, list):
+        return []
+    rows: list[dict[str, object]] = []
+    for index, derivation in enumerate(derivations):
+        if not isinstance(derivation, dict):
+            continue
+        local_key = str(derivation.get("derivation_id") or index)
+        operands = derivation.get("operand_measurement_ids")
+        operand_keys = [
+            _surface_row_key(sale.source_url, str(value))
+            for value in operands
+            if value
+        ] if isinstance(operands, list) else []
+        explicit_id = str(derivation.get("explicit_candidate_id") or "")
+        rows.append(
+            {
+                "derivation_key": _surface_row_key(sale.source_url, local_key),
+                "source_url": sale.source_url,
+                "asset_id": str(derivation.get("asset_id") or "asset-main"),
+                "kind": str(derivation.get("kind") or "unknown"),
+                "value_m2": derivation.get("value_m2"),
+                "operand_measurement_keys": operand_keys,
+                "formula": str(derivation.get("formula") or "surface explicitement indiquée"),
+                "validation_status": str(derivation.get("validation_status") or "rejected"),
+                "confidence": derivation.get("confidence") or 0,
+                "explicit_candidate": candidates_by_id.get(explicit_id),
+                "warnings": derivation.get("warnings") or [],
+                "is_selected": local_key == selected_id,
+                "reasoning_version": version,
+            }
+        )
+    return rows
+
+
+def _surface_row_key(source_url: str, local_key: str) -> str:
+    return hashlib.sha256(f"{source_url}\0{local_key}".encode()).hexdigest()
 
 
 def _pdf_extraction_confidence(payload: Any) -> dict[str, object]:

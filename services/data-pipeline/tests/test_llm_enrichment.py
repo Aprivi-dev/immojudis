@@ -10,8 +10,15 @@ from src.enrichment.extract_structured import (
     enrich_sale_with_llm,
     extract_source_description,
     load_llm_context_for_sale,
+    load_llm_fact_context_chunks_for_sale,
 )
-from src.enrichment.llm_client import ReplicateClient, _retry_sleep_seconds, _stringify_output, parse_json_response
+from src.enrichment.llm_client import (
+    ReplicateClient,
+    _retry_sleep_seconds,
+    _stringify_output,
+    _user_prompt_for_model,
+    parse_json_response,
+)
 from src.normalize import normalize_sale
 from src.pdf_enrichment import sale_storage_id
 
@@ -139,6 +146,54 @@ class DisplayOnlyClient:
                 "à vérifier selon les documents disponibles."
             ),
             "confidence": {"display_description": 0.86},
+        }
+
+
+class StructuredRoomSurfaceClient:
+    calls = 0
+
+    def is_available(self) -> bool:
+        return True
+
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        self.calls += 1
+        if self.calls > 1:
+            return {
+                "display_description": (
+                    "Maison dont la surface habitable de 57,74 m² est reconstituée à partir "
+                    "des mesures de chaque pièce du procès-verbal."
+                ),
+                "confidence": {"display_description": 0.91},
+            }
+        measurements = [
+            ("entrée", "circulation", "5.00", "Entrée 5,00 m²"),
+            ("cuisine", "service", "8.00", "cuisine 8,00 m²"),
+            ("séjour", "habitable", "19.56", "séjour 19,56 m²"),
+            ("chambre 1", "habitable", "9.41", "chambre 9,41 m²"),
+            ("chambre 2", "habitable", "11.40", "chambre 11,40 m²"),
+            ("salle d'eau", "sanitary", "4.37", "salle d'eau 4,37 m²"),
+        ]
+        return {
+            "property_type": "house",
+            "assets": [
+                {
+                    "asset_id": "asset-main",
+                    "property_type": "house",
+                    "measurement_completeness": "complete",
+                    "spaces": [
+                        {
+                            "space_label": label,
+                            "category": category,
+                            "value_m2": value,
+                            "included_in_habitable_sum": True,
+                            "confidence": 0.94,
+                            "evidence": {"quote": quote, "document_label": "PV descriptif", "page_number": 4},
+                        }
+                        for label, category, value, quote in measurements
+                    ],
+                }
+            ],
+            "confidence": {"property_type": 0.95},
         }
 
 
@@ -316,6 +371,56 @@ def test_replicate_client_formats_gemini_payload() -> None:
     assert payload["dynamic_thinking"] is False
     assert "max_tokens" not in payload
     assert "presence_penalty" not in payload
+
+
+def test_replicate_client_uses_gemini_3_thinking_level_without_legacy_fields() -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="google/gemini-3.5-flash",
+        max_tokens=8192,
+        temperature=0,
+        thinking_level="low",
+    )
+
+    payload = client._input_payload("user prompt", system_prompt="system prompt")
+
+    assert payload["max_output_tokens"] == 8192
+    assert payload["thinking_level"] == "low"
+    assert "thinking_budget" not in payload
+    assert "dynamic_thinking" not in payload
+
+
+def test_replicate_client_formats_qwen37_payload() -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="qwen/qwen3-7-plus",
+        max_tokens=8192,
+        temperature=0,
+    )
+
+    payload = client._input_payload("user prompt", system_prompt="system prompt")
+
+    assert payload == {
+        "prompt": "user prompt",
+        "system_prompt": "system prompt",
+        "max_tokens": 8192,
+        "temperature": 0,
+        "top_p": 0.8,
+        "presence_penalty": 0,
+        "frequency_penalty": 0,
+    }
+
+
+def test_qwen37_keeps_system_and_user_prompts_separate() -> None:
+    prompt = _user_prompt_for_model(
+        "qwen/qwen3-7-plus",
+        "system prompt unique marker",
+        "user prompt",
+    )
+
+    assert prompt.startswith("user prompt")
+    assert "system prompt unique marker" not in prompt
+    assert "objet JSON valide" in prompt
 
 
 def test_replicate_rate_limit_tracks_prediction_starts(monkeypatch) -> None:
@@ -864,3 +969,82 @@ def test_load_llm_context_includes_merged_source_pages(tmp_path, monkeypatch) ->
     assert "Annonce Avoventes" in context
     assert "Annonce Vench" in context
     assert "Texte Vench" in context
+
+
+def test_structured_llm_measurements_are_validated_then_summed_server_side(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_immobilieres",
+            "source_url": "https://example.test/room-surface",
+            "property_type": "Maison",
+            "raw_text": (
+                "Le bien se compose des pièces suivantes : Entrée 5,00 m², cuisine 8,00 m², "
+                "séjour 19,56 m², chambre 9,41 m², chambre 11,40 m² et salle d'eau 4,37 m²."
+            ),
+        }
+    )
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "false")
+
+    stats = enrich_sale_with_llm(
+        sale,
+        client=StructuredRoomSurfaceClient(),
+        output_dir=tmp_path / "llm-extractions",
+    )
+
+    assert sale.surface_m2 == Decimal("57.74")
+    assert sale.habitable_surface_m2 == Decimal("57.74")
+    assert sale.surface_source == "llm_structured_verified"
+    selected_id = sale.raw_payload["surface_analysis"]["selected_derivation_id"]
+    assert selected_id
+    selected = next(
+        item
+        for item in sale.raw_payload["surface_analysis"]["derivations"]
+        if item["derivation_id"] == selected_id
+    )
+    assert selected["kind"] == "calculated_room_sum"
+    assert selected["formula"].endswith("= 57.74 m²")
+    assert len(selected["operand_measurement_ids"]) == 6
+    assert stats.structured_surface_verified == 1
+    assert stats.calculated_surface_verified == 1
+
+
+def test_fact_context_chunks_cover_every_pdf_page_and_report_truncation(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/all-pdf-pages",
+            "raw_text": "Annonce source principale.",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    pages = [
+        {"page": page, "method": "pdftotext", "text": f"MARQUEUR_PAGE_{page} " + (str(page) * 2100)}
+        for page in range(1, 4)
+    ]
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps(
+            [
+                {
+                    "label": "PV descriptif",
+                    "document_type": "pv_descriptif",
+                    "url": "https://example.test/pv-pages.pdf",
+                    "pages": pages,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    chunks = load_llm_fact_context_chunks_for_sale(sale, chunk_chars=3000, max_chunks=0)
+
+    full_context = "\n".join(chunks)
+    assert len(chunks) >= 3
+    assert all(f"MARQUEUR_PAGE_{page}" in full_context for page in range(1, 4))
+    assert sale.raw_payload["llm_fact_context_coverage"]["complete"] is True
+
+    truncated = load_llm_fact_context_chunks_for_sale(sale, chunk_chars=3000, max_chunks=1)
+    assert len(truncated) == 1
+    assert sale.raw_payload["llm_fact_context_coverage"]["complete"] is False

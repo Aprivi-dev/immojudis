@@ -19,6 +19,13 @@ from src.enrichment.prompts import (
     build_display_description_prompt,
     build_user_prompt,
 )
+from src.enrichment.surface_reasoning import (
+    SURFACE_REASONING_VERSION,
+    ExtractedAsset,
+    apply_surface_reasoning_to_sale,
+    extract_surface_facts_from_text,
+    merge_extracted_assets,
+)
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.pdf_enrichment import sale_storage_id
@@ -176,6 +183,7 @@ class LLMExtraction(BaseModel):
     property_type: PropertyType | None = None
     display_description: str | None = None
     surface_m2: float | None = None
+    assets: list[ExtractedAsset] = Field(default_factory=list)
     rooms_count: int | None = None
     bedrooms_count: int | None = None
     occupancy_status: OccupancyStatus | None = None
@@ -262,6 +270,13 @@ class LLMExtraction(BaseModel):
             return []
         return [item for item in value if isinstance(item, dict)]
 
+    @field_validator("assets", mode="before")
+    @classmethod
+    def normalize_assets(cls, value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, dict)]
+
     @field_validator("legal_risks", "physical_risks", "servitudes", mode="before")
     @classmethod
     def default_empty_lists(cls, value: Any) -> Any:
@@ -304,6 +319,9 @@ class LLMEnrichmentStats:
     occupancy_extracted: int = 0
     occupancy_detected: int = 0
     risks_detected: int = 0
+    fact_chunks_analyzed: int = 0
+    structured_surface_verified: int = 0
+    calculated_surface_verified: int = 0
     unavailable: bool = False
     error_messages: list[str] = field(default_factory=list)
 
@@ -322,9 +340,19 @@ def enrich_sale_with_llm(
     if source_description:
         sale.raw_payload["source_description"] = source_description
 
-    llm_context = load_llm_context_for_sale(sale, max_chars=int(settings["llm_pdf_max_chars"]))
-    if not llm_context:
+    extraction_mode = str(settings.get("llm_extraction_mode") or "structured_then_display")
+    if extraction_mode == "display_description":
+        contexts = [load_llm_context_for_sale(sale, max_chars=int(settings["llm_pdf_max_chars"]))]
+    else:
+        contexts = load_llm_fact_context_chunks_for_sale(
+            sale,
+            chunk_chars=int(settings.get("llm_fact_chunk_chars") or 12000),
+            max_chunks=int(settings.get("llm_fact_max_chunks") or 0),
+        )
+    fact_contexts = [context for context in contexts if context]
+    if not fact_contexts:
         return stats
+    full_evidence_context = "\n\n".join(fact_contexts)
 
     client = client or create_llm_client()
     if not client.is_available():
@@ -334,37 +362,97 @@ def enrich_sale_with_llm(
     stats.analyzed += 1
     model_name = str(getattr(client, "model", "") or "")
     prompt_version = str(settings["llm_prompt_version"])
-    cache_key = _llm_cache_key(llm_context, model_name, prompt_version=prompt_version)
+    cache_key = _llm_cache_key(
+        full_evidence_context,
+        model_name,
+        prompt_version=f"{prompt_version}:{extraction_mode}:{SURFACE_REASONING_VERSION}",
+    )
     cached = _load_cached_extraction(sale, cache_key, output_dir) if settings["incremental_enrichment"] else None
     if cached is not None:
         extraction = cached
         stats.valid_json += 1
-        _apply_extraction_to_sale(sale, extraction, stats, llm_context, prompt_version=prompt_version)
-        sale.raw_payload["llm_extraction"] = extraction.model_dump()
+        _apply_extraction_to_sale(sale, extraction, stats, full_evidence_context, prompt_version=prompt_version)
+        sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
+        if extraction.assets:
+            sale.raw_payload["llm_fact_extraction"] = extraction.model_dump(mode="json")
         sale.raw_payload["llm_cache_hit"] = True
         return stats
 
-    extraction_mode = str(settings.get("llm_extraction_mode") or "full")
     if extraction_mode == "display_description":
-        system_prompt = DISPLAY_DESCRIPTION_SYSTEM_PROMPT
-        user_prompt = build_display_description_prompt(llm_context)
+        try:
+            raw = client.generate_json(
+                DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
+                build_display_description_prompt(full_evidence_context),
+            )
+            extraction = LLMExtraction.model_validate(raw)
+        except Exception as exc:
+            LOGGER.warning("LLM display synthesis failed for %s: %s", sale.source_url, exc)
+            stats.errors += 1
+            stats.error_messages.append(_llm_error_message(sale, exc))
+            return stats
     else:
-        system_prompt = SYSTEM_PROMPT
-        user_prompt = build_user_prompt(llm_context)
+        chunk_extractions: list[LLMExtraction] = []
+        failed_chunks = 0
+        for index, context in enumerate(fact_contexts, start=1):
+            try:
+                raw = client.generate_json(SYSTEM_PROMPT, build_user_prompt(context))
+                chunk_extractions.append(LLMExtraction.model_validate(raw))
+                stats.fact_chunks_analyzed += 1
+            except Exception as exc:
+                failed_chunks += 1
+                stats.errors += 1
+                stats.error_messages.append(
+                    f"{_llm_error_message(sale, exc)} [fact chunk {index}/{len(fact_contexts)}]"
+                )
+        if not chunk_extractions:
+            return stats
+        extraction = _merge_llm_extractions(chunk_extractions)
+        if failed_chunks:
+            extraction = _downgrade_extraction_completeness(extraction)
+        sale.raw_payload["llm_fact_coverage"] = {
+            "total_chunks": len(fact_contexts),
+            "successful_chunks": len(chunk_extractions),
+            "failed_chunks": failed_chunks,
+            "complete": failed_chunks == 0,
+        }
+        sale.raw_payload["llm_fact_prompt_version"] = str(
+            settings.get("llm_fact_prompt_version") or prompt_version
+        )
 
-    try:
-        raw = client.generate_json(system_prompt, user_prompt)
-        extraction = LLMExtraction.model_validate(raw)
-    except Exception as exc:
-        LOGGER.warning("LLM extraction failed for %s: %s", sale.source_url, exc)
-        stats.errors += 1
-        stats.error_messages.append(_llm_error_message(sale, exc))
-        return stats
+        if extraction_mode in {"structured_then_display", "full"}:
+            display_context = _build_validated_display_context(
+                sale,
+                extraction,
+                fallback_context=load_llm_context_for_sale(
+                    sale,
+                    max_chars=int(settings.get("llm_display_context_chars") or 12000),
+                ),
+            )
+            try:
+                display_raw = client.generate_json(
+                    DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
+                    build_display_description_prompt(display_context),
+                )
+                display_extraction = LLMExtraction.model_validate(display_raw)
+                extraction.display_description = display_extraction.display_description
+                if "display_description" in display_extraction.confidence:
+                    extraction.confidence["display_description"] = display_extraction.confidence[
+                        "display_description"
+                    ]
+                sale.raw_payload["llm_display_prompt_version"] = str(
+                    settings.get("llm_display_prompt_version") or prompt_version
+                )
+            except Exception as exc:
+                LOGGER.warning("LLM display synthesis failed for %s: %s", sale.source_url, exc)
+                stats.errors += 1
+                stats.error_messages.append(_llm_error_message(sale, exc))
 
     stats.valid_json += 1
     _save_extraction(sale, extraction, output_dir, cache_key=cache_key, model=model_name, prompt_version=prompt_version)
-    _apply_extraction_to_sale(sale, extraction, stats, llm_context, prompt_version=prompt_version)
-    sale.raw_payload["llm_extraction"] = extraction.model_dump()
+    _apply_extraction_to_sale(sale, extraction, stats, full_evidence_context, prompt_version=prompt_version)
+    sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
+    if extraction_mode != "display_description":
+        sale.raw_payload["llm_fact_extraction"] = extraction.model_dump(mode="json")
     sale.raw_payload["llm_cache_hit"] = False
     return stats
 
@@ -415,6 +503,144 @@ def load_llm_context_for_sale(sale: AuctionSale, max_chars: int = 12000) -> str 
     if not raw_text:
         return None
     return f"[ANNONCE SOURCE]\n{raw_text[:max_chars]}"
+
+
+def load_llm_fact_context_chunks_for_sale(
+    sale: AuctionSale,
+    *,
+    chunk_chars: int = 12000,
+    max_chunks: int = 0,
+) -> list[str]:
+    """Return page-aware chunks covering all text already collected by the tool.
+
+    Unlike the display context, this fact-extraction context does not keep only
+    the first pages or keyword windows. Every source block and every extracted
+    PDF page is represented. ``max_chunks=0`` means no artificial coverage cap.
+    """
+
+    chunk_chars = max(3000, chunk_chars)
+    sections = _all_source_fact_sections(sale)
+    pdf_path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
+    try:
+        pdf_payload = json.loads(pdf_path.read_text(encoding="utf-8")) if pdf_path.exists() else []
+    except (OSError, json.JSONDecodeError):
+        pdf_payload = []
+    if isinstance(pdf_payload, list):
+        sections.extend(_all_pdf_fact_sections(pdf_payload))
+    chunks = _pack_fact_sections(sections, chunk_chars=chunk_chars)
+    total_chunks = len(chunks)
+    if max_chunks > 0:
+        chunks = chunks[:max_chunks]
+    sale.raw_payload["llm_fact_context_coverage"] = {
+        "total_chunks": total_chunks,
+        "selected_chunks": len(chunks),
+        "complete": len(chunks) == total_chunks,
+        "chunk_chars": chunk_chars,
+    }
+    return chunks
+
+
+def _all_source_fact_sections(sale: AuctionSale) -> list[str]:
+    sections: list[str] = []
+    payloads = _source_payloads_for_sale(sale)
+    primary_raw_text = _source_raw_text_without_pdf(
+        payloads[0].get("raw_text") if payloads else None
+    ) or _source_raw_text_without_pdf(sale.raw_text)
+    if primary_raw_text:
+        sections.append(f"[ANNONCE SOURCE - URL {sale.source_url}]\n{primary_raw_text}")
+    metadata = _source_metadata_section(sale)
+    if metadata:
+        sections.append(metadata)
+    # Do not include fields produced by a previous enrichment pass here: doing
+    # so would change the cache key after applying the extraction itself.
+    for index, payload in enumerate(payloads):
+        sections.extend(
+            _source_payload_sections(
+                payload,
+                sale,
+                include_raw_text=not (index == 0 and primary_raw_text),
+            )
+        )
+    return _unique_fact_sections(sections)
+
+
+def _all_pdf_fact_sections(pdf_payload: list[dict[str, Any]]) -> list[str]:
+    sections: list[str] = []
+    for item in pdf_payload:
+        if not isinstance(item, dict):
+            continue
+        label = clean_text(item.get("label")) or "document"
+        document_type = clean_text(item.get("document_type")) or "pdf"
+        document_url = clean_text(item.get("url")) or "URL inconnue"
+        pages = item.get("pages")
+        if isinstance(pages, list) and pages:
+            for page in pages:
+                if not isinstance(page, dict):
+                    continue
+                text = clean_text(page.get("text"))
+                if not text:
+                    continue
+                page_number = page.get("page")
+                method = clean_text(page.get("method")) or "extraction"
+                sections.append(
+                    f"[DOCUMENT: {label} | TYPE: {document_type} | URL: {document_url} | "
+                    f"PAGE: {page_number} | METHODE: {method}]\n{text}"
+                )
+            continue
+        text = clean_text(item.get("text"))
+        if text:
+            sections.append(
+                f"[DOCUMENT: {label} | TYPE: {document_type} | URL: {document_url}]\n{text}"
+            )
+    return _unique_fact_sections(sections)
+
+
+def _pack_fact_sections(sections: list[str], *, chunk_chars: int) -> list[str]:
+    fragments: list[str] = []
+    for section in sections:
+        if len(section) <= chunk_chars:
+            fragments.append(section)
+            continue
+        header, separator, body = section.partition("\n")
+        prefix = f"{header}\n" if separator else ""
+        available = max(1000, chunk_chars - len(prefix) - 40)
+        # Keep a small overlap so a room label and its value cannot be split on
+        # opposite sides of a model call boundary.
+        step = max(500, available - 250)
+        for index, start in enumerate(range(0, len(body), step), start=1):
+            fragments.append(f"{prefix}[FRAGMENT {index}]\n{body[start:start + available]}")
+            if start + available >= len(body):
+                break
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_size = 0
+    for fragment in fragments:
+        extra = len(fragment) + (2 if current else 0)
+        if current and current_size + extra > chunk_chars:
+            chunks.append("\n\n".join(current))
+            current = []
+            current_size = 0
+        current.append(fragment)
+        current_size += len(fragment) + (2 if current_size else 0)
+    if current:
+        chunks.append("\n\n".join(current))
+    return chunks
+
+
+def _unique_fact_sections(sections: list[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for section in sections:
+        normalized = clean_text(section)
+        if not normalized:
+            continue
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        if digest in seen:
+            continue
+        seen.add(digest)
+        unique.append(normalized)
+    return unique
 
 
 def build_source_page_context(sale: AuctionSale, max_chars: int = 5000) -> str | None:
@@ -704,7 +930,7 @@ def _save_extraction(
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{sale_storage_id(sale)}.json"
-    payload = extraction.model_dump()
+    payload = extraction.model_dump(mode="json")
     if cache_key or model or prompt_version:
         payload["_cache"] = {"key": cache_key, "model": model, "prompt_version": prompt_version}
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -748,6 +974,107 @@ def _llm_error_message(sale: AuctionSale, exc: Exception) -> str:
     return f"LLM extraction failed [{source}] {sale.source_url} — {title}: {detail[:500]}"
 
 
+def _merge_llm_extractions(extractions: list[LLMExtraction]) -> LLMExtraction:
+    if not extractions:
+        return LLMExtraction()
+    merged = extractions[0].model_copy(deep=True)
+    merged.assets = merge_extracted_assets([asset for item in extractions for asset in item.assets])
+    scalar_fields = (
+        "property_type",
+        "surface_m2",
+        "rooms_count",
+        "bedrooms_count",
+        "occupancy_status",
+        "occupancy_details",
+        "copropriete",
+        "works_needed",
+        "summary",
+        "investor_notes",
+    )
+    list_fields = (
+        "legal_risks",
+        "physical_risks",
+        "servitudes",
+        "investment_facts",
+        "contradictions",
+        "analysis_questions",
+        "scoring_guidance",
+    )
+    for extraction in extractions[1:]:
+        for field_name in scalar_fields:
+            current = getattr(merged, field_name)
+            incoming = getattr(extraction, field_name)
+            if current is None or current == "unknown":
+                setattr(merged, field_name, incoming)
+            elif incoming not in (None, "unknown") and incoming != current:
+                merged.contradictions.append(
+                    {
+                        "field": field_name,
+                        "statement": "Valeurs différentes relevées dans plusieurs fragments.",
+                        "sources": [str(current), str(incoming)],
+                        "confidence": 0.9,
+                    }
+                )
+                if field_name in {"surface_m2", "rooms_count", "bedrooms_count", "occupancy_status"}:
+                    setattr(merged, field_name, None if field_name != "occupancy_status" else "unknown")
+        for field_name in list_fields:
+            values = [*getattr(merged, field_name), *getattr(extraction, field_name)]
+            setattr(merged, field_name, _dedupe_json_values(values))
+        for field_name, score in extraction.confidence.items():
+            merged.confidence[field_name] = max(merged.confidence.get(field_name, 0.0), score)
+        for field_name, evidence in extraction.evidence.items():
+            if field_name not in merged.evidence:
+                merged.evidence[field_name] = evidence
+    return merged
+
+
+def _downgrade_extraction_completeness(extraction: LLMExtraction) -> LLMExtraction:
+    assets = []
+    for asset in extraction.assets:
+        completeness = asset.measurement_completeness
+        if completeness in {"complete", "likely_complete"}:
+            completeness = "partial"
+        assets.append(asset.model_copy(update={"measurement_completeness": completeness}))
+    return extraction.model_copy(update={"assets": assets})
+
+
+def _dedupe_json_values(values: list[Any]) -> list[Any]:
+    unique: list[Any] = []
+    seen: set[str] = set()
+    for value in values:
+        marker = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        unique.append(value)
+    return unique
+
+
+def _build_validated_display_context(
+    sale: AuctionSale,
+    extraction: LLMExtraction,
+    *,
+    fallback_context: str | None,
+) -> str:
+    facts = {
+        "property_type": extraction.property_type or sale.property_type,
+        "rooms_count": extraction.rooms_count or sale.rooms_count,
+        "bedrooms_count": extraction.bedrooms_count or sale.bedrooms_count,
+        "occupancy_status": extraction.occupancy_status or sale.occupancy_status,
+        "occupancy_details": extraction.occupancy_details,
+        "assets": [asset.model_dump(mode="json") for asset in extraction.assets],
+        "legal_risks": extraction.legal_risks,
+        "physical_risks": extraction.physical_risks,
+        "servitudes": extraction.servitudes,
+        "works_needed": extraction.works_needed,
+        "contradictions": extraction.contradictions,
+    }
+    sections = ["[FAITS STRUCTURES A VALIDER POUR AFFICHAGE]\n" + json.dumps(facts, ensure_ascii=False)]
+    if fallback_context:
+        sections.append(fallback_context)
+    return "\n\n".join(sections)
+
+
 def _apply_extraction_to_sale(
     sale: AuctionSale,
     extraction: LLMExtraction,
@@ -758,7 +1085,7 @@ def _apply_extraction_to_sale(
     confidence = extraction.confidence
     if prompt_version:
         sale.raw_payload["llm_prompt_version"] = prompt_version
-    if extraction.surface_m2 is not None:
+    if extraction.surface_m2 is not None or extraction.assets:
         stats.surface_detected += 1
     if extraction.rooms_count is not None:
         stats.rooms_detected += 1
@@ -767,10 +1094,38 @@ def _apply_extraction_to_sale(
     if extraction.occupancy_status not in (None, "unknown"):
         stats.occupancy_detected += 1
 
-    if sale.surface_m2 is None and extraction.surface_m2 is not None and confidence.get("surface_m2", 0) >= 0.7:
+    structured_assets = list(extraction.assets)
+    if not structured_assets:
+        deterministic_asset = extract_surface_facts_from_text(context)
+        if deterministic_asset is not None:
+            structured_assets = [deterministic_asset]
+    selected_structured_surface = None
+    if structured_assets:
+        previous_surface = sale.surface_m2
+        surface_result = apply_surface_reasoning_to_sale(
+            sale,
+            structured_assets,
+            context=context,
+            source="llm_structured_verified" if extraction.assets else "deterministic_surface_reasoning",
+        )
+        selected_structured_surface = surface_result.selected
+        if selected_structured_surface is not None:
+            stats.structured_surface_verified += 1
+            if selected_structured_surface.kind.startswith("calculated_"):
+                stats.calculated_surface_verified += 1
+            if sale.surface_m2 is not None and sale.surface_m2 != previous_surface:
+                stats.surface_extracted += 1
+
+    if (
+        selected_structured_surface is None
+        and sale.surface_m2 is None
+        and extraction.surface_m2 is not None
+        and confidence.get("surface_m2", 0) >= 0.7
+        and _scalar_surface_is_supported(context, extraction.surface_m2, extraction.evidence)
+    ):
         try:
             sale.surface_m2 = Decimal(str(extraction.surface_m2))
-            sale.surface_source = sale.surface_source or "llm"
+            sale.surface_source = sale.surface_source or "llm_explicit_verified"
             sale.surface_confidence = sale.surface_confidence or Decimal(str(confidence.get("surface_m2", 0)))
             evidence_quote = _evidence_quote(extraction.evidence, "surface_m2")
             if evidence_quote and not sale.surface_evidence:
@@ -826,6 +1181,26 @@ def _apply_extraction_to_sale(
     due_diligence = _due_diligence_payload(extraction)
     if due_diligence:
         sale.raw_payload["llm_due_diligence"] = due_diligence
+
+
+def _scalar_surface_is_supported(context: str, value: float, evidence: dict[str, Any]) -> bool:
+    quote = _evidence_quote(evidence, "surface_m2")
+    variants = {
+        str(value),
+        str(value).replace(".", ","),
+        str(Decimal(str(value)).normalize()),
+        str(Decimal(str(value)).normalize()).replace(".", ","),
+    }
+    searchable = quote or context
+    if not searchable or not any(variant in searchable for variant in variants):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:surface|superficie|carrez|habitable|appartement|maison|immeuble|b[âa]timent|local)\b",
+            searchable,
+            re.I,
+        )
+    )
 
 
 def _format_risk_notes(extraction: LLMExtraction) -> str | None:

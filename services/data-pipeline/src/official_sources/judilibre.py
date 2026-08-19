@@ -116,12 +116,15 @@ class JudilibreDecision(JudilibreDecisionSummary):
     contested: dict[str, Any] | None = None
     forward: dict[str, Any] | None = None
     rapprochements: list[dict[str, Any]] = Field(default_factory=list)
-    timeline: list[dict[str, Any]] = Field(default_factory=list)
+    timeline: list[dict[str, Any]] | None = Field(default_factory=list)
     to_be_deleted: bool = False
     partial: bool = False
     legacy: dict[str, Any] = Field(default_factory=dict)
     particular_interest: bool = Field(default=False, alias="particularInterest")
-    titles_and_summaries: dict[str, Any] = Field(default_factory=dict, alias="titlesAndSummaries")
+    titles_and_summaries: dict[str, Any] | list[Any] = Field(
+        default_factory=dict,
+        alias="titlesAndSummaries",
+    )
 
     @field_validator("decision_datetime", "update_datetime")
     @classmethod

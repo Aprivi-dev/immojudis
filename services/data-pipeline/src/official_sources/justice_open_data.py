@@ -38,6 +38,27 @@ COMPETENCE_SCHEMA = (
     "Conseil de Prud'hommes compétent",
 )
 
+# The July 2026 publication clarified the proximity-court column label without
+# changing its meaning. Canonicalize it so historical and current Ministry
+# exports share one parser contract.
+_COMPETENCE_HEADER_ALIASES = {
+    "Tribunal de proximité compétent (hors communes exclusives aux TJ)": (
+        "Tribunal de proximité compétent"
+    ),
+}
+
+# These stable commune/court pairs are deliberately geographically dispersed.
+# They catch a real failure mode observed in a structurally valid Ministry CSV
+# where the jurisdiction columns were shifted between communes. Schema checks
+# and per-row SRJ validation alone cannot detect that semantic corruption.
+_COMPETENCE_SEMANTIC_CANARIES = {
+    "01187": "Tribunal judiciaire de Bourg-en-Bresse",
+    "13201": "Tribunal judiciaire de Marseille",
+    "33063": "Tribunal judiciaire de Bordeaux",
+    "69381": "Tribunal judiciaire de Lyon",
+    "75056": "Tribunal judiciaire de Paris",
+}
+
 STRUCTURE_SCHEMA = (
     "TYPE",
     "CODE_INSEE",
@@ -123,6 +144,42 @@ def parse_justice_competences_csv(path: str | Path) -> JusticeOpenDataParseResul
 
 def parse_justice_structures_csv(path: str | Path) -> JusticeOpenDataParseResult:
     return _parse_expected_csv(Path(path), expected_kind="justice_court_structure")
+
+
+def validate_justice_competence_semantics(
+    result: JusticeOpenDataParseResult,
+) -> None:
+    """Reject a full territorial reference whose commune mappings are corrupt.
+
+    This validator is intentionally separate from the row parser: unit tests,
+    bounded samples and fixtures may contain only a few communes. Production
+    ingestion and the competent-court resolver call it on the complete file.
+    """
+
+    if result.quality.dataset_kind != "justice_court_competence":
+        raise JusticeOpenDataSchemaError(
+            "territorial competence semantic validation requires the competence dataset"
+        )
+    if result.quality.rejected_rows or result.quality.valid_rows < 34_000:
+        raise JusticeOpenDataSchemaError(
+            "territorial competence reference is incomplete or contains rejected rows"
+        )
+
+    court_by_insee = {
+        str(record.get("insee_code") or "").upper(): _court_fingerprint(
+            record.get("tj_name")
+        )
+        for record in result.records
+    }
+    mismatches = [
+        insee_code
+        for insee_code, expected_court in _COMPETENCE_SEMANTIC_CANARIES.items()
+        if court_by_insee.get(insee_code) != _court_fingerprint(expected_court)
+    ]
+    if mismatches:
+        raise JusticeOpenDataSchemaError(
+            "territorial competence reference failed semantic canaries: " + ", ".join(mismatches)
+        )
 
 
 def _parse_expected_csv(path: Path, *, expected_kind: str) -> JusticeOpenDataParseResult:
@@ -412,11 +469,18 @@ def _field_token(value: str) -> str:
 
 
 def _clean_header(value: str) -> str:
-    return unicodedata.normalize("NFC", str(value)).strip().lstrip("\ufeff")
+    cleaned = unicodedata.normalize("NFC", str(value)).strip().lstrip("\ufeff")
+    return _COMPETENCE_HEADER_ALIASES.get(cleaned, cleaned)
 
 
 def _clean_text(value: object) -> str:
     return unicodedata.normalize("NFC", str(value or "")).strip()
+
+
+def _court_fingerprint(value: object) -> str:
+    normalized = unicodedata.normalize("NFKD", _clean_text(value))
+    ascii_text = "".join(char for char in normalized if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", " ", ascii_text.lower()).strip()
 
 
 def _looks_like_html(text: str) -> bool:
@@ -436,6 +500,8 @@ def _main() -> int:
     parser.add_argument("path", type=Path)
     args = parser.parse_args()
     result = parse_justice_open_data_csv(args.path)
+    if result.quality.dataset_kind == "justice_court_competence":
+        validate_justice_competence_semantics(result)
     print(json.dumps(result.quality.as_dict(), ensure_ascii=False, sort_keys=True, indent=2))
     return 0
 

@@ -4,9 +4,10 @@ SYSTEM_PROMPT = (
     "Tu es un extracteur de données spécialisé dans les ventes aux enchères "
     "immobilières judiciaires françaises. Tu agis comme un analyste de due "
     "diligence : tu identifies les faits importants, leur source, les "
-    "contradictions et les incertitudes. Tu dois extraire uniquement les "
-    "informations explicitement présentes dans les documents fournis. Tu ne dois "
-    "jamais déduire, compléter, arrondir ou inventer. Si une information est "
+    "contradictions et les incertitudes. Tu extrais toutes les mesures explicites "
+    "pièce par pièce et lot par lot, avec leur preuve exacte. Tu ne dois jamais "
+    "compléter, arrondir ou inventer une mesure. Le calcul arithmétique et le choix "
+    "de la surface canonique sont réalisés ensuite par un validateur déterministe. Si une information est "
     "absente, contradictoire, illisible ou ambiguë, retourne null ou unknown, "
     "signale l'incertitude et baisse fortement la confiance. Réponds uniquement "
     "avec un objet JSON valide, sans markdown, sans commentaire et sans texte "
@@ -31,24 +32,24 @@ def build_user_prompt(context_text: str) -> str:
         "Règles anti-hallucination obligatoires :\n"
         "- N'extrais une valeur que si elle est explicitement écrite dans le texte fourni.\n"
         "- N'utilise pas tes connaissances générales, le nom de la ville, le type d'annonce ou des habitudes de marché.\n"
-        "- Si le texte contient plusieurs valeurs contradictoires pour le même champ, retourne null ou unknown.\n"
+        "- Si le texte contient plusieurs valeurs contradictoires pour le même champ, conserve les valeurs dans explicit_surfaces/contradictions et retourne le champ scalaire null.\n"
         "- Si une valeur semble venir d'un tableau de diagnostics, d'un DPE, d'une page, d'un article ou d'un numéro de lot, ne l'utilise pas.\n"
         "- Ne convertis pas les ares/centiares en m² sauf si le document donne explicitement une surface en m².\n"
         "- Les champs texte doivent rester courts et citer les mots utiles du document quand c'est possible.\n\n"
-        "Règles synthèse d'affichage Immojudis :\n"
-        "- display_description est le paragraphe public affiché sur la fiche de bien. Il doit condenser l'ensemble des informations fiables du contexte : annonce source, champs structurés déjà extraits, PV descriptif, cahier des conditions, diagnostics et autres documents fournis.\n"
-        "- Utilise uniquement les faits explicitement présents dans le contexte. Ne complète jamais avec une hypothèse, une estimation, une connaissance de marché ou une formulation commerciale.\n"
-        "- Priorise les faits utiles au lecteur : type de bien, localisation, surface, composition, lots/annexes, stationnement, extérieur, occupation, état/travaux, diagnostics/servitudes/contraintes seulement s'ils sont confirmés.\n"
-        "- En cas de contradiction entre sources, ne tranche pas : mentionne l'incertitude en termes sobres ou omets le point si la contradiction rend le fait inexploitable.\n"
-        "- Rédige un seul paragraphe en français naturel, sans titre, sans markdown, sans puces et sans retour à la ligne. Vise 90 à 110 mots ; si les données fiables sont rares, reste plus court sans remplissage.\n"
-        "- Le ton doit être neutre, factuel et homogène d'une annonce à l'autre. N'utilise pas de superlatifs, de promesse de rentabilité, de conseil juridique ou de mention du LLM.\n"
-        "- Ne mentionne jamais que le texte a été reformulé par un LLM.\n\n"
+        "Séparation des responsabilités :\n"
+        "- Cette passe extrait uniquement des faits. Laisse display_description à null.\n"
+        "- Une seconde passe rédigera la synthèse à partir des faits validés.\n\n"
         "Règles surfaces :\n"
         "- surface_m2 doit représenter la surface principale du bien, pas une surface de terrain, garage, cave, dépendance, local annexe ou piscine.\n"
         "- Pour un appartement, privilégie une surface loi Carrez explicitement mentionnée.\n"
         "- Pour une maison, privilégie une surface habitable explicitement mentionnée.\n"
         "- Pour un terrain/parcelle, utilise une contenance uniquement si le bien est clairement un terrain.\n"
-        "- Ne somme jamais plusieurs surfaces sauf si le texte indique explicitement un total.\n"
+        "- N'effectue aucune somme toi-même : extrais chaque pièce dans assets[].spaces. Le serveur vérifiera et calculera le total.\n"
+        "- Pour chaque logement, local ou lot distinct, crée un asset_id stable dans cette réponse. Ne mélange jamais deux logements.\n"
+        "- Pour une surface globale explicitement écrite, utilise assets[].explicit_surfaces et indique son type exact.\n"
+        "- Une surface écrite m³ dans un passage parlant clairement de surface doit garder unit_as_written=m3 ; ne corrige pas silencieusement l'unité.\n"
+        "- included_in_habitable_sum doit être false pour garage, cave, grenier non aménagé, parking, balcon, terrasse, jardin et terrain.\n"
+        "- measurement_completeness vaut complete seulement si le document présente clairement la composition exhaustive ; partial si certaines pièces ne sont pas mesurées.\n"
         "- Si seule une surface annexe est visible, retourne surface_m2 null et confidence.surface_m2 0.\n\n"
         "Règles pièces et chambres :\n"
         "- rooms_count correspond au nombre de pièces principales. T3 signifie 3 pièces.\n"
@@ -92,6 +93,20 @@ def build_user_prompt(context_text: str) -> str:
         '  "property_type": "apartment|house|building|land|commercial|parking|mixed|other|unknown|null",\n'
         '  "display_description": null,\n'
         '  "surface_m2": 0.0,\n'
+        '  "assets": [\n'
+        '    {\n'
+        '      "asset_id": "asset-1",\n'
+        '      "lot_labels": ["lot 14"],\n'
+        '      "property_type": "apartment|house|building|commercial|parking|other|unknown|null",\n'
+        '      "measurement_completeness": "complete|likely_complete|partial|unknown",\n'
+        '      "spaces": [\n'
+        '        {"measurement_id": null, "asset_id": "asset-1", "lot_label": "lot 14", "level": null, "space_label": "séjour", "category": "habitable|circulation|sanitary|service|annex|exterior|land|unknown", "value_m2": 19.56, "included_in_habitable_sum": true, "confidence": 0.0, "evidence": {"quote": "citation exacte avec 19,56 m²", "document_url": null, "document_label": null, "page_number": null, "source_kind": null}, "extraction_method": "llm"}\n'
+        '      ],\n'
+        '      "explicit_surfaces": [\n'
+        '        {"candidate_id": null, "asset_id": "asset-1", "value_m2": 64.8, "kind": "explicit_carrez|explicit_habitable|explicit_total|explicit_built|land|annex|unknown", "scope": "sale|asset|lot|level|partial|unknown", "is_explicit": true, "unit_as_written": "m2|m3", "confidence": 0.0, "evidence": {"quote": "citation exacte", "document_url": null, "document_label": null, "page_number": null, "source_kind": null}}\n'
+        '      ]\n'
+        '    }\n'
+        '  ],\n'
         '  "rooms_count": null,\n'
         '  "bedrooms_count": null,\n'
         '  "occupancy_status": "vacant|occupied|rented|owner_occupied|squatted|unknown|null",\n'

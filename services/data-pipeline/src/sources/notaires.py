@@ -81,7 +81,11 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
                     if sale.get("department") in TARGET_DEPARTMENTS:
                         raw_sales.append(sale)
 
-    return ScrapeResult(validate_raw_sales("notaires", unique_dicts(raw_sales, "source_url"), errors), errors)
+    return ScrapeResult(
+        validate_raw_sales("notaires", unique_dicts(raw_sales, "source_url"), errors),
+        errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
+    )
 
 
 def _department_filters() -> tuple[str | None, ...]:

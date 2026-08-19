@@ -1,3 +1,4 @@
+from src.court_competence import CompetentCourtAssignment
 from src.normalize import normalize_sale
 from src.tribunal import fill_tribunal
 
@@ -11,11 +12,90 @@ def test_fill_tribunal_from_city_mapping() -> None:
             "department": "33",
         }
     )
-
     fill_tribunal(sale)
 
     assert sale.tribunal == "TJ Bordeaux"
     assert sale.tribunal_code == "bordeaux"
+    assert "tribunal_competence_unverified" in sale.quality_flags
+
+
+def test_fill_tribunal_prefers_verified_insee_competence(
+    monkeypatch,
+) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/haut-valromey",
+            "department": "01",
+            "city": "Haut-Valromey",
+            "tribunal": "TJ Saintes",
+            "raw_payload": {
+                "geocode": {
+                    "provider": "ban_geoplateforme",
+                    "accepted": True,
+                    "citycode": "01187",
+                }
+            },
+        }
+    )
+    sale.raw_payload["geocode"] = {
+        "provider": "ban_geoplateforme",
+        "accepted": True,
+        "citycode": "01187",
+    }
+    assignment = CompetentCourtAssignment(
+        insee_code="01187",
+        commune_name="HAUT VALROMEY",
+        court_code="justice_tj_1_39",
+        court_name="TJ Bourg-en-Bresse",
+        official_court_name="Tribunal judiciaire de Bourg-en-Bresse",
+        court_origin_code="1",
+        court_srj_code="39",
+        court_department="01",
+        court_city="Bourg-en-Bresse",
+        reference_sha256="b" * 64,
+    )
+    monkeypatch.setattr("src.tribunal.resolve_competent_court", lambda _sale: assignment)
+
+    fill_tribunal(sale)
+
+    assert sale.tribunal == "TJ Bourg-en-Bresse"
+    assert sale.tribunal_code == "justice_tj_1_39"
+    assert sale.raw_payload["tribunal_assignment"] == assignment.evidence()
+    assert "tribunal_competence_unverified" not in sale.quality_flags
+
+
+def test_fill_tribunal_does_not_guess_when_verified_insee_is_unresolved(
+    monkeypatch,
+) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/bordeaux",
+            "department": "33",
+            "city": "Bordeaux",
+            "tribunal": "TJ Bordeaux",
+            "raw_payload": {
+                "geocode": {
+                    "provider": "ban_geoplateforme",
+                    "accepted": True,
+                    "citycode": "33063",
+                }
+            },
+        }
+    )
+    sale.raw_payload["geocode"] = {
+        "provider": "ban_geoplateforme",
+        "accepted": True,
+        "citycode": "33063",
+    }
+    monkeypatch.setattr("src.tribunal.resolve_competent_court", lambda _sale: None)
+
+    fill_tribunal(sale)
+
+    assert sale.tribunal is None
+    assert sale.tribunal_code is None
+    assert "tribunal_competence_unresolved" in sale.quality_flags
 
 
 def test_fill_tribunal_prefers_explicit_raw_text() -> None:
@@ -46,8 +126,8 @@ def test_fill_tribunal_rejects_out_of_department_known_tribunal() -> None:
 
     fill_tribunal(sale)
 
-    assert sale.tribunal == "TJ Bordeaux"
-    assert sale.tribunal_code == "bordeaux"
+    assert sale.tribunal == "TJ Lyon"
+    assert sale.tribunal_code is None
     assert "tribunal_inconsistent" in sale.quality_flags
 
 

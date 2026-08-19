@@ -60,28 +60,36 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      REPLICATE_MODEL: qwen/qwen3-7-plus
       PIPELINE_ENRICH_WORKERS: 2
       PIPELINE_LLM_WORKERS: 1
       PIPELINE_PDF_MAX_TARGETS: 10
       PIPELINE_LLM_MAX_TARGETS: 10
       PIPELINE_LLM_BACKFILL_MAX_TARGETS: 10
       PIPELINE_LLM_BACKFILL_PROGRESS_EVERY: 5
-      PIPELINE_IDLE_LLM_BACKFILL_ENABLED: false
+      PIPELINE_IDLE_LLM_BACKFILL_ENABLED: true
+      PIPELINE_ENRICHMENT_QUEUE_ENABLED: true
+      PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE: 10
       REPLICATE_MIN_INTERVAL_SECONDS: 15
       REPLICATE_WAIT_SECONDS: 1
       REPLICATE_MAX_RETRIES: 4
       REPLICATE_RETRY_BACKOFF_SECONDS: 30
       REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
-      REPLICATE_MAX_TOKENS: 1024
-      LLM_EXTRACTION_MODE: display_description
-      LLM_PDF_MAX_CHARS: 6000
+      REPLICATE_MAX_TOKENS: 8192
+      LLM_EXTRACTION_MODE: structured_then_display
+      LLM_PROMPT_VERSION: auction_llm_v8_qwen37_structured_display
+      LLM_FACT_PROMPT_VERSION: auction_facts_v1
+      LLM_DISPLAY_PROMPT_VERSION: auction_display_v7
+      LLM_FACT_CHUNK_CHARS: 12000
+      LLM_FACT_MAX_CHUNKS: 0
+      LLM_DISPLAY_CONTEXT_CHARS: 12000
+      LLM_PDF_MAX_CHARS: 12000
       LLM_ENABLED: true
       LLM_PROVIDER: replicate
-      LLM_PROMPT_VERSION: auction_llm_v6_display
       PDF_EXTRACTOR: auto
       PDF_DOCLING_ENABLED: false
       PDF_OCR_ENABLED: true
-      PDF_MAX_DOCUMENTS_PER_SALE: 2
+      PDF_MAX_DOCUMENTS_PER_SALE: 6
       ENABLE_LICITOR_BENCHMARK: true
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
@@ -137,6 +145,7 @@ jobs:
           }
 
           cutoff="$(date -u -d '190 minutes ago' +'%Y-%m-%dT%H:%M:%SZ')"
+          enrichment_cutoff="$(date -u -d '30 minutes ago' +'%Y-%m-%dT%H:%M:%SZ')"
           now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
           if [ -n "${GITHUB_TOKEN:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
@@ -196,6 +205,26 @@ jobs:
             --data-urlencode "limit=1"; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             echo "reason=queued_data_refresh" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if has_rows auction_enrichment_jobs \
+            --data-urlencode "select=id" \
+            --data-urlencode "status=in.(queued,failed)" \
+            --data-urlencode "next_attempt_at=lte.$now" \
+            --data-urlencode "limit=1"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=queued_enrichment" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if has_rows auction_enrichment_jobs \
+            --data-urlencode "select=id" \
+            --data-urlencode "status=eq.running" \
+            --data-urlencode "locked_at=lt.$enrichment_cutoff" \
+            --data-urlencode "limit=1"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=stale_enrichment_lock" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 

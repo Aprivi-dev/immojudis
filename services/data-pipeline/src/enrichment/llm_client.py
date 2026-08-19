@@ -37,6 +37,7 @@ class ReplicateClient:
     min_interval_seconds: float | None = None
     thinking_budget: int | None = None
     dynamic_thinking: bool | None = None
+    thinking_level: str | None = None
 
     def __post_init__(self) -> None:
         settings = load_settings()
@@ -69,6 +70,7 @@ class ReplicateClient:
             if self.dynamic_thinking is not None
             else bool(settings["replicate_dynamic_thinking"])
         )
+        self.thinking_level = self.thinking_level or str(settings.get("replicate_thinking_level") or "low")
 
     def is_available(self) -> bool:
         return bool(self.api_token and self.model)
@@ -185,14 +187,30 @@ class ReplicateClient:
 
     def _input_payload(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
         if _is_gemini_model(str(self.model)):
-            return {
+            payload = {
                 "prompt": prompt,
                 "system_instruction": system_prompt or "",
                 "temperature": float(self.temperature if self.temperature is not None else 0),
                 "top_p": 1,
                 "max_output_tokens": int(self.max_tokens or 8192),
-                "thinking_budget": int(self.thinking_budget or 0),
-                "dynamic_thinking": bool(self.dynamic_thinking),
+            }
+            if _is_gemini_3_model(str(self.model)):
+                payload["thinking_level"] = (
+                    self.thinking_level if self.thinking_level in {"none", "low", "high"} else "low"
+                )
+            else:
+                payload["thinking_budget"] = int(self.thinking_budget or 0)
+                payload["dynamic_thinking"] = bool(self.dynamic_thinking)
+            return payload
+        if _is_qwen_model(str(self.model)):
+            return {
+                "prompt": prompt,
+                "system_prompt": system_prompt or "",
+                "max_tokens": int(self.max_tokens or 8192),
+                "temperature": float(self.temperature if self.temperature is not None else 0),
+                "top_p": 0.8,
+                "presence_penalty": 0,
+                "frequency_penalty": 0,
             }
         return {
             "prompt": prompt,
@@ -236,13 +254,21 @@ def create_llm_client() -> ReplicateClient:
 
 
 def _user_prompt_for_model(model: str, system_prompt: str, user_prompt: str) -> str:
-    if _is_gemini_model(model):
+    if _is_gemini_model(model) or _is_qwen_model(model):
         return (
             f"{user_prompt}\n\n"
             "RAPPEL FINAL: réponds uniquement par un objet JSON valide. "
             "Le premier caractère de ta réponse doit être { et le dernier doit être }."
         )
     return _combine_prompts(system_prompt, user_prompt)
+
+
+def _is_gemini_3_model(model: str) -> bool:
+    return bool(re.search(r"(?:^|/)gemini-3(?:[.-]|$)", model, re.I))
+
+
+def _is_qwen_model(model: str) -> bool:
+    return model.lower().startswith("qwen/")
 
 
 def _combine_prompts(system_prompt: str, user_prompt: str) -> str:

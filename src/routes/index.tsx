@@ -3,20 +3,13 @@
 import { createFileRoute, Link } from "@/lib/router-compat";
 import Image from "next/image";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
-import Bell from "lucide-react/dist/esm/icons/bell.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import Calculator from "lucide-react/dist/esm/icons/calculator.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
-import Database from "lucide-react/dist/esm/icons/database.js";
-import FileChartColumnIncreasing from "lucide-react/dist/esm/icons/file-chart-column-increasing.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
-import Gauge from "lucide-react/dist/esm/icons/gauge.js";
-import Landmark from "lucide-react/dist/esm/icons/landmark.js";
-import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Radar from "lucide-react/dist/esm/icons/radar.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
-import UsersRound from "lucide-react/dist/esm/icons/users-round.js";
 import { useEffect, useState, type ComponentType } from "react";
 import { BrandMark } from "@/components/BrandLogo";
 import { RESOURCES_PATH } from "@/lib/navigation";
@@ -46,7 +39,7 @@ type CandleArrowGeometry = {
 const benefits = [
   { icon: FileSearch, title: "Rapports d'opportunité", text: "mise à prix, DVF, risques" },
   { icon: Calculator, title: "Mise plafond", text: "budget, frais, travaux, marge" },
-  { icon: Bell, title: "Alertes data-driven", text: "décote, rendement, zone" },
+  { icon: Radar, title: "Alertes data-driven", text: "décote, rendement, zone" },
 ] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
 
 const auctionCards = [
@@ -116,7 +109,7 @@ const workflowSteps = [
 
 const reportPillars = [
   {
-    icon: FileChartColumnIncreasing,
+    icon: ChartNoAxesCombined,
     title: "Rapport d'opportunité judiciaire",
     text: "Une fiche lisible qui rassemble mise à prix, estimation de marché, fourchette de valeur, comparables DVF, prix moyen local, décote apparente et niveau de confiance.",
   },
@@ -131,12 +124,12 @@ const reportPillars = [
     text: "Alertes quand une vente correspond à une zone, une décote minimale, un DPE, une maison avec terrain ou un rendement potentiel défini.",
   },
   {
-    icon: Database,
+    icon: FileSearch,
     title: "Donnée judiciaire enrichie",
     text: "Le différenciateur reste vertical : tribunal, audience, documents, occupation connue, risques, parcelle cadastrale et sources horodatées.",
   },
   {
-    icon: UsersRound,
+    icon: Scale,
     title: "Avocats référencés",
     text: "Une brique de mise en relation oriente l'acheteur vers des avocats référencés par barreau, tribunal et zone d'intervention.",
   },
@@ -549,12 +542,12 @@ function AuctionCardsSection() {
             </span>
             <span className="ij-card-body">
               <span className="ij-card-city">
-                <MapPin aria-hidden className="h-4 w-4" />
+                <Radar aria-hidden className="h-4 w-4" />
                 {card.city}
               </span>
               <strong>{card.title}</strong>
               <span className="ij-card-meta">
-                <Landmark aria-hidden className="h-4 w-4" />
+                <Scale aria-hidden className="h-4 w-4" />
                 {card.tribunal}
               </span>
               <span className="ij-card-price">
@@ -597,7 +590,7 @@ function OfferPlansSection() {
             <ul>
               {plan.features.map((feature) => (
                 <li key={feature}>
-                  <Gauge aria-hidden className="h-4 w-4" />
+                  <ChartNoAxesCombined aria-hidden className="h-4 w-4" />
                   <span>{feature}</span>
                 </li>
               ))}

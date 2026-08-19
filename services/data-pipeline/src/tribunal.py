@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from src.court_competence import resolve_competent_court, verified_sale_insee_code
 from src.models import AuctionSale
 from src.normalize import clean_text
 
@@ -86,14 +87,6 @@ DEPARTMENT_TRIBUNALS = {
     "64": {"TJ Bayonne", "TJ Pau"},
 }
 
-DEPARTMENT_DEFAULT_TRIBUNAL = {
-    "33": "TJ Bordeaux",
-    "24": "TJ Périgueux",
-    "40": "TJ Dax",
-    "47": "TJ Agen",
-    "64": "TJ Bayonne",
-}
-
 
 def infer_tribunal(sale: AuctionSale) -> str | None:
     explicit = _extract_explicit_tribunal(sale.raw_text)
@@ -113,9 +106,6 @@ def infer_tribunal(sale: AuctionSale) -> str | None:
     if city_key in CITY_TO_TRIBUNAL:
         return CITY_TO_TRIBUNAL[city_key]
 
-    if sale.department in DEPARTMENT_DEFAULT_TRIBUNAL:
-        return DEPARTMENT_DEFAULT_TRIBUNAL[sale.department]
-
     return None
 
 
@@ -126,11 +116,31 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
         _add_quality_flag(sale, "non_judicial_sale_context")
         return sale
 
+    verified_insee_code = verified_sale_insee_code(sale)
+    competent_court = resolve_competent_court(sale)
+    if competent_court is not None:
+        sale.tribunal = competent_court.court_name
+        sale.tribunal_code = competent_court.court_code
+        sale.raw_payload["tribunal_assignment"] = competent_court.evidence()
+        _remove_quality_flag(sale, "tribunal_inconsistent")
+        _remove_quality_flag(sale, "tribunal_competence_unresolved")
+        _remove_quality_flag(sale, "tribunal_competence_unverified")
+        return sale
+    if verified_insee_code is not None:
+        # A verified commune without a valid Ministry reference must never
+        # fall through to a city list or a department-wide default.
+        sale.tribunal = None
+        sale.tribunal_code = None
+        sale.raw_payload.pop("tribunal_assignment", None)
+        _add_quality_flag(sale, "tribunal_competence_unresolved")
+        return sale
+
     canonical = canonicalize_tribunal(sale.tribunal)
     if canonical:
         sale.tribunal = canonical
         sale.tribunal_code = TRIBUNAL_CODES.get(canonical)
         validate_tribunal(sale)
+        _add_quality_flag(sale, "tribunal_competence_unverified")
         return sale
     if clean_text(sale.tribunal):
         _add_quality_flag(sale, "tribunal_inconsistent")
@@ -140,6 +150,8 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
     sale.tribunal = infer_tribunal(sale)
     sale.tribunal_code = TRIBUNAL_CODES.get(sale.tribunal or "")
     validate_tribunal(sale)
+    if sale.tribunal:
+        _add_quality_flag(sale, "tribunal_competence_unverified")
     if had_invalid_source_tribunal:
         _add_quality_flag(sale, "tribunal_inconsistent")
     return sale
@@ -157,13 +169,6 @@ def validate_tribunal(sale: AuctionSale) -> AuctionSale:
     sale.tribunal_code = TRIBUNAL_CODES.get(sale.tribunal or "")
     if sale.tribunal not in AQUITAINE_TRIBUNALS:
         _add_quality_flag(sale, "tribunal_inconsistent")
-        previous = sale.tribunal
-        sale.tribunal = None
-        city_key = _fingerprint(sale.city)
-        sale.tribunal = CITY_TO_TRIBUNAL.get(city_key) or DEPARTMENT_DEFAULT_TRIBUNAL.get(sale.department or "")
-        sale.tribunal_code = TRIBUNAL_CODES.get(sale.tribunal or "")
-        if sale.tribunal is None:
-            sale.tribunal = previous
         return sale
     if sale.tribunal not in DEPARTMENT_TRIBUNALS[sale.department]:
         _add_quality_flag(sale, "tribunal_inconsistent")

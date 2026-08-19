@@ -78,6 +78,11 @@ def test_document_facts_version_forces_one_time_pdf_reanalysis() -> None:
 
     sale.raw_payload["document_facts_version"] = "document_facts_v1_starting_price"
 
+    assert main._needs_structured_heavy_enrichment(sale) is True
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
+
+    sale.raw_payload["document_facts_version"] = main.DOCUMENT_FACTS_VERSION
+
     assert main._needs_structured_heavy_enrichment(sale) is False
     assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is True
 

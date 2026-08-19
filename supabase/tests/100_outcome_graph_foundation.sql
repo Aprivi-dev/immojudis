@@ -441,6 +441,82 @@ select throws_ok(
   'a model cannot bypass the reviewed promotion workflow on insert'
 );
 
+create function pg_temp.outcome_promotion_report(p_mode text)
+returns jsonb
+language sql
+immutable
+as $$
+  select jsonb_build_object(
+    'schemaVersion', 'outcome_model_evaluation_report_v1',
+    'thresholdVersion', 'outcome-commercial-v1',
+    'evaluationMode', p_mode,
+    'aggregateOnly', true,
+    'containsPersonalData', false,
+    'metrics', jsonb_build_object(
+      'brierScore', 0.14,
+      'logLoss', 0.41,
+      'meanAbsoluteError', 12450,
+      'intervalCoverage80', 0.79
+    ),
+    'calibration', jsonb_build_object(
+      'expectedCalibrationError', 0.04,
+      'maximumCalibrationError', 0.09,
+      'binCount', 10
+    ),
+    'gates', jsonb_build_object(
+      'inputContractPassed', true,
+      'temporalLeakageCheckPassed', true,
+      'performanceThresholdPassed', true,
+      'calibrationThresholdPassed', true
+    )
+  );
+$$;
+
+create procedure pg_temp.append_passing_outcome_evaluation(
+  p_model_version_id uuid,
+  p_mode text,
+  p_knowledge_cutoff_at timestamptz
+)
+language sql
+as $$
+  insert into public.outcome_model_evaluations (
+    model_version_id, evaluation_mode, evaluation_status,
+    evaluation_rule_version, model_status_at_evaluation,
+    evaluation_period_start, evaluation_period_end,
+    feature_cutoff_at, outcome_cutoff_at, knowledge_cutoff_at,
+    required_observation_count, observation_count,
+    eligible_observation_count, scored_observation_count,
+    known_outcome_count, excluded_observation_count,
+    invalid_observation_count, source_manifest_hash,
+    prediction_manifest_hash, outcome_manifest_hash, report,
+    report_hash, evaluation_hash, created_at
+  ) values (
+    p_model_version_id, p_mode, 'passed',
+    'outcome_evaluation_gate_v1', 'active',
+    case when p_mode = 'prospective_shadow'
+      then (p_knowledge_cutoff_at at time zone 'UTC')::date
+      else (p_knowledge_cutoff_at at time zone 'UTC')::date - 10 end,
+    case when p_mode = 'prospective_shadow'
+      then (p_knowledge_cutoff_at at time zone 'UTC')::date
+      else (p_knowledge_cutoff_at at time zone 'UTC')::date - 3 end,
+    case when p_mode = 'prospective_shadow'
+      then p_knowledge_cutoff_at
+      else p_knowledge_cutoff_at - interval '4 days' end,
+    case when p_mode = 'prospective_shadow'
+      then p_knowledge_cutoff_at
+      else p_knowledge_cutoff_at - interval '2 days' end,
+    p_knowledge_cutoff_at,
+    1,
+    case when p_mode = 'historical_replay' then 1000 else 300 end,
+    case when p_mode = 'historical_replay' then 1000 else 300 end,
+    300,
+    case when p_mode = 'historical_replay' then 1000 else 300 end,
+    0, 0, repeat('a', 64), repeat('b', 64), repeat('c', 64),
+    pg_temp.outcome_promotion_report(p_mode),
+    repeat('0', 64), repeat('0', 64), '2100-01-01 00:00:00+00'
+  );
+$$;
+
 insert into public.model_versions (
   id,
   model_key,
@@ -450,6 +526,9 @@ insert into public.model_versions (
   feature_schema_version,
   training_cutoff_at,
   training_sample_size,
+  metrics,
+  calibration,
+  artifact_sha256,
   created_at
 ) values (
   '98200000-0000-4000-8000-000000000001',
@@ -460,6 +539,9 @@ insert into public.model_versions (
   'outcome-v1',
   '2026-06-30T23:59:59Z',
   47,
+  '{"brierScore":0.14}'::jsonb,
+  '{"ece":0.04}'::jsonb,
+  repeat('1', 64),
   '2026-07-19T09:00:00Z'
 );
 
@@ -482,13 +564,30 @@ set
   approved_by = '92500000-0000-4000-8000-000000000001'
 where id = '98200000-0000-4000-8000-000000000001';
 
+call pg_temp.append_passing_outcome_evaluation(
+  '98200000-0000-4000-8000-000000000001',
+  'historical_replay',
+  '2026-07-22T09:00:00Z'
+);
+
+update public.model_versions
+set status = 'shadow'
+where id = '98200000-0000-4000-8000-000000000001';
+
+call pg_temp.append_passing_outcome_evaluation(
+  '98200000-0000-4000-8000-000000000001',
+  'prospective_shadow',
+  clock_timestamp()
+);
+
 update public.model_versions
 set status = 'active'
 where id = '98200000-0000-4000-8000-000000000001';
 
 insert into public.model_versions (
   id, model_key, version, model_kind, segment, feature_schema_version,
-  training_cutoff_at, training_sample_size, created_at
+  training_cutoff_at, training_sample_size, metrics, calibration,
+  artifact_sha256, created_at
 ) values (
   '98200000-0000-4000-8000-000000000002',
   'outcome-cohort',
@@ -498,6 +597,9 @@ insert into public.model_versions (
   'outcome-v1',
   '2026-06-30T23:59:59Z',
   47,
+  '{"brierScore":0.15}'::jsonb,
+  '{"ece":0.05}'::jsonb,
+  repeat('2', 64),
   '2026-07-19T09:00:00Z'
 );
 
@@ -508,13 +610,19 @@ set
   approved_by = '92500000-0000-4000-8000-000000000001'
 where id = '98200000-0000-4000-8000-000000000002';
 
+call pg_temp.append_passing_outcome_evaluation(
+  '98200000-0000-4000-8000-000000000002',
+  'historical_replay',
+  '2026-07-23T09:00:00Z'
+);
+
 update public.model_versions
 set status = 'shadow'
 where id = '98200000-0000-4000-8000-000000000002';
 
 insert into public.model_versions (
   id, model_key, version, model_kind, segment, feature_schema_version,
-  training_sample_size, created_at
+  training_sample_size, metrics, calibration, artifact_sha256, created_at
 ) values (
   '98200000-0000-4000-8000-000000000003',
   'outcome-cohort-no-cutoff',
@@ -523,6 +631,9 @@ insert into public.model_versions (
   'national',
   'outcome-v1',
   47,
+  '{"brierScore":0.16}'::jsonb,
+  '{"ece":0.06}'::jsonb,
+  repeat('3', 64),
   '2026-07-19T09:00:00Z'
 );
 
@@ -531,10 +642,6 @@ set
   status = 'validated',
   approved_at = '2026-07-21T09:00:00Z',
   approved_by = '92500000-0000-4000-8000-000000000001'
-where id = '98200000-0000-4000-8000-000000000003';
-
-update public.model_versions
-set status = 'active'
 where id = '98200000-0000-4000-8000-000000000003';
 
 select throws_ok(
@@ -817,8 +924,8 @@ select throws_ok(
       repeat('m', 64)
     )$$,
   '23514',
-  'Ready prediction requires a model training cutoff.',
-  'a ready prediction cannot use a model without a training cutoff'
+  'Published Outcome Graph prediction requires an active model.',
+  'a model without a training cutoff cannot pass the activation gate'
 );
 
 select throws_ok(
@@ -1190,11 +1297,15 @@ select throws_ok(
 );
 
 insert into public.model_versions (
-  model_key, version, model_kind, segment, feature_schema_version,
-  training_cutoff_at, training_sample_size, created_at
+  id, model_key, version, model_kind, segment, feature_schema_version,
+  training_cutoff_at, training_sample_size, metrics, calibration,
+  artifact_sha256, created_at
 ) values (
+  '98200000-0000-4000-8000-000000000004',
   'outcome-cohort', '2.0.0', 'cohort_baseline', 'national',
-  'outcome-v1', '2026-06-30T23:59:59Z', 47, '2026-07-19T09:00:00Z'
+  'outcome-v1', '2026-06-30T23:59:59Z', 47,
+  '{"brierScore":0.13}'::jsonb, '{"ece":0.03}'::jsonb,
+  repeat('4', 64), '2026-07-19T09:00:00Z'
 );
 
 update public.model_versions
@@ -1203,6 +1314,22 @@ set
   approved_at = '2026-07-21T09:00:00Z',
   approved_by = '92500000-0000-4000-8000-000000000001'
 where model_key = 'outcome-cohort' and version = '2.0.0';
+
+call pg_temp.append_passing_outcome_evaluation(
+  '98200000-0000-4000-8000-000000000004',
+  'historical_replay',
+  '2026-07-24T09:00:00Z'
+);
+
+update public.model_versions
+set status = 'shadow'
+where id = '98200000-0000-4000-8000-000000000004';
+
+call pg_temp.append_passing_outcome_evaluation(
+  '98200000-0000-4000-8000-000000000004',
+  'prospective_shadow',
+  clock_timestamp()
+);
 
 select throws_ok(
   $$update public.model_versions
