@@ -8,7 +8,7 @@ describe("admin dashboard AI description stats", () => {
         status: "upcoming",
         raw_payload: {
           llm_display_description: "Synthèse prête.",
-          llm_prompt_version: "auction_llm_v8_qwen37_structured_display",
+          llm_prompt_version: "auction_llm_v9_qwen2_7b_scan_display",
         },
       },
       {
@@ -31,7 +31,7 @@ describe("admin dashboard AI description stats", () => {
     ]);
 
     expect(stats).toEqual({
-      expectedPromptVersion: "auction_llm_v8_qwen37_structured_display",
+      expectedPromptVersion: "auction_llm_v9_qwen2_7b_scan_display",
       total: 4,
       activeOrUpcoming: 3,
       ready: 1,
@@ -46,7 +46,7 @@ describe("admin dashboard AI description stats", () => {
       status: "past",
       raw_payload: {
         llm_display_description: "Ancienne annonce.",
-        llm_prompt_version: "auction_llm_v8_qwen37_structured_display",
+        llm_prompt_version: "auction_llm_v9_qwen2_7b_scan_display",
       },
     }));
     const secondPage = [
@@ -54,7 +54,7 @@ describe("admin dashboard AI description stats", () => {
         status: "active",
         raw_payload: {
           llm_display_description: "Synthèse active.",
-          llm_prompt_version: "auction_llm_v8_qwen37_structured_display",
+          llm_prompt_version: "auction_llm_v9_qwen2_7b_scan_display",
         },
       },
     ];

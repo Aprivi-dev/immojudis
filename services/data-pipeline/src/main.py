@@ -212,7 +212,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     try:
         known_details: dict[str, dict[str, object]] = (
             fetch_known_sale_details()
-            if (settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment)
+            if (
+                settings["incremental_enrichment"]
+                and options.upsert
+                and (options.heavy_enrichment or options.use_llm)
+            )
             else {}
         )
     except Exception as exc:
@@ -290,13 +294,18 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     # corrections de géocodage) arrivent jusqu'au read model.
     enriched_hashes: set[str] = set()
     current_llm_description_hashes: set[str] = set()
-    if settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment:
+    if (
+        settings["incremental_enrichment"]
+        and options.upsert
+        and (options.heavy_enrichment or options.use_llm)
+    ):
         content_hashes = [sale.content_hash for sale in canonical_sales if sale.content_hash]
-        enriched_hashes = fetch_enriched_content_hashes(
-            content_hashes,
-            require_llm_description=False,
-            require_document_analysis=True,
-        )
+        if options.heavy_enrichment:
+            enriched_hashes = fetch_enriched_content_hashes(
+                content_hashes,
+                require_llm_description=False,
+                require_document_analysis=True,
+            )
         if options.use_llm:
             current_llm_description_hashes = fetch_enriched_content_hashes(
                 content_hashes,
@@ -314,7 +323,10 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     pdf_stats = PdfEnrichmentStats()
     llm_stats = LLMEnrichmentStats()
     llm_client = None
-    if options.heavy_enrichment and options.use_llm:
+    # The public description is a lightweight product requirement of every
+    # scan. PDF/OCR can be disabled independently with --no-heavy-enrichment;
+    # only --no-llm explicitly disables the Replicate synthesis.
+    if options.use_llm:
         try:
             llm_client = create_llm_client()
         except LLMClientUnavailable as exc:
@@ -422,7 +434,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             and not _llm_description_already_current(sale, current_llm_description_hashes)
             and sale.source_url not in failed_urls
         ]
-        if options.heavy_enrichment and options.use_llm
+        if options.use_llm
         else []
     )
     llm_targets_before_limit = len(llm_targets)
@@ -1387,7 +1399,10 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
     parser.add_argument(
         "--no-heavy-enrichment",
         action="store_true",
-        help="Publie les annonces sans PDF/OCR/LLM. Utile pour un scrape rapide orienté visibilité front.",
+        help=(
+            "Publie les annonces sans PDF/OCR lourd. La synthèse Qwen courte reste active; "
+            "ajoutez --no-llm pour la désactiver explicitement."
+        ),
     )
     parser.add_argument("--no-upsert", action="store_true", help="N'écrit pas dans Supabase.")
     parser.add_argument("--limit", type=int, default=None, help="Limite le nombre d'annonces brutes traitées.")

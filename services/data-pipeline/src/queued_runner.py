@@ -10,7 +10,13 @@ from src.config import load_settings
 from src.dpe import enrich_dpe_sales
 from src.enrichment.extract_structured import enrich_sale_with_llm
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
-from src.main import SOURCE_NAMES, PipelineOptions, run_llm_description_backfill, run_pipeline
+from src.main import (
+    SOURCE_NAMES,
+    PipelineOptions,
+    _needs_llm_display_description_refresh,
+    run_llm_description_backfill,
+    run_pipeline,
+)
 from src.pdf_enrichment import enrich_sale_from_pdfs
 from src.sale_procedure import classify_sale_procedure
 from src.storage.supabase_client import (
@@ -199,6 +205,9 @@ def run_enrichment_queue_batch(*, limit: int) -> int:
         str(job.get("job_type") or "") in {"fact_extraction", "display_description"}
         for job in jobs
     )
+    settings = load_settings()
+    display_only_mode = str(settings.get("llm_extraction_mode") or "display_description") == "display_description"
+    prompt_version = str(settings.get("llm_prompt_version") or "")
     llm_client = None
     if needs_llm:
         try:
@@ -229,10 +238,23 @@ def run_enrichment_queue_batch(*, limit: int) -> int:
             if job_types & {"fact_extraction", "display_description"}:
                 if llm_client is None:
                     raise RuntimeError("LLM client unavailable")
-                llm_stats = enrich_sale_with_llm(sale, client=llm_client)
-                if llm_stats.unavailable or not llm_stats.valid_json:
-                    detail = llm_stats.error_messages[-1] if llm_stats.error_messages else "LLM extraction incomplete"
-                    raise RuntimeError(detail)
+                # The early scan upsert enqueues a safety-net job before the
+                # inline Qwen call. If the final upsert already persisted the
+                # current synthesis, completing that job without another paid
+                # prediction prevents duplicate Replicate spend.
+                description_current = not _needs_llm_display_description_refresh(
+                    sale,
+                    prompt_version=prompt_version,
+                )
+                if not (display_only_mode and description_current):
+                    llm_stats = enrich_sale_with_llm(sale, client=llm_client)
+                    if llm_stats.unavailable or not llm_stats.valid_json:
+                        detail = (
+                            llm_stats.error_messages[-1]
+                            if llm_stats.error_messages
+                            else "LLM extraction incomplete"
+                        )
+                        raise RuntimeError(detail)
             fill_tribunal(sale)
             classify_sale_procedure(sale)
             normalize_asset_features(sale)

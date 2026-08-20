@@ -2043,7 +2043,7 @@ def _extraction_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
             {
                 "source_url": sale.source_url,
                 "provider": "replicate",
-                "model": str(cache.get("_cache", {}).get("model") or "qwen/qwen3-7-plus"),
+                "model": str(cache.get("_cache", {}).get("model") or "zsxkib/qwen2-7b-instruct"),
                 "input_hash": input_hash,
                 "schema_version": "llm_extraction_v2_structured_assets",
                 "result": llm_payload,

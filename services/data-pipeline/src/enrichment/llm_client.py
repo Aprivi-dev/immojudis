@@ -106,7 +106,13 @@ class ReplicateClient:
 
     def _create_prediction(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
         owner, model_name = _split_replicate_model(str(self.model))
-        endpoint = f"https://api.replicate.com/v1/models/{owner}/{model_name}/predictions"
+        model_reference = str(self.model)
+        versioned_model = _replicate_model_version(model_reference)
+        endpoint = (
+            "https://api.replicate.com/v1/predictions"
+            if versioned_model
+            else f"https://api.replicate.com/v1/models/{owner}/{model_name}/predictions"
+        )
         headers = {
             "Authorization": f"Bearer {self.api_token}",
             "Content-Type": "application/json",
@@ -114,6 +120,11 @@ class ReplicateClient:
             "Cancel-After": str(self.cancel_after),
         }
         payload = {"input": self._input_payload(prompt, system_prompt=system_prompt)}
+        if versioned_model:
+            # Community models are called through the versioned predictions
+            # endpoint. Pinning the version also protects the scan output from
+            # an upstream model image changing without notice.
+            payload["version"] = model_reference
         response = self._post_with_retries(endpoint, headers=headers, payload=payload)
         return response.json()
 
@@ -202,6 +213,21 @@ class ReplicateClient:
                 payload["thinking_budget"] = int(self.thinking_budget or 0)
                 payload["dynamic_thinking"] = bool(self.dynamic_thinking)
             return payload
+        if _is_qwen2_7b_instruct_model(str(self.model)):
+            return {
+                "prompt": prompt,
+                "system_prompt": system_prompt or "",
+                "model_type": "Qwen2-7B-Instruct",
+                "max_new_tokens": min(int(self.max_tokens or 512), 32768),
+                # This Cog model validates temperature with a minimum of 0.1.
+                "temperature": max(
+                    0.1,
+                    float(self.temperature if self.temperature is not None else 0.1),
+                ),
+                "top_k": 1,
+                "top_p": 1,
+                "repetition_penalty": 1,
+            }
         if _is_qwen_model(str(self.model)):
             return {
                 "prompt": prompt,
@@ -268,7 +294,13 @@ def _is_gemini_3_model(model: str) -> bool:
 
 
 def _is_qwen_model(model: str) -> bool:
-    return model.lower().startswith("qwen/")
+    model_path = model.split(":", 1)[0].lower()
+    return bool(re.search(r"(?:^|/)qwen(?:[\d._-]|$)", model_path))
+
+
+def _is_qwen2_7b_instruct_model(model: str) -> bool:
+    model_path = model.split(":", 1)[0].lower()
+    return model_path.endswith("/qwen2-7b-instruct")
 
 
 def _combine_prompts(system_prompt: str, user_prompt: str) -> str:
@@ -427,8 +459,16 @@ def _response_excerpt(text: str, max_chars: int = 180) -> str:
 def _split_replicate_model(model: str) -> tuple[str, str]:
     if "/" not in model:
         raise ValueError("REPLICATE_MODEL must be formatted as owner/model")
-    owner, model_name = model.split("/", 1)
+    model_path = model.split(":", 1)[0]
+    owner, model_name = model_path.split("/", 1)
     return owner, model_name
+
+
+def _replicate_model_version(model: str) -> str | None:
+    if ":" not in model:
+        return None
+    _model_path, version = model.rsplit(":", 1)
+    return version or None
 
 
 def _is_gemini_model(model: str) -> bool:

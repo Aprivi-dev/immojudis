@@ -14,6 +14,11 @@ PDF_TEXTS_DIR = RAW_DIR / "pdf_texts"
 PDF_DOCUMENT_TEXTS_DIR = PDF_TEXTS_DIR / "documents"
 DOCLING_TEXTS_DIR = RAW_DIR / "docling_texts"
 LLM_EXTRACTIONS_DIR = PROCESSED_DIR / "llm_extractions"
+DEFAULT_REPLICATE_MODEL = (
+    "zsxkib/qwen2-7b-instruct:"
+    "5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4"
+)
+DEFAULT_LLM_PROMPT_VERSION = "auction_llm_v9_qwen2_7b_scan_display"
 
 FRANCE_DEPARTMENTS = (
     *(f"{department:02d}" for department in range(1, 96)),
@@ -132,9 +137,9 @@ def load_settings() -> dict[str, str | float | None]:
         "llm_enabled": os.getenv("LLM_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
         "llm_provider": os.getenv("LLM_PROVIDER", "replicate").lower(),
         "replicate_api_token": os.getenv("REPLICATE_API_TOKEN"),
-        "replicate_model": os.getenv("REPLICATE_MODEL", "qwen/qwen3-7-plus"),
-        "replicate_temperature": float(os.getenv("REPLICATE_TEMPERATURE", "0")),
-        "replicate_max_tokens": int(os.getenv("REPLICATE_MAX_TOKENS", "8192")),
+        "replicate_model": os.getenv("REPLICATE_MODEL", DEFAULT_REPLICATE_MODEL),
+        "replicate_temperature": float(os.getenv("REPLICATE_TEMPERATURE", "0.1")),
+        "replicate_max_tokens": int(os.getenv("REPLICATE_MAX_TOKENS", "512")),
         "replicate_timeout_seconds": float(os.getenv("REPLICATE_TIMEOUT_SECONDS", "180")),
         "replicate_wait_seconds": int(os.getenv("REPLICATE_WAIT_SECONDS", "60")),
         "replicate_cancel_after": os.getenv("REPLICATE_CANCEL_AFTER", "5m"),
@@ -144,7 +149,7 @@ def load_settings() -> dict[str, str | float | None]:
         # Les appels LLM restent espacés globalement pour éviter les rafales
         # Replicate, mais l'intervalle doit rester assez court pour que les
         # backfills bornés ne passent pas l'essentiel du temps à dormir.
-        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "15")),
+        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "1")),
         "pipeline_enrich_workers": max(1, int(os.getenv("PIPELINE_ENRICH_WORKERS", "2"))),
         # Extractions PDF/OCR en parallèle (CPU + RAM : on reste prudent pour ne
         # pas saturer la mémoire du runner avec plusieurs Docling/OCR simultanés).
@@ -153,7 +158,9 @@ def load_settings() -> dict[str, str | float | None]:
         # On sépare donc le LLM des workers PDF pour éviter les boucles de 429.
         "pipeline_llm_workers": max(1, int(os.getenv("PIPELINE_LLM_WORKERS", "1"))),
         "pipeline_pdf_max_targets": max(0, int(os.getenv("PIPELINE_PDF_MAX_TARGETS", "10"))),
-        "pipeline_llm_max_targets": max(0, int(os.getenv("PIPELINE_LLM_MAX_TARGETS", "10"))),
+        # 0 means every eligible sale collected by the scan is summarized in
+        # that same run. The explicit backfill limit remains separately bounded.
+        "pipeline_llm_max_targets": max(0, int(os.getenv("PIPELINE_LLM_MAX_TARGETS", "0"))),
         "pipeline_llm_backfill_max_targets": max(
             1,
             int(os.getenv("PIPELINE_LLM_BACKFILL_MAX_TARGETS", os.getenv("PIPELINE_LLM_MAX_TARGETS", "20"))),
@@ -180,11 +187,11 @@ def load_settings() -> dict[str, str | float | None]:
         in {"1", "true", "yes", "on"},
         "llm_prompt_version": os.getenv(
             "LLM_PROMPT_VERSION",
-            "auction_llm_v8_qwen37_structured_display",
+            DEFAULT_LLM_PROMPT_VERSION,
         ),
         "llm_fact_prompt_version": os.getenv("LLM_FACT_PROMPT_VERSION", "auction_facts_v1"),
-        "llm_display_prompt_version": os.getenv("LLM_DISPLAY_PROMPT_VERSION", "auction_display_v7"),
-        "llm_extraction_mode": os.getenv("LLM_EXTRACTION_MODE", "structured_then_display").lower(),
+        "llm_display_prompt_version": os.getenv("LLM_DISPLAY_PROMPT_VERSION", "auction_display_v8"),
+        "llm_extraction_mode": os.getenv("LLM_EXTRACTION_MODE", "display_description").lower(),
         "llm_pdf_max_chars": int(os.getenv("LLM_PDF_MAX_CHARS", "12000")),
         "llm_fact_chunk_chars": max(3000, int(os.getenv("LLM_FACT_CHUNK_CHARS", "12000"))),
         # 0 means every collected source block and extracted PDF page is analyzed.
