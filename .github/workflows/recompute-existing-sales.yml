@@ -33,6 +33,11 @@ on:
         required: false
         default: false
         type: boolean
+      repair_only:
+        description: "Skip recompute and only repair/verify persisted procedure payloads"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -88,6 +93,7 @@ jobs:
         run: python -m src.official_sources.justice_reference_sync
 
       - name: Validate recompute without writing
+        if: ${{ !inputs.repair_only }}
         env:
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
@@ -103,7 +109,7 @@ jobs:
           python -m src.recompute_scoring "${args[@]}"
 
       - name: Publish recomputed sales
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && !inputs.repair_only }}
         env:
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
