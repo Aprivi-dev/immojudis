@@ -23,6 +23,7 @@ from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
 BASE_URL = "https://www.encheres-publiques.com"
+CANONICAL_BASE_URL = "https://encheres-publiques.com"
 NATIONAL_LIST_URL = f"{BASE_URL}/ventes/immobilier"
 LOGGER = logging.getLogger(__name__)
 PARIS_TZ = ZoneInfo("Europe/Paris")
@@ -72,6 +73,7 @@ def scrape_encheres_publiques_aquitaine_result(
     settings = load_settings()
     client = PoliteHttpClient(
         base_url=BASE_URL,
+        allowed_redirect_origins=(CANONICAL_BASE_URL,),
         user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
