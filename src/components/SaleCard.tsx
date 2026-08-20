@@ -13,6 +13,7 @@ import { firstPropertyImage, shouldRejectRenderedPropertyImage } from "@/lib/sal
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { SaleCountdown } from "./SaleCountdown";
+import { SaleProcedureBadge } from "./SaleProcedurePanel";
 import { MapThumbnail } from "./MapThumbnail";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 
@@ -91,6 +92,7 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
                 Nouveau
               </span>
             ) : null}
+            {locked ? null : <SaleProcedureBadge sale={sale} />}
             {locked ? null : <SaleCountdown date={sale.sale_date} />}
           </div>
           {viewed && (

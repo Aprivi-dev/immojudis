@@ -42,6 +42,7 @@ from src.quality import (
     format_extraction_gap_report,
     format_quality_report,
 )
+from src.sale_procedure import classify_sale_procedure
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.cessions_etat import scrape_cessions_etat_aquitaine_result
@@ -1124,6 +1125,7 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     if geocode:
         geocode_sale(sale)
     fill_tribunal(sale)
+    classify_sale_procedure(sale)
     surface_context = _surface_reasoning_context_for_sale(sale)
     if surface_context:
         extract_and_apply_deterministic_surface_reasoning(sale, surface_context)

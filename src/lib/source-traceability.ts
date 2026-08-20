@@ -4,10 +4,17 @@ import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
 import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import type { StructuredDpeDiagnostic } from "@/lib/dpe";
 import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
+import {
+  getSaleProcedure,
+  lawyerRequirementLabel,
+  saleVerificationLabel,
+  saleVenueLabel,
+} from "@/lib/sale-procedure";
 
 export type SourceTraceKind =
   | "judicial_listing"
   | "judicial_document"
+  | "sale_procedure"
   | "surface_evidence"
   | "cadastral_context"
   | "dpe_context"
@@ -67,6 +74,7 @@ export function buildReportTraceability({
 }): ReportTraceability {
   const entries = dedupeTraceEntries([
     ...listingEntries(sale),
+    ...procedureEntries(sale),
     ...surfaceEntries(sale),
     ...cadastreEntries(cadastreParcels),
     ...dpeEntries(dpeDiagnostics),
@@ -83,6 +91,25 @@ export function buildReportTraceability({
     limitations: buildLimitations({ marketEstimate, sale }),
     complianceNotice: REPORT_COMPLIANCE_NOTICE,
   };
+}
+
+function procedureEntries(sale: AuctionSale): SourceTraceEntry[] {
+  const procedure = getSaleProcedure(sale);
+  if (!procedure.procedure) return [];
+
+  return procedure.sources.slice(0, 4).map((source, index) => ({
+    id: stableId("sale-procedure", source.url, source.label, String(index)),
+    kind: "sale_procedure",
+    label: cleanText(source.label) ?? `Source de procédure ${index + 1}`,
+    sourceName: cleanText(source.source_name) ?? "Vérification Immojudis",
+    url: cleanText(source.url),
+    capturedAt: cleanText(source.checked_at) ?? procedure.verifiedAt,
+    confidenceLabel: saleVerificationLabel(procedure.verificationStatus),
+    detail: `${saleVenueLabel(procedure.venueType)} · ${lawyerRequirementLabel(procedure)}`,
+    limitation: procedure.issues.length
+      ? procedure.issues.join(" ")
+      : "Les conditions particulières du cahier des charges restent applicables à cette vente.",
+  }));
 }
 
 function urbanPlanningEntries(signals: StructuredUrbanPlanningSignal[]): SourceTraceEntry[] {
@@ -185,12 +212,12 @@ function listingEntries(sale: AuctionSale): SourceTraceEntry[] {
     entries.push({
       id: stableId("listing", primaryUrl ?? sourceName),
       kind: "judicial_listing",
-      label: "Annonce judiciaire",
+      label: "Annonce de vente",
       sourceName,
       url: primaryUrl,
       capturedAt,
       confidenceLabel: "Source primaire",
-      detail: cleanText(sale.primary_source) ?? "Fiche issue de la source judiciaire collectee.",
+      detail: cleanText(sale.primary_source) ?? "Fiche issue de la source de vente collectée.",
       limitation: "La fiche doit etre relue dans sa version officielle avant toute decision.",
     });
   }

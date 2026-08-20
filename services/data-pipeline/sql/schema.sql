@@ -41,6 +41,10 @@ create table if not exists auction_sales (
   external_id text,
   tribunal text,
   tribunal_code text references tribunals(code),
+  sale_venue_type text not null default 'unknown',
+  sale_legal_framework text not null default 'unknown',
+  sale_verification_status text not null default 'pending',
+  sale_procedure jsonb not null default '{}'::jsonb,
   department text,
   city text,
   address text,
@@ -117,6 +121,10 @@ end $$;
 alter table auction_sales add column if not exists rooms_count integer;
 alter table auction_sales add column if not exists bedrooms_count integer;
 alter table auction_sales add column if not exists tribunal_code text references tribunals(code);
+alter table auction_sales add column if not exists sale_venue_type text not null default 'unknown';
+alter table auction_sales add column if not exists sale_legal_framework text not null default 'unknown';
+alter table auction_sales add column if not exists sale_verification_status text not null default 'pending';
+alter table auction_sales add column if not exists sale_procedure jsonb not null default '{}'::jsonb;
 alter table auction_sales add column if not exists primary_source text;
 alter table auction_sales add column if not exists source_urls jsonb default '[]'::jsonb;
 alter table auction_sales add column if not exists dedupe_confidence text;
@@ -874,7 +882,26 @@ begin
   if not exists (select 1 from pg_constraint where conname = 'auction_sales_surface_scope_check') then
     alter table auction_sales add constraint auction_sales_surface_scope_check check (surface_scope is null or surface_scope in ('total','room','annex','room_or_annex','land','unknown','partial'));
   end if;
+  if not exists (select 1 from pg_constraint where conname = 'auction_sales_sale_venue_type_check') then
+    alter table auction_sales add constraint auction_sales_sale_venue_type_check
+      check (sale_venue_type in ('tribunal','notary','state','online','unknown'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'auction_sales_sale_legal_framework_check') then
+    alter table auction_sales add constraint auction_sales_sale_legal_framework_check
+      check (sale_legal_framework in ('judicial_seizure','judicial_partition','insolvency','voluntary_notarial','state_sale','unknown'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'auction_sales_sale_verification_status_check') then
+    alter table auction_sales add constraint auction_sales_sale_verification_status_check
+      check (sale_verification_status in ('verified','cross_checked','pending','conflict'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'auction_sales_sale_procedure_object_check') then
+    alter table auction_sales add constraint auction_sales_sale_procedure_object_check
+      check (jsonb_typeof(sale_procedure) = 'object');
+  end if;
 end $$;
+
+create index if not exists auction_sales_venue_status_idx
+  on auction_sales(sale_venue_type, status);
 
 create or replace view public_auction_sales
 with (security_invoker = true)

@@ -69,6 +69,7 @@ POSTGRES_JSON_COLUMNS = {
     "quality_flags",
     "raw_payload",
     "observations",
+    "sale_procedure",
 }
 UPSERT_COLUMNS = (
     "source_name",
@@ -79,6 +80,10 @@ UPSERT_COLUMNS = (
     "external_id",
     "tribunal",
     "tribunal_code",
+    "sale_venue_type",
+    "sale_legal_framework",
+    "sale_verification_status",
+    "sale_procedure",
     "department",
     "city",
     "address",

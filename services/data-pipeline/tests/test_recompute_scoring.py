@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from src.asset_normalization import normalize_asset_features
-from src.recompute_scoring import _sale_from_storage_row
+from src.recompute_scoring import _sale_from_storage_row, _validate_persisted_sale_procedure
 
 
 def test_storage_recompute_preserves_editorial_text_for_surface_reconciliation() -> None:
@@ -83,3 +83,53 @@ def test_storage_recompute_restores_partial_pdf_surface_scope() -> None:
     assert sale.app_surface_kind is None
     assert sale.surface_scope == "partial"
     assert sale.title == "Appartement"
+
+
+def test_persisted_sale_procedure_validation_accepts_consistent_payload() -> None:
+    row = {
+        "sale_venue_type": "tribunal",
+        "sale_legal_framework": "judicial_seizure",
+        "sale_verification_status": "cross_checked",
+        "sale_procedure": {
+            "schema_version": "sale_procedure_v1",
+            "venue_type": "tribunal",
+            "legal_framework": "judicial_seizure",
+            "rules": {"lawyer_required": True},
+            "verification": {"status": "cross_checked"},
+        },
+    }
+
+    assert _validate_persisted_sale_procedure(row) == []
+
+
+def test_persisted_sale_procedure_validation_rejects_empty_or_inconsistent_payload() -> None:
+    assert _validate_persisted_sale_procedure(
+        {
+            "sale_venue_type": "tribunal",
+            "sale_legal_framework": "judicial_seizure",
+            "sale_verification_status": "verified",
+            "sale_procedure": {},
+        }
+    ) == ["missing sale_procedure"]
+
+    issues = _validate_persisted_sale_procedure(
+        {
+            "sale_venue_type": "notary",
+            "sale_legal_framework": "voluntary_notarial",
+            "sale_verification_status": "verified",
+            "sale_procedure": {
+                "schema_version": "outdated",
+                "venue_type": "tribunal",
+                "legal_framework": "unknown",
+                "verification": {"status": "pending"},
+            },
+        }
+    )
+
+    assert issues == [
+        "invalid schema_version",
+        "venue_type mismatch",
+        "legal_framework mismatch",
+        "missing rules",
+        "verification status mismatch",
+    ]

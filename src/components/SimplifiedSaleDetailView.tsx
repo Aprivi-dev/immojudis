@@ -29,6 +29,8 @@ import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { OutcomeForecast, useOutcomeGraphForecast } from "@/components/OutcomeForecast";
 import { RotatingCamera360 } from "@/components/RotatingCamera360";
+import { SaleProcedurePanel } from "@/components/SaleProcedurePanel";
+import { SaleTribunalHistory } from "@/components/SaleTribunalHistory";
 import { fetchPrecomputedMarketEstimate } from "@/lib/client-api";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.functions";
@@ -43,6 +45,14 @@ import { Link } from "@/lib/router-compat";
 import { getSaleDisplayDescription, hasSaleAiDescription } from "@/lib/sale-description";
 import { propertyImages } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
+import {
+  getSaleProcedure,
+  lawyerRequirementLabel,
+  participationModeLabel,
+  saleEventLabel,
+  saleProcedureIsConfirmed,
+  saleVenueLabel,
+} from "@/lib/sale-procedure";
 import { getDisplaySurface, getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 
@@ -175,6 +185,7 @@ function SimplifiedSaleDetailView({
         </section>
 
         <PropertyDescription sale={sale} />
+        <SaleProcedurePanel sale={sale} />
       </div>
 
       {access === "analysis" ? (
@@ -221,6 +232,7 @@ function PropertyDescription({ sale }: { sale: AuctionSale }) {
 }
 
 function PropertyIdentity({ sale }: { sale: AuctionSale }) {
+  const procedure = getSaleProcedure(sale);
   const images = propertyImages(sale.media);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
@@ -403,7 +415,7 @@ function PropertyIdentity({ sale }: { sale: AuctionSale }) {
               : propertyTypeLabel(sale.property_type)}
           </Fact>
           <Fact icon={<CalendarDays className="h-4 w-4" />}>
-            Audience {formatDate(sale.sale_date)}
+            {saleEventLabel(procedure.venueType)} {formatDate(sale.sale_date)}
           </Fact>
         </div>
         <p className="mt-4 flex flex-wrap items-baseline gap-x-2 text-sm text-brand-navy/72">
@@ -411,7 +423,7 @@ function PropertyIdentity({ sale }: { sale: AuctionSale }) {
           <strong className="font-display text-3xl font-medium text-gold-soft">
             {formatPrice(sale.starting_price_eur)}
           </strong>
-          <span>— prix de départ judiciaire</span>
+          <span>— prix de départ de la vente</span>
         </p>
       </div>
 
@@ -669,13 +681,17 @@ function AnalysisContent({
   onCalculationOpenChange: (open: boolean) => void;
 }) {
   const forecastQuery = useOutcomeGraphForecast(sale.id);
+  const procedure = getSaleProcedure(sale);
+  const showTribunalHistory =
+    procedure.venueType === "tribunal" && saleProcedureIsConfirmed(procedure);
   const hasVerifiedForecast = forecastQuery.data?.forecast.status === "ready";
   const navigationItems = [
     ["#summary", "Synthèse"],
+    ...(showTribunalHistory ? [["#tribunal-history", "Tribunal"]] : []),
     ...(hasVerifiedForecast ? [["#outcome-forecast", "Prévision"]] : []),
     ["#market", "Marché local"],
     ["#risks", "Risques & pièces"],
-    ["#lawyer", "Avocat"],
+    ["#lawyer", showTribunalHistory ? "Avocat" : "Organisateur"],
   ];
 
   return (
@@ -700,6 +716,8 @@ function AnalysisContent({
           <MarketEvidence marketEstimate={marketEstimate} marketLoading={marketLoading} />
         </div>
       </section>
+
+      {showTribunalHistory ? <SaleTribunalHistory sale={sale} /> : null}
 
       <OutcomeForecast forecastQuery={forecastQuery} />
 
@@ -809,8 +827,8 @@ function CeilingExplanation({
         </div>
       </dl>
       <p className="mt-6 max-w-2xl text-sm leading-relaxed text-brand-navy/70 sm:text-base">
-        Par défaut, Immojudis intègre un rafraîchissement car les biens judiciaires sont rarement
-        livrés en état neuf.
+        Par défaut, Immojudis intègre un rafraîchissement car les biens vendus aux enchères sont
+        rarement livrés en état neuf.
       </p>
     </div>
   );
@@ -1025,6 +1043,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function LawyerSection({ sale }: { sale: AuctionSale }) {
+  const procedure = getSaleProcedure(sale);
+  const isJudicial = procedure.venueType === "tribunal" && saleProcedureIsConfirmed(procedure);
   const isPersistedSale =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sale.id);
   const directoryHref = isPersistedSale
@@ -1037,11 +1057,14 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
         <div className="grid gap-7 rounded-lg border border-[#a9c9df] bg-[#eef7ff] p-6 sm:p-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.15fr)] lg:items-center">
           <div>
             <h2 className="font-display text-3xl font-medium leading-tight text-brand-navy sm:text-4xl">
-              Prêt à enchérir ? Faites-vous accompagner.
+              {isJudicial
+                ? "Prêt à enchérir ? Mandatez l’avocat compétent."
+                : "Préparez votre participation avec l’organisateur."}
             </h2>
             <p className="mt-4 max-w-xl text-sm leading-relaxed text-brand-navy/70 sm:text-base">
-              Trouvez un avocat inscrit au barreau compétent pour vérifier le dossier et porter vos
-              enchères.
+              {isJudicial
+                ? "La représentation par avocat est obligatoire : il vérifie le dossier, reçoit votre mandat et porte les enchères."
+                : `${lawyerRequirementLabel(procedure)}. Participation ${participationModeLabel(procedure.participationMode).toLowerCase()} selon les conditions de la vente.`}
             </p>
           </div>
           <div className="rounded-lg border border-brand-navy/14 bg-white p-5 shadow-sm sm:flex sm:items-center sm:gap-5">
@@ -1050,19 +1073,29 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
             </span>
             <div className="mt-3 min-w-0 flex-1 sm:mt-0">
               <p className="font-display text-2xl font-semibold text-brand-navy">
-                {sale.city ?? sale.tribunal_city ?? "Barreau compétent"}
+                {isJudicial
+                  ? (procedure.eligibleBar ?? sale.tribunal_city ?? "Barreau compétent")
+                  : (procedure.organizerName ??
+                    procedure.venueName ??
+                    saleVenueLabel(procedure.venueType))}
               </p>
-              <p className="mt-1 text-sm text-brand-navy/70">Avocats référencés par Immojudis</p>
+              <p className="mt-1 text-sm text-brand-navy/70">
+                {isJudicial
+                  ? "Avocats référencés par Immojudis"
+                  : "Coordonnées vérifiées par Immojudis"}
+              </p>
             </div>
-            <a
-              href={directoryHref}
-              className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft sm:mt-0"
-            >
-              Voir les avocats disponibles
-              <ArrowRight className="h-4 w-4" aria-hidden />
-            </a>
+            {isJudicial ? (
+              <a
+                href={directoryHref}
+                className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft sm:mt-0"
+              >
+                Voir les avocats disponibles
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </a>
+            ) : null}
           </div>
-          {isPersistedSale ? (
+          {isPersistedSale && isJudicial ? (
             <div className="lg:col-start-2">
               <LawyerReferralButton saleId={sale.id} className="min-h-11 w-full sm:w-auto" />
             </div>
