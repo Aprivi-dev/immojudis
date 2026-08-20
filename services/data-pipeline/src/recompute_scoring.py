@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
@@ -11,6 +12,7 @@ from dotenv import load_dotenv
 
 from src.asset_normalization import normalize_asset_features
 from src.config import ROOT_DIR, load_settings
+from src.geocode import geocode_sale
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
 from src.storage.supabase_client import upsert_sales_to_supabase
@@ -36,21 +38,36 @@ def recompute_scoring(
     limit: int | None = None,
     batch_size: int = 20,
     dry_run: bool = False,
+    geocode_missing: bool = False,
+    geocode_workers: int = 1,
 ) -> int:
     _load_env_fallbacks()
     rows = _fetch_sales(source=source, limit=limit)
     if not rows:
         LOGGER.error("No stored sales matched the requested recompute scope")
         return 1
-    sales = []
+    sales: list[Any] = []
     failures: list[str] = []
-    for row in rows:
-        try:
-            sale = _recomputed_sale_from_storage_row(row)
-            sales.append(sale)
-        except Exception as exc:
-            failures.append(str(row.get("source_url") or row.get("id") or "unknown-row"))
-            LOGGER.exception("Scoring recompute failed for %s: %s", row.get("source_url"), exc)
+    if geocode_missing and geocode_workers > 1:
+        with ThreadPoolExecutor(max_workers=geocode_workers, thread_name_prefix="catalogue-geocode") as executor:
+            futures = [
+                executor.submit(_recomputed_sale_from_storage_row, row, geocode=True)
+                for row in rows
+            ]
+            for row, future in zip(rows, futures, strict=True):
+                try:
+                    sales.append(future.result())
+                except Exception as exc:
+                    failures.append(str(row.get("source_url") or row.get("id") or "unknown-row"))
+                    LOGGER.exception("Scoring recompute failed for %s: %s", row.get("source_url"), exc)
+    else:
+        for row in rows:
+            try:
+                sale = _recomputed_sale_from_storage_row(row, geocode=geocode_missing)
+                sales.append(sale)
+            except Exception as exc:
+                failures.append(str(row.get("source_url") or row.get("id") or "unknown-row"))
+                LOGGER.exception("Scoring recompute failed for %s: %s", row.get("source_url"), exc)
 
     if dry_run:
         _print_summary(sales, dry_run=True, failures=failures)
@@ -275,8 +292,10 @@ def _sale_from_storage_row(row: dict[str, Any]):
     return sale
 
 
-def _recomputed_sale_from_storage_row(row: dict[str, Any]):
+def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = False):
     sale = _sale_from_storage_row(row)
+    if geocode:
+        geocode_sale(sale)
     fill_tribunal(sale)
     classify_sale_procedure(sale)
     normalize_asset_features(sale)
@@ -314,6 +333,7 @@ def _print_summary(
     court_verified = 0
     court_unresolved = 0
     court_unverified = 0
+    geocode_verified = 0
     procedure_statuses: dict[str, int] = {}
     for sale in sales:
         by_source[sale.source_name] = by_source.get(sale.source_name, 0) + 1
@@ -328,6 +348,14 @@ def _print_summary(
         assignment = sale.raw_payload.get("tribunal_assignment")
         if isinstance(assignment, dict) and assignment.get("status") == "verified":
             court_verified += 1
+        geocode = sale.raw_payload.get("geocode")
+        if (
+            isinstance(geocode, dict)
+            and geocode.get("provider") == "ban_geoplateforme"
+            and geocode.get("accepted") is True
+            and geocode.get("citycode")
+        ):
+            geocode_verified += 1
         if "tribunal_competence_unresolved" in sale.quality_flags:
             court_unresolved += 1
         if "tribunal_competence_unverified" in sale.quality_flags:
@@ -342,6 +370,7 @@ def _print_summary(
     print(f"- pretri_only: {pretri}")
     print(f"- works_to_quantify: {works}")
     print(f"- non_judicial_context: {non_judicial}")
+    print(f"- ban_geoplateforme_verified: {geocode_verified}")
     print(f"- tribunal_competence_verified: {court_verified}")
     print(f"- tribunal_competence_unresolved: {court_unresolved}")
     print(f"- tribunal_competence_unverified: {court_unverified}")
@@ -354,6 +383,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None, help="Nombre maximum d'annonces à recalculer.")
     parser.add_argument("--batch-size", type=int, default=20, help="Taille des lots d'upsert Supabase.")
     parser.add_argument("--dry-run", action="store_true", help="Recalcule sans écrire dans Supabase.")
+    parser.add_argument(
+        "--geocode-missing",
+        action="store_true",
+        help="Valide les adresses historiques avec BAN/GéoPlateforme avant le rattachement au tribunal.",
+    )
+    parser.add_argument(
+        "--geocode-workers",
+        type=int,
+        default=1,
+        choices=range(1, 9),
+        metavar="1..8",
+        help="Nombre borné de validations d'adresse simultanées.",
+    )
     parser.add_argument(
         "--verify-only",
         action="store_true",
@@ -380,5 +422,7 @@ if __name__ == "__main__":
             limit=args.limit,
             batch_size=args.batch_size,
             dry_run=args.dry_run,
+            geocode_missing=args.geocode_missing,
+            geocode_workers=args.geocode_workers,
         )
     )
