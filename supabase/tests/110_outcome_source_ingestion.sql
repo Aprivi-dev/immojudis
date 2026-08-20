@@ -136,14 +136,15 @@ select ok(
 select ok(
   (
     select official
-      and legal_review_status = 'pending'
-      and ingestion_policy = 'disabled'
-      and not active
+      and legal_review_status = 'approved'
+      and ingestion_policy = 'allowed_automated'
+      and active
       and personal_data_possible
+      and terms_version = 'reviewed_2026-08-20'
     from public.data_sources
     where name = 'judilibre'
   ),
-  'Judilibre remains disabled until PISTE and legal review are activated'
+  'Judilibre is approved only with the reviewed production source policy'
 );
 
 select ok(
@@ -222,8 +223,24 @@ select ok(
 select ok(
   has_table_privilege('service_role', 'storage.buckets', 'SELECT')
   and has_table_privilege('service_role', 'storage.objects', 'SELECT')
-  and has_table_privilege('service_role', 'storage.objects', 'INSERT'),
-  'only the trusted server path receives the explicit artifact Storage grants'
+  and has_table_privilege('service_role', 'storage.objects', 'INSERT')
+  and has_table_privilege('service_role', 'storage.objects', 'DELETE'),
+  'only the trusted server path receives capture and physical-purge Storage grants'
+);
+
+insert into public.data_sources (
+  id, name, publisher, official, base_url, license,
+  legal_review_status, ingestion_policy, active
+) values (
+  'a1000000-0000-4000-8000-000000000099',
+  'outcome-disabled-pgtap',
+  'Test publisher',
+  true,
+  'https://example.test/disabled-source',
+  'Test-only',
+  'pending',
+  'disabled',
+  false
 );
 
 set local role service_role;
@@ -232,7 +249,7 @@ select throws_ok(
   $$insert into public.ingestion_jobs (
       source_id, job_kind, idempotency_key
     ) values (
-      (select id from public.data_sources where name = 'judilibre'),
+      (select id from public.data_sources where name = 'outcome-disabled-pgtap'),
       'judilibre_history', 'judilibre-disabled-source-test'
     )$$,
   '23514',
@@ -242,7 +259,7 @@ select throws_ok(
 
 select throws_ok(
   $$select app_private.upsert_outcome_source_checkpoint(
-      (select id from public.data_sources where name = 'judilibre'),
+      (select id from public.data_sources where name = 'outcome-disabled-pgtap'),
       'history', null, '{}'::jsonb, null, 'test-connector/1.0.0', null
     )$$,
   '23514',
@@ -255,7 +272,7 @@ select lives_ok(
       id, source_id, job_kind, stream_key, idempotency_key, payload, priority
     ) values (
       'a1700000-0000-4000-8000-000000000003',
-      (select id from public.data_sources where name = 'judilibre'),
+      (select id from public.data_sources where name = 'outcome-disabled-pgtap'),
       'source.purge', 'deletions', 'disabled-source-purge-test',
       '{"external_record_id":"deleted-upstream"}'::jsonb, 100
     )$$,
@@ -268,7 +285,7 @@ select is(
     from app_private.claim_outcome_ingestion_job(
       'pgtap-purge-worker',
       300,
-      (select id from public.data_sources where name = 'judilibre'),
+      (select id from public.data_sources where name = 'outcome-disabled-pgtap'),
       'source.purge'
     )
   ),

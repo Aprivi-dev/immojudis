@@ -241,7 +241,7 @@ def _run_plan(_args: argparse.Namespace) -> int:
             "sources": {
                 "judilibre": {
                     "channel": "automated",
-                    "default_state": "disabled_pending_legal_and_piste",
+                    "default_state": "runtime_gated_after_review",
                     "requires": [
                         "approved active data_sources policy",
                         "PISTE KeyId or OAuth2 credentials",

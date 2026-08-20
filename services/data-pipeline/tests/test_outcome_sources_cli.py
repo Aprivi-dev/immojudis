@@ -426,10 +426,12 @@ def test_bounded_records_does_not_overconsume() -> None:
     assert consumed == ["one", "two"]
 
 
-def test_plan_is_secret_free_and_describes_closed_sources(capsys: pytest.CaptureFixture[str]) -> None:
+def test_plan_is_secret_free_and_describes_runtime_gated_sources(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert main(["plan"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["sources"]["judilibre"]["default_state"] == "disabled_pending_legal_and_piste"
+    assert payload["sources"]["judilibre"]["default_state"] == "runtime_gated_after_review"
     assert payload["sources"]["encheres_publiques_open_data"]["training_eligible"] is False
 
 

@@ -116,6 +116,28 @@ class SupabaseRawArtifactStore:
             mime_type=mime_type,
         )
 
+    def remove_paths(self, paths: list[str]) -> int:
+        """Delete bounded private objects without exposing their names in errors."""
+        unique_paths = list(dict.fromkeys(paths))
+        if len(unique_paths) > 100:
+            raise ValueError("at most 100 artifact paths may be removed at once")
+        for path in unique_paths:
+            if (
+                not isinstance(path, str)
+                or not path
+                or len(path) > 1024
+                or path.startswith("/")
+                or ".." in path.split("/")
+            ):
+                raise ValueError("artifact path is invalid")
+        if not unique_paths:
+            return 0
+        try:
+            self._client.storage.from_(self.bucket).remove(unique_paths)
+        except Exception:
+            raise RawArtifactStorageError("private raw artifact deletion failed") from None
+        return len(unique_paths)
+
 
 def _is_duplicate_storage_error(error: Exception) -> bool:
     if StorageException is not None and not isinstance(error, StorageException):
