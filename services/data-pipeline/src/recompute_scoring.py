@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -15,6 +16,14 @@ from src.config import ROOT_DIR, load_settings
 from src.geocode import geocode_sale
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
+from src.sources.common import PoliteHttpClient
+from src.sources.encheres_publiques import (
+    BASE_URL as ENCHERES_PUBLIQUES_BASE_URL,
+)
+from src.sources.encheres_publiques import (
+    parse_encheres_publiques_detail_html,
+)
+from src.sources.licitor import LicitorClient, parse_licitor_detail_html
 from src.storage.supabase_client import _postgrest_request_with_retries, upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
 
@@ -30,6 +39,32 @@ SALE_LEGAL_FRAMEWORKS = {
     "unknown",
 }
 SALE_VERIFICATION_STATUSES = {"verified", "cross_checked", "pending", "conflict"}
+PROCEDURE_REFRESH_SUPPORTED_SOURCES = {"licitor", "encheres_publiques"}
+PROCEDURE_REFRESH_FIELDS = {
+    "address",
+    "city",
+    "department",
+    "description",
+    "documents",
+    "external_id",
+    "habitable_surface_m2",
+    "latitude",
+    "lawyer_contact",
+    "lawyer_name",
+    "longitude",
+    "postal_code",
+    "property_type",
+    "raw_image_url",
+    "raw_text",
+    "rooms_count",
+    "sale_date",
+    "source_images",
+    "starting_price_eur",
+    "surface_m2",
+    "title",
+    "tribunal",
+    "visit_dates",
+}
 
 
 def recompute_scoring(
@@ -167,6 +202,146 @@ def repair_invalid_sale_procedures(
     print(f"- repaired: {repaired}")
     print(f"- failures: {len(failures)}")
     return 1 if failures or repaired != len(repairs) else 0
+
+
+def refresh_unknown_sale_procedures(
+    *,
+    source: str | None = None,
+    limit: int | None = None,
+) -> int:
+    """Re-fetch public source pages for unresolved procedures, then verify them again."""
+
+    _load_env_fallbacks()
+    rows = _fetch_sales(source=source, limit=limit)
+    candidates = [
+        row
+        for row in rows
+        if row.get("sale_venue_type") == "unknown"
+        and row.get("source_name") in PROCEDURE_REFRESH_SUPPORTED_SOURCES
+    ]
+    if not candidates:
+        print("Unknown sale procedure source refresh")
+        print("- candidates: 0")
+        print("- refreshed: 0")
+        print("- unresolved: 0")
+        print("- failures: 0")
+        return 0
+
+    clients = _procedure_refresh_clients()
+    refreshed_sales: list[Any] = []
+    failures: list[str] = []
+    for row in candidates:
+        identifier = str(row.get("source_url") or row.get("id") or "unknown-row")
+        try:
+            details = _fetch_procedure_source_details(row, clients)
+            if not details:
+                raise RuntimeError("the refreshed source page returned no structured sale details")
+            refreshed_row = _merge_refetched_source_details(row, details)
+            refreshed_sales.append(_recomputed_sale_from_storage_row(refreshed_row, geocode=True))
+        except Exception as exc:
+            failures.append(identifier)
+            LOGGER.exception("Procedure source refresh failed for %s: %s", identifier, exc)
+
+    upserted = 0
+    for sale in refreshed_sales:
+        try:
+            upserted += upsert_sales_to_supabase([sale], refresh_last_seen=False)
+        except Exception as exc:
+            failures.append(sale.source_url)
+            LOGGER.exception("Refreshed procedure upsert failed for %s: %s", sale.source_url, exc)
+
+    unresolved = sum(sale.sale_venue_type == "unknown" for sale in refreshed_sales)
+    print("Unknown sale procedure source refresh")
+    print(f"- candidates: {len(candidates)}")
+    print(f"- refreshed: {upserted}")
+    print(f"- unresolved: {unresolved}")
+    print(f"- failures: {len(failures)}")
+    return 1 if failures or upserted != len(refreshed_sales) else 0
+
+
+def _procedure_refresh_clients() -> dict[str, Any]:
+    settings = load_settings()
+    common = {
+        "user_agent": str(settings["user_agent"]),
+        "delay_seconds": float(settings["request_delay_seconds"]),
+        "timeout_seconds": float(settings["request_timeout_seconds"]),
+    }
+    return {
+        "licitor": LicitorClient(**common),
+        "encheres_publiques": PoliteHttpClient(
+            base_url=ENCHERES_PUBLIQUES_BASE_URL,
+            **common,
+        ),
+    }
+
+
+def _fetch_procedure_source_details(
+    row: dict[str, Any],
+    clients: dict[str, Any],
+) -> dict[str, Any]:
+    source_name = str(row.get("source_name") or "")
+    source_url = str(row.get("source_url") or "")
+    client = clients.get(source_name)
+    if client is None or not source_url:
+        return {}
+
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            html = client.get(source_url)
+            if source_name == "licitor":
+                return parse_licitor_detail_html(html, source_url)
+            if source_name == "encheres_publiques":
+                return parse_encheres_publiques_detail_html(html, source_url)
+            return {}
+        except Exception as exc:
+            last_error = exc
+            if attempt < 3:
+                LOGGER.warning(
+                    "Procedure source refresh attempt %s/3 failed for %s: %s",
+                    attempt,
+                    source_url,
+                    exc,
+                )
+                time.sleep(2 * attempt)
+    if last_error is not None:
+        raise last_error
+    return {}
+
+
+def _merge_refetched_source_details(
+    row: dict[str, Any],
+    details: dict[str, Any],
+) -> dict[str, Any]:
+    merged_row = dict(row)
+    original_payload = dict(row.get("raw_payload")) if isinstance(row.get("raw_payload"), dict) else {}
+    merged_payload = {**original_payload}
+
+    for key in PROCEDURE_REFRESH_FIELDS:
+        value = details.get(key)
+        if value in (None, "", []):
+            continue
+        merged_row[key] = value
+        merged_payload[key] = value
+
+    existing_blocks = (
+        original_payload.get("source_blocks")
+        if isinstance(original_payload.get("source_blocks"), dict)
+        else {}
+    )
+    refreshed_blocks = details.get("source_blocks") if isinstance(details.get("source_blocks"), dict) else {}
+    if existing_blocks or refreshed_blocks:
+        merged_payload["source_blocks"] = {**existing_blocks, **refreshed_blocks}
+
+    merged_payload["procedure_source_refresh"] = {
+        "schema_version": "procedure_source_refresh_v1",
+        "source_name": row.get("source_name"),
+        "source_url": row.get("source_url"),
+        "fetched_at": datetime.now(UTC).isoformat(),
+        "status": "verified_source_page",
+    }
+    merged_row["raw_payload"] = merged_payload
+    return merged_row
 
 
 def _validate_persisted_sale_procedure(
@@ -413,12 +588,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Recalcule et réécrit individuellement les procédures persistées incohérentes.",
     )
+    parser.add_argument(
+        "--refresh-unknown-procedures",
+        action="store_true",
+        help="Relit les pages sources publiques des procédures encore indéterminées.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
     args = parse_args()
+    if args.refresh_unknown_procedures:
+        raise SystemExit(refresh_unknown_sale_procedures(source=args.source, limit=args.limit))
     if args.repair_invalid_procedures:
         raise SystemExit(repair_invalid_sale_procedures(source=args.source, limit=args.limit))
     if args.verify_only:

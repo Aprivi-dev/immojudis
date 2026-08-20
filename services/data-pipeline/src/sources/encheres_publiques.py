@@ -178,7 +178,7 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
     postal_code = _postal_code(address_text)
     latitude, longitude = _coordinates(address)
     visit_dates = _extract_visit_dates(state, lot)
-    source_blocks = _extract_source_blocks(lot)
+    source_blocks = _extract_source_blocks(lot, organizer)
     raw_text = _build_detail_raw_text(lot, address, organizer, event, visit_dates, source_blocks)
     surface = _resolve_built_surface(lot)
     title = _plain_text(lot.get("nom"))
@@ -443,7 +443,11 @@ def _extract_visit_dates(state: dict[str, Any], lot: dict[str, Any]) -> list[str
     return _unique_strings(visits)
 
 
-def _extract_source_blocks(lot: dict[str, Any]) -> dict[str, str]:
+def _extract_source_blocks(
+    lot: dict[str, Any],
+    organizer: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    organizer = organizer or {}
     mapping = {
         "resume": lot.get("criteres_resume"),
         "description": lot.get("description"),
@@ -457,6 +461,8 @@ def _extract_source_blocks(lot: dict[str, Any]) -> dict[str, str]:
         "dpe": lot.get("critere_consommation_energetique"),
         "ges": lot.get("critere_emissions_de_gaz"),
         "occupation": lot.get("critere_occupation_du_bien"),
+        "organisateur": organizer.get("nom"),
+        "organisateur_categorie": organizer.get("categorie"),
     }
     return {key: value for key, raw in mapping.items() if (value := _plain_text(raw))}
 
@@ -476,6 +482,7 @@ def _extract_listing_source_blocks(
         "date_vente": _timestamp_to_display(lot.get("ouverture_date") or event.get("ouverture_date")),
         "tribunal": _tribunal_name(organizer, event),
         "organisateur": organizer.get("nom"),
+        "organisateur_categorie": organizer.get("categorie"),
         "surface": _extract_surface(lot.get("criteres_resume"), lot.get("nom")),
         "page_text": _build_raw_text(lot, address, organizer, event),
     }

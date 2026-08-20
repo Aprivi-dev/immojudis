@@ -111,6 +111,30 @@ def test_uses_structured_notarial_details_as_case_evidence() -> None:
     assert classified.sale_procedure["rules"]["guarantee"]["status"] == "case_verified"
 
 
+def test_uses_verified_source_organizer_category_for_notarial_venue() -> None:
+    sale = make_sale(
+        source_name="encheres_publiques",
+        source_url="https://www.encheres-publiques.com/encheres/immobilier/lot_123",
+        description="Vente volontaire organisée par Office du Parc.",
+        lawyer_name="Office du Parc",
+        tribunal=None,
+        tribunal_code=None,
+        raw_payload={
+            "source_blocks": {
+                "organisateur": "Office du Parc",
+                "organisateur_categorie": "notaire",
+            }
+        },
+    )
+
+    classified = classify_sale_procedure(sale, verified_at=VERIFIED_AT)
+
+    assert classified.sale_venue_type == "notary"
+    assert classified.sale_verification_status == "verified"
+    assert classified.sale_procedure["organizer_name"] == "Office du Parc"
+    assert classified.sale_procedure["rules"]["lawyer_required"] is False
+
+
 def test_does_not_present_address_only_court_as_verified_venue() -> None:
     sale = make_sale(description="Maison proposée aux enchères publiques.")
 
