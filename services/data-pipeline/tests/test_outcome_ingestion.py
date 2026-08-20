@@ -34,9 +34,13 @@ from src.outcome_ingestion.service import JsonSourceRecord, OutcomeSourceIngesti
 class FakeBucket:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
+        self.remove_calls: list[list[str]] = []
 
     def upload(self, **kwargs: object) -> None:
         self.calls.append(kwargs)
+
+    def remove(self, paths: list[str]) -> None:
+        self.remove_calls.append(paths)
 
 
 class FakeStorage:
@@ -177,6 +181,19 @@ def test_storage_configuration_error_does_not_echo_credentials() -> None:
             {"supabase_url": "https://project.supabase.co", "supabase_service_role_key": ""}
         )
     assert "service-role-secret" not in str(raised.value)
+
+
+def test_private_storage_deletion_is_bounded_and_rejects_unsafe_paths() -> None:
+    client = FakeClient()
+    store = SupabaseRawArtifactStore(client)
+
+    assert store.remove_paths(["judilibre/a/object.json", "judilibre/a/object.json"]) == 1
+    assert client.bucket.remove_calls == [["judilibre/a/object.json"]]
+
+    with pytest.raises(ValueError, match="invalid"):
+        store.remove_paths(["../outside.json"])
+    with pytest.raises(ValueError, match="at most 100"):
+        store.remove_paths([f"judilibre/{index}.json" for index in range(101)])
 
 
 def test_request_fingerprint_is_deterministic_and_stored_url_can_drop_query() -> None:

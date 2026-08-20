@@ -42,10 +42,9 @@ Avant activation, le responsable de traitement doit :
   canoniques rattachés, revus, soutenus par une preuve A/B et conformes au cutoff peuvent alimenter
   une cohorte dans un futur workflow ; la tranche actuelle force également tous les résultats
   canoniques à rester non entraînables ;
-- appliquer la migration qui provisionne le bucket privé, tester l'absence de droits
-  `anon`/`authenticated`, livrer le janitor d'objets orphelins et le worker de purge physique, puis
-  tester la propagation d'une correction/suppression à Storage, aux projections et aux files en
-  échec ;
+- maintenir le bucket privé sans droits `anon`/`authenticated`, exécuter quotidiennement le janitor
+  d'objets orphelins et le worker de purge physique, puis surveiller la propagation des
+  corrections/suppressions à Storage, aux projections et aux files en échec ;
 - conserver l'attribution, les versions de CGU/licence et la date de dernière mise à jour. Pour
   Judilibre, surveiller la synchronisation transactionnelle selon le délai approuvé ; les CGU
   recommandent un intervalle maximal de 72 heures, sous réserve de disponibilité.

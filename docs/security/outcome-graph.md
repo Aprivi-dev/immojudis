@@ -33,14 +33,14 @@ Le navigateur est une surface de présentation. Le composant Analyse et le masqu
 
 ### Acteurs
 
-| Acteur | Droits actuels Outcome Graph |
-|---|---|
-| Anonyme | Aucun grant sur les 16 tables; route refusée sans authentification |
-| Découverte authentifié | Entitlement refusé; aucun accès direct aux tables internes |
-| Analyse / premium manuel | Lecture de la projection API uniquement; aucun accès direct aux 16 tables internes |
-| Administrateur | Accès Analyse via le résolveur canonique existant |
-| `service_role` | Écritures serveur/worker selon les grants; contourne la RLS |
-| Opérateur, reviewer, cabinet, analyste | Rôles fins non encore implémentés dans la tranche Outcome Graph |
+| Acteur                                 | Droits actuels Outcome Graph                                                       |
+| -------------------------------------- | ---------------------------------------------------------------------------------- |
+| Anonyme                                | Aucun grant sur les 16 tables; route refusée sans authentification                 |
+| Découverte authentifié                 | Entitlement refusé; aucun accès direct aux tables internes                         |
+| Analyse / premium manuel               | Lecture de la projection API uniquement; aucun accès direct aux 16 tables internes |
+| Administrateur                         | Accès Analyse via le résolveur canonique existant                                  |
+| `service_role`                         | Écritures serveur/worker selon les grants; contourne la RLS                        |
+| Opérateur, reviewer, cabinet, analyste | Rôles fins non encore implémentés dans la tranche Outcome Graph                    |
 
 Être premium ne donne aucun droit d’écriture dans le registre.
 
@@ -106,12 +106,14 @@ Le `service_role` reste un writer de confiance et peut porter les transitions de
 
 Les connecteurs/parseurs DVF, Judilibre, Justice et Enchères ainsi que la CLI commune sont présents.
 La politique est vérifiée avant Storage puis verrouillée avec `FOR SHARE` dans la transaction de
-provenance. Judilibre reste `pending`, `disabled`, inactif, et possède en plus un interrupteur runtime
-désactivé par défaut. Les candidats source sont tous contraints à `training_eligible = false`.
+provenance. Judilibre est approuvé pour l'ingestion automatisée depuis la revue du 20 août 2026, mais
+possède encore un interrupteur runtime explicite. Les candidats source sont tous contraints à
+`training_eligible = false`.
 
-Le bucket `outcome-raw-artifacts` est privé et ne possède aucune policy navigateur. L'activation
-Judilibre reste interdite tant que le replay SQL/RLS, le janitor d'objets orphelins et le worker de
-purge physique ne sont pas testés.
+Le bucket `outcome-raw-artifacts` est privé et ne possède aucune policy navigateur. Le janitor et le
+worker de purge physique sont exécutés dans le workflow Judilibre avec le `service_role`; leur sortie
+ne contient que des compteurs. Les textes bruts expirent après 730 jours et toute correction ou
+suppression amont reste prioritaire.
 
 ### Confidentialité du plafond
 
@@ -135,21 +137,21 @@ Chaque lecture réussie tente d’insérer `outcome_graph.viewed` dans `feature_
 
 ## Menaces et réponse actuelle
 
-| Menace | Contrôle actuel | Résiduel |
-|---|---|---|
-| Contournement premium | Auth + entitlement serveur; aucun grant/policy navigateur sur les tables internes | Tests réels admin/abonnement actif à compléter pour cette route |
-| IDOR / énumération | Auth/entitlement avant UUID; produit global premium | Pas encore de ressources cabinet à isoler |
-| Exposition `service_role` | Import serveur uniquement; aucune clé dans le DTO | Rotation/scan secrets relèvent de l’exploitation existante |
-| Réécriture historique | Triggers append-only; chaîne `supersedes_prediction_id` linéaire, horodatée et indexée | Motif métier et audit opérateur d’une supersession à formaliser |
-| Modification concurrente de l’audience | Garde des entrées du round après snapshot et verrous `FOR SHARE` dans les validateurs | Le producteur doit créer un nouveau round pour toute correction post-snapshot |
-| Fuite post-audience | Validateurs snapshot/prédiction et repository | JSON de manifeste fourni par un producteur de confiance; builder non livré |
-| Prédiction sur cohorte faible | Règles `n >= 10`, éligibilité et conflit | Éligibilité résultat/preuve complète pas encore matérialisée bout en bout |
-| Publication du mauvais modèle | Insert draft-only, transitions avec approbateur, type public/shadow lié au statut | Commande d’administration et audit métier de promotion non livrés |
-| Donnée personnelle dans features | Aucune colonne magistrat; accès snapshot serveur seulement | Validation de contenu JSON et audit PII manquants |
-| Exposition de preuve | Aucun grant client sur artefacts/preuves | Bucket privé, URL signée et upload sécurisé non livrés |
-| SSRF connecteur | Judilibre n'accepte que les origines PISTE prévues et refuse les redirections | Les autres futures sources réseau devront appliquer les mêmes protections |
-| Abus volumétrique API | Validation UUID et logs | Pas de rate limit spécifique Outcome Graph livré |
-| XSS via texte de cohorte/explication | React échappe les chaînes par défaut | Sanitation et bornes de longueur producteur à formaliser |
+| Menace                                 | Contrôle actuel                                                                        | Résiduel                                                                      |
+| -------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Contournement premium                  | Auth + entitlement serveur; aucun grant/policy navigateur sur les tables internes      | Tests réels admin/abonnement actif à compléter pour cette route               |
+| IDOR / énumération                     | Auth/entitlement avant UUID; produit global premium                                    | Pas encore de ressources cabinet à isoler                                     |
+| Exposition `service_role`              | Import serveur uniquement; aucune clé dans le DTO                                      | Rotation/scan secrets relèvent de l’exploitation existante                    |
+| Réécriture historique                  | Triggers append-only; chaîne `supersedes_prediction_id` linéaire, horodatée et indexée | Motif métier et audit opérateur d’une supersession à formaliser               |
+| Modification concurrente de l’audience | Garde des entrées du round après snapshot et verrous `FOR SHARE` dans les validateurs  | Le producteur doit créer un nouveau round pour toute correction post-snapshot |
+| Fuite post-audience                    | Validateurs snapshot/prédiction et repository                                          | JSON de manifeste fourni par un producteur de confiance; builder non livré    |
+| Prédiction sur cohorte faible          | Règles `n >= 10`, éligibilité et conflit                                               | Éligibilité résultat/preuve complète pas encore matérialisée bout en bout     |
+| Publication du mauvais modèle          | Insert draft-only, transitions avec approbateur, type public/shadow lié au statut      | Commande d’administration et audit métier de promotion non livrés             |
+| Donnée personnelle dans features       | Aucune colonne magistrat; accès snapshot serveur seulement                             | Validation de contenu JSON et audit PII manquants                             |
+| Exposition de preuve                   | Aucun grant client sur artefacts/preuves                                               | Bucket privé, URL signée et upload sécurisé non livrés                        |
+| SSRF connecteur                        | Judilibre n'accepte que les origines PISTE prévues et refuse les redirections          | Les autres futures sources réseau devront appliquer les mêmes protections     |
+| Abus volumétrique API                  | Validation UUID et logs                                                                | Pas de rate limit spécifique Outcome Graph livré                              |
+| XSS via texte de cohorte/explication   | React échappe les chaînes par défaut                                                   | Sanitation et bornes de longueur producteur à formaliser                      |
 
 ## Surfaces non encore livrées
 

@@ -1,6 +1,9 @@
 name: Outcome Graph - Judilibre synchronization
 
 on:
+  schedule:
+    # Judilibre corrections/deletions should be consumed within 72 hours.
+    - cron: "23 2 * * *"
   workflow_dispatch:
     inputs:
       operation:
@@ -83,16 +86,16 @@ jobs:
       should_sync: ${{ steps.gate.outputs.should_sync }}
     env:
       REPOSITORY_ENABLED: ${{ vars.JUDILIBRE_ENABLED || 'false' }}
-      REQUESTED_OPERATION: ${{ inputs.operation }}
-      REQUESTED_PROFILE: ${{ inputs.profile }}
+      REQUESTED_OPERATION: ${{ github.event_name == 'schedule' && 'sync' || inputs.operation }}
+      REQUESTED_PROFILE: ${{ inputs.profile || 'adjudication_v2' }}
       REQUESTED_DATE_START: ${{ inputs.date_start }}
       REQUESTED_DATE_END: ${{ inputs.date_end }}
-      REQUESTED_MAX_RESULTS_PER_WINDOW: ${{ inputs.max_results_per_window }}
-      REQUESTED_MAX_TOTAL_RESULTS: ${{ inputs.max_total_results }}
-      REQUESTED_MAX_PAGES: ${{ inputs.max_pages }}
-      REQUESTED_MAX_RECORDS: ${{ inputs.max_records }}
+      REQUESTED_MAX_RESULTS_PER_WINDOW: ${{ inputs.max_results_per_window || '250' }}
+      REQUESTED_MAX_TOTAL_RESULTS: ${{ inputs.max_total_results || '500' }}
+      REQUESTED_MAX_PAGES: ${{ inputs.max_pages || '10' }}
+      REQUESTED_MAX_RECORDS: ${{ inputs.max_records || '1000' }}
       REQUESTED_BOOTSTRAP_CONFIRMATION: ${{ inputs.confirm_bootstrap }}
-      REQUESTED_SYNC_CONFIRMATION: ${{ inputs.confirm_sync }}
+      REQUESTED_SYNC_CONFIRMATION: ${{ github.event_name == 'schedule' && 'SYNC-JUDILIBRE-TRACKED-ONLY' || inputs.confirm_sync }}
     steps:
       - name: Evaluate activation and bounds
         id: gate
@@ -220,7 +223,7 @@ jobs:
         run: python -m src.outcome_sources_cli plan
 
   ingest:
-    name: Run manually gated Judilibre ingestion
+    name: Run gated Judilibre ingestion
     needs: gate
     if: >-
       needs.gate.outputs.should_bootstrap == 'true' ||
@@ -243,14 +246,15 @@ jobs:
       JUDILIBRE_MAX_RETRIES: ${{ vars.JUDILIBRE_MAX_RETRIES || '4' }}
       JUDILIBRE_RETRY_BACKOFF_SECONDS: ${{ vars.JUDILIBRE_RETRY_BACKOFF_SECONDS || '1' }}
       JUDILIBRE_RETRY_MAX_SLEEP_SECONDS: ${{ vars.JUDILIBRE_RETRY_MAX_SLEEP_SECONDS || '30' }}
-      REQUESTED_PROFILE: ${{ inputs.profile }}
+      REQUESTED_PROFILE: ${{ inputs.profile || 'adjudication_v2' }}
       REQUESTED_DATE_START: ${{ inputs.date_start }}
       REQUESTED_DATE_END: ${{ inputs.date_end }}
-      REQUESTED_MAX_RESULTS_PER_WINDOW: ${{ inputs.max_results_per_window }}
-      REQUESTED_MAX_TOTAL_RESULTS: ${{ inputs.max_total_results }}
+      REQUESTED_MAX_RESULTS_PER_WINDOW: ${{ inputs.max_results_per_window || '250' }}
+      REQUESTED_MAX_TOTAL_RESULTS: ${{ inputs.max_total_results || '500' }}
       REQUESTED_SINCE: ${{ inputs.since }}
-      REQUESTED_MAX_PAGES: ${{ inputs.max_pages }}
-      REQUESTED_MAX_RECORDS: ${{ inputs.max_records }}
+      REQUESTED_MAX_PAGES: ${{ inputs.max_pages || '10' }}
+      REQUESTED_MAX_RECORDS: ${{ inputs.max_records || '1000' }}
+      SCHEDULED_RUN: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -368,8 +372,29 @@ jobs:
           )
           if [ -n "$REQUESTED_SINCE" ]; then
             args+=(--since "$REQUESTED_SINCE")
+          elif [ "$SCHEDULED_RUN" = "true" ]; then
+            args+=(--since "$(date -u -d '72 hours ago' +%Y-%m-%dT%H:%M:%S+00:00)")
           fi
           python -m src.outcome_sources_cli "${args[@]}"
+
+      - name: Propagate upstream deletions and clean private Storage orphans
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: >-
+          python scripts/run_outcome_retention.py
+          --max-jobs 500
+          --orphan-limit 500
+          --orphan-grace-hours 24
+
+      - name: Build review-only Judilibre match candidates
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: >-
+          python scripts/match_judilibre_candidates.py
+          --limit 2000
+          --persist
 
       - name: Publish bounded run summary
         if: always()
@@ -378,7 +403,7 @@ jobs:
             echo "## Outcome Graph - Judilibre"
             echo
             echo "- Repository gate: \`JUDILIBRE_ENABLED=true\`"
-            echo "- Trigger: manual only"
+            echo "- Trigger: ${{ github.event_name }}"
             if [ "${{ needs.gate.outputs.should_bootstrap }}" = "true" ]; then
               echo "- Operation: targeted-search bootstrap"
               echo "- Profile: \`$REQUESTED_PROFILE\`"
@@ -392,6 +417,8 @@ jobs:
               echo "- Record budget: \`$REQUESTED_MAX_RECORDS\`"
             fi
             echo "- Raw decision artifact uploaded to Actions: no"
+            echo "- Physical source-deletion propagation: enabled"
+            echo "- Match publication: review-only; no automatic outcome"
             echo "- Successful bounded segments persist a resume cursor; watermark promotion waits for the terminal page"
             echo "- Training eligibility: false"
           } >> "$GITHUB_STEP_SUMMARY"
