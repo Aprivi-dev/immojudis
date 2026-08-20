@@ -328,6 +328,8 @@ def test_parse_encheres_publiques_detail_html_extracts_rich_lot_context() -> Non
     assert "Libre de toute occupation" in (sale.raw_text or "")
     assert "autorisation" not in (sale.raw_text or "")
     assert raw_sale["source_blocks"]["renseignements_de_vente"].startswith("Texte générique")
+    assert raw_sale["source_blocks"]["organisateur"] == "OFFICE NOTARIAL DU JEU DE PAUME"
+    assert raw_sale["source_blocks"]["organisateur_categorie"] == "notaire"
     assert raw_sale["source_images"] == ["https://www.encheres-publiques.com/static/lot/photo/bordeaux.jpg"]
 
 

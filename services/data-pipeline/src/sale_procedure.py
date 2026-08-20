@@ -31,6 +31,7 @@ _EXPLICIT_NOTARY_PATTERNS = (
     re.compile(r"\badjudication\s+(?:devant|par)\s+(?:un\s+)?notaire\b", re.I),
     re.compile(r"\bchambre\s+(?:interd[eé]partementale\s+|d[eé]partementale\s+)?des\s+notaires\b", re.I),
     re.compile(r"\bimmo[-\s]?interactif\b", re.I),
+    re.compile(r"\borganisateur_categorie\s*:\s*notaire\b", re.I),
 )
 _STATE_PATTERNS = (
     re.compile(r"\bvente\s+domaniale\b", re.I),

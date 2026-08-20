@@ -46,6 +46,85 @@ def test_fetch_sales_uses_retrying_postgrest_transport(monkeypatch) -> None:
     assert all(call["table"] == "auction_sales" for call in calls)
 
 
+def test_merge_refetched_source_details_preserves_and_extends_evidence() -> None:
+    merged = recompute_module._merge_refetched_source_details(
+        {
+            "source_name": "encheres_publiques",
+            "source_url": "https://www.encheres-publiques.com/encheres/lot_123",
+            "raw_payload": {
+                "source_blocks": {"mise_a_prix": "100000"},
+                "collector_marker": "preserved",
+            },
+        },
+        {
+            "address": "1 rue Exemple, 74000 Annecy",
+            "raw_text": "Vente volontaire organisée par Office du Parc",
+            "source_blocks": {
+                "organisateur": "Office du Parc",
+                "organisateur_categorie": "notaire",
+            },
+            "status": "unknown",
+        },
+    )
+
+    assert merged["address"] == "1 rue Exemple, 74000 Annecy"
+    assert merged["raw_payload"]["collector_marker"] == "preserved"
+    assert merged["raw_payload"]["source_blocks"] == {
+        "mise_a_prix": "100000",
+        "organisateur": "Office du Parc",
+        "organisateur_categorie": "notaire",
+    }
+    assert merged["raw_payload"]["procedure_source_refresh"]["status"] == "verified_source_page"
+    assert "status" not in merged or merged["status"] != "unknown"
+
+
+def test_refresh_unknown_sale_procedures_refetches_only_supported_unknowns(monkeypatch) -> None:
+    rows = [
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/example/123.html",
+            "sale_venue_type": "unknown",
+            "raw_payload": {},
+        },
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/known",
+            "sale_venue_type": "unknown",
+            "raw_payload": {},
+        },
+    ]
+    refreshed = AuctionSale(
+        source_name="licitor",
+        source_url="https://www.licitor.com/annonce/example/123.html",
+        sale_venue_type="tribunal",
+    )
+    writes: list[str] = []
+
+    monkeypatch.setattr(recompute_module, "_load_env_fallbacks", lambda: None)
+    monkeypatch.setattr(recompute_module, "_fetch_sales", lambda **_kwargs: rows)
+    monkeypatch.setattr(recompute_module, "_procedure_refresh_clients", lambda: {})
+    monkeypatch.setattr(
+        recompute_module,
+        "_fetch_procedure_source_details",
+        lambda row, _clients: {"raw_text": "Tribunal judiciaire de Paris"},
+    )
+    monkeypatch.setattr(
+        recompute_module,
+        "_recomputed_sale_from_storage_row",
+        lambda row, geocode: refreshed,
+    )
+    monkeypatch.setattr(
+        recompute_module,
+        "upsert_sales_to_supabase",
+        lambda sales, refresh_last_seen: writes.extend(sale.source_url for sale in sales) or len(sales),
+    )
+
+    exit_code = recompute_module.refresh_unknown_sale_procedures()
+
+    assert exit_code == 0
+    assert writes == ["https://www.licitor.com/annonce/example/123.html"]
+
+
 def test_recomputed_sale_validates_geocode_before_court_assignment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
