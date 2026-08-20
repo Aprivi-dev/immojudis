@@ -67,6 +67,11 @@ on:
         description: "Type SYNC-JUDILIBRE-TRACKED-ONLY when operation=sync"
         required: false
         type: string
+      refresh_justice_references:
+        description: "Refresh and ingest the verified official Justice court registry before matching"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -326,6 +331,35 @@ jobs:
               ;;
           esac
 
+      - name: Refresh verified official Justice court registry
+        if: >-
+          github.event_name == 'schedule' ||
+          inputs.refresh_justice_references == true
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%d)" != "01" ]; then
+            echo "Official Justice court registry refresh is scheduled for the first UTC day of each month"
+            exit 0
+          fi
+
+          justice_reference_dir="$RUNNER_TEMP/justice-references"
+          python -m src.official_sources.justice_reference_sync \
+            --output-dir "$justice_reference_dir" \
+            --no-cache-fallback
+          python -m src.outcome_sources_cli validate-local \
+            justice \
+            "$justice_reference_dir/2026-domaine-juridique-adresse.csv"
+          python -m src.outcome_sources_cli ingest-local \
+            justice \
+            "$justice_reference_dir/2026-domaine-juridique-adresse.csv" \
+            --all \
+            --workers 8
+
       - name: Verify the live Judilibre contract without writing data
         env:
           JUDILIBRE_KEY_ID: ${{ secrets.JUDILIBRE_KEY_ID }}
@@ -418,6 +452,7 @@ jobs:
             fi
             echo "- Raw decision artifact uploaded to Actions: no"
             echo "- Physical source-deletion propagation: enabled"
+            echo "- Official Justice court registry: monthly verified refresh; manual refresh available"
             echo "- Match publication: review-only; no automatic outcome"
             echo "- Successful bounded segments persist a resume cursor; watermark promotion waits for the terminal page"
             echo "- Training eligibility: false"
