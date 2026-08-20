@@ -109,7 +109,7 @@ jobs:
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
           set -euo pipefail
-          args=(--batch-size 20)
+          args=(--batch-size 20 --geocode-missing --geocode-workers 4)
           if [ "$REQUESTED_SOURCE" != "all" ]; then
             args+=(--source "$REQUESTED_SOURCE")
           fi

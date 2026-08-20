@@ -1,8 +1,52 @@
 from decimal import Decimal
 
+import pytest
+
+from src import recompute_scoring as recompute_module
 from src.asset_normalization import normalize_asset_features
 from src.models import AuctionSale
 from src.recompute_scoring import _sale_from_storage_row, _validate_persisted_sale_procedure
+
+
+def test_recomputed_sale_validates_geocode_before_court_assignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_geocode(sale: AuctionSale) -> AuctionSale:
+        calls.append("geocode")
+        sale.raw_payload["geocode"] = {
+            "provider": "ban_geoplateforme",
+            "accepted": True,
+            "citycode": "33063",
+        }
+        return sale
+
+    def fake_tribunal(sale: AuctionSale) -> AuctionSale:
+        calls.append("tribunal")
+        assert sale.raw_payload["geocode"]["citycode"] == "33063"
+        return sale
+
+    monkeypatch.setattr(recompute_module, "geocode_sale", fake_geocode)
+    monkeypatch.setattr(recompute_module, "fill_tribunal", fake_tribunal)
+    monkeypatch.setattr(recompute_module, "classify_sale_procedure", lambda sale: calls.append("procedure") or sale)
+    monkeypatch.setattr(recompute_module, "normalize_asset_features", lambda sale: calls.append("assets") or sale)
+
+    sale = recompute_module._recomputed_sale_from_storage_row(
+        {
+            "id": "historical-geocode",
+            "source_name": "avoventes",
+            "source_url": "https://example.test/historical-geocode",
+            "address": "30 cours de l'Intendance",
+            "postal_code": "33000",
+            "city": "Bordeaux",
+            "raw_payload": {},
+        },
+        geocode=True,
+    )
+
+    assert sale.raw_payload["geocode"]["provider"] == "ban_geoplateforme"
+    assert calls == ["geocode", "tribunal", "procedure", "assets"]
 
 
 def test_storage_recompute_preserves_editorial_text_for_surface_reconciliation() -> None:
