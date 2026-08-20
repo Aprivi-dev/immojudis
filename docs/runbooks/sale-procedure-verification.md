@@ -33,8 +33,9 @@ requalification des annonces actives.
 
 3. Examiner `sale_procedure_statuses`, les conflits et un échantillon de chaque source.
 4. En mode définitif, le workflow exécute ensuite l'upsert complet, vérifie que le nombre publié
-   correspond au nombre calculé, puis relit toutes les lignes persistées avec `--verify-only`.
-   Une procédure vide, incohérente ou d'une version inattendue fait échouer le déploiement.
+   correspond au nombre calculé, reprend individuellement les éventuelles lignes incohérentes, puis
+   relit toutes les lignes persistées avec `--verify-only`. Une procédure encore vide, incohérente,
+   différente du recalcul attendu ou d'une version inattendue fait échouer le déploiement.
 5. Vérifier dans le catalogue Découverte que le bloc procédural est présent sans fuite des analyses
    premium.
 6. Vérifier dans l'offre Analyse que l'historique tribunal apparaît uniquement pour une vente

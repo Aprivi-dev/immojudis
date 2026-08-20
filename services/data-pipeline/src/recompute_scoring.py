@@ -46,10 +46,7 @@ def recompute_scoring(
     failures: list[str] = []
     for row in rows:
         try:
-            sale = _sale_from_storage_row(row)
-            fill_tribunal(sale)
-            classify_sale_procedure(sale)
-            normalize_asset_features(sale)
+            sale = _recomputed_sale_from_storage_row(row)
             sales.append(sale)
         except Exception as exc:
             failures.append(str(row.get("source_url") or row.get("id") or "unknown-row"))
@@ -94,7 +91,12 @@ def verify_persisted_sale_procedures(
     for row in rows:
         statuses[str(row.get("sale_verification_status") or "missing")] += 1
         venues[str(row.get("sale_venue_type") or "missing")] += 1
-        issues = _validate_persisted_sale_procedure(row)
+        try:
+            expected_sale = _recomputed_sale_from_storage_row(row)
+            issues = _validate_persisted_sale_procedure(row, expected_sale=expected_sale)
+        except Exception as exc:
+            LOGGER.exception("Persisted procedure verification failed for %s: %s", row.get("source_url"), exc)
+            issues = ["procedure recompute failed"]
         if issues:
             invalid.append((str(row.get("source_url") or row.get("id") or "unknown-row"), issues))
 
@@ -110,7 +112,51 @@ def verify_persisted_sale_procedures(
     return 1 if invalid else 0
 
 
-def _validate_persisted_sale_procedure(row: dict[str, Any]) -> list[str]:
+def repair_invalid_sale_procedures(
+    *,
+    source: str | None = None,
+    limit: int | None = None,
+) -> int:
+    """Retry inconsistent catalogue rows individually, then let verification re-read them."""
+
+    _load_env_fallbacks()
+    rows = _fetch_sales(source=source, limit=limit)
+    if not rows:
+        LOGGER.error("No stored sales matched the requested repair scope")
+        return 1
+
+    repairs = []
+    failures: list[str] = []
+    for row in rows:
+        identifier = str(row.get("source_url") or row.get("id") or "unknown-row")
+        try:
+            expected_sale = _recomputed_sale_from_storage_row(row)
+            if _validate_persisted_sale_procedure(row, expected_sale=expected_sale):
+                repairs.append(expected_sale)
+        except Exception as exc:
+            failures.append(identifier)
+            LOGGER.exception("Procedure repair preparation failed for %s: %s", identifier, exc)
+
+    repaired = 0
+    for sale in repairs:
+        try:
+            repaired += upsert_sales_to_supabase([sale], refresh_last_seen=False)
+        except Exception as exc:
+            failures.append(sale.source_url)
+            LOGGER.exception("Individual procedure repair failed for %s: %s", sale.source_url, exc)
+
+    print("Sale procedure repair summary")
+    print(f"- candidates: {len(repairs)}")
+    print(f"- repaired: {repaired}")
+    print(f"- failures: {len(failures)}")
+    return 1 if failures or repaired != len(repairs) else 0
+
+
+def _validate_persisted_sale_procedure(
+    row: dict[str, Any],
+    *,
+    expected_sale: Any | None = None,
+) -> list[str]:
     issues: list[str] = []
     venue_type = row.get("sale_venue_type")
     legal_framework = row.get("sale_legal_framework")
@@ -140,6 +186,17 @@ def _validate_persisted_sale_procedure(row: dict[str, Any]) -> list[str]:
         issues.append("missing verification")
     elif verification.get("status") != verification_status:
         issues.append("verification status mismatch")
+    if expected_sale is not None:
+        if venue_type != expected_sale.sale_venue_type:
+            issues.append("venue_type differs from recompute")
+        if legal_framework != expected_sale.sale_legal_framework:
+            issues.append("legal_framework differs from recompute")
+        if verification_status != expected_sale.sale_verification_status:
+            issues.append("verification status differs from recompute")
+        expected_procedure = expected_sale.sale_procedure
+        for key in ("ruleset_version", "participation_mode", "rules"):
+            if procedure.get(key) != expected_procedure.get(key):
+                issues.append(f"{key} differs from recompute")
     return issues
 
 
@@ -215,6 +272,14 @@ def _sale_from_storage_row(row: dict[str, Any]):
     sale.updated_at = _parse_datetime(row.get("updated_at"))
     sale.quality_flags = []
     sale.raw_payload = raw_sale
+    return sale
+
+
+def _recomputed_sale_from_storage_row(row: dict[str, Any]):
+    sale = _sale_from_storage_row(row)
+    fill_tribunal(sale)
+    classify_sale_procedure(sale)
+    normalize_asset_features(sale)
     return sale
 
 
@@ -294,12 +359,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Vérifie les procédures persistées sans les recalculer ni les modifier.",
     )
+    parser.add_argument(
+        "--repair-invalid-procedures",
+        action="store_true",
+        help="Recalcule et réécrit individuellement les procédures persistées incohérentes.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
     args = parse_args()
+    if args.repair_invalid_procedures:
+        raise SystemExit(repair_invalid_sale_procedures(source=args.source, limit=args.limit))
     if args.verify_only:
         raise SystemExit(verify_persisted_sale_procedures(source=args.source, limit=args.limit))
     raise SystemExit(

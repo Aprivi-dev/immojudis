@@ -99,6 +99,17 @@ def test_does_not_present_address_only_court_as_verified_venue() -> None:
     assert "n'est pas encore confirmé" in classified.sale_procedure["verification"]["issues"][0]
 
 
+def test_reclassification_never_uses_derived_procedure_as_source_evidence() -> None:
+    sale = make_sale(description="Maison proposée aux enchères publiques.")
+
+    first = classify_sale_procedure(sale, verified_at=VERIFIED_AT)
+    second = classify_sale_procedure(first, verified_at="2026-08-20T10:30:00+00:00")
+
+    assert first.sale_verification_status == "pending"
+    assert second.sale_verification_status == "pending"
+    assert second.sale_procedure["rules"]["lawyer_required"] is None
+
+
 def test_conflicting_explicit_venues_are_not_silently_resolved() -> None:
     sale = make_sale(
         description=(

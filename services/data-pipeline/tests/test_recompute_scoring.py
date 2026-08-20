@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from src.asset_normalization import normalize_asset_features
+from src.models import AuctionSale
 from src.recompute_scoring import _sale_from_storage_row, _validate_persisted_sale_procedure
 
 
@@ -132,4 +133,40 @@ def test_persisted_sale_procedure_validation_rejects_empty_or_inconsistent_paylo
         "legal_framework mismatch",
         "missing rules",
         "verification status mismatch",
+    ]
+
+
+def test_persisted_sale_procedure_validation_detects_stale_but_well_formed_payload() -> None:
+    row = {
+        "sale_venue_type": "tribunal",
+        "sale_legal_framework": "unknown",
+        "sale_verification_status": "pending",
+        "sale_procedure": {
+            "schema_version": "sale_procedure_v1",
+            "ruleset_version": "fr_auction_participation_2026-08-20",
+            "venue_type": "tribunal",
+            "legal_framework": "unknown",
+            "participation_mode": "in_person",
+            "rules": {"lawyer_required": None},
+            "verification": {"status": "pending"},
+        },
+    }
+    expected = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/stale",
+        sale_venue_type="tribunal",
+        sale_legal_framework="judicial_seizure",
+        sale_verification_status="verified",
+        sale_procedure={
+            "ruleset_version": "fr_auction_participation_2026-08-20",
+            "participation_mode": "lawyer_mandate",
+            "rules": {"lawyer_required": True},
+        },
+    )
+
+    assert _validate_persisted_sale_procedure(row, expected_sale=expected) == [
+        "legal_framework differs from recompute",
+        "verification status differs from recompute",
+        "participation_mode differs from recompute",
+        "rules differs from recompute",
     ]
