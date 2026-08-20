@@ -648,7 +648,7 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatc
     assert calls.count("upsert") == 2
 
 
-def test_pipeline_skips_pdf_when_only_llm_description_is_missing(monkeypatch) -> None:
+def test_pipeline_generates_llm_description_when_heavy_enrichment_is_disabled(monkeypatch) -> None:
     calls: list[str] = []
     settings = _settings()
     settings["incremental_enrichment"] = True
@@ -691,7 +691,17 @@ def test_pipeline_skips_pdf_when_only_llm_description_is_missing(monkeypatch) ->
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: len(sales))
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: len(sales))
 
-    assert main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=True, upsert=True)) == 0
+    assert (
+        main.run_pipeline(
+            main.PipelineOptions(
+                source="avoventes",
+                use_llm=True,
+                heavy_enrichment=False,
+                upsert=True,
+            )
+        )
+        == 0
+    )
     assert "pdf" not in calls
     assert calls == ["llm"]
 

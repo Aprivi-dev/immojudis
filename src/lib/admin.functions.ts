@@ -24,7 +24,7 @@ const startScrollSchema = z.object({
 });
 const AUTOMATIC_LLM_ENRICHMENT = true;
 const LLM_BACKFILL_SOURCE = "llm-description-backfill";
-const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v8_qwen37_structured_display";
+const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v9_qwen2_7b_scan_display";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };

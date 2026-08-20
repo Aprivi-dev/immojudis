@@ -423,6 +423,63 @@ def test_qwen37_keeps_system_and_user_prompts_separate() -> None:
     assert "objet JSON valide" in prompt
 
 
+def test_replicate_client_formats_qwen2_7b_instruct_payload() -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model=(
+            "zsxkib/qwen2-7b-instruct:"
+            "5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4"
+        ),
+        max_tokens=512,
+        temperature=0,
+    )
+
+    payload = client._input_payload("user prompt", system_prompt="system prompt")
+
+    assert payload == {
+        "prompt": "user prompt",
+        "system_prompt": "system prompt",
+        "model_type": "Qwen2-7B-Instruct",
+        "max_new_tokens": 512,
+        "temperature": 0.1,
+        "top_k": 1,
+        "top_p": 1,
+        "repetition_penalty": 1,
+    }
+
+
+def test_replicate_client_uses_pinned_predictions_endpoint_for_qwen2_7b(monkeypatch) -> None:
+    model = (
+        "zsxkib/qwen2-7b-instruct:"
+        "5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4"
+    )
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model=model,
+        min_interval_seconds=0,
+    )
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def json(self):
+            return {"id": "prediction-test", "status": "starting"}
+
+    def fake_post(endpoint, *, headers, payload):
+        captured["endpoint"] = endpoint
+        captured["headers"] = headers
+        captured["payload"] = payload
+        return FakeResponse()
+
+    monkeypatch.setattr(client, "_post_with_retries", fake_post)
+
+    prediction = client._create_prediction("user prompt", system_prompt="system prompt")
+
+    assert prediction["id"] == "prediction-test"
+    assert captured["endpoint"] == "https://api.replicate.com/v1/predictions"
+    assert captured["payload"]["version"] == model
+    assert captured["payload"]["input"]["model_type"] == "Qwen2-7B-Instruct"
+
+
 def test_replicate_rate_limit_tracks_prediction_starts(monkeypatch) -> None:
     client = ReplicateClient(
         api_token="replicate-token-test",

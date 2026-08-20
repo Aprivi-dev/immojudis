@@ -1463,7 +1463,7 @@ as $$
 declare
   v_input_hash text := md5(
     coalesce(new.content_hash, new.source_url || coalesce(new.documents::text, '[]'))
-    || ':surface_reasoning_v1:auction_facts_v1:auction_display_v7:qwen3_7_plus'
+    || ':auction_display_v8:qwen2_7b_instruct'
   );
   v_has_documents boolean := jsonb_typeof(coalesce(new.documents, '[]'::jsonb)) = 'array'
     and jsonb_array_length(coalesce(new.documents, '[]'::jsonb)) > 0;
@@ -1475,7 +1475,7 @@ begin
   end if;
 
   insert into public.auction_enrichment_jobs (source_url, job_type, priority, input_hash)
-  values (new.source_url, 'fact_extraction', 20, v_input_hash)
+  values (new.source_url, 'display_description', 20, v_input_hash)
   on conflict (source_url, job_type, input_hash) do nothing;
   return new;
 end;
@@ -1536,10 +1536,10 @@ select
   jobs.priority,
   md5(
     coalesce(sale.content_hash, sale.source_url || coalesce(sale.documents::text, '[]'))
-    || ':surface_reasoning_v1:auction_facts_v1:auction_display_v7:qwen3_7_plus'
+    || ':auction_display_v8:qwen2_7b_instruct'
   )
 from public.auction_sales as sale
-cross join lateral (values ('fact_extraction'::text, 20)) as jobs(job_type, priority)
+cross join lateral (values ('display_description'::text, 20)) as jobs(job_type, priority)
 where sale.status in ('active', 'upcoming')
 on conflict (source_url, job_type, input_hash) do nothing;
 
@@ -1550,7 +1550,7 @@ select
   30,
   md5(
     coalesce(sale.content_hash, sale.source_url || coalesce(sale.documents::text, '[]'))
-    || ':surface_reasoning_v1:auction_facts_v1:auction_display_v7:qwen3_7_plus'
+    || ':auction_display_v8:qwen2_7b_instruct'
   )
 from public.auction_sales as sale
 where sale.status in ('active', 'upcoming')

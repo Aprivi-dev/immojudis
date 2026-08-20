@@ -307,3 +307,54 @@ def test_enrichment_queue_marks_every_sale_job_failed_on_extraction_error(monkey
         ("job-facts", False, "invalid structured response"),
         ("job-display", False, "invalid structured response"),
     ]
+
+
+def test_enrichment_queue_does_not_pay_twice_for_scan_description(monkeypatch) -> None:
+    prompt_version = "auction_llm_v9_qwen2_7b_scan_display"
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/already-summarized",
+        description="Appartement de 42 m² situé à Bordeaux.",
+        raw_payload={
+            "llm_display_description": "Appartement de 42 m² situé à Bordeaux.",
+            "llm_prompt_version": prompt_version,
+        },
+    )
+    finished: list[tuple[str, bool, str | None]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [
+            {
+                "id": "job-display",
+                "source_url": sale.source_url,
+                "job_type": "display_description",
+            }
+        ],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(
+        queued_runner,
+        "load_settings",
+        lambda: {
+            "llm_extraction_mode": "display_description",
+            "llm_prompt_version": prompt_version,
+        },
+    )
+    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_with_llm",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Replicate must not be called twice")),
+    )
+    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: current)
+    monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, succeeded, error_message=None: finished.append((job_id, succeeded, error_message)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=10) == 1
+    assert finished == [("job-display", True, None)]

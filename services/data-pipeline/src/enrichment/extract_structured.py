@@ -340,7 +340,7 @@ def enrich_sale_with_llm(
     if source_description:
         sale.raw_payload["source_description"] = source_description
 
-    extraction_mode = str(settings.get("llm_extraction_mode") or "structured_then_display")
+    extraction_mode = str(settings.get("llm_extraction_mode") or "display_description")
     if extraction_mode == "display_description":
         contexts = [load_llm_context_for_sale(sale, max_chars=int(settings["llm_pdf_max_chars"]))]
     else:

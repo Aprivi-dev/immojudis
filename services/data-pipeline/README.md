@@ -113,7 +113,7 @@ Les enrichissements peuvent être parallélisés et plafonnés par run :
 PIPELINE_ENRICH_WORKERS=2
 PIPELINE_PDF_WORKERS=2
 PIPELINE_PDF_MAX_TARGETS=10
-PIPELINE_LLM_MAX_TARGETS=10
+PIPELINE_LLM_MAX_TARGETS=0
 PIPELINE_LLM_BACKFILL_MAX_TARGETS=10
 PIPELINE_IDLE_LLM_BACKFILL_ENABLED=true
 PIPELINE_ENRICHMENT_QUEUE_ENABLED=true
@@ -420,10 +420,11 @@ PDF_OCR_LANGUAGE=fra+eng
 
 ## Enrichissement LLM Replicate
 
-Le module `src/enrichment/` utilise Replicate pour extraire une lecture structurée des textes PDF.
-Le modèle par défaut est `qwen/qwen3-7-plus`. Son contexte d'un million de
-jetons permet de conserver l'ensemble des pages collectées, tandis que son
-tarif Replicate reste adapté au traitement systématique des annonces.
+Le module `src/enrichment/` utilise Replicate pour rédiger la synthèse publique
+des biens pendant le scan qui les collecte. Le modèle par défaut est la version
+épinglée de `zsxkib/qwen2-7b-instruct` (Qwen2 7B Instruct). Ce modèle est adapté
+à une génération courte et économique ; l'épinglage évite qu'une nouvelle image
+du modèle modifie silencieusement le format des synthèses.
 
 Configuration :
 
@@ -431,24 +432,24 @@ Configuration :
 LLM_ENABLED=true
 LLM_PROVIDER=replicate
 REPLICATE_API_TOKEN=your-replicate-token
-REPLICATE_MODEL=qwen/qwen3-7-plus
-REPLICATE_TEMPERATURE=0
-REPLICATE_MAX_TOKENS=8192
+REPLICATE_MODEL=zsxkib/qwen2-7b-instruct:5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4
+REPLICATE_TEMPERATURE=0.1
+REPLICATE_MAX_TOKENS=512
 REPLICATE_TIMEOUT_SECONDS=180
 REPLICATE_WAIT_SECONDS=60
 REPLICATE_CANCEL_AFTER=5m
 REPLICATE_MAX_RETRIES=4
 REPLICATE_RETRY_BACKOFF_SECONDS=30
 REPLICATE_RETRY_MAX_SLEEP_SECONDS=60
-REPLICATE_MIN_INTERVAL_SECONDS=15
+REPLICATE_MIN_INTERVAL_SECONDS=1
 # Contrôles utilisés uniquement si REPLICATE_MODEL désigne un modèle Gemini
 REPLICATE_THINKING_BUDGET=0
 REPLICATE_DYNAMIC_THINKING=false
 REPLICATE_THINKING_LEVEL=low
-LLM_PROMPT_VERSION=auction_llm_v8_qwen37_structured_display
+LLM_PROMPT_VERSION=auction_llm_v9_qwen2_7b_scan_display
 LLM_FACT_PROMPT_VERSION=auction_facts_v1
-LLM_DISPLAY_PROMPT_VERSION=auction_display_v7
-LLM_EXTRACTION_MODE=structured_then_display
+LLM_DISPLAY_PROMPT_VERSION=auction_display_v8
+LLM_EXTRACTION_MODE=display_description
 LLM_PDF_MAX_CHARS=12000
 LLM_FACT_CHUNK_CHARS=12000
 LLM_FACT_MAX_CHUNKS=0
@@ -457,7 +458,7 @@ INCREMENTAL_ENRICHMENT=true
 PDF_DOCLING_FAST_TIMEOUT_SECONDS=60
 PDF_MAX_DOCUMENTS_PER_SALE=6
 PIPELINE_PDF_MAX_TARGETS=10
-PIPELINE_LLM_MAX_TARGETS=10
+PIPELINE_LLM_MAX_TARGETS=0
 PIPELINE_LLM_BACKFILL_MAX_TARGETS=20
 PIPELINE_IDLE_LLM_BACKFILL_ENABLED=true
 PIPELINE_ENRICHMENT_QUEUE_ENABLED=true
@@ -469,14 +470,17 @@ Pour Gemini via Replicate, le client envoie le prompt système dans `system_inst
 Les erreurs temporaires Replicate, dont `429 Too Many Requests`, sont retentées avec backoff exponentiel et un délai minimal entre appels pour éviter les rafales en fin de run.
 Les textes PDF et les extractions LLM sont mis en cache par empreinte de document/contexte. Le run suivant réutilise les résultats inchangés, limite les documents transmis aux plus utiles et applique un timeout Docling plus court sur les PDF signés ou très lourds avant fallback.
 
-Le pipeline tente l'enrichissement LLM sur les annonces sélectionnées par les
-garde-fous `PIPELINE_LLM_MAX_TARGETS` et le cache incrémental. Le mode courant
-`structured_then_display` effectue deux passes distinctes :
+Le mode courant `display_description` effectue un seul appel court par bien :
+il rédige uniquement la synthèse publique à partir des blocs collectés sur la
+fiche source et du texte documentaire déjà disponible. `PIPELINE_LLM_MAX_TARGETS=0`
+désactive le plafond de sélection : chaque bien éligible sans synthèse courante
+est donc traité avant la publication finale du scan. `--no-llm` reste le seul
+moyen explicite de désactiver cette étape.
 
-1. extraction factuelle de tous les blocs de l'annonce et de toutes les pages
-   PDF déjà collectées, découpés en segments traçables ;
-2. rédaction de la synthèse publique uniquement à partir des faits consolidés
-   et validés.
+Le mode `structured_then_display` reste disponible pour une campagne
+d'extraction factuelle complète. Il analyse alors les blocs et pages en
+segments traçables avant une seconde passe de rédaction, mais il est plus long
+et plus coûteux que le mode utilisé par les scans ordinaires.
 
 Chaque pièce ou lot est extrait séparément avec valeur, catégorie, document,
 page et citation. Le LLM ne réalise pas l'addition : le module déterministe
@@ -500,15 +504,16 @@ borné par `PIPELINE_LLM_BACKFILL_MAX_TARGETS` ou `--limit`. En CI, la file
 collecte. Les jobs échoués sont retentés et un verrou abandonné depuis plus de
 30 minutes peut être réclamé par un autre worker.
 
-La migration `20260819105011_add_structured_surface_reasoning_queue.sql` doit
-être appliquée avant de déployer le worker. Les trois nouvelles tables activent
+Les migrations `20260819105011_add_structured_surface_reasoning_queue.sql` et
+`20260820144541_use_qwen2_7b_scan_descriptions.sql` doivent être appliquées
+avant de déployer le worker. Les trois nouvelles tables activent
 RLS explicitement : seules les lectures abonnées passent par
 `has_analysis_access()`, tandis que la file et sa fonction de claim restent
 réservées au `service_role`.
 
 Un cache évite de rappeler Replicate quand le triplet `modèle + versions de prompts + contexte factuel complet` n'a pas changé. Cela limite le coût, accélère les relances et stabilise les extractions. Une annonce déjà publiée avec une ancienne version de prompt est réenrichie afin de régénérer la description d'affichage. À chaque collecte avec LLM actif, le skip incrémental exige désormais `raw_payload.llm_display_description` et `raw_payload.llm_prompt_version = LLM_PROMPT_VERSION` : une annonce scorée mais sans synthèse IA publique repasse donc automatiquement dans l'enrichissement.
 
-La passe factuelle couvre toutes les pages extraites. `LLM_FACT_CHUNK_CHARS`
+Dans le mode factuel optionnel, la passe couvre toutes les pages extraites. `LLM_FACT_CHUNK_CHARS`
 limite la taille d'un segment, tandis que `LLM_FACT_MAX_CHUNKS=0` signifie
 qu'aucune page n'est volontairement écartée. La passe d'affichage utilise un
 contexte consolidé plus court. Les métriques `llm_fact_context_coverage` et
