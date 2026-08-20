@@ -1,80 +1,86 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  buildTribunalJudicialActivityDirectory,
+  type TribunalJudicialActivityDirectorySale,
+} from "@/lib/tribunal-judicial-activity-directory";
 import { TribunalsPage } from "@/routes/tribunaux";
 
 const mocks = vi.hoisted(() => ({
-  fetchEntitlements: vi.fn(),
-  fetchStatistics: vi.fn(),
+  fetchDirectory: vi.fn(),
 }));
 
-vi.mock("@/hooks/use-auth", () => ({
-  useAuth: () => ({ user: { id: "user-1" }, loading: false }),
-}));
-
-vi.mock("@/lib/client-api", () => ({
-  fetchFeatureEntitlements: mocks.fetchEntitlements,
-}));
-
-vi.mock("@/lib/tribunal-statistics-client", () => ({
-  fetchTribunalStatistics: mocks.fetchStatistics,
+vi.mock("@/lib/tribunal-judicial-activity-directory-client", () => ({
+  fetchTribunalJudicialActivityDirectory: mocks.fetchDirectory,
 }));
 
 vi.mock("@/lib/router-compat", () => ({
   createFileRoute: () => (options: unknown) => options,
-  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
-    <a href={to}>{children}</a>
-  ),
 }));
+
+const AS_OF = new Date("2026-08-20T12:00:00.000Z");
+const DIRECTORY = buildTribunalJudicialActivityDirectory({
+  courts: [
+    { code: "marseille", name: "TJ Marseille", judicialRegion: "Aix-en-Provence" },
+    { code: "paris", name: "TJ Paris", judicialRegion: "Paris" },
+  ],
+  sales: [...courtSales("marseille", 6, 20_000), ...courtSales("paris", 5, 80_000)],
+  asOf: AS_OF,
+  historyMonths: 36,
+});
 
 describe("TribunalsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.fetchDirectory.mockResolvedValue(DIRECTORY);
   });
 
   afterEach(cleanup);
 
-  it("n’appelle jamais les statistiques pour un compte Découverte et montre un aperçu fictif", async () => {
-    mocks.fetchEntitlements.mockResolvedValue(entitlements("locked"));
+  it("affiche publiquement les fourchettes de mise et de délai du tribunal", async () => {
+    renderPage();
 
-    const { container } = renderPage();
-
-    await screen.findByText(/aperçu flouté ci-dessous est une démonstration entièrement fictive/i);
-    expect(screen.getByText(/démonstration fictive — aucune donnée réelle/i)).toBeTruthy();
-    expect(container.querySelector('[data-preview-kind="strictly-fictional"]')).toBeTruthy();
-    expect(mocks.fetchEntitlements).toHaveBeenCalledOnce();
-    expect(mocks.fetchStatistics).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "TJ Marseille" })).toBeTruthy();
+    expect(screen.getByText(/Fourchette centrale 21 250 € – 23 750 €/i)).toBeTruthy();
+    expect(screen.getByText(/Fourchette centrale 23 – 28 jours/i)).toBeTruthy();
+    expect(screen.getByText(/Écart prix final \/ mise à prix non publié/i)).toBeTruthy();
+    expect(mocks.fetchDirectory).toHaveBeenCalledWith(36);
   });
 
-  it("remplace une erreur d’accès interne par un message public stable", async () => {
-    mocks.fetchEntitlements.mockRejectedValue(
+  it("permet de rechercher un autre tribunal sans authentification", async () => {
+    renderPage();
+    await screen.findByRole("heading", { name: "TJ Marseille" });
+
+    fireEvent.change(screen.getByPlaceholderText("Marseille, Paris, Lyon…"), {
+      target: { value: "Paris" },
+    });
+
+    expect(await screen.findByRole("heading", { name: "TJ Paris" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "TJ Marseille" })).toBeNull();
+  });
+
+  it("remplace une erreur interne par un message public stable", async () => {
+    mocks.fetchDirectory.mockRejectedValue(
       new Error("relation billing_secrets does not exist for tenant 8842"),
     );
 
     renderPage();
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("Impossible de vérifier votre accès Analyse");
+    expect(alert.textContent).toContain("Statistiques temporairement indisponibles");
     expect(alert.textContent).not.toContain("billing_secrets");
-    expect(mocks.fetchStatistics).not.toHaveBeenCalled();
   });
 
-  it("remplace une erreur de statistiques interne par un message public stable", async () => {
-    mocks.fetchEntitlements.mockResolvedValue(entitlements("included"));
-    mocks.fetchStatistics.mockRejectedValue(
-      new Error("snapshot 185c0dc9-a681-40ad-a2bf-935fdf40b710 failed validation"),
-    );
-
+  it("recalcule la période lorsque le visiteur choisit 12 mois", async () => {
     renderPage();
+    await screen.findByRole("heading", { name: "TJ Marseille" });
 
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain(
-      "statistiques par tribunal sont temporairement indisponibles",
-    );
-    expect(alert.textContent).not.toContain("185c0dc9");
-    await waitFor(() => expect(mocks.fetchStatistics).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "12 mois" }));
+
+    await waitFor(() => expect(mocks.fetchDirectory).toHaveBeenCalledWith(12));
   });
 });
 
@@ -89,9 +95,24 @@ function renderPage() {
   );
 }
 
-function entitlements(salesStatistics: "included" | "locked") {
-  return {
-    plan: { features: { salesStatistics } },
-    usage: {},
-  };
+function courtSales(
+  tribunalCode: string,
+  count: number,
+  basePrice: number,
+): TribunalJudicialActivityDirectorySale[] {
+  return Array.from({ length: count }, (_, index) => {
+    const saleDate = new Date(AS_OF.getTime() + (20 + index * 5) * 24 * 60 * 60 * 1_000);
+    return {
+      tribunalCode,
+      id: `${tribunalCode}-${index}`,
+      saleDate: saleDate.toISOString(),
+      status: "upcoming",
+      startingPriceEur: basePrice + index * 1_000,
+      propertyType: "apartment",
+      visitDates: ["visite annoncée"],
+      firstSeenAt: new Date(
+        saleDate.getTime() - (20 + index * 2) * 24 * 60 * 60 * 1_000,
+      ).toISOString(),
+    };
+  });
 }

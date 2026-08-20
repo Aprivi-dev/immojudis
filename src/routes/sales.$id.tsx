@@ -15,9 +15,11 @@ import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
+  saleProcedureIsConfirmed,
   saleVerificationLabel,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
+import { SaleTribunalHistory } from "@/components/SaleTribunalHistory";
 import type { AuctionSale } from "@/lib/types";
 
 type SaleDetailRouteData = {
@@ -95,6 +97,8 @@ function SalePublicPreview({
 }) {
   const price = formatPrice(preview.starting_price_eur);
   const procedure = getSaleProcedure(preview);
+  const showTribunalActivity =
+    procedure.venueType === "tribunal" && saleProcedureIsConfirmed(procedure);
 
   return (
     <main className="min-h-screen bg-[#f7f5f3] px-4 py-10 text-foreground sm:px-6">
@@ -183,6 +187,7 @@ function SalePublicPreview({
           ) : null}
         </div>
       </section>
+      {showTribunalActivity ? <SaleTribunalHistory sale={preview} /> : null}
     </main>
   );
 }
