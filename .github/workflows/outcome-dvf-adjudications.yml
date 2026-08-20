@@ -284,6 +284,7 @@ jobs:
             --limit "$REQUESTED_LIMIT"
             --page-size 500
             --context-limit 250
+            --workers 4
             --persist
           )
           if [ -n "$REQUESTED_MATCH_CURSOR" ]; then

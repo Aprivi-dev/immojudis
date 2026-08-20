@@ -158,6 +158,12 @@ def build_parser() -> argparse.ArgumentParser:
         help=("Source records fetched per page; --limit remains the global run ceiling."),
     )
     match_dvf.add_argument(
+        "--workers",
+        type=_bounded_ingest_workers,
+        default=1,
+        help="Bounded parallel context checks (1..8; default: 1).",
+    )
+    match_dvf.add_argument(
         "--after-source-record-id",
         default=None,
         help="Resume after the last source-record UUID returned by a prior bounded run.",
@@ -422,6 +428,7 @@ def _run_match_dvf(args: argparse.Namespace) -> int:
         persist=bool(args.persist),
         after_source_record_id=args.after_source_record_id,
         page_size=args.page_size,
+        workers=args.workers,
     )
     _print_json(
         {

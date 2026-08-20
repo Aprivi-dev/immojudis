@@ -284,3 +284,26 @@ def test_global_source_bound_stops_on_terminal_short_page() -> None:
     assert summary.truncated is False
     assert repository.load_record_limits == [2, 2]
     assert repository.load_record_cursors == [None, "source-record-2"]
+
+
+def test_parallel_matching_preserves_aggregate_counts() -> None:
+    repository = FakeMatchingRepository(
+        records=[
+            _record(source_record_id="source-record-1"),
+            _record(source_record_id="source-record-2"),
+            _record(source_record_id="source-record-3"),
+        ]
+    )
+
+    summary = DvfAdjudicationMatchingService(repository).run(
+        source_limit=3,
+        page_size=3,
+        context_limit=25,
+        workers=3,
+    )
+
+    assert summary.source_records_loaded == 3
+    assert summary.contexts_evaluated == 3
+    assert summary.objective_candidates == 3
+    assert summary.dry_run_candidates == 3
+    assert summary.writes == 0
