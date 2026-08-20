@@ -1,6 +1,6 @@
 begin;
 
-select plan(32);
+select plan(35);
 
 select has_table(
   'public',
@@ -386,6 +386,40 @@ select ok(
     where bridge.source_url_snapshot = 'https://example.test/catalogue/annonce-past'
   ),
   'case, lot, round, and unknown outcome survive catalogue deletion'
+);
+
+insert into public.auction_sales (
+  id, source_name, source_url, property_type, status
+) values (
+  'a1000000-0000-4000-8000-000000000005',
+  'bridge-test',
+  'https://example.test/catalogue/annonce-past',
+  'unknown',
+  'unknown'
+);
+
+select results_eq(
+  $$select scanned_count, created_count, reused_count, linked_count, complete
+    from public.bridge_auction_sales_to_outcome_graph()$$,
+  $$values (4::bigint, 0::bigint, 4::bigint, 4::bigint, true)$$,
+  'a returning source URL reattaches to its immutable lineage without ambiguity'
+);
+
+select ok(
+  (
+    select bridge.auction_sale_id = 'a1000000-0000-4000-8000-000000000005'
+      and lot_row.auction_sale_id = 'a1000000-0000-4000-8000-000000000005'
+    from public.auction_sale_outcome_bridges bridge
+    join public.auction_lots lot_row on lot_row.id = bridge.lot_id
+    where bridge.source_url_snapshot = 'https://example.test/catalogue/annonce-past'
+  ),
+  'reattachment updates both the bridge and its preserved lot'
+);
+
+select is(
+  (select count(*) from public.auction_sale_outcome_bridges),
+  4::bigint,
+  'reattachment does not duplicate immutable bridge provenance'
 );
 
 select * from finish();
