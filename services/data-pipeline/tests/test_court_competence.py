@@ -54,6 +54,10 @@ def test_reference_resolves_exact_insee_to_ministry_tj_when_cache_is_available()
     haut_valromey = reference.resolve("01187")
     assert bordeaux is not None
     assert (bordeaux.court_code, bordeaux.court_name) == ("bordeaux", "TJ Bordeaux")
+    assert bordeaux.court_address == "30 RUE DES FRERES BONIE, 33000, BORDEAUX"
+    assert bordeaux.court_postal_code == "33000"
+    assert bordeaux.court_phone
+    assert bordeaux.court_email == "tj-bordeaux@justice.fr"
     assert haut_valromey is not None
     assert haut_valromey.court_name == "TJ Bourg-en-Bresse"
     assert haut_valromey.court_code == "justice_tj_1_39"

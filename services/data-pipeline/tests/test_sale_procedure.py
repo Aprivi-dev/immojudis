@@ -28,6 +28,7 @@ def make_sale(**overrides: object) -> AuctionSale:
                 "court_code": "bordeaux",
                 "court_name": "TJ Bordeaux",
                 "court_city": "Bordeaux",
+                "court_address": "30 rue des Frères Bonie, 33000, BORDEAUX",
                 "insee_code": "33063",
                 "source_url": "https://www.data.gouv.fr/fr/datasets/competence-territoriale/",
                 "reference_sha256": "a" * 64,
@@ -45,6 +46,7 @@ def test_classifies_and_cross_checks_judicial_sale() -> None:
     assert sale.sale_verification_status == "cross_checked"
     assert sale.sale_procedure["schema_version"] == SALE_PROCEDURE_SCHEMA_VERSION
     assert sale.sale_procedure["eligible_bar"] == "Barreau de Bordeaux"
+    assert sale.sale_procedure["venue_address"] == "30 rue des Frères Bonie, 33000, BORDEAUX"
     assert sale.sale_procedure["rules"]["lawyer_required"] is True
     assert sale.sale_procedure["rules"]["guarantee"]["amount_eur"] == 8000.0
     assert sale.sale_procedure["rules"]["overbid"] == {
@@ -86,6 +88,29 @@ def test_classifies_verified_notarial_sale_and_extracts_deposit() -> None:
     assert classified.sale_procedure["rules"]["guarantee"]["status"] == "case_verified"
 
 
+def test_uses_structured_notarial_details_as_case_evidence() -> None:
+    sale = make_sale(
+        source_name="notaires",
+        source_url="https://www.immobilier.notaires.fr/fr/annonce/456",
+        description="Vente notariale aux enchères.",
+        lawyer_name="Me Durand",
+        tribunal=None,
+        tribunal_code=None,
+        raw_payload={
+            "source_blocks": {
+                "consignation": 60000,
+                "auction_location": "6 rue Mably, 33000 BORDEAUX",
+            }
+        },
+    )
+
+    classified = classify_sale_procedure(sale, verified_at=VERIFIED_AT)
+
+    assert classified.sale_procedure["venue_address"] == "6 rue Mably, 33000 BORDEAUX"
+    assert classified.sale_procedure["rules"]["guarantee"]["amount_eur"] == 60000.0
+    assert classified.sale_procedure["rules"]["guarantee"]["status"] == "case_verified"
+
+
 def test_does_not_present_address_only_court_as_verified_venue() -> None:
     sale = make_sale(description="Maison proposée aux enchères publiques.")
 
@@ -94,6 +119,7 @@ def test_does_not_present_address_only_court_as_verified_venue() -> None:
     assert classified.sale_venue_type == "tribunal"
     assert classified.sale_verification_status == "pending"
     assert classified.sale_procedure["rules"]["lawyer_required"] is None
+    assert classified.sale_procedure["venue_address"] is None
     assert classified.sale_procedure["verification"]["regulatory_sources"] == []
     assert "sale_procedure_unverified" in classified.quality_flags
     assert "n'est pas encore confirmé" in classified.sale_procedure["verification"]["issues"][0]
