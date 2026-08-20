@@ -1,6 +1,6 @@
 begin;
 
-select plan(26);
+select plan(28);
 
 select has_table(
   'public',
@@ -50,6 +50,51 @@ values
   ('court_correct', 'TJ Bourg-en-Bresse', '01', 'Bourg-en-Bresse',
    '["Tribunal judiciaire de Bourg-en-Bresse"]'::jsonb);
 
+insert into public.data_sources (
+  id, name, publisher, official, base_url, license,
+  legal_review_status, ingestion_policy, active
+) values (
+  'c2000000-0000-4000-8000-000000000001',
+  'competence-reconciliation-pgtap',
+  'Test publisher',
+  true,
+  'https://example.test/competence-source',
+  'Test-only',
+  'approved',
+  'allowed_automated',
+  true
+);
+
+insert into public.raw_artifacts (
+  id, source_id, external_record_id, canonical_url, storage_object_path,
+  mime_type, byte_size, content_hash, captured_at, connector_version
+) values (
+  'c2100000-0000-4000-8000-000000000001',
+  'c2000000-0000-4000-8000-000000000001',
+  'court-reconciliation-record',
+  'https://example.test/competence-source/record',
+  'outcome-sources/test/court-reconciliation-record.json',
+  'application/json',
+  17,
+  repeat('c', 64),
+  '2026-08-20T12:00:00Z',
+  'test-connector/1.0.0'
+);
+
+insert into public.judicial_source_records (
+  id, source_id, raw_artifact_id, record_kind, external_record_id,
+  normalized_data, content_hash, connector_version
+) values (
+  'c2200000-0000-4000-8000-000000000001',
+  'c2000000-0000-4000-8000-000000000001',
+  'c2100000-0000-4000-8000-000000000001',
+  'auction_result_candidate',
+  'court-reconciliation-record',
+  '{"source":"test"}'::jsonb,
+  repeat('d', 64),
+  'test-connector/1.0.0'
+);
+
 insert into public.auction_sales(
   id, source_name, source_url, tribunal, tribunal_code, department, city,
   address, postal_code, property_type, sale_date, status, raw_payload
@@ -87,6 +132,19 @@ values
   );
 
 select * from public.bridge_auction_sales_to_outcome_graph();
+
+insert into public.source_record_matches (
+  source_record_id, round_id, match_score, match_method, match_signals, status
+)
+select
+  'c2200000-0000-4000-8000-000000000001',
+  bridge.round_id,
+  0.7000,
+  'parcel',
+  '{"parcel":true}'::jsonb,
+  'candidate'
+from public.auction_sale_outcome_bridges bridge
+where bridge.auction_sale_id = 'c1000000-0000-4000-8000-000000000001';
 
 update public.auction_sales
 set tribunal = 'TJ Bourg-en-Bresse',
@@ -298,6 +356,67 @@ select ok(
     where auction_sale_id = 'c1000000-0000-4000-8000-000000000002'
   ),
   'unmapped bridge provenance explains why no court was trusted'
+);
+
+insert into public.source_record_matches (
+  source_record_id, round_id, match_score, match_method, match_signals, status
+)
+select
+  'c2200000-0000-4000-8000-000000000001',
+  bridge.round_id,
+  0.7000,
+  'court_name_address',
+  '{"court":true,"address":true}'::jsonb,
+  'candidate'
+from public.auction_sale_outcome_bridges bridge
+where bridge.auction_sale_id = 'c1000000-0000-4000-8000-000000000002';
+
+update public.auction_sales
+set tribunal = 'TJ Bourg-en-Bresse',
+    tribunal_code = 'court_correct',
+    raw_payload = jsonb_build_object(
+      'geocode', jsonb_build_object(
+        'provider', 'ban_geoplateforme',
+        'accepted', true,
+        'citycode', '01187'
+      ),
+      'tribunal_assignment', jsonb_build_object(
+        'schema_version', 'justice_competent_court_assignment_v1',
+        'status', 'verified',
+        'mapping_method', 'justice_competence_insee_exact',
+        'insee_code', '01187',
+        'commune_name', 'HAUT VALROMEY',
+        'court_code', 'court_correct',
+        'court_name', 'TJ Bourg-en-Bresse',
+        'official_court_name', 'Tribunal judiciaire de Bourg-en-Bresse',
+        'court_origin_code', '1',
+        'court_srj_code', '39',
+        'court_department', '01',
+        'court_city', 'Bourg-en-Bresse',
+        'reference_sha256', repeat('b', 64),
+        'source_name', 'justice_open_data',
+        'source_url', 'https://www.data.gouv.fr/datasets/liste-des-juridictions-competentes-pour-les-communes-de-france'
+      )
+    )
+where id = 'c1000000-0000-4000-8000-000000000002';
+
+select results_eq(
+  $$select corrected_count, already_correct_count, blocked_count, complete
+    from public.reconcile_catalogue_competent_courts()$$,
+  $$values (0::bigint, 1::bigint, 1::bigint, false)$$,
+  'a court-dependent source candidate still blocks statistical identity mutation'
+);
+
+select is(
+  (
+    select court_row.code
+    from public.auction_sale_outcome_bridges bridge
+    join public.auction_rounds round_row on round_row.id = bridge.round_id
+    join public.outcome_courts court_row on court_row.id = round_row.court_id
+    where bridge.auction_sale_id = 'c1000000-0000-4000-8000-000000000002'
+  ),
+  'legacy:unmapped',
+  'a blocked court-dependent lineage remains unchanged'
 );
 
 select * from finish();
