@@ -2,11 +2,31 @@ from decimal import Decimal
 
 from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
+from src.sources.common import is_allowed_origin_url
 from src.sources.encheres_publiques import (
+    BASE_URL,
+    CANONICAL_BASE_URL,
     _enrich_sale_from_detail,
     parse_encheres_publiques_detail_html,
     parse_encheres_publiques_html,
 )
+
+
+def test_encheres_publiques_accepts_only_its_www_and_canonical_origins() -> None:
+    allowed_origins = (BASE_URL, CANONICAL_BASE_URL)
+
+    assert is_allowed_origin_url(
+        "https://www.encheres-publiques.com/encheres/immobilier/lot_1",
+        allowed_origins,
+    )
+    assert is_allowed_origin_url(
+        "https://encheres-publiques.com/encheres/immobilier/lot_1",
+        allowed_origins,
+    )
+    assert not is_allowed_origin_url(
+        "https://encheres-publiques.com.evil.example/encheres/immobilier/lot_1",
+        allowed_origins,
+    )
 
 
 def test_parse_encheres_publiques_html_reads_next_apollo_state() -> None:

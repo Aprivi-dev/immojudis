@@ -21,6 +21,9 @@ from src.sources.encheres_publiques import (
     BASE_URL as ENCHERES_PUBLIQUES_BASE_URL,
 )
 from src.sources.encheres_publiques import (
+    CANONICAL_BASE_URL as ENCHERES_PUBLIQUES_CANONICAL_BASE_URL,
+)
+from src.sources.encheres_publiques import (
     parse_encheres_publiques_detail_html,
 )
 from src.sources.licitor import LicitorClient, parse_licitor_detail_html
@@ -270,6 +273,7 @@ def _procedure_refresh_clients() -> dict[str, Any]:
         "licitor": LicitorClient(**common),
         "encheres_publiques": PoliteHttpClient(
             base_url=ENCHERES_PUBLIQUES_BASE_URL,
+            allowed_redirect_origins=(ENCHERES_PUBLIQUES_CANONICAL_BASE_URL,),
             **common,
         ),
     }
