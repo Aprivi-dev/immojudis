@@ -59,6 +59,11 @@ on:
         required: true
         default: "1000"
         type: string
+      max_segments:
+        description: "Maximum durable tracked-history segments in this run (1..20)"
+        required: true
+        default: "1"
+        type: string
       confirm_bootstrap:
         description: "Type BOOTSTRAP-JUDILIBRE-TARGETED when operation=bootstrap"
         required: false
@@ -99,6 +104,7 @@ jobs:
       REQUESTED_MAX_TOTAL_RESULTS: ${{ inputs.max_total_results || '500' }}
       REQUESTED_MAX_PAGES: ${{ inputs.max_pages || '10' }}
       REQUESTED_MAX_RECORDS: ${{ inputs.max_records || '1000' }}
+      REQUESTED_MAX_SEGMENTS: ${{ inputs.max_segments || '1' }}
       REQUESTED_BOOTSTRAP_CONFIRMATION: ${{ inputs.confirm_bootstrap }}
       REQUESTED_SYNC_CONFIRMATION: ${{ github.event_name == 'schedule' && 'SYNC-JUDILIBRE-TRACKED-ONLY' || inputs.confirm_sync }}
     steps:
@@ -195,6 +201,11 @@ jobs:
             echo "max_records must be an integer between 1 and 5000" >&2
             exit 1
           fi
+          if ! [[ "$REQUESTED_MAX_SEGMENTS" =~ ^[0-9]+$ ]] ||
+            [ "$REQUESTED_MAX_SEGMENTS" -lt 1 ] || [ "$REQUESTED_MAX_SEGMENTS" -gt 20 ]; then
+            echo "max_segments must be an integer between 1 and 20" >&2
+            exit 1
+          fi
 
           write_output "should_sync=true"
 
@@ -259,6 +270,7 @@ jobs:
       REQUESTED_SINCE: ${{ inputs.since }}
       REQUESTED_MAX_PAGES: ${{ inputs.max_pages || '10' }}
       REQUESTED_MAX_RECORDS: ${{ inputs.max_records || '1000' }}
+      REQUESTED_MAX_SEGMENTS: ${{ inputs.max_segments || '1' }}
       SCHEDULED_RUN: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
     steps:
       - name: Check out repository
@@ -398,18 +410,29 @@ jobs:
         run: |
           set -euo pipefail
 
-          args=(
-            judilibre-sync
-            --stream-key transactional_history
-            --max-pages "$REQUESTED_MAX_PAGES"
-            --max-records "$REQUESTED_MAX_RECORDS"
-          )
-          if [ -n "$REQUESTED_SINCE" ]; then
-            args+=(--since "$REQUESTED_SINCE")
-          elif [ "$SCHEDULED_RUN" = "true" ]; then
-            args+=(--since "$(date -u -d '72 hours ago' +%Y-%m-%dT%H:%M:%S+00:00)")
-          fi
-          python -m src.outcome_sources_cli "${args[@]}"
+          for segment_number in $(seq 1 "$REQUESTED_MAX_SEGMENTS"); do
+            args=(
+              judilibre-sync
+              --stream-key transactional_history
+              --max-pages "$REQUESTED_MAX_PAGES"
+              --max-records "$REQUESTED_MAX_RECORDS"
+            )
+            if [ -n "$REQUESTED_SINCE" ]; then
+              args+=(--since "$REQUESTED_SINCE")
+            elif [ "$SCHEDULED_RUN" = "true" ]; then
+              args+=(--since "$(date -u -d '72 hours ago' +%Y-%m-%dT%H:%M:%S+00:00)")
+            fi
+
+            segment_summary="$(python -m src.outcome_sources_cli "${args[@]}")"
+            echo "$segment_summary"
+            scan_complete="$(python -c \
+              'import json, sys; print(json.loads(sys.argv[1])["scan_complete"])' \
+              "$segment_summary")"
+            if [ "$scan_complete" = "True" ]; then
+              echo "Judilibre transactional history reached its terminal page in segment $segment_number"
+              break
+            fi
+          done
 
       - name: Propagate upstream deletions and clean private Storage orphans
         env:
@@ -449,6 +472,7 @@ jobs:
               echo "- Stream key: \`transactional_history\`"
               echo "- Page budget: \`$REQUESTED_MAX_PAGES\`"
               echo "- Record budget: \`$REQUESTED_MAX_RECORDS\`"
+              echo "- Segment budget: \`$REQUESTED_MAX_SEGMENTS\`"
             fi
             echo "- Raw decision artifact uploaded to Actions: no"
             echo "- Physical source-deletion propagation: enabled"
