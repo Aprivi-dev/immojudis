@@ -117,8 +117,10 @@ L'activation effective nécessite simultanément :
 Les variables optionnelles sont `JUDILIBRE_BASE_URL`, `JUDILIBRE_OAUTH_TOKEN_URL`,
 `JUDILIBRE_OAUTH_SCOPE`, `JUDILIBRE_OAUTH_CLIENT_AUTH_METHOD`,
 `JUDILIBRE_HISTORY_PAGE_SIZE`, les paramètres de retry, ainsi que
-les entrées manuelles `max_pages` et `max_records`. Pour le suivi, ces deux bornes valent
-respectivement 10 et 1 000 par défaut, avec des maxima workflow de 50 pages et 5 000 événements.
+les entrées manuelles `max_pages`, `max_records` et `max_segments`. Pour le suivi, ces bornes valent
+respectivement 10, 1 000 et 1 par défaut, avec des maxima workflow de 50 pages, 5 000 événements et
+20 segments. Le mode de rattrapage répète des segments indépendamment checkpointés dans la même
+exécution et s'arrête dès que `scan_complete=true` ; un échec ne rejoue donc que le dernier segment.
 
 Le stream est volontairement fixé à `transactional_history` afin d'éviter plusieurs checkpoints
 concurrents pour la même source. Le connecteur reprend le checkpoint Supabase ; `since` ne sert que
