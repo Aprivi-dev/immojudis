@@ -4,10 +4,12 @@ import argparse
 import json
 import sys
 from collections.abc import Iterable, Iterator, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import date, datetime
 from itertools import islice
 from pathlib import Path
+from threading import local
 from typing import Any, Literal
 
 from src.config import load_settings
@@ -40,7 +42,11 @@ from src.outcome_ingestion.judilibre_ingestion import (
     JudilibreOutcomeIngestor,
     validate_judilibre_search_request,
 )
-from src.outcome_ingestion.repository import OutcomeIngestionError, OutcomeIngestionRepository
+from src.outcome_ingestion.repository import (
+    OutcomeIngestionError,
+    OutcomeIngestionRepository,
+    PersistedSourceRecord,
+)
 from src.outcome_ingestion.service import JsonSourceRecord, OutcomeSourceIngestionService
 
 LocalSource = Literal["dvf-adjudications", "justice", "encheres-hearings", "encheres-courts"]
@@ -76,6 +82,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Persist reviewed source candidates through private Storage and append-only provenance.",
     )
     _add_local_source_args(ingest, require_bound=True)
+    ingest.add_argument(
+        "--workers",
+        type=_bounded_ingest_workers,
+        default=1,
+        help="Bounded parallel Storage/DB writers (1..8; default: 1).",
+    )
     ingest.set_defaults(handler=_run_ingest_local)
 
     fetch = commands.add_parser("judilibre-fetch", help="Fetch and persist one Judilibre decision.")
@@ -181,6 +193,13 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def _bounded_ingest_workers(value: str) -> int:
+    parsed = _positive_int(value)
+    if parsed > 8:
+        raise argparse.ArgumentTypeError("value must not exceed 8")
+    return parsed
+
+
 def _iso_calendar_date(value: str) -> date:
     try:
         return date.fromisoformat(value)
@@ -277,22 +296,45 @@ def _run_ingest_local(args: argparse.Namespace) -> int:
     repository = OutcomeIngestionRepository.from_settings(settings)
     # Fail before parsing or Storage writes if the legal/source policy is closed.
     repository.require_source_policy(source_name, channel)
-    service = OutcomeSourceIngestionService(
-        repository=repository,
-        artifact_store=SupabaseRawArtifactStore.from_settings(settings),
-    )
     limit = None if args.all else args.limit
     stored = unchanged = 0
-    for record in _bounded_records(_local_records(args.source, args.path), limit):
-        persisted = service.ingest_json_record(record, channel=channel)
+    records = _bounded_records(_local_records(args.source, args.path), limit)
+
+    def count_result(persisted: PersistedSourceRecord) -> None:
+        nonlocal stored, unchanged
         if persisted.inserted_new_version:
             stored += 1
         else:
             unchanged += 1
+
+    if args.workers == 1:
+        service = OutcomeSourceIngestionService(
+            repository=repository,
+            artifact_store=SupabaseRawArtifactStore.from_settings(settings),
+        )
+        for record in records:
+            count_result(service.ingest_json_record(record, channel=channel))
+    else:
+        worker_state = local()
+
+        def ingest_record(record: JsonSourceRecord) -> PersistedSourceRecord:
+            service = getattr(worker_state, "service", None)
+            if service is None:
+                service = OutcomeSourceIngestionService(
+                    repository=OutcomeIngestionRepository.from_settings(settings),
+                    artifact_store=SupabaseRawArtifactStore.from_settings(settings),
+                )
+                worker_state.service = service
+            return service.ingest_json_record(record, channel=channel)
+
+        with ThreadPoolExecutor(max_workers=args.workers, thread_name_prefix="outcome-ingest") as executor:
+            for persisted in executor.map(ingest_record, records):
+                count_result(persisted)
     _print_json(
         {
             "mode": "ingest-local",
             "source": source_name,
+            "workers": args.workers,
             "stored_versions": stored,
             "unchanged_versions": unchanged,
             "training_eligible": False,

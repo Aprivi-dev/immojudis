@@ -33,6 +33,69 @@ def test_ingest_local_requires_explicit_bound() -> None:
     with pytest.raises(SystemExit):
         parser.parse_args(["ingest-local", "dvf-adjudications", "source.zip"])
 
+    args = parser.parse_args(
+        ["ingest-local", "dvf-adjudications", "source.zip", "--limit", "10", "--workers", "4"]
+    )
+    assert args.workers == 4
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ["ingest-local", "dvf-adjudications", "source.zip", "--limit", "10", "--workers", "9"]
+        )
+
+
+def test_ingest_local_parallel_branch_preserves_aggregate_output(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class FakeRepository:
+        @classmethod
+        def from_settings(cls, _settings: object) -> FakeRepository:
+            return cls()
+
+        def require_source_policy(self, source_name: str, channel: str) -> None:
+            assert (source_name, channel) == ("dvf_dgfip", "automated")
+
+    class FakeArtifactStore:
+        @classmethod
+        def from_settings(cls, _settings: object) -> FakeArtifactStore:
+            return cls()
+
+    class FakeService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def ingest_json_record(self, record: JsonSourceRecord, *, channel: str) -> object:
+            assert channel == "automated"
+            return SimpleNamespace(inserted_new_version=record.external_record_id != "unchanged")
+
+    monkeypatch.setattr(outcome_sources_cli, "load_settings", lambda: {})
+    monkeypatch.setattr(outcome_sources_cli, "OutcomeIngestionRepository", FakeRepository)
+    monkeypatch.setattr(outcome_sources_cli, "SupabaseRawArtifactStore", FakeArtifactStore)
+    monkeypatch.setattr(outcome_sources_cli, "OutcomeSourceIngestionService", FakeService)
+    monkeypatch.setattr(
+        outcome_sources_cli,
+        "_local_records",
+        lambda _source, _path: iter((_record("one"), _record("unchanged"), _record("two"))),
+    )
+
+    args = SimpleNamespace(
+        source="dvf-adjudications",
+        path="source.zip",
+        all=False,
+        limit=3,
+        workers=3,
+    )
+    assert outcome_sources_cli._run_ingest_local(args) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "mode": "ingest-local",
+        "source": "dvf_dgfip",
+        "workers": 3,
+        "stored_versions": 2,
+        "unchanged_versions": 1,
+        "training_eligible": False,
+    }
+
 
 def test_match_dvf_requires_explicit_bound_and_defaults_to_dry_run() -> None:
     parser = build_parser()
