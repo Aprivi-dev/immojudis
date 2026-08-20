@@ -108,6 +108,7 @@ def test_match_dvf_requires_explicit_bound_and_defaults_to_dry_run() -> None:
     assert args.all is False
     assert args.context_limit == 250
     assert args.page_size == 500
+    assert args.workers == 1
     assert args.persist is False
 
     resumed = parser.parse_args(
@@ -126,6 +127,8 @@ def test_match_dvf_requires_explicit_bound_and_defaults_to_dry_run() -> None:
 
     with pytest.raises(SystemExit):
         parser.parse_args(["match-dvf", "--limit", "10", "--page-size", "5001"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["match-dvf", "--limit", "10", "--workers", "9"])
 
 
 def test_judilibre_search_sync_requires_a_closed_profile_window_and_result_caps() -> None:

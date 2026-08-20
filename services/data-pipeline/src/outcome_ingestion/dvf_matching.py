@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -68,6 +69,7 @@ class DvfAdjudicationMatchingService:
         persist: bool = False,
         after_source_record_id: str | None = None,
         page_size: int = DVF_MATCH_PAGE_SIZE_DEFAULT,
+        workers: int = 1,
     ) -> DvfMatchingSummary:
         if source_limit is not None and source_limit < 1:
             raise ValueError("DVF source-record limit must be positive")
@@ -77,6 +79,8 @@ class DvfAdjudicationMatchingService:
             raise ValueError(
                 f"DVF page size must be between 1 and {DVF_MATCH_PAGE_SIZE_MAX}"
             )
+        if workers < 1 or workers > 8:
+            raise ValueError("DVF matching workers must be between 1 and 8")
         summary = DvfMatchingSummary(
             dry_run=not persist,
             source_limit=source_limit,
@@ -91,49 +95,70 @@ class DvfAdjudicationMatchingService:
             summary.empty_reason = "no_active_outcome_lots"
             return summary
 
-        cursor_id = after_source_record_id
-        while True:
-            remaining = (
-                None
-                if source_limit is None
-                else source_limit - summary.source_records_loaded
-            )
-            if remaining == 0:
-                summary.truncated = bool(
-                    self.repository.load_active_dvf_adjudication_records(
-                        limit=1,
-                        after_source_record_id=cursor_id,
+        executor = (
+            ThreadPoolExecutor(max_workers=workers, thread_name_prefix="dvf-match")
+            if workers > 1
+            else None
+        )
+        try:
+            cursor_id = after_source_record_id
+            while True:
+                remaining = (
+                    None
+                    if source_limit is None
+                    else source_limit - summary.source_records_loaded
+                )
+                if remaining == 0:
+                    summary.truncated = bool(
+                        self.repository.load_active_dvf_adjudication_records(
+                            limit=1,
+                            after_source_record_id=cursor_id,
+                        )
                     )
+                    break
+
+                page_limit = page_size if remaining is None else min(page_size, remaining)
+                records = self.repository.load_active_dvf_adjudication_records(
+                    limit=page_limit,
+                    after_source_record_id=cursor_id,
                 )
-                break
+                if not records:
+                    break
+                if len(records) > page_limit:
+                    raise DvfMatchingDataError("DVF repository returned an oversized page")
+                next_cursor_id = records[-1].source_record_id
+                if next_cursor_id == cursor_id:
+                    raise DvfMatchingDataError("DVF source-record pagination did not advance")
 
-            page_limit = page_size if remaining is None else min(page_size, remaining)
-            records = self.repository.load_active_dvf_adjudication_records(
-                limit=page_limit,
-                after_source_record_id=cursor_id,
-            )
-            if not records:
-                break
-            if len(records) > page_limit:
-                raise DvfMatchingDataError("DVF repository returned an oversized page")
-            next_cursor_id = records[-1].source_record_id
-            if next_cursor_id == cursor_id:
-                raise DvfMatchingDataError("DVF source-record pagination did not advance")
+                summary.pages_loaded += 1
+                summary.source_records_loaded += len(records)
+                summary.last_source_record_id = next_cursor_id
+                if executor is None:
+                    for record in records:
+                        self._match_record(
+                            record,
+                            summary=summary,
+                            context_limit=context_limit,
+                            persist=persist,
+                        )
+                else:
+                    per_record = executor.map(
+                        lambda record: self._match_one_record(
+                            record,
+                            context_limit=context_limit,
+                            persist=persist,
+                        ),
+                        records,
+                    )
+                    for record_summary in per_record:
+                        _merge_record_summary(summary, record_summary)
 
-            summary.pages_loaded += 1
-            summary.source_records_loaded += len(records)
-            summary.last_source_record_id = next_cursor_id
-            for record in records:
-                self._match_record(
-                    record,
-                    summary=summary,
-                    context_limit=context_limit,
-                    persist=persist,
-                )
-
-            cursor_id = next_cursor_id
-            if len(records) < page_limit:
-                break
+                cursor_id = next_cursor_id
+                if len(records) < page_limit:
+                    break
+        finally:
+            if executor is not None:
+                executor.shutdown(wait=True, cancel_futures=True)
 
         if summary.source_records_loaded == 0:
             summary.empty_reason = "no_active_dvf_source_records"
@@ -141,6 +166,26 @@ class DvfAdjudicationMatchingService:
 
         if summary.objective_candidates == 0 and summary.empty_reason is None:
             summary.empty_reason = "no_objective_match_candidates"
+        return summary
+
+    def _match_one_record(
+        self,
+        record: StoredDvfAdjudicationRecord,
+        *,
+        context_limit: int,
+        persist: bool,
+    ) -> DvfMatchingSummary:
+        summary = DvfMatchingSummary(
+            dry_run=not persist,
+            source_limit=1,
+            context_limit=context_limit,
+        )
+        self._match_record(
+            record,
+            summary=summary,
+            context_limit=context_limit,
+            persist=persist,
+        )
         return summary
 
     def _match_record(
@@ -306,6 +351,23 @@ def persisted_match_signals(match: DvfMatchCandidate) -> dict[str, object]:
         }
     )
     return signals
+
+
+def _merge_record_summary(total: DvfMatchingSummary, record: DvfMatchingSummary) -> None:
+    for field_name in (
+        "invalid_source_records",
+        "records_without_contexts",
+        "contexts_evaluated",
+        "context_limits_reached",
+        "weak_matches_skipped",
+        "objective_candidates",
+        "existing_candidates",
+        "dry_run_candidates",
+        "persisted_candidates",
+        "automatic_matches",
+        "training_eligibility_changes",
+    ):
+        setattr(total, field_name, getattr(total, field_name) + getattr(record, field_name))
 
 
 def _required_date(data: Mapping[str, object], key: str) -> date:
