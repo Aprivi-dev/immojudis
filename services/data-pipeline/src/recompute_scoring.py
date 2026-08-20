@@ -15,7 +15,7 @@ from src.config import ROOT_DIR, load_settings
 from src.geocode import geocode_sale
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
-from src.storage.supabase_client import upsert_sales_to_supabase
+from src.storage.supabase_client import _postgrest_request_with_retries, upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
 
 LOGGER = logging.getLogger(__name__)
@@ -250,7 +250,14 @@ def _fetch_sales(*, source: str | None, limit: int | None) -> list[dict[str, Any
         }
         if source:
             params["source_name"] = f"eq.{source}"
-        response = httpx.get(endpoint, params=params, headers=headers, timeout=120)
+        response = _postgrest_request_with_retries(
+            "GET",
+            endpoint,
+            table="auction_sales",
+            params=params,
+            headers=headers,
+            timeout=120,
+        )
         if response.is_error:
             raise httpx.HTTPStatusError(
                 f"{response.status_code} response from Supabase auction_sales: {response.text}",

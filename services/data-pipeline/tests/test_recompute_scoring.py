@@ -8,6 +8,44 @@ from src.models import AuctionSale
 from src.recompute_scoring import _sale_from_storage_row, _validate_persisted_sale_procedure
 
 
+def test_fetch_sales_uses_retrying_postgrest_transport(monkeypatch) -> None:
+    monkeypatch.setattr(
+        recompute_module,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    calls: list[dict[str, object]] = []
+
+    class Response:
+        is_error = False
+        status_code = 200
+        text = ""
+
+        def __init__(self, rows):
+            self._rows = rows
+
+        def json(self):
+            return self._rows
+
+    pages = iter([[{"source_url": "https://example.test/sale"}]])
+
+    def fake_request(method, endpoint, *, table, **kwargs):
+        calls.append({"method": method, "endpoint": endpoint, "table": table, **kwargs})
+        return Response(next(pages))
+
+    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", fake_request)
+
+    rows = recompute_module._fetch_sales(source=None, limit=None)
+
+    assert rows == [{"source_url": "https://example.test/sale"}]
+    assert len(calls) == 1
+    assert all(call["method"] == "GET" for call in calls)
+    assert all(call["table"] == "auction_sales" for call in calls)
+
+
 def test_recomputed_sale_validates_geocode_before_court_assignment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
