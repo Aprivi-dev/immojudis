@@ -3,6 +3,10 @@ name: Recompute Existing Sales
 on:
   workflow_dispatch:
     inputs:
+      confirm_target:
+        description: "Type production to use the production Supabase catalogue"
+        required: true
+        type: string
       source:
         description: "Existing source rows to recalibrate"
         required: true
@@ -34,14 +38,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: immojudis-recompute-existing-sales
+  # Use the catalogue-wide writer lock shared with scheduled ingestion.
+  group: immojudis-data-pipeline
   cancel-in-progress: false
 
 jobs:
   run:
     name: Recompute stored sales
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: services/data-pipeline
@@ -49,6 +54,15 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
+      - name: Check target confirmation
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm_target }}" != "production" ]; then
+            echo "confirm_target must be exactly: production" >&2
+            exit 1
+          fi
+
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -62,11 +76,26 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Recompute existing sales
+      - name: Validate recompute without writing
         env:
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
-          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--batch-size 20 --dry-run)
+          if [ "$REQUESTED_SOURCE" != "all" ]; then
+            args+=(--source "$REQUESTED_SOURCE")
+          fi
+          if [ -n "$REQUESTED_LIMIT" ]; then
+            args+=(--limit "$REQUESTED_LIMIT")
+          fi
+          python -m src.recompute_scoring "${args[@]}"
+
+      - name: Publish recomputed sales
+        if: ${{ !inputs.dry_run }}
+        env:
+          REQUESTED_SOURCE: ${{ inputs.source }}
+          REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
           set -euo pipefail
           args=(--batch-size 20)
@@ -76,7 +105,20 @@ jobs:
           if [ -n "$REQUESTED_LIMIT" ]; then
             args+=(--limit "$REQUESTED_LIMIT")
           fi
-          if [ "$DRY_RUN" = "true" ]; then
-            args+=(--dry-run)
+          python -m src.recompute_scoring "${args[@]}"
+
+      - name: Verify persisted sale procedures
+        if: ${{ !inputs.dry_run }}
+        env:
+          REQUESTED_SOURCE: ${{ inputs.source }}
+          REQUESTED_LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          args=(--verify-only)
+          if [ "$REQUESTED_SOURCE" != "all" ]; then
+            args+=(--source "$REQUESTED_SOURCE")
+          fi
+          if [ -n "$REQUESTED_LIMIT" ]; then
+            args+=(--limit "$REQUESTED_LIMIT")
           fi
           python -m src.recompute_scoring "${args[@]}"

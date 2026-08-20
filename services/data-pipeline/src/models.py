@@ -19,6 +19,10 @@ class AuctionSale(BaseModel):
     external_id: str | None = None
     tribunal: str | None = None
     tribunal_code: str | None = None
+    sale_venue_type: str = "unknown"
+    sale_legal_framework: str = "unknown"
+    sale_verification_status: str = "pending"
+    sale_procedure: dict[str, Any] = Field(default_factory=dict)
     department: str | None = None
     city: str | None = None
     address: str | None = None

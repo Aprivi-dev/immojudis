@@ -13,6 +13,10 @@ export type AuctionSale = {
   tribunal_code: string | null;
   tribunal_name: string | null;
   tribunal_city: string | null;
+  sale_venue_type?: SaleVenueType | null;
+  sale_legal_framework?: SaleLegalFramework | null;
+  sale_verification_status?: SaleVerificationStatus | null;
+  sale_procedure?: Record<string, unknown> | null;
   property_type: string | null;
   starting_price_eur: number | null;
   sale_date: string | null;
@@ -64,6 +68,18 @@ export type AuctionSale = {
   created_at: string | null;
   updated_at: string | null;
 };
+
+export type SaleVenueType = "tribunal" | "notary" | "state" | "online" | "unknown";
+
+export type SaleLegalFramework =
+  | "judicial_seizure"
+  | "judicial_partition"
+  | "insolvency"
+  | "voluntary_notarial"
+  | "state_sale"
+  | "unknown";
+
+export type SaleVerificationStatus = "verified" | "cross_checked" | "pending" | "conflict";
 
 export type SaleFilters = {
   department?: string;

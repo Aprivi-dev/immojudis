@@ -982,6 +982,10 @@ export type Database = {
           risk_notes: string | null;
           rooms_count: number | null;
           sale_date: string | null;
+          sale_legal_framework: string;
+          sale_procedure: Json;
+          sale_venue_type: string;
+          sale_verification_status: string;
           score_version: string | null;
           source_name: string | null;
           source_url: string | null;
@@ -1031,6 +1035,10 @@ export type Database = {
           risk_notes?: string | null;
           rooms_count?: number | null;
           sale_date?: string | null;
+          sale_legal_framework?: string;
+          sale_procedure?: Json;
+          sale_venue_type?: string;
+          sale_verification_status?: string;
           score_version?: string | null;
           source_name?: string | null;
           source_url?: string | null;
@@ -1080,6 +1088,10 @@ export type Database = {
           risk_notes?: string | null;
           rooms_count?: number | null;
           sale_date?: string | null;
+          sale_legal_framework?: string;
+          sale_procedure?: Json;
+          sale_venue_type?: string;
+          sale_verification_status?: string;
           score_version?: string | null;
           source_name?: string | null;
           source_url?: string | null;
@@ -3222,6 +3234,8 @@ export type Database = {
       v_auction_sales_app_preview: {
         Row: {
           id: string | null;
+          sale_venue_type: string | null;
+          sale_verification_status: string | null;
           starting_price_eur: number | null;
         };
         Relationships: [];

@@ -80,7 +80,12 @@ export const SALE_LIST_COLUMNS = [
   "updated_at",
 ].join(",");
 
-const SALE_PREVIEW_COLUMNS = ["id", "starting_price_eur"].join(",");
+const SALE_PREVIEW_COLUMNS = [
+  "id",
+  "starting_price_eur",
+  "sale_venue_type",
+  "sale_verification_status",
+].join(",");
 
 const SALE_MAP_COLUMNS = [
   "id",

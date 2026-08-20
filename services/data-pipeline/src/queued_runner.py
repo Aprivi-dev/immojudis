@@ -12,6 +12,7 @@ from src.enrichment.extract_structured import enrich_sale_with_llm
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
 from src.main import SOURCE_NAMES, PipelineOptions, run_llm_description_backfill, run_pipeline
 from src.pdf_enrichment import enrich_sale_from_pdfs
+from src.sale_procedure import classify_sale_procedure
 from src.storage.supabase_client import (
     claim_auction_enrichment_jobs_from_supabase,
     fail_stale_running_runs_in_supabase,
@@ -27,6 +28,7 @@ from src.storage.supabase_client import (
     upsert_dpe_diagnostics_to_supabase,
     upsert_sales_to_supabase,
 )
+from src.tribunal import fill_tribunal
 
 LOGGER = logging.getLogger(__name__)
 VALID_SOURCES = {"all", *SOURCE_NAMES}
@@ -231,6 +233,8 @@ def run_enrichment_queue_batch(*, limit: int) -> int:
                 if llm_stats.unavailable or not llm_stats.valid_json:
                     detail = llm_stats.error_messages[-1] if llm_stats.error_messages else "LLM extraction incomplete"
                     raise RuntimeError(detail)
+            fill_tribunal(sale)
+            classify_sale_procedure(sale)
             normalize_asset_features(sale)
             upsert_sales_to_supabase([sale], refresh_last_seen=False)
         except Exception as exc:

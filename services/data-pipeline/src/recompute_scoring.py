@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
@@ -11,11 +12,22 @@ from dotenv import load_dotenv
 from src.asset_normalization import normalize_asset_features
 from src.config import ROOT_DIR, load_settings
 from src.normalize import normalize_sale
+from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
 from src.storage.supabase_client import upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
 
 LOGGER = logging.getLogger(__name__)
 PAGE_SIZE = 200
+SALE_VENUE_TYPES = {"tribunal", "notary", "state", "online", "unknown"}
+SALE_LEGAL_FRAMEWORKS = {
+    "judicial_seizure",
+    "judicial_partition",
+    "insolvency",
+    "voluntary_notarial",
+    "state_sale",
+    "unknown",
+}
+SALE_VERIFICATION_STATUSES = {"verified", "cross_checked", "pending", "conflict"}
 
 
 def recompute_scoring(
@@ -27,25 +39,108 @@ def recompute_scoring(
 ) -> int:
     _load_env_fallbacks()
     rows = _fetch_sales(source=source, limit=limit)
+    if not rows:
+        LOGGER.error("No stored sales matched the requested recompute scope")
+        return 1
     sales = []
+    failures: list[str] = []
     for row in rows:
         try:
             sale = _sale_from_storage_row(row)
             fill_tribunal(sale)
+            classify_sale_procedure(sale)
             normalize_asset_features(sale)
             sales.append(sale)
         except Exception as exc:
+            failures.append(str(row.get("source_url") or row.get("id") or "unknown-row"))
             LOGGER.exception("Scoring recompute failed for %s: %s", row.get("source_url"), exc)
 
     if dry_run:
-        _print_summary(sales, dry_run=True)
-        return 0
+        _print_summary(sales, dry_run=True, failures=failures)
+        return 1 if failures else 0
 
     upserted = 0
     for batch in _chunks(sales, max(1, batch_size)):
         upserted += upsert_sales_to_supabase(batch, refresh_last_seen=False)
-    _print_summary(sales, dry_run=False, upserted=upserted)
+    _print_summary(sales, dry_run=False, upserted=upserted, failures=failures)
+    if failures or upserted != len(sales):
+        LOGGER.error(
+            "Incomplete scoring recompute: selected=%s computed=%s upserted=%s failures=%s",
+            len(rows),
+            len(sales),
+            upserted,
+            len(failures),
+        )
+        return 1
     return 0
+
+
+def verify_persisted_sale_procedures(
+    *,
+    source: str | None = None,
+    limit: int | None = None,
+) -> int:
+    """Fail closed when a persisted procedure payload is missing or inconsistent."""
+
+    _load_env_fallbacks()
+    rows = _fetch_sales(source=source, limit=limit)
+    if not rows:
+        LOGGER.error("No stored sales matched the requested verification scope")
+        return 1
+
+    invalid: list[tuple[str, list[str]]] = []
+    statuses: Counter[str] = Counter()
+    venues: Counter[str] = Counter()
+    for row in rows:
+        statuses[str(row.get("sale_verification_status") or "missing")] += 1
+        venues[str(row.get("sale_venue_type") or "missing")] += 1
+        issues = _validate_persisted_sale_procedure(row)
+        if issues:
+            invalid.append((str(row.get("source_url") or row.get("id") or "unknown-row"), issues))
+
+    print("Persisted sale procedure verification")
+    print(f"- sales: {len(rows)}")
+    print(f"- invalid: {len(invalid)}")
+    print(f"- venues: {dict(venues)}")
+    print(f"- statuses: {dict(statuses)}")
+    for identifier, issues in invalid[:20]:
+        print(f"- invalid_row: {identifier}: {', '.join(issues)}")
+    if len(invalid) > 20:
+        print(f"- additional_invalid_rows: {len(invalid) - 20}")
+    return 1 if invalid else 0
+
+
+def _validate_persisted_sale_procedure(row: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    venue_type = row.get("sale_venue_type")
+    legal_framework = row.get("sale_legal_framework")
+    verification_status = row.get("sale_verification_status")
+    procedure = row.get("sale_procedure")
+
+    if venue_type not in SALE_VENUE_TYPES:
+        issues.append("invalid sale_venue_type")
+    if legal_framework not in SALE_LEGAL_FRAMEWORKS:
+        issues.append("invalid sale_legal_framework")
+    if verification_status not in SALE_VERIFICATION_STATUSES:
+        issues.append("invalid sale_verification_status")
+    if not isinstance(procedure, dict) or not procedure:
+        issues.append("missing sale_procedure")
+        return issues
+
+    if procedure.get("schema_version") != SALE_PROCEDURE_SCHEMA_VERSION:
+        issues.append("invalid schema_version")
+    if procedure.get("venue_type") != venue_type:
+        issues.append("venue_type mismatch")
+    if procedure.get("legal_framework") != legal_framework:
+        issues.append("legal_framework mismatch")
+    if not isinstance(procedure.get("rules"), dict):
+        issues.append("missing rules")
+    verification = procedure.get("verification")
+    if not isinstance(verification, dict):
+        issues.append("missing verification")
+    elif verification.get("status") != verification_status:
+        issues.append("verification status mismatch")
+    return issues
 
 
 def _load_env_fallbacks() -> None:
@@ -140,7 +235,13 @@ def _chunks(items: list[Any], size: int):
         yield items[index : index + size]
 
 
-def _print_summary(sales: list[Any], *, dry_run: bool, upserted: int = 0) -> None:
+def _print_summary(
+    sales: list[Any],
+    *,
+    dry_run: bool,
+    upserted: int = 0,
+    failures: list[str] | None = None,
+) -> None:
     by_source: dict[str, int] = {}
     pretri = 0
     works = 0
@@ -148,6 +249,7 @@ def _print_summary(sales: list[Any], *, dry_run: bool, upserted: int = 0) -> Non
     court_verified = 0
     court_unresolved = 0
     court_unverified = 0
+    procedure_statuses: dict[str, int] = {}
     for sale in sales:
         by_source[sale.source_name] = by_source.get(sale.source_name, 0) + 1
         analysis = sale.raw_payload.get("investment_analysis") if isinstance(sale.raw_payload, dict) else {}
@@ -165,10 +267,12 @@ def _print_summary(sales: list[Any], *, dry_run: bool, upserted: int = 0) -> Non
             court_unresolved += 1
         if "tribunal_competence_unverified" in sale.quality_flags:
             court_unverified += 1
+        procedure_statuses[sale.sale_verification_status] = procedure_statuses.get(sale.sale_verification_status, 0) + 1
     print("Scoring recompute summary")
     print(f"- mode: {'dry-run' if dry_run else 'upsert'}")
     print(f"- sales: {len(sales)}")
     print(f"- upserted: {upserted}")
+    print(f"- failures: {len(failures or [])}")
     print(f"- by_source: {by_source}")
     print(f"- pretri_only: {pretri}")
     print(f"- works_to_quantify: {works}")
@@ -176,6 +280,7 @@ def _print_summary(sales: list[Any], *, dry_run: bool, upserted: int = 0) -> Non
     print(f"- tribunal_competence_verified: {court_verified}")
     print(f"- tribunal_competence_unresolved: {court_unresolved}")
     print(f"- tribunal_competence_unverified: {court_unverified}")
+    print(f"- sale_procedure_statuses: {procedure_statuses}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -184,12 +289,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None, help="Nombre maximum d'annonces à recalculer.")
     parser.add_argument("--batch-size", type=int, default=20, help="Taille des lots d'upsert Supabase.")
     parser.add_argument("--dry-run", action="store_true", help="Recalcule sans écrire dans Supabase.")
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Vérifie les procédures persistées sans les recalculer ni les modifier.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
     args = parse_args()
+    if args.verify_only:
+        raise SystemExit(verify_persisted_sale_procedures(source=args.source, limit=args.limit))
     raise SystemExit(
         recompute_scoring(
             source=args.source,
