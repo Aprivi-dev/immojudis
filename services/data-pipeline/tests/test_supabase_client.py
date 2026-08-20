@@ -1,12 +1,41 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import httpx
 import pytest
 
 from src.court_competence import CompetentCourtAssignment
 from src.normalize import normalize_sale
 from src.storage import supabase_client
 from src.storage.supabase_client import _sanitize_postgrest_payload, _secondary_source_urls
+
+
+def test_postgrest_upsert_batch_retries_cloudflare_520(monkeypatch) -> None:
+    responses = iter(
+        [
+            httpx.Response(520, request=httpx.Request("POST", "https://supabase.test/rest/v1/properties")),
+            httpx.Response(201, request=httpx.Request("POST", "https://supabase.test/rest/v1/properties")),
+        ]
+    )
+    attempts: list[int] = []
+
+    def fake_post(*args, **kwargs):
+        attempts.append(1)
+        return next(responses)
+
+    monkeypatch.setattr(supabase_client.httpx, "post", fake_post)
+    monkeypatch.setattr(supabase_client.time, "sleep", lambda _seconds: None)
+
+    response = supabase_client._postgrest_upsert_batch(
+        "https://supabase.test/rest/v1/properties",
+        "secret",
+        "properties",
+        [{"source_url": "https://example.test/sale"}],
+        "source_url",
+    )
+
+    assert response.status_code == 201
+    assert len(attempts) == 2
 
 
 def test_sanitize_postgrest_payload_removes_null_characters_recursively() -> None:
