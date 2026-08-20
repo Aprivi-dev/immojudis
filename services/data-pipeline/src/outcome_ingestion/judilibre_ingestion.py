@@ -821,15 +821,31 @@ def _collect_targeted_search_metadata(
 
         first_pass_ids, first_pass_metadata_sha256, first_pass_positions = scan_leaf(page)
         second_pass_ids, second_pass_metadata_sha256, _ = scan_leaf()
-        if (
-            second_pass_ids != first_pass_ids
-            or second_pass_metadata_sha256 != first_pass_metadata_sha256
+        if len(set(first_pass_ids)) != len(first_pass_ids) or len(set(second_pass_ids)) != len(
+            second_pass_ids
         ):
+            raise OfficialSourceConfigurationError(
+                "Judilibre search returned a duplicate decision identifier"
+            )
+        first_pass_metadata_by_id = dict(
+            zip(first_pass_ids, first_pass_metadata_sha256, strict=True)
+        )
+        second_pass_metadata_by_id = dict(
+            zip(second_pass_ids, second_pass_metadata_sha256, strict=True)
+        )
+        if second_pass_metadata_by_id != first_pass_metadata_by_id:
             raise OfficialSourceConfigurationError(
                 "Judilibre leaf metadata changed between stability passes"
             )
 
-        metadata_ids_sha256 = canonical_sha256({"ordered_decision_ids": first_pass_ids})
+        # Judilibre guarantees the requested date ordering, but does not expose
+        # a secondary sort key for decisions sharing the same date. Compare the
+        # stable identifier/metadata mapping and canonicalize locally so harmless
+        # tie reordering cannot invalidate an otherwise complete scan.
+        stable_ids = sorted(first_pass_metadata_by_id)
+        positions_by_id = {position[0]: position for position in first_pass_positions}
+        first_pass_positions = [positions_by_id[decision_id] for decision_id in stable_ids]
+        metadata_ids_sha256 = canonical_sha256({"ordered_decision_ids": stable_ids})
         metadata_count = len(first_pass_ids)
         split_plan.append(
             {
