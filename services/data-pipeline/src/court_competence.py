@@ -58,6 +58,10 @@ class CompetentCourtAssignment:
     court_department: str
     court_city: str
     reference_sha256: str
+    court_address: str = ""
+    court_postal_code: str = ""
+    court_phone: str | None = None
+    court_email: str | None = None
 
     def evidence(self) -> dict[str, object]:
         return {
@@ -73,6 +77,10 @@ class CompetentCourtAssignment:
             "court_srj_code": self.court_srj_code,
             "court_department": self.court_department,
             "court_city": self.court_city,
+            "court_address": self.court_address,
+            "court_postal_code": self.court_postal_code,
+            "court_phone": self.court_phone,
+            "court_email": self.court_email,
             "reference_sha256": self.reference_sha256,
             "source_name": "justice_open_data",
             "source_url": JUSTICE_COMPETENCES_DATASET_URL,
@@ -130,6 +138,10 @@ class CourtCompetenceReference:
                 court_department=_department_from_insee(str(structure["insee_code"])),
                 court_city=_court_city(official_name, str(structure.get("routing_line") or "")),
                 reference_sha256=str(row["canonical_hash"]),
+                court_address=str(structure.get("full_address") or ""),
+                court_postal_code=str(structure.get("postal_code") or ""),
+                court_phone=str(structure["phone"]) if structure.get("phone") else None,
+                court_email=str(structure["email"]) if structure.get("email") else None,
             )
         self._assignments = assignments
 

@@ -93,7 +93,7 @@ def classify_sale_procedure(
         "venue_type": venue_type,
         "legal_framework": legal_framework,
         "venue_name": _venue_name(sale, venue_type),
-        "venue_address": _venue_address(sale),
+        "venue_address": _venue_address(sale, venue_type=venue_type, status=status),
         "participation_mode": participation_mode,
         "organizer_name": _organizer_name(sale, venue_type),
         "organizer_type": _organizer_type(venue_type),
@@ -210,7 +210,7 @@ def _participation_rules(
         )
 
     if venue_type == "notary":
-        amount_eur, rate_pct = _extract_notarial_guarantee(corpus)
+        amount_eur, rate_pct = _extract_notarial_guarantee(sale, corpus)
         return (
             {
                 "lawyer_required": False,
@@ -328,7 +328,7 @@ def _sale_corpus(sale: AuctionSale) -> str:
     # Otherwise a pending address-only court assignment can promote itself to
     # verified by matching wording in its own generated participation guide.
     block_values = (
-        [value for key, value in source_blocks.items() if key != "sale_procedure"]
+        [f"{key}: {value}" for key, value in source_blocks.items() if key != "sale_procedure"]
         if isinstance(source_blocks, dict)
         else []
     )
@@ -453,7 +453,7 @@ def _venue_name(sale: AuctionSale, venue_type: str) -> str | None:
     return None
 
 
-def _venue_address(sale: AuctionSale) -> str | None:
+def _venue_address(sale: AuctionSale, *, venue_type: str, status: str) -> str | None:
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     source_blocks = payload.get("source_blocks")
     if isinstance(source_blocks, dict):
@@ -461,6 +461,14 @@ def _venue_address(sale: AuctionSale) -> str | None:
             value = clean_text(source_blocks.get(key))
             if value:
                 return value
+    assignment = payload.get("tribunal_assignment")
+    if (
+        venue_type == "tribunal"
+        and status in {"verified", "cross_checked"}
+        and isinstance(assignment, dict)
+        and assignment.get("status") == "verified"
+    ):
+        return clean_text(assignment.get("court_address"))
     return None
 
 
@@ -514,16 +522,40 @@ def _judicial_guarantee(starting_price: Decimal | None) -> float | None:
     return float(max(Decimal("3000"), starting_price * Decimal("0.10")))
 
 
-def _extract_notarial_guarantee(corpus: str) -> tuple[float | None, float | None]:
+def _extract_notarial_guarantee(
+    sale: AuctionSale,
+    corpus: str,
+) -> tuple[float | None, float | None]:
+    structured_amount, structured_rate = _structured_notarial_guarantee(sale)
     amount_match = re.search(
         r"\bconsignation\b.{0,100}?([0-9][0-9\s.]{2,})\s*(?:€|euros?)\b",
         corpus,
         re.I,
     )
     rate_match = re.search(r"\bconsignation\b.{0,80}?(\d{1,2}(?:[,.]\d+)?)\s*%", corpus, re.I)
-    amount = _parse_amount(amount_match.group(1)) if amount_match else None
-    rate = float(rate_match.group(1).replace(",", ".")) if rate_match else None
+    amount = structured_amount or (_parse_amount(amount_match.group(1)) if amount_match else None)
+    rate = structured_rate or (float(rate_match.group(1).replace(",", ".")) if rate_match else None)
     return amount, rate
+
+
+def _structured_notarial_guarantee(sale: AuctionSale) -> tuple[float | None, float | None]:
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    source_blocks = payload.get("source_blocks")
+    if not isinstance(source_blocks, dict):
+        return None, None
+    value = source_blocks.get("consignation")
+    if isinstance(value, bool) or value in (None, ""):
+        return None, None
+    if isinstance(value, (int, float, Decimal)):
+        amount = float(value)
+        return (amount if amount > 0 else None), None
+
+    text = clean_text(value) or ""
+    rate_match = re.search(r"(\d{1,2}(?:[,.]\d+)?)\s*%", text)
+    if rate_match:
+        return None, float(rate_match.group(1).replace(",", "."))
+    amount = _parse_amount(text)
+    return amount, None
 
 
 def _parse_amount(value: str) -> float | None:
