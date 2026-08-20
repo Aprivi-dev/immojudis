@@ -61,6 +61,9 @@ schéma et la cohérence croisée des fichiers, puis importe le registre des str
 privé. Une exécution manuelle peut demander la même opération avec
 `refresh_justice_references=true`. Ce registre est requis pour résoudre exactement un code Judilibre
 `tj<INSEE>` vers un tribunal Outcome ; une structure absente ou ambiguë reste non rapprochée.
+Le code ministériel historique `TGI` est accepté uniquement pour les lignes courantes dont le nom
+officiel correspond exactement à un tribunal judiciaire du catalogue ; il est traité comme
+l'équivalent de type du code `TJ`, sans modifier le nom ni autoriser une recherche approximative.
 
 Après validation des credentials et avant tout bootstrap ou suivi, le workflow exécute
 `scripts/check_judilibre_contract.py`. Ce canary tente au maximum quatre fenêtres historiques

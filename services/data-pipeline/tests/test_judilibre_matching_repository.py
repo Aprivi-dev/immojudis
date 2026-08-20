@@ -272,7 +272,7 @@ def test_tj_insee_resolution_requires_current_official_justice_structure_and_exa
     assert "source.legal_review_status = 'approved'" in justice_statement
     assert "source.ingestion_policy = 'allowed_automated'" in justice_statement
     assert "justice_court_structure_v1" in justice_statement
-    assert "record.normalized_data->>'structure_type_code' = 'TJ'" in justice_statement
+    assert "record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')" in justice_statement
     assert "newer.record_version > record.record_version" in justice_statement
     assert "public.source_purge_events" in justice_statement
     assert "extensions.unaccent" in justice_statement
