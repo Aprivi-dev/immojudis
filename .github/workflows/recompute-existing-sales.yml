@@ -107,18 +107,19 @@ jobs:
           fi
           python -m src.recompute_scoring "${args[@]}"
 
-      - name: Verify persisted sale procedures
+      - name: Repair and verify persisted sale procedures
         if: ${{ !inputs.dry_run }}
         env:
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
           set -euo pipefail
-          args=(--verify-only)
+          scope_args=()
           if [ "$REQUESTED_SOURCE" != "all" ]; then
-            args+=(--source "$REQUESTED_SOURCE")
+            scope_args+=(--source "$REQUESTED_SOURCE")
           fi
           if [ -n "$REQUESTED_LIMIT" ]; then
-            args+=(--limit "$REQUESTED_LIMIT")
+            scope_args+=(--limit "$REQUESTED_LIMIT")
           fi
-          python -m src.recompute_scoring "${args[@]}"
+          python -m src.recompute_scoring --repair-invalid-procedures "${scope_args[@]}"
+          python -m src.recompute_scoring --verify-only "${scope_args[@]}"

@@ -324,7 +324,14 @@ def _verification_facts(
 def _sale_corpus(sale: AuctionSale) -> str:
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     source_blocks = payload.get("source_blocks")
-    block_values = list(source_blocks.values()) if isinstance(source_blocks, dict) else []
+    # Derived procedure output must never become evidence for its next run.
+    # Otherwise a pending address-only court assignment can promote itself to
+    # verified by matching wording in its own generated participation guide.
+    block_values = (
+        [value for key, value in source_blocks.items() if key != "sale_procedure"]
+        if isinstance(source_blocks, dict)
+        else []
+    )
     document_values: list[object] = []
     for document in sale.documents:
         if not isinstance(document, dict):
