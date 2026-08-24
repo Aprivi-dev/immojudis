@@ -1,9 +1,6 @@
 name: Outcome Graph - Judilibre synchronization
 
 on:
-  schedule:
-    # Judilibre corrections/deletions should be consumed within 72 hours.
-    - cron: "23 2 * * *"
   workflow_dispatch:
     inputs:
       operation:
@@ -96,7 +93,7 @@ jobs:
       should_sync: ${{ steps.gate.outputs.should_sync }}
     env:
       REPOSITORY_ENABLED: ${{ vars.JUDILIBRE_ENABLED || 'false' }}
-      REQUESTED_OPERATION: ${{ github.event_name == 'schedule' && 'sync' || inputs.operation }}
+      REQUESTED_OPERATION: ${{ inputs.operation }}
       REQUESTED_PROFILE: ${{ inputs.profile || 'adjudication_v2' }}
       REQUESTED_DATE_START: ${{ inputs.date_start }}
       REQUESTED_DATE_END: ${{ inputs.date_end }}
@@ -106,7 +103,7 @@ jobs:
       REQUESTED_MAX_RECORDS: ${{ inputs.max_records || '1000' }}
       REQUESTED_MAX_SEGMENTS: ${{ inputs.max_segments || '1' }}
       REQUESTED_BOOTSTRAP_CONFIRMATION: ${{ inputs.confirm_bootstrap }}
-      REQUESTED_SYNC_CONFIRMATION: ${{ github.event_name == 'schedule' && 'SYNC-JUDILIBRE-TRACKED-ONLY' || inputs.confirm_sync }}
+      REQUESTED_SYNC_CONFIRMATION: ${{ inputs.confirm_sync }}
     steps:
       - name: Evaluate activation and bounds
         id: gate
@@ -271,7 +268,6 @@ jobs:
       REQUESTED_MAX_PAGES: ${{ inputs.max_pages || '10' }}
       REQUESTED_MAX_RECORDS: ${{ inputs.max_records || '1000' }}
       REQUESTED_MAX_SEGMENTS: ${{ inputs.max_segments || '1' }}
-      SCHEDULED_RUN: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -344,20 +340,13 @@ jobs:
           esac
 
       - name: Refresh verified official Justice court registry
-        if: >-
-          github.event_name == 'schedule' ||
-          inputs.refresh_justice_references == true
+        if: inputs.refresh_justice_references == true
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
-
-          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%d)" != "01" ]; then
-            echo "Official Justice court registry refresh is scheduled for the first UTC day of each month"
-            exit 0
-          fi
 
           justice_reference_dir="$RUNNER_TEMP/justice-references"
           python -m src.official_sources.justice_reference_sync \
@@ -419,8 +408,6 @@ jobs:
             )
             if [ -n "$REQUESTED_SINCE" ]; then
               args+=(--since "$REQUESTED_SINCE")
-            elif [ "$SCHEDULED_RUN" = "true" ]; then
-              args+=(--since "$(date -u -d '72 hours ago' +%Y-%m-%dT%H:%M:%S+00:00)")
             fi
 
             segment_summary="$(python -m src.outcome_sources_cli "${args[@]}")"
@@ -476,7 +463,7 @@ jobs:
             fi
             echo "- Raw decision artifact uploaded to Actions: no"
             echo "- Physical source-deletion propagation: enabled"
-            echo "- Official Justice court registry: monthly verified refresh; manual refresh available"
+            echo "- Official Justice court registry: explicit manual refresh only"
             echo "- Match publication: review-only; no automatic outcome"
             echo "- Successful bounded segments persist a resume cursor; watermark promotion waits for the terminal page"
             echo "- Training eligibility: false"
