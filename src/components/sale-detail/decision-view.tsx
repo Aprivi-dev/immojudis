@@ -85,7 +85,6 @@ import {
   type SaleWorkspaceDocumentReviews,
   type SaleWorkspaceStatus,
 } from "@/lib/sale-workspace-shared";
-import { openStreetMapQueryUrl, openStreetMapUrl } from "@/lib/tiles";
 import { cn } from "@/lib/utils";
 import { propertyImages } from "@/lib/sale-media";
 import { saleSourceLinks } from "@/lib/sale-source-links";
@@ -303,10 +302,10 @@ export function DecisionMediaFrame({
               mode="streetLevel"
               lat={mapLocation.lat}
               lng={mapLocation.lng}
-              label="Vue rue"
-              title="Vue rue Mapbox"
+              label="Quartier 3D"
+              title="Vue 3D du quartier"
               description={mapDescription || "Adresse de l'annonce"}
-              ariaLabel="Afficher la vue rue Mapbox pour l'annonce"
+              ariaLabel="Afficher la vue 3D Mapbox du quartier pour l'annonce"
               icon={MapPin}
               className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
             />

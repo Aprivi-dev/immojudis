@@ -418,8 +418,8 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
             "a confirmer",
           )}`,
           streetFacadeAnalysis.streetLevelUrl
-            ? `Vue rue Mapbox: ${stringValue(streetFacadeAnalysis.streetLevelUrl, "")}`
-            : "Vue rue Mapbox: a confirmer",
+            ? `Vue 3D du quartier: ${stringValue(streetFacadeAnalysis.streetLevelUrl, "")}`
+            : "Vue 3D du quartier: a confirmer",
           streetFacadeAnalysis.aerial3dUrl
             ? `Vue 3D: ${stringValue(streetFacadeAnalysis.aerial3dUrl, "")}`
             : "Vue 3D: a confirmer",

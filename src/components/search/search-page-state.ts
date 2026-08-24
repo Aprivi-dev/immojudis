@@ -425,14 +425,3 @@ export function alertDefaultsFromSearch(
 export function clampZoneName(value: string): string {
   return value.trim().slice(0, 120) || "Zone surveillée";
 }
-
-export function fallbackImageForSale(id: string) {
-  const images = [
-    "/media/landing/auction-lyon.webp",
-    "/media/landing/auction-nantes.webp",
-    "/media/landing/auction-bordeaux.webp",
-    "/media/landing/auction-toulouse.webp",
-  ];
-  const index = [...id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % images.length;
-  return images[index] ?? images[0];
-}

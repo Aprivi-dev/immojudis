@@ -17,6 +17,7 @@ from src.normalize import (
 )
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://www.info-encheres.com"
 LIST_URL = f"{BASE_URL}/vente-encheres-immobilieres-annonces.html"
@@ -340,7 +341,8 @@ def _extract_images(soup: BeautifulSoup, source_url: str) -> list[str]:
         if property_name and property_name.lower() in {"og:image", "twitter:image"}:
             _append_image_url(urls, meta.get("content"), source_url)
     for image in soup.find_all("img"):
-        _append_image_url(urls, image.get("data-src") or image.get("src"), source_url)
+        for candidate in html_image_candidates(image):
+            _append_image_url(urls, candidate, source_url)
     return urls
 
 

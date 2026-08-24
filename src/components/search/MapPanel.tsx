@@ -27,7 +27,7 @@ import {
   MAPBOX_COPYRIGHT_URL,
   getMapboxAccessToken,
   getMapboxStyleUrl,
-  mapboxStaticImageUrl,
+  mapboxSatelliteImageUrl,
 } from "@/lib/mapbox";
 import {
   buildMapboxSaleFeatureCollection,
@@ -646,7 +646,7 @@ function buildPopupHtml(sale: AuctionSale & { latitude: number; longitude: numbe
     riskCount > 1 ? `${riskCount} alertes` : riskCount === 1 ? "1 alerte" : "Faible";
   const imageUrl =
     firstPropertyImage(sale.media) ||
-    mapboxStaticImageUrl({
+    mapboxSatelliteImageUrl({
       lat: sale.latitude,
       lng: sale.longitude,
       zoom: 15,

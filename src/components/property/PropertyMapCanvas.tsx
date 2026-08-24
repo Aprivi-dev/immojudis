@@ -1,10 +1,11 @@
 import { useState } from "react";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
+import Navigation from "lucide-react/dist/esm/icons/navigation.js";
 import Minus from "lucide-react/dist/esm/icons/minus.js";
 import Plus from "lucide-react/dist/esm/icons/plus.js";
 import type { Property } from "@/lib/property-types";
-import { openStreetMapUrl } from "@/lib/tiles";
 import { MapThumbnail } from "@/components/MapThumbnail";
+import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 
 const INITIAL_MAP_ZOOM = 15;
 
@@ -27,8 +28,6 @@ export function PropertyMapCanvas({ property }: { property: Property }) {
       </div>
     );
   }
-
-  const openUrl = openStreetMapUrl(location.lat, location.lng, zoom);
 
   return (
     <div className="relative min-h-[22rem] overflow-hidden rounded-md border border-border bg-muted">
@@ -57,14 +56,19 @@ export function PropertyMapCanvas({ property }: { property: Property }) {
           <Minus className="h-4 w-4" />
         </button>
       </div>
-      <a
-        href={openUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="absolute bottom-3 left-3 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-sm transition-colors hover:border-gold/50 hover:text-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
-      >
-        Ouvrir la carte
-      </a>
+      <div className="absolute bottom-3 left-3">
+        <MapboxPreviewButton
+          mode="aerial3d"
+          lat={location.lat}
+          lng={location.lng}
+          label="Vue aérienne 3D"
+          title="Vue aérienne 3D Mapbox"
+          description={property.address}
+          ariaLabel={`Afficher la vue aérienne 3D Mapbox de ${property.address}`}
+          icon={Navigation}
+          className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-sm transition-colors hover:border-gold/50 hover:text-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+        />
+      </div>
     </div>
   );
 }

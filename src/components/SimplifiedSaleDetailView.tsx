@@ -29,6 +29,7 @@ import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { OutcomeForecast, useOutcomeGraphForecast } from "@/components/OutcomeForecast";
 import { RotatingCamera360 } from "@/components/RotatingCamera360";
+import { SaleVisual } from "@/components/SaleVisual";
 import { SaleProcedurePanel } from "@/components/SaleProcedurePanel";
 import { SaleTribunalHistory } from "@/components/SaleTribunalHistory";
 import { fetchPrecomputedMarketEstimate } from "@/lib/client-api";
@@ -346,10 +347,10 @@ function PropertyIdentity({ sale }: { sale: AuctionSale }) {
                   mode="streetLevel"
                   lat={mapLocation.lat}
                   lng={mapLocation.lng}
-                  label="Vue rue"
-                  title="Vue rue Mapbox"
+                  label="Quartier 3D"
+                  title="Vue 3D du quartier"
                   description={address || "Adresse de l'annonce"}
-                  ariaLabel="Afficher la vue rue Mapbox de l'annonce"
+                  ariaLabel="Afficher la vue 3D Mapbox du quartier"
                   icon={MapPin}
                   className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 />
@@ -371,12 +372,7 @@ function PropertyIdentity({ sale }: { sale: AuctionSale }) {
             </button>
           </>
         ) : (
-          <div className="grid h-[250px] place-items-center bg-[linear-gradient(145deg,#e5f1fb,#fffaf2)] sm:h-[430px]">
-            <div className="text-center text-brand-navy/54">
-              <Camera className="mx-auto h-8 w-8" aria-hidden />
-              <p className="mt-3 text-sm font-medium">Photos à confirmer</p>
-            </div>
-          </div>
+          <SaleVisual sale={sale} title={title} className="h-[250px] sm:h-[430px]" eager />
         )}
       </div>
 
