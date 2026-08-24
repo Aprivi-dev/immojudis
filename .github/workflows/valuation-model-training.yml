@@ -34,10 +34,6 @@ on:
         description: "Type production when activate=true"
         required: true
         type: string
-  workflow_run:
-    workflows: ["Immojudis DVF Import"]
-    types: [completed]
-
 permissions:
   contents: read
 
@@ -47,16 +43,13 @@ concurrency:
 
 jobs:
   train:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request')
     name: Train ${{ matrix.segment }} model
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        segment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.segment != 'all' && fromJSON(format('["{0}"]', github.event.inputs.segment)) || fromJSON('["apartment", "house", "building", "commercial", "land"]') }}
+        segment: ${{ github.event.inputs.segment != 'all' && fromJSON(format('["{0}"]', github.event.inputs.segment)) || fromJSON('["apartment", "house", "building", "commercial", "land"]') }}
     defaults:
       run:
         working-directory: services/data-pipeline
@@ -65,7 +58,7 @@ jobs:
       TRIGGER_EVENT: ${{ github.event_name }}
       REQUESTED_MIN_ROWS: ${{ github.event.inputs.min_rows || '500' }}
       REQUESTED_LIMIT: ${{ github.event.inputs.limit || '750000' }}
-      REQUESTED_ACTIVATE: ${{ github.event_name == 'workflow_run' && 'true' || github.event.inputs.activate }}
+      REQUESTED_ACTIVATE: ${{ github.event.inputs.activate }}
       REQUESTED_CONFIRM_TARGET: ${{ github.event.inputs.confirm_target }}
     steps:
       - name: Validate production activation

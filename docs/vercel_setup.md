@@ -62,10 +62,11 @@ les migrations locales nécessitent toujours une valeur Postgres lisible
 
 La page `/admin` crée une ligne `auction_runs` en statut `queued`.
 
-Deux mécanismes peuvent ensuite lancer le vrai pipeline :
-
-1. **Déclenchement immédiat** : si `GITHUB_SCROLL_TOKEN` est configuré dans Vercel, le serveur déclenche le workflow GitHub Actions `data-pipeline.yml` avec l'identifiant du run.
-2. **Fallback automatique** : le workflow GitHub Actions est planifié toutes les 30 minutes et traite le plus ancien run `queued`.
+Le pipeline ne peut ensuite démarrer que par **déclenchement manuel** : si
+`GITHUB_SCROLL_TOKEN` est configuré dans Vercel, une action explicite dans
+`/admin` déclenche le workflow GitHub Actions `data-pipeline.yml` avec
+l'identifiant du run. Il n'existe aucun fallback planifié. Si le dispatch
+échoue, la ligne reste `queued` jusqu'à une nouvelle action manuelle.
 
 Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans Supabase :
 

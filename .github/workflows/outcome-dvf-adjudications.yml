@@ -28,11 +28,6 @@ on:
         description: "Optional source-record UUID emitted by a truncated prior matching run"
         required: false
         type: string
-  schedule:
-    # The scheduled run validates the latest official archive by default.
-    # It ingests only when repository variable DVF_ADJUDICATION_INGESTION_ENABLED=true.
-    - cron: "45 4 12 4,10 *"
-
 permissions:
   contents: read
 
@@ -50,11 +45,11 @@ jobs:
         working-directory: services/data-pipeline
     env:
       DVF_DATASET_API_URL: https://www.data.gouv.fr/api/1/datasets/demandes-de-valeurs-foncieres/
-      REQUESTED_MODE: ${{ github.event_name == 'schedule' && (vars.DVF_ADJUDICATION_INGESTION_ENABLED == 'true' && 'ingest' || 'validate') || inputs.mode }}
-      REQUESTED_YEAR: ${{ github.event_name == 'schedule' && '' || inputs.resource_year }}
-      REQUESTED_LIMIT: ${{ github.event_name == 'schedule' && (vars.DVF_ADJUDICATION_MAX_CANDIDATES || '5000') || inputs.max_candidates }}
+      REQUESTED_MODE: ${{ inputs.mode }}
+      REQUESTED_YEAR: ${{ inputs.resource_year }}
+      REQUESTED_LIMIT: ${{ inputs.max_candidates }}
       REQUESTED_CONFIRMATION: ${{ inputs.confirm_ingestion }}
-      REQUESTED_MATCH_CURSOR: ${{ github.event_name == 'schedule' && '' || inputs.matching_after_source_record_id }}
+      REQUESTED_MATCH_CURSOR: ${{ inputs.matching_after_source_record_id }}
     steps:
       # The job-level run directory is created by checkout, so no run step may precede it.
       - name: Check out repository
