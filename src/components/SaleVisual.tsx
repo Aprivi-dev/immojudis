@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ImageOff from "lucide-react/dist/esm/icons/image-off.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import type { AuctionSale } from "@/lib/types";
@@ -17,6 +17,13 @@ type VisualCandidate = {
   kind: "map" | "photo" | "satellite";
   url: string;
   label: string;
+};
+
+type VisualSelection = {
+  saleId: string;
+  index: number;
+  exhausted: boolean;
+  loadedUrl: string | null;
 };
 
 export function SaleVisual({
@@ -62,22 +69,69 @@ export function SaleVisual({
       ? [{ kind: "map" as const, url: sectorMapUrl, label: "Carte du secteur Mapbox" }]
       : []),
   ];
-  const [selection, setSelection] = useState({ saleId: sale.id, index: 0, exhausted: false });
+  const imageRef = useRef<HTMLImageElement>(null);
+  const [selection, setSelection] = useState<VisualSelection>({
+    saleId: sale.id,
+    index: 0,
+    exhausted: false,
+    loadedUrl: null,
+  });
   const activeSelection =
-    selection.saleId === sale.id ? selection : { saleId: sale.id, index: 0, exhausted: false };
+    selection.saleId === sale.id
+      ? selection
+      : { saleId: sale.id, index: 0, exhausted: false, loadedUrl: null };
   const candidate = activeSelection.exhausted ? null : (candidates[activeSelection.index] ?? null);
+  const candidateCount = candidates.length;
+  const candidateUrl = candidate?.url ?? "";
+  const candidateKind = candidate?.kind ?? null;
+  const candidateIsReady = Boolean(candidate && activeSelection.loadedUrl === candidate.url);
 
-  const rejectCandidate = () => {
+  const rejectCandidate = useCallback(() => {
     setSelection((current) => {
       const index = current.saleId === sale.id ? current.index : 0;
       const nextIndex = index + 1;
       return {
         saleId: sale.id,
         index: nextIndex,
-        exhausted: nextIndex >= candidates.length,
+        exhausted: nextIndex >= candidateCount,
+        loadedUrl: null,
       };
     });
-  };
+  }, [candidateCount, sale.id]);
+
+  const markCandidateReady = useCallback(() => {
+    if (!candidateUrl) return;
+
+    setSelection((current) => {
+      const index = current.saleId === sale.id ? current.index : 0;
+      if (current.saleId === sale.id && current.loadedUrl === candidateUrl) return current;
+
+      return {
+        saleId: sale.id,
+        index,
+        exhausted: false,
+        loadedUrl: candidateUrl,
+      };
+    });
+  }, [candidateUrl, sale.id]);
+
+  useEffect(() => {
+    const image = imageRef.current;
+    if (!candidateUrl || !image?.complete) return;
+
+    // An external image can fail before React hydration attaches onError.
+    // Re-check the browser's settled image state so the fallback still advances.
+    if (
+      !image.naturalWidth ||
+      !image.naturalHeight ||
+      (candidateKind === "photo" && shouldRejectRenderedPropertyImage(image))
+    ) {
+      rejectCandidate();
+      return;
+    }
+
+    markCandidateReady();
+  }, [candidateKind, candidateUrl, markCandidateReady, rejectCandidate]);
 
   if (!candidate) {
     return (
@@ -100,8 +154,18 @@ export function SaleVisual({
   }
 
   return (
-    <div className={`relative h-full w-full overflow-hidden bg-muted ${className}`}>
+    <div
+      className={`relative h-full w-full overflow-hidden bg-muted ${className}`}
+      aria-busy={!candidateIsReady}
+    >
+      {!candidateIsReady ? (
+        <div
+          className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,#e8f1f6_25%,#f7fafc_45%,#e8f1f6_65%)] bg-[length:220%_100%]"
+          aria-hidden
+        />
+      ) : null}
       <img
+        ref={imageRef}
         key={candidate.url}
         src={candidate.url}
         alt={
@@ -122,13 +186,19 @@ export function SaleVisual({
             shouldRejectRenderedPropertyImage(event.currentTarget)
           ) {
             rejectCandidate();
+            return;
           }
+          markCandidateReady();
         }}
-        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.025]"
+        className={`h-full w-full object-cover text-transparent transition duration-500 group-hover:scale-[1.025] ${
+          candidateIsReady ? "opacity-100" : "opacity-0"
+        }`}
       />
-      <span className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/65 bg-[#07111f]/78 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white shadow-sm backdrop-blur">
-        {candidate.label}
-      </span>
+      {candidateIsReady ? (
+        <span className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/65 bg-[#07111f]/78 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white shadow-sm backdrop-blur">
+          {candidate.label}
+        </span>
+      ) : null}
     </div>
   );
 }
