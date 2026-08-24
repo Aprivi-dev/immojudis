@@ -33,6 +33,8 @@ jobs:
         run: npm run test
       - name: Static security invariants
         run: npm run test:security-invariants
+      - name: Manual-only data collection invariant
+        run: npm run check:manual-collection
       - name: Production build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL || 'https://ci.supabase.co' }}

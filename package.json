@@ -16,6 +16,7 @@
     "build:dev": "next build",
     "build:budgets": "node scripts/check-build-budgets.mjs",
     "test:security-invariants": "node scripts/check-security-invariants.mjs",
+    "check:manual-collection": "node scripts/check-manual-data-collection.mjs",
     "test:db-concurrency": "node scripts/test-concurrent-db-quotas.mjs && node scripts/test-phase-2-db-concurrency.mjs",
     "check:schema-drift": "node scripts/check-supabase-schema-drift.mjs",
     "test:e2e": "playwright test",

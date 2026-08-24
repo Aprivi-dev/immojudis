@@ -27,10 +27,6 @@
     {
       "path": "/api/cron/operational-health",
       "schedule": "0 7 * * *"
-    },
-    {
-      "path": "/api/cron/cnb-lawyer-directory",
-      "schedule": "15 5 * * 1"
     }
   ]
 }

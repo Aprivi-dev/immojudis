@@ -22,13 +22,11 @@ Le workflow `Outcome Graph - DVF adjudications` :
 7. publie le nombre de pages et de sources parcourues, les écritures, les plafonds de contextes
    atteints, la troncature éventuelle et le dernier UUID permettant une reprise explicite.
 
-Le lancement manuel est en mode `validate` par défaut. Le mode `ingest` exige la confirmation
-`INGEST-DVF` ainsi que les secrets `SUPABASE_DB_URL`, `SUPABASE_URL` et
-`SUPABASE_SERVICE_ROLE_KEY`. Le run semestriel reste une validation sans écriture tant que la
-variable de dépôt `DVF_ADJUDICATION_INGESTION_ENABLED` n'est pas exactement `true`.
-`DVF_ADJUDICATION_MAX_CANDIDATES` peut réduire ou augmenter la borne planifiée entre 1 et 20 000 ;
-la valeur par défaut est 5 000. Cette borne est le plafond de tout le run de matching, pas la taille
-d'une page. Le workflow n'utilise jamais `match-dvf --all`. Si le résumé indique
+Le lancement est uniquement manuel et utilise le mode `validate` par défaut. Le mode `ingest` exige
+la confirmation `INGEST-DVF` ainsi que les secrets `SUPABASE_DB_URL`, `SUPABASE_URL` et
+`SUPABASE_SERVICE_ROLE_KEY`. `max_candidates` fixe une borne comprise entre 1 et 20 000 ; sa valeur
+par défaut est 5 000. Cette borne est le plafond de tout le run de matching, pas la taille d'une
+page. Le workflow n'utilise jamais `match-dvf --all`. Si le résumé indique
 `source_scan_truncated=true`, relancer manuellement avec l'UUID publié dans
 `matching_after_source_record_id`; un curseur absent ou mal formé est refusé. Une page terminale
 plus courte que 500, ou la sonde bornée effectuée au plafond, permet de distinguer un scan achevé
