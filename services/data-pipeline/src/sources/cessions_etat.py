@@ -11,6 +11,7 @@ from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_sett
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://cessions.immobilier-etat.gouv.fr"
 LIST_URL = f"{BASE_URL}/"
@@ -234,8 +235,9 @@ def _location(text: str | None) -> tuple[str | None, str | None]:
 
 def _first_image(card: Tag, page_url: str) -> str | None:
     image = card.find("img")
-    if image and (image.get("src") or image.get("data-src")):
-        return urljoin(page_url, str(image.get("src") or image.get("data-src")))
+    if image:
+        if candidates := html_image_candidates(image):
+            return urljoin(page_url, candidates[0])
     images = str(card.get("data-images") or "").split(",")
     return urljoin(page_url, images[0]) if images and images[0].strip() else None
 
@@ -267,7 +269,8 @@ def _extract_images(soup: BeautifulSoup, page_url: str) -> list[str]:
         for node in soup.select(selector):
             _append_image(images, node.get("content"), page_url)
     for node in soup.find_all("img"):
-        _append_image(images, node.get("data-src") or node.get("src"), page_url)
+        for candidate in html_image_candidates(node):
+            _append_image(images, candidate, page_url)
     return _unique_text_values(images)
 
 

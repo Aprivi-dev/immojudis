@@ -1,7 +1,7 @@
 const DEFAULT_MAPBOX_STYLE = "mapbox/streets-v12";
 const DEFAULT_STATIC_IMAGE_SIZE = { width: 640, height: 360 };
-const MAPBOX_STANDARD_STYLE = "mapbox/standard";
-const MAPBOX_STANDARD_SATELLITE_STYLE = "mapbox/standard-satellite";
+const MAPBOX_STATIC_STREETS_STYLE = "mapbox/streets-v12";
+const MAPBOX_STATIC_SATELLITE_STYLE = "mapbox/satellite-v9";
 
 export const MAPBOX_ATTRIBUTION = "© Mapbox © OpenStreetMap";
 export const MAPBOX_COPYRIGHT_URL = "https://www.mapbox.com/about/maps/";
@@ -81,7 +81,7 @@ export function mapboxMapUrl(lat: number, lng: number) {
   });
 }
 
-export function mapboxStreetLevelUrl(lat: number, lng: number) {
+export function mapboxNeighborhood3dUrl(lat: number, lng: number) {
   return mapboxStaticImageUrl({
     lat,
     lng,
@@ -90,9 +90,12 @@ export function mapboxStreetLevelUrl(lat: number, lng: number) {
     pitch: 72,
     width: 1280,
     height: 720,
-    style: MAPBOX_STANDARD_STYLE,
+    style: MAPBOX_STATIC_STREETS_STYLE,
   });
 }
+
+/** @deprecated Kept for stored report compatibility. */
+export const mapboxStreetLevelUrl = mapboxNeighborhood3dUrl;
 
 export function mapboxAerial3dUrl(lat: number, lng: number) {
   return mapboxStaticImageUrl({
@@ -103,7 +106,33 @@ export function mapboxAerial3dUrl(lat: number, lng: number) {
     pitch: 68,
     width: 1280,
     height: 720,
-    style: MAPBOX_STANDARD_SATELLITE_STYLE,
+    style: MAPBOX_STATIC_SATELLITE_STYLE,
+  });
+}
+
+export function mapboxSatelliteImageUrl({
+  lat,
+  lng,
+  zoom = 17,
+  width = DEFAULT_STATIC_IMAGE_SIZE.width,
+  height = DEFAULT_STATIC_IMAGE_SIZE.height,
+  marker = true,
+}: {
+  lat: number;
+  lng: number;
+  zoom?: number;
+  width?: number;
+  height?: number;
+  marker?: boolean;
+}) {
+  return mapboxStaticImageUrl({
+    lat,
+    lng,
+    zoom,
+    width,
+    height,
+    marker,
+    style: MAPBOX_STATIC_SATELLITE_STYLE,
   });
 }
 

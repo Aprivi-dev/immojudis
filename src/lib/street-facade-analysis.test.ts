@@ -22,8 +22,8 @@ describe("street facade analysis", () => {
         lng: EXAMPLE_SALE.longitude,
       },
     });
-    expect(analysis.streetLevelUrl).toContain("/styles/v1/mapbox/standard/static/");
-    expect(analysis.aerial3dUrl).toContain("/styles/v1/mapbox/standard-satellite/static/");
+    expect(analysis.streetLevelUrl).toContain("/styles/v1/mapbox/streets-v12/static/");
+    expect(analysis.aerial3dUrl).toContain("/styles/v1/mapbox/satellite-v9/static/");
     expect(analysis.mapUrl).toContain("/styles/v1/mapbox/streets-v12/static/");
   });
 

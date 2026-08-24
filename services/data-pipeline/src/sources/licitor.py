@@ -20,6 +20,7 @@ from src.normalize import (
 )
 from src.raw_models import validate_raw_sales
 from src.sources.common import MAX_SAFE_REDIRECTS, REDIRECT_STATUS_CODES, ScrapeResult, is_allowed_origin_url
+from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://www.licitor.com"
 ALLOWED_ORIGINS = (BASE_URL, "https://licitor.com")
@@ -722,8 +723,11 @@ def _extract_images(soup: BeautifulSoup, source_url: str) -> list[str]:
     images: list[str] = []
     for selector in ("meta[property='og:image']", "meta[name='twitter:image']", ".LegalAd img"):
         for node in soup.select(selector):
-            value = node.get("content") if node.name == "meta" else node.get("src")
-            _append_image(images, value, source_url)
+            if node.name == "meta":
+                _append_image(images, node.get("content"), source_url)
+            else:
+                for candidate in html_image_candidates(node):
+                    _append_image(images, candidate, source_url)
     return _unique(images)
 
 

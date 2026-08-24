@@ -685,7 +685,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             {mapUrl || streetLevelUrl || aerial3dUrl ? (
               <div className="mt-4 flex flex-wrap gap-2">
                 {streetLevelUrl ? (
-                  <SharedExternalLink href={streetLevelUrl} label="Vue rue Mapbox" />
+                  <SharedExternalLink href={streetLevelUrl} label="Vue 3D du quartier" />
                 ) : null}
                 {aerial3dUrl ? <SharedExternalLink href={aerial3dUrl} label="Vue 3D" /> : null}
                 {mapUrl ? <SharedExternalLink href={mapUrl} label="Carte" /> : null}
