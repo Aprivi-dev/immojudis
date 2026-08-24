@@ -56,7 +56,9 @@ for (const entry of await readdir(migrationDirectory, { withFileTypes: true })) 
     (match) => match[1],
   );
   if (jobNames.length !== invocations.length) {
-    failures.push(`${relativePath}: every cron.schedule call must expose a literal audited job name`);
+    failures.push(
+      `${relativePath}: every cron.schedule call must expose a literal audited job name`,
+    );
   }
   for (const jobName of jobNames) {
     if (!allowedDatabaseCronJobs.has(jobName)) {
