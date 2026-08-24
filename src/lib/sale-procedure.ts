@@ -232,6 +232,10 @@ export function saleProcedureIsConfirmed(procedure: SaleProcedurePresentation): 
   );
 }
 
+export function saleIsTribunalVenue(sale: AuctionSale): boolean {
+  return getSaleProcedure(sale).venueType === "tribunal";
+}
+
 export function saleLegalFrameworkLabel(framework: SaleLegalFramework): string {
   return {
     judicial_seizure: "Saisie immobilière",

@@ -18,6 +18,7 @@ import type { AuctionSale } from "@/lib/types";
 
 export function SaleTribunalHistory({ sale }: { sale: AuctionSale }) {
   const courtCode = sale.tribunal_code?.trim() ?? "";
+  const courtLabel = sale.tribunal_name?.trim() || sale.tribunal?.trim() || null;
   const query = useQuery({
     queryKey: ["tribunal-judicial-activity", courtCode || sale.id, 36],
     queryFn: () =>
@@ -33,8 +34,12 @@ export function SaleTribunalHistory({ sale }: { sale: AuctionSale }) {
   if (query.isError || !query.data) {
     return (
       <HistoryNotice
-        title="Activité judiciaire temporairement indisponible"
-        detail="Immojudis ne remplace pas les annonces judiciaires vérifiées par des estimations ou des données non contrôlées."
+        title={
+          courtLabel
+            ? `Statistiques de ${courtLabel} en cours de consolidation`
+            : "Rattachement exact au tribunal en cours"
+        }
+        detail="Ce bloc reste présent sur la vente. Immojudis publiera les chiffres dès que le rattachement au référentiel officiel et l’échantillon du même tribunal auront été contrôlés ; aucune statistique approximative n’est substituée."
       />
     );
   }

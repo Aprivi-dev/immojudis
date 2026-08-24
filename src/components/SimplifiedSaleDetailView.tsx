@@ -50,6 +50,7 @@ import {
   lawyerRequirementLabel,
   participationModeLabel,
   saleEventLabel,
+  saleIsTribunalVenue,
   saleProcedureIsConfirmed,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
@@ -97,6 +98,7 @@ function SimplifiedSaleDetailView({
   access,
 }: SaleDetailProps & { access: "discovery" | "analysis" }) {
   const [calculationOpen, setCalculationOpen] = useState(false);
+  const isTribunalSale = saleIsTribunalVenue(sale);
   const marketSurfaces = getMarketValuationSurfaces(sale);
   const surface = marketSurfaces.builtSurfaceM2;
   const marketQuery = useQuery({
@@ -199,7 +201,10 @@ function SimplifiedSaleDetailView({
           onCalculationOpenChange={setCalculationOpen}
         />
       ) : (
-        <DiscoveryContinuation />
+        <>
+          {isTribunalSale ? <SaleTribunalHistory sale={sale} /> : null}
+          <DiscoveryContinuation />
+        </>
       )}
     </main>
   );
@@ -681,9 +686,7 @@ function AnalysisContent({
   onCalculationOpenChange: (open: boolean) => void;
 }) {
   const forecastQuery = useOutcomeGraphForecast(sale.id);
-  const procedure = getSaleProcedure(sale);
-  const showTribunalHistory =
-    procedure.venueType === "tribunal" && saleProcedureIsConfirmed(procedure);
+  const showTribunalHistory = saleIsTribunalVenue(sale);
   const hasVerifiedForecast = forecastQuery.data?.forecast.status === "ready";
   const navigationItems = [
     ["#summary", "Synthèse"],

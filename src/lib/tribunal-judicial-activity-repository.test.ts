@@ -93,6 +93,7 @@ describe("tribunal judicial activity repository", () => {
     const saleLookup = fakeQuery({
       data: {
         tribunal_code: "justice_tj_1_59",
+        tribunal: "TJ Marseille",
         sale_venue_type: "tribunal",
         sale_verification_status: "cross_checked",
       },
@@ -120,7 +121,7 @@ describe("tribunal judicial activity repository", () => {
     expect(result.court.code).toBe("justice_tj_1_59");
     expect(serverFrom).toHaveBeenNthCalledWith(1, "auction_sales");
     expect(saleLookup.state.selected).toBe(
-      "tribunal_code,sale_venue_type,sale_verification_status",
+      "tribunal_code,tribunal,sale_venue_type,sale_verification_status",
     );
     expect(saleLookup.state.selected).not.toMatch(/address|description|lawyer|raw|document/i);
     expect(saleLookup.state.filters).toContainEqual([
@@ -130,10 +131,161 @@ describe("tribunal judicial activity repository", () => {
     ]);
   });
 
+  it("récupère le rattachement territorial officiel lorsque le code manque sur l’annonce", async () => {
+    const saleLookup = fakeQuery({
+      data: {
+        tribunal_code: null,
+        tribunal: null,
+        sale_venue_type: "tribunal",
+        sale_verification_status: "pending",
+      },
+      error: null,
+    });
+    const assignmentLookup = fakeQuery({
+      data: { court_code: "justice_tj_1_59" },
+      error: null,
+    });
+    const courtQuery = fakeQuery({
+      data: {
+        code: "justice_tj_1_59",
+        name: "TJ Marseille",
+        judicial_region: "Aix-en-Provence",
+      },
+      error: null,
+    });
+    const salesQuery = fakeQuery({ data: [], error: null });
+    serverFrom
+      .mockReturnValueOnce(saleLookup.query)
+      .mockReturnValueOnce(assignmentLookup.query)
+      .mockReturnValueOnce(courtQuery.query)
+      .mockReturnValueOnce(salesQuery.query);
+
+    const result = await getTribunalJudicialActivity(
+      { saleId: "11111111-1111-4111-8111-111111111111", historyMonths: 36 },
+      { asOf: AS_OF },
+    );
+
+    expect(result.court.code).toBe("justice_tj_1_59");
+    expect(serverFrom).toHaveBeenNthCalledWith(2, "auction_sale_competent_court_assignments");
+    expect(assignmentLookup.state.selected).toBe("court_code");
+    expect(assignmentLookup.state.filters).toContainEqual([
+      "eq",
+      "auction_sale_id",
+      "11111111-1111-4111-8111-111111111111",
+    ]);
+    expect(assignmentLookup.state.orders).toContainEqual(["created_at", { ascending: false }]);
+  });
+
+  it("utilise un libellé canonique strict pour une annonce recoupée sans affectation auditée", async () => {
+    const saleLookup = fakeQuery({
+      data: {
+        tribunal_code: null,
+        tribunal: "TJ Marseille",
+        sale_venue_type: "tribunal",
+        sale_verification_status: "verified",
+      },
+      error: null,
+    });
+    const assignmentLookup = fakeQuery({ data: null, error: null });
+    const tribunalLookup = fakeQuery({
+      data: { code: "justice_tj_1_59", canonical_name: "TJ Marseille" },
+      error: null,
+    });
+    const courtQuery = fakeQuery({
+      data: {
+        code: "justice_tj_1_59",
+        name: "TJ Marseille",
+        judicial_region: null,
+      },
+      error: null,
+    });
+    const salesQuery = fakeQuery({ data: [], error: null });
+    serverFrom
+      .mockReturnValueOnce(saleLookup.query)
+      .mockReturnValueOnce(assignmentLookup.query)
+      .mockReturnValueOnce(tribunalLookup.query)
+      .mockReturnValueOnce(courtQuery.query)
+      .mockReturnValueOnce(salesQuery.query);
+
+    const result = await getTribunalJudicialActivity(
+      { saleId: "11111111-1111-4111-8111-111111111111", historyMonths: 36 },
+      { asOf: AS_OF },
+    );
+
+    expect(result.court.code).toBe("justice_tj_1_59");
+    expect(serverFrom).toHaveBeenNthCalledWith(3, "tribunals");
+    expect(tribunalLookup.state.filters).toContainEqual(["eq", "canonical_name", "TJ Marseille"]);
+  });
+
+  it("tolère uniquement les différences typographiques d’un libellé de tribunal recoupé", async () => {
+    const saleLookup = fakeQuery({
+      data: {
+        tribunal_code: null,
+        tribunal: "TJ Beziers",
+        sale_venue_type: "tribunal",
+        sale_verification_status: "verified",
+      },
+      error: null,
+    });
+    const assignmentLookup = fakeQuery({ data: null, error: null });
+    const exactTribunalLookup = fakeQuery({ data: null, error: null });
+    const boundedTribunalsLookup = fakeQuery({
+      data: [
+        { code: "beziers", canonical_name: "TJ Béziers" },
+        { code: "paris", canonical_name: "TJ Paris" },
+      ],
+      error: null,
+    });
+    const courtQuery = fakeQuery({
+      data: { code: "beziers", name: "TJ Béziers", judicial_region: null },
+      error: null,
+    });
+    const salesQuery = fakeQuery({ data: [], error: null });
+    serverFrom
+      .mockReturnValueOnce(saleLookup.query)
+      .mockReturnValueOnce(assignmentLookup.query)
+      .mockReturnValueOnce(exactTribunalLookup.query)
+      .mockReturnValueOnce(boundedTribunalsLookup.query)
+      .mockReturnValueOnce(courtQuery.query)
+      .mockReturnValueOnce(salesQuery.query);
+
+    const result = await getTribunalJudicialActivity(
+      { saleId: "11111111-1111-4111-8111-111111111111", historyMonths: 36 },
+      { asOf: AS_OF },
+    );
+
+    expect(result.court.code).toBe("beziers");
+    expect(serverFrom).toHaveBeenNthCalledWith(4, "tribunals");
+    expect(boundedTribunalsLookup.state.ranges).toEqual([[0, 250]]);
+  });
+
+  it("ne déduit pas un tribunal depuis un simple libellé encore non contrôlé", async () => {
+    const saleLookup = fakeQuery({
+      data: {
+        tribunal_code: null,
+        tribunal: "TJ Marseille",
+        sale_venue_type: "tribunal",
+        sale_verification_status: "pending",
+      },
+      error: null,
+    });
+    const assignmentLookup = fakeQuery({ data: null, error: null });
+    serverFrom.mockReturnValueOnce(saleLookup.query).mockReturnValueOnce(assignmentLookup.query);
+
+    await expect(
+      getTribunalJudicialActivity(
+        { saleId: "11111111-1111-4111-8111-111111111111", historyMonths: 36 },
+        { asOf: AS_OF },
+      ),
+    ).rejects.toThrow("no verified exact judicial court assignment");
+    expect(serverFrom).toHaveBeenCalledTimes(2);
+  });
+
   it("refuse une annonce notariale même si elle porte un code tribunal", async () => {
     const saleLookup = fakeQuery({
       data: {
         tribunal_code: "justice_tj_1_59",
+        tribunal: "TJ Marseille",
         sale_venue_type: "notary",
         sale_verification_status: "verified",
       },
@@ -146,7 +298,7 @@ describe("tribunal judicial activity repository", () => {
         { saleId: "11111111-1111-4111-8111-111111111111", historyMonths: 36 },
         { asOf: AS_OF },
       ),
-    ).rejects.toThrow("no verified exact judicial court assignment");
+    ).rejects.toThrow("not identified as a judicial tribunal sale");
     expect(serverFrom).toHaveBeenCalledOnce();
   });
 

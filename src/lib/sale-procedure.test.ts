@@ -4,6 +4,7 @@ import {
   guaranteeLabel,
   lawyerRequirementLabel,
   overbidLabel,
+  saleIsTribunalVenue,
   saleVerificationLabel,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
@@ -154,5 +155,22 @@ describe("sale procedure presentation", () => {
     expect(saleVenueLabel(procedure.venueType)).toBe("Vente au tribunal");
     expect(lawyerRequirementLabel(procedure)).toBe("Représentation à confirmer");
     expect(procedure.issues).toContain("Qualification détaillée en cours de vérification.");
+    expect(saleIsTribunalVenue(sale())).toBe(true);
+  });
+
+  it("does not expose tribunal activity on a confirmed notarial sale", () => {
+    expect(
+      saleIsTribunalVenue(
+        sale({
+          sale_venue_type: "notary",
+          sale_verification_status: "verified",
+          tribunal: null,
+          tribunal_code: null,
+          tribunal_name: null,
+          tribunal_city: null,
+          source_name: "notaires.fr",
+        }),
+      ),
+    ).toBe(false);
   });
 });

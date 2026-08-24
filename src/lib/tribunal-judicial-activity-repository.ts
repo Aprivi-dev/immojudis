@@ -41,8 +41,22 @@ const storedCourtSchema = z
 const storedSaleCourtSchema = z
   .object({
     tribunal_code: z.string().min(1).nullable(),
+    tribunal: z.string().min(1).nullable(),
     sale_venue_type: z.string().min(1),
     sale_verification_status: z.string().min(1),
+  })
+  .strict();
+
+const storedCompetentCourtAssignmentSchema = z
+  .object({
+    court_code: z.string().min(1),
+  })
+  .strict();
+
+const storedTribunalReferenceSchema = z
+  .object({
+    code: z.string().min(1),
+    canonical_name: z.string().min(1),
   })
   .strict();
 
@@ -164,7 +178,7 @@ export async function getTribunalJudicialActivityDirectory(
 async function resolveCourtCodeFromSale(saleId: string): Promise<string> {
   const result = await activityAdmin
     .from("auction_sales")
-    .select("tribunal_code,sale_venue_type,sale_verification_status")
+    .select("tribunal_code,tribunal,sale_venue_type,sale_verification_status")
     .eq("id", saleId)
     .limit(1)
     .maybeSingle();
@@ -177,16 +191,89 @@ async function resolveCourtCodeFromSale(saleId: string): Promise<string> {
     throw new TribunalJudicialActivityUnavailableError("No judicial sale is available.");
   }
   const sale = storedSaleCourtSchema.parse(result.data);
-  if (
-    sale.sale_venue_type !== "tribunal" ||
-    !["verified", "cross_checked"].includes(sale.sale_verification_status) ||
-    !sale.tribunal_code
-  ) {
+  if (sale.sale_venue_type !== "tribunal") {
     throw new TribunalJudicialActivityUnavailableError(
-      "The sale has no verified exact judicial court assignment.",
+      "The sale is not identified as a judicial tribunal sale.",
     );
   }
-  return sale.tribunal_code.toLocaleLowerCase("fr-FR");
+
+  if (sale.tribunal_code) return normalizeCourtCode(sale.tribunal_code);
+
+  const assignmentResult = await activityAdmin
+    .from("auction_sale_competent_court_assignments")
+    .select("court_code")
+    .eq("auction_sale_id", saleId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (assignmentResult.error) {
+    throw new TribunalJudicialActivityUnavailableError(
+      `Verified competent-court lookup failed: ${assignmentResult.error.message}`,
+    );
+  }
+  if (assignmentResult.data) {
+    const assignment = storedCompetentCourtAssignmentSchema.parse(assignmentResult.data);
+    return normalizeCourtCode(assignment.court_code);
+  }
+
+  if (sale.tribunal && ["verified", "cross_checked"].includes(sale.sale_verification_status)) {
+    const tribunalResult = await activityAdmin
+      .from("tribunals")
+      .select("code,canonical_name")
+      .eq("canonical_name", sale.tribunal)
+      .limit(1)
+      .maybeSingle();
+    if (tribunalResult.error) {
+      throw new TribunalJudicialActivityUnavailableError(
+        `Canonical court reference lookup failed: ${tribunalResult.error.message}`,
+      );
+    }
+    if (tribunalResult.data) {
+      const tribunal = storedTribunalReferenceSchema.parse(tribunalResult.data);
+      return normalizeCourtCode(tribunal.code);
+    }
+
+    const referenceResult = await activityAdmin
+      .from("tribunals")
+      .select("code,canonical_name")
+      .order("code", { ascending: true })
+      .range(0, MAX_DIRECTORY_COURTS);
+    if (referenceResult.error) {
+      throw new TribunalJudicialActivityUnavailableError(
+        `Bounded canonical court reference lookup failed: ${referenceResult.error.message}`,
+      );
+    }
+    const references = z.array(storedTribunalReferenceSchema).parse(referenceResult.data ?? []);
+    if (references.length > MAX_DIRECTORY_COURTS) {
+      throw new TribunalJudicialActivityUnavailableError(
+        "The bounded canonical court reference exceeded 250 rows.",
+      );
+    }
+    const saleCourtFingerprint = courtNameFingerprint(sale.tribunal);
+    const normalizedMatches = references.filter(
+      (reference) => courtNameFingerprint(reference.canonical_name) === saleCourtFingerprint,
+    );
+    if (normalizedMatches.length === 1) {
+      return normalizeCourtCode(normalizedMatches[0].code);
+    }
+  }
+
+  throw new TribunalJudicialActivityUnavailableError(
+    "The sale has no verified exact judicial court assignment.",
+  );
+}
+
+function normalizeCourtCode(value: string): string {
+  return value.trim().toLocaleLowerCase("fr-FR");
+}
+
+function courtNameFingerprint(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("fr-FR")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 async function loadEligibleSales(input: {

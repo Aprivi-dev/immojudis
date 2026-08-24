@@ -15,7 +15,7 @@ import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
-  saleProcedureIsConfirmed,
+  saleIsTribunalVenue,
   saleVerificationLabel,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
@@ -97,8 +97,7 @@ function SalePublicPreview({
 }) {
   const price = formatPrice(preview.starting_price_eur);
   const procedure = getSaleProcedure(preview);
-  const showTribunalActivity =
-    procedure.venueType === "tribunal" && saleProcedureIsConfirmed(procedure);
+  const showTribunalActivity = saleIsTribunalVenue(preview);
 
   return (
     <main className="min-h-screen bg-[#f7f5f3] px-4 py-10 text-foreground sm:px-6">
