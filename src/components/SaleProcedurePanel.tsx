@@ -105,7 +105,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
           <h3 className="font-display text-2xl font-semibold text-brand-navy">
             Ce que cela change pour vous
           </h3>
-          <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <ProcedureFact
               icon={Scale}
               label="Représentation"
@@ -134,7 +134,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
               value={overbidLabel(procedure)}
               detail={procedure.overbidNote}
             />
-          </dl>
+          </div>
 
           <div className="mt-5 rounded-md border border-brand-navy/10 bg-[#eef7ff] p-4">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -218,25 +218,25 @@ function ProcedureFact({
   detail: string;
 }) {
   return (
-    <div className="rounded-md border border-brand-navy/10 p-4">
+    <dl className="rounded-md border border-brand-navy/10 p-4">
       <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/55">
         <Icon className="h-4 w-4 text-gold-soft" aria-hidden />
         {label}
       </dt>
       <dd className="mt-3 text-base font-semibold leading-snug text-brand-navy">{value}</dd>
-      <p className="mt-2 text-xs leading-relaxed text-brand-navy/60">{detail}</p>
-    </div>
+      <dd className="mt-2 text-xs leading-relaxed text-brand-navy/60">{detail}</dd>
+    </dl>
   );
 }
 
 function CompactFact({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <dl>
       <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-brand-navy/50">
         {label}
       </dt>
       <dd className="mt-1 text-sm font-semibold text-brand-navy">{value}</dd>
-    </div>
+    </dl>
   );
 }
 
