@@ -6,15 +6,10 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import Calculator from "lucide-react/dist/esm/icons/calculator.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
-import Check from "lucide-react/dist/esm/icons/check.js";
-import Clock3 from "lucide-react/dist/esm/icons/clock-3.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
-import Files from "lucide-react/dist/esm/icons/files.js";
-import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Radar from "lucide-react/dist/esm/icons/radar.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
-import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useEffect, useState, type ComponentType } from "react";
 import { BrandMark } from "@/components/BrandLogo";
 import { RESOURCES_PATH } from "@/lib/navigation";
@@ -114,7 +109,7 @@ const reportOutcomes = [
     text: "Estimation de marché, fourchette de valeur et ventes comparables réunies dans une lecture cohérente.",
   },
   {
-    icon: ShieldCheck,
+    icon: Scale,
     title: "Identifier les risques",
     text: "Les points d'attention juridiques, techniques et locatifs sont rendus visibles avant de s'engager.",
   },
@@ -127,7 +122,7 @@ const reportOutcomes = [
 
 const trustPoints = [
   {
-    icon: Clock3,
+    icon: CalendarDays,
     title: "Sources et fraîcheur affichées",
     text: "Les dates et limites des données restent visibles.",
   },
@@ -137,12 +132,12 @@ const trustPoints = [
     text: "Le marché local est replacé dans son contexte.",
   },
   {
-    icon: Files,
+    icon: FileSearch,
     title: "Documents judiciaires",
     text: "Les pièces disponibles sont regroupées par vente.",
   },
   {
-    icon: ShieldCheck,
+    icon: Scale,
     title: "Niveau de confiance",
     text: "La solidité de l'analyse est explicitée.",
   },
@@ -580,7 +575,7 @@ function AuctionCardsSection() {
             </span>
             <span className="ij-card-body">
               <span className="ij-card-city">
-                <MapPin aria-hidden className="h-4 w-4" />
+                <Radar aria-hidden className="h-4 w-4" />
                 {card.city}
               </span>
               <strong>{card.title}</strong>
@@ -628,7 +623,6 @@ function OfferPlansSection() {
             <ul>
               {plan.features.map((feature) => (
                 <li key={feature}>
-                  <Check aria-hidden className="h-4 w-4" />
                   <span>{feature}</span>
                 </li>
               ))}

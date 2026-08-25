@@ -3,14 +3,11 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  search: { bien: "bordeaux" as "bordeaux" | "nantes" | "toulouse" },
-}));
+const mocks = vi.hoisted(() => ({ bien: "bordeaux" }));
 
-vi.mock("@/lib/router-compat", () => ({
-  createFileRoute: () => (options: Record<string, unknown>) => ({
-    ...options,
-    useSearch: () => mocks.search,
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => ({
+    get: (key: string) => (key === "bien" ? mocks.bien : null),
   }),
 }));
 
@@ -38,7 +35,8 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   ),
 }));
 
-import { ExampleSalePage, Route } from "@/routes/annonce-exemple";
+import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
+import { ExampleSalePage } from "@/routes/annonce-exemple";
 
 describe("ExampleSalePage", () => {
   afterEach(cleanup);
@@ -48,8 +46,8 @@ describe("ExampleSalePage", () => {
     ["nantes", "Nantes"],
     ["toulouse", "Toulouse"],
   ] as const)("rend l'exemple %s avec l'analyse publique complète", (bien, city) => {
-    mocks.search.bien = bien;
-    render(<ExampleSalePage />);
+    mocks.bien = bien;
+    render(<ExampleSalePage examples={EXAMPLE_SALE_RECORDS} />);
 
     const detail = screen.getByTestId("example-detail");
     expect(detail.dataset.city).toBe(city);
@@ -59,8 +57,9 @@ describe("ExampleSalePage", () => {
   });
 
   it("ignore l'ancien paramètre de limitation et conserve l'analyse complète", () => {
-    const validateSearch = Route.validateSearch as (search: Record<string, unknown>) => unknown;
+    mocks.bien = "decouverte";
+    render(<ExampleSalePage examples={EXAMPLE_SALE_RECORDS} />);
 
-    expect(validateSearch({ offre: "decouverte" })).toEqual({ bien: "bordeaux" });
+    expect(screen.getByTestId("example-detail").dataset.city).toBe("Bordeaux");
   });
 });

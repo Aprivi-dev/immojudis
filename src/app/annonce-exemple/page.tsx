@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
 import { ExampleSalePage } from "@/routes/annonce-exemple";
 
 export const metadata: Metadata = {
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function Page() {
   return (
     <Suspense fallback={<ExampleFallback />}>
-      <ExampleSalePage />
+      <ExampleSalePage examples={EXAMPLE_SALE_RECORDS} />
     </Suspense>
   );
 }
