@@ -1,10 +1,27 @@
 import { createHash, randomUUID } from "node:crypto";
+import { Parser } from "htmlparser2";
 import { Resend, type AttachmentData, type EmailReceivedEvent } from "resend";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 40 * 1024 * 1024;
+const MAX_HTML_BODY_CHARS = 500_000;
+const MAX_EXTRACTED_BODY_CHARS = 20_000;
+const HTML_LINE_BREAK_TAGS = new Set([
+  "blockquote",
+  "br",
+  "div",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "li",
+  "p",
+  "tr",
+]);
 const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
@@ -392,16 +409,57 @@ export function findInboundToken(
   addresses: readonly string[],
   inboundDomain: string,
 ): string | null {
-  const escapedDomain = inboundDomain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(
-    `(?:^|<)enquete\\+([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})@${escapedDomain}(?:>|$)`,
-    "i",
-  );
+  const expectedDomain = inboundDomain.trim().toLowerCase();
+  const localPartPattern =
+    /^enquete\+([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
   for (const address of addresses) {
-    const match = address.trim().match(pattern);
+    const email = normalizeEmail(address);
+    const separatorIndex = email.lastIndexOf("@");
+    if (separatorIndex <= 0 || email.slice(separatorIndex + 1) !== expectedDomain) continue;
+    const match = localPartPattern.exec(email.slice(0, separatorIndex));
     if (match?.[1]) return match[1].toLowerCase();
   }
   return null;
+}
+
+export function htmlToPlainText(value: string) {
+  let output = "";
+  let suppressedDepth = 0;
+  const append = (text: string) => {
+    if (output.length >= MAX_EXTRACTED_BODY_CHARS) return;
+    output += text.slice(0, MAX_EXTRACTED_BODY_CHARS - output.length);
+  };
+  const parser = new Parser(
+    {
+      onopentag(name) {
+        const tag = name.toLowerCase();
+        if (tag === "script" || tag === "style") {
+          suppressedDepth += 1;
+        } else if (suppressedDepth === 0 && HTML_LINE_BREAK_TAGS.has(tag)) {
+          append("\n");
+        }
+      },
+      ontext(text) {
+        if (suppressedDepth === 0) append(text);
+      },
+      onclosetag(name) {
+        const tag = name.toLowerCase();
+        if (tag === "script" || tag === "style") {
+          suppressedDepth = Math.max(0, suppressedDepth - 1);
+        } else if (suppressedDepth === 0 && HTML_LINE_BREAK_TAGS.has(tag)) {
+          append("\n");
+        }
+      },
+    },
+    { decodeEntities: true },
+  );
+  parser.end(value.slice(0, MAX_HTML_BODY_CHARS));
+  return output
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 export function extractInformationAgentFacts(bodyText: string): ExtractedInformationAgentFact[] {
@@ -480,23 +538,8 @@ function conflictsWithSale(
 
 function cleanInboundBody(text: string | null, html: string | null) {
   const source =
-    text?.trim() || stripHtml(html || "").trim() || "Réponse reçue sans corps de texte.";
+    text?.trim() || htmlToPlainText(html || "") || "Réponse reçue sans corps de texte.";
   return source.slice(0, 16000);
-}
-
-function stripHtml(value: string) {
-  return value
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n");
 }
 
 function safeFilename(value: string) {
