@@ -1,5 +1,6 @@
 "use client";
 
+import "mapbox-gl/dist/mapbox-gl.css";
 import { useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import type * as MapboxGL from "mapbox-gl";
@@ -64,7 +65,7 @@ export function MapboxPreviewButton({
           </DialogDescription>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-white/78">
-              {mode === "aerial3d" ? "Relief satellite" : "Rue immersive"}
+              {mode === "aerial3d" ? "Relief satellite" : "Carte 3D du quartier"}
             </span>
             <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-white/78">
               Navigation libre
@@ -74,7 +75,13 @@ export function MapboxPreviewButton({
             </span>
           </div>
         </DialogHeader>
-        <MapboxPreviewCanvas active={open} mode={mode} lat={lat} lng={lng} title={title} />
+        <MapboxPreviewCanvas
+          active={open}
+          mode={mode}
+          lat={lat}
+          lng={lng}
+          title={description || title}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -224,7 +231,7 @@ function MapboxPreviewCanvas({
         aria-hidden={status !== "ready"}
       />
       {status === "ready" && (
-        <div className="pointer-events-none absolute bottom-3 left-3 right-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="pointer-events-none absolute bottom-8 left-3 right-24 flex flex-col gap-2 sm:bottom-3 sm:right-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="max-w-sm rounded-lg border border-white/12 bg-[#07111f]/82 px-3 py-2 text-white shadow-lg backdrop-blur">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/58">
               {mapboxPreviewModeLabel(mode)}
@@ -232,7 +239,7 @@ function MapboxPreviewCanvas({
             <p className="mt-1 truncate text-sm font-semibold">{title}</p>
           </div>
           {coordinateLabel && (
-            <div className="w-fit rounded-full border border-white/12 bg-[#07111f]/82 px-3 py-1.5 text-xs font-semibold tabular-nums text-white/75 shadow-lg backdrop-blur">
+            <div className="hidden w-fit rounded-full border border-white/12 bg-[#07111f]/82 px-3 py-1.5 text-xs font-semibold tabular-nums text-white/75 shadow-lg backdrop-blur sm:block">
               {coordinateLabel}
             </div>
           )}

@@ -4,6 +4,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import type { Database } from "@/integrations/supabase/types";
 import {
   buildDvfComparableAnalysis,
+  DVF_PUBLIC_SOURCE_URL,
   type DvfComparableAnalysis,
   type DvfComparableCandidate,
 } from "@/lib/dvf-comparable-engine";
@@ -36,14 +37,13 @@ type DvfComparableRow = Pick<
   | "latitude"
   | "longitude"
   | "source"
-  | "source_url"
 >;
 
 const REFERENCE_SALE_COLUMNS =
   "id,title,city,department,postal_code,address,property_type,starting_price_eur,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,rooms_count,latitude,longitude";
 
 const DVF_COLUMNS =
-  "id,source_mutation_id,sale_date,mutation_nature,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source,source_url";
+  "id,source_mutation_id,sale_date,mutation_nature,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source";
 
 const optionalText = (max = 140) =>
   z.preprocess(
@@ -211,6 +211,7 @@ async function fetchDvfCandidates({
   let query = supabaseAdmin
     .from("dvf_transactions")
     .select(DVF_COLUMNS)
+    .eq("mutation_nature", "Vente")
     .gte("sale_date", minSaleDate)
     .gte("latitude", bbox.latMin)
     .lte("latitude", bbox.latMax)
@@ -263,7 +264,7 @@ function rowToComparableCandidate(
     postalCode: row.postal_code,
     parcelId: row.parcel_id,
     source: row.source,
-    sourceUrl: row.source_url,
+    sourceUrl: DVF_PUBLIC_SOURCE_URL,
   };
 }
 

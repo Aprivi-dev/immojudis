@@ -56,7 +56,7 @@ describe("SearchPagination", () => {
     expect(
       (screen.getByRole("button", { name: "Chargement..." }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    const results = await axe(container, { rules: { "color-contrast": { enabled: false } } });
+    const results = await axe(container);
     expect(results.violations).toEqual([]);
   });
 });

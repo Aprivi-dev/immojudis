@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: "auction_runs id to execute. Leave empty to process the oldest queued run."
+        description: "auction_runs id created by the admin. Leave empty for an explicit manual scan."
         required: false
         type: string
       source:
@@ -33,15 +33,14 @@ on:
         required: false
         default: false
         type: boolean
-  schedule:
-    - cron: "*/30 * * * *"
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: immojudis-data-pipeline-${{ github.event_name == 'schedule' && 'schedule' || 'worker' }}
+  # Catalogue preservation and cleanup are deliberately single-writer.
+  group: immojudis-data-pipeline
   cancel-in-progress: false
 
 jobs:
@@ -57,28 +56,35 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      REPLICATE_MODEL: zsxkib/qwen2-7b-instruct:5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4
       PIPELINE_ENRICH_WORKERS: 2
       PIPELINE_LLM_WORKERS: 1
       PIPELINE_PDF_MAX_TARGETS: 10
-      PIPELINE_LLM_MAX_TARGETS: 10
+      # 0 = synthétiser tous les biens éligibles pendant le scan courant.
+      PIPELINE_LLM_MAX_TARGETS: 0
       PIPELINE_LLM_BACKFILL_MAX_TARGETS: 10
       PIPELINE_LLM_BACKFILL_PROGRESS_EVERY: 5
-      PIPELINE_IDLE_LLM_BACKFILL_ENABLED: false
-      REPLICATE_MIN_INTERVAL_SECONDS: 15
+      REPLICATE_MIN_INTERVAL_SECONDS: 1
       REPLICATE_WAIT_SECONDS: 1
       REPLICATE_MAX_RETRIES: 4
       REPLICATE_RETRY_BACKOFF_SECONDS: 30
       REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
-      REPLICATE_MAX_TOKENS: 1024
+      REPLICATE_TEMPERATURE: 0.1
+      REPLICATE_MAX_TOKENS: 512
       LLM_EXTRACTION_MODE: display_description
-      LLM_PDF_MAX_CHARS: 6000
+      LLM_PROMPT_VERSION: auction_llm_v9_qwen2_7b_scan_display
+      LLM_FACT_PROMPT_VERSION: auction_facts_v1
+      LLM_DISPLAY_PROMPT_VERSION: auction_display_v8
+      LLM_FACT_CHUNK_CHARS: 12000
+      LLM_FACT_MAX_CHUNKS: 0
+      LLM_DISPLAY_CONTEXT_CHARS: 12000
+      LLM_PDF_MAX_CHARS: 12000
       LLM_ENABLED: true
       LLM_PROVIDER: replicate
-      LLM_PROMPT_VERSION: auction_llm_v6_display
       PDF_EXTRACTOR: auto
       PDF_DOCLING_ENABLED: false
       PDF_OCR_ENABLED: true
-      PDF_MAX_DOCUMENTS_PER_SALE: 2
+      PDF_MAX_DOCUMENTS_PER_SALE: 6
       ENABLE_LICITOR_BENCHMARK: true
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
@@ -88,134 +94,11 @@ jobs:
       ENABLE_AGRASC_BENCHMARK: true
       ENABLE_ENCHERES_IMMOBILIERES_BENCHMARK: true
       ENABLE_NOTAIRES_BENCHMARK: true
-      GITHUB_TOKEN: ${{ github.token }}
     steps:
-      - name: Preflight scheduled work
-        id: preflight
-        working-directory: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-
-          if [ "${GITHUB_EVENT_NAME:-}" != "schedule" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=manual_or_dispatch" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=missing_supabase_env" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          rest_url="${SUPABASE_URL%/}/rest/v1"
-          auth_headers=(
-            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}"
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}"
-            -H "Accept: application/json"
-          )
-          github_headers=(
-            -H "Authorization: Bearer ${GITHUB_TOKEN:-}"
-            -H "Accept: application/vnd.github+json"
-            -H "X-GitHub-Api-Version: 2022-11-28"
-          )
-
-          has_rows() {
-            local table="$1"
-            shift
-            local response
-            if ! response="$(curl -fsS --get "${auth_headers[@]}" "$rest_url/$table" "$@")"; then
-              echo "Preflight query failed for $table; running full worker."
-              echo "should_run=true" >> "$GITHUB_OUTPUT"
-              echo "reason=preflight_query_failed" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            [ "$(jq 'length' <<< "$response")" -gt 0 ]
-          }
-
-          cutoff="$(date -u -d '190 minutes ago' +'%Y-%m-%dT%H:%M:%SZ')"
-          now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-
-          if [ -n "${GITHUB_TOKEN:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
-            workflow_url="${GITHUB_API_URL:-https://api.github.com}/repos/${GITHUB_REPOSITORY}/actions/workflows/data-pipeline.yml/runs"
-            for workflow_status in in_progress queued; do
-              if ! response="$(curl -fsS --get "${github_headers[@]}" "$workflow_url" \
-                --data-urlencode "branch=${GITHUB_REF_NAME:-main}" \
-                --data-urlencode "status=${workflow_status}" \
-                --data-urlencode "per_page=20")"; then
-                echo "GitHub workflow lookup failed; continuing with Supabase preflight."
-                continue
-              fi
-              if jq -e --arg current "${GITHUB_RUN_ID}" \
-                '[.workflow_runs[] | select((.id | tostring) != $current and .event != "schedule")] | length > 0' \
-                <<< "$response" >/dev/null; then
-                echo "Another manual data pipeline run is already active; skipping scheduled preflight."
-                echo "should_run=false" >> "$GITHUB_OUTPUT"
-                echo "reason=manual_pipeline_active" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            done
-          fi
-
-          if has_rows auction_runs \
-            --data-urlencode "select=id" \
-            --data-urlencode "status=eq.running" \
-            --data-urlencode "started_at=lt.$cutoff" \
-            --data-urlencode "limit=1"; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=stale_running_run" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if has_rows auction_runs \
-            --data-urlencode "select=id" \
-            --data-urlencode "status=eq.running" \
-            --data-urlencode "started_at=gte.$cutoff" \
-            --data-urlencode "limit=1"; then
-            echo "Active data pipeline run found; skipping scheduled worker."
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "reason=active_running_run" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if has_rows auction_runs \
-            --data-urlencode "select=id" \
-            --data-urlencode "status=eq.queued" \
-            --data-urlencode "limit=1"; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=queued_auction_run" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if has_rows data_refresh_requests \
-            --data-urlencode "select=id" \
-            --data-urlencode "status=eq.queued" \
-            --data-urlencode "limit=1"; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=queued_data_refresh" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if has_rows auction_sales \
-            --data-urlencode "select=source_url" \
-            --data-urlencode "sale_date=lt.$now" \
-            --data-urlencode "or=(status.eq.active,status.eq.upcoming)" \
-            --data-urlencode "limit=1"; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=past_sales_maintenance" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "No queued data work found; skipping dependency setup."
-          echo "should_run=false" >> "$GITHUB_OUTPUT"
-          echo "reason=no_scheduled_work" >> "$GITHUB_OUTPUT"
-
       - name: Check out repository
-        if: steps.preflight.outputs.should_run == 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python
-        if: steps.preflight.outputs.should_run == 'true'
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
@@ -223,7 +106,6 @@ jobs:
           cache-dependency-path: services/data-pipeline/requirements.txt
 
       - name: Restore pipeline extraction cache
-        if: steps.preflight.outputs.should_run == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
@@ -235,8 +117,15 @@ jobs:
           restore-keys: |
             immojudis-data-pipeline-${{ runner.os }}-
 
+      - name: Restore verified Justice reference cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: services/data-pipeline/data/raw/outcome_sources/justice_courts
+          key: immojudis-justice-reference-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            immojudis-justice-reference-${{ runner.os }}-
+
       - name: Install document extraction packages
-        if: steps.preflight.outputs.should_run == 'true'
         run: |
           packages=(antiword)
           if [ "${PDF_OCR_ENABLED:-false}" = "true" ]; then
@@ -246,11 +135,12 @@ jobs:
           sudo apt-get install -y "${packages[@]}"
 
       - name: Install Python dependencies
-        if: steps.preflight.outputs.should_run == 'true'
         run: python -m pip install -r requirements.txt
 
-      - name: Run requested or queued pipeline
-        if: steps.preflight.outputs.should_run == 'true'
+      - name: Refresh and verify official Justice references
+        run: python -m src.official_sources.justice_reference_sync
+
+      - name: Run manually requested pipeline
         env:
           REQUESTED_RUN_ID: ${{ github.event.inputs.run_id }}
           REQUESTED_SOURCE: ${{ github.event.inputs.source }}
@@ -259,18 +149,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -n "$REQUESTED_RUN_ID" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
-            args=(--source "${REQUESTED_SOURCE:-all}")
-            if [ "${REQUESTED_LLM_BACKFILL:-false}" = "true" ]; then
-              args+=(--backfill-llm-descriptions)
-            fi
-            if [ -n "$REQUESTED_RUN_ID" ]; then
-              args+=(--run-id "$REQUESTED_RUN_ID")
-            fi
-            if [ -n "$REQUESTED_LIMIT" ]; then
-              args+=(--limit "$REQUESTED_LIMIT")
-            fi
-            python -m src.main "${args[@]}"
-          else
-            python -m src.queued_runner
+          args=(--source "${REQUESTED_SOURCE:-all}")
+          if [ "${REQUESTED_LLM_BACKFILL:-false}" = "true" ]; then
+            args+=(--backfill-llm-descriptions)
           fi
+          if [ -n "$REQUESTED_RUN_ID" ]; then
+            args+=(--run-id "$REQUESTED_RUN_ID")
+          fi
+          if [ -n "$REQUESTED_LIMIT" ]; then
+            args+=(--limit "$REQUESTED_LIMIT")
+          fi
+          python -m src.main "${args[@]}"

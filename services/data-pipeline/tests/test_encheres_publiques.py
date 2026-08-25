@@ -2,11 +2,31 @@ from decimal import Decimal
 
 from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
+from src.sources.common import is_allowed_origin_url
 from src.sources.encheres_publiques import (
+    BASE_URL,
+    CANONICAL_BASE_URL,
     _enrich_sale_from_detail,
     parse_encheres_publiques_detail_html,
     parse_encheres_publiques_html,
 )
+
+
+def test_encheres_publiques_accepts_only_its_www_and_canonical_origins() -> None:
+    allowed_origins = (BASE_URL, CANONICAL_BASE_URL)
+
+    assert is_allowed_origin_url(
+        "https://www.encheres-publiques.com/encheres/immobilier/lot_1",
+        allowed_origins,
+    )
+    assert is_allowed_origin_url(
+        "https://encheres-publiques.com/encheres/immobilier/lot_1",
+        allowed_origins,
+    )
+    assert not is_allowed_origin_url(
+        "https://encheres-publiques.com.evil.example/encheres/immobilier/lot_1",
+        allowed_origins,
+    )
 
 
 def test_parse_encheres_publiques_html_reads_next_apollo_state() -> None:
@@ -328,6 +348,8 @@ def test_parse_encheres_publiques_detail_html_extracts_rich_lot_context() -> Non
     assert "Libre de toute occupation" in (sale.raw_text or "")
     assert "autorisation" not in (sale.raw_text or "")
     assert raw_sale["source_blocks"]["renseignements_de_vente"].startswith("Texte générique")
+    assert raw_sale["source_blocks"]["organisateur"] == "OFFICE NOTARIAL DU JEU DE PAUME"
+    assert raw_sale["source_blocks"]["organisateur_categorie"] == "notaire"
     assert raw_sale["source_images"] == ["https://www.encheres-publiques.com/static/lot/photo/bordeaux.jpg"]
 
 

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { HomeRouteClient } from "./_route-clients/HomeRouteClient";
+import { HomePage } from "@/routes/index";
 
 export const metadata: Metadata = {
   title: "Immojudis - L'immobilier judiciaire en toute clarté",
@@ -28,7 +28,7 @@ export default function Page() {
           __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
         }}
       />
-      <HomeRouteClient />
+      <HomePage />
     </>
   );
 }

@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute, Link, useNavigate } from "@/lib/router-compat";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
@@ -69,7 +71,7 @@ const modeCopy: Record<
   },
 };
 
-function LoginPage() {
+export function LoginPage() {
   const { user, profile } = useAuth();
   const { redirect, mode: requestedMode } = Route.useSearch();
   const navigate = useNavigate();
@@ -374,7 +376,7 @@ function ModeButton({
       onClick={onClick}
       className={`rounded-md px-3 py-2 text-[11px] font-bold uppercase tracking-[0.14em] transition ${
         active
-          ? "bg-gold text-background shadow-[0_12px_28px_rgb(242_196_135_/_18%)]"
+          ? "bg-gold text-brand-navy shadow-[0_12px_28px_rgb(242_196_135_/_18%)]"
           : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
       }`}
     >

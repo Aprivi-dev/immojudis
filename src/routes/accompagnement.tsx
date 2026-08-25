@@ -1,3 +1,5 @@
+"use client";
+
 import type { ReactNode } from "react";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
@@ -8,6 +10,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Target from "lucide-react/dist/esm/icons/target.js";
 import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
+
 import { createFileRoute, Link } from "@/lib/router-compat";
 
 export const Route = createFileRoute("/accompagnement")({
@@ -36,10 +39,11 @@ const analysisFeatures = [
   "Mise plafond avec travaux incluse par défaut",
   "Estimation du bien et ventes comparables",
   "Détail des frais, travaux, risques et pièces",
+  "3 enquêtes IA supervisées par période de 30 jours",
   "Mise en relation avec un avocat depuis le dossier",
 ] as const;
 
-function AccompagnementPage() {
+export function AccompagnementPage() {
   return (
     <main className="min-h-screen bg-white text-brand-navy">
       <section className="border-b border-brand-navy/10 bg-[#eef7ff]">
@@ -54,10 +58,10 @@ function AccompagnementPage() {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link
-                to="/annonce-exemple"
+                href="/#exemples"
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-gold-soft px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gold"
               >
-                Voir une annonce analysée
+                Voir les exemples sur l'accueil
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
               <Link
@@ -97,7 +101,7 @@ function AccompagnementPage() {
             features={analysisFeatures}
             highlighted
           >
-            <p className="mb-3 text-center text-xs font-medium text-brand-navy/55">
+            <p className="mb-3 text-center text-xs font-medium text-brand-navy/70">
               Paiement unique · sans abonnement
             </p>
             <BillingActions hideHelper className="[&>button]:w-full" />

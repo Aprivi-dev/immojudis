@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute, Link } from "@/lib/router-compat";
 import { useQuery } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
@@ -7,6 +9,7 @@ import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import type { ReactElement } from "react";
+import { AdminShell } from "@/components/admin/AdminShell";
 import { getSales } from "@/lib/queries";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import type { AuctionSale } from "@/lib/types";
@@ -25,14 +28,19 @@ export const Route = createFileRoute("/admin/quality")({
   component: AdminQualityPage,
 });
 
-function AdminQualityPage() {
-  const { data, isLoading, error } = useQuery({
+export function AdminQualityPage() {
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["admin-quality-sales"],
     queryFn: () => getSales({}, 500, "date_asc"),
     staleTime: 60_000,
   });
   const sales = data ?? [];
-  const { data: valuationOverview, isLoading: valuationLoading } = useQuery({
+  const {
+    data: valuationOverview,
+    isLoading: valuationLoading,
+    refetch: refetchValuation,
+    isFetching: valuationFetching,
+  } = useQuery({
     queryKey: ["admin-valuation-overview"],
     queryFn: fetchValuationAdminOverview,
     staleTime: 60_000,
@@ -51,28 +59,17 @@ function AdminQualityPage() {
     .slice(0, 12);
 
   return (
-    <main className="liquid-page min-h-screen bg-background px-4 py-8">
-      <div className="mx-auto max-w-6xl">
-        <header className="glass-shell flex flex-wrap items-end justify-between gap-4 rounded-lg p-6 sm:p-8">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
-              Admin qualité
-            </div>
-            <h1 className="mt-4 font-display text-4xl leading-tight text-foreground sm:text-5xl">
-              Pilotage data & scoring
-            </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              Vue interne pour repérer rapidement les ventes qui fragilisent la confiance produit.
-            </p>
-          </div>
-          <Link
-            to="/sales"
-            className="liquid-button rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-wide text-background"
-          >
-            Retour annonces
-          </Link>
-        </header>
-
+    <AdminShell
+      activeSection="quality"
+      title="Qualité des données"
+      description="Repérez les dossiers qui fragilisent la confiance produit."
+      onRefresh={() => {
+        void refetch();
+        void refetchValuation();
+      }}
+      isRefreshing={isFetching || valuationFetching}
+    >
+      <div className="max-w-[92rem]">
         {error && (
           <div className="mt-6 rounded-lg border border-red-300/20 bg-red-500/10 p-4 text-sm text-red-100">
             {error instanceof Error ? error.message : "Erreur de chargement"}
@@ -258,7 +255,7 @@ function AdminQualityPage() {
           </div>
         </section>
       </div>
-    </main>
+    </AdminShell>
   );
 }
 

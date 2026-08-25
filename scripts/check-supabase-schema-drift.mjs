@@ -10,7 +10,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvironmentFiles(root);
 
 const remote = process.argv.includes("--remote");
-const target = remote
+const configuredTarget = remote
   ? firstFilledEnv(
       process.env.SUPABASE_DB_URL,
       process.env.POSTGRES_URL_NON_POOLING,
@@ -18,10 +18,12 @@ const target = remote
     )
   : "local";
 
-if (!target) {
+if (!configuredTarget) {
   console.error("[schema-drift] A direct Postgres URL is required for --remote.");
   process.exit(1);
 }
+
+const target = remote ? withMaintenanceSessionSettings(configuredTarget) : configuredTarget;
 
 const temporaryDirectory = mkdtempSync(join(tmpdir(), "immojudis-schema-drift-"));
 const outputPath = join(temporaryDirectory, "drift.sql");
@@ -48,6 +50,10 @@ try {
     {
       cwd: root,
       encoding: "utf8",
+      env: {
+        ...process.env,
+        PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || "600",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -58,12 +64,13 @@ try {
     process.exit(result.status ?? 1);
   }
 
-  const diff = existsSync(outputPath) ? readFileSync(outputPath, "utf8").trim() : "";
+  const rawDiff = existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "";
+  const diff = normalizeDiff(rawDiff);
   if (diff) {
     console.error(
       `[schema-drift] ${remote ? "Production" : "Local database"} differs from committed migrations.`,
     );
-    console.error(diff.slice(0, 4_000));
+    console.error(diff.slice(0, 40_000));
     process.exit(1);
   }
 
@@ -98,6 +105,46 @@ function loadEnvironmentFiles(directory) {
 
 function firstFilledEnv(...values) {
   return values.find((value) => !isMissing(value))?.trim();
+}
+
+function withMaintenanceSessionSettings(databaseUrl) {
+  const url = new URL(databaseUrl);
+  if (url.hostname.endsWith(".pooler.supabase.com")) url.port = "5432";
+  url.searchParams.set("connect_timeout", process.env.PGCONNECT_TIMEOUT || "600");
+  const existingOptions = url.searchParams.get("options")?.trim();
+  if (!existingOptions?.includes("statement_timeout")) {
+    url.searchParams.set(
+      "options",
+      [existingOptions, "-c statement_timeout=0 -c lock_timeout=0"].filter(Boolean).join(" "),
+    );
+  }
+  return url.toString();
+}
+
+function normalizeDiff(value) {
+  return value
+    .split(/\r?\n/)
+    .filter((line) => {
+      const normalized = line.trim();
+      if (!normalized) return false;
+
+      // Supabase installs pg_net in a non-relocatable platform-selected schema.
+      // Its presence and behavior are covered by pgTAP, so schema placement is
+      // intentionally outside the application-owned drift boundary.
+      if (/^CREATE EXTENSION pg_net WITH SCHEMA public;$/i.test(normalized)) return false;
+
+      // This read-only connector role is managed outside migrations. Ignore its
+      // grants without masking changes to application roles or objects.
+      if (/\blovable_readonly\b/i.test(normalized)) return false;
+
+      return !(
+        /^-- Migration unit \d+:/i.test(normalized) ||
+        /^-- (Transaction mode|Boundary reason):/i.test(normalized) ||
+        /^SET check_function_bodies = false;$/i.test(normalized)
+      );
+    })
+    .join("\n")
+    .trim();
 }
 
 function isMissing(value) {

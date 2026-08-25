@@ -48,6 +48,16 @@ describe("admin readiness", () => {
       CRON_SECRET: "cron-secret",
       GITHUB_SCROLL_TOKEN: "ghp_test",
       REPLICATE_API_TOKEN: "replicate-token-test",
+      NEXT_PUBLIC_LEGAL_ENTITY_NAME: "ImmoJudis SAS",
+      NEXT_PUBLIC_LEGAL_ENTITY_FORM: "SAS",
+      NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS: "1 rue de Paris, 75001 Paris",
+      NEXT_PUBLIC_LEGAL_REGISTRATION: "RCS Paris 000 000 000",
+      NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR: "Direction ImmoJudis",
+      NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "contact@immojudis.fr",
+      NEXT_PUBLIC_LEGAL_CONTACT_PHONE: "+33 1 00 00 00 00",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_NAME: "Médiateur de la consommation",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_ADDRESS: "1 rue de la Médiation, 75001 Paris",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_WEBSITE: "https://mediateur.example",
     });
 
     expect(items.every((item) => item.status === "ready")).toBe(true);
@@ -57,7 +67,7 @@ describe("admin readiness", () => {
     expect(
       aiDescriptionItem({
         status: "blocked",
-        promptVersion: "auction_llm_v6_display",
+        promptVersion: "auction_llm_v9_qwen2_7b_scan_display",
         activeUpcomingCount: 149,
         coveredCurrentCount: 145,
         missingCurrentCount: 4,
@@ -78,7 +88,7 @@ describe("admin readiness", () => {
     expect(
       aiDescriptionItem({
         status: "ready",
-        promptVersion: "auction_llm_v6_display",
+        promptVersion: "auction_llm_v9_qwen2_7b_scan_display",
         activeUpcomingCount: 149,
         coveredCurrentCount: 149,
         missingCurrentCount: 0,
@@ -98,6 +108,12 @@ describe("admin readiness", () => {
         status: "blocked",
         schedulerActive: true,
         schedulerSchedule: "*/15 * * * *",
+        sloTargetPercent: 99.5,
+        sloWindowDays: 30,
+        successfulRunCount: 98,
+        failedRunCount: 2,
+        totalRunCount: 100,
+        successRatePercent: 98,
         openAlertCount: 1,
         criticalOpenAlertCount: 0,
         pendingDeliveryCount: 0,
@@ -110,6 +126,33 @@ describe("admin readiness", () => {
       key: "operations.health",
       status: "blocked",
       action: expect.stringContaining("canal externe"),
+    });
+  });
+
+  it("surfaces an unmet health SLO without inventing an operational incident", () => {
+    expect(
+      operationalHealthItem({
+        status: "warning",
+        schedulerActive: true,
+        schedulerSchedule: "*/15 * * * *",
+        sloTargetPercent: 99.5,
+        sloWindowDays: 30,
+        successfulRunCount: 98,
+        failedRunCount: 2,
+        totalRunCount: 100,
+        successRatePercent: 98,
+        openAlertCount: 0,
+        criticalOpenAlertCount: 0,
+        pendingDeliveryCount: 0,
+        failedDeliveryCount: 0,
+        lastHealthRunAt: "2026-07-29T14:15:00.000Z",
+        alerts: [],
+        detail: "Le contrôle de santé atteint 98.000 % sur 30 jours, sous le SLO de 99.5 %.",
+      }),
+    ).toMatchObject({
+      key: "operations.health",
+      status: "warning",
+      action: expect.stringContaining("exécutions en échec"),
     });
   });
 });

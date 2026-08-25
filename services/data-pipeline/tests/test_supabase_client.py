@@ -1,11 +1,41 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import httpx
 import pytest
 
+from src.court_competence import CompetentCourtAssignment
 from src.normalize import normalize_sale
 from src.storage import supabase_client
 from src.storage.supabase_client import _sanitize_postgrest_payload, _secondary_source_urls
+
+
+def test_postgrest_upsert_batch_retries_cloudflare_520(monkeypatch) -> None:
+    responses = iter(
+        [
+            httpx.Response(520, request=httpx.Request("POST", "https://supabase.test/rest/v1/properties")),
+            httpx.Response(201, request=httpx.Request("POST", "https://supabase.test/rest/v1/properties")),
+        ]
+    )
+    attempts: list[int] = []
+
+    def fake_post(*args, **kwargs):
+        attempts.append(1)
+        return next(responses)
+
+    monkeypatch.setattr(supabase_client.httpx, "post", fake_post)
+    monkeypatch.setattr(supabase_client.time, "sleep", lambda _seconds: None)
+
+    response = supabase_client._postgrest_upsert_batch(
+        "https://supabase.test/rest/v1/properties",
+        "secret",
+        "properties",
+        [{"source_url": "https://example.test/sale"}],
+        "source_url",
+    )
+
+    assert response.status_code == 201
+    assert len(attempts) == 2
 
 
 def test_sanitize_postgrest_payload_removes_null_characters_recursively() -> None:
@@ -497,7 +527,9 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     monkeypatch.setattr(
         supabase_client,
         "_delete_secondary_sale_rows_with_postgres",
-        lambda db_url, sales: calls.append((db_url, "delete_secondary", len(sales))) or 0,
+        lambda *args: (_ for _ in ()).throw(
+            AssertionError("upsert must not delete secondary rows before the Outcome Graph bridge")
+        ),
     )
     monkeypatch.setattr(
         supabase_client,
@@ -520,10 +552,156 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     assert supabase_client.upsert_sales_to_supabase([sale]) == 1
     assert calls == [
         ("postgresql://example", "auction_sales", 1),
-        ("postgresql://example", "delete_secondary", 1),
         ("https://supabase.test", "normalized_tables", 1),
         ("https://supabase.test", "asset_tables", 1),
     ]
+
+
+def test_upsert_sales_via_rest_does_not_delete_secondary_rows(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/primary",
+            "source_urls": [
+                "https://example.test/primary",
+                "https://example.test/secondary",
+            ],
+        }
+    )
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_with_rest",
+        lambda *args, **kwargs: calls.append("upsert"),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_delete_secondary_sale_rows",
+        lambda *args: (_ for _ in ()).throw(
+            AssertionError("upsert must not delete secondary rows before the Outcome Graph bridge")
+        ),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_sync_normalized_sale_tables_with_rest",
+        lambda *args, **kwargs: calls.append("normalized"),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_asset_tables_with_rest",
+        lambda *args, **kwargs: calls.append("assets"),
+    )
+
+    assert supabase_client.upsert_sales_to_supabase([sale]) == 1
+    assert calls == ["upsert", "normalized", "assets"]
+
+
+def test_upsert_sales_registers_verified_competent_court_before_sale(monkeypatch) -> None:
+    assignment = CompetentCourtAssignment(
+        insee_code="01187",
+        commune_name="HAUT VALROMEY",
+        court_code="justice_tj_1_39",
+        court_name="TJ Bourg-en-Bresse",
+        official_court_name="Tribunal judiciaire de Bourg-en-Bresse",
+        court_origin_code="1",
+        court_srj_code="39",
+        court_department="01",
+        court_city="Bourg-en-Bresse",
+        reference_sha256="c" * 64,
+    )
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/haut-valromey",
+            "tribunal": assignment.court_name,
+            "tribunal_code": assignment.court_code,
+            "raw_payload": {"tribunal_assignment": assignment.evidence()},
+        }
+    )
+    sale.raw_payload["tribunal_assignment"] = assignment.evidence()
+    calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda _url, _key, table, payload, on_conflict: calls.append((table, (payload, on_conflict))),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_with_rest",
+        lambda *_args, **_kwargs: calls.append(("auction_sales", None)),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_sync_normalized_sale_tables_with_rest",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_asset_tables_with_rest",
+        lambda *args, **kwargs: None,
+    )
+
+    assert supabase_client.upsert_sales_to_supabase([sale]) == 1
+
+    assert calls[0][0] == "tribunals"
+    tribunal_payload, on_conflict = calls[0][1]
+    assert on_conflict == "code"
+    assert tribunal_payload[0]["code"] == "justice_tj_1_39"
+    assert calls[1] == ("auction_sales", None)
+
+
+def test_secondary_sale_cleanup_is_explicit_and_uses_postgres(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/primary",
+            "source_urls": [
+                "https://example.test/primary",
+                "https://example.test/secondary",
+            ],
+        }
+    )
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://example",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_delete_secondary_sale_rows_with_postgres",
+        lambda db_url, sales: calls.append("delete_secondary") or 1,
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_delete_secondary_sale_rows",
+        lambda *args: (_ for _ in ()).throw(AssertionError("REST fallback should not run")),
+    )
+
+    assert supabase_client.delete_secondary_sales_in_supabase([sale]) == 1
+    assert calls == ["delete_secondary"]
 
 
 def test_upsert_sales_can_preserve_last_seen_during_recompute(monkeypatch) -> None:
@@ -946,6 +1124,10 @@ def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
     )
 
     assert [table for table, _filter in delete_calls] == [
+        "auction_surface_derivations",
+        "auction_surface_derivations",
+        "auction_surface_measurements",
+        "auction_surface_measurements",
         "auction_risks",
         "auction_risks",
         "auction_risk_occurrences",
@@ -957,6 +1139,60 @@ def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
     ]
     assert delete_calls[0][1].count("https://example.test") == supabase_client.POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE
     assert delete_calls[1][1].count("https://example.test") == 1
+
+
+def test_surface_reasoning_rows_preserve_evidence_and_formula() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_immobilieres",
+            "source_url": "https://example.test/surface-persistence",
+        }
+    )
+    sale.raw_payload["surface_analysis"] = {
+        "version": "surface_reasoning_v1",
+        "selected_derivation_id": "derivation-1",
+        "measurements": [
+            {
+                "measurement_id": "measurement-1",
+                "asset_id": "asset-main",
+                "space_label": "séjour",
+                "category": "habitable",
+                "value_m2": "19.56",
+                "included_in_habitable_sum": True,
+                "confidence": 0.93,
+                "extraction_method": "llm",
+                "evidence": {
+                    "quote": "séjour (19,56 m²)",
+                    "document_label": "PV descriptif",
+                    "page_number": 3,
+                },
+            }
+        ],
+        "candidates": [],
+        "derivations": [
+            {
+                "derivation_id": "derivation-1",
+                "asset_id": "asset-main",
+                "kind": "calculated_room_sum",
+                "value_m2": "19.56",
+                "operand_measurement_ids": ["measurement-1"],
+                "formula": "19.56 = 19.56 m²",
+                "validation_status": "partial",
+                "confidence": 0.68,
+                "warnings": ["room_measurement_set_may_be_incomplete"],
+            }
+        ],
+    }
+
+    measurements = supabase_client._surface_measurement_rows_for_sale(sale)
+    derivations = supabase_client._surface_derivation_rows_for_sale(sale)
+
+    assert measurements[0]["evidence_quote"] == "séjour (19,56 m²)"
+    assert measurements[0]["page_number"] == 3
+    assert measurements[0]["reasoning_version"] == "surface_reasoning_v1"
+    assert derivations[0]["formula"] == "19.56 = 19.56 m²"
+    assert derivations[0]["is_selected"] is True
+    assert derivations[0]["operand_measurement_keys"] == [measurements[0]["measurement_key"]]
 
 
 def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:

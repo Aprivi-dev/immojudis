@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getSales, rpc } = vi.hoisted(() => ({ getSales: vi.fn(), rpc: vi.fn() }));
+const { getSales, getSalesWithCoords, rpc } = vi.hoisted(() => ({
+  getSales: vi.fn(),
+  getSalesWithCoords: vi.fn(),
+  rpc: vi.fn(),
+}));
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: { rpc },
@@ -9,14 +13,15 @@ vi.mock("@/integrations/supabase/client", () => ({
 vi.mock("@/lib/queries", () => ({
   getSales,
   getSalesCount: vi.fn(),
-  getSalesWithCoords: vi.fn(),
+  getSalesWithCoords,
 }));
 
-import { fetchSearchCount, fetchSearchResults } from "./search-service";
+import { fetchSearchCount, fetchSearchMapResults, fetchSearchResults } from "./search-service";
 
 describe("public preview search service", () => {
   beforeEach(() => {
     getSales.mockReset();
+    getSalesWithCoords.mockReset();
     rpc.mockReset();
   });
 
@@ -32,6 +37,41 @@ describe("public preview search service", () => {
     expect(getSales).toHaveBeenCalledWith(expect.any(Object), 24, "date_desc", 48, {
       discovery: true,
     });
+  });
+
+  it("excludes homepage example sales from authenticated and map results", async () => {
+    const example = {
+      id: "example-immojudis-nantes-maison",
+      source_name: "Dossier de démonstration Immojudis",
+    };
+    const realSale = { id: "49deebe5-bbba-4c8a-9f4e-237a2edbae94" };
+    getSales.mockResolvedValue([example, realSale]);
+    getSalesWithCoords.mockResolvedValue([realSale, example]);
+
+    await expect(fetchSearchResults({ search: {}, preview: false })).resolves.toEqual([realSale]);
+    await expect(fetchSearchMapResults({})).resolves.toEqual([realSale]);
+  });
+
+  it("excludes homepage example sales from anonymous preview results", async () => {
+    rpc.mockResolvedValue({
+      data: [
+        {
+          id: "example-immojudis-bordeaux-t2",
+          starting_price_eur: 92_000,
+          total_count: 2,
+        },
+        {
+          id: "49deebe5-bbba-4c8a-9f4e-237a2edbae94",
+          starting_price_eur: 135_000,
+          total_count: 2,
+        },
+      ],
+      error: null,
+    });
+
+    await expect(fetchSearchResults({ search: {}, preview: true })).resolves.toEqual([
+      { id: "49deebe5-bbba-4c8a-9f4e-237a2edbae94", starting_price_eur: 135_000 },
+    ]);
   });
 
   it("deduplicates the preview request and sends expanded region departments", async () => {

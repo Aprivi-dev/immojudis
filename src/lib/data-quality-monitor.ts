@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
 import { extractDpe } from "@/lib/dpe";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
+import { getSaleProcedure } from "@/lib/sale-procedure";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
@@ -159,6 +160,18 @@ function assertAdmin(context: AdminContext): string {
 
 function buildFieldMetrics(sales: AuctionSale[]): DataQualityMetric[] {
   return [
+    metric({
+      key: "sale_procedure",
+      label: "Procédure de vente vérifiée",
+      sales,
+      predicate: hasVerifiedSaleProcedure,
+      productImpact:
+        "Conditionne le lieu de vente, le recours à un avocat, la consignation et les délais affichés au visiteur.",
+      nextAction:
+        "Rapprocher l'annonce, les pièces et le référentiel officiel avant de publier une qualification définitive.",
+      warningPct: 90,
+      healthyPct: 98,
+    }),
     metric({
       key: "ai_description",
       label: "Synthèse IA publique",
@@ -470,6 +483,15 @@ function hasCadastreSignal(sale: AuctionSale): boolean {
 
 function hasSourceTrace(sale: AuctionSale): boolean {
   return Boolean(sale.source_url || sale.primary_source || sale.source_name || sale.source_urls);
+}
+
+function hasVerifiedSaleProcedure(sale: AuctionSale): boolean {
+  const procedure = getSaleProcedure(sale);
+  return (
+    procedure.procedure != null &&
+    (procedure.verificationStatus === "verified" ||
+      procedure.verificationStatus === "cross_checked")
+  );
 }
 
 function hasAiDisplayDescription(sale: AuctionSale): boolean {

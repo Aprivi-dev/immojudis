@@ -5,6 +5,17 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Major upgrades require an explicit migration plan. Let Dependabot keep
+    # delivering security updates plus routine minor and patch maintenance
+    # without creating predictably broken Vercel previews.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+      # These minor releases deliberately change generated formatting or the
+      # pinned Stripe API version. Upgrade them in dedicated migration PRs.
+      - dependency-name: prettier
+      - dependency-name: stripe
     groups:
       production-dependencies:
         dependency-type: production
