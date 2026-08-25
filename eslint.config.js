@@ -19,6 +19,7 @@ export default tseslint.config(
       ".tanstack",
       ".vercel",
       ".vinxi",
+      "supabase/.temp",
     ],
   },
   {

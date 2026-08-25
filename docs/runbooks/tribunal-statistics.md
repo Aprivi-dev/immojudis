@@ -1,6 +1,6 @@
 # Statistiques par tribunal — runbook d’exploitation
 
-_Version 0.6 — 20 août 2026. Cette fonctionnalité est une restitution descriptive expérimentale. Elle ne constitue ni une prédiction individuelle, ni une garantie de prix ou d’issue._
+_Version 0.7 — 24 août 2026. Cette fonctionnalité est une restitution descriptive expérimentale. Elle ne constitue ni une prédiction individuelle, ni une garantie de prix ou d’issue._
 
 ## Résumé opérateur
 
@@ -21,8 +21,11 @@ annonce, y compris la fiche publique anonyme. Le client fournit soit le code tri
 l'identifiant de l'annonce ; dans ce second cas, le serveur résout le code sans renvoyer la ligne
 source. La route `GET /api/v1/tribunals/judicial-activity/directory` alimente l’explorateur public
 `/tribunaux` en chargeant une seule fois les tribunaux actifs et les annonces admissibles, puis en
-agrégeant côté serveur. Aucune ligne source n’est renvoyée. Ces routes ne dépendent pas des outcomes
-et ne produisent aucune probabilité. Elles comptent uniquement
+agrégeant côté serveur dans l’ordre France entière → ressort judiciaire → tribunal. Les médianes
+nationales et régionales sont recalculées sur les annonces unitaires de leur périmètre et ne sont
+jamais des moyennes de médianes tribunal. Le contrat v2 publie aussi la part de profils tribunal dont
+les repères de prix et d’anticipation franchissent leur seuil. Aucune ligne source n’est renvoyée.
+Ces routes ne dépendent pas des outcomes et ne produisent aucune probabilité. Elles comptent uniquement
 les annonces qui satisfont simultanément les conditions suivantes :
 
 - `sale_venue_type = tribunal` ;
@@ -44,6 +47,9 @@ Cette route mesure la couverture Immojudis et non l’activité exhaustive du gr
 ne renvoie aucune adresse, identité, URL source, texte brut ou dossier individuel, et utilise un cache
 partagé de cinq minutes. Une lecture échouée produit une indisponibilité ; elle n’est jamais transformée
 en zéro activité.
+
+La priorisation des sources ouvertes et les tranches d’enrichissement sont suivies dans
+[`docs/statistics-data-enrichment-roadmap.md`](../statistics-data-enrichment-roadmap.md).
 
 En cas de doute sur la provenance, les dénominateurs, la revue ou le cutoff :
 
@@ -223,6 +229,59 @@ Avant tout build :
 Avant toute nouvelle collecte Judilibre, régénérer sur PISTE les identifiants qui ont été exposés pendant la configuration, remplacer les secrets dans le coffre de l’environnement visé, puis révoquer les anciennes valeurs. Ne jamais placer un secret PISTE dans Git, une commande documentée, une capture, un log ou une variable publique du frontend.
 
 Le builder doit toujours commencer en **dry-run**. Ce mode calcule les agrégats et les manifestes, affiche uniquement un résumé opérateur non personnel — qui peut contenir des effectifs exacts privés — et n’insère ni snapshot ni membre.
+
+## Référence historique StatJur
+
+Le tableau StatJur « Activité civile des tribunaux de grande instance », type `T1`, expose les
+affaires nouvelles et terminées de la catégorie « Ventes, saisies immobilières ». Au 24 août 2026,
+les millésimes détaillés disponibles vont de 2004 à 2019. Cette source sert uniquement à qualifier
+la densité historique et la représentativité territoriale : elle ne doit jamais devenir le
+dénominateur du catalogue courant, une mesure d’exhaustivité ou une preuve d’issue judiciaire.
+
+Le connecteur conserve trois états : `observed` avec une valeur entière, `suppressed` pour `NC`
+(valeur officielle non nulle inférieure à cinq), et `missing` pour une cellule vide. Il vérifie la
+version du site, les deux colonnes attendues, les 72 cellules par ligne, la ligne France, l’unicité
+des codes et une couverture nationale minimale. Les requêtes sont limitées à une toutes les quatre
+secondes et refusent tout changement d’origine ou redirection externe.
+
+La migration crée `justice_jurisdiction_activity_imports` et `justice_jurisdiction_activity`. Ces
+tables sont privées, sous RLS, append-only et non lisibles par `anon` ou `authenticated`. Les lignes
+ambiguës et non rattachées restent auditables avec un `court_id` nul, mais seules les correspondances
+exactes par code ou libellé normalisé peuvent alimenter un profil tribunal.
+Le code StatJur est rapproché en priorité du couple officiel Justice `origine/SRJ` conservé dans
+les preuves de tribunal compétent ; le libellé exact normalisé n’intervient qu’en repli. Le ressort
+de cour d’appel est dérivé du référentiel officiel des compétences communales, jamais deviné depuis
+le département.
+
+La source `justice_jurisdiction_statistics` est installée avec `legal_review_status=pending`,
+`ingestion_policy=disabled` et `active=false`. Avant toute collecte réseau ou persistance :
+
+1. documenter la licence et les conditions de réutilisation du service StatJur ;
+2. faire approuver la source, puis seulement passer sa politique à `allowed_automated` et l’activer ;
+3. conserver `JUSTICE_ACTIVITY_ENABLED=false` hors du processus opérateur contrôlé ;
+4. capturer d’abord un fragment HTML officiel et lancer une validation locale ;
+5. examiner tous les rapprochements `ambiguous` et `unmatched` avant le choix du pilote.
+
+Validation locale sans accès réseau ni écriture, depuis `services/data-pipeline` :
+
+```bash
+python -m src.justice_activity_cli \
+  --html /chemin/vers/statjur-t1-2019.html \
+  --year 2019 \
+  --source-version v26.02.2
+```
+
+Après revue juridique et activation explicite, le dry-run connecté peut charger les effectifs
+catalogue et proposer trois à cinq ressorts pilotes :
+
+```bash
+JUSTICE_ACTIVITY_ENABLED=true python -m src.justice_activity_cli --fetch --year 2019
+```
+
+La persistance ajoute `--persist`. Elle exige en plus `SUPABASE_DB_URL` et une politique source
+officielle, approuvée, automatisée et active. Un second passage sur le même contenu est idempotent.
+Le rapport garde `periodsComparable=false` et affiche les volumes historiques et courants côte à
+côte, sans division entre les deux.
 
 Depuis `services/data-pipeline`, exemple borné sur 36 mois avec cutoff explicite :
 

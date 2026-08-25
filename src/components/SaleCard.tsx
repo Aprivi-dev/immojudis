@@ -47,7 +47,7 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
     >
       <article className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-white shadow-sm transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-xl">
         <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
-          <SaleVisual sale={sale} title={title} locked={locked} />
+          <SaleVisual sale={sale} title={title} locked={locked} mapWidth={512} mapHeight={384} />
           <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/45 to-transparent" />
           <div className="absolute left-3 top-3 flex flex-wrap gap-2">
             {locked ? (

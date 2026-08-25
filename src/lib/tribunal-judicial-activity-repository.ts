@@ -17,7 +17,8 @@ import {
 
 const PAGE_SIZE = 1_000;
 const MAX_SALES_PER_COURT = 5_000;
-const MAX_DIRECTORY_SALES = 5_000;
+// Keep a fail-closed bound while covering the current verified national corpus.
+const MAX_DIRECTORY_SALES = 25_000;
 const MAX_DIRECTORY_COURTS = 250;
 const SALE_COLUMNS = [
   "id",
@@ -379,7 +380,7 @@ async function loadEligibleDirectorySales(input: {
     if (page.length < PAGE_SIZE) return rows;
   }
   throw new TribunalJudicialActivityUnavailableError(
-    "The bounded judicial activity directory scan exceeded 5,000 sales.",
+    "The bounded judicial activity directory scan exceeded 25,000 sales.",
   );
 }
 

@@ -1,34 +1,30 @@
 "use client";
 
-import { createFileRoute } from "@/lib/router-compat";
-import { AnalysisSaleDetailView, FreeSaleDetailView } from "@/components/SimplifiedSaleDetailView";
-import { EXAMPLE_MARKET_ESTIMATE, EXAMPLE_SALE } from "@/lib/example-sale";
-import { saleSeoTitle } from "@/lib/seo";
+import { useSearchParams } from "next/navigation";
+import { AnalysisSaleDetailView } from "@/components/SimplifiedSaleDetailView";
+import type { MarketEstimate } from "@/lib/market.functions";
+import type { AuctionSale } from "@/lib/types";
 
-export const Route = createFileRoute("/annonce-exemple")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    offre: search.offre === "decouverte" ? ("decouverte" as const) : ("analyse" as const),
-  }),
-  head: () => ({
-    meta: [
-      { title: saleSeoTitle(EXAMPLE_SALE) },
-      { property: "og:title", content: saleSeoTitle(EXAMPLE_SALE) },
-      {
-        name: "description",
-        content:
-          "Consultez une annonce Immojudis d'exemple avec photos fictives, pieces analysees, risques, marche local et mise plafond.",
-      },
-    ],
-  }),
-  component: ExampleSalePage,
-});
+export function ExampleSalePage({
+  examples,
+}: {
+  examples: Record<
+    "bordeaux" | "nantes" | "toulouse",
+    { sale: AuctionSale; marketEstimate: MarketEstimate }
+  >;
+}) {
+  const requestedKey = useSearchParams().get("bien");
+  const exampleKey =
+    requestedKey === "nantes" || requestedKey === "toulouse" ? requestedKey : "bordeaux";
+  const example = examples[exampleKey];
 
-export function ExampleSalePage() {
-  const { offre } = Route.useSearch<{ offre: "decouverte" | "analyse" }>();
-  if (offre === "decouverte") {
-    return <FreeSaleDetailView sale={EXAMPLE_SALE} />;
-  }
   return (
-    <AnalysisSaleDetailView sale={EXAMPLE_SALE} marketEstimateOverride={EXAMPLE_MARKET_ESTIMATE} />
+    <AnalysisSaleDetailView
+      sale={example.sale}
+      marketEstimateOverride={example.marketEstimate}
+      returnTo="/#exemples"
+      backLabel="Retour aux exemples"
+      publicDemo
+    />
   );
 }
