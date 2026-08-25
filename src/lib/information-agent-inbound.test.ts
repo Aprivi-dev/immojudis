@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { extractInformationAgentFacts, findInboundToken } from "@/lib/information-agent-inbound";
+import {
+  extractInformationAgentFacts,
+  findInboundToken,
+  htmlToPlainText,
+} from "@/lib/information-agent-inbound";
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: vi.fn(), storage: { from: vi.fn() } },
@@ -17,6 +21,17 @@ describe("information agent inbound parsing", () => {
     expect(
       findInboundToken([`enquete+${token}@example.test`], "reponses.immojudis.com"),
     ).toBeNull();
+    expect(
+      findInboundToken([`enquete+${token}@reponsesXimmojudis.com`], "reponses.immojudis.com"),
+    ).toBeNull();
+  });
+
+  it("extracts text with a parser and ignores active HTML content", () => {
+    const text = htmlToPlainText(
+      "<style>body{display:none}</style><script >alert('&amp;')</script ><p>Surface &amp; état</p><p>84 m²</p>",
+    );
+
+    expect(text).toBe("Surface & état\n\n84 m²");
   });
 
   it("extracts bounded candidates without treating them as verified facts", () => {
