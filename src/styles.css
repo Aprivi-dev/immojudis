@@ -325,6 +325,27 @@
     box-shadow: 0 1px 3px rgb(19 34 56 / 4%);
   }
 
+  .admin-template-input {
+    width: 100%;
+    border: 1px solid rgb(19 34 56 / 16%);
+    border-radius: 0.5rem;
+    background: #ffffff;
+    padding: 0.7rem 0.8rem;
+    color: #132238;
+    font-size: 0.875rem;
+    font-weight: 400;
+    letter-spacing: normal;
+    outline: none;
+    transition:
+      border-color var(--dur-fast) ease,
+      box-shadow var(--dur-fast) ease;
+  }
+
+  .admin-template-input:focus {
+    border-color: rgb(201 141 69 / 70%);
+    box-shadow: 0 0 0 3px rgb(201 141 69 / 12%);
+  }
+
   .admin-console .liquid-page {
     background: transparent;
   }

@@ -1,11 +1,21 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import {
+  INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
+  renderInformationRequestEmail,
+} from "../../emails/information-request";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { getPublishedInformationAgentEmailTemplate } from "@/lib/admin-information-agent-email-template";
 import { parseDocs } from "@/lib/documents";
 import { sendResendEmail } from "@/lib/email-alerts";
 import { formatDate, formatPrice } from "@/lib/format";
+import {
+  DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+  renderInformationAgentEmailContent,
+  type InformationAgentEmailTemplateContent,
+} from "@/lib/information-agent-email-template";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { featureIncluded, type PlanCode } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
@@ -17,6 +27,8 @@ import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
 type MissionRow = Database["public"]["Tables"]["information_agent_missions"]["Row"];
+type CaseRow = Database["public"]["Tables"]["information_agent_cases"]["Row"];
+type FactRow = Database["public"]["Tables"]["information_agent_fact_candidates"]["Row"];
 
 export const INFORMATION_AGENT_QUESTIONS = {
   documents: {
@@ -121,6 +133,7 @@ export type InformationAgentGap = {
 
 export type InformationAgentMission = {
   id: string;
+  caseId: string | null;
   saleId: string | null;
   status: MissionRow["status"];
   recipientKind: MissionRow["recipient_kind"];
@@ -138,6 +151,18 @@ export type InformationAgentMission = {
   updatedAt: string;
 };
 
+export type InformationAgentFact = {
+  id: string;
+  caseId: string;
+  factKey: FactRow["fact_key"];
+  displayValue: string;
+  confidence: number;
+  status: FactRow["status"];
+  evidenceExcerpt: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+};
+
 export type InformationAgentQuota = {
   limit: number | null;
   used: number;
@@ -151,12 +176,14 @@ export type InformationAgentResponse = {
   gaps: InformationAgentGap[];
   quota: InformationAgentQuota;
   plan: { code: PlanCode; label: string };
+  facts: InformationAgentFact[];
 };
 
 export type InformationAgentListResponse = {
   ok: true;
   missions: InformationAgentMission[];
   quota: InformationAgentQuota;
+  facts: InformationAgentFact[];
 };
 
 export function detectInformationGaps(sale: AuctionSale): InformationAgentGap[] {
@@ -200,40 +227,32 @@ export function buildInformationRequestDraft({
   sale,
   recipientName,
   questionKeys,
+  template = DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
 }: {
   sale: AuctionSale;
   recipientName?: string | null;
   questionKeys: readonly InformationAgentQuestionKey[];
+  template?: InformationAgentEmailTemplateContent;
 }): { subject: string; bodyText: string } {
   const title = saleDisplayTitle(sale, "Vente immobilière");
   const location = [sale.postal_code, sale.city].filter(Boolean).join(" ");
   const hearing = formatDate(sale.sale_date);
   const reference = [title, location, sale.tribunal].filter(Boolean).join(" — ");
-  const greeting = recipientName ? `Bonjour ${recipientName},` : "Bonjour,";
-  const questions = questionKeys.map((key) => `- ${INFORMATION_AGENT_QUESTIONS[key].question}`);
-
-  return {
-    subject: `Demande d'informations — ${title} — audience du ${hearing}`.slice(0, 200),
-    bodyText: [
-      greeting,
-      "",
-      "Je suis l'assistant numérique ImmoJudis, agissant à la demande d'un utilisateur intéressé par cette vente.",
-      "",
-      `Référence de l'annonce : ${reference || title}`,
-      `Date annoncée : ${hearing}`,
-      `Mise à prix annoncée : ${formatPrice(sale.starting_price_eur)}`,
-      "",
-      "Afin de l'aider à préparer son analyse, pourriez-vous nous préciser les éléments suivants ?",
-      ...questions,
-      "",
-      "Vous pouvez répondre directement à cet email. Votre réponse sera transmise à l'utilisateur qui a demandé cette enquête.",
-      "",
-      "Merci par avance pour votre aide.",
-      "",
-      "Assistant ImmoJudis",
-      "Message préparé par un système d'IA et envoyé uniquement après validation explicite de l'utilisateur.",
-    ].join("\n"),
-  };
+  return renderInformationAgentEmailContent({
+    template,
+    values: {
+      recipient_name: recipientName?.trim() || "Madame, Monsieur",
+      sale_title: title,
+      sale_reference: reference || title,
+      location: location || "Localisation non précisée",
+      tribunal: sale.tribunal || "Tribunal non précisé",
+      hearing_date: hearing,
+      starting_price: formatPrice(sale.starting_price_eur),
+      questions: questionKeys
+        .map((key) => `- ${INFORMATION_AGENT_QUESTIONS[key].question}`)
+        .join("\n"),
+    },
+  });
 }
 
 export async function createInformationAgentDraft({
@@ -251,7 +270,10 @@ export async function createInformationAgentDraft({
     windowSeconds: 60,
   });
 
-  const sale = await getSale(auth.supabase, input.saleId);
+  const [sale, emailTemplate] = await Promise.all([
+    getSale(auth.supabase, input.saleId),
+    getPublishedInformationAgentEmailTemplate(),
+  ]);
   const gaps = detectInformationGaps(sale);
   const defaultQuestions = gaps.length
     ? gaps.map((gap) => gap.key)
@@ -263,7 +285,12 @@ export async function createInformationAgentDraft({
     throw new Error("Requête invalide : renseignez l'adresse email du professionnel à contacter.");
   }
   const recipientName = input.recipientName ?? sale.lawyer_name;
-  const draft = buildInformationRequestDraft({ sale, recipientName, questionKeys });
+  const draft = buildInformationRequestDraft({
+    sale,
+    recipientName,
+    questionKeys,
+    template: emailTemplate.content,
+  });
   const quota = await readInformationAgentQuota(
     auth.userId,
     plan.limits.informationAgentMissionsPer30Days,
@@ -283,18 +310,29 @@ export async function createInformationAgentDraft({
       missing_information: gaps.map((gap) => gap.key),
       sale_snapshot: saleSnapshot(sale),
       privacy_version: LEGAL_DOCUMENTS.privacy.version,
-      metadata: { draft_source: "deterministic_gap_analysis" },
+      metadata: {
+        draft_source: "deterministic_gap_analysis",
+        email_content_template_id: emailTemplate.id,
+        email_content_template_revision: emailTemplate.revision,
+      },
     })
     .select("*")
     .single();
 
   if (error) throw error;
+  const { error: subscribeError } = await supabaseAdmin.rpc("subscribe_information_agent_mission", {
+    p_user_id: auth.userId,
+    p_mission_id: data.id,
+  });
+  if (subscribeError) throw subscribeError;
+  const subscribedMission = await loadOwnedMission(auth.userId, data.id);
   return {
     ok: true,
-    mission: missionFromRow(data),
+    mission: missionFromRow(subscribedMission),
     gaps,
     quota,
     plan: { code: plan.plan, label: plan.label },
+    facts: await listFactsForCases(subscribedMission.case_id ? [subscribedMission.case_id] : []),
   };
 }
 
@@ -319,7 +357,15 @@ export async function listInformationAgentMissions({
     readInformationAgentQuota(auth.userId, plan.limits.informationAgentMissionsPer30Days),
   ]);
   if (error) throw error;
-  return { ok: true, missions: (data ?? []).map(missionFromRow), quota };
+  const rows = data ?? [];
+  return {
+    ok: true,
+    missions: rows.map(missionFromRow),
+    quota,
+    facts: await listFactsForCases(
+      rows.flatMap((mission) => (mission.case_id ? [mission.case_id] : [])),
+    ),
+  };
 }
 
 export async function runInformationAgentAction({
@@ -362,6 +408,7 @@ export async function runInformationAgentAction({
       auth.userId,
       plan.limits.informationAgentMissionsPer30Days,
     ),
+    facts: await listFactsForCases(data.case_id ? [data.case_id] : []),
   };
 }
 
@@ -374,10 +421,6 @@ async function approveAndSendMission({
   input: Extract<InformationAgentActionPayload, { action: "approve_and_send" }>;
   fetchImpl: typeof fetch;
 }) {
-  const requesterEmail = normalizedEmail(auth.claims.email);
-  if (!requesterEmail) {
-    throw new Error("Configuration du compte incomplète : aucune adresse email de réponse.");
-  }
   const mission = await loadOwnedMission(auth.userId, input.missionId);
   if (mission.status !== "draft" && mission.status !== "failed") {
     throw new Error("Requête invalide : cette enquête ne peut plus être modifiée.");
@@ -388,8 +431,8 @@ async function approveAndSendMission({
     .update({
       recipient_email: input.recipientEmail,
       recipient_name: input.recipientName || null,
-      reply_to_email: requesterEmail,
-      share_requester_email: true,
+      reply_to_email: null,
+      share_requester_email: false,
       subject: input.subject,
       body_text: input.bodyText,
       failure_reason: null,
@@ -401,8 +444,14 @@ async function approveAndSendMission({
     .single();
   if (editError) throw editError;
 
-  const messageHash = approvalFingerprint(edited);
-  const { error: approvalError } = await supabaseAdmin.rpc(
+  const { error: subscribeError } = await supabaseAdmin.rpc("subscribe_information_agent_mission", {
+    p_user_id: auth.userId,
+    p_mission_id: mission.id,
+  });
+  if (subscribeError) throw subscribeError;
+  const subscribedMission = await loadOwnedMission(auth.userId, mission.id);
+  const messageHash = approvalFingerprint(subscribedMission);
+  const { data: approvalRows, error: approvalError } = await supabaseAdmin.rpc(
     "approve_information_agent_mission_bounded",
     {
       p_user_id: auth.userId,
@@ -416,28 +465,40 @@ async function approveAndSendMission({
     }
     throw new Error(approvalError.message || "Approbation de l'enquête impossible.");
   }
+  const approval = approvalRows?.[0];
+  if (!approval) throw new Error("Approbation de l'enquête impossible.");
+  if (!approval.should_send) return;
 
   const config = resolveInformationAgentEmailConfig();
+  const replyTo = `enquete+${approval.inbound_token}@${config.inboundDomain}`;
   const sendingAt = new Date().toISOString();
-  await updateMissionOrThrow(mission.id, auth.userId, { status: "sending" });
 
   try {
+    const renderedEmail = await renderInformationRequestEmail({
+      subject: edited.subject,
+      bodyText: edited.body_text,
+      replyTo,
+      caseReference: informationAgentCaseReference(approval.case_id),
+      appUrl: config.appUrl,
+    });
     const delivery = await sendResendEmail({
       apiKey: config.apiKey,
-      idempotencyKey: `immojudis-information-agent-${mission.id}`,
+      idempotencyKey: `immojudis-information-agent-case-${approval.case_id}`,
       fetchImpl,
       message: {
         from: config.from,
         to: edited.recipient_email,
-        replyTo: requesterEmail,
+        replyTo,
         subject: edited.subject,
-        text: edited.body_text,
-        html: textToSafeHtml(edited.body_text),
+        text: renderedEmail.text,
+        html: renderedEmail.html,
       },
     });
     const sentAt = new Date().toISOString();
+    const missionMetadata = asObject(edited.metadata);
     const { error: messageError } = await supabaseAdmin.from("information_agent_messages").insert({
       mission_id: mission.id,
+      case_id: approval.case_id,
       user_id: auth.userId,
       direction: "outbound",
       message_kind: "initial",
@@ -448,10 +509,21 @@ async function approveAndSendMission({
       body_text: edited.body_text,
       provider_message_id: delivery.id,
       sent_at: sentAt,
-      metadata: { approval_sha256: messageHash },
+      metadata: {
+        approval_sha256: messageHash,
+        email_template_version: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
+        email_content_template_id: missionMetadata.email_content_template_id ?? null,
+        email_content_template_revision: missionMetadata.email_content_template_revision ?? null,
+      },
     });
     if (messageError) throw messageError;
     await updateMissionOrThrow(mission.id, auth.userId, {
+      status: "sent",
+      sent_at: sentAt,
+      provider_message_id: delivery.id,
+      failure_reason: null,
+    });
+    await updateCaseOrThrow(approval.case_id, {
       status: "sent",
       sent_at: sentAt,
       provider_message_id: delivery.id,
@@ -463,6 +535,10 @@ async function approveAndSendMission({
       status: "failed",
       failure_reason: detail,
       metadata: { ...asObject(edited.metadata), last_send_attempt_at: sendingAt },
+    });
+    await updateCaseOrThrow(approval.case_id, {
+      status: "failed",
+      failure_reason: detail,
     });
     throw error;
   }
@@ -482,6 +558,7 @@ async function recordMissionReply({
   const receivedAt = new Date().toISOString();
   const { error } = await supabaseAdmin.from("information_agent_messages").insert({
     mission_id: mission.id,
+    case_id: mission.case_id,
     user_id: auth.userId,
     direction: "inbound",
     message_kind: "reply",
@@ -498,6 +575,9 @@ async function recordMissionReply({
     status: "replied",
     replied_at: receivedAt,
   });
+  if (mission.case_id) {
+    await updateCaseOrThrow(mission.case_id, { status: "replied", replied_at: receivedAt });
+  }
 }
 
 async function cancelMission({
@@ -573,6 +653,7 @@ async function readInformationAgentQuota(
 function missionFromRow(row: MissionRow): InformationAgentMission {
   return {
     id: row.id,
+    caseId: row.case_id,
     saleId: row.sale_id,
     status: row.status,
     recipientKind: row.recipient_kind,
@@ -612,6 +693,7 @@ function approvalFingerprint(mission: MissionRow): string {
         replyToEmail: mission.reply_to_email,
         subject: mission.subject,
         bodyText: mission.body_text,
+        emailTemplateVersion: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
       }),
     )
     .digest("hex");
@@ -620,10 +702,49 @@ function approvalFingerprint(mission: MissionRow): string {
 function resolveInformationAgentEmailConfig(env: NodeJS.ProcessEnv = process.env) {
   const apiKey = env.RESEND_API_KEY?.trim();
   const from = env.INFORMATION_AGENT_EMAIL_FROM?.trim() || env.ALERT_EMAIL_FROM?.trim();
-  if (!apiKey || !from) {
-    throw new Error("Configuration d'envoi de l'agent incomplète.");
+  const inboundDomain = env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase();
+  if (!apiKey || !from || !inboundDomain) {
+    throw new Error("Configuration d'envoi et de réception de l'agent incomplète.");
   }
-  return { apiKey, from };
+  return { apiKey, from, inboundDomain, appUrl: "https://immojudis.com" };
+}
+
+export function informationAgentCaseReference(caseId: string): string {
+  return `IJ-${caseId.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+}
+
+async function updateCaseOrThrow(
+  caseId: string,
+  values: Database["public"]["Tables"]["information_agent_cases"]["Update"],
+) {
+  const { error } = await supabaseAdmin
+    .from("information_agent_cases")
+    .update(values)
+    .eq("id", caseId);
+  if (error) throw error;
+}
+
+async function listFactsForCases(caseIds: string[]): Promise<InformationAgentFact[]> {
+  const uniqueCaseIds = [...new Set(caseIds)];
+  if (!uniqueCaseIds.length) return [];
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_fact_candidates")
+    .select("*")
+    .in("case_id", uniqueCaseIds)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return (data ?? []).map((fact) => ({
+    id: fact.id,
+    caseId: fact.case_id,
+    factKey: fact.fact_key,
+    displayValue: fact.display_value,
+    confidence: fact.confidence,
+    status: fact.status,
+    evidenceExcerpt: fact.evidence_excerpt,
+    createdAt: fact.created_at,
+    reviewedAt: fact.reviewed_at,
+  }));
 }
 
 function addGap(gaps: InformationAgentGap[], key: InformationAgentQuestionKey, reason: string) {
@@ -658,17 +779,4 @@ function isQuestionKey(value: string): value is InformationAgentQuestionKey {
 
 function asObject(value: Json): Record<string, Json | undefined> {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function textToSafeHtml(value: string): string {
-  return `<div style="font-family:Arial,sans-serif;line-height:1.6;white-space:pre-wrap">${escapeHtml(value)}</div>`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }

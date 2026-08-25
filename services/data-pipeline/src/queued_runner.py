@@ -17,6 +17,7 @@ from src.main import (
     run_llm_description_backfill,
     run_pipeline,
 )
+from src.information_agent_evidence import run_information_agent_evidence_batch
 from src.pdf_enrichment import enrich_sale_from_pdfs
 from src.sale_procedure import classify_sale_procedure
 from src.storage.supabase_client import (
@@ -52,10 +53,19 @@ def main() -> int:
 
     run = fetch_next_queued_run_from_supabase()
     if not run:
+        settings = load_settings()
+        evidence_processed = run_information_agent_evidence_batch(
+            limit=int(settings.get("information_agent_evidence_batch_size") or 5)
+        )
+        if evidence_processed:
+            print(
+                f"Processed information-agent evidence: {evidence_processed}. "
+                f"Marked stale runs failed: {stale_failed}."
+            )
+            return 0
         refresh_request = fetch_next_data_refresh_request_from_supabase()
         if refresh_request:
             return run_data_refresh_request(refresh_request)
-        settings = load_settings()
         if settings.get("pipeline_enrichment_queue_enabled"):
             processed = run_enrichment_queue_batch(
                 limit=int(settings.get("pipeline_enrichment_queue_batch_size") or 10)
