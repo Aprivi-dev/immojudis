@@ -115,9 +115,6 @@ PIPELINE_PDF_WORKERS=2
 PIPELINE_PDF_MAX_TARGETS=10
 PIPELINE_LLM_MAX_TARGETS=0
 PIPELINE_LLM_BACKFILL_MAX_TARGETS=10
-PIPELINE_IDLE_LLM_BACKFILL_ENABLED=true
-PIPELINE_ENRICHMENT_QUEUE_ENABLED=true
-PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE=10
 DEDUPE_RECONCILE_ENABLED=true
 DEDUPE_RECONCILE_MAX_ROWS=2000
 ```
@@ -136,15 +133,12 @@ python -m src.main --backfill-llm-descriptions
 python -m src.main --backfill-llm-descriptions --limit 20 --backfill-statuses active,upcoming
 ```
 
-Le backfill doit rester un run dédié depuis l'admin ou `workflow_dispatch` :
-cela évite que les runs planifiés idle ajoutent des appels Replicate longs à
-chaque passage.
+Le backfill doit rester un run dédié lancé depuis l'admin ou
+`workflow_dispatch`. Aucun passage idle n'est planifié en production.
 
 En CI, les backfills IA sont volontairement bornés par petits lots et les
 prédictions Replicate démarrent avec `REPLICATE_WAIT_SECONDS=1` pour éviter
 d'ajouter le temps de génération à l'intervalle minimal entre deux requêtes.
-Les runs planifiés font aussi un preflight léger : ils sautent le worker si un
-run manuel ou un autre run Supabase récent est déjà actif.
 
 Activer Licitor uniquement pour un benchmark :
 
@@ -269,12 +263,11 @@ automatiquement au moteur comparable si l'artefact est absent ou invalide.
 La valeur de marché ainsi produite reste distincte du calcul de mise plafond,
 qui retire ensuite travaux, frais et marge de sécurité.
 
-Le workflow GitHub Actions `Immojudis Valuation Model Training` peut aussi être
-déclenché manuellement. Il se relance automatiquement après un import DVF
-réussi, entraîne chaque segment séparément sur au plus 750 000 ventes récentes,
-applique les mêmes seuils de promotion et conserve le bundle JSON pendant 30
-jours pour audit. Une activation manuelle exige la confirmation explicite de la
-cible `production`.
+Le workflow GitHub Actions `Immojudis Valuation Model Training` est uniquement
+déclenché manuellement. Il entraîne chaque segment séparément sur au plus
+750 000 ventes récentes, applique les mêmes seuils de promotion et conserve le
+bundle JSON pendant 30 jours pour audit. Une activation exige la confirmation
+explicite de la cible `production`.
 
 ## Enrichissement cadastre
 
@@ -362,8 +355,9 @@ python -m src.queued_runner
 ou `failed`.
 
 `python -m src.queued_runner` récupère le plus ancien run `queued` dans
-Supabase et lance le pipeline avec ses paramètres. C'est la commande utilisée
-par le workflow GitHub Actions planifié.
+Supabase et lance le pipeline avec ses paramètres. Cette commande n'est jamais
+planifiée : elle doit être invoquée explicitement par un opérateur. Le workflow
+GitHub Actions de production accepte uniquement `workflow_dispatch`.
 
 Le pipeline :
 
@@ -460,10 +454,12 @@ PDF_MAX_DOCUMENTS_PER_SALE=6
 PIPELINE_PDF_MAX_TARGETS=10
 PIPELINE_LLM_MAX_TARGETS=0
 PIPELINE_LLM_BACKFILL_MAX_TARGETS=20
-PIPELINE_IDLE_LLM_BACKFILL_ENABLED=true
-PIPELINE_ENRICHMENT_QUEUE_ENABLED=true
-PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE=10
 ```
+
+Les options `PIPELINE_IDLE_LLM_BACKFILL_ENABLED` et
+`PIPELINE_ENRICHMENT_QUEUE_ENABLED` ne sont pas configurées dans le workflow de
+production. Elles sont réservées au lancement local explicite de
+`python -m src.queued_runner` ; aucun worker de file n'est planifié.
 
 Le provider Replicate appelle l'API HTTP officielle avec `Authorization: Bearer $REPLICATE_API_TOKEN` et l'endpoint `/v1/models/{owner}/{model}/predictions`.
 Pour Gemini via Replicate, le client envoie le prompt système dans `system_instruction` et limite la réponse à du JSON validé ensuite par Pydantic.
@@ -499,10 +495,10 @@ doivent être du JSON validé par Pydantic, puis sont sauvegardées dans
 
 Le mode `--backfill-llm-descriptions` traite les annonces déjà présentes dans
 Supabase qui n'ont pas encore de synthèse publique courante. Son volume est
-borné par `PIPELINE_LLM_BACKFILL_MAX_TARGETS` ou `--limit`. En CI, la file
-`auction_enrichment_jobs` reprend automatiquement les analyses après la
-collecte. Les jobs échoués sont retentés et un verrou abandonné depuis plus de
-30 minutes peut être réclamé par un autre worker.
+borné par `PIPELINE_LLM_BACKFILL_MAX_TARGETS` ou `--limit`. La file
+`auction_enrichment_jobs` n'est jamais consommée en arrière-plan : les jobs
+restent en attente jusqu'au lancement manuel d'un worker. Lors d'une collecte
+manuelle, la synthèse Qwen reste produite directement dans le scan courant.
 
 Les migrations `20260819105011_add_structured_surface_reasoning_queue.sql` et
 `20260820144541_use_qwen2_7b_scan_descriptions.sql` doivent être appliquées
