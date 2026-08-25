@@ -72,6 +72,8 @@ jobs:
             services/data-pipeline/requirements.txt
             services/data-pipeline/requirements-dev.txt
       - run: python -m pip install -r requirements-dev.txt
+      - name: Resolve optional Docling and valuation stacks
+        run: python -m pip install --dry-run -r requirements-docling.txt -r requirements-valuation.txt
       - name: Lint
         run: python -m ruff check .
       - name: Run tests
