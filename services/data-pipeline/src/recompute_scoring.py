@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
@@ -10,12 +13,61 @@ from dotenv import load_dotenv
 
 from src.asset_normalization import normalize_asset_features
 from src.config import ROOT_DIR, load_settings
+from src.geocode import geocode_sale
 from src.normalize import normalize_sale
-from src.storage.supabase_client import upsert_sales_to_supabase
+from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
+from src.sources.common import PoliteHttpClient
+from src.sources.encheres_publiques import (
+    BASE_URL as ENCHERES_PUBLIQUES_BASE_URL,
+)
+from src.sources.encheres_publiques import (
+    CANONICAL_BASE_URL as ENCHERES_PUBLIQUES_CANONICAL_BASE_URL,
+)
+from src.sources.encheres_publiques import (
+    parse_encheres_publiques_detail_html,
+)
+from src.sources.licitor import LicitorClient, parse_licitor_detail_html
+from src.storage.supabase_client import _postgrest_request_with_retries, upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
 
 LOGGER = logging.getLogger(__name__)
 PAGE_SIZE = 200
+SALE_VENUE_TYPES = {"tribunal", "notary", "state", "online", "unknown"}
+SALE_LEGAL_FRAMEWORKS = {
+    "judicial_seizure",
+    "judicial_partition",
+    "insolvency",
+    "voluntary_notarial",
+    "state_sale",
+    "unknown",
+}
+SALE_VERIFICATION_STATUSES = {"verified", "cross_checked", "pending", "conflict"}
+PROCEDURE_REFRESH_SUPPORTED_SOURCES = {"licitor", "encheres_publiques"}
+PROCEDURE_REFRESH_FIELDS = {
+    "address",
+    "city",
+    "department",
+    "description",
+    "documents",
+    "external_id",
+    "habitable_surface_m2",
+    "latitude",
+    "lawyer_contact",
+    "lawyer_name",
+    "longitude",
+    "postal_code",
+    "property_type",
+    "raw_image_url",
+    "raw_text",
+    "rooms_count",
+    "sale_date",
+    "source_images",
+    "starting_price_eur",
+    "surface_m2",
+    "title",
+    "tribunal",
+    "visit_dates",
+}
 
 
 def recompute_scoring(
@@ -24,28 +76,324 @@ def recompute_scoring(
     limit: int | None = None,
     batch_size: int = 20,
     dry_run: bool = False,
+    geocode_missing: bool = False,
+    geocode_workers: int = 1,
 ) -> int:
     _load_env_fallbacks()
     rows = _fetch_sales(source=source, limit=limit)
-    sales = []
-    for row in rows:
-        try:
-            sale = _sale_from_storage_row(row)
-            fill_tribunal(sale)
-            normalize_asset_features(sale)
-            sales.append(sale)
-        except Exception as exc:
-            LOGGER.exception("Scoring recompute failed for %s: %s", row.get("source_url"), exc)
+    if not rows:
+        LOGGER.error("No stored sales matched the requested recompute scope")
+        return 1
+    sales: list[Any] = []
+    failures: list[str] = []
+    if geocode_missing and geocode_workers > 1:
+        with ThreadPoolExecutor(max_workers=geocode_workers, thread_name_prefix="catalogue-geocode") as executor:
+            futures = [
+                executor.submit(_recomputed_sale_from_storage_row, row, geocode=True)
+                for row in rows
+            ]
+            for row, future in zip(rows, futures, strict=True):
+                try:
+                    sales.append(future.result())
+                except Exception as exc:
+                    failures.append(str(row.get("source_url") or row.get("id") or "unknown-row"))
+                    LOGGER.exception("Scoring recompute failed for %s: %s", row.get("source_url"), exc)
+    else:
+        for row in rows:
+            try:
+                sale = _recomputed_sale_from_storage_row(row, geocode=geocode_missing)
+                sales.append(sale)
+            except Exception as exc:
+                failures.append(str(row.get("source_url") or row.get("id") or "unknown-row"))
+                LOGGER.exception("Scoring recompute failed for %s: %s", row.get("source_url"), exc)
 
     if dry_run:
-        _print_summary(sales, dry_run=True)
-        return 0
+        _print_summary(sales, dry_run=True, failures=failures)
+        return 1 if failures else 0
 
     upserted = 0
     for batch in _chunks(sales, max(1, batch_size)):
         upserted += upsert_sales_to_supabase(batch, refresh_last_seen=False)
-    _print_summary(sales, dry_run=False, upserted=upserted)
+    _print_summary(sales, dry_run=False, upserted=upserted, failures=failures)
+    if failures or upserted != len(sales):
+        LOGGER.error(
+            "Incomplete scoring recompute: selected=%s computed=%s upserted=%s failures=%s",
+            len(rows),
+            len(sales),
+            upserted,
+            len(failures),
+        )
+        return 1
     return 0
+
+
+def verify_persisted_sale_procedures(
+    *,
+    source: str | None = None,
+    limit: int | None = None,
+) -> int:
+    """Fail closed when a persisted procedure payload is missing or inconsistent."""
+
+    _load_env_fallbacks()
+    rows = _fetch_sales(source=source, limit=limit)
+    if not rows:
+        LOGGER.error("No stored sales matched the requested verification scope")
+        return 1
+
+    invalid: list[tuple[str, list[str]]] = []
+    statuses: Counter[str] = Counter()
+    venues: Counter[str] = Counter()
+    for row in rows:
+        statuses[str(row.get("sale_verification_status") or "missing")] += 1
+        venues[str(row.get("sale_venue_type") or "missing")] += 1
+        try:
+            expected_sale = _recomputed_sale_from_storage_row(row)
+            issues = _validate_persisted_sale_procedure(row, expected_sale=expected_sale)
+        except Exception as exc:
+            LOGGER.exception("Persisted procedure verification failed for %s: %s", row.get("source_url"), exc)
+            issues = ["procedure recompute failed"]
+        if issues:
+            invalid.append((str(row.get("source_url") or row.get("id") or "unknown-row"), issues))
+
+    print("Persisted sale procedure verification")
+    print(f"- sales: {len(rows)}")
+    print(f"- invalid: {len(invalid)}")
+    print(f"- venues: {dict(venues)}")
+    print(f"- statuses: {dict(statuses)}")
+    for identifier, issues in invalid[:20]:
+        print(f"- invalid_row: {identifier}: {', '.join(issues)}")
+    if len(invalid) > 20:
+        print(f"- additional_invalid_rows: {len(invalid) - 20}")
+    return 1 if invalid else 0
+
+
+def repair_invalid_sale_procedures(
+    *,
+    source: str | None = None,
+    limit: int | None = None,
+) -> int:
+    """Retry inconsistent catalogue rows individually, then let verification re-read them."""
+
+    _load_env_fallbacks()
+    rows = _fetch_sales(source=source, limit=limit)
+    if not rows:
+        LOGGER.error("No stored sales matched the requested repair scope")
+        return 1
+
+    repairs = []
+    failures: list[str] = []
+    for row in rows:
+        identifier = str(row.get("source_url") or row.get("id") or "unknown-row")
+        try:
+            expected_sale = _recomputed_sale_from_storage_row(row)
+            if _validate_persisted_sale_procedure(row, expected_sale=expected_sale):
+                repairs.append(expected_sale)
+        except Exception as exc:
+            failures.append(identifier)
+            LOGGER.exception("Procedure repair preparation failed for %s: %s", identifier, exc)
+
+    repaired = 0
+    for sale in repairs:
+        try:
+            repaired += upsert_sales_to_supabase([sale], refresh_last_seen=False)
+        except Exception as exc:
+            failures.append(sale.source_url)
+            LOGGER.exception("Individual procedure repair failed for %s: %s", sale.source_url, exc)
+
+    print("Sale procedure repair summary")
+    print(f"- candidates: {len(repairs)}")
+    print(f"- repaired: {repaired}")
+    print(f"- failures: {len(failures)}")
+    return 1 if failures or repaired != len(repairs) else 0
+
+
+def refresh_unknown_sale_procedures(
+    *,
+    source: str | None = None,
+    limit: int | None = None,
+) -> int:
+    """Re-fetch public source pages for unresolved procedures, then verify them again."""
+
+    _load_env_fallbacks()
+    rows = _fetch_sales(source=source, limit=limit)
+    candidates = [
+        row
+        for row in rows
+        if row.get("sale_venue_type") == "unknown"
+        and row.get("source_name") in PROCEDURE_REFRESH_SUPPORTED_SOURCES
+    ]
+    if not candidates:
+        print("Unknown sale procedure source refresh")
+        print("- candidates: 0")
+        print("- refreshed: 0")
+        print("- unresolved: 0")
+        print("- failures: 0")
+        return 0
+
+    clients = _procedure_refresh_clients()
+    refreshed_sales: list[Any] = []
+    failures: list[str] = []
+    for row in candidates:
+        identifier = str(row.get("source_url") or row.get("id") or "unknown-row")
+        try:
+            details = _fetch_procedure_source_details(row, clients)
+            if not details:
+                raise RuntimeError("the refreshed source page returned no structured sale details")
+            refreshed_row = _merge_refetched_source_details(row, details)
+            refreshed_sales.append(_recomputed_sale_from_storage_row(refreshed_row, geocode=True))
+        except Exception as exc:
+            failures.append(identifier)
+            LOGGER.exception("Procedure source refresh failed for %s: %s", identifier, exc)
+
+    upserted = 0
+    for sale in refreshed_sales:
+        try:
+            upserted += upsert_sales_to_supabase([sale], refresh_last_seen=False)
+        except Exception as exc:
+            failures.append(sale.source_url)
+            LOGGER.exception("Refreshed procedure upsert failed for %s: %s", sale.source_url, exc)
+
+    unresolved = sum(sale.sale_venue_type == "unknown" for sale in refreshed_sales)
+    print("Unknown sale procedure source refresh")
+    print(f"- candidates: {len(candidates)}")
+    print(f"- refreshed: {upserted}")
+    print(f"- unresolved: {unresolved}")
+    print(f"- failures: {len(failures)}")
+    return 1 if failures or upserted != len(refreshed_sales) else 0
+
+
+def _procedure_refresh_clients() -> dict[str, Any]:
+    settings = load_settings()
+    common = {
+        "user_agent": str(settings["user_agent"]),
+        "delay_seconds": float(settings["request_delay_seconds"]),
+        "timeout_seconds": float(settings["request_timeout_seconds"]),
+    }
+    return {
+        "licitor": LicitorClient(**common),
+        "encheres_publiques": PoliteHttpClient(
+            base_url=ENCHERES_PUBLIQUES_BASE_URL,
+            allowed_redirect_origins=(ENCHERES_PUBLIQUES_CANONICAL_BASE_URL,),
+            **common,
+        ),
+    }
+
+
+def _fetch_procedure_source_details(
+    row: dict[str, Any],
+    clients: dict[str, Any],
+) -> dict[str, Any]:
+    source_name = str(row.get("source_name") or "")
+    source_url = str(row.get("source_url") or "")
+    client = clients.get(source_name)
+    if client is None or not source_url:
+        return {}
+
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            html = client.get(source_url)
+            if source_name == "licitor":
+                return parse_licitor_detail_html(html, source_url)
+            if source_name == "encheres_publiques":
+                return parse_encheres_publiques_detail_html(html, source_url)
+            return {}
+        except Exception as exc:
+            last_error = exc
+            if attempt < 3:
+                LOGGER.warning(
+                    "Procedure source refresh attempt %s/3 failed for %s: %s",
+                    attempt,
+                    source_url,
+                    exc,
+                )
+                time.sleep(2 * attempt)
+    if last_error is not None:
+        raise last_error
+    return {}
+
+
+def _merge_refetched_source_details(
+    row: dict[str, Any],
+    details: dict[str, Any],
+) -> dict[str, Any]:
+    merged_row = dict(row)
+    original_payload = dict(row.get("raw_payload")) if isinstance(row.get("raw_payload"), dict) else {}
+    merged_payload = {**original_payload}
+
+    for key in PROCEDURE_REFRESH_FIELDS:
+        value = details.get(key)
+        if value in (None, "", []):
+            continue
+        merged_row[key] = value
+        merged_payload[key] = value
+
+    existing_blocks = (
+        original_payload.get("source_blocks")
+        if isinstance(original_payload.get("source_blocks"), dict)
+        else {}
+    )
+    refreshed_blocks = details.get("source_blocks") if isinstance(details.get("source_blocks"), dict) else {}
+    if existing_blocks or refreshed_blocks:
+        merged_payload["source_blocks"] = {**existing_blocks, **refreshed_blocks}
+
+    merged_payload["procedure_source_refresh"] = {
+        "schema_version": "procedure_source_refresh_v1",
+        "source_name": row.get("source_name"),
+        "source_url": row.get("source_url"),
+        "fetched_at": datetime.now(UTC).isoformat(),
+        "status": "verified_source_page",
+    }
+    merged_row["raw_payload"] = merged_payload
+    return merged_row
+
+
+def _validate_persisted_sale_procedure(
+    row: dict[str, Any],
+    *,
+    expected_sale: Any | None = None,
+) -> list[str]:
+    issues: list[str] = []
+    venue_type = row.get("sale_venue_type")
+    legal_framework = row.get("sale_legal_framework")
+    verification_status = row.get("sale_verification_status")
+    procedure = row.get("sale_procedure")
+
+    if venue_type not in SALE_VENUE_TYPES:
+        issues.append("invalid sale_venue_type")
+    if legal_framework not in SALE_LEGAL_FRAMEWORKS:
+        issues.append("invalid sale_legal_framework")
+    if verification_status not in SALE_VERIFICATION_STATUSES:
+        issues.append("invalid sale_verification_status")
+    if not isinstance(procedure, dict) or not procedure:
+        issues.append("missing sale_procedure")
+        return issues
+
+    if procedure.get("schema_version") != SALE_PROCEDURE_SCHEMA_VERSION:
+        issues.append("invalid schema_version")
+    if procedure.get("venue_type") != venue_type:
+        issues.append("venue_type mismatch")
+    if procedure.get("legal_framework") != legal_framework:
+        issues.append("legal_framework mismatch")
+    if not isinstance(procedure.get("rules"), dict):
+        issues.append("missing rules")
+    verification = procedure.get("verification")
+    if not isinstance(verification, dict):
+        issues.append("missing verification")
+    elif verification.get("status") != verification_status:
+        issues.append("verification status mismatch")
+    if expected_sale is not None:
+        if venue_type != expected_sale.sale_venue_type:
+            issues.append("venue_type differs from recompute")
+        if legal_framework != expected_sale.sale_legal_framework:
+            issues.append("legal_framework differs from recompute")
+        if verification_status != expected_sale.sale_verification_status:
+            issues.append("verification status differs from recompute")
+        expected_procedure = expected_sale.sale_procedure
+        for key in ("ruleset_version", "participation_mode", "rules"):
+            if procedure.get(key) != expected_procedure.get(key):
+                issues.append(f"{key} differs from recompute")
+    return issues
 
 
 def _load_env_fallbacks() -> None:
@@ -81,7 +429,14 @@ def _fetch_sales(*, source: str | None, limit: int | None) -> list[dict[str, Any
         }
         if source:
             params["source_name"] = f"eq.{source}"
-        response = httpx.get(endpoint, params=params, headers=headers, timeout=120)
+        response = _postgrest_request_with_retries(
+            "GET",
+            endpoint,
+            table="auction_sales",
+            params=params,
+            headers=headers,
+            timeout=120,
+        )
         if response.is_error:
             raise httpx.HTTPStatusError(
                 f"{response.status_code} response from Supabase auction_sales: {response.text}",
@@ -123,6 +478,16 @@ def _sale_from_storage_row(row: dict[str, Any]):
     return sale
 
 
+def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = False):
+    sale = _sale_from_storage_row(row)
+    if geocode:
+        geocode_sale(sale)
+    fill_tribunal(sale)
+    classify_sale_procedure(sale)
+    normalize_asset_features(sale)
+    return sale
+
+
 def _parse_datetime(value: object | None):
     if not value:
         return None
@@ -140,11 +505,22 @@ def _chunks(items: list[Any], size: int):
         yield items[index : index + size]
 
 
-def _print_summary(sales: list[Any], *, dry_run: bool, upserted: int = 0) -> None:
+def _print_summary(
+    sales: list[Any],
+    *,
+    dry_run: bool,
+    upserted: int = 0,
+    failures: list[str] | None = None,
+) -> None:
     by_source: dict[str, int] = {}
     pretri = 0
     works = 0
     non_judicial = 0
+    court_verified = 0
+    court_unresolved = 0
+    court_unverified = 0
+    geocode_verified = 0
+    procedure_statuses: dict[str, int] = {}
     for sale in sales:
         by_source[sale.source_name] = by_source.get(sale.source_name, 0) + 1
         analysis = sale.raw_payload.get("investment_analysis") if isinstance(sale.raw_payload, dict) else {}
@@ -155,14 +531,36 @@ def _print_summary(sales: list[Any], *, dry_run: bool, upserted: int = 0) -> Non
             works += 1
         if "non_judicial_sale_context" in sale.quality_flags:
             non_judicial += 1
+        assignment = sale.raw_payload.get("tribunal_assignment")
+        if isinstance(assignment, dict) and assignment.get("status") == "verified":
+            court_verified += 1
+        geocode = sale.raw_payload.get("geocode")
+        if (
+            isinstance(geocode, dict)
+            and geocode.get("provider") == "ban_geoplateforme"
+            and geocode.get("accepted") is True
+            and geocode.get("citycode")
+        ):
+            geocode_verified += 1
+        if "tribunal_competence_unresolved" in sale.quality_flags:
+            court_unresolved += 1
+        if "tribunal_competence_unverified" in sale.quality_flags:
+            court_unverified += 1
+        procedure_statuses[sale.sale_verification_status] = procedure_statuses.get(sale.sale_verification_status, 0) + 1
     print("Scoring recompute summary")
     print(f"- mode: {'dry-run' if dry_run else 'upsert'}")
     print(f"- sales: {len(sales)}")
     print(f"- upserted: {upserted}")
+    print(f"- failures: {len(failures or [])}")
     print(f"- by_source: {by_source}")
     print(f"- pretri_only: {pretri}")
     print(f"- works_to_quantify: {works}")
     print(f"- non_judicial_context: {non_judicial}")
+    print(f"- ban_geoplateforme_verified: {geocode_verified}")
+    print(f"- tribunal_competence_verified: {court_verified}")
+    print(f"- tribunal_competence_unresolved: {court_unresolved}")
+    print(f"- tribunal_competence_unverified: {court_unverified}")
+    print(f"- sale_procedure_statuses: {procedure_statuses}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -171,17 +569,53 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None, help="Nombre maximum d'annonces à recalculer.")
     parser.add_argument("--batch-size", type=int, default=20, help="Taille des lots d'upsert Supabase.")
     parser.add_argument("--dry-run", action="store_true", help="Recalcule sans écrire dans Supabase.")
+    parser.add_argument(
+        "--geocode-missing",
+        action="store_true",
+        help="Valide les adresses historiques avec BAN/GéoPlateforme avant le rattachement au tribunal.",
+    )
+    parser.add_argument(
+        "--geocode-workers",
+        type=int,
+        default=1,
+        choices=range(1, 9),
+        metavar="1..8",
+        help="Nombre borné de validations d'adresse simultanées.",
+    )
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Vérifie les procédures persistées sans les recalculer ni les modifier.",
+    )
+    parser.add_argument(
+        "--repair-invalid-procedures",
+        action="store_true",
+        help="Recalcule et réécrit individuellement les procédures persistées incohérentes.",
+    )
+    parser.add_argument(
+        "--refresh-unknown-procedures",
+        action="store_true",
+        help="Relit les pages sources publiques des procédures encore indéterminées.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
     args = parse_args()
+    if args.refresh_unknown_procedures:
+        raise SystemExit(refresh_unknown_sale_procedures(source=args.source, limit=args.limit))
+    if args.repair_invalid_procedures:
+        raise SystemExit(repair_invalid_sale_procedures(source=args.source, limit=args.limit))
+    if args.verify_only:
+        raise SystemExit(verify_persisted_sale_procedures(source=args.source, limit=args.limit))
     raise SystemExit(
         recompute_scoring(
             source=args.source,
             limit=args.limit,
             batch_size=args.batch_size,
             dry_run=args.dry_run,
+            geocode_missing=args.geocode_missing,
+            geocode_workers=args.geocode_workers,
         )
     )

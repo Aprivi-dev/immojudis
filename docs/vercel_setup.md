@@ -6,7 +6,7 @@
 - TypeScript strict
 - Tailwind CSS v4 + shadcn/ui
 - Supabase JS (auth, queries, RLS)
-- OpenStreetMap sur les pages détail et listes
+- Mapbox GL JS et Mapbox Static Images pour toutes les vues cartographiques
 
 ## 1. Installation locale
 
@@ -27,7 +27,6 @@ npm run dev        # http://localhost:3000
 | `SUPABASE_SECRET_KEY`                | ✅ prod  | Clé serveur Supabase nouvelle génération, ou utiliser `SUPABASE_SERVICE_ROLE_KEY` pour les projets legacy.                  |
 | `SUPABASE_SERVICE_ROLE_KEY`          | ✅ prod  | Clé serveur legacy Supabase, acceptée en repli de `SUPABASE_SECRET_KEY`.                                                    |
 | `SUPABASE_DB_URL`                    | ✅ ops   | URL Postgres directe pour appliquer les migrations. Repli accepté : `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`.           |
-| `NEXT_PUBLIC_OSM_TILE_URL`           | ❌       | Template de tuiles OSM compatible `{z}/{x}/{y}`. Défaut : `https://tile.openstreetmap.org/{z}/{x}/{y}.png`.                 |
 | `GITHUB_SCROLL_TOKEN`                | ❌       | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.                            |
 | `GITHUB_SCROLL_REPOSITORY`           | ❌       | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                                    |
 | `GITHUB_SCROLL_WORKFLOW`             | ❌       | Workflow cible. Défaut : `data-pipeline.yml`.                                                                               |
@@ -62,10 +61,11 @@ les migrations locales nécessitent toujours une valeur Postgres lisible
 
 La page `/admin` crée une ligne `auction_runs` en statut `queued`.
 
-Deux mécanismes peuvent ensuite lancer le vrai pipeline :
-
-1. **Déclenchement immédiat** : si `GITHUB_SCROLL_TOKEN` est configuré dans Vercel, le serveur déclenche le workflow GitHub Actions `data-pipeline.yml` avec l'identifiant du run.
-2. **Fallback automatique** : le workflow GitHub Actions est planifié toutes les 30 minutes et traite le plus ancien run `queued`.
+Le pipeline ne peut ensuite démarrer que par **déclenchement manuel** : si
+`GITHUB_SCROLL_TOKEN` est configuré dans Vercel, une action explicite dans
+`/admin` déclenche le workflow GitHub Actions `data-pipeline.yml` avec
+l'identifiant du run. Il n'existe aucun fallback planifié. Si le dispatch
+échoue, la ligne reste `queued` jusqu'à une nouvelle action manuelle.
 
 Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans Supabase :
 
@@ -194,7 +194,7 @@ Le projet cible Vercel. Pour déployer :
 2. Framework preset : **Next.js**.
 3. Build command : `npm run build`.
 4. Output directory : laisser la valeur auto générée par Next.js/Vercel.
-5. Renseigner les env vars Supabase publiques dans Project Settings → Environment Variables. Optionnellement, définir `NEXT_PUBLIC_OSM_TILE_URL` pour utiliser un fournisseur de tuiles OSM dédié.
+5. Renseigner les variables Supabase publiques et `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` dans Project Settings → Environment Variables.
 6. Donner le rôle admin via Supabase Auth `app_metadata.role = admin`.
 7. Deploy.
 

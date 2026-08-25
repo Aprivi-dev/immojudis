@@ -1,5 +1,7 @@
 create extension if not exists pgcrypto;
 create extension if not exists postgis;
+create schema if not exists app_private;
+grant usage on schema app_private to service_role;
 
 create table if not exists tribunals (
   code text primary key,
@@ -39,6 +41,10 @@ create table if not exists auction_sales (
   external_id text,
   tribunal text,
   tribunal_code text references tribunals(code),
+  sale_venue_type text not null default 'unknown',
+  sale_legal_framework text not null default 'unknown',
+  sale_verification_status text not null default 'pending',
+  sale_procedure jsonb not null default '{}'::jsonb,
   department text,
   city text,
   address text,
@@ -115,6 +121,10 @@ end $$;
 alter table auction_sales add column if not exists rooms_count integer;
 alter table auction_sales add column if not exists bedrooms_count integer;
 alter table auction_sales add column if not exists tribunal_code text references tribunals(code);
+alter table auction_sales add column if not exists sale_venue_type text not null default 'unknown';
+alter table auction_sales add column if not exists sale_legal_framework text not null default 'unknown';
+alter table auction_sales add column if not exists sale_verification_status text not null default 'pending';
+alter table auction_sales add column if not exists sale_procedure jsonb not null default '{}'::jsonb;
 alter table auction_sales add column if not exists primary_source text;
 alter table auction_sales add column if not exists source_urls jsonb default '[]'::jsonb;
 alter table auction_sales add column if not exists dedupe_confidence text;
@@ -600,6 +610,63 @@ create table if not exists auction_extractions (
   unique (source_url, provider, input_hash)
 );
 
+create table if not exists auction_surface_measurements (
+  measurement_key text primary key,
+  source_url text not null references auction_sales(source_url) on delete cascade,
+  asset_id text not null,
+  lot_label text,
+  level_label text,
+  space_label text not null,
+  category text not null check (category in ('habitable','circulation','sanitary','service','annex','exterior','land','unknown')),
+  value_m2 numeric not null check (value_m2 > 0 and value_m2 <= 10000),
+  included_in_habitable_sum boolean,
+  confidence numeric not null default 0 check (confidence >= 0 and confidence <= 1),
+  evidence_quote text not null,
+  document_url text,
+  document_label text,
+  page_number integer check (page_number is null or page_number > 0),
+  extraction_method text not null,
+  reasoning_version text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists auction_surface_derivations (
+  derivation_key text primary key,
+  source_url text not null references auction_sales(source_url) on delete cascade,
+  asset_id text not null,
+  kind text not null check (kind in ('explicit_carrez','explicit_habitable','explicit_total','explicit_built','calculated_room_sum','calculated_sale_sum','land','annex','unknown')),
+  value_m2 numeric not null check (value_m2 > 0 and value_m2 <= 1000000),
+  operand_measurement_keys jsonb not null default '[]'::jsonb check (jsonb_typeof(operand_measurement_keys) = 'array'),
+  formula text not null,
+  validation_status text not null check (validation_status in ('verified','partial','contradicted','rejected')),
+  confidence numeric not null default 0 check (confidence >= 0 and confidence <= 1),
+  explicit_candidate jsonb,
+  warnings jsonb not null default '[]'::jsonb check (jsonb_typeof(warnings) = 'array'),
+  is_selected boolean not null default false,
+  reasoning_version text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists auction_enrichment_jobs (
+  id uuid primary key default gen_random_uuid(),
+  source_url text not null references auction_sales(source_url) on delete cascade,
+  job_type text not null check (job_type in ('pdf','fact_extraction','display_description')),
+  status text not null default 'queued' check (status in ('queued','running','completed','failed','cancelled')),
+  priority integer not null default 0,
+  input_hash text not null,
+  attempt_count integer not null default 0 check (attempt_count >= 0),
+  max_attempts integer not null default 4 check (max_attempts > 0),
+  next_attempt_at timestamptz not null default now(),
+  locked_at timestamptz,
+  completed_at timestamptz,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (source_url, job_type, input_hash)
+);
+
 create table if not exists auction_risk_occurrences (
   id uuid primary key default gen_random_uuid(),
   source_url text not null references auction_sales(source_url) on delete cascade,
@@ -687,23 +754,27 @@ create table if not exists auction_sale_history (
   new_row jsonb
 );
 
-create or replace function log_auction_sale_change()
+create or replace function public.log_auction_sale_change()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
   if (to_jsonb(old) - 'updated_at' - 'last_seen_at') is distinct from (to_jsonb(new) - 'updated_at' - 'last_seen_at') then
-    insert into auction_sale_history (source_url, old_row, new_row)
+    insert into public.auction_sale_history (source_url, old_row, new_row)
     values (new.source_url, to_jsonb(old), to_jsonb(new));
   end if;
   return new;
 end;
 $$;
 
-drop trigger if exists trg_log_auction_sale_change on auction_sales;
+drop trigger if exists trg_log_auction_sale_change on public.auction_sales;
 create trigger trg_log_auction_sale_change
-after update on auction_sales
-for each row execute function log_auction_sale_change();
+after update on public.auction_sales
+for each row execute function public.log_auction_sale_change();
+
+revoke all on function public.log_auction_sale_change()
+from public, anon, authenticated, service_role;
 
 create index if not exists idx_auction_sales_department on auction_sales(department);
 create index if not exists idx_auction_sales_city on auction_sales(city);
@@ -760,6 +831,9 @@ create index if not exists idx_auction_documents_source_url on auction_documents
 create index if not exists idx_auction_documents_type on auction_documents(document_type);
 create index if not exists idx_auction_extractions_source_url on auction_extractions(source_url);
 create index if not exists idx_auction_extractions_provider on auction_extractions(provider);
+create index if not exists auction_surface_measurements_source_asset_idx on auction_surface_measurements(source_url, asset_id, category);
+create index if not exists auction_surface_derivations_source_selected_idx on auction_surface_derivations(source_url, is_selected, validation_status);
+create index if not exists auction_enrichment_jobs_claim_idx on auction_enrichment_jobs(priority desc, next_attempt_at, created_at) where status in ('queued','failed','running');
 create unique index if not exists idx_auction_score_factors_source_key on auction_score_factors(source_url, factor_key);
 create index if not exists idx_auction_score_factors_source_url on auction_score_factors(source_url);
 create index if not exists idx_auction_risk_occurrences_source_url on auction_risk_occurrences(source_url);
@@ -812,7 +886,26 @@ begin
   if not exists (select 1 from pg_constraint where conname = 'auction_sales_surface_scope_check') then
     alter table auction_sales add constraint auction_sales_surface_scope_check check (surface_scope is null or surface_scope in ('total','room','annex','room_or_annex','land','unknown','partial'));
   end if;
+  if not exists (select 1 from pg_constraint where conname = 'auction_sales_sale_venue_type_check') then
+    alter table auction_sales add constraint auction_sales_sale_venue_type_check
+      check (sale_venue_type in ('tribunal','notary','state','online','unknown'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'auction_sales_sale_legal_framework_check') then
+    alter table auction_sales add constraint auction_sales_sale_legal_framework_check
+      check (sale_legal_framework in ('judicial_seizure','judicial_partition','insolvency','voluntary_notarial','state_sale','unknown'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'auction_sales_sale_verification_status_check') then
+    alter table auction_sales add constraint auction_sales_sale_verification_status_check
+      check (sale_verification_status in ('verified','cross_checked','pending','conflict'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'auction_sales_sale_procedure_object_check') then
+    alter table auction_sales add constraint auction_sales_sale_procedure_object_check
+      check (jsonb_typeof(sale_procedure) = 'object');
+  end if;
 end $$;
+
+create index if not exists auction_sales_venue_status_idx
+  on auction_sales(sale_venue_type, status);
 
 create or replace view public_auction_sales
 with (security_invoker = true)
@@ -1193,6 +1286,9 @@ alter table auction_risks enable row level security;
 alter table auction_runs enable row level security;
 alter table auction_documents enable row level security;
 alter table auction_extractions enable row level security;
+alter table auction_surface_measurements enable row level security;
+alter table auction_surface_derivations enable row level security;
+alter table auction_enrichment_jobs enable row level security;
 alter table auction_risk_occurrences enable row level security;
 alter table auction_urban_planning_signals enable row level security;
 alter table auction_score_factors enable row level security;
@@ -1229,6 +1325,9 @@ grant select, insert, update, delete on table tribunals to service_role;
 grant select, insert, update, delete on table auction_runs to service_role;
 grant select, insert, update, delete on table auction_documents to service_role;
 grant select, insert, update, delete on table auction_extractions to service_role;
+grant select, insert, update, delete on table auction_surface_measurements to service_role;
+grant select, insert, update, delete on table auction_surface_derivations to service_role;
+grant select, insert, update, delete on table auction_enrichment_jobs to service_role;
 grant select, insert, update, delete on table auction_risk_occurrences to service_role;
 grant select, insert, update, delete on table auction_urban_planning_signals to service_role;
 grant select, insert, update, delete on table auction_score_factors to service_role;
@@ -1250,6 +1349,9 @@ revoke all on table auction_risks from anon, authenticated;
 revoke all on table auction_runs from anon, authenticated;
 revoke all on table auction_documents from anon, authenticated;
 revoke all on table auction_extractions from anon, authenticated;
+revoke all on table auction_surface_measurements from anon, authenticated;
+revoke all on table auction_surface_derivations from anon, authenticated;
+revoke all on table auction_enrichment_jobs from anon, authenticated;
 revoke all on table auction_risk_occurrences from anon, authenticated;
 revoke all on table auction_urban_planning_signals from anon, authenticated;
 revoke all on table auction_score_factors from anon, authenticated;
@@ -1278,6 +1380,8 @@ grant select on properties to authenticated;
 grant select on judicial_sales to authenticated;
 grant select on auction_features to authenticated;
 grant select on auction_surfaces to authenticated;
+grant select on auction_surface_measurements to authenticated;
+grant select on auction_surface_derivations to authenticated;
 grant select on auction_risks to authenticated;
 grant select on auction_documents to authenticated;
 grant select on auction_risk_occurrences to authenticated;
@@ -1312,6 +1416,10 @@ create policy auction_features_authenticated_read on auction_features for select
 drop policy if exists auction_surfaces_public_read on auction_surfaces;
 drop policy if exists auction_surfaces_authenticated_read on auction_surfaces;
 create policy auction_surfaces_authenticated_read on auction_surfaces for select to authenticated using (public.has_analysis_access());
+drop policy if exists auction_surface_measurements_analysis_read on auction_surface_measurements;
+create policy auction_surface_measurements_analysis_read on auction_surface_measurements for select to authenticated using (public.has_analysis_access());
+drop policy if exists auction_surface_derivations_analysis_read on auction_surface_derivations;
+create policy auction_surface_derivations_analysis_read on auction_surface_derivations for select to authenticated using (public.has_analysis_access());
 drop policy if exists auction_risks_public_read on auction_risks;
 drop policy if exists auction_risks_authenticated_read on auction_risks;
 create policy auction_risks_authenticated_read on auction_risks for select to authenticated using (public.has_analysis_access());
@@ -1349,5 +1457,109 @@ begin
     create policy spatial_ref_sys_authenticated_read on spatial_ref_sys for select to authenticated using (true);
   end if;
 end $$;
+
+create or replace function app_private.enqueue_auction_surface_enrichment()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_input_hash text := md5(
+    coalesce(new.content_hash, new.source_url || coalesce(new.documents::text, '[]'))
+    || ':auction_display_v8:qwen2_7b_instruct'
+  );
+  v_has_documents boolean := jsonb_typeof(coalesce(new.documents, '[]'::jsonb)) = 'array'
+    and jsonb_array_length(coalesce(new.documents, '[]'::jsonb)) > 0;
+begin
+  if v_has_documents then
+    insert into public.auction_enrichment_jobs (source_url, job_type, priority, input_hash)
+    values (new.source_url, 'pdf', 30, v_input_hash)
+    on conflict (source_url, job_type, input_hash) do nothing;
+  end if;
+
+  insert into public.auction_enrichment_jobs (source_url, job_type, priority, input_hash)
+  values (new.source_url, 'display_description', 20, v_input_hash)
+  on conflict (source_url, job_type, input_hash) do nothing;
+  return new;
+end;
+$$;
+
+revoke all on function app_private.enqueue_auction_surface_enrichment() from public, anon, authenticated;
+grant execute on function app_private.enqueue_auction_surface_enrichment() to service_role;
+
+drop trigger if exists auction_sales_enqueue_surface_enrichment on public.auction_sales;
+create trigger auction_sales_enqueue_surface_enrichment
+after insert or update of content_hash, documents on public.auction_sales
+for each row execute function app_private.enqueue_auction_surface_enrichment();
+
+create or replace function public.claim_auction_enrichment_jobs(p_limit integer default 10)
+returns setof public.auction_enrichment_jobs
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  return query
+  with candidates as (
+    select job.id
+    from public.auction_enrichment_jobs as job
+    where (
+        job.status in ('queued', 'failed')
+        or (
+          job.status = 'running'
+          and job.locked_at < statement_timestamp() - interval '30 minutes'
+        )
+      )
+      and job.next_attempt_at <= statement_timestamp()
+      and job.attempt_count < job.max_attempts
+    order by job.priority desc, job.next_attempt_at, job.created_at
+    for update skip locked
+    limit greatest(1, least(coalesce(p_limit, 10), 100))
+  )
+  update public.auction_enrichment_jobs as job
+  set
+    status = 'running',
+    attempt_count = job.attempt_count + 1,
+    locked_at = statement_timestamp(),
+    updated_at = statement_timestamp(),
+    last_error = null
+  from candidates
+  where job.id = candidates.id
+  returning job.*;
+end;
+$$;
+
+revoke all on function public.claim_auction_enrichment_jobs(integer) from public, anon, authenticated;
+grant execute on function public.claim_auction_enrichment_jobs(integer) to service_role;
+
+insert into public.auction_enrichment_jobs (source_url, job_type, priority, input_hash)
+select
+  sale.source_url,
+  jobs.job_type,
+  jobs.priority,
+  md5(
+    coalesce(sale.content_hash, sale.source_url || coalesce(sale.documents::text, '[]'))
+    || ':auction_display_v8:qwen2_7b_instruct'
+  )
+from public.auction_sales as sale
+cross join lateral (values ('display_description'::text, 20)) as jobs(job_type, priority)
+where sale.status in ('active', 'upcoming')
+on conflict (source_url, job_type, input_hash) do nothing;
+
+insert into public.auction_enrichment_jobs (source_url, job_type, priority, input_hash)
+select
+  sale.source_url,
+  'pdf',
+  30,
+  md5(
+    coalesce(sale.content_hash, sale.source_url || coalesce(sale.documents::text, '[]'))
+    || ':auction_display_v8:qwen2_7b_instruct'
+  )
+from public.auction_sales as sale
+where sale.status in ('active', 'upcoming')
+  and jsonb_typeof(coalesce(sale.documents, '[]'::jsonb)) = 'array'
+  and jsonb_array_length(coalesce(sale.documents, '[]'::jsonb)) > 0
+on conflict (source_url, job_type, input_hash) do nothing;
 
 notify pgrst, 'reload schema';

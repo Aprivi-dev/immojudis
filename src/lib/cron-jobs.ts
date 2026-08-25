@@ -26,6 +26,10 @@ type CronRpcClient = {
     name: "evaluate_operational_health",
     args: { p_now: string },
   ): Promise<{ data: Record<string, unknown> | null; error: { message?: string } | null }>;
+  rpc(
+    name: "evaluate_market_valuation_health",
+    args: { p_now: string },
+  ): Promise<{ data: Record<string, unknown> | null; error: { message?: string } | null }>;
 };
 
 export async function runMonitoredCron(
@@ -62,6 +66,7 @@ export async function runMonitoredCron(
       durationMs,
       status: 200,
       outcome: "success",
+      summary: result,
     });
     return NextResponse.json(
       {
@@ -121,8 +126,15 @@ export async function evaluateOperationalHealth(
     p_now: now.toISOString(),
   });
   if (error) throw new Error(error.message || "Operational health evaluation failed.");
+  const { data: valuation, error: valuationError } = await client.rpc(
+    "evaluate_market_valuation_health",
+    { p_now: now.toISOString() },
+  );
+  if (valuationError) {
+    throw new Error(valuationError.message || "Valuation health evaluation failed.");
+  }
   const delivery = await deliverOperationalAlertNotifications();
-  return { health: data ?? {}, externalAlerts: delivery };
+  return { health: data ?? {}, valuation: valuation ?? {}, externalAlerts: delivery };
 }
 
 export function positiveNumberFromEnv(name: string): number | undefined {

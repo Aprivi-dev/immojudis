@@ -3,20 +3,13 @@
 import { createFileRoute, Link } from "@/lib/router-compat";
 import Image from "next/image";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
-import Bell from "lucide-react/dist/esm/icons/bell.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import Calculator from "lucide-react/dist/esm/icons/calculator.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
-import Database from "lucide-react/dist/esm/icons/database.js";
-import FileChartColumnIncreasing from "lucide-react/dist/esm/icons/file-chart-column-increasing.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
-import Gauge from "lucide-react/dist/esm/icons/gauge.js";
-import Landmark from "lucide-react/dist/esm/icons/landmark.js";
-import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Radar from "lucide-react/dist/esm/icons/radar.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
-import UsersRound from "lucide-react/dist/esm/icons/users-round.js";
 import { useEffect, useState, type ComponentType } from "react";
 import { BrandMark } from "@/components/BrandLogo";
 import { RESOURCES_PATH } from "@/lib/navigation";
@@ -46,13 +39,14 @@ type CandleArrowGeometry = {
 const benefits = [
   { icon: FileSearch, title: "Rapports d'opportunité", text: "mise à prix, DVF, risques" },
   { icon: Calculator, title: "Mise plafond", text: "budget, frais, travaux, marge" },
-  { icon: Bell, title: "Alertes data-driven", text: "décote, rendement, zone" },
+  { icon: Radar, title: "Alertes data-driven", text: "décote, rendement, zone" },
 ] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
 
 const auctionCards = [
   {
+    example: "bordeaux",
     image: "/media/landing/auction-bordeaux.webp",
-    badge: "Décote apparente -31%",
+    badge: "Décote à examiner",
     city: "Bordeaux",
     tribunal: "Tribunal judiciaire de Bordeaux",
     title: "Appartement de caractère, quartier Jardin Public",
@@ -62,35 +56,26 @@ const auctionCards = [
     confidence: "Confiance moyenne",
   },
   {
+    example: "nantes",
     image: "/media/landing/auction-nantes.webp",
-    badge: "Maison + terrain",
+    badge: "Frais à simuler",
     city: "Nantes",
     tribunal: "Tribunal judiciaire de Nantes",
     title: "Maison de ville en pierre avec dépendance",
     price: "Mise à prix 138 500 €",
-    signal: "Frais à simuler",
+    signal: "Maison avec terrain",
     score: "71/100",
     confidence: "Dossier à compléter",
   },
   {
-    image: "/media/landing/auction-lyon.webp",
-    badge: "Audience le 16 juillet",
-    city: "Lyon",
-    tribunal: "Tribunal judiciaire de Lyon",
-    title: "Appartement familial avec balcon et stationnement",
-    price: "Mise à prix 176 000 €",
-    signal: "Prix/m² local suivi",
-    score: "64/100",
-    confidence: "Confiance prudente",
-  },
-  {
+    example: "toulouse",
     image: "/media/landing/auction-toulouse.webp",
-    badge: "Alerte investisseur",
+    badge: "Travaux à provisionner",
     city: "Toulouse",
     tribunal: "Tribunal judiciaire de Toulouse",
     title: "Maison ancienne avec jardin arboré",
     price: "Mise à prix 121 000 €",
-    signal: "Travaux à provisionner",
+    signal: "Risque locatif à lire",
     score: "69/100",
     confidence: "Risque à lire",
   },
@@ -98,47 +83,63 @@ const auctionCards = [
 
 const workflowSteps = [
   {
+    number: "01",
     icon: Search,
-    title: "1. Repérez",
+    title: "Repérez",
     text: "Filtrez les ventes par zone, tribunal, budget, type de bien et date d'audience.",
   },
   {
+    number: "02",
     icon: ChartNoAxesCombined,
-    title: "2. Chiffrez",
+    title: "Chiffrez",
     text: "Comparez la mise à prix au marché local, aux frais et à vos hypothèses de travaux.",
   },
   {
+    number: "03",
     icon: Scale,
-    title: "3. Décidez",
+    title: "Décidez",
     text: "Fixez une mise maximale avant l'audience et gardez la trace des points à valider.",
   },
-] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
+] satisfies Array<{ number: string; icon: IconComponent; title: string; text: string }>;
 
-const reportPillars = [
+const reportOutcomes = [
   {
-    icon: FileChartColumnIncreasing,
-    title: "Rapport d'opportunité judiciaire",
-    text: "Une fiche lisible qui rassemble mise à prix, estimation de marché, fourchette de valeur, comparables DVF, prix moyen local, décote apparente et niveau de confiance.",
+    icon: ChartNoAxesCombined,
+    title: "Comprendre la valeur",
+    text: "Estimation de marché, fourchette de valeur et ventes comparables réunies dans une lecture cohérente.",
+  },
+  {
+    icon: Scale,
+    title: "Identifier les risques",
+    text: "Les points d'attention juridiques, techniques et locatifs sont rendus visibles avant de s'engager.",
   },
   {
     icon: Calculator,
-    title: "Score d'enchère maximum",
-    text: "L'utilisateur renseigne budget, frais, travaux et rendement ou marge cible. ImmoJudis calcule la mise maximale conseillée avant l'audience.",
+    title: "Fixer sa mise maximale",
+    text: "Budget, frais, travaux et marge de sécurité sont transformés en une limite claire avant l'audience.",
+  },
+] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
+
+const trustPoints = [
+  {
+    icon: CalendarDays,
+    title: "Sources et fraîcheur affichées",
+    text: "Les dates et limites des données restent visibles.",
   },
   {
-    icon: Radar,
-    title: "Alertes intelligentes",
-    text: "Alertes quand une vente correspond à une zone, une décote minimale, un DPE, une maison avec terrain ou un rendement potentiel défini.",
+    icon: ChartNoAxesCombined,
+    title: "Comparables DVF",
+    text: "Le marché local est replacé dans son contexte.",
   },
   {
-    icon: Database,
-    title: "Donnée judiciaire enrichie",
-    text: "Le différenciateur reste vertical : tribunal, audience, documents, occupation connue, risques, parcelle cadastrale et sources horodatées.",
+    icon: FileSearch,
+    title: "Documents judiciaires",
+    text: "Les pièces disponibles sont regroupées par vente.",
   },
   {
-    icon: UsersRound,
-    title: "Avocats référencés",
-    text: "Une brique de mise en relation oriente l'acheteur vers des avocats référencés par barreau, tribunal et zone d'intervention.",
+    icon: Scale,
+    title: "Niveau de confiance",
+    text: "La solidité de l'analyse est explicitée.",
   },
 ] satisfies Array<{ icon: IconComponent; title: string; text: string }>;
 
@@ -160,22 +161,23 @@ const planPreviews = [
   {
     name: "Découverte",
     price: "Gratuit",
-    audience: "Un compte suffit pour explorer les ventes et leurs informations essentielles.",
+    audience: "Pour explorer les ventes et repérer les dossiers à approfondir.",
+    cta: "Créer mon compte gratuit",
     features: [
-      "Catalogue des ventes judiciaires et recherche de base",
-      "Mise à prix, audience, localisation, surface et tribunal",
-      "Aperçu flouté de chaque analyse disponible",
-      "Aucune carte bancaire et aucune limite de durée",
+      "Recherche et filtres des ventes judiciaires",
+      "Informations essentielles de chaque bien",
+      "Aperçu des analyses disponibles",
     ],
   },
   {
     name: "Analyse",
     price: "29 € / 30 jours",
-    audience: "Un paiement unique pour préparer vos décisions avant l'audience.",
+    audience: "Pour chiffrer une opportunité et préparer sa décision avant l'audience.",
+    cta: "Débloquer les analyses",
     features: [
-      "Rapports, risques, documents et comparables DVF détaillés",
-      "Calcul de mise maximale, frais, travaux et scénarios",
-      "Alertes, favoris, exports, historique et analyse multi-biens",
+      "Rapports, risques et comparables détaillés",
+      "Estimation, frais et mise maximale conseillée",
+      "Alertes, favoris, exports et historique",
       "Cadastre, DPE, quartier et avocats référencés",
     ],
   },
@@ -196,8 +198,8 @@ export function HomePage() {
       <HeroSection />
       <OpportunityReportSection />
       <AuctionCardsSection />
-      <OfferPlansSection />
       <HomeProcessSection />
+      <OfferPlansSection />
       <HomeFooter />
     </main>
   );
@@ -467,26 +469,30 @@ function CandleAnimation() {
 function OpportunityReportSection() {
   return (
     <section className="ij-report" aria-labelledby="report-title">
-      <div className="ij-report-head">
-        <p className="ij-proof-kicker">Nouvelle offre ImmoJudis</p>
-        <h2 id="report-title">Un rapport d'opportunité judiciaire sur chaque annonce.</h2>
-        <p>
-          Plutôt qu'une estimation générique, ImmoJudis assemble les signaux utiles au moment où la
-          décision se prend : avant de mandater l'avocat, de bloquer le budget et de lever la main.
-        </p>
-      </div>
-
       <div className="ij-report-layout">
-        <div className="ij-report-pillars" aria-label="Briques produit">
-          {reportPillars.map(({ icon: Icon, title, text }) => (
-            <article key={title} className="ij-report-pillar">
-              <span>
-                <Icon aria-hidden className="h-5 w-5" />
-              </span>
-              <h3>{title}</h3>
-              <p>{text}</p>
-            </article>
-          ))}
+        <div className="ij-report-story">
+          <div className="ij-report-head">
+            <p className="ij-proof-kicker">Nouvelle offre ImmoJudis</p>
+            <h2 id="report-title">Un rapport d'opportunité pour décider avant l'audience.</h2>
+            <p>
+              Chaque vente est transformée en dossier de décision pour évaluer son potentiel,
+              identifier ses risques et cadrer l'enchère avant de mandater un avocat.
+            </p>
+          </div>
+
+          <div className="ij-report-outcomes" aria-label="Bénéfices du rapport">
+            {reportOutcomes.map(({ icon: Icon, title, text }) => (
+              <article key={title} className="ij-report-outcome">
+                <span className="ij-report-outcome-icon">
+                  <Icon aria-hidden className="h-5 w-5" />
+                </span>
+                <span>
+                  <h3>{title}</h3>
+                  <p>{text}</p>
+                </span>
+              </article>
+            ))}
+          </div>
         </div>
 
         <aside className="ij-report-card" aria-label="Aperçu de rapport">
@@ -520,15 +526,30 @@ function OpportunityReportSection() {
           </Link>
         </aside>
       </div>
+
+      <div className="ij-trust-rail" aria-label="Transparence des analyses">
+        {trustPoints.map(({ icon: Icon, title, text }) => (
+          <div key={title} className="ij-trust-item">
+            <Icon aria-hidden className="h-5 w-5" />
+            <span>
+              <strong>{title}</strong>
+              <small>{text}</small>
+            </span>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
 
 function AuctionCardsSection() {
   return (
-    <section className="ij-auctions" aria-labelledby="auctions-title">
+    <section id="exemples" className="ij-auctions" aria-labelledby="auctions-title">
       <div className="ij-auctions-head">
-        <h2 id="auctions-title">Découvrez les ventes en cours avec leurs signaux.</h2>
+        <div>
+          <p className="ij-proof-kicker">Exemples de lecture</p>
+          <h2 id="auctions-title">Des ventes à explorer, avec les signaux utiles.</h2>
+        </div>
         <Link to="/sales" className="ij-all-sales">
           Voir toutes les ventes <ArrowRight aria-hidden className="h-4 w-4" />
         </Link>
@@ -536,7 +557,12 @@ function AuctionCardsSection() {
 
       <div className="ij-card-grid">
         {auctionCards.map((card) => (
-          <Link key={card.title} to="/sales" search={{ q: card.city }} className="ij-auction-card">
+          <Link
+            key={card.title}
+            to="/annonce-exemple"
+            search={{ bien: card.example }}
+            className="ij-auction-card"
+          >
             <span className="ij-card-image">
               <Image
                 src={card.image}
@@ -549,12 +575,12 @@ function AuctionCardsSection() {
             </span>
             <span className="ij-card-body">
               <span className="ij-card-city">
-                <MapPin aria-hidden className="h-4 w-4" />
+                <Radar aria-hidden className="h-4 w-4" />
                 {card.city}
               </span>
               <strong>{card.title}</strong>
               <span className="ij-card-meta">
-                <Landmark aria-hidden className="h-4 w-4" />
+                <Scale aria-hidden className="h-4 w-4" />
                 {card.tribunal}
               </span>
               <span className="ij-card-price">
@@ -566,6 +592,9 @@ function AuctionCardsSection() {
                 <strong>{card.score}</strong>
               </span>
               <span className="ij-card-confidence">{card.confidence}</span>
+              <span className="ij-card-action">
+                Voir l'annonce exemple <ArrowRight aria-hidden className="h-4 w-4" />
+              </span>
             </span>
           </Link>
         ))}
@@ -579,15 +608,12 @@ function OfferPlansSection() {
     <section className="ij-plans" aria-labelledby="plans-title">
       <div className="ij-plans-intro">
         <p className="ij-proof-kicker">Une offre simple, sans abonnement</p>
-        <h2 id="plans-title">Découvrez gratuitement. Analysez pendant 30 jours pour 29 €.</h2>
-        <p>
-          Le compte gratuit montre l'étendue des informations disponibles. Le paiement débloque
-          toutes les preuves et tous les outils de décision pendant 30 jours.
-        </p>
+        <h2 id="plans-title">Commencez gratuitement. Analysez pendant 30 jours pour 29 €.</h2>
+        <p>Choisissez le niveau de lecture adapté au dossier que vous préparez aujourd'hui.</p>
       </div>
 
       <div className="ij-plan-grid">
-        {planPreviews.map((plan) => (
+        {planPreviews.map((plan, index) => (
           <article key={plan.name} className="ij-plan-card">
             <div>
               <span>{plan.name}</span>
@@ -597,24 +623,28 @@ function OfferPlansSection() {
             <ul>
               {plan.features.map((feature) => (
                 <li key={feature}>
-                  <Gauge aria-hidden className="h-4 w-4" />
                   <span>{feature}</span>
                 </li>
               ))}
             </ul>
+            {index === 0 ? (
+              <Link
+                to="/login"
+                search={{ mode: "investor", redirect: undefined }}
+                className="ij-plan-button"
+              >
+                {plan.cta} <ArrowRight aria-hidden className="h-4 w-4" />
+              </Link>
+            ) : (
+              <Link to="/accompagnement" className="ij-plan-button ij-plan-button-primary">
+                {plan.cta} <ArrowRight aria-hidden className="h-4 w-4" />
+              </Link>
+            )}
           </article>
         ))}
       </div>
 
-      <div className="ij-plans-cta">
-        <span>
-          Aucun renouvellement automatique : vous pouvez acheter 30 jours supplémentaires quand vous
-          en avez besoin.
-        </span>
-        <Link to="/accompagnement" className="ij-signup-button">
-          Comparer Découverte et Analyse <ArrowRight aria-hidden className="h-4 w-4" />
-        </Link>
-      </div>
+      <p className="ij-plan-renewal">Paiement unique, sans renouvellement automatique.</p>
     </section>
   );
 }
@@ -625,27 +655,31 @@ function HomeProcessSection() {
       <div className="ij-process-head">
         <div>
           <p className="ij-proof-kicker">Parcours de décision</p>
-          <h2 id="process-title">Du signal à l'enchère maximale</h2>
+          <h2 id="process-title">Du signal à la mise maximale</h2>
         </div>
         <p>
-          Une lecture rapide, mais défendable : chaque donnée doit aider à acheter moins cher, à
-          éviter un risque ou à respecter une limite fixée avant l'audience.
+          Trois étapes pour transformer l'information judiciaire en une décision chiffrée et
+          défendable.
         </p>
       </div>
 
       <div className="ij-process-body">
         <div className="ij-process-steps">
           <div className="ij-step-grid">
-            {workflowSteps.map(({ icon: Icon, title, text }) => (
-              <div key={title} className="ij-step">
-                <span className="ij-step-icon">
+            {workflowSteps.map(({ number, icon: Icon, title, text }) => (
+              <article key={title} className="ij-step">
+                <span className="ij-step-number" aria-hidden>
+                  {number}
+                </span>
+                <span className="ij-step-icon" aria-hidden>
                   <Icon aria-hidden className="h-4 w-4" />
                 </span>
-                <span>
+                <span className="ij-step-copy">
                   <strong>{title}</strong>
                   <small>{text}</small>
                 </span>
-              </div>
+                <ArrowRight aria-hidden className="ij-step-flow h-4 w-4" />
+              </article>
             ))}
           </div>
         </div>

@@ -85,8 +85,16 @@ function classifyApiError(error: unknown, options: ApiErrorOptions) {
   ) {
     return { code: "FORBIDDEN" as const, status: 403, message };
   }
-  if (error instanceof ZodError || error instanceof SyntaxError) {
-    return { code: "INVALID_REQUEST" as const, status: 400, message: "Requête invalide." };
+  if (
+    error instanceof ZodError ||
+    error instanceof SyntaxError ||
+    message.startsWith("Requête invalide")
+  ) {
+    return {
+      code: "INVALID_REQUEST" as const,
+      status: 400,
+      message: message.startsWith("Requête invalide") ? message : "Requête invalide.",
+    };
   }
   if (message.toLowerCase().includes("configur")) {
     return {

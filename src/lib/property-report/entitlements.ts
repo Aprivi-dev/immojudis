@@ -108,6 +108,8 @@ export function buildPlanEntitlements(
       soldComparables: featureAccess(plan, "property.soldComparables"),
       activeComparables: featureAccess(plan, "property.activeComparables"),
       neighborhoodAnalysis: featureAccess(plan, "property.neighborhoodAnalysis"),
+      outcomeGraph: featureAccess(plan, "property.outcomeGraph"),
+      informationAgent: featureAccess(plan, "property.informationAgent"),
       bidCeiling: featureAccess(plan, "property.bidCeiling"),
       advancedBidScenarios: featureAccess(plan, "property.advancedBidScenarios"),
       dpeMap: featureAccess(plan, "dpe.map"),

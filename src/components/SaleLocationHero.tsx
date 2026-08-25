@@ -1,11 +1,10 @@
-import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import type { ReactNode } from "react";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Navigation from "lucide-react/dist/esm/icons/navigation.js";
 import type { AuctionSale } from "@/lib/types";
 import { saleDisplayTitle } from "@/lib/sale-title";
-import { openStreetMapQueryUrl, openStreetMapUrl } from "@/lib/tiles";
 import { MapThumbnail } from "@/components/MapThumbnail";
+import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 
 function saleAddress(sale: AuctionSale): string {
   return [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
@@ -17,10 +16,6 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
   const address = saleAddress(sale);
   const title = saleDisplayTitle(sale);
   const hasLocation = lat != null && lng != null;
-  const mapUrl = hasLocation
-    ? openStreetMapUrl(lat, lng, 17)
-    : openStreetMapQueryUrl(address || sale.city || sale.department || "France");
-
   if (!hasLocation) {
     return (
       <div className="liquid-panel flex min-h-[220px] flex-col items-center justify-center rounded-lg p-8 text-center">
@@ -29,14 +24,9 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
         <p className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
           Les coordonnées précises ne sont pas encore disponibles pour ce bien.
         </p>
-        <a
-          href={mapUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-4 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-soft hover:text-gold"
-        >
-          Rechercher la localisation <ExternalLink className="h-3 w-3" />
-        </a>
+        <span className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-soft">
+          Géocodage en attente
+        </span>
       </div>
     );
   }
@@ -72,14 +62,17 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
             </div>
           </dl>
         </div>
-        <a
-          href={mapUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-gold/30 bg-gold/10 px-4 text-sm font-semibold text-gold-soft transition-colors hover:border-gold/60 hover:bg-gold/15 hover:text-gold"
-        >
-          Ouvrir la carte <ExternalLink className="h-4 w-4" />
-        </a>
+        <MapboxPreviewButton
+          mode="aerial3d"
+          lat={lat}
+          lng={lng}
+          label="Explorer la vue aérienne 3D"
+          title="Vue aérienne 3D Mapbox"
+          description={address || title}
+          ariaLabel={`Afficher la vue aérienne 3D Mapbox de ${title}`}
+          icon={Navigation}
+          className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-gold/30 bg-gold/10 px-4 text-sm font-semibold text-gold-soft transition-colors hover:border-gold/60 hover:bg-gold/15 hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+        />
       </div>
     </div>
   );

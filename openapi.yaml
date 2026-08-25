@@ -1,0 +1,1491 @@
+openapi: 3.1.0
+info:
+  title: ImmoJudis Premium Analytics API
+  version: 1.3.0
+  description: >-
+    Contrats de lecture pour l'activité publique des ventes judiciaires, Outcome
+    Graph et les statistiques descriptives expérimentales par tribunal. Les
+    registres opérateur, preuves, membres de cohortes et commandes d'écriture
+    restent hors de cette API.
+servers:
+  - url: /api/v1
+paths:
+  /sales/{saleId}/outcome-graph:
+    get:
+      operationId: getSaleOutcomeGraph
+      summary: Lire la dernière prévision Outcome Graph admissible
+      description: >-
+        Réservé au plan Analyse. Le serveur refuse les prédictions sans snapshot
+        pré-audience validé, cohorte éligible ou provenance complète. Le plafond
+        personnel n'est pas envoyé à cette route et se calcule dans le navigateur.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: saleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Prévision prête ou refus explicite pour données insuffisantes
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Toujours `private, no-store`.
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [forecast]
+                properties:
+                  forecast:
+                    $ref: "#/components/schemas/OutcomeGraphForecast"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tribunals/judicial-activity:
+    get:
+      operationId: getTribunalJudicialActivity
+      summary: Lire l'activité des ventes judiciaires suivies pour un tribunal
+      description: >-
+        Agrégat public limité aux annonces explicitement judiciaires, confirmées
+        ou recoupées, et rattachées par code exact à un tribunal actif du
+        référentiel Justice. Les ventes notariales, les annonces en attente ou en
+        conflit, les dates aberrantes et les rattachements approximatifs sont
+        exclus. Les médianes sont masquées sous cinq observations. Cet agrégat
+        mesure la couverture Immojudis et ne prétend pas être un registre exhaustif
+        de l'activité du greffe.
+      parameters:
+        - name: courtCode
+          in: query
+          required: false
+          description: >-
+            Code exact d'un tribunal actif, normalisé en minuscules. Fournir
+            exactement ce paramètre ou `saleId`.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+            pattern: "^[a-z0-9][a-z0-9:._-]*$"
+        - name: saleId
+          in: query
+          required: false
+          description: >-
+            Identifiant d'une annonce dont le tribunal judiciaire vérifié sera
+            résolu côté serveur. Fournir exactement ce paramètre ou `courtCode`.
+          schema:
+            type: string
+            format: uuid
+        - name: historyMonths
+          in: query
+          required: false
+          description: Fenêtre des ventes passées observées; 36 mois par défaut.
+          schema:
+            type: integer
+            enum: [12, 24, 36]
+            default: 36
+      responses:
+        "200":
+          description: Activité judiciaire agrégée et provenance du calcul.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: public, s-maxage=300, stale-while-revalidate=600
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TribunalJudicialActivityResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
+  /tribunals/judicial-activity/directory:
+    get:
+      operationId: getTribunalJudicialActivityDirectory
+      summary: Parcourir les profils publics des tribunaux suivis
+      description: >-
+        Observatoire public organisé France, ressort judiciaire, puis tribunal.
+        Il ne retient que les tribunaux disposant d'au moins une vente judiciaire
+        contrôlée dans la fenêtre. Chaque niveau conserve ses échantillons, ses
+        fourchettes centrales de mise à prix et d'anticipation, ainsi que ses
+        limites de couverture. Aucune ligne d'annonce ou preuve source n'est renvoyée.
+      parameters:
+        - name: historyMonths
+          in: query
+          required: false
+          description: Fenêtre des ventes passées observées; 36 mois par défaut.
+          schema:
+            type: integer
+            enum: [12, 24, 36]
+            default: 36
+      responses:
+        "200":
+          description: Agrégats nationaux, couverture par ressort et profils tribunal.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: public, s-maxage=300, stale-while-revalidate=600
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TribunalJudicialActivityDirectoryResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
+  /tribunals/statistics:
+    get:
+      operationId: getTribunalStatistics
+      summary: Lire les statistiques historiques par tribunal
+      description: >-
+        Réservé au plan Analyse. Restitue la référence nationale et ses
+        snapshots tribunal compatibles pour les audiences initiales, sur une
+        fenêtre historique de 12, 24 ou 36 mois. L'univers couvre uniquement les
+        audiences matures disposant d'un snapshot de features gelé admissible au
+        cutoff; la couverture publiée ne mesure donc pas toutes les audiences
+        matures. Les résultats sont expérimentaux, conditionnés par des preuves
+        admissibles et descriptifs : ils ne prédisent pas l'issue d'une audience
+        individuelle. La route est indisponible tant que le feature flag serveur
+        n'est pas exactement la chaîne `true`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: windowMonths
+          in: query
+          required: false
+          description: Fenêtre historique close; 36 mois par défaut.
+          schema:
+            type: integer
+            enum: [12, 24, 36]
+            default: 36
+        - name: courtCode
+          in: query
+          required: false
+          description: >-
+            Code d'un seul tribunal. Le serveur supprime les espaces de bord et
+            normalise le code en minuscules.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+            pattern: "^[a-z0-9][a-z0-9:._-]*$"
+      responses:
+        "200":
+          description: >-
+            Référence nationale et statistiques tribunal compatibles, avec
+            effectifs publiables ou masqués, inconnus, exclusions et méthodes
+            d'ajustement. Une cellule supprimée ne révèle aucun compte exact.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+            Vary:
+              description: La réponse privée varie selon le jeton d'autorisation.
+              schema:
+                type: string
+                const: Authorization
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TribunalStatisticsResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Supabase JWT
+  responses:
+    InvalidRequest:
+      description: Identifiant ou requête invalide
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    AuthRequired:
+      description: Authentification Supabase requise
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Forbidden:
+      description: Fonctionnalité réservée au plan Analyse
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    InternalError:
+      description: Registre temporairement indisponible
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    StatisticsUnavailable:
+      description: >-
+        Fonctionnalité désactivée, snapshot national absent ou snapshot refusé
+        par les contrôles de publication.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+  schemas:
+    ApiError:
+      type: object
+      required: [ok, error, code, requestId]
+      properties:
+        ok:
+          const: false
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - AUTH_REQUIRED
+            - FORBIDDEN
+            - INVALID_REQUEST
+            - RATE_LIMITED
+            - CONFIGURATION_ERROR
+            - INTERNAL_ERROR
+        requestId:
+          type: string
+    NullableProbability:
+      oneOf:
+        - type: number
+          minimum: 0
+          maximum: 1
+        - type: "null"
+    MoneyCents:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 9007199254740991
+      description: Montant exact en centimes d'euro, jamais un flottant en euros.
+    NullableMoneyCents:
+      oneOf:
+        - $ref: "#/components/schemas/MoneyCents"
+        - type: "null"
+    Quantiles:
+      type: object
+      required: [p10Cents, p50Cents, p90Cents]
+      properties:
+        p10Cents:
+          $ref: "#/components/schemas/MoneyCents"
+        p50Cents:
+          $ref: "#/components/schemas/MoneyCents"
+        p90Cents:
+          $ref: "#/components/schemas/MoneyCents"
+    OutcomeGraphForecast:
+      type: object
+      required:
+        - saleId
+        - roundId
+        - predictionId
+        - snapshotId
+        - status
+        - generatedAt
+        - horizon
+        - modelVersion
+        - cohort
+        - marketValueCents
+        - startingPriceCents
+        - effectiveStartingPriceCents
+        - flow
+        - initialPrice
+        - surenchereProbability
+        - finalPrice
+        - ceiling
+        - pressure
+        - confidence
+        - delays
+        - explanationFactors
+        - limitations
+        - refusalReason
+      properties:
+        saleId:
+          type: string
+          format: uuid
+        roundId:
+          type: [string, "null"]
+          format: uuid
+        predictionId:
+          type: [string, "null"]
+          format: uuid
+        snapshotId:
+          type: [string, "null"]
+          format: uuid
+        status:
+          type: string
+          enum: [ready, insufficient_data]
+        generatedAt:
+          type: [string, "null"]
+          format: date-time
+        horizon:
+          type: [string, "null"]
+          enum: [T-30, T-14, T-7, T-1, T-2h, null]
+        modelVersion:
+          type: [string, "null"]
+        cohort:
+          oneOf:
+            - type: object
+              required: [id, label, level, periodStart, periodEnd]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                label:
+                  type: string
+                level:
+                  type: string
+                  enum:
+                    - tribunal_procedure_type_occupation_discount
+                    - tribunal_procedure_type
+                    - region_procedure_type
+                    - national_procedure_type
+                    - national_property_type
+                    - national
+                periodStart:
+                  type: string
+                  format: date-time
+                periodEnd:
+                  type: string
+                  format: date-time
+            - type: "null"
+        marketValueCents:
+          $ref: "#/components/schemas/NullableMoneyCents"
+        startingPriceCents:
+          $ref: "#/components/schemas/NullableMoneyCents"
+        effectiveStartingPriceCents:
+          $ref: "#/components/schemas/NullableMoneyCents"
+        flow:
+          type: object
+          required:
+            - heldProbability
+            - postponedProbability
+            - cancelledOrNotRequestedProbability
+            - adjudicatedIfHeldProbability
+            - noBidIfHeldProbability
+          properties:
+            heldProbability:
+              $ref: "#/components/schemas/NullableProbability"
+            postponedProbability:
+              $ref: "#/components/schemas/NullableProbability"
+            cancelledOrNotRequestedProbability:
+              $ref: "#/components/schemas/NullableProbability"
+            adjudicatedIfHeldProbability:
+              $ref: "#/components/schemas/NullableProbability"
+            noBidIfHeldProbability:
+              $ref: "#/components/schemas/NullableProbability"
+        initialPrice:
+          oneOf:
+            - $ref: "#/components/schemas/Quantiles"
+            - type: "null"
+        surenchereProbability:
+          $ref: "#/components/schemas/NullableProbability"
+        finalPrice:
+          oneOf:
+            - $ref: "#/components/schemas/Quantiles"
+            - type: "null"
+        ceiling:
+          oneOf:
+            - type: object
+              required:
+                - amountCents
+                - finalPriceBelowOrEqualIfAdjudicatedProbability
+                - adjudicationAndFinalPriceBelowOrEqualProbability
+              properties:
+                amountCents:
+                  $ref: "#/components/schemas/MoneyCents"
+                finalPriceBelowOrEqualIfAdjudicatedProbability:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                adjudicationAndFinalPriceBelowOrEqualProbability:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+            - type: "null"
+        pressure:
+          oneOf:
+            - type: object
+              required: [score, label, coverage, components]
+              properties:
+                score:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                label:
+                  type: string
+                  enum: [faible, modérée, élevée]
+                coverage:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                components:
+                  type: array
+                  items:
+                    type: object
+                    required: [key, label, score, weight]
+                    properties:
+                      key:
+                        type: string
+                        enum: [discount, adjudication, qualified_demand, history, liquidity]
+                      label:
+                        type: string
+                      score:
+                        type: [number, "null"]
+                      weight:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+            - type: "null"
+        confidence:
+          oneOf:
+            - type: object
+              required: [label, score, sampleSize, tribunalSampleSize]
+              properties:
+                label:
+                  type: string
+                  enum: [faible, moyen, élevé]
+                score:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                sampleSize:
+                  type: integer
+                  minimum: 10
+                tribunalSampleSize:
+                  type: integer
+                  minimum: 0
+            - type: "null"
+        delays:
+          type: [object, "null"]
+          additionalProperties:
+            $ref: "#/components/schemas/NullableProbability"
+        explanationFactors:
+          type: array
+          items:
+            type: object
+            required: [label, detail, direction]
+            properties:
+              label:
+                type: string
+              detail:
+                type: string
+              direction:
+                type: string
+                enum: [up, down, neutral]
+        limitations:
+          type: array
+          items:
+            type: string
+        refusalReason:
+          type: [string, "null"]
+    TribunalJudicialActivityMetric:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [status, value, sampleSize]
+          properties:
+            status:
+              type: string
+              const: published
+            value:
+              type: number
+              minimum: 0
+            sampleSize:
+              type: integer
+              minimum: 3
+        - type: object
+          additionalProperties: false
+          required: [status, value, sampleSize]
+          properties:
+            status:
+              type: string
+              const: insufficient_data
+            value:
+              type: "null"
+            sampleSize:
+              type: integer
+              minimum: 0
+      description: >-
+        Médiane ou taux accompagné de son échantillon. Le seuil usuel est cinq;
+        la médiane des lots par jour d'audience utilise trois jours distincts.
+    TribunalJudicialActivityRangeMetric:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [status, p25, p50, p75, sampleSize]
+          properties:
+            status:
+              type: string
+              const: published
+            p25:
+              type: number
+              minimum: 0
+            p50:
+              type: number
+              minimum: 0
+            p75:
+              type: number
+              minimum: 0
+            sampleSize:
+              type: integer
+              minimum: 5
+        - type: object
+          additionalProperties: false
+          required: [status, p25, p50, p75, sampleSize]
+          properties:
+            status:
+              type: string
+              const: insufficient_data
+            p25:
+              type: "null"
+            p50:
+              type: "null"
+            p75:
+              type: "null"
+            sampleSize:
+              type: integer
+              minimum: 0
+      description: >-
+        Fourchette interquartile avec médiane. Publiée à partir de cinq
+        observations et ordonnée P25 ≤ P50 ≤ P75.
+    TribunalJudicialActivityResponse:
+      type: object
+      additionalProperties: false
+      required: [court, period, activity, reliability, provenance]
+      properties:
+        court:
+          type: object
+          additionalProperties: false
+          required: [code, name, judicialRegion]
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+            judicialRegion:
+              type: [string, "null"]
+        period:
+          type: object
+          additionalProperties: false
+          required: [historyMonths, historyStart, asOf, upcomingEnd]
+          properties:
+            historyMonths:
+              type: integer
+              enum: [12, 24, 36]
+            historyStart:
+              type: string
+              format: date-time
+            asOf:
+              type: string
+              format: date-time
+            upcomingEnd:
+              type: string
+              format: date-time
+        activity:
+          type: object
+          additionalProperties: false
+          required:
+            - observedPastSales
+            - upcomingSales
+            - upcomingSales90Days
+            - upcomingHearingDays
+            - nextSaleAt
+            - medianStartingPriceEur
+            - startingPriceRangeEur
+            - visitCoverage
+            - medianDiscoveryLeadDays
+            - discoveryLeadRangeDays
+            - medianLotsPerHearingDay
+            - medianDaysBetweenHearingDays
+            - topPropertyTypes
+            - propertyTypeBenchmarks
+          properties:
+            observedPastSales:
+              type: integer
+              minimum: 0
+            upcomingSales:
+              type: integer
+              minimum: 0
+            upcomingSales90Days:
+              type: integer
+              minimum: 0
+            upcomingHearingDays:
+              type: integer
+              minimum: 0
+            nextSaleAt:
+              type: [string, "null"]
+              format: date-time
+            medianStartingPriceEur:
+              $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+            startingPriceRangeEur:
+              $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+            visitCoverage:
+              $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+            medianDiscoveryLeadDays:
+              $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+            discoveryLeadRangeDays:
+              $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+            medianLotsPerHearingDay:
+              $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+            medianDaysBetweenHearingDays:
+              $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+            topPropertyTypes:
+              type: array
+              maxItems: 3
+              items:
+                type: object
+                additionalProperties: false
+                required: [propertyType, count, share]
+                properties:
+                  propertyType:
+                    type: string
+                  count:
+                    type: integer
+                    minimum: 1
+                  share:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+            propertyTypeBenchmarks:
+              type: array
+              maxItems: 12
+              items:
+                type: object
+                additionalProperties: false
+                required:
+                  - propertyType
+                  - observedSales
+                  - startingPriceRangeEur
+                  - discoveryLeadRangeDays
+                properties:
+                  propertyType:
+                    type: string
+                  observedSales:
+                    type: integer
+                    minimum: 1
+                  startingPriceRangeEur:
+                    $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+                  discoveryLeadRangeDays:
+                    $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+        reliability:
+          type: object
+          additionalProperties: false
+          required: [level, label, currentSampleSize, exactCourtMatch, limitations]
+          properties:
+            level:
+              type: string
+              enum: [insufficient_data, indicative, descriptive, strong]
+            label:
+              type: string
+            currentSampleSize:
+              type: integer
+              minimum: 0
+            exactCourtMatch:
+              type: boolean
+              const: true
+            limitations:
+              type: array
+              minItems: 1
+              items:
+                type: string
+        provenance:
+          type: object
+          additionalProperties: false
+          required:
+            - builderVersion
+            - generatedAt
+            - courtReferenceSource
+            - includedVerificationStatuses
+            - excludedPendingOrConflictingSales
+          properties:
+            builderVersion:
+              type: string
+              const: tribunal_judicial_activity_v1
+            generatedAt:
+              type: string
+              format: date-time
+            courtReferenceSource:
+              type: string
+              const: justice_open_data
+            includedVerificationStatuses:
+              type: array
+              prefixItems:
+                - type: string
+                  const: verified
+                - type: string
+                  const: cross_checked
+              minItems: 2
+              maxItems: 2
+            excludedPendingOrConflictingSales:
+              type: boolean
+              const: true
+    TribunalJudicialActivityDirectoryResponse:
+      type: object
+      additionalProperties: false
+      required: [period, totals, national, regions, tribunals, provenance]
+      properties:
+        period:
+          type: object
+          additionalProperties: false
+          required: [historyMonths, historyStart, asOf, upcomingEnd]
+          properties:
+            historyMonths:
+              type: integer
+              enum: [12, 24, 36]
+            historyStart:
+              type: string
+              format: date-time
+            asOf:
+              type: string
+              format: date-time
+            upcomingEnd:
+              type: string
+              format: date-time
+        totals:
+          type: object
+          additionalProperties: false
+          required: [trackedCourts, observedPastSales, upcomingSales, upcomingSales90Days]
+          properties:
+            trackedCourts:
+              type: integer
+              minimum: 0
+            observedPastSales:
+              type: integer
+              minimum: 0
+            upcomingSales:
+              type: integer
+              minimum: 0
+            upcomingSales90Days:
+              type: integer
+              minimum: 0
+        national:
+          $ref: "#/components/schemas/TribunalJudicialActivityScopeOverview"
+        regions:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TribunalJudicialActivityRegionOverview"
+        tribunals:
+          type: array
+          maxItems: 250
+          items:
+            $ref: "#/components/schemas/TribunalJudicialActivityResponse"
+        provenance:
+          type: object
+          additionalProperties: false
+          required:
+            - generatedAt
+            - directoryVersion
+            - includesOnlyExactActiveCourts
+            - aggregationOrder
+          properties:
+            generatedAt:
+              type: string
+              format: date-time
+            directoryVersion:
+              type: string
+              const: tribunal_judicial_activity_directory_v2
+            includesOnlyExactActiveCourts:
+              type: boolean
+              const: true
+            aggregationOrder:
+              type: string
+              const: national_region_tribunal
+    TribunalJudicialActivityScopeOverview:
+      type: object
+      additionalProperties: false
+      required:
+        - observedPastSales
+        - upcomingSales
+        - upcomingSales90Days
+        - startingPriceRangeEur
+        - discoveryLeadRangeDays
+        - visitCoverage
+        - coverage
+      properties:
+        observedPastSales:
+          type: integer
+          minimum: 0
+        upcomingSales:
+          type: integer
+          minimum: 0
+        upcomingSales90Days:
+          type: integer
+          minimum: 0
+        startingPriceRangeEur:
+          $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+        discoveryLeadRangeDays:
+          $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+        visitCoverage:
+          $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [trackedCourts, publishableCourtProfiles, rate]
+          properties:
+            trackedCourts:
+              type: integer
+              minimum: 0
+            publishableCourtProfiles:
+              type: integer
+              minimum: 0
+            rate:
+              type: number
+              minimum: 0
+              maximum: 1
+    TribunalJudicialActivityRegionOverview:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - observedPastSales
+        - upcomingSales
+        - upcomingSales90Days
+        - startingPriceRangeEur
+        - discoveryLeadRangeDays
+        - visitCoverage
+        - coverage
+      properties:
+        name:
+          type: string
+        observedPastSales:
+          type: integer
+          minimum: 0
+        upcomingSales:
+          type: integer
+          minimum: 0
+        upcomingSales90Days:
+          type: integer
+          minimum: 0
+        startingPriceRangeEur:
+          $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+        discoveryLeadRangeDays:
+          $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+        visitCoverage:
+          $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [trackedCourts, publishableCourtProfiles, rate]
+          properties:
+            trackedCourts:
+              type: integer
+              minimum: 0
+            publishableCourtProfiles:
+              type: integer
+              minimum: 0
+            rate:
+              type: number
+              minimum: 0
+              maximum: 1
+    TribunalStatisticsAdjustmentMethod:
+      type: string
+      enum:
+        - suppressed
+        - raw
+        - beta_binomial
+        - national_fallback
+        - log_shrinkage
+      description: >-
+        `national_fallback` est réservé pour compatibilité. Le builder v1
+        supprime la cellule lorsqu'une référence nationale publiable manque; il
+        n'émet pas un repli national de substitution dans ce cas.
+    TribunalStatisticsPublicSampleCount:
+      oneOf:
+        - type: integer
+          minimum: 10
+        - type: "null"
+      description: >-
+        Compte public. Il vaut null sous 10 ou lorsque le quality gate échoue;
+        le compte exact reste privé.
+    TribunalStatisticsConfidenceInterval:
+      type: object
+      additionalProperties: false
+      required: [low, high]
+      properties:
+        low:
+          type: number
+          minimum: 0
+          maximum: 1
+        high:
+          type: number
+          minimum: 0
+          maximum: 1
+      description: Intervalle ordonné avec `low ≤ high`.
+    TribunalStatisticsPublishedMetric:
+      type: object
+      additionalProperties: false
+      required:
+        - rawValue
+        - adjustedValue
+        - numerator
+        - knownDenominator
+        - eligibleUniverse
+        - unknownCount
+        - excludedCount
+        - exclusionReasons
+        - confidenceInterval
+        - method
+      properties:
+        rawValue:
+          type: number
+          minimum: 0
+          maximum: 1
+        adjustedValue:
+          type: number
+          minimum: 0
+          maximum: 1
+        numerator:
+          type: integer
+          minimum: 0
+        knownDenominator:
+          type: integer
+          minimum: 10
+        eligibleUniverse:
+          type: integer
+          minimum: 10
+        unknownCount:
+          type: integer
+          minimum: 0
+          description: Inconnus conservés hors du dénominateur connu.
+        excludedCount:
+          type: integer
+          minimum: 0
+        exclusionReasons:
+          type: object
+          propertyNames:
+            enum:
+              - no_terminal_outcome_at_cutoff
+              - ambiguous_terminal_outcome
+              - outcome_status_claim_ineligible
+              - unsupported_outcome_status
+              - surenchere_status_claim_ineligible
+              - initial_starting_price_eur_claim_ineligible
+              - effective_starting_price_eur_claim_ineligible
+              - final_hammer_price_claim_ineligible
+              - finality_status_claim_ineligible
+              - non_positive_price
+              - result_observed_at_claim_ineligible
+              - result_observed_after_cutoff
+              - result_observed_before_hearing
+          additionalProperties:
+            type: integer
+            minimum: 0
+        confidenceInterval:
+          $ref: "#/components/schemas/TribunalStatisticsConfidenceInterval"
+        method:
+          type: string
+          enum: [raw, beta_binomial, national_fallback]
+          description: >-
+            `national_fallback` est réservé pour compatibilité; le builder v1
+            supprime la cellule si son parent publiable manque.
+      description: >-
+        Proportion publiée avec dénominateur propre. Le numérateur ne dépasse
+        pas le dénominateur connu et knownDenominator + unknownCount +
+        excludedCount = eligibleUniverse. Au national, les proportions de 10 à
+        29 observations utilisent l'a priori de Jeffreys versionné.
+    TribunalStatisticsSuppressedMetric:
+      type: object
+      additionalProperties: false
+      required:
+        - rawValue
+        - adjustedValue
+        - numerator
+        - knownDenominator
+        - eligibleUniverse
+        - unknownCount
+        - excludedCount
+        - exclusionReasons
+        - confidenceInterval
+        - method
+      properties:
+        rawValue:
+          type: "null"
+        adjustedValue:
+          type: "null"
+        numerator:
+          type: "null"
+        knownDenominator:
+          type: "null"
+        eligibleUniverse:
+          type: "null"
+        unknownCount:
+          type: "null"
+        excludedCount:
+          type: "null"
+        exclusionReasons:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+        confidenceInterval:
+          type: "null"
+        method:
+          type: string
+          const: suppressed
+      description: >-
+        Cellule entièrement masquée. Aucun compte exact ni motif chiffré n'est
+        exposé afin d'empêcher sa reconstruction.
+    TribunalStatisticsMetric:
+      oneOf:
+        - $ref: "#/components/schemas/TribunalStatisticsPublishedMetric"
+        - $ref: "#/components/schemas/TribunalStatisticsSuppressedMetric"
+      description: >-
+        Proportion publiée ou cellule entièrement masquée sous 10 observations
+        ou lorsque le quality gate du snapshot échoue.
+    TribunalStatisticsQuantiles:
+      type: object
+      additionalProperties: false
+      required: [p10, p50, p90]
+      properties:
+        p10:
+          type: number
+          minimum: 0
+        p50:
+          type: number
+          minimum: 0
+        p90:
+          type: number
+          minimum: 0
+      description: Quantiles monotones `p10 ≤ p50 ≤ p90`.
+    TribunalStatisticsPublishedDistribution:
+      type: object
+      additionalProperties: false
+      required:
+        - sampleSize
+        - eligibleUniverse
+        - unknownCount
+        - raw
+        - adjusted
+        - method
+        - parentSampleSize
+        - excludedCount
+        - exclusionReasons
+      properties:
+        sampleSize:
+          type: integer
+          minimum: 10
+        eligibleUniverse:
+          type: integer
+          minimum: 10
+        unknownCount:
+          type: integer
+          minimum: 0
+          description: Observations inconnues conservées hors de l'échantillon connu.
+        raw:
+          $ref: "#/components/schemas/TribunalStatisticsQuantiles"
+        adjusted:
+          $ref: "#/components/schemas/TribunalStatisticsQuantiles"
+        method:
+          type: string
+          enum: [raw, national_fallback, log_shrinkage]
+          description: >-
+            `national_fallback` est réservé pour compatibilité; le builder v1
+            supprime la cellule si son parent publiable manque.
+        parentSampleSize:
+          type: integer
+          minimum: 0
+        excludedCount:
+          type: integer
+          minimum: 0
+        exclusionReasons:
+          type: object
+          propertyNames:
+            enum:
+              - no_terminal_outcome_at_cutoff
+              - ambiguous_terminal_outcome
+              - outcome_status_claim_ineligible
+              - unsupported_outcome_status
+              - surenchere_status_claim_ineligible
+              - initial_starting_price_eur_claim_ineligible
+              - effective_starting_price_eur_claim_ineligible
+              - final_hammer_price_claim_ineligible
+              - finality_status_claim_ineligible
+              - non_positive_price
+              - result_observed_at_claim_ineligible
+              - result_observed_after_cutoff
+              - result_observed_before_hearing
+          additionalProperties:
+            type: integer
+            minimum: 0
+      description: >-
+        Distribution publiée de ratio ou de délai, avec sampleSize +
+        unknownCount + excludedCount = eligibleUniverse. Une distribution locale
+        exige une référence nationale publiable.
+    TribunalStatisticsSuppressedDistribution:
+      type: object
+      additionalProperties: false
+      required:
+        - sampleSize
+        - eligibleUniverse
+        - unknownCount
+        - raw
+        - adjusted
+        - method
+        - parentSampleSize
+        - excludedCount
+        - exclusionReasons
+      properties:
+        sampleSize:
+          type: "null"
+        eligibleUniverse:
+          type: "null"
+        unknownCount:
+          type: "null"
+        raw:
+          type: "null"
+        adjusted:
+          type: "null"
+        method:
+          type: string
+          const: suppressed
+        parentSampleSize:
+          type: "null"
+        excludedCount:
+          type: "null"
+        exclusionReasons:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+      description: >-
+        Distribution entièrement masquée. Aucun effectif, quantile, parent ni
+        motif chiffré n'est exposé.
+    TribunalStatisticsDistribution:
+      oneOf:
+        - $ref: "#/components/schemas/TribunalStatisticsPublishedDistribution"
+        - $ref: "#/components/schemas/TribunalStatisticsSuppressedDistribution"
+      description: >-
+        Distribution publiée ou entièrement masquée. Au national, 10 à 29
+        observations restent supprimées faute de parent indépendant. En local,
+        une référence nationale publiable est obligatoire.
+    TribunalStatisticsFlow:
+      type: object
+      additionalProperties: false
+      required:
+        - held
+        - postponed
+        - cancelled
+        - notRequested
+        - noBidIfHeld
+        - adjudicatedIfHeld
+      properties:
+        held:
+          $ref: "#/components/schemas/TribunalStatisticsMetric"
+        postponed:
+          $ref: "#/components/schemas/TribunalStatisticsMetric"
+        cancelled:
+          $ref: "#/components/schemas/TribunalStatisticsMetric"
+        notRequested:
+          $ref: "#/components/schemas/TribunalStatisticsMetric"
+        noBidIfHeld:
+          $ref: "#/components/schemas/TribunalStatisticsMetric"
+        adjudicatedIfHeld:
+          $ref: "#/components/schemas/TribunalStatisticsMetric"
+    TribunalStatisticsSurenchere:
+      type: object
+      additionalProperties: false
+      required: [filed]
+      properties:
+        filed:
+          $ref: "#/components/schemas/TribunalStatisticsMetric"
+    TribunalStatisticsPriceRatios:
+      type: object
+      additionalProperties: false
+      required: [finalToInitial, finalToEffective, finalToMarket]
+      properties:
+        finalToInitial:
+          $ref: "#/components/schemas/TribunalStatisticsDistribution"
+          description: >-
+            Prix final / mise initiale. Exige un final_hammer_price_eur et une
+            finality_status procedurally_definitive admissibles; le prix
+            d'adjudication initial n'est jamais substitué au prix final.
+        finalToEffective:
+          $ref: "#/components/schemas/TribunalStatisticsDistribution"
+          description: >-
+            Prix final / mise effective, avec les mêmes exigences de prix final
+            et de finalité procédurale.
+        finalToMarket:
+          $ref: "#/components/schemas/TribunalStatisticsDistribution"
+          description: >-
+            Toujours suppressed dans tribunal_statistics_builder_v1 faute
+            d'estimation de marché pré-audience canonique. Tous les comptes et
+            quantiles publics sont null.
+    TribunalStatisticsDelays:
+      type: object
+      additionalProperties: false
+      required: [hearingToKnownResult, postponementToNextHearing]
+      properties:
+        hearingToKnownResult:
+          $ref: "#/components/schemas/TribunalStatisticsDistribution"
+        postponementToNextHearing:
+          $ref: "#/components/schemas/TribunalStatisticsDistribution"
+          description: >-
+            Toujours suppressed dans tribunal_statistics_builder_v1 faute de
+            lien canonique vérifié vers l'audience suivante. Tous les comptes et
+            quantiles publics sont null.
+    TribunalStatisticsFallback:
+      type: object
+      additionalProperties: false
+      required: [scope, parentLabel, localWeight]
+      properties:
+        scope:
+          type: string
+          enum: [none, national]
+        parentLabel:
+          type: [string, "null"]
+          minLength: 1
+        localWeight:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: >-
+            Signal global de qualité fondé sur l'échantillon de statuts, affiché
+            comme « Qualité globale ». Ce n'est ni un poids par cellule, ni la
+            force d'un a priori bêta-binomial, ni le coefficient exact du
+            rétrécissement.
+    TribunalStatisticsItem:
+      type: object
+      additionalProperties: false
+      required:
+        - scope
+        - tribunal
+        - roundKind
+        - period
+        - reliability
+        - samples
+        - flow
+        - surenchere
+        - priceRatios
+        - delays
+        - fallback
+        - methodology
+        - limitations
+      properties:
+        scope:
+          type: string
+          enum: [national, tribunal]
+        tribunal:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [code, name, judicialRegion]
+              properties:
+                code:
+                  type: string
+                  minLength: 1
+                name:
+                  type: string
+                  minLength: 1
+                judicialRegion:
+                  type: [string, "null"]
+                  minLength: 1
+            - type: "null"
+          description: Null pour le scope national, obligatoire pour le scope tribunal.
+        roundKind:
+          type: string
+          const: initial
+        period:
+          type: object
+          additionalProperties: false
+          required: [start, end, windowMonths, knowledgeCutoffAt]
+          properties:
+            start:
+              type: string
+              format: date
+            end:
+              type: string
+              format: date
+            windowMonths:
+              type: integer
+              enum: [12, 24, 36]
+            knowledgeCutoffAt:
+              type: string
+              format: date-time
+        reliability:
+          type: object
+          additionalProperties: false
+          required: [level, label, qualityGatePassed, coverage, warnings]
+          properties:
+            level:
+              type: string
+              enum: [insufficient_data, smoothed, descriptive, robust]
+              description: >-
+                Signal global du snapshot fondé sur l'échantillon de statuts, le
+                quality gate et la couverture. robust exige au moins 100 statuts
+                connus, un quality gate réussi et une couverture d'au moins 80 %.
+                Avec au moins 100 statuts mais une couverture inférieure, le
+                niveau reste descriptive et un avertissement est fourni. Il ne
+                qualifie pas chaque cellule et ne constitue pas une fiabilité
+                prédictive.
+            label:
+              type: string
+              minLength: 1
+            qualityGatePassed:
+              type: boolean
+              description: >-
+                Vrai seulement si la revue humaine et la couverture privée du gel
+                antérieur au cutoff (au moins 80 %) satisfont les règles v1. Si
+                false, toutes les métriques et distributions du snapshot sont
+                supprimées, indépendamment de leur taille d'échantillon.
+            coverage:
+              oneOf:
+                - type: number
+                  minimum: 0
+                  maximum: 1
+                - type: "null"
+              description: >-
+                Statuts admissibles connus divisés par eligibleRounds dans le
+                sous-univers disposant d'un snapshot de features gelé. Vaut null
+                si eligibleRounds ou status est masqué; ne mesure pas toutes les
+                audiences initiales matures.
+            warnings:
+              type: array
+              description: >-
+                Avertissements agrégés non personnels. Peut notamment contenir
+                `round_not_frozen_at_cutoff` pour signaler, sans effectif public,
+                des audiences matures exclues faute de snapshot gelé admissible.
+              items:
+                type: string
+                minLength: 1
+        samples:
+          type: object
+          additionalProperties: false
+          required:
+            - eligibleRounds
+            - status
+            - initialPrice
+            - effectivePrice
+            - marketPrice
+            - surenchere
+            - resultDelay
+            - postponementDelay
+            - doubleReviewed
+          properties:
+            eligibleRounds:
+              $ref: "#/components/schemas/TribunalStatisticsPublicSampleCount"
+              description: >-
+                Audiences initiales matures disposant d'un snapshot de features
+                gelé admissible au cutoff; ce n'est pas l'ensemble des audiences
+                matures.
+            status:
+              $ref: "#/components/schemas/TribunalStatisticsPublicSampleCount"
+            initialPrice:
+              $ref: "#/components/schemas/TribunalStatisticsPublicSampleCount"
+            effectivePrice:
+              $ref: "#/components/schemas/TribunalStatisticsPublicSampleCount"
+            marketPrice:
+              $ref: "#/components/schemas/TribunalStatisticsPublicSampleCount"
+              description: >-
+                Null dans tribunal_statistics_builder_v1, car finalToMarket est
+                toujours supprimé.
+            surenchere:
+              $ref: "#/components/schemas/TribunalStatisticsPublicSampleCount"
+            resultDelay:
+              $ref: "#/components/schemas/TribunalStatisticsPublicSampleCount"
+            postponementDelay:
+              $ref: "#/components/schemas/TribunalStatisticsPublicSampleCount"
+              description: >-
+                Null dans tribunal_statistics_builder_v1, car
+                postponementToNextHearing est toujours supprimé.
+            doubleReviewed:
+              $ref: "#/components/schemas/TribunalStatisticsPublicSampleCount"
+          description: >-
+            Effectifs publics indépendamment masqués sous 10 ou lorsque le
+            quality gate échoue. Les effectifs exacts restent dans le snapshot et
+            le manifeste privés.
+        flow:
+          $ref: "#/components/schemas/TribunalStatisticsFlow"
+        surenchere:
+          $ref: "#/components/schemas/TribunalStatisticsSurenchere"
+        priceRatios:
+          $ref: "#/components/schemas/TribunalStatisticsPriceRatios"
+        delays:
+          $ref: "#/components/schemas/TribunalStatisticsDelays"
+        fallback:
+          $ref: "#/components/schemas/TribunalStatisticsFallback"
+        methodology:
+          type: object
+          additionalProperties: false
+          required: [builderVersion, eligibilityRuleVersion, smoothingRuleVersion]
+          properties:
+            builderVersion:
+              type: string
+              const: tribunal_statistics_builder_v1
+            eligibilityRuleVersion:
+              type: string
+              const: claim_ab_reviewed_frozen_round_as_of_v1
+            smoothingRuleVersion:
+              type: string
+              const: jeffreys_beta_log_shrinkage_v1
+        limitations:
+          type: array
+          items:
+            type: string
+            minLength: 1
+    TribunalStatisticsResponse:
+      type: object
+      additionalProperties: false
+      required: [national, tribunals, meta]
+      properties:
+        national:
+          $ref: "#/components/schemas/TribunalStatisticsItem"
+        tribunals:
+          type: array
+          items:
+            $ref: "#/components/schemas/TribunalStatisticsItem"
+        meta:
+          type: object
+          additionalProperties: false
+          required: [generatedAt, experimental, windowMonths, roundKind, warnings]
+          properties:
+            generatedAt:
+              type: string
+              format: date-time
+            experimental:
+              type: boolean
+              const: true
+            windowMonths:
+              type: integer
+              enum: [12, 24, 36]
+            roundKind:
+              type: string
+              const: initial
+            warnings:
+              type: array
+              description: >-
+                Avertissements nationaux agrégés, dont éventuellement
+                `round_not_frozen_at_cutoff`. L'effectif exact reste privé.
+              items:
+                type: string
+                minLength: 1

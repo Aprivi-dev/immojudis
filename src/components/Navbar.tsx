@@ -15,6 +15,7 @@ import { RESOURCES_PATH } from "@/lib/navigation";
 
 const AUTH_NAV_ITEMS = [
   { to: "/sales", label: "Annonces" },
+  { to: "/tribunaux", label: "Tribunaux" },
   { to: "/avocats", label: "Avocats" },
 ] as const;
 
@@ -28,12 +29,14 @@ const HOME_NAV_ITEMS = [
   { to: RESOURCES_PATH, label: "Ressources" },
   { to: "/a-propos", label: "À propos" },
 ] as const;
+const NON_HOME_PUBLIC_NAV_ITEMS = HOME_NAV_ITEMS.filter((item) => item.to !== "/annonce-exemple");
 
 export function Navbar() {
   const location = useLocation();
   const { user, profile, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const isHome = location.pathname === "/";
+  const isAdminArea = location.pathname === "/admin" || location.pathname.startsWith("/admin/");
   const isSalesListing = location.pathname === "/sales" || location.pathname === "/sales/";
   const isProductPage =
     location.pathname === "/annonce-exemple" || /^\/sales\/[^/]+/.test(location.pathname);
@@ -45,7 +48,9 @@ export function Navbar() {
         ...(isProfessionalAccount(user, profile) ? [PRO_NAV_ITEM] : []),
         ...(admin ? [ADMIN_NAV_ITEM] : []),
       ]
-    : HOME_NAV_ITEMS;
+    : isHome
+      ? HOME_NAV_ITEMS
+      : NON_HOME_PUBLIC_NAV_ITEMS;
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -59,6 +64,8 @@ export function Navbar() {
   }, [mobileOpen]);
 
   const closeMobileMenu = () => setMobileOpen(false);
+
+  if (isAdminArea) return null;
 
   if (isSalesListing) return null;
 

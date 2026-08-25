@@ -211,6 +211,7 @@ async function fetchDvfCandidates({
   let query = supabaseAdmin
     .from("dvf_transactions")
     .select(DVF_COLUMNS)
+    .eq("mutation_nature", "Vente")
     .gte("sale_date", minSaleDate)
     .gte("latitude", bbox.latMin)
     .lte("latitude", bbox.latMax)
