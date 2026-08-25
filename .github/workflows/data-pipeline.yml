@@ -96,7 +96,7 @@ jobs:
       ENABLE_NOTAIRES_BENCHMARK: true
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -106,7 +106,7 @@ jobs:
           cache-dependency-path: services/data-pipeline/requirements.txt
 
       - name: Restore pipeline extraction cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             services/data-pipeline/data/documents
@@ -118,7 +118,7 @@ jobs:
             immojudis-data-pipeline-${{ runner.os }}-
 
       - name: Restore verified Justice reference cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: services/data-pipeline/data/raw/outcome_sources/justice_courts
           key: immojudis-justice-reference-${{ runner.os }}-${{ github.run_id }}
