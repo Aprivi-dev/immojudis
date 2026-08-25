@@ -25,6 +25,7 @@ import Target from "lucide-react/dist/esm/icons/target.js";
 import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
 import { DocumentsList } from "@/components/DocumentsList";
+import { InformationRequestAgent } from "@/components/InformationRequestAgent";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { OutcomeForecast, useOutcomeGraphForecast } from "@/components/OutcomeForecast";
@@ -690,6 +691,7 @@ function AnalysisContent({
     ...(hasVerifiedForecast ? [["#outcome-forecast", "Prévision"]] : []),
     ["#market", "Marché local"],
     ["#risks", "Risques & pièces"],
+    ["#information-agent", "Enquête IA"],
     ["#lawyer", showTribunalHistory ? "Avocat" : "Organisateur"],
   ];
 
@@ -721,6 +723,11 @@ function AnalysisContent({
       <OutcomeForecast forecastQuery={forecastQuery} />
 
       <RisksAndDocuments sale={sale} />
+      <div className="border-b border-brand-navy/10 bg-[#eef7ff]">
+        <div className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+          <InformationRequestAgent sale={sale} />
+        </div>
+      </div>
       <LawyerSection sale={sale} />
 
       <section className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8">

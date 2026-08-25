@@ -175,6 +175,7 @@ export type PlanEntitlements = {
     activeComparables: FeatureAccess;
     neighborhoodAnalysis: FeatureAccess;
     outcomeGraph: FeatureAccess;
+    informationAgent: FeatureAccess;
     bidCeiling: FeatureAccess;
     advancedBidScenarios: FeatureAccess;
     dpeMap: FeatureAccess;
@@ -196,6 +197,7 @@ const ADMIN_PLAN_LIMITS: PlanEntitlements["limits"] = {
   saleAnalysisItems: null,
   apiKeys: null,
   workspaceCollaborators: null,
+  informationAgentMissionsPer30Days: null,
 };
 
 export type SavedPropertyReport = SavedReportRow & {

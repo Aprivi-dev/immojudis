@@ -39,6 +39,7 @@ const analysisFeatures = [
   "Mise plafond avec travaux incluse par défaut",
   "Estimation du bien et ventes comparables",
   "Détail des frais, travaux, risques et pièces",
+  "3 enquêtes IA supervisées par période de 30 jours",
   "Mise en relation avec un avocat depuis le dossier",
 ] as const;
 

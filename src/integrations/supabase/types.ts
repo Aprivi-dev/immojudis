@@ -2907,6 +2907,196 @@ export type Database = {
           },
         ];
       };
+      information_agent_missions: {
+        Row: {
+          ai_disclosure_version: string;
+          approved_at: string | null;
+          approved_message_sha256: string | null;
+          body_text: string;
+          completed_at: string | null;
+          created_at: string;
+          failure_reason: string | null;
+          followup_count: number;
+          id: string;
+          last_followup_at: string | null;
+          metadata: Json;
+          missing_information: string[];
+          privacy_version: string;
+          provider_message_id: string | null;
+          question_keys: string[];
+          recipient_email: string;
+          recipient_kind: "source_lawyer" | "source_contact" | "manual_professional";
+          recipient_name: string | null;
+          replied_at: string | null;
+          reply_to_email: string | null;
+          sale_id: string | null;
+          sale_snapshot: Json;
+          sent_at: string | null;
+          share_requester_email: boolean;
+          status:
+            | "draft"
+            | "approved"
+            | "sending"
+            | "sent"
+            | "replied"
+            | "completed"
+            | "failed"
+            | "cancelled";
+          subject: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          ai_disclosure_version?: string;
+          approved_at?: string | null;
+          approved_message_sha256?: string | null;
+          body_text: string;
+          completed_at?: string | null;
+          created_at?: string;
+          failure_reason?: string | null;
+          followup_count?: number;
+          id?: string;
+          last_followup_at?: string | null;
+          metadata?: Json;
+          missing_information?: string[];
+          privacy_version: string;
+          provider_message_id?: string | null;
+          question_keys: string[];
+          recipient_email: string;
+          recipient_kind?: "source_lawyer" | "source_contact" | "manual_professional";
+          recipient_name?: string | null;
+          replied_at?: string | null;
+          reply_to_email?: string | null;
+          sale_id?: string | null;
+          sale_snapshot?: Json;
+          sent_at?: string | null;
+          share_requester_email?: boolean;
+          status?:
+            | "draft"
+            | "approved"
+            | "sending"
+            | "sent"
+            | "replied"
+            | "completed"
+            | "failed"
+            | "cancelled";
+          subject: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          ai_disclosure_version?: string;
+          approved_at?: string | null;
+          approved_message_sha256?: string | null;
+          body_text?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          failure_reason?: string | null;
+          followup_count?: number;
+          id?: string;
+          last_followup_at?: string | null;
+          metadata?: Json;
+          missing_information?: string[];
+          privacy_version?: string;
+          provider_message_id?: string | null;
+          question_keys?: string[];
+          recipient_email?: string;
+          recipient_kind?: "source_lawyer" | "source_contact" | "manual_professional";
+          recipient_name?: string | null;
+          replied_at?: string | null;
+          reply_to_email?: string | null;
+          sale_id?: string | null;
+          sale_snapshot?: Json;
+          sent_at?: string | null;
+          share_requester_email?: boolean;
+          status?:
+            | "draft"
+            | "approved"
+            | "sending"
+            | "sent"
+            | "replied"
+            | "completed"
+            | "failed"
+            | "cancelled";
+          subject?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_missions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      information_agent_messages: {
+        Row: {
+          attachments: Json;
+          body_text: string;
+          created_at: string;
+          delivery_status: "draft" | "queued" | "sent" | "received" | "failed";
+          direction: "outbound" | "inbound";
+          from_email: string | null;
+          id: string;
+          message_kind: "initial" | "followup" | "reply" | "manual_note";
+          metadata: Json;
+          mission_id: string;
+          provider_message_id: string | null;
+          received_at: string | null;
+          sent_at: string | null;
+          subject: string;
+          to_email: string | null;
+          user_id: string;
+        };
+        Insert: {
+          attachments?: Json;
+          body_text: string;
+          created_at?: string;
+          delivery_status: "draft" | "queued" | "sent" | "received" | "failed";
+          direction: "outbound" | "inbound";
+          from_email?: string | null;
+          id?: string;
+          message_kind: "initial" | "followup" | "reply" | "manual_note";
+          metadata?: Json;
+          mission_id: string;
+          provider_message_id?: string | null;
+          received_at?: string | null;
+          sent_at?: string | null;
+          subject: string;
+          to_email?: string | null;
+          user_id: string;
+        };
+        Update: {
+          attachments?: Json;
+          body_text?: string;
+          created_at?: string;
+          delivery_status?: "draft" | "queued" | "sent" | "received" | "failed";
+          direction?: "outbound" | "inbound";
+          from_email?: string | null;
+          id?: string;
+          message_kind?: "initial" | "followup" | "reply" | "manual_note";
+          metadata?: Json;
+          mission_id?: string;
+          provider_message_id?: string | null;
+          received_at?: string | null;
+          sent_at?: string | null;
+          subject?: string;
+          to_email?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_messages_mission_id_fkey";
+            columns: ["mission_id"];
+            isOneToOne: false;
+            referencedRelation: "information_agent_missions";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       lawyer_referral_requests: {
         Row: {
           admin_notes: string | null;
@@ -3242,6 +3432,14 @@ export type Database = {
       };
     };
     Functions: {
+      approve_information_agent_mission_bounded: {
+        Args: { p_message_sha256: string; p_mission_id: string; p_user_id: string };
+        Returns: {
+          approved_at: string;
+          mission_id: string;
+          usage_count: number;
+        }[];
+      };
       claim_auction_sale_market_estimate: {
         Args: {
           p_auction_sale_id: string;

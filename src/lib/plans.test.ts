@@ -25,6 +25,7 @@ describe("plan matrix", () => {
     expect(featureIncluded("decouverte", "lawyers.directory")).toBe(true);
     expect(featureIncluded("decouverte", "lawyers.referrals")).toBe(false);
     expect(featureIncluded("decouverte", "property.outcomeGraph")).toBe(false);
+    expect(featureIncluded("decouverte", "property.informationAgent")).toBe(false);
     expect(PLAN_LIMITS.decouverte.propertyReportsPerMonth).toBe(0);
     expect(PLAN_LIMITS.decouverte.pdfExportsPerMonth).toBe(0);
     expect(PLAN_LIMITS.decouverte.favoriteSales).toBe(0);
@@ -38,6 +39,8 @@ describe("plan matrix", () => {
     expect(featureIncluded("analyse", "alerts.realtimeChanges")).toBe(true);
     expect(featureIncluded("analyse", "workspace.collaboration")).toBe(true);
     expect(featureIncluded("analyse", "property.outcomeGraph")).toBe(true);
+    expect(featureIncluded("analyse", "property.informationAgent")).toBe(true);
+    expect(PLAN_LIMITS.analyse.informationAgentMissionsPer30Days).toBe(3);
     expect(PLAN_LIMITS.analyse.workspaceCollaborators).toBeGreaterThan(0);
   });
 
