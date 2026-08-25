@@ -81,7 +81,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
               >
                 {saleVenueLabel(procedure.venueType)}
               </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
+              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/75 sm:text-base">
                 {lawyerRequirementLabel(procedure)}. Immojudis réunit ici les démarches, délais et
                 justificatifs utiles pour participer sans devoir reconstituer la procédure.
               </p>
@@ -105,7 +105,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
           <h3 className="font-display text-2xl font-semibold text-brand-navy">
             Ce que cela change pour vous
           </h3>
-          <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <ProcedureFact
               icon={Scale}
               label="Représentation"
@@ -134,7 +134,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
               value={overbidLabel(procedure)}
               detail={procedure.overbidNote}
             />
-          </dl>
+          </div>
 
           <div className="mt-5 rounded-md border border-brand-navy/10 bg-[#eef7ff] p-4">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -157,7 +157,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
               />
             </div>
             {procedure.venueAddress ? (
-              <p className="mt-3 flex items-start gap-2 border-t border-brand-navy/10 pt-3 text-sm text-brand-navy/68">
+              <p className="mt-3 flex items-start gap-2 border-t border-brand-navy/10 pt-3 text-sm text-brand-navy/75">
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" aria-hidden />
                 {procedure.venueAddress}
               </p>
@@ -177,7 +177,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
                 </span>
                 <div>
                   <p className="text-sm font-semibold text-brand-navy">{step.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-brand-navy/62">{step.detail}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-brand-navy/75">{step.detail}</p>
                 </div>
               </li>
             ))}
@@ -185,14 +185,14 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
 
           {procedure.organizerName || procedure.organizerContact ? (
             <div className="mt-6 rounded-md border border-gold/25 bg-[#fffaf2] p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-brand-navy/55">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-brand-navy/75">
                 Contact de la vente
               </p>
               <p className="mt-2 font-semibold text-brand-navy">
                 {procedure.organizerName ?? "Coordonnées disponibles"}
               </p>
               {procedure.organizerContact ? (
-                <p className="mt-1 break-words text-sm text-brand-navy/68">
+                <p className="mt-1 break-words text-sm text-brand-navy/75">
                   {procedure.organizerContact}
                 </p>
               ) : null}
@@ -218,25 +218,25 @@ function ProcedureFact({
   detail: string;
 }) {
   return (
-    <div className="rounded-md border border-brand-navy/10 p-4">
-      <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/55">
+    <dl className="rounded-md border border-brand-navy/10 p-4">
+      <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
         <Icon className="h-4 w-4 text-gold-soft" aria-hidden />
         {label}
       </dt>
       <dd className="mt-3 text-base font-semibold leading-snug text-brand-navy">{value}</dd>
-      <p className="mt-2 text-xs leading-relaxed text-brand-navy/60">{detail}</p>
-    </div>
+      <dd className="mt-2 text-xs leading-relaxed text-brand-navy/75">{detail}</dd>
+    </dl>
   );
 }
 
 function CompactFact({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-brand-navy/50">
+    <dl>
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
         {label}
       </dt>
       <dd className="mt-1 text-sm font-semibold text-brand-navy">{value}</dd>
-    </div>
+    </dl>
   );
 }
 
@@ -261,7 +261,7 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
           <ShieldCheck className="h-4 w-4 text-gold-soft" aria-hidden />
           Vérification Immojudis · {sourceLinks.length} source{sourceLinks.length > 1 ? "s" : ""}
         </span>
-        <span className="text-xs font-normal text-brand-navy/55">
+        <span className="text-xs font-normal text-brand-navy/75">
           {procedure.verifiedAt
             ? `contrôlé ${formatDateTime(procedure.verifiedAt)}`
             : "date à confirmer"}
@@ -269,7 +269,7 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
       </summary>
       <div className="mt-4 grid gap-5 border-t border-brand-navy/10 pt-4 lg:grid-cols-2">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/55">
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
             Sources contrôlées
           </p>
           {sourceLinks.length ? (
@@ -286,23 +286,23 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
                     <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                   </a>
                   {source.sourceName && source.sourceName !== source.label ? (
-                    <p className="mt-0.5 text-xs text-brand-navy/55">{source.sourceName}</p>
+                    <p className="mt-0.5 text-xs text-brand-navy/75">{source.sourceName}</p>
                   ) : null}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-sm text-brand-navy/62">
+            <p className="mt-2 text-sm text-brand-navy/75">
               Les justificatifs de cette qualification sont en cours de rattachement.
             </p>
           )}
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/55">
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
             Points encore ouverts
           </p>
           {procedure.issues.length ? (
-            <ul className="mt-3 space-y-2 text-sm leading-relaxed text-brand-navy/65">
+            <ul className="mt-3 space-y-2 text-sm leading-relaxed text-brand-navy/75">
               {procedure.issues.map((issue) => (
                 <li key={issue} className="flex gap-2">
                   <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />

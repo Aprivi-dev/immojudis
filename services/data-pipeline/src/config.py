@@ -181,6 +181,10 @@ def load_settings() -> dict[str, str | float | None]:
             1,
             min(100, int(os.getenv("PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE", "10"))),
         ),
+        "information_agent_evidence_batch_size": max(
+            1,
+            min(10, int(os.getenv("INFORMATION_AGENT_EVIDENCE_BATCH_SIZE", "5"))),
+        ),
         "replicate_thinking_budget": int(os.getenv("REPLICATE_THINKING_BUDGET", "0")),
         "replicate_thinking_level": os.getenv("REPLICATE_THINKING_LEVEL", "low").lower(),
         "replicate_dynamic_thinking": os.getenv("REPLICATE_DYNAMIC_THINKING", "false").lower()

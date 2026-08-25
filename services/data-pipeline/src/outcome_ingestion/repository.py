@@ -1558,7 +1558,7 @@ class OutcomeIngestionRepository:
                         and not record.training_eligible
                         and record.normalized_data->>'schema_version'
                           = 'justice_court_structure_v1'
-                        and record.normalized_data->>'structure_type_code' = 'TJ'
+                        and record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')
                         and upper(record.normalized_data->>'insee_code') = %s
                         and record.normalized_data @> '{
                           "training_eligible": false,
@@ -2284,7 +2284,7 @@ def _load_current_judilibre_court_resolutions(
             and not record.training_eligible
             and record.normalized_data->>'schema_version'
               = 'justice_court_structure_v1'
-            and record.normalized_data->>'structure_type_code' = 'TJ'
+            and record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')
             and upper(record.normalized_data->>'insee_code') = %s
             and record.normalized_data @> '{
               "training_eligible": false,

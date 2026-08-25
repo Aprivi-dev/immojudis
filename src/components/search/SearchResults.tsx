@@ -53,8 +53,7 @@ import {
   propertyTypeLabel,
 } from "@/lib/format";
 import { geocodeAddress, pricePerM2, type GeoPoint } from "@/lib/geo";
-import { mapboxStaticImageUrl } from "@/lib/mapbox";
-import { firstPropertyImage, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
+import { SaleVisual } from "@/components/SaleVisual";
 import { cleanSaleTitle, saleDisplayTitle } from "@/lib/sale-title";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { isNew } from "@/lib/dates";
@@ -93,7 +92,7 @@ import {
 import type { MapViewportChange } from "./MapPanel";
 import { SearchPagination } from "./SearchPagination";
 import { ErrorState, ListingCardSkeleton, NoResultsState } from "./SearchFilters";
-import { SearchStatistics, fallbackImageForSale } from "./search-page-state";
+import { SearchStatistics } from "./search-page-state";
 export function SearchStatisticsPanel({
   statistics,
   locked,
@@ -583,42 +582,7 @@ export function ListingImage({
   locked: boolean;
   title: string;
 }) {
-  const fallback = fallbackImageForSale(sale.id);
-  const imageUrl = locked ? fallback : firstPropertyImage(sale.media);
-  const mapUrl =
-    !imageUrl && !locked && sale.latitude != null && sale.longitude != null
-      ? mapboxStaticImageUrl({ lat: sale.latitude, lng: sale.longitude, zoom: 15 })
-      : "";
-  const src = imageUrl || mapUrl || fallback;
-
-  return (
-    <img
-      src={src}
-      alt={locked ? "" : title}
-      loading="lazy"
-      decoding="async"
-      referrerPolicy="strict-origin-when-cross-origin"
-      onError={(event) => {
-        if (event.currentTarget.dataset.fallbackApplied === "true") return;
-        event.currentTarget.dataset.fallbackApplied = "true";
-        event.currentTarget.src = mapUrl || fallback;
-      }}
-      onLoad={(event) => {
-        if (
-          locked ||
-          event.currentTarget.dataset.fallbackApplied === "true" ||
-          !shouldRejectRenderedPropertyImage(event.currentTarget)
-        ) {
-          return;
-        }
-        event.currentTarget.dataset.fallbackApplied = "true";
-        event.currentTarget.src = mapUrl || fallback;
-      }}
-      className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.025] ${
-        locked ? "opacity-80" : ""
-      }`}
-    />
-  );
+  return <SaleVisual sale={sale} title={title} locked={locked} />;
 }
 
 export function ListingBadge({

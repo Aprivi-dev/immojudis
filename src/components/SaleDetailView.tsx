@@ -40,6 +40,7 @@ import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { FeaturedLawyerPlacement } from "@/components/FeaturedLawyerPlacement";
 import { PropertyReportActions } from "@/components/PropertyReportActions";
+import { InformationRequestAgent } from "@/components/InformationRequestAgent";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleLocationHero } from "@/components/SaleLocationHero";
 import { MapThumbnail } from "@/components/MapThumbnail";
@@ -85,7 +86,6 @@ import {
   type SaleWorkspaceDocumentReviews,
   type SaleWorkspaceStatus,
 } from "@/lib/sale-workspace-shared";
-import { openStreetMapQueryUrl, openStreetMapUrl } from "@/lib/tiles";
 import { cn } from "@/lib/utils";
 import { propertyImages } from "@/lib/sale-media";
 import { saleSourceLinks } from "@/lib/sale-source-links";
@@ -302,6 +302,8 @@ export function SaleDetailView({
           <ProofsSection sale={sale} decision={decision} product={product} />
 
           <BeforeAuctionSection sale={sale} decision={decision} acquisitionCost={acquisitionCost} />
+
+          <InformationRequestAgent sale={sale} />
 
           <FAQSection />
 

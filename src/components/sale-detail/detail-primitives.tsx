@@ -85,7 +85,6 @@ import {
   type SaleWorkspaceDocumentReviews,
   type SaleWorkspaceStatus,
 } from "@/lib/sale-workspace-shared";
-import { openStreetMapQueryUrl, openStreetMapUrl } from "@/lib/tiles";
 import { cn } from "@/lib/utils";
 import { propertyImages } from "@/lib/sale-media";
 import { saleSourceLinks } from "@/lib/sale-source-links";

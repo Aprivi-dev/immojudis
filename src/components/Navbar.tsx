@@ -35,6 +35,7 @@ export function Navbar() {
   const { user, profile, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const isHome = location.pathname === "/";
+  const isAdminArea = location.pathname === "/admin" || location.pathname.startsWith("/admin/");
   const isSalesListing = location.pathname === "/sales" || location.pathname === "/sales/";
   const isProductPage =
     location.pathname === "/annonce-exemple" || /^\/sales\/[^/]+/.test(location.pathname);
@@ -60,6 +61,8 @@ export function Navbar() {
   }, [mobileOpen]);
 
   const closeMobileMenu = () => setMobileOpen(false);
+
+  if (isAdminArea) return null;
 
   if (isSalesListing) return null;
 

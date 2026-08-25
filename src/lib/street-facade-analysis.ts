@@ -107,7 +107,7 @@ function summary({
   addressLabel: string | null;
 }): string {
   if (status === "coordinates_ready") {
-    return "Vue rue Mapbox, vue 3D et carte peuvent être ouvertes depuis les coordonnées du bien.";
+    return "La vue 3D du quartier, la vue aérienne et la carte peuvent être ouvertes depuis les coordonnées du bien.";
   }
   if (status === "address_only") {
     return `Adresse disponible pour ${addressLabel ?? "le bien"}, coordonnées Mapbox à confirmer.`;
@@ -128,8 +128,8 @@ function decisionImpact(status: StreetFacadeStatus): string {
 function nextActions(status: StreetFacadeStatus): string[] {
   if (status === "coordinates_ready") {
     return [
-      "Ouvrir la vue rue Mapbox pour vérifier façade, accès, stationnement et état apparent de la rue.",
-      "Comparer la vue 3D avec les photos et le PV descriptif.",
+      "Ouvrir la vue 3D Mapbox du quartier pour vérifier accès, stationnement et configuration de la rue.",
+      "Comparer la vue aérienne 3D avec les photos et le PV descriptif.",
       "Noter toute nuisance visible à intégrer au plafond ou à la visite.",
     ];
   }
@@ -137,7 +137,7 @@ function nextActions(status: StreetFacadeStatus): string[] {
     return [
       "Géocoder l'adresse pour obtenir des coordonnées fiables.",
       "Vérifier que la position Mapbox correspond bien au bien vendu.",
-      "Compléter ensuite le contrôle par vue rue Mapbox ou visite sur place.",
+      "Compléter ensuite le contrôle par la vue 3D du quartier ou une visite sur place.",
     ];
   }
   return [

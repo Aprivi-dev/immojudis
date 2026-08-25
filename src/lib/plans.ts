@@ -39,6 +39,7 @@ export type FeatureKey =
   | "property.activeComparables"
   | "property.neighborhoodAnalysis"
   | "property.outcomeGraph"
+  | "property.informationAgent"
   | "data.onDemandRefresh"
   | "lawyers.directory"
   | "lawyers.referrals"
@@ -60,6 +61,7 @@ export type PlanLimits = {
   saleAnalysisItems: number | null;
   apiKeys: number | null;
   workspaceCollaborators: number | null;
+  informationAgentMissionsPer30Days: number | null;
 };
 
 export const PLAN_LABELS: Record<PlanCode, string> = {
@@ -105,6 +107,7 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "property.activeComparables": "locked",
     "property.neighborhoodAnalysis": "locked",
     "property.outcomeGraph": "locked",
+    "property.informationAgent": "locked",
     "data.onDemandRefresh": "locked",
     "lawyers.directory": "included",
     "lawyers.referrals": "locked",
@@ -148,6 +151,7 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "property.activeComparables": "included",
     "property.neighborhoodAnalysis": "included",
     "property.outcomeGraph": "included",
+    "property.informationAgent": "included",
     "data.onDemandRefresh": "included",
     "lawyers.directory": "included",
     "lawyers.referrals": "included",
@@ -168,6 +172,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     saleAnalysisItems: 0,
     apiKeys: 0,
     workspaceCollaborators: 0,
+    informationAgentMissionsPer30Days: 0,
   },
   analyse: {
     propertyReportsPerMonth: null,
@@ -180,6 +185,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     saleAnalysisItems: 12,
     apiKeys: 2,
     workspaceCollaborators: 25,
+    informationAgentMissionsPer30Days: 3,
   },
 };
 

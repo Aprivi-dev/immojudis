@@ -3,7 +3,9 @@ import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 
 const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
-const MAX_TOTAL_CLIENT_JS_BYTES = 4_000_000;
+// The protected admin editor adds an isolated client route; keep a small global
+// allowance for it while enforcing a dedicated initial-load budget below.
+const MAX_TOTAL_CLIENT_JS_BYTES = 4_020_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 const MAX_PUBLIC_MEDIA_BYTES = 1_600_000;
 const MAX_BUSINESS_MODULE_LINES = 1_500;
@@ -55,14 +57,14 @@ const routeBudgets = [
     manifest: ".next/server/app/sales/[id]/page_client-reference-manifest.js",
     routeKey: "/sales/[id]/page",
     entryKey: "[project]/src/app/sales/[id]/page",
-    maxBytes: 600_000,
+    maxBytes: 660_000,
   },
   {
     name: "example",
     manifest: ".next/server/app/annonce-exemple/page_client-reference-manifest.js",
     routeKey: "/annonce-exemple/page",
     entryKey: "[project]/src/app/annonce-exemple/page",
-    maxBytes: 600_000,
+    maxBytes: 650_000,
   },
   {
     name: "pricing",
@@ -70,6 +72,13 @@ const routeBudgets = [
     routeKey: "/accompagnement/page",
     entryKey: "[project]/src/app/accompagnement/page",
     maxBytes: 500_000,
+  },
+  {
+    name: "admin-agent",
+    manifest: ".next/server/app/admin/agent-ia/page_client-reference-manifest.js",
+    routeKey: "/admin/agent-ia/page",
+    entryKey: "[project]/src/app/admin/agent-ia/page",
+    maxBytes: 600_000,
   },
 ];
 

@@ -48,11 +48,20 @@ contextes supplémentaires.
 
 ## Judilibre
 
-Le workflow `Outcome Graph - Judilibre synchronization` est fermé par défaut. L'absence de la
-variable de dépôt `JUDILIBRE_ENABLED=true` fait échouer toute ingestion avant checkout, lecture des
-secrets ou requête réseau. Le mode `plan`, sélectionné par défaut, reste sans secret et sans écriture.
-Il n'existe volontairement aucun `schedule` Judilibre : le bootstrap comme le suivi sont uniquement
-manuels.
+Le workflow `Outcome Graph - Judilibre synchronization` reste fermé par défaut sans la variable de
+dépôt `JUDILIBRE_ENABLED=true`. Le mode `plan` reste sans secret et sans écriture. Après le bootstrap
+manuel ciblé, un suivi quotidien recharge seulement les décisions déjà retenues afin de propager les
+corrections et suppressions dans le délai maximal de 72 heures.
+
+Le premier jour UTC de chaque mois, ce même workflow télécharge les deux référentiels officiels du
+ministère de la Justice, vérifie l'organisation productrice, la licence, la taille, le hash, le
+schéma et la cohérence croisée des fichiers, puis importe le registre des structures dans le stockage
+privé. Une exécution manuelle peut demander la même opération avec
+`refresh_justice_references=true`. Ce registre est requis pour résoudre exactement un code Judilibre
+`tj<INSEE>` vers un tribunal Outcome ; une structure absente ou ambiguë reste non rapprochée.
+Le code ministériel historique `TGI` est accepté uniquement pour les lignes courantes dont le nom
+officiel correspond exactement à un tribunal judiciaire du catalogue ; il est traité comme
+l'équivalent de type du code `TJ`, sans modifier le nom ni autoriser une recherche approximative.
 
 Après validation des credentials et avant tout bootstrap ou suivi, le workflow exécute
 `scripts/check_judilibre_contract.py`. Ce canary tente au maximum quatre fenêtres historiques
@@ -66,21 +75,29 @@ Deux opérations d'ingestion séparées sont disponibles :
 
 1. `bootstrap` lance une recherche ciblée avec
    `judilibre-search-sync --profile … --date-start … --date-end … --max-results-per-window …
-   --max-total-results …`. Le profil doit
+--max-total-results …`. Le profil doit
    être l'un de `saisie_immobiliere_v2`, `vente_forcee_v2`, `adjudication_v2`, `adjuge_v2`,
    `mise_a_prix_v2` ou `surenchere_v2`. Les deux dates sont obligatoires, la fenêtre contient au plus 31 jours
    calendaires, le plafond par sous-fenêtre doit être compris entre 1 et 500 et le plafond global
    entre 1 et 10 000. Une fenêtre trop dense est divisée en intervalles calendaires disjoints ; le
    bootstrap échoue sans écriture si une seule journée reste trop dense, si le total global est
    dépassé ou si l'API relâche la requête. Chaque sous-fenêtre terminale est lue deux fois ; le
-   bootstrap échoue aussi sans écriture si le total ou la liste ordonnée des identifiants change
-   entre ces deux lectures. L'opérateur doit saisir exactement
+   bootstrap échoue aussi sans écriture si le total, l'ensemble des identifiants ou l'empreinte des
+   métadonnées associées à un identifiant change entre ces deux lectures. L'ordre brut peut varier
+   pour deux décisions partageant la même date ; les identifiants sont donc triés localement avant
+   calcul de l'empreinte canonique. L'opérateur doit saisir exactement
    `BOOTSTRAP-JUDILIBRE-TARGETED` dans `confirm_bootstrap`.
 2. `sync` lance `judilibre-sync` avec des plafonds de pages et d'événements. Cette synchronisation
    transactionnelle est **tracked-only** : elle recharge ou marque supprimés uniquement les
    identifiants déjà retenus par un bootstrap ciblé ; les événements portant sur d'autres décisions
    sont ignorés. L'opérateur doit saisir exactement `SYNC-JUDILIBRE-TRACKED-ONLY` dans
    `confirm_sync`.
+
+Après chaque ingestion, `scripts/run_outcome_retention.py` traite les purges avec reprise, nettoie
+les objets privés sans provenance âgés de plus de 24 heures et applique la rétention de 730 jours au
+brut Judilibre. `scripts/match_judilibre_candidates.py --persist` ajoute ensuite uniquement des
+candidats de rapprochement soumis à revue ; il ne crée aucun résultat et ne modifie jamais
+`training_eligible`.
 
 L'activation effective nécessite simultanément :
 
@@ -92,14 +109,16 @@ L'activation effective nécessite simultanément :
 - soit `JUDILIBRE_KEY_ID`, soit le couple
   `JUDILIBRE_OAUTH_CLIENT_ID` / `JUDILIBRE_OAUTH_CLIENT_SECRET`, selon
   `JUDILIBRE_AUTH_MODE` ;
-- pour le premier suivi transactionnel, un point de départ ISO-8601 dans l'entrée manuelle `since`
-  si aucun checkpoint n'existe.
+- pour le premier suivi transactionnel manuel, un point de départ ISO-8601 dans l'entrée `since` si
+  aucun checkpoint n'existe. Le suivi planifié utilise au besoin une borne glissante de 72 heures.
 
 Les variables optionnelles sont `JUDILIBRE_BASE_URL`, `JUDILIBRE_OAUTH_TOKEN_URL`,
 `JUDILIBRE_OAUTH_SCOPE`, `JUDILIBRE_OAUTH_CLIENT_AUTH_METHOD`,
 `JUDILIBRE_HISTORY_PAGE_SIZE`, les paramètres de retry, ainsi que
-les entrées manuelles `max_pages` et `max_records`. Pour le suivi, ces deux bornes valent
-respectivement 10 et 1 000 par défaut, avec des maxima workflow de 50 pages et 5 000 événements.
+les entrées manuelles `max_pages`, `max_records` et `max_segments`. Pour le suivi, ces bornes valent
+respectivement 10, 1 000 et 1 par défaut, avec des maxima workflow de 50 pages, 5 000 événements et
+20 segments. Le mode de rattrapage répète des segments indépendamment checkpointés dans la même
+exécution et s'arrête dès que `scan_complete=true` ; un échec ne rejoue donc que le dernier segment.
 
 Le stream est volontairement fixé à `transactional_history` afin d'éviter plusieurs checkpoints
 concurrents pour la même source. Le connecteur reprend le checkpoint Supabase ; `since` ne sert que

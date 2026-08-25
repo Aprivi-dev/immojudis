@@ -25,10 +25,12 @@ import Target from "lucide-react/dist/esm/icons/target.js";
 import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
 import { DocumentsList } from "@/components/DocumentsList";
+import { InformationRequestAgent } from "@/components/InformationRequestAgent";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { OutcomeForecast, useOutcomeGraphForecast } from "@/components/OutcomeForecast";
 import { RotatingCamera360 } from "@/components/RotatingCamera360";
+import { SaleVisual } from "@/components/SaleVisual";
 import { SaleProcedurePanel } from "@/components/SaleProcedurePanel";
 import { SaleTribunalHistory } from "@/components/SaleTribunalHistory";
 import { fetchPrecomputedMarketEstimate } from "@/lib/client-api";
@@ -50,6 +52,7 @@ import {
   lawyerRequirementLabel,
   participationModeLabel,
   saleEventLabel,
+  saleIsTribunalVenue,
   saleProcedureIsConfirmed,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
@@ -97,6 +100,7 @@ function SimplifiedSaleDetailView({
   access,
 }: SaleDetailProps & { access: "discovery" | "analysis" }) {
   const [calculationOpen, setCalculationOpen] = useState(false);
+  const isTribunalSale = saleIsTribunalVenue(sale);
   const marketSurfaces = getMarketValuationSurfaces(sale);
   const surface = marketSurfaces.builtSurfaceM2;
   const marketQuery = useQuery({
@@ -199,7 +203,10 @@ function SimplifiedSaleDetailView({
           onCalculationOpenChange={setCalculationOpen}
         />
       ) : (
-        <DiscoveryContinuation />
+        <>
+          {isTribunalSale ? <SaleTribunalHistory sale={sale} /> : null}
+          <DiscoveryContinuation />
+        </>
       )}
     </main>
   );
@@ -341,10 +348,10 @@ function PropertyIdentity({ sale }: { sale: AuctionSale }) {
                   mode="streetLevel"
                   lat={mapLocation.lat}
                   lng={mapLocation.lng}
-                  label="Vue rue"
-                  title="Vue rue Mapbox"
+                  label="Quartier 3D"
+                  title="Vue 3D du quartier"
                   description={address || "Adresse de l'annonce"}
-                  ariaLabel="Afficher la vue rue Mapbox de l'annonce"
+                  ariaLabel="Afficher la vue 3D Mapbox du quartier"
                   icon={MapPin}
                   className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 />
@@ -366,12 +373,7 @@ function PropertyIdentity({ sale }: { sale: AuctionSale }) {
             </button>
           </>
         ) : (
-          <div className="grid h-[250px] place-items-center bg-[linear-gradient(145deg,#e5f1fb,#fffaf2)] sm:h-[430px]">
-            <div className="text-center text-brand-navy/54">
-              <Camera className="mx-auto h-8 w-8" aria-hidden />
-              <p className="mt-3 text-sm font-medium">Photos à confirmer</p>
-            </div>
-          </div>
+          <SaleVisual sale={sale} title={title} className="h-[250px] sm:h-[430px]" eager />
         )}
       </div>
 
@@ -681,9 +683,7 @@ function AnalysisContent({
   onCalculationOpenChange: (open: boolean) => void;
 }) {
   const forecastQuery = useOutcomeGraphForecast(sale.id);
-  const procedure = getSaleProcedure(sale);
-  const showTribunalHistory =
-    procedure.venueType === "tribunal" && saleProcedureIsConfirmed(procedure);
+  const showTribunalHistory = saleIsTribunalVenue(sale);
   const hasVerifiedForecast = forecastQuery.data?.forecast.status === "ready";
   const navigationItems = [
     ["#summary", "Synthèse"],
@@ -691,6 +691,7 @@ function AnalysisContent({
     ...(hasVerifiedForecast ? [["#outcome-forecast", "Prévision"]] : []),
     ["#market", "Marché local"],
     ["#risks", "Risques & pièces"],
+    ["#information-agent", "Enquête IA"],
     ["#lawyer", showTribunalHistory ? "Avocat" : "Organisateur"],
   ];
 
@@ -722,6 +723,11 @@ function AnalysisContent({
       <OutcomeForecast forecastQuery={forecastQuery} />
 
       <RisksAndDocuments sale={sale} />
+      <div className="border-b border-brand-navy/10 bg-[#eef7ff]">
+        <div className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+          <InformationRequestAgent sale={sale} />
+        </div>
+      </div>
       <LawyerSection sale={sale} />
 
       <section className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8">

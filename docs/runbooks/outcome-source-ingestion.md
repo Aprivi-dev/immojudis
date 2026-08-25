@@ -43,16 +43,15 @@ Voir aussi la [model card](../model-card-outcome-graph.md), le
 
 ## Catalogue des sources raccordées ou préparées
 
-| Source                                                                                                                                                                                                                                                                     | Rôle prévu                                                                                                           | Accès et licence                                                                                                                                                                                                            | Politique initiale                                               | Limites importantes                                                                                                                                                                                |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Judilibre](https://www.data.gouv.fr/dataservices/api-judilibre) — Cour de cassation                                                                                                                                                                                       | Décisions judiciaires pseudonymisées, métadonnées, mises à jour et suppressions                                      | API JSON via PISTE après inscription ; Licence Ouverte 2.0, [CGU Judilibre](https://www.courdecassation.fr/conditions-generales-dutilisation-pour-la-reutilisation-des-donnees-judiciaires-ouvertes-open-data) et CGU PISTE | `pending`, `disabled`, inactive ; données personnelles possibles | Couverture progressive selon juridiction et matière, API annoncée bêta sans garantie de complétude, fraîcheur ou disponibilité ; aucun profilage de magistrat/greffe                               |
-| [DVF](https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres) — DGFiP                                                                                                                                                                                             | Mutations `Adjudication` comme candidats de prix de résultat ; mutations `Vente` comme comparables de marché séparés | Archives annuelles `.txt.zip` ; Licence Ouverte 2.0 et conditions DVF                                                                                                                                                       | `approved`, `allowed_automated`, active                          | Cinq années, hors Alsace, Moselle et Mayotte selon la fiche source ; remplacement semestriel complet ; pas d'identifiant durable de mutation ; données potentiellement personnelles selon la DGFiP |
-| [Compétence territoriale](https://www.data.gouv.fr/datasets/liste-des-juridictions-competentes-pour-les-communes-de-france) et [structures géocodées](https://www.data.gouv.fr/datasets/donnees-geocodees-des-structures-de-la-justice-30378257) — ministère de la Justice | Référentiel officiel commune → juridiction et identité/adresse des structures                                        | CSV ; Licence Ouverte 2.0                                                                                                                                                                                                   | `approved`, `allowed_automated`, active                          | Référentiel, pas résultat de vente ; schéma et disponibilité des ressources doivent être contrôlés à chaque téléchargement                                                                         |
-| [Enchères Publiques](https://www.data.gouv.fr/datasets/distribution-des-prix-de-vente-des-biens-immobiliers-des-tribunaux-judiciaires-francais)                                                                                                                            | Index non officiel d'audiences et références d'organisateurs                                                         | CSV ; Licence Ouverte 2.0, attribution et lien vers Encheres-Publiques.com demandés par le producteur                                                                                                                       | `pending`, `allowed_manual`, inactive                            | Le fichier réellement observé ne contient **ni prix ni résultat**, malgré le titre et la description de sa fiche ; uniquement grade C, revue humaine obligatoire                                   |
+| Source                                                                                                                                                                                                                                                                     | Rôle prévu                                                                                                           | Accès et licence                                                                                                                                                                                                            | Politique opérationnelle                                                 | Limites importantes                                                                                                                                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Judilibre](https://www.data.gouv.fr/dataservices/api-judilibre) — Cour de cassation                                                                                                                                                                                       | Décisions judiciaires pseudonymisées, métadonnées, mises à jour et suppressions                                      | API JSON via PISTE après inscription ; Licence Ouverte 2.0, [CGU Judilibre](https://www.courdecassation.fr/conditions-generales-dutilisation-pour-la-reutilisation-des-donnees-judiciaires-ouvertes-open-data) et CGU PISTE | `approved`, `allowed_automated`, active ; données personnelles possibles | Couverture progressive selon juridiction et matière, API annoncée bêta sans garantie de complétude, fraîcheur ou disponibilité ; aucun profilage de magistrat/greffe                               |
+| [DVF](https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres) — DGFiP                                                                                                                                                                                             | Mutations `Adjudication` comme candidats de prix de résultat ; mutations `Vente` comme comparables de marché séparés | Archives annuelles `.txt.zip` ; Licence Ouverte 2.0 et conditions DVF                                                                                                                                                       | `approved`, `allowed_automated`, active                                  | Cinq années, hors Alsace, Moselle et Mayotte selon la fiche source ; remplacement semestriel complet ; pas d'identifiant durable de mutation ; données potentiellement personnelles selon la DGFiP |
+| [Compétence territoriale](https://www.data.gouv.fr/datasets/liste-des-juridictions-competentes-pour-les-communes-de-france) et [structures géocodées](https://www.data.gouv.fr/datasets/donnees-geocodees-des-structures-de-la-justice-30378257) — ministère de la Justice | Référentiel officiel commune → juridiction et identité/adresse des structures                                        | CSV ; Licence Ouverte 2.0                                                                                                                                                                                                   | `approved`, `allowed_automated`, active                                  | Référentiel, pas résultat de vente ; schéma et disponibilité des ressources doivent être contrôlés à chaque téléchargement                                                                         |
+| [Enchères Publiques](https://www.data.gouv.fr/datasets/distribution-des-prix-de-vente-des-biens-immobiliers-des-tribunaux-judiciaires-francais)                                                                                                                            | Index non officiel d'audiences et références d'organisateurs                                                         | CSV ; Licence Ouverte 2.0, attribution et lien vers Encheres-Publiques.com demandés par le producteur                                                                                                                       | `pending`, `allowed_manual`, inactive                                    | Le fichier réellement observé ne contient **ni prix ni résultat**, malgré le titre et la description de sa fiche ; uniquement grade C, revue humaine obligatoire                                   |
 
-Les valeurs de politique ci-dessus sont les valeurs conservatrices insérées par la migration. Le
-`ON CONFLICT DO NOTHING` préserve toute décision juridique ou opérationnelle déjà enregistrée dans
-un environnement.
+Les valeurs de politique ci-dessus sont les états opérationnels codifiés par les migrations. Toute
+activation réseau reste en plus soumise au drapeau serveur explicite et aux secrets du connecteur.
 
 ### À propos de LABEL
 
@@ -268,20 +267,20 @@ SHA-256 de ce fichier et ses compteurs restent donc dans le manifeste local ci-d
 import de production, le fichier source complet devra devenir lui-même un artefact gouverné et être
 relié à ses extractions afin que la reproductibilité ne dépende pas du cache de travail.
 
-Le fichier de migration d'ingestion prévoit de créer ce bucket comme privé, de limiter chaque objet à
+Le fichier de migration d'ingestion crée ce bucket comme privé, limite chaque objet à
 100 Mio et de borner les types MIME admis. Il ne crée aucune policy Storage `anon` ou
 `authenticated` et accorde au `service_role` seulement les opérations nécessaires à la capture
 immuable. Cette migration a été appliquée sur la base de production le 31 juillet 2026; le bucket est
 privé et aucun grant direct `anon` ou `authenticated` n'existe sur les tables Outcome. Avant la
 première ingestion réelle, tester upload et lecture avec le seul rôle de service. Ne
-jamais rendre le texte brut Judilibre public par URL signée longue durée. Le futur worker de purge
-devra recevoir un mécanisme de suppression serveur dédié et aussi étroit que possible ; ce chemin de
-suppression n'est pas livré dans cette tranche.
+jamais rendre le texte brut Judilibre public par URL signée longue durée. Le worker
+`scripts/run_outcome_retention.py` utilise le seul rôle serveur, traite les suppressions par lots
+bornés et conserve une preuve minimale sans recopier le texte ni les chemins Storage dans les logs.
 
-Un échec entre l'upload Storage et le commit de provenance peut actuellement laisser un objet privé
-orphelin. Judilibre doit donc rester désactivé tant qu'un janitor d'artefacts non référencés et le
-worker de purge physique n'ont pas été livrés et testés. Le caractère privé du bucket réduit
-l'exposition ; il ne remplace ni la compensation ni la politique de conservation.
+Un échec entre l'upload Storage et le commit de provenance peut laisser un objet privé orphelin. Le
+janitor du worker de rétention supprime les objets sans ligne de provenance après 24 heures, ce qui
+évite une course avec une transaction active. Le caractère privé du bucket réduit l'exposition ; il
+ne remplace ni ce janitor ni la politique de conservation de 24 mois du brut Judilibre.
 
 ## Matching et non-entraînement
 
@@ -345,9 +344,9 @@ corriger retourne un blocage au lieu d'être réécrite.
 
 ## Activation de Judilibre via PISTE
 
-Judilibre est fail-closed à deux niveaux : sa ligne `data_sources` est initialement inactive et
-désactivée, et `JUDILIBRE_ENABLED` vaut `false` par défaut. Des identifiants valides ne suffisent donc
-pas à déclencher un appel.
+Judilibre reste fail-closed au runtime : la politique `data_sources` est approuvée et active, mais
+`JUDILIBRE_ENABLED` doit valoir exactement `true` et les secrets PISTE doivent être complets pour
+autoriser un appel. Des identifiants valides seuls ne suffisent donc pas à déclencher l'ingestion.
 
 ### Prérequis avant bascule
 
@@ -360,8 +359,8 @@ pas à déclencher un appel.
    et membres du greffe.
 4. Appliquer et tester les migrations sur staging, vérifier le bucket privé provisionné, puis vérifier
    les droits et la RLS avec les rôles `anon`, `authenticated` et `service_role`.
-5. Livrer et tester le worker de purge physique. La migration sait journaliser une demande et créer
-   un job `source.purge`, mais le worker qui supprime l'objet et clôt la purge n'est pas encore livré.
+5. Vérifier le worker `scripts/run_outcome_retention.py` : suppression Storage, clôture append-only,
+   reprise après échec et janitor des objets sans provenance.
 6. Configurer les secrets côté worker uniquement. Ne jamais utiliser un préfixe `NEXT_PUBLIC_`.
 7. Tester un petit intervalle en sandbox, vérifier les hashes, versions, compteurs, corrections et
    suppressions, puis seulement faire approuver l'activation automatisée en production.

@@ -63,7 +63,6 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 | `ALERT_EMAIL_FROM`                |   ✅   | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`                               |
 | `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` |   ➖   | Token public Mapbox utilisé par Mapbox GL JS et les mini-cartes statiques.                              |
 | `NEXT_PUBLIC_MAPBOX_STYLE`        |   ➖   | Style Mapbox, par exemple `mapbox/streets-v12` ou `mapbox://styles/<user>/<style>`.                     |
-| `NEXT_PUBLIC_OSM_TILE_URL`        |   ➖   | Fallback legacy de tuiles OSM compatible `{z}/{x}/{y}` si Mapbox est absent ou indisponible.            |
 | `GITHUB_SCROLL_TOKEN`             |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                |
 | `OPERATIONS_ALERT_WEBHOOK_URL`    |   ➖   | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                     |
 
@@ -93,8 +92,8 @@ puis l'API adresse française en secours.
 
 Configurez `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` et, si besoin,
 `NEXT_PUBLIC_MAPBOX_STYLE`. Le style par défaut est `mapbox/streets-v12`.
-`NEXT_PUBLIC_OSM_TILE_URL` reste disponible comme fallback legacy pour les vues
-qui utilisent encore une tuile statique compatible OSM lorsque Mapbox est absent.
+Les vues cartographiques et leurs replis utilisent exclusivement les services
+Mapbox configurés pour l'application.
 
 ## Scripts
 

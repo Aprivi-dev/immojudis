@@ -22,9 +22,9 @@ describe("mapbox preview modes", () => {
     });
   });
 
-  it("labels the street mode as a Mapbox street-level view", () => {
-    expect(mapboxPreviewModeLabel("aerial3d")).toBe("Vue 3D Mapbox");
-    expect(mapboxPreviewModeLabel("streetLevel")).toBe("Vue rue Mapbox");
-    expect(mapboxPreviewLoadingLabel("streetLevel")).toBe("Chargement de la vue rue Mapbox...");
+  it("labels the map modes without implying photographic street imagery", () => {
+    expect(mapboxPreviewModeLabel("aerial3d")).toBe("Vue aérienne 3D Mapbox");
+    expect(mapboxPreviewModeLabel("streetLevel")).toBe("Vue 3D du quartier");
+    expect(mapboxPreviewLoadingLabel("streetLevel")).toBe("Chargement de la vue 3D du quartier...");
   });
 });

@@ -40,6 +40,7 @@ export type EmailAlertDispatchSummary = {
 export type ResendEmailMessage = {
   from: string;
   to: string;
+  replyTo?: string | null;
   subject: string;
   html: string;
   text: string;
@@ -300,6 +301,7 @@ export async function sendResendEmail({
     html: message.html,
     text: message.text,
   };
+  if (message.replyTo) payload.reply_to = message.replyTo;
   if (message.unsubscribeUrl) {
     payload.headers = {
       "List-Unsubscribe": `<${message.unsubscribeUrl}>`,

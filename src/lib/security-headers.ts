@@ -1,7 +1,6 @@
 type SecurityHeaderOptions = {
   enforceCsp: boolean;
   isProduction: boolean;
-  osmTileUrl?: string;
   supabaseUrl?: string;
 };
 
@@ -17,7 +16,7 @@ export function buildSecurityHeaders(options: SecurityHeaderOptions): SecurityHe
     "https://*.supabase.co",
     "wss://*.supabase.co",
   ]);
-  for (const candidate of [options.supabaseUrl, options.osmTileUrl]) {
+  for (const candidate of [options.supabaseUrl]) {
     const origin = safeOrigin(candidate);
     if (origin) connectSources.add(origin);
   }
