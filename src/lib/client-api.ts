@@ -49,6 +49,7 @@ import type {
 } from "@/lib/lawyer-referrals";
 import type { MarketAnalyticsResponse } from "@/lib/market-analytics";
 import type { MarketContext } from "@/lib/market.functions";
+import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
 import type {
   NotificationPreferencesResponse,
   NotificationPreferenceUpdateInput,
@@ -103,6 +104,25 @@ import type {
   WatchedZonesResponse,
   WatchedZoneUpdateInput,
 } from "@/lib/watched-zones";
+import type {
+  PrivacyRequestAdminListResponse,
+  PrivacyRequestAdminSummary,
+  PrivacyRequestAdminUpdate,
+  PrivacyRequestInput,
+  PrivacyRequestListResponse,
+  PrivacyRequestSummary,
+} from "@/lib/privacy-requests";
+import type {
+  InformationAgentActionInput,
+  InformationAgentCreateInput,
+  InformationAgentListResponse,
+  InformationAgentResponse,
+} from "@/lib/information-agent";
+import type {
+  InformationAgentEmailTemplateContent,
+  InformationAgentEmailTemplatePreview,
+  InformationAgentEmailTemplateWorkspace,
+} from "@/lib/information-agent-email-template";
 
 async function authHeaders(): Promise<HeadersInit> {
   const {
@@ -128,6 +148,39 @@ async function readJson<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
+export async function fetchInformationAgentMissions(args: {
+  saleId: string;
+}): Promise<InformationAgentListResponse> {
+  const search = new URLSearchParams({ saleId: args.saleId });
+  const response = await fetch(`/api/information-agent?${search.toString()}`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<InformationAgentListResponse>(response);
+}
+
+export async function createInformationAgentDraftClient(args: {
+  data: InformationAgentCreateInput;
+}): Promise<InformationAgentResponse> {
+  const response = await fetch("/api/information-agent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(args.data),
+  });
+  return readJson<InformationAgentResponse>(response);
+}
+
+export async function runInformationAgentActionClient(args: {
+  data: InformationAgentActionInput;
+}): Promise<InformationAgentListResponse> {
+  const response = await fetch("/api/information-agent", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(args.data),
+  });
+  return readJson<InformationAgentListResponse>(response);
+}
+
 export async function fetchPrecomputedMarketEstimate(args: {
   saleId: string;
 }): Promise<MarketContext> {
@@ -140,7 +193,22 @@ export async function fetchPrecomputedMarketEstimate(args: {
     body: JSON.stringify({ saleId: args.saleId }),
   });
 
-  return readJson<MarketContext>(response);
+  const payload = (await response.json().catch(() => null)) as MarketContext | null;
+  if (response.status === 401 || response.status === 403 || !payload) {
+    throw new Error(payload?.error ?? `Erreur HTTP ${response.status}`);
+  }
+  return payload;
+}
+
+export async function fetchOutcomeGraphForecast(args: {
+  saleId: string;
+}): Promise<{ forecast: OutcomeGraphForecast }> {
+  const response = await fetch(`/api/v1/sales/${encodeURIComponent(args.saleId)}/outcome-graph`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+
+  return readJson<{ forecast: OutcomeGraphForecast }>(response);
 }
 
 export async function fetchValuationAdminOverview(): Promise<ValuationAdminResponse> {
@@ -960,19 +1028,59 @@ export async function exportSalesCsv(args: {
   };
 }
 
-export async function startAnalyseCheckout(
-  plan: Exclude<PlanCode, "decouverte"> = "analyse",
-): Promise<BillingSessionResponse> {
+export async function startAnalyseCheckout(args: {
+  plan?: Exclude<PlanCode, "decouverte">;
+  consent: {
+    termsAccepted: true;
+    termsVersion: string;
+    privacyVersion: string;
+    paymentObligationAcknowledged: true;
+    immediatePerformanceRequested: true;
+    withdrawalInformationAcknowledged: true;
+  };
+}): Promise<BillingSessionResponse> {
   const response = await fetch("/api/billing/checkout", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(await authHeaders()),
     },
-    body: JSON.stringify({ plan }),
+    body: JSON.stringify({ plan: args.plan ?? "analyse", consent: args.consent }),
   });
 
   return readJson<BillingSessionResponse>(response);
+}
+
+export async function fetchPrivacyRequests(): Promise<PrivacyRequestListResponse> {
+  const response = await fetch("/api/privacy/requests", { headers: await authHeaders() });
+  return readJson<PrivacyRequestListResponse>(response);
+}
+
+export async function createPrivacyRequestClient(
+  data: PrivacyRequestInput,
+): Promise<PrivacyRequestSummary> {
+  const response = await fetch("/api/privacy/requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<PrivacyRequestSummary>(response);
+}
+
+export async function fetchAdminPrivacyRequests(): Promise<PrivacyRequestAdminListResponse> {
+  const response = await fetch("/api/admin/privacy-requests", { headers: await authHeaders() });
+  return readJson<PrivacyRequestAdminListResponse>(response);
+}
+
+export async function updateAdminPrivacyRequest(
+  data: PrivacyRequestAdminUpdate,
+): Promise<PrivacyRequestAdminSummary> {
+  const response = await fetch("/api/admin/privacy-requests", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<PrivacyRequestAdminSummary>(response);
 }
 
 export async function openBillingPortal(): Promise<BillingSessionResponse> {
@@ -990,6 +1098,48 @@ export async function fetchAdminDashboard(): Promise<AdminDashboardData> {
   });
 
   return readJson<AdminDashboardData>(response);
+}
+
+export async function fetchAdminInformationAgentEmailTemplate(): Promise<InformationAgentEmailTemplateWorkspace> {
+  const response = await fetch("/api/admin/information-agent/template", {
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<InformationAgentEmailTemplateWorkspace>(response);
+}
+
+export async function previewAdminInformationAgentEmailTemplate(
+  template: InformationAgentEmailTemplateContent,
+): Promise<{ preview: InformationAgentEmailTemplatePreview }> {
+  const response = await fetch("/api/admin/information-agent/template", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ action: "preview", template }),
+  });
+  return readJson<{ preview: InformationAgentEmailTemplatePreview }>(response);
+}
+
+export async function saveAdminInformationAgentEmailTemplateDraft(args: {
+  draftId: string | null;
+  template: InformationAgentEmailTemplateContent;
+}): Promise<InformationAgentEmailTemplateWorkspace> {
+  const response = await fetch("/api/admin/information-agent/template", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ action: "save_draft", ...args }),
+  });
+  return readJson<InformationAgentEmailTemplateWorkspace>(response);
+}
+
+export async function publishAdminInformationAgentEmailTemplateDraft(
+  draftId: string,
+): Promise<InformationAgentEmailTemplateWorkspace> {
+  const response = await fetch("/api/admin/information-agent/template", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ action: "publish", draftId, publicationConfirmed: true }),
+  });
+  return readJson<InformationAgentEmailTemplateWorkspace>(response);
 }
 
 export async function fetchAdminDataQuality(): Promise<DataQualityReport> {

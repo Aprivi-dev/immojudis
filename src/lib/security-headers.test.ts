@@ -7,7 +7,6 @@ describe("browser security headers", () => {
       enforceCsp: false,
       isProduction: true,
       supabaseUrl: "https://project.supabase.co",
-      osmTileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     });
     const values = Object.fromEntries(headers.map((header) => [header.key, header.value]));
 

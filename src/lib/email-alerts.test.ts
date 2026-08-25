@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { buildAlertEmailMessage, resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
+import { describe, expect, it, vi } from "vitest";
+import {
+  buildAlertEmailMessage,
+  resolveEmailAlertDeliveryConfig,
+  sendResendEmail,
+} from "@/lib/email-alerts";
 
 describe("email alerts", () => {
   it("requires Resend, sender and canonical app URL before dispatching", () => {
@@ -50,5 +54,30 @@ describe("email alerts", () => {
     );
     expect(message.text).toContain("ni une promesse de gain");
     expect(message.html).toContain("Se désinscrire des alertes email");
+  });
+
+  it("passes a supervised-agent reply address to Resend", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ id: "email_1" }),
+    );
+
+    await sendResendEmail({
+      apiKey: "re_test",
+      idempotencyKey: "mission-1",
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      message: {
+        from: "Assistant ImmoJudis <assistant@immojudis.fr>",
+        to: "cabinet@example.test",
+        replyTo: "utilisateur@example.test",
+        subject: "Demande d'informations",
+        html: "<p>Bonjour</p>",
+        text: "Bonjour",
+      },
+    });
+
+    const requestInit = fetchMock.mock.calls[0]?.[1];
+    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+      reply_to: "utilisateur@example.test",
+    });
   });
 });

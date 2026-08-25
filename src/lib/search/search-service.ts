@@ -2,6 +2,7 @@ import { getSales, getSalesCount, getSalesWithCoords } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import type { AuctionSale } from "@/lib/types";
+import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
 import { departmentSearchValues, frenchSearchTerms } from "./french-geo-search";
 import type { SalesSearchParams } from "./search-url-state";
 import {
@@ -30,14 +31,20 @@ export async function fetchSearchResults({
   preview: boolean;
   discovery?: boolean;
 }): Promise<AuctionSale[]> {
-  if (preview) return (await fetchPreviewSearch(search)).items;
+  if (preview) return excludeHomepageExampleSales((await fetchPreviewSearch(search)).items);
 
   const page = search.page ?? 1;
   const perPage = search.limit ?? DEFAULT_SEARCH_LIMIT;
   const offset = (page - 1) * perPage;
-  return getSales(dataFiltersFromSearch(search), perPage, dataSortFromSearch(search.sort), offset, {
-    discovery,
-  });
+  return excludeHomepageExampleSales(
+    await getSales(
+      dataFiltersFromSearch(search),
+      perPage,
+      dataSortFromSearch(search.sort),
+      offset,
+      { discovery },
+    ),
+  );
 }
 
 export async function fetchSearchCount({
@@ -59,11 +66,13 @@ export async function fetchSearchMapResults(
   search: SalesSearchParams,
   options: { discovery?: boolean } = {},
 ): Promise<AuctionSale[]> {
-  return getSalesWithCoords(
-    dataFiltersFromSearch(search),
-    MAX_MAP_RESULTS,
-    dataSortFromSearch(search.sort),
-    options,
+  return excludeHomepageExampleSales(
+    await getSalesWithCoords(
+      dataFiltersFromSearch(search),
+      MAX_MAP_RESULTS,
+      dataSortFromSearch(search.sort),
+      options,
+    ),
   );
 }
 

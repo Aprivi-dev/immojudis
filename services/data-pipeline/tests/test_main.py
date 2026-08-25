@@ -23,6 +23,16 @@ except ModuleNotFoundError as exc:
 @pytest.fixture(autouse=True)
 def _disable_real_expired_sale_cleanup(monkeypatch) -> None:
     monkeypatch.setattr(main, "delete_expired_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(main, "delete_secondary_sales_in_supabase", lambda sales: 0)
+    monkeypatch.setattr(
+        main,
+        "bridge_auction_sales_before_cleanup",
+        lambda settings: types.SimpleNamespace(
+            scanned_count=0,
+            created_count=0,
+            reused_count=0,
+        ),
+    )
 
 
 def test_needs_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
@@ -67,6 +77,11 @@ def test_document_facts_version_forces_one_time_pdf_reanalysis() -> None:
     assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
 
     sale.raw_payload["document_facts_version"] = "document_facts_v1_starting_price"
+
+    assert main._needs_structured_heavy_enrichment(sale) is True
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
+
+    sale.raw_payload["document_facts_version"] = main.DOCUMENT_FACTS_VERSION
 
     assert main._needs_structured_heavy_enrichment(sale) is False
     assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is True
@@ -244,9 +259,29 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch) 
     monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
-    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(
+        main,
+        "bridge_auction_sales_before_cleanup",
+        lambda settings: calls.append("bridge")
+        or types.SimpleNamespace(scanned_count=3, created_count=3, reused_count=0),
+    )
+    monkeypatch.setattr(
+        main,
+        "reconcile_duplicate_sales_in_supabase",
+        lambda **kwargs: calls.append("reconcile") or 0,
+    )
+    monkeypatch.setattr(
+        main,
+        "delete_secondary_sales_in_supabase",
+        lambda sales: calls.append("delete_secondary") or 1,
+    )
+    monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: calls.append("mark_past") or 0)
     monkeypatch.setattr(main, "delete_expired_sales_in_supabase", lambda: calls.append("delete_expired") or 3)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
+    monkeypatch.setattr(
+        main,
+        "delete_vench_sales_without_surface_in_supabase",
+        lambda: calls.append("delete_vench") or 0,
+    )
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales))
 
@@ -256,8 +291,86 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch) 
         )
         == 0
     )
-    assert calls[-1] == "delete_expired"
+    assert calls[-6:] == [
+        "bridge",
+        "delete_secondary",
+        "reconcile",
+        "mark_past",
+        "delete_expired",
+        "delete_vench",
+    ]
     assert summary_capture["deleted_expired_sales"] == 3
+    assert summary_capture["deleted_secondary_sales"] == 1
+    assert summary_capture["outcome_bridge_scanned"] == 3
+
+
+def test_pipeline_skips_every_cleanup_when_outcome_bridge_fails(monkeypatch) -> None:
+    finish_calls: list[tuple[str, dict[str, list[str]]]] = []
+    cleanup_calls: list[str] = []
+
+    monkeypatch.setattr(main, "load_settings", lambda: _settings())
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finish_calls.append((status, errors)),
+    )
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
+    monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
+    monkeypatch.setattr(
+        main,
+        "scrape_avoventes_aquitaine_result",
+        lambda known=None: ScrapeResult([_raw_sale()], []),
+    )
+    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
+    monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
+    monkeypatch.setattr(main, "format_quality_report", lambda report: [])
+    monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: len(sales))
+    monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: len(sales))
+    monkeypatch.setattr(
+        main,
+        "bridge_auction_sales_before_cleanup",
+        lambda settings: (_ for _ in ()).throw(RuntimeError("bridge incomplete")),
+    )
+    monkeypatch.setattr(
+        main,
+        "reconcile_duplicate_sales_in_supabase",
+        lambda **kwargs: cleanup_calls.append("reconcile") or 0,
+    )
+    monkeypatch.setattr(
+        main,
+        "delete_secondary_sales_in_supabase",
+        lambda sales: cleanup_calls.append("delete_secondary") or 0,
+    )
+    monkeypatch.setattr(
+        main,
+        "mark_past_sales_in_supabase",
+        lambda: cleanup_calls.append("mark_past") or 0,
+    )
+    monkeypatch.setattr(
+        main,
+        "delete_expired_sales_in_supabase",
+        lambda: cleanup_calls.append("delete_expired") or 0,
+    )
+    monkeypatch.setattr(
+        main,
+        "delete_vench_sales_without_surface_in_supabase",
+        lambda: cleanup_calls.append("delete_vench") or 0,
+    )
+
+    result = main.run_pipeline(
+        main.PipelineOptions(source="avoventes", use_llm=False, heavy_enrichment=False, upsert=True)
+    )
+
+    assert result == 1
+    assert cleanup_calls == []
+    assert finish_calls[-1][0] == "failed"
+    assert finish_calls[-1][1]["supabase"] == ["bridge incomplete"]
 
 
 def test_pipeline_returns_failure_when_final_supabase_publication_fails(monkeypatch) -> None:
@@ -359,6 +472,7 @@ def test_pipeline_skips_redundant_final_sale_upsert_when_unchanged(monkeypatch) 
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
     monkeypatch.setattr(main, "geocode_sale", lambda sale: calls.append("geocode") or sale)
     monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(main, "classify_sale_procedure", lambda sale: sale)
     monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
@@ -534,7 +648,7 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatc
     assert calls.count("upsert") == 2
 
 
-def test_pipeline_skips_pdf_when_only_llm_description_is_missing(monkeypatch) -> None:
+def test_pipeline_generates_llm_description_when_heavy_enrichment_is_disabled(monkeypatch) -> None:
     calls: list[str] = []
     settings = _settings()
     settings["incremental_enrichment"] = True
@@ -577,7 +691,17 @@ def test_pipeline_skips_pdf_when_only_llm_description_is_missing(monkeypatch) ->
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: len(sales))
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: len(sales))
 
-    assert main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=True, upsert=True)) == 0
+    assert (
+        main.run_pipeline(
+            main.PipelineOptions(
+                source="avoventes",
+                use_llm=True,
+                heavy_enrichment=False,
+                upsert=True,
+            )
+        )
+        == 0
+    )
     assert "pdf" not in calls
     assert calls == ["llm"]
 

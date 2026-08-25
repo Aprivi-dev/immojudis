@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AboutRouteClient } from "../_route-clients/AboutRouteClient";
+import { AboutPage } from "@/routes/a-propos";
 
 export const metadata: Metadata = {
   title: "A propos",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <AboutRouteClient />;
+  return <AboutPage />;
 }

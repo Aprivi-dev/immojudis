@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import { MAPBOX_ATTRIBUTION, MAPBOX_COPYRIGHT_URL, mapboxStaticImageUrl } from "@/lib/mapbox";
-import { OSM_ATTRIBUTION, OSM_COPYRIGHT_URL, osmTileMarkerPct, osmTileUrl } from "@/lib/tiles";
+import {
+  MAPBOX_ATTRIBUTION,
+  MAPBOX_COPYRIGHT_URL,
+  mapboxSatelliteImageUrl,
+  mapboxStaticImageUrl,
+} from "@/lib/mapbox";
 
 type Props = {
   lat: number | null | undefined;
@@ -9,21 +13,17 @@ type Props = {
   zoom?: number;
   className?: string;
   alt?: string;
+  variant?: "streets" | "satellite";
 };
 
-export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
+export function MapThumbnail({ lat, lng, zoom = 15, className, alt, variant = "streets" }: Props) {
   const mapboxUrl =
     lat != null && lng != null
-      ? mapboxStaticImageUrl({ lat, lng, zoom, width: 720, height: 420 })
+      ? variant === "satellite"
+        ? mapboxSatelliteImageUrl({ lat, lng, zoom, width: 720, height: 420 })
+        : mapboxStaticImageUrl({ lat, lng, zoom, width: 720, height: 420 })
       : "";
-  const osmUrl = lat != null && lng != null ? osmTileUrl(lat, lng, zoom) : "";
-  const [provider, setProvider] = useState<"mapbox" | "osm" | "fallback">(
-    mapboxUrl ? "mapbox" : "osm",
-  );
-
-  useEffect(() => {
-    setProvider(mapboxUrl ? "mapbox" : "osm");
-  }, [mapboxUrl, osmUrl]);
+  const [failedUrl, setFailedUrl] = useState("");
 
   if (lat == null || lng == null) {
     return (
@@ -35,7 +35,7 @@ export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
     );
   }
 
-  if (provider === "fallback") {
+  if (!mapboxUrl || failedUrl === mapboxUrl) {
     return (
       <div
         className={`relative flex items-center justify-center overflow-hidden bg-[var(--surface)] ${className ?? ""}`}
@@ -54,9 +54,7 @@ export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gold/40 bg-gold/15 text-gold">
             <MapPin className="h-4 w-4" />
           </span>
-          <span className="text-xs font-medium text-foreground">
-            Carte momentanément indisponible
-          </span>
+          <span className="text-xs font-medium text-foreground">Aperçu Mapbox indisponible</span>
           <span className="text-[11px] text-muted-foreground">
             Coordonnées conservées : {lat.toFixed(4)}, {lng.toFixed(4)}
           </span>
@@ -65,39 +63,24 @@ export function MapThumbnail({ lat, lng, zoom = 15, className, alt }: Props) {
     );
   }
 
-  const usingMapbox = provider === "mapbox" && Boolean(mapboxUrl);
-  const src = usingMapbox ? mapboxUrl : osmUrl;
-  const pos = osmTileMarkerPct(lat, lng, zoom);
-  const attributionHref = usingMapbox ? MAPBOX_COPYRIGHT_URL : OSM_COPYRIGHT_URL;
-  const attributionLabel = usingMapbox ? MAPBOX_ATTRIBUTION : OSM_ATTRIBUTION;
-
   return (
     <div className={`relative overflow-hidden bg-muted ${className ?? ""}`}>
       <img
-        src={src}
-        alt={alt ?? "Carte"}
+        src={mapboxUrl}
+        alt={alt ?? (variant === "satellite" ? "Vue aérienne" : "Carte")}
         loading="lazy"
         decoding="async"
         referrerPolicy="strict-origin-when-cross-origin"
-        onError={() =>
-          setProvider((current) => (current === "mapbox" && osmUrl ? "osm" : "fallback"))
-        }
+        onError={() => setFailedUrl(mapboxUrl)}
         className="h-full w-full object-cover"
       />
-      {!usingMapbox ? (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-red-500 shadow-md"
-          style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
-        />
-      ) : null}
       <a
-        href={attributionHref}
+        href={MAPBOX_COPYRIGHT_URL}
         target="_blank"
         rel="noreferrer"
         className="absolute bottom-1 right-1 rounded bg-white/85 px-1.5 py-0.5 text-[9px] font-semibold text-[#1f2937] shadow-sm"
       >
-        {attributionLabel}
+        {MAPBOX_ATTRIBUTION}
       </a>
     </div>
   );

@@ -23,6 +23,7 @@ from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 
 BASE_URL = "https://www.encheres-publiques.com"
+CANONICAL_BASE_URL = "https://encheres-publiques.com"
 NATIONAL_LIST_URL = f"{BASE_URL}/ventes/immobilier"
 LOGGER = logging.getLogger(__name__)
 PARIS_TZ = ZoneInfo("Europe/Paris")
@@ -72,6 +73,7 @@ def scrape_encheres_publiques_aquitaine_result(
     settings = load_settings()
     client = PoliteHttpClient(
         base_url=BASE_URL,
+        allowed_redirect_origins=(CANONICAL_BASE_URL,),
         user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
@@ -100,6 +102,7 @@ def scrape_encheres_publiques_aquitaine_result(
     return ScrapeResult(
         validate_raw_sales("encheres_publiques", unique_dicts(raw_sales, "source_url"), errors),
         errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
     )
 
 
@@ -177,7 +180,7 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
     postal_code = _postal_code(address_text)
     latitude, longitude = _coordinates(address)
     visit_dates = _extract_visit_dates(state, lot)
-    source_blocks = _extract_source_blocks(lot)
+    source_blocks = _extract_source_blocks(lot, organizer)
     raw_text = _build_detail_raw_text(lot, address, organizer, event, visit_dates, source_blocks)
     surface = _resolve_built_surface(lot)
     title = _plain_text(lot.get("nom"))
@@ -442,7 +445,11 @@ def _extract_visit_dates(state: dict[str, Any], lot: dict[str, Any]) -> list[str
     return _unique_strings(visits)
 
 
-def _extract_source_blocks(lot: dict[str, Any]) -> dict[str, str]:
+def _extract_source_blocks(
+    lot: dict[str, Any],
+    organizer: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    organizer = organizer or {}
     mapping = {
         "resume": lot.get("criteres_resume"),
         "description": lot.get("description"),
@@ -456,6 +463,8 @@ def _extract_source_blocks(lot: dict[str, Any]) -> dict[str, str]:
         "dpe": lot.get("critere_consommation_energetique"),
         "ges": lot.get("critere_emissions_de_gaz"),
         "occupation": lot.get("critere_occupation_du_bien"),
+        "organisateur": organizer.get("nom"),
+        "organisateur_categorie": organizer.get("categorie"),
     }
     return {key: value for key, raw in mapping.items() if (value := _plain_text(raw))}
 
@@ -475,6 +484,7 @@ def _extract_listing_source_blocks(
         "date_vente": _timestamp_to_display(lot.get("ouverture_date") or event.get("ouverture_date")),
         "tribunal": _tribunal_name(organizer, event),
         "organisateur": organizer.get("nom"),
+        "organisateur_categorie": organizer.get("categorie"),
         "surface": _extract_surface(lot.get("criteres_resume"), lot.get("nom")),
         "page_text": _build_raw_text(lot, address, organizer, event),
     }

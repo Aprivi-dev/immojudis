@@ -4,8 +4,16 @@ begin;
 drop index if exists public.idx_auction_sales_score;
 
 -- 2) Index the previously unindexed FK auction_observations.canonical_source_url
-create index if not exists idx_auction_observations_canonical_source_url
-  on public.auction_observations (canonical_source_url);
+-- Some empty Supabase preview branches replay this migration before the legacy
+-- bootstrap that creates auction_observations. Keep the migration replayable.
+do $$
+begin
+  if to_regclass('public.auction_observations') is not null then
+    create index if not exists idx_auction_observations_canonical_source_url
+      on public.auction_observations (canonical_source_url);
+  end if;
+end;
+$$;
 
 -- 3) Fix auth_rls_initplan: wrap auth.uid()/auth.jwt() in scalar subqueries so
 --    they are evaluated once per statement instead of once per row. Predicates

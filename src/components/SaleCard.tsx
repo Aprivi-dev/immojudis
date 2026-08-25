@@ -9,11 +9,11 @@ import { dpeColor, extractDpe } from "@/lib/dpe";
 import type { AuctionSale } from "@/lib/types";
 import { formatPrice, formatDate, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
-import { firstPropertyImage, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { SaleCountdown } from "./SaleCountdown";
-import { MapThumbnail } from "./MapThumbnail";
+import { SaleProcedureBadge } from "./SaleProcedurePanel";
+import { SaleVisual } from "./SaleVisual";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 
 export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?: boolean }) {
@@ -34,8 +34,6 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
         : "chip-neutral";
   const propertyLabel = locked ? "Annonce réservée" : propertyTypeLabel(sale.property_type);
   const title = locked ? "Détail réservé aux membres" : saleDisplayTitle(sale, propertyLabel);
-  const fallbackImage = "/media/landing/auction-bordeaux.webp";
-  const imageUrl = locked ? fallbackImage : firstPropertyImage(sale.media);
   const dpe = locked ? null : extractDpe(sale);
   const dpeTheme = dpeColor(dpe?.class);
 
@@ -49,36 +47,7 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
     >
       <article className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-white shadow-sm transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-xl">
         <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={locked ? "" : title}
-              width={896}
-              height={672}
-              loading="lazy"
-              decoding="async"
-              referrerPolicy="no-referrer"
-              onError={(event) => {
-                event.currentTarget.src = fallbackImage;
-              }}
-              onLoad={(event) => {
-                if (!locked && shouldRejectRenderedPropertyImage(event.currentTarget)) {
-                  event.currentTarget.src = fallbackImage;
-                }
-              }}
-              className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.03] ${
-                locked ? "scale-110 opacity-60 blur-md" : ""
-              }`}
-            />
-          ) : (
-            <MapThumbnail
-              lat={sale.latitude}
-              lng={sale.longitude}
-              zoom={14}
-              className="h-full w-full"
-              alt={title}
-            />
-          )}
+          <SaleVisual sale={sale} title={title} locked={locked} mapWidth={512} mapHeight={384} />
           <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/45 to-transparent" />
           <div className="absolute left-3 top-3 flex flex-wrap gap-2">
             {locked ? (
@@ -91,6 +60,7 @@ export function SaleCard({ sale, locked = false }: { sale: AuctionSale; locked?:
                 Nouveau
               </span>
             ) : null}
+            {locked ? null : <SaleProcedureBadge sale={sale} />}
             {locked ? null : <SaleCountdown date={sale.sale_date} />}
           </div>
           {viewed && (

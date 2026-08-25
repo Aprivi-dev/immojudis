@@ -97,10 +97,10 @@ export function PhotoGallery({
             mode="streetLevel"
             lat={location.lat}
             lng={location.lng}
-            label="Vue rue"
-            title="Vue rue Mapbox"
+            label="Quartier 3D"
+            title="Vue 3D du quartier"
             description={address}
-            ariaLabel={`Afficher la vue rue Mapbox pour ${address}`}
+            ariaLabel={`Afficher la vue 3D Mapbox du quartier pour ${address}`}
             icon={Navigation2}
             className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-lg transition-colors hover:border-gold/50 hover:text-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
           />

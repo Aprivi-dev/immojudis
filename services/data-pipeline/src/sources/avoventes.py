@@ -15,6 +15,7 @@ from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.sources.common import MAX_SAFE_REDIRECTS, REDIRECT_STATUS_CODES, ScrapeResult, is_allowed_origin_url
+from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://avoventes.fr"
 SEARCH_URL = f"{BASE_URL}/recherche"
@@ -112,7 +113,11 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
             # always refresh the detail page after filtering to the target territory.
             _enrich_sale_from_detail(client, sale, errors)
             raw_sales.append(sale)
-    return ScrapeResult(validate_raw_sales("avoventes", raw_sales, errors), errors)
+    return ScrapeResult(
+        validate_raw_sales("avoventes", raw_sales, errors),
+        errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
+    )
 
 
 def parse_avoventes_html(
@@ -328,8 +333,9 @@ def _extract_images(soup: BeautifulSoup, page_url: str) -> list[str]:
     for selector in ("meta[property='og:image']", "meta[name='twitter:image']"):
         for node in soup.select(selector):
             _append_image(images, node.get("content"), page_url)
-    for node in soup.select("#lightSliderDetails [data-src]"):
-        _append_image(images, node.get("data-src"), page_url)
+    for node in soup.select("#lightSliderDetails img, #lightSliderDetails [data-src]"):
+        for candidate in html_image_candidates(node):
+            _append_image(images, candidate, page_url)
     return _unique_text_values(images)
 
 

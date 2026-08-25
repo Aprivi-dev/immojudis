@@ -3,6 +3,10 @@ name: Recompute Existing Sales
 on:
   workflow_dispatch:
     inputs:
+      confirm_target:
+        description: "Type production to use the production Supabase catalogue"
+        required: true
+        type: string
       source:
         description: "Existing source rows to recalibrate"
         required: true
@@ -29,19 +33,30 @@ on:
         required: false
         default: false
         type: boolean
+      repair_only:
+        description: "Skip recompute and only repair/verify persisted procedure payloads"
+        required: false
+        default: false
+        type: boolean
+      refresh_unknown_only:
+        description: "Re-fetch source pages for unresolved procedures, then repair/verify"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: immojudis-recompute-existing-sales
+  # Use the catalogue-wide writer lock shared with scheduled ingestion.
+  group: immojudis-data-pipeline
   cancel-in-progress: false
 
 jobs:
   run:
     name: Recompute stored sales
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: services/data-pipeline
@@ -49,6 +64,19 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
+      - name: Check target confirmation
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm_target }}" != "production" ]; then
+            echo "confirm_target must be exactly: production" >&2
+            exit 1
+          fi
+          if [ "${{ inputs.repair_only }}" = "true" ] && [ "${{ inputs.refresh_unknown_only }}" = "true" ]; then
+            echo "repair_only and refresh_unknown_only are mutually exclusive" >&2
+            exit 1
+          fi
+
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -62,21 +90,78 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Recompute existing sales
+      - name: Restore verified Justice reference cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: services/data-pipeline/data/raw/outcome_sources/justice_courts
+          key: immojudis-justice-reference-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            immojudis-justice-reference-${{ runner.os }}-
+
+      - name: Refresh and verify official Justice references
+        run: python -m src.official_sources.justice_reference_sync
+
+      - name: Validate recompute without writing
+        if: ${{ !inputs.repair_only && !inputs.refresh_unknown_only }}
         env:
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
-          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          args=(--batch-size 20)
+          args=(--batch-size 20 --dry-run)
           if [ "$REQUESTED_SOURCE" != "all" ]; then
             args+=(--source "$REQUESTED_SOURCE")
           fi
           if [ -n "$REQUESTED_LIMIT" ]; then
             args+=(--limit "$REQUESTED_LIMIT")
           fi
-          if [ "$DRY_RUN" = "true" ]; then
-            args+=(--dry-run)
+          python -m src.recompute_scoring "${args[@]}"
+
+      - name: Publish recomputed sales
+        if: ${{ !inputs.dry_run && !inputs.repair_only && !inputs.refresh_unknown_only }}
+        env:
+          REQUESTED_SOURCE: ${{ inputs.source }}
+          REQUESTED_LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          args=(--batch-size 20 --geocode-missing --geocode-workers 4)
+          if [ "$REQUESTED_SOURCE" != "all" ]; then
+            args+=(--source "$REQUESTED_SOURCE")
+          fi
+          if [ -n "$REQUESTED_LIMIT" ]; then
+            args+=(--limit "$REQUESTED_LIMIT")
           fi
           python -m src.recompute_scoring "${args[@]}"
+
+      - name: Refresh unresolved procedure source pages
+        if: ${{ !inputs.dry_run && inputs.refresh_unknown_only }}
+        env:
+          REQUESTED_SOURCE: ${{ inputs.source }}
+          REQUESTED_LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          args=(--refresh-unknown-procedures)
+          if [ "$REQUESTED_SOURCE" != "all" ]; then
+            args+=(--source "$REQUESTED_SOURCE")
+          fi
+          if [ -n "$REQUESTED_LIMIT" ]; then
+            args+=(--limit "$REQUESTED_LIMIT")
+          fi
+          python -m src.recompute_scoring "${args[@]}"
+
+      - name: Repair and verify persisted sale procedures
+        if: ${{ !inputs.dry_run }}
+        env:
+          REQUESTED_SOURCE: ${{ inputs.source }}
+          REQUESTED_LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          scope_args=()
+          if [ "$REQUESTED_SOURCE" != "all" ]; then
+            scope_args+=(--source "$REQUESTED_SOURCE")
+          fi
+          if [ -n "$REQUESTED_LIMIT" ]; then
+            scope_args+=(--limit "$REQUESTED_LIMIT")
+          fi
+          python -m src.recompute_scoring --repair-invalid-procedures "${scope_args[@]}"
+          python -m src.recompute_scoring --verify-only "${scope_args[@]}"

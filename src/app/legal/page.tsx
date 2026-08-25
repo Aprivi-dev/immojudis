@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { LegalRouteClient } from "../_route-clients/LegalRouteClient";
+import { LegalPage } from "@/routes/legal";
 
 export const metadata: Metadata = {
   title: "Mentions legales",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <LegalRouteClient />;
+  return <LegalPage />;
 }

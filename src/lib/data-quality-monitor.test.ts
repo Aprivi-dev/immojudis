@@ -66,6 +66,10 @@ describe("data quality monitor", () => {
       pct: 100,
       status: "healthy",
     });
+    expect(metric(report.fields, "sale_procedure")).toMatchObject({
+      pct: 100,
+      status: "healthy",
+    });
     expect(report.sourceCoverage).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ source: "avoventes", count: 1, missingAiDescription: 0 }),
@@ -137,6 +141,59 @@ function saleFixture(overrides: Partial<AuctionSale> = {}): AuctionSale {
     tribunal_code: "tj-lyon",
     tribunal_name: "Tribunal judiciaire de Lyon",
     tribunal_city: "Lyon",
+    sale_venue_type: "tribunal",
+    sale_legal_framework: "judicial_seizure",
+    sale_verification_status: "cross_checked",
+    sale_procedure: {
+      schema_version: "sale_procedure_v1",
+      ruleset_version: "fr_auction_participation_2026-08-20",
+      venue_type: "tribunal",
+      legal_framework: "judicial_seizure",
+      venue_name: "Tribunal judiciaire de Lyon",
+      venue_address: null,
+      participation_mode: "in_person",
+      organizer_name: null,
+      organizer_type: "pursuing_lawyer",
+      organizer_contact: null,
+      eligible_bar: "Barreau de Lyon",
+      rules: {
+        lawyer_required: true,
+        lawyer_note: "Avocat du barreau compétent.",
+        bid_method: "lawyer_mandate",
+        guarantee: {
+          amount_eur: 12_000,
+          rate_pct: 10,
+          minimum_eur: 3_000,
+          status: "regulatory_verified",
+          note: "Garantie légale minimale.",
+        },
+        financing_condition: false,
+        cooling_off_period: false,
+        payment_deadline_days: 60,
+        overbid: {
+          allowed: true,
+          minimum_increase_pct: 10,
+          window_days: 10,
+          note: "Acte d'avocat.",
+        },
+      },
+      verification: {
+        status: "cross_checked",
+        verified_at: "2026-07-06T07:00:00.000Z",
+        case_source_count: 1,
+        case_sources: [
+          {
+            kind: "listing",
+            label: "Annonce",
+            source_name: "Avoventes",
+            url: "https://example.test/vente",
+          },
+        ],
+        regulatory_sources: [],
+        facts: [],
+        issues: [],
+      },
+    },
     property_type: "apartment",
     starting_price_eur: 120_000,
     sale_date: "2026-08-20T09:00:00.000Z",

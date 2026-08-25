@@ -4,11 +4,13 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
-import { getStoredSaleMarketContext } from "@/lib/sale-market-estimates";
+import { refreshSaleValuationOnDemand } from "@/lib/sale-market-estimates";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { z } from "zod";
 
 const requestSchema = z.object({ saleId: z.string().uuid() });
+
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
@@ -19,7 +21,7 @@ export async function POST(request: Request) {
       "Estimation de marché réservée au plan Analyse.",
     );
     const { saleId } = requestSchema.parse(await request.json());
-    const response = await getStoredSaleMarketContext(saleId);
+    const response = await refreshSaleValuationOnDemand(saleId);
     if (response.estimate) {
       await recordFeatureUsageEvent({
         auth,
@@ -37,11 +39,22 @@ export async function POST(request: Request) {
         },
       });
     }
+    const status = response.estimate
+      ? 200
+      : response.status === "queued"
+        ? 202
+        : response.status === "insufficient_data"
+          ? 422
+          : 503;
     return NextResponse.json(response, {
+      status,
       headers: {
         "cache-control": response.estimate
           ? "private, max-age=300, stale-while-revalidate=3600"
           : "no-store",
+        ...(response.retryAfterSeconds
+          ? { "retry-after": String(response.retryAfterSeconds) }
+          : {}),
       },
     });
   } catch (error) {

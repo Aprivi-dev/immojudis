@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { SaleDetailRouteClient } from "@/app/_route-clients/SaleDetailRouteClient";
 import { formatPrice } from "@/lib/format";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
+import { getSaleProcedure, saleVenueLabel } from "@/lib/sale-procedure";
 import { saleSeoTitle } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import { SaleDetailPage } from "@/routes/sales.$id";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -21,21 +22,24 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const data = await loadSaleDetail(id);
   const visibleSale = data.sale ?? data.preview ?? null;
   const title = saleSeoTitle(visibleSale);
+  const venueLabel = visibleSale
+    ? saleVenueLabel(getSaleProcedure(visibleSale).venueType).toLocaleLowerCase("fr-FR")
+    : "vente aux enchères immobilière";
 
   return {
     title,
     description:
       visibleSale?.starting_price_eur != null
-        ? `Vente immobiliere judiciaire Immojudis avec mise a prix ${formatPrice(
+        ? `${venueLabel} Immojudis avec mise à prix ${formatPrice(
             visibleSale.starting_price_eur,
-          )}. Connectez-vous pour consulter l'analyse complete du dossier.`
-        : "Vente immobiliere judiciaire Immojudis : consultez l'analyse complete du dossier apres connexion.",
+          )}. Consultez l’organisation et les règles de participation vérifiées.`
+        : `Immojudis : ${venueLabel}, organisation et règles de participation vérifiées.`,
     openGraph: {
       title,
       description:
         visibleSale?.city != null
-          ? `Vente judiciaire a ${visibleSale.city}.`
-          : "Vente immobiliere judiciaire Immojudis.",
+          ? `${venueLabel} à ${visibleSale.city}.`
+          : `${venueLabel} Immojudis.`,
       type: "article",
     },
     alternates: {
@@ -84,7 +88,7 @@ export default async function Page({ params }: PageProps) {
         />
       ) : null}
       <Suspense fallback={<SaleDetailFallback sale={visibleSale} />}>
-        <SaleDetailRouteClient id={id} loaderData={data} />
+        <SaleDetailPage id={id} initialData={data} />
       </Suspense>
     </>
   );
@@ -99,7 +103,7 @@ function SaleDetailFallback({
     <main className="min-h-screen bg-[#f7f5f3] px-4 py-10 text-foreground sm:px-6">
       <section className="mx-auto max-w-3xl rounded-lg border border-border bg-white p-6 shadow-sm sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
-          Vente judiciaire
+          {sale ? saleVenueLabel(getSaleProcedure(sale).venueType) : "Vente aux enchères"}
         </p>
         <h1 className="mt-3 font-display text-3xl leading-tight sm:text-4xl">
           {saleSeoTitle(sale)}

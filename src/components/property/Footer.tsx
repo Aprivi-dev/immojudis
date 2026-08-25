@@ -9,8 +9,14 @@ export function Footer() {
           <Link to="/legal" className="transition-colors hover:text-gold-soft">
             Mentions legales
           </Link>
+          <Link to="/conditions-generales" className="transition-colors hover:text-gold-soft">
+            Conditions generales
+          </Link>
           <Link to="/privacy" className="transition-colors hover:text-gold-soft">
             Confidentialite
+          </Link>
+          <Link to="/mes-droits" className="transition-colors hover:text-gold-soft">
+            Mes droits
           </Link>
           <Link to="/contact" className="transition-colors hover:text-gold-soft">
             Contact

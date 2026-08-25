@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { LawyerDirectoryRouteClient } from "../_route-clients/LawyerDirectoryRouteClient";
+import { LawyerDirectoryPage } from "@/routes/avocats";
 
 export const metadata: Metadata = {
   title: "Annuaire des avocats en droit immobilier — Immojudis",
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <LawyerDirectoryRouteClient />;
+  return <LawyerDirectoryPage />;
 }
