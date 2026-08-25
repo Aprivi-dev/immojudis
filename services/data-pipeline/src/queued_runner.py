@@ -10,6 +10,7 @@ from src.config import load_settings
 from src.dpe import enrich_dpe_sales
 from src.enrichment.extract_structured import enrich_sale_with_llm
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
+from src.information_agent_evidence import run_information_agent_evidence_batch
 from src.main import (
     SOURCE_NAMES,
     PipelineOptions,
@@ -17,7 +18,6 @@ from src.main import (
     run_llm_description_backfill,
     run_pipeline,
 )
-from src.information_agent_evidence import run_information_agent_evidence_batch
 from src.pdf_enrichment import enrich_sale_from_pdfs
 from src.sale_procedure import classify_sale_procedure
 from src.storage.supabase_client import (

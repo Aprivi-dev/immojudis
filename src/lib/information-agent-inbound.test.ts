@@ -14,7 +14,9 @@ describe("information agent inbound parsing", () => {
         "reponses.immojudis.com",
       ),
     ).toBe(token);
-    expect(findInboundToken([`enquete+${token}@example.test`], "reponses.immojudis.com")).toBeNull();
+    expect(
+      findInboundToken([`enquete+${token}@example.test`], "reponses.immojudis.com"),
+    ).toBeNull();
   });
 
   it("extracts bounded candidates without treating them as verified facts", () => {
