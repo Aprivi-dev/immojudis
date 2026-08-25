@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getMapboxStyleUrl,
   mapboxAerial3dUrl,
+  mapboxSatelliteImageUrl,
   mapboxStaticImageUrl,
   mapboxStreetLevelUrl,
   normalizeMapboxStyle,
@@ -46,10 +47,13 @@ describe("mapbox helpers", () => {
     vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
 
     expect(mapboxStreetLevelUrl(45.1234567, 1.2345678)).toContain(
-      "/styles/v1/mapbox/standard/static/pin-s+0f766e(1.234568,45.123457)/1.234568,45.123457,18,20,72/1280x720@2x",
+      "/styles/v1/mapbox/streets-v12/static/pin-s+0f766e(1.234568,45.123457)/1.234568,45.123457,18,20,72/1280x720@2x",
     );
     expect(mapboxAerial3dUrl(45.1234567, 1.2345678)).toContain(
-      "/styles/v1/mapbox/standard-satellite/static/pin-s+0f766e(1.234568,45.123457)/1.234568,45.123457,17.2,36,68/1280x720@2x",
+      "/styles/v1/mapbox/satellite-v9/static/pin-s+0f766e(1.234568,45.123457)/1.234568,45.123457,17.2,36,68/1280x720@2x",
     );
+    expect(
+      mapboxSatelliteImageUrl({ lat: 45.1234567, lng: 1.2345678, width: 640, height: 360 }),
+    ).toContain("/styles/v1/mapbox/satellite-v9/static/");
   });
 });

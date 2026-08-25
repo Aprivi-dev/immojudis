@@ -1,6 +1,6 @@
 # Statistiques par tribunal — runbook d’exploitation
 
-_Version 0.4 — 17 août 2026. Cette fonctionnalité est une restitution descriptive expérimentale. Elle ne constitue ni une prédiction individuelle, ni une garantie de prix ou d’issue._
+_Version 0.6 — 20 août 2026. Cette fonctionnalité est une restitution descriptive expérimentale. Elle ne constitue ni une prédiction individuelle, ni une garantie de prix ou d’issue._
 
 ## Résumé opérateur
 
@@ -13,6 +13,37 @@ TRIBUNAL_STATISTICS_ENABLED=false
 ```
 
 La valeur doit être exactement `true` pour autoriser le builder à démarrer et l’API à lire les snapshots. Le flag doit être configuré séparément dans chaque processus concerné. Le passer à `false`, retirer la variable ou lui donner toute autre valeur ferme le service; cela ne supprime aucune donnée. Même avec le flag actif, le builder n’écrit rien sans `SUPABASE_DB_URL` **et** l’option `--persist`.
+
+### Activité judiciaire publique sur les annonces
+
+La route distincte `GET /api/v1/tribunals/judicial-activity` alimente le bloc tribunal de chaque
+annonce, y compris la fiche publique anonyme. Le client fournit soit le code tribunal exact, soit
+l'identifiant de l'annonce ; dans ce second cas, le serveur résout le code sans renvoyer la ligne
+source. La route `GET /api/v1/tribunals/judicial-activity/directory` alimente l’explorateur public
+`/tribunaux` en chargeant une seule fois les tribunaux actifs et les annonces admissibles, puis en
+agrégeant côté serveur. Aucune ligne source n’est renvoyée. Ces routes ne dépendent pas des outcomes
+et ne produisent aucune probabilité. Elles comptent uniquement
+les annonces qui satisfont simultanément les conditions suivantes :
+
+- `sale_venue_type = tribunal` ;
+- `sale_verification_status in (verified, cross_checked)` ;
+- code exact présent dans un `outcome_courts` actif, lui-même rattaché au référentiel Justice ;
+- statut catalogue `upcoming`, `past` ou `adjudicated` cohérent avec la date ;
+- date comprise entre le début de la fenêtre historique et les douze prochains mois.
+
+La réponse publique contient le volume passé observé, le volume à venir, les annonces des 90
+prochains jours, le nombre de jours d’audience, la prochaine date, la mise à prix médiane, la part
+avec visite, le délai médian entre première détection et audience, les lots médians par jour et les
+types de biens dominants. Les mises et délais publient également P25, P50 et P75 : la fourchette
+centrale P25–P75 contient la moitié des annonces. Des repères par type de bien sont calculés avec le
+même seuil. Les médianes, fourchettes et taux exigent cinq observations, sauf les lots ou intervalles
+par jour d’audience qui exigent trois observations. Sous le seuil, la valeur est `insufficient_data`
+mais la taille de l’échantillon d’annonces publiques reste visible.
+
+Cette route mesure la couverture Immojudis et non l’activité exhaustive du greffe. Elle est publique,
+ne renvoie aucune adresse, identité, URL source, texte brut ou dossier individuel, et utilise un cache
+partagé de cinq minutes. Une lecture échouée produit une indisponibilité ; elle n’est jamais transformée
+en zéro activité.
 
 En cas de doute sur la provenance, les dénominateurs, la revue ou le cutoff :
 

@@ -14,6 +14,7 @@ from src.enrichment.surface_reasoning import extract_surface_facts_from_text
 from src.normalize import clean_text, has_rented_occupancy_signal, no_lease_occupancy_status, strip_accents
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://encheresimmobilieres.fr"
 LIST_URL = f"{BASE_URL}/biens-en-vente"
@@ -348,7 +349,8 @@ def _detail_images(soup: BeautifulSoup, source_url: str) -> list[str]:
         for node in soup.select(selector):
             _append_image(images, node.get("content"), source_url)
     for image in soup.find_all("img"):
-        _append_image(images, image.get("data-src") or image.get("src"), source_url)
+        for candidate in html_image_candidates(image):
+            _append_image(images, candidate, source_url)
     return _merge_text_values([], images)
 
 

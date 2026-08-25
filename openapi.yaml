@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
   title: ImmoJudis Premium Analytics API
-  version: 1.1.0
+  version: 1.3.0
   description: >-
-    Contrats de lecture premium pour Outcome Graph et les statistiques
-    descriptives expérimentales par tribunal. Les registres opérateur, preuves,
-    membres de cohortes et commandes d'écriture restent hors de cette API.
+    Contrats de lecture pour l'activité publique des ventes judiciaires, Outcome
+    Graph et les statistiques descriptives expérimentales par tribunal. Les
+    registres opérateur, preuves, membres de cohortes et commandes d'écriture
+    restent hors de cette API.
 servers:
   - url: /api/v1
 paths:
@@ -53,6 +54,104 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
+  /tribunals/judicial-activity:
+    get:
+      operationId: getTribunalJudicialActivity
+      summary: Lire l'activité des ventes judiciaires suivies pour un tribunal
+      description: >-
+        Agrégat public limité aux annonces explicitement judiciaires, confirmées
+        ou recoupées, et rattachées par code exact à un tribunal actif du
+        référentiel Justice. Les ventes notariales, les annonces en attente ou en
+        conflit, les dates aberrantes et les rattachements approximatifs sont
+        exclus. Les médianes sont masquées sous cinq observations. Cet agrégat
+        mesure la couverture Immojudis et ne prétend pas être un registre exhaustif
+        de l'activité du greffe.
+      parameters:
+        - name: courtCode
+          in: query
+          required: false
+          description: >-
+            Code exact d'un tribunal actif, normalisé en minuscules. Fournir
+            exactement ce paramètre ou `saleId`.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+            pattern: "^[a-z0-9][a-z0-9:._-]*$"
+        - name: saleId
+          in: query
+          required: false
+          description: >-
+            Identifiant d'une annonce dont le tribunal judiciaire vérifié sera
+            résolu côté serveur. Fournir exactement ce paramètre ou `courtCode`.
+          schema:
+            type: string
+            format: uuid
+        - name: historyMonths
+          in: query
+          required: false
+          description: Fenêtre des ventes passées observées; 36 mois par défaut.
+          schema:
+            type: integer
+            enum: [12, 24, 36]
+            default: 36
+      responses:
+        "200":
+          description: Activité judiciaire agrégée et provenance du calcul.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: public, s-maxage=300, stale-while-revalidate=600
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TribunalJudicialActivityResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
+  /tribunals/judicial-activity/directory:
+    get:
+      operationId: getTribunalJudicialActivityDirectory
+      summary: Parcourir les profils publics des tribunaux suivis
+      description: >-
+        Annuaire public des tribunaux disposant d'au moins une vente judiciaire
+        contrôlée dans la fenêtre. Chaque profil conserve ses échantillons, ses
+        fourchettes centrales de mise à prix et d'anticipation, ainsi que ses
+        limites de couverture. Aucune ligne d'annonce ou preuve source n'est
+        renvoyée.
+      parameters:
+        - name: historyMonths
+          in: query
+          required: false
+          description: Fenêtre des ventes passées observées; 36 mois par défaut.
+          schema:
+            type: integer
+            enum: [12, 24, 36]
+            default: 36
+      responses:
+        "200":
+          description: Annuaire agrégé des profils par tribunal.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: public, s-maxage=300, stale-while-revalidate=600
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TribunalJudicialActivityDirectoryResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
   /tribunals/statistics:
     get:
       operationId: getTribunalStatistics
@@ -411,6 +510,305 @@ components:
             type: string
         refusalReason:
           type: [string, "null"]
+    TribunalJudicialActivityMetric:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [status, value, sampleSize]
+          properties:
+            status:
+              type: string
+              const: published
+            value:
+              type: number
+              minimum: 0
+            sampleSize:
+              type: integer
+              minimum: 3
+        - type: object
+          additionalProperties: false
+          required: [status, value, sampleSize]
+          properties:
+            status:
+              type: string
+              const: insufficient_data
+            value:
+              type: "null"
+            sampleSize:
+              type: integer
+              minimum: 0
+      description: >-
+        Médiane ou taux accompagné de son échantillon. Le seuil usuel est cinq;
+        la médiane des lots par jour d'audience utilise trois jours distincts.
+    TribunalJudicialActivityRangeMetric:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [status, p25, p50, p75, sampleSize]
+          properties:
+            status:
+              type: string
+              const: published
+            p25:
+              type: number
+              minimum: 0
+            p50:
+              type: number
+              minimum: 0
+            p75:
+              type: number
+              minimum: 0
+            sampleSize:
+              type: integer
+              minimum: 5
+        - type: object
+          additionalProperties: false
+          required: [status, p25, p50, p75, sampleSize]
+          properties:
+            status:
+              type: string
+              const: insufficient_data
+            p25:
+              type: "null"
+            p50:
+              type: "null"
+            p75:
+              type: "null"
+            sampleSize:
+              type: integer
+              minimum: 0
+      description: >-
+        Fourchette interquartile avec médiane. Publiée à partir de cinq
+        observations et ordonnée P25 ≤ P50 ≤ P75.
+    TribunalJudicialActivityResponse:
+      type: object
+      additionalProperties: false
+      required: [court, period, activity, reliability, provenance]
+      properties:
+        court:
+          type: object
+          additionalProperties: false
+          required: [code, name, judicialRegion]
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+            judicialRegion:
+              type: [string, "null"]
+        period:
+          type: object
+          additionalProperties: false
+          required: [historyMonths, historyStart, asOf, upcomingEnd]
+          properties:
+            historyMonths:
+              type: integer
+              enum: [12, 24, 36]
+            historyStart:
+              type: string
+              format: date-time
+            asOf:
+              type: string
+              format: date-time
+            upcomingEnd:
+              type: string
+              format: date-time
+        activity:
+          type: object
+          additionalProperties: false
+          required:
+            - observedPastSales
+            - upcomingSales
+            - upcomingSales90Days
+            - upcomingHearingDays
+            - nextSaleAt
+            - medianStartingPriceEur
+            - startingPriceRangeEur
+            - visitCoverage
+            - medianDiscoveryLeadDays
+            - discoveryLeadRangeDays
+            - medianLotsPerHearingDay
+            - medianDaysBetweenHearingDays
+            - topPropertyTypes
+            - propertyTypeBenchmarks
+          properties:
+            observedPastSales:
+              type: integer
+              minimum: 0
+            upcomingSales:
+              type: integer
+              minimum: 0
+            upcomingSales90Days:
+              type: integer
+              minimum: 0
+            upcomingHearingDays:
+              type: integer
+              minimum: 0
+            nextSaleAt:
+              type: [string, "null"]
+              format: date-time
+            medianStartingPriceEur:
+              $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+            startingPriceRangeEur:
+              $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+            visitCoverage:
+              $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+            medianDiscoveryLeadDays:
+              $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+            discoveryLeadRangeDays:
+              $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+            medianLotsPerHearingDay:
+              $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+            medianDaysBetweenHearingDays:
+              $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+            topPropertyTypes:
+              type: array
+              maxItems: 3
+              items:
+                type: object
+                additionalProperties: false
+                required: [propertyType, count, share]
+                properties:
+                  propertyType:
+                    type: string
+                  count:
+                    type: integer
+                    minimum: 1
+                  share:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+            propertyTypeBenchmarks:
+              type: array
+              maxItems: 12
+              items:
+                type: object
+                additionalProperties: false
+                required:
+                  - propertyType
+                  - observedSales
+                  - startingPriceRangeEur
+                  - discoveryLeadRangeDays
+                properties:
+                  propertyType:
+                    type: string
+                  observedSales:
+                    type: integer
+                    minimum: 1
+                  startingPriceRangeEur:
+                    $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+                  discoveryLeadRangeDays:
+                    $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+        reliability:
+          type: object
+          additionalProperties: false
+          required: [level, label, currentSampleSize, exactCourtMatch, limitations]
+          properties:
+            level:
+              type: string
+              enum: [insufficient_data, indicative, descriptive, strong]
+            label:
+              type: string
+            currentSampleSize:
+              type: integer
+              minimum: 0
+            exactCourtMatch:
+              type: boolean
+              const: true
+            limitations:
+              type: array
+              minItems: 1
+              items:
+                type: string
+        provenance:
+          type: object
+          additionalProperties: false
+          required:
+            - builderVersion
+            - generatedAt
+            - courtReferenceSource
+            - includedVerificationStatuses
+            - excludedPendingOrConflictingSales
+          properties:
+            builderVersion:
+              type: string
+              const: tribunal_judicial_activity_v1
+            generatedAt:
+              type: string
+              format: date-time
+            courtReferenceSource:
+              type: string
+              const: justice_open_data
+            includedVerificationStatuses:
+              type: array
+              prefixItems:
+                - type: string
+                  const: verified
+                - type: string
+                  const: cross_checked
+              minItems: 2
+              maxItems: 2
+            excludedPendingOrConflictingSales:
+              type: boolean
+              const: true
+    TribunalJudicialActivityDirectoryResponse:
+      type: object
+      additionalProperties: false
+      required: [period, totals, tribunals, provenance]
+      properties:
+        period:
+          type: object
+          additionalProperties: false
+          required: [historyMonths, historyStart, asOf, upcomingEnd]
+          properties:
+            historyMonths:
+              type: integer
+              enum: [12, 24, 36]
+            historyStart:
+              type: string
+              format: date-time
+            asOf:
+              type: string
+              format: date-time
+            upcomingEnd:
+              type: string
+              format: date-time
+        totals:
+          type: object
+          additionalProperties: false
+          required: [trackedCourts, observedPastSales, upcomingSales, upcomingSales90Days]
+          properties:
+            trackedCourts:
+              type: integer
+              minimum: 0
+            observedPastSales:
+              type: integer
+              minimum: 0
+            upcomingSales:
+              type: integer
+              minimum: 0
+            upcomingSales90Days:
+              type: integer
+              minimum: 0
+        tribunals:
+          type: array
+          maxItems: 250
+          items:
+            $ref: "#/components/schemas/TribunalJudicialActivityResponse"
+        provenance:
+          type: object
+          additionalProperties: false
+          required: [generatedAt, directoryVersion, includesOnlyExactActiveCourts]
+          properties:
+            generatedAt:
+              type: string
+              format: date-time
+            directoryVersion:
+              type: string
+              const: tribunal_judicial_activity_directory_v1
+            includesOnlyExactActiveCourts:
+              type: boolean
+              const: true
     TribunalStatisticsAdjustmentMethod:
       type: string
       enum:

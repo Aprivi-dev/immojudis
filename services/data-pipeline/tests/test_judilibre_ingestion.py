@@ -1210,7 +1210,7 @@ def test_targeted_search_buffers_complete_metadata_then_persists_with_provenance
     assert checkpoint["watermark_at"] == datetime(2025, 6, 1, tzinfo=UTC)
 
 
-def test_targeted_search_rejects_an_ordered_id_change_between_metadata_passes() -> None:
+def test_targeted_search_accepts_tie_reordering_between_metadata_passes() -> None:
     repository = FakeRepository()
     service = FakeService()
     client = FakeClient(
@@ -1227,6 +1227,44 @@ def test_targeted_search_rejects_an_ordered_id_change_between_metadata_passes() 
                     page=0,
                     page_size=2,
                     identifiers=("decision-b", "decision-a"),
+                    total=2,
+                ),
+            ]
+        },
+    )
+    ingestor = JudilibreOutcomeIngestor(client=client, repository=repository, service=service)
+
+    summary = ingestor.sync_targeted_search(
+        profile="adjudication_v2",
+        date_start=date(2025, 5, 1),
+        date_end=date(2025, 5, 31),
+        max_results=2,
+    )
+
+    assert len(client.search_queries) == 2
+    assert client.decision_ids == ["decision-a", "decision-b"]
+    assert summary.selected_decisions == 2
+    assert len(service.records) == 2
+    assert len(repository.checkpoints) == 1
+
+
+def test_targeted_search_rejects_an_identifier_change_between_metadata_passes() -> None:
+    repository = FakeRepository()
+    service = FakeService()
+    client = FakeClient(
+        _decision(),
+        search_pages_by_window={
+            (date(2025, 5, 1), date(2025, 5, 31), 0): [
+                _search_page(
+                    page=0,
+                    page_size=2,
+                    identifiers=("decision-a", "decision-b"),
+                    total=2,
+                ),
+                _search_page(
+                    page=0,
+                    page_size=2,
+                    identifiers=("decision-a", "decision-c"),
                     total=2,
                 ),
             ]

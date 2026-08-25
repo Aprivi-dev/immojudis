@@ -12,6 +12,7 @@ from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DE
 from src.normalize import SURFACE_VALUE_PATTERN, clean_text
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://www.petitesaffiches.fr"
 LIST_URL = f"{BASE_URL}/encheres-immobilieres/"
@@ -344,7 +345,8 @@ def _detail_images(soup: BeautifulSoup, source_url: str) -> list[str]:
         if property_name and property_name.lower() in {"og:image", "twitter:image"}:
             _append_image_url(urls, meta.get("content"), source_url)
     for image in soup.find_all("img"):
-        _append_image_url(urls, image.get("data-src") or image.get("src"), source_url)
+        for candidate in html_image_candidates(image):
+            _append_image_url(urls, candidate, source_url)
     return urls
 
 
