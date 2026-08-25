@@ -40,6 +40,7 @@ import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { FeaturedLawyerPlacement } from "@/components/FeaturedLawyerPlacement";
 import { PropertyReportActions } from "@/components/PropertyReportActions";
+import { InformationRequestAgent } from "@/components/InformationRequestAgent";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleLocationHero } from "@/components/SaleLocationHero";
 import { MapThumbnail } from "@/components/MapThumbnail";
@@ -301,6 +302,8 @@ export function SaleDetailView({
           <ProofsSection sale={sale} decision={decision} product={product} />
 
           <BeforeAuctionSection sale={sale} decision={decision} acquisitionCost={acquisitionCost} />
+
+          <InformationRequestAgent sale={sale} />
 
           <FAQSection />
 
