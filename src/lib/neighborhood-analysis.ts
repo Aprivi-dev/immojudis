@@ -367,7 +367,7 @@ function nextActions({
     actions.push("Confirmer les coordonnées avant analyse façade/rue.");
   } else {
     actions.push(
-      "Relire la vue rue Mapbox et la vue 3D pour repérer nuisances, accès et état de rue.",
+      "Relire la vue 3D Mapbox du quartier pour repérer nuisances, accès et configuration de la rue.",
     );
   }
   if (status === "profiled") {

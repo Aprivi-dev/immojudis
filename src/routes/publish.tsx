@@ -1,3 +1,5 @@
+"use client";
+
 import { createFileRoute, Link } from "@/lib/router-compat";
 import { useQuery } from "@tanstack/react-query";
 import type * as React from "react";
@@ -102,7 +104,7 @@ const PROMOTION_OPTIONS = [
   },
 ] as const;
 
-function PublishPage() {
+export function PublishPage() {
   const { user, profile, loading } = useAuth();
   const [draft, setDraft] = useState<PublishDraft>(INITIAL_DRAFT);
   const [files, setFiles] = useState<File[]>([]);

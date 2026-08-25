@@ -11,7 +11,7 @@ const ENV_FILES = [
   ".env.vercel-production.local",
 ];
 const PAGE_SIZE = 1_000;
-const DEFAULT_PROMPT_VERSION = "auction_llm_v6_display";
+const DEFAULT_PROMPT_VERSION = "auction_llm_v9_qwen2_7b_scan_display";
 const args = new Set(process.argv.slice(2));
 const jsonOutput = args.has("--json");
 const noFail = args.has("--no-fail");

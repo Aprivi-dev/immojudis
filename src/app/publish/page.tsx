@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { PublishRouteClient } from "../_route-clients/PublishRouteClient";
+import { AuthGate } from "@/components/AuthGate";
+import { PublishPage } from "@/routes/publish";
 
 export const metadata: Metadata = {
   title: "Publier une vente",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <PublishRouteClient />;
+  return (
+    <AuthGate>
+      <PublishPage />
+    </AuthGate>
+  );
 }

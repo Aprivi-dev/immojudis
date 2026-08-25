@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { AdminRouteClient } from "../_route-clients/AdminRouteClient";
+import { AuthGate } from "@/components/AuthGate";
+import { AdminDashboardPage } from "@/routes/admin";
 
 export const metadata: Metadata = {
   title: "Admin",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <AdminRouteClient />;
+  return (
+    <AuthGate>
+      <AdminDashboardPage />
+    </AuthGate>
+  );
 }

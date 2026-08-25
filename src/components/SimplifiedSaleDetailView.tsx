@@ -25,9 +25,14 @@ import Target from "lucide-react/dist/esm/icons/target.js";
 import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
 import { DocumentsList } from "@/components/DocumentsList";
+import { InformationRequestAgent } from "@/components/InformationRequestAgent";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
+import { OutcomeForecast, useOutcomeGraphForecast } from "@/components/OutcomeForecast";
 import { RotatingCamera360 } from "@/components/RotatingCamera360";
+import { SaleVisual } from "@/components/SaleVisual";
+import { SaleProcedurePanel } from "@/components/SaleProcedurePanel";
+import { SaleTribunalHistory } from "@/components/SaleTribunalHistory";
 import { fetchPrecomputedMarketEstimate } from "@/lib/client-api";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.functions";
@@ -42,6 +47,15 @@ import { Link } from "@/lib/router-compat";
 import { getSaleDisplayDescription, hasSaleAiDescription } from "@/lib/sale-description";
 import { propertyImages } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
+import {
+  getSaleProcedure,
+  lawyerRequirementLabel,
+  participationModeLabel,
+  saleEventLabel,
+  saleIsTribunalVenue,
+  saleProcedureIsConfirmed,
+  saleVenueLabel,
+} from "@/lib/sale-procedure";
 import { getDisplaySurface, getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 
@@ -58,18 +72,24 @@ type SaleDetailProps = {
   sale: AuctionSale;
   marketEstimateOverride?: MarketEstimate | null;
   returnTo?: string;
+  backLabel?: string;
+  publicDemo?: boolean;
 };
 
 export function AnalysisSaleDetailView({
   sale,
   marketEstimateOverride = null,
   returnTo = "/sales",
+  backLabel = "Retour aux ventes",
+  publicDemo = false,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
       sale={sale}
       marketEstimateOverride={marketEstimateOverride}
       returnTo={returnTo}
+      backLabel={backLabel}
+      publicDemo={publicDemo}
       access="analysis"
     />
   );
@@ -83,9 +103,12 @@ function SimplifiedSaleDetailView({
   sale,
   marketEstimateOverride = null,
   returnTo,
+  backLabel = "Retour aux ventes",
+  publicDemo = false,
   access,
 }: SaleDetailProps & { access: "discovery" | "analysis" }) {
   const [calculationOpen, setCalculationOpen] = useState(false);
+  const isTribunalSale = saleIsTribunalVenue(sale);
   const marketSurfaces = getMarketValuationSurfaces(sale);
   const surface = marketSurfaces.builtSurfaceM2;
   const marketQuery = useQuery({
@@ -93,6 +116,8 @@ function SimplifiedSaleDetailView({
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
     enabled: access === "analysis" && marketEstimateOverride == null,
     staleTime: 24 * 60 * 60_000,
+    refetchInterval: (query) =>
+      query.state.data?.status === "queued" && !query.state.data.estimate ? 15_000 : false,
   });
   const marketEstimate = marketEstimateOverride ?? marketQuery.data?.estimate ?? null;
   const recommendations = useMemo(
@@ -115,12 +140,44 @@ function SimplifiedSaleDetailView({
     <main className="min-h-screen bg-[#eef7ff] text-brand-navy">
       <div className="mx-auto max-w-[1460px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <Link
-          to={returnTo ?? "/sales"}
+          href={returnTo ?? "/sales"}
           className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          Retour aux ventes
+          {backLabel}
         </Link>
+
+        {access === "analysis" &&
+        marketEstimateOverride == null &&
+        !marketEstimate &&
+        (marketQuery.data?.error || marketQuery.error) ? (
+          <div
+            className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-start gap-2">
+              <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <div>
+                <p className="font-semibold">Estimation de marché à compléter</p>
+                <p className="mt-0.5">
+                  {marketQuery.data?.error ??
+                    (marketQuery.error instanceof Error
+                      ? marketQuery.error.message
+                      : "L’estimation est momentanément indisponible.")}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void marketQuery.refetch()}
+              disabled={marketQuery.isFetching}
+              className="min-h-10 shrink-0 rounded-lg border border-amber-400 bg-white px-3 font-semibold transition-colors hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              {marketQuery.isFetching ? "Calcul en cours…" : "Relancer l’estimation"}
+            </button>
+          </div>
+        ) : null}
 
         <section className="mt-4 grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(430px,0.92fr)] xl:items-start">
           <PropertyIdentity sale={sale} />
@@ -140,6 +197,7 @@ function SimplifiedSaleDetailView({
         </section>
 
         <PropertyDescription sale={sale} />
+        <SaleProcedurePanel sale={sale} />
       </div>
 
       {access === "analysis" ? (
@@ -151,9 +209,13 @@ function SimplifiedSaleDetailView({
           surface={surface}
           calculationOpen={calculationOpen}
           onCalculationOpenChange={setCalculationOpen}
+          publicDemo={publicDemo}
         />
       ) : (
-        <DiscoveryContinuation />
+        <>
+          {isTribunalSale ? <SaleTribunalHistory sale={sale} /> : null}
+          <DiscoveryContinuation />
+        </>
       )}
     </main>
   );
@@ -186,6 +248,7 @@ function PropertyDescription({ sale }: { sale: AuctionSale }) {
 }
 
 function PropertyIdentity({ sale }: { sale: AuctionSale }) {
+  const procedure = getSaleProcedure(sale);
   const images = propertyImages(sale.media);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
@@ -294,10 +357,10 @@ function PropertyIdentity({ sale }: { sale: AuctionSale }) {
                   mode="streetLevel"
                   lat={mapLocation.lat}
                   lng={mapLocation.lng}
-                  label="Vue rue"
-                  title="Vue rue Mapbox"
+                  label="Quartier 3D"
+                  title="Vue 3D du quartier"
                   description={address || "Adresse de l'annonce"}
-                  ariaLabel="Afficher la vue rue Mapbox de l'annonce"
+                  ariaLabel="Afficher la vue 3D Mapbox du quartier"
                   icon={MapPin}
                   className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 />
@@ -319,12 +382,7 @@ function PropertyIdentity({ sale }: { sale: AuctionSale }) {
             </button>
           </>
         ) : (
-          <div className="grid h-[250px] place-items-center bg-[linear-gradient(145deg,#e5f1fb,#fffaf2)] sm:h-[430px]">
-            <div className="text-center text-brand-navy/54">
-              <Camera className="mx-auto h-8 w-8" aria-hidden />
-              <p className="mt-3 text-sm font-medium">Photos à confirmer</p>
-            </div>
-          </div>
+          <SaleVisual sale={sale} title={title} className="h-[250px] sm:h-[430px]" eager />
         )}
       </div>
 
@@ -368,7 +426,7 @@ function PropertyIdentity({ sale }: { sale: AuctionSale }) {
               : propertyTypeLabel(sale.property_type)}
           </Fact>
           <Fact icon={<CalendarDays className="h-4 w-4" />}>
-            Audience {formatDate(sale.sale_date)}
+            {saleEventLabel(procedure.venueType)} {formatDate(sale.sale_date)}
           </Fact>
         </div>
         <p className="mt-4 flex flex-wrap items-baseline gap-x-2 text-sm text-brand-navy/72">
@@ -376,7 +434,7 @@ function PropertyIdentity({ sale }: { sale: AuctionSale }) {
           <strong className="font-display text-3xl font-medium text-gold-soft">
             {formatPrice(sale.starting_price_eur)}
           </strong>
-          <span>— prix de départ judiciaire</span>
+          <span>— prix de départ de la vente</span>
         </p>
       </div>
 
@@ -476,7 +534,7 @@ function AnalysisDecisionPanel({
         <dl className="grid grid-cols-3 gap-2 text-center">
           {markers.map((marker) => (
             <div key={marker.label}>
-              <dt className="text-[11px] font-semibold text-brand-navy/54 sm:text-xs">
+              <dt className="text-[11px] font-semibold text-brand-navy/70 sm:text-xs">
                 {marker.label}
               </dt>
               <dd
@@ -624,6 +682,7 @@ function AnalysisContent({
   surface,
   calculationOpen,
   onCalculationOpenChange,
+  publicDemo,
 }: {
   sale: AuctionSale;
   marketEstimate: MarketEstimate | null;
@@ -632,17 +691,26 @@ function AnalysisContent({
   surface: number | null;
   calculationOpen: boolean;
   onCalculationOpenChange: (open: boolean) => void;
+  publicDemo: boolean;
 }) {
+  const forecastQuery = useOutcomeGraphForecast(sale.id, !publicDemo);
+  const showTribunalHistory = !publicDemo && saleIsTribunalVenue(sale);
+  const hasVerifiedForecast = forecastQuery.data?.forecast.status === "ready";
+  const navigationItems = [
+    ["#summary", "Synthèse"],
+    ...(showTribunalHistory ? [["#tribunal-history", "Tribunal"]] : []),
+    ...(hasVerifiedForecast ? [["#outcome-forecast", "Prévision"]] : []),
+    ["#market", "Marché local"],
+    ["#risks", "Risques & pièces"],
+    ["#information-agent", "Enquête IA"],
+    ["#lawyer", showTribunalHistory ? "Avocat" : "Organisateur"],
+  ];
+
   return (
     <>
       <nav className="sticky top-16 z-30 border-y border-brand-navy/10 bg-white/95 shadow-sm backdrop-blur">
         <div className="mx-auto flex max-w-5xl justify-between overflow-x-auto px-4 sm:px-6">
-          {[
-            ["#summary", "Synthèse"],
-            ["#market", "Marché local"],
-            ["#risks", "Risques & pièces"],
-            ["#lawyer", "Avocat"],
-          ].map(([href, label]) => (
+          {navigationItems.map(([href, label]) => (
             <a
               key={href}
               href={href}
@@ -661,7 +729,16 @@ function AnalysisContent({
         </div>
       </section>
 
+      {showTribunalHistory ? <SaleTribunalHistory sale={sale} /> : null}
+
+      <OutcomeForecast forecastQuery={forecastQuery} />
+
       <RisksAndDocuments sale={sale} />
+      <div className="border-b border-brand-navy/10 bg-[#eef7ff]">
+        <div className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+          <InformationRequestAgent sale={sale} previewOnly={publicDemo} />
+        </div>
+      </div>
       <LawyerSection sale={sale} />
 
       <section className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8">
@@ -767,8 +844,8 @@ function CeilingExplanation({
         </div>
       </dl>
       <p className="mt-6 max-w-2xl text-sm leading-relaxed text-brand-navy/70 sm:text-base">
-        Par défaut, Immojudis intègre un rafraîchissement car les biens judiciaires sont rarement
-        livrés en état neuf.
+        Par défaut, Immojudis intègre un rafraîchissement car les biens vendus aux enchères sont
+        rarement livrés en état neuf.
       </p>
     </div>
   );
@@ -835,9 +912,13 @@ function MarketEvidence({
       </dl>
 
       {comparables.length ? (
-        <div className="mt-7 overflow-x-auto border-y border-brand-navy/14">
+        <div
+          className="mt-7 overflow-x-auto border-y border-brand-navy/14"
+          tabIndex={0}
+          aria-label="Comparables de marché"
+        >
           <table className="w-full min-w-[540px] text-left text-sm">
-            <thead className="text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-navy/52">
+            <thead className="text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-navy/70">
               <tr>
                 <th className="py-3 pr-4">Date</th>
                 <th className="px-4 py-3">Surface</th>
@@ -979,6 +1060,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function LawyerSection({ sale }: { sale: AuctionSale }) {
+  const procedure = getSaleProcedure(sale);
+  const isJudicial = procedure.venueType === "tribunal" && saleProcedureIsConfirmed(procedure);
   const isPersistedSale =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sale.id);
   const directoryHref = isPersistedSale
@@ -991,11 +1074,14 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
         <div className="grid gap-7 rounded-lg border border-[#a9c9df] bg-[#eef7ff] p-6 sm:p-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.15fr)] lg:items-center">
           <div>
             <h2 className="font-display text-3xl font-medium leading-tight text-brand-navy sm:text-4xl">
-              Prêt à enchérir ? Faites-vous accompagner.
+              {isJudicial
+                ? "Prêt à enchérir ? Mandatez l’avocat compétent."
+                : "Préparez votre participation avec l’organisateur."}
             </h2>
             <p className="mt-4 max-w-xl text-sm leading-relaxed text-brand-navy/70 sm:text-base">
-              Trouvez un avocat inscrit au barreau compétent pour vérifier le dossier et porter vos
-              enchères.
+              {isJudicial
+                ? "La représentation par avocat est obligatoire : il vérifie le dossier, reçoit votre mandat et porte les enchères."
+                : `${lawyerRequirementLabel(procedure)}. Participation ${participationModeLabel(procedure.participationMode).toLowerCase()} selon les conditions de la vente.`}
             </p>
           </div>
           <div className="rounded-lg border border-brand-navy/14 bg-white p-5 shadow-sm sm:flex sm:items-center sm:gap-5">
@@ -1004,19 +1090,29 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
             </span>
             <div className="mt-3 min-w-0 flex-1 sm:mt-0">
               <p className="font-display text-2xl font-semibold text-brand-navy">
-                {sale.city ?? sale.tribunal_city ?? "Barreau compétent"}
+                {isJudicial
+                  ? (procedure.eligibleBar ?? sale.tribunal_city ?? "Barreau compétent")
+                  : (procedure.organizerName ??
+                    procedure.venueName ??
+                    saleVenueLabel(procedure.venueType))}
               </p>
-              <p className="mt-1 text-sm text-brand-navy/60">Avocats référencés par Immojudis</p>
+              <p className="mt-1 text-sm text-brand-navy/70">
+                {isJudicial
+                  ? "Avocats référencés par Immojudis"
+                  : "Coordonnées vérifiées par Immojudis"}
+              </p>
             </div>
-            <a
-              href={directoryHref}
-              className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft sm:mt-0"
-            >
-              Voir les avocats disponibles
-              <ArrowRight className="h-4 w-4" aria-hidden />
-            </a>
+            {isJudicial ? (
+              <a
+                href={directoryHref}
+                className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft sm:mt-0"
+              >
+                Voir les avocats disponibles
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </a>
+            ) : null}
           </div>
-          {isPersistedSale ? (
+          {isPersistedSale && isJudicial ? (
             <div className="lg:col-start-2">
               <LawyerReferralButton saleId={sale.id} className="min-h-11 w-full sm:w-auto" />
             </div>

@@ -7,6 +7,7 @@ import {
   resolveMarketPropertySegment,
   type MarketEngineCandidate,
 } from "@/lib/market-estimation-engine";
+import { DVF_PUBLIC_SOURCE_URL } from "@/lib/dvf-comparable-engine";
 import { haversineKm } from "@/lib/geo";
 import { featureIncluded, isPlanPeriodActive, normalizePlanCode } from "@/lib/plans";
 import { cleanSaleTitle } from "@/lib/sale-title";
@@ -34,14 +35,13 @@ export type DvfBacktestTransaction = Pick<
   | "latitude"
   | "longitude"
   | "source"
-  | "source_url"
->;
+> & { source_url?: string | null };
 
 const REFERENCE_SALE_COLUMNS =
   "id,title,city,department,postal_code,address,property_type,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,latitude,longitude";
 
 const DVF_BACKTEST_COLUMNS =
-  "id,source_mutation_id,sale_date,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source,source_url";
+  "id,source_mutation_id,sale_date,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source";
 
 export const valuationBacktestQuerySchema = z.object({
   saleId: z.string().uuid(),
@@ -370,6 +370,7 @@ async function fetchBacktestTransactions({
   let query = supabaseAdmin
     .from("dvf_transactions")
     .select(DVF_BACKTEST_COLUMNS)
+    .eq("mutation_nature", "Vente")
     .gte("sale_date", minSaleDate)
     .gte("latitude", bbox.latMin)
     .lte("latitude", bbox.latMax)
@@ -611,7 +612,7 @@ function normalizeTransaction(
     postalCode: transaction.postal_code,
     parcelId: transaction.parcel_id,
     source: transaction.source,
-    sourceUrl: transaction.source_url,
+    sourceUrl: transaction.source_url ?? DVF_PUBLIC_SOURCE_URL,
     latitude,
     longitude,
     distanceM,

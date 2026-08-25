@@ -1,5 +1,9 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
+  "github": {
+    "silent": true
+  },
   "installCommand": "npx --yes --package=npm@11.18.0 -c 'npm ci'",
   "buildCommand": "npm run build",
   "regions": ["cdg1"],
@@ -17,20 +21,12 @@
       "schedule": "45 6 * * *"
     },
     {
-      "path": "/api/cron/precompute-valuations",
-      "schedule": "30 5 * * *"
-    },
-    {
       "path": "/api/cron/data-retention",
       "schedule": "15 4 * * 0"
     },
     {
       "path": "/api/cron/operational-health",
       "schedule": "0 7 * * *"
-    },
-    {
-      "path": "/api/cron/cnb-lawyer-directory",
-      "schedule": "15 5 * * 1"
     }
   ]
 }

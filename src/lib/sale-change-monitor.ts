@@ -124,6 +124,11 @@ export type SaleChangeMonitorBatchResult = {
   results: SaleChangeMonitorBatchUserResult[];
 };
 
+type InvestorMonitorCandidate = {
+  userId: string;
+  userRole: "admin" | "user";
+};
+
 export const saleChangeEventActionSchema = z.object({
   eventId: z.string().uuid(),
   action: z.enum(["read", "unread", "dismiss", "restore"]),
@@ -289,15 +294,16 @@ export async function runSaleChangeMonitorBatch({
   userLimit?: number;
 } = {}): Promise<SaleChangeMonitorBatchResult> {
   const startedAt = new Date().toISOString();
-  const candidateUserIds = await getInvestorUserIds(
+  const candidates = await getInvestorUsers(
     clampLimit(userLimit, MAX_SALE_CHANGE_MONITOR_USER_LIMIT),
   );
   const results: SaleChangeMonitorBatchUserResult[] = [];
 
-  for (const userId of candidateUserIds) {
+  for (const candidate of candidates) {
+    const userId = candidate.userId;
     try {
       const response = await monitorUserSaleChanges({
-        auth: systemAuthForUser(userId),
+        auth: systemAuthForInvestorUser(candidate),
       });
       results.push({
         userId,
@@ -321,11 +327,11 @@ export async function runSaleChangeMonitorBatch({
     }
   }
 
-  return {
+  const result: SaleChangeMonitorBatchResult = {
     ok: true,
     startedAt,
     finishedAt: new Date().toISOString(),
-    candidateUserCount: candidateUserIds.length,
+    candidateUserCount: candidates.length,
     monitoredUserCount: results.filter((result) => result.ok).length,
     failedUserCount: results.filter((result) => !result.ok).length,
     totalChangeCount: results.reduce((total, result) => total + result.changeCount, 0),
@@ -335,6 +341,15 @@ export async function runSaleChangeMonitorBatch({
     ),
     results,
   };
+
+  if (result.failedUserCount > 0) {
+    const firstFailure = result.results.find((item) => !item.ok)?.error;
+    throw new Error(
+      `Le suivi des ventes a échoué pour ${result.failedUserCount}/${result.candidateUserCount} utilisateur(s)${firstFailure ? ` : ${firstFailure}` : "."}`,
+    );
+  }
+
+  return result;
 }
 
 export function buildSaleChangeSnapshot(sale: AuctionSale): SaleChangeSnapshot {
@@ -642,7 +657,7 @@ async function insertChangeEvents(
   return data ?? [];
 }
 
-async function getInvestorUserIds(limit: number): Promise<string[]> {
+async function getInvestorUsers(limit: number): Promise<InvestorMonitorCandidate[]> {
   const [profilesResult, subscriptionsResult] = await Promise.all([
     supabaseAdmin
       .from("user_profiles")
@@ -660,23 +675,36 @@ async function getInvestorUserIds(limit: number): Promise<string[]> {
 
   if (profilesResult.error) throw profilesResult.error;
   if (subscriptionsResult.error) throw subscriptionsResult.error;
-  const userIds = new Set((profilesResult.data ?? []).map((profile) => profile.user_id));
+  const candidates = new Map<string, InvestorMonitorCandidate>();
+  for (const profile of profilesResult.data ?? []) {
+    candidates.set(profile.user_id, {
+      userId: profile.user_id,
+      userRole: profile.user_role === "admin" ? "admin" : "user",
+    });
+  }
   for (const subscription of (subscriptionsResult.data ?? []).filter((row) =>
     isPlanPeriodActive(row.status, row.current_period_end),
   )) {
-    userIds.add(subscription.user_id);
+    if (!candidates.has(subscription.user_id)) {
+      candidates.set(subscription.user_id, {
+        userId: subscription.user_id,
+        userRole: "user",
+      });
+    }
   }
-  return Array.from(userIds).slice(0, limit);
+  return Array.from(candidates.values()).slice(0, limit);
 }
 
-function systemAuthForUser(userId: string): SupabaseAuthContext {
+export function systemAuthForInvestorUser(
+  candidate: InvestorMonitorCandidate,
+): SupabaseAuthContext {
   return {
     supabase: supabaseAdmin,
-    userId,
+    userId: candidate.userId,
     claims: {},
-    accountTier: "free",
-    userRole: "user",
-    isAdmin: false,
+    accountTier: "premium",
+    userRole: candidate.userRole,
+    isAdmin: candidate.userRole === "admin",
   };
 }
 

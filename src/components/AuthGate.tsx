@@ -1,3 +1,5 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "@/lib/router-compat";
@@ -22,6 +24,7 @@ const PUBLIC_PATHS = new Set([
   "/ressources",
   "/ventes-immobilieres-judiciaires",
   "/legal",
+  "/conditions-generales",
   "/privacy",
   "/properties",
 ]);
