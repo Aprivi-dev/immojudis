@@ -754,23 +754,27 @@ create table if not exists auction_sale_history (
   new_row jsonb
 );
 
-create or replace function log_auction_sale_change()
+create or replace function public.log_auction_sale_change()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
   if (to_jsonb(old) - 'updated_at' - 'last_seen_at') is distinct from (to_jsonb(new) - 'updated_at' - 'last_seen_at') then
-    insert into auction_sale_history (source_url, old_row, new_row)
+    insert into public.auction_sale_history (source_url, old_row, new_row)
     values (new.source_url, to_jsonb(old), to_jsonb(new));
   end if;
   return new;
 end;
 $$;
 
-drop trigger if exists trg_log_auction_sale_change on auction_sales;
+drop trigger if exists trg_log_auction_sale_change on public.auction_sales;
 create trigger trg_log_auction_sale_change
-after update on auction_sales
-for each row execute function log_auction_sale_change();
+after update on public.auction_sales
+for each row execute function public.log_auction_sale_change();
+
+revoke all on function public.log_auction_sale_change()
+from public, anon, authenticated, service_role;
 
 create index if not exists idx_auction_sales_department on auction_sales(department);
 create index if not exists idx_auction_sales_city on auction_sales(city);
