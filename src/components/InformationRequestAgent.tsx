@@ -26,6 +26,7 @@ const STATUS_LABELS: Record<InformationAgentMission["status"], string> = {
   approved: "Validée",
   sending: "Envoi en cours",
   sent: "Envoyée",
+  subscribed: "Dossier mutualisé rejoint",
   replied: "Réponse enregistrée",
   completed: "Terminée",
   failed: "Envoi à reprendre",
@@ -95,7 +96,11 @@ export function InformationRequestAgent({
       setBodyText(response.mission.bodyText);
       setApprovalConfirmed(false);
       setShareEmail(false);
-      toast.success("Brouillon préparé. Relisez-le avant tout envoi.");
+      toast.success(
+        response.mission.status === "subscribed"
+          ? "Une enquête existe déjà : vous venez de rejoindre son suivi."
+          : "Brouillon préparé. Relisez-le avant tout envoi.",
+      );
       await queryClient.invalidateQueries({ queryKey });
     },
     onError: showError,
@@ -109,7 +114,11 @@ export function InformationRequestAgent({
       setApprovalConfirmed(false);
       setShareEmail(false);
       toast.success(
-        mission?.status === "sent" ? "Email envoyé au professionnel." : "Enquête mise à jour.",
+        mission?.status === "sent"
+          ? "Email envoyé au professionnel."
+          : mission?.status === "subscribed"
+            ? "Vous suivez maintenant l’enquête déjà ouverte, sans nouvel email."
+            : "Enquête mise à jour.",
       );
       await queryClient.invalidateQueries({ queryKey });
     },
@@ -150,6 +159,7 @@ export function InformationRequestAgent({
     () => activeMission?.missingInformation.map(gapLabel) ?? [],
     [activeMission?.missingInformation],
   );
+  const sharedFacts = missionsQuery.data?.facts ?? [];
 
   return (
     <section
@@ -172,7 +182,8 @@ export function InformationRequestAgent({
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               ImmoJudis prépare un email ciblé à l’intermédiaire de l’annonce pour demander pièces,
-              photos et précisions. Rien ne part sans votre validation explicite.
+              photos et précisions. Une enquête déjà ouverte est mutualisée entre utilisateurs afin
+              d’éviter les sollicitations en double.
             </p>
           </div>
           {quota?.limit != null ? (
@@ -333,8 +344,8 @@ export function InformationRequestAgent({
                       className="mt-1 h-4 w-4 accent-[#b8924a]"
                     />
                     <span>
-                      J’accepte que mon adresse email soit utilisée comme adresse de réponse et
-                      communiquée au destinataire.
+                      J’accepte de rejoindre le dossier partagé. Les réponses sont centralisées par
+                      ImmoJudis et mon adresse personnelle n’est pas communiquée au destinataire.
                     </span>
                   </label>
                   <div className="flex items-start gap-2 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
@@ -423,6 +434,37 @@ export function InformationRequestAgent({
                     )}
                     Enregistrer la réponse
                   </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {sharedFacts.length ? (
+              <div className="grid gap-3 rounded-xl border border-border bg-white p-4">
+                <div>
+                  <h3 className="font-semibold text-foreground">Informations reçues</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    Les éléments sont partagés avec les utilisateurs de cette enquête. Ils ne
+                    modifient l’annonce et ses estimations qu’après validation ImmoJudis.
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  {sharedFacts.map((fact) => (
+                    <div
+                      key={fact.id}
+                      className="flex flex-col gap-1 rounded-lg border border-border/70 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <span className="text-sm text-foreground">{fact.displayValue}</span>
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        {fact.status === "accepted"
+                          ? "Vérifié et intégré"
+                          : fact.status === "rejected"
+                            ? "Non retenu"
+                            : fact.status === "conflict"
+                              ? "Contradiction à vérifier"
+                              : "À vérifier"}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : null}

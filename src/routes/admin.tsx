@@ -28,6 +28,7 @@ import { AdminLawyerReferralRequestsPanel } from "@/components/admin/AdminLawyer
 import { AdminPrivacyRequestsPanel } from "@/components/admin/AdminPrivacyRequestsPanel";
 import { AdminReferencedLawyersPanel } from "@/components/admin/AdminReferencedLawyersPanel";
 import { AdminSubscriptionsPanel } from "@/components/admin/AdminSubscriptionsPanel";
+import { AdminInformationAgentTemplatePanel } from "@/components/admin/AdminInformationAgentTemplatePanel";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json, Tables } from "@/integrations/supabase/types";
@@ -100,6 +101,11 @@ const VIEW_COPY: Record<
     title: "Opérations",
     description: "Collecte, enrichissement et suivi des traitements.",
     searchPlaceholder: "Rechercher un run…",
+  },
+  agent: {
+    title: "Agent IA",
+    description:
+      "Configurez les prises de contact et contrôlez le template envoyé aux professionnels.",
   },
   publications: {
     title: "Publications",
@@ -375,6 +381,8 @@ export function AdminDashboardPage({
           onBackfill={() => backfillMutation.mutate()}
         />
       ) : null}
+
+      {initialView === "agent" ? <AdminInformationAgentTemplatePanel /> : null}
 
       {initialView === "publications" ? (
         <AdminPublications

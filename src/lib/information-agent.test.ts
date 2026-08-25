@@ -43,8 +43,8 @@ describe("supervised information agent", () => {
     });
 
     expect(draft.subject).toContain("audience du 14 septembre 2026");
-    expect(draft.bodyText).toContain("assistant numérique ImmoJudis");
-    expect(draft.bodyText).toContain("système d'IA");
+    expect(draft.bodyText).toContain("service indépendant d’analyse");
+    expect(draft.bodyText).toContain("contrôlée avant toute intégration");
     expect(draft.bodyText).toContain("cahier des conditions de vente");
     expect(draft.bodyText).not.toMatch(/plafond d.enchère|budget de l.utilisateur/i);
   });

@@ -1,6 +1,7 @@
 "use client";
 
 import Activity from "lucide-react/dist/esm/icons/activity.js";
+import Bot from "lucide-react/dist/esm/icons/bot.js";
 import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
 import BriefcaseBusiness from "lucide-react/dist/esm/icons/briefcase-business.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
@@ -21,6 +22,7 @@ import { Link } from "@/lib/router-compat";
 export type AdminSection =
   | "overview"
   | "operations"
+  | "agent"
   | "quality"
   | "publications"
   | "clients"
@@ -35,6 +37,7 @@ const ADMIN_NAV_ITEMS: Array<{
 }> = [
   { section: "overview", href: "/admin", label: "Vue d’ensemble", icon: LayoutDashboard },
   { section: "operations", href: "/admin/operations", label: "Opérations", icon: Database },
+  { section: "agent", href: "/admin/agent-ia", label: "Agent IA", icon: Bot },
   { section: "quality", href: "/admin/quality", label: "Qualité des données", icon: BarChart3 },
   { section: "publications", href: "/admin/publications", label: "Publications", icon: FileCheck2 },
   { section: "clients", href: "/admin/clients", label: "Clients & abonnements", icon: CreditCard },

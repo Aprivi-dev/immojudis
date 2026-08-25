@@ -71,6 +71,7 @@ jobs:
       PIPELINE_IDLE_LLM_BACKFILL_ENABLED: true
       PIPELINE_ENRICHMENT_QUEUE_ENABLED: true
       PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE: 10
+      INFORMATION_AGENT_EVIDENCE_BATCH_SIZE: 5
       REPLICATE_MIN_INTERVAL_SECONDS: 1
       REPLICATE_WAIT_SECONDS: 1
       REPLICATE_MAX_RETRIES: 4
@@ -207,6 +208,28 @@ jobs:
             --data-urlencode "limit=1"; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             echo "reason=queued_data_refresh" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if has_rows information_agent_evidence_extractions \
+            --data-urlencode "select=id" \
+            --data-urlencode "status=in.(queued,failed)" \
+            --data-urlencode "available_at=lte.$now" \
+            --data-urlencode "attempts=lt.3" \
+            --data-urlencode "limit=1"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=queued_information_agent_evidence" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if has_rows information_agent_evidence_extractions \
+            --data-urlencode "select=id" \
+            --data-urlencode "status=eq.processing" \
+            --data-urlencode "locked_at=lt.$enrichment_cutoff" \
+            --data-urlencode "attempts=lt.3" \
+            --data-urlencode "limit=1"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=stale_information_agent_evidence_lock" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
