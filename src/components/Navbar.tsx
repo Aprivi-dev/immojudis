@@ -29,6 +29,7 @@ const HOME_NAV_ITEMS = [
   { to: RESOURCES_PATH, label: "Ressources" },
   { to: "/a-propos", label: "À propos" },
 ] as const;
+const NON_HOME_PUBLIC_NAV_ITEMS = HOME_NAV_ITEMS.filter((item) => item.to !== "/annonce-exemple");
 
 export function Navbar() {
   const location = useLocation();
@@ -47,7 +48,9 @@ export function Navbar() {
         ...(isProfessionalAccount(user, profile) ? [PRO_NAV_ITEM] : []),
         ...(admin ? [ADMIN_NAV_ITEM] : []),
       ]
-    : HOME_NAV_ITEMS;
+    : isHome
+      ? HOME_NAV_ITEMS
+      : NON_HOME_PUBLIC_NAV_ITEMS;
 
   useEffect(() => {
     if (!mobileOpen) return;

@@ -582,7 +582,7 @@ export function ListingImage({
   locked: boolean;
   title: string;
 }) {
-  return <SaleVisual sale={sale} title={title} locked={locked} />;
+  return <SaleVisual sale={sale} title={title} locked={locked} mapWidth={512} mapHeight={384} />;
 }
 
 export function ListingBadge({

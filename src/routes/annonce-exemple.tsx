@@ -1,13 +1,18 @@
 "use client";
 
 import { createFileRoute } from "@/lib/router-compat";
-import { AnalysisSaleDetailView, FreeSaleDetailView } from "@/components/SimplifiedSaleDetailView";
-import { EXAMPLE_MARKET_ESTIMATE, EXAMPLE_SALE } from "@/lib/example-sale";
+import { AnalysisSaleDetailView } from "@/components/SimplifiedSaleDetailView";
+import {
+  EXAMPLE_SALE,
+  EXAMPLE_SALE_RECORDS,
+  isExampleSaleKey,
+  type ExampleSaleKey,
+} from "@/lib/example-sale";
 import { saleSeoTitle } from "@/lib/seo";
 
 export const Route = createFileRoute("/annonce-exemple")({
   validateSearch: (search: Record<string, unknown>) => ({
-    offre: search.offre === "decouverte" ? ("decouverte" as const) : ("analyse" as const),
+    bien: isExampleSaleKey(search.bien) ? search.bien : ("bordeaux" as const),
   }),
   head: () => ({
     meta: [
@@ -24,11 +29,16 @@ export const Route = createFileRoute("/annonce-exemple")({
 });
 
 export function ExampleSalePage() {
-  const { offre } = Route.useSearch<{ offre: "decouverte" | "analyse" }>();
-  if (offre === "decouverte") {
-    return <FreeSaleDetailView sale={EXAMPLE_SALE} />;
-  }
+  const { bien } = Route.useSearch<{ bien: ExampleSaleKey }>();
+  const example = EXAMPLE_SALE_RECORDS[bien];
+
   return (
-    <AnalysisSaleDetailView sale={EXAMPLE_SALE} marketEstimateOverride={EXAMPLE_MARKET_ESTIMATE} />
+    <AnalysisSaleDetailView
+      sale={example.sale}
+      marketEstimateOverride={example.marketEstimate}
+      returnTo="/#exemples"
+      backLabel="Retour aux exemples"
+      publicDemo
+    />
   );
 }

@@ -645,14 +645,13 @@ function buildPopupHtml(sale: AuctionSale & { latitude: number; longitude: numbe
   const riskLabel =
     riskCount > 1 ? `${riskCount} alertes` : riskCount === 1 ? "1 alerte" : "Faible";
   const imageUrl =
-    firstPropertyImage(sale.media) ||
     mapboxSatelliteImageUrl({
       lat: sale.latitude,
       lng: sale.longitude,
       zoom: 15,
       width: 420,
       height: 250,
-    });
+    }) || firstPropertyImage(sale.media);
   const detailUrl = `/sales/${encodeURIComponent(sale.id)}`;
   const location = [sale.city, sale.tribunal_city ?? sale.tribunal_name]
     .filter(Boolean)
