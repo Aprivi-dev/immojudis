@@ -1,13 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import ArrowDown from "lucide-react/dist/esm/icons/arrow-down.js";
-import ArrowUp from "lucide-react/dist/esm/icons/arrow-up.js";
-import Bot from "lucide-react/dist/esm/icons/bot.js";
-import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
-import Eye from "lucide-react/dist/esm/icons/eye.js";
-import Lock from "lucide-react/dist/esm/icons/lock.js";
-import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
-import Save from "lucide-react/dist/esm/icons/save.js";
-import Send from "lucide-react/dist/esm/icons/send.js";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
@@ -37,7 +28,7 @@ export function AdminInformationAgentTemplatePanel() {
   if (templateQuery.isLoading) {
     return (
       <AdminPanel className="flex min-h-80 items-center justify-center p-6 text-sm text-[#132238]/60">
-        <RefreshCw className="mr-2 size-4 animate-spin" />
+        <LoadingIndicator />
         Chargement du template
       </AdminPanel>
     );
@@ -160,7 +151,6 @@ function InformationAgentTemplateEditor({
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#a36f2c]">
-              <Bot className="size-4" />
               Agent IA autonome
             </div>
             <h2 className="mt-2 text-xl font-semibold text-[#132238]">
@@ -260,14 +250,14 @@ function InformationAgentTemplateEditor({
                         disabled={index === 0}
                         onClick={() => moveBlock(index, -1)}
                       >
-                        <ArrowUp className="size-3.5" />
+                        <span aria-hidden="true">↑</span>
                       </OrderButton>
                       <OrderButton
                         label="Descendre ce bloc"
                         disabled={index === template.blocks.length - 1}
                         onClick={() => moveBlock(index, 1)}
                       >
-                        <ArrowDown className="size-3.5" />
+                        <span aria-hidden="true">↓</span>
                       </OrderButton>
                     </div>
                   </div>
@@ -294,11 +284,7 @@ function InformationAgentTemplateEditor({
                   disabled={previewMutation.isPending}
                   onClick={() => previewMutation.mutate()}
                 >
-                  {previewMutation.isPending ? (
-                    <RefreshCw className="size-4 animate-spin" />
-                  ) : (
-                    <Eye className="size-4" />
-                  )}
+                  {previewMutation.isPending ? <LoadingIndicator /> : null}
                   Prévisualiser
                 </button>
                 <button
@@ -307,11 +293,7 @@ function InformationAgentTemplateEditor({
                   disabled={saveMutation.isPending || !dirty}
                   onClick={() => saveMutation.mutate()}
                 >
-                  {saveMutation.isPending ? (
-                    <RefreshCw className="size-4 animate-spin" />
-                  ) : (
-                    <Save className="size-4" />
-                  )}
+                  {saveMutation.isPending ? <LoadingIndicator /> : null}
                   Enregistrer le brouillon
                 </button>
               </div>
@@ -330,7 +312,6 @@ function InformationAgentTemplateEditor({
                   className="rounded-xl border border-emerald-900/10 bg-emerald-50/60 p-4"
                 >
                   <div className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
-                    <Lock className="size-4" />
                     {block.title}
                   </div>
                   <p className="mt-2 text-xs leading-5 text-emerald-950/65">{block.description}</p>
@@ -362,8 +343,7 @@ function InformationAgentTemplateEditor({
             ) : (
               <div className="grid min-h-[28rem] place-items-center p-8 text-center text-sm text-[#132238]/55">
                 <div>
-                  <Eye className="mx-auto size-8 text-[#a6792b]" />
-                  <p className="mt-3">Aucun aperçu généré pour ce brouillon.</p>
+                  <p>Aucun aperçu généré pour ce brouillon.</p>
                 </div>
               </div>
             )}
@@ -395,11 +375,7 @@ function InformationAgentTemplateEditor({
               }
               onClick={() => publishMutation.mutate()}
             >
-              {publishMutation.isPending ? (
-                <RefreshCw className="size-4 animate-spin" />
-              ) : (
-                <Send className="size-4" />
-              )}
+              {publishMutation.isPending ? <LoadingIndicator /> : null}
               Publier ce template
             </button>
             {!workspace.draft ? (
@@ -433,7 +409,9 @@ function InformationAgentTemplateEditor({
                     </p>
                   </div>
                   {entry.status === "published" ? (
-                    <CheckCircle className="size-4 shrink-0 text-emerald-600" />
+                    <span className="shrink-0 text-emerald-600" aria-label="Version publiée">
+                      ✓
+                    </span>
                   ) : (
                     <span className="text-[10px] uppercase tracking-[0.12em] text-[#132238]/45">
                       Archivé
@@ -455,6 +433,15 @@ function EditorField({ label, children }: { label: string; children: ReactNode }
       {label}
       {children}
     </label>
+  );
+}
+
+function LoadingIndicator() {
+  return (
+    <span
+      aria-hidden="true"
+      className="mr-2 size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent"
+    />
   );
 }
 
