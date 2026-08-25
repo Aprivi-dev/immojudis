@@ -11,6 +11,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  manual-collection:
+    name: Manual-only data collection invariant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+      - run: npm run check:manual-collection
+
   web:
     name: Web (typecheck + lint)
     runs-on: ubuntu-latest
@@ -111,9 +121,9 @@ jobs:
       - name: Pin npm
         run: npm install --global npm@11.18.0
       - run: npm ci
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-      - name: Run registration-to-share journey
+      - name: Install Chromium, Firefox and WebKit
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run cross-browser journeys and accessibility checks
         run: npm run test:e2e
 
   dependency-review:

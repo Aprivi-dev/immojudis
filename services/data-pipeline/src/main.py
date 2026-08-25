@@ -23,11 +23,13 @@ from src.enrichment.extract_structured import (
     extract_source_description,
 )
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
+from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
 from src.geocode import geocode_sale
 from src.lifecycle import mark_past_sales
 from src.models import AuctionSale
-from src.normalize import normalize_sale, parse_price
+from src.normalize import clean_text, normalize_sale, parse_price
+from src.outcome_ingestion.catalogue_bridge import bridge_auction_sales_before_cleanup
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
     PdfEnrichmentStats,
@@ -40,6 +42,7 @@ from src.quality import (
     format_extraction_gap_report,
     format_quality_report,
 )
+from src.sale_procedure import classify_sale_procedure
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.cessions_etat import scrape_cessions_etat_aquitaine_result
@@ -54,6 +57,7 @@ from src.sources.vench import scrape_vench_aquitaine_result
 from src.storage.supabase_client import (
     create_run_in_supabase,
     delete_expired_sales_in_supabase,
+    delete_secondary_sales_in_supabase,
     delete_vench_sales_without_surface_in_supabase,
     fetch_enriched_content_hashes,
     fetch_known_sale_details,
@@ -149,11 +153,17 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "raw_image_url",
     "source_description",
     "llm_extraction",
+    "llm_fact_extraction",
+    "llm_fact_prompt_version",
+    "llm_display_prompt_version",
+    "llm_fact_coverage",
+    "llm_fact_context_coverage",
     "llm_display_description",
     "llm_display_description_word_count",
     "llm_prompt_version",
     "document_analysis",
     "surface_extraction",
+    "surface_analysis",
     "land_surface_extraction",
     "investment_analysis",
     "llm_due_diligence",
@@ -194,6 +204,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     errors: dict[str, list[str]] = {source: [] for source in SOURCE_NAMES}
     raw_sales: list[dict[str, object]] = []
     raw_by_source = {source: 0 for source in SOURCE_NAMES}
+    scrape_coverage: dict[str, dict[str, object]] = {}
     timings: dict[str, float] = {}
 
     # Données connues en base : Vench s'en sert comme fallback quand la page est
@@ -201,7 +212,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     try:
         known_details: dict[str, dict[str, object]] = (
             fetch_known_sale_details()
-            if (settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment)
+            if (
+                settings["incremental_enrichment"]
+                and options.upsert
+                and (options.heavy_enrichment or options.use_llm)
+            )
             else {}
         )
     except Exception as exc:
@@ -240,6 +255,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             timings[f"scrape_{name}_seconds"] = seconds
             errors.setdefault(name, []).extend(result.errors)
             raw_by_source[name] = len(result.sales)
+            scrape_coverage[name] = {
+                **result.coverage,
+                "duration_seconds": seconds,
+                "configured_page_limit": _configured_page_limit(name, settings),
+            }
             raw_sales.extend(result.sales)
     timings["scrape_total_seconds"] = round(time.perf_counter() - scrape_overall_started, 2)
 
@@ -274,13 +294,18 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     # corrections de géocodage) arrivent jusqu'au read model.
     enriched_hashes: set[str] = set()
     current_llm_description_hashes: set[str] = set()
-    if settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment:
+    if (
+        settings["incremental_enrichment"]
+        and options.upsert
+        and (options.heavy_enrichment or options.use_llm)
+    ):
         content_hashes = [sale.content_hash for sale in canonical_sales if sale.content_hash]
-        enriched_hashes = fetch_enriched_content_hashes(
-            content_hashes,
-            require_llm_description=False,
-            require_document_analysis=True,
-        )
+        if options.heavy_enrichment:
+            enriched_hashes = fetch_enriched_content_hashes(
+                content_hashes,
+                require_llm_description=False,
+                require_document_analysis=True,
+            )
         if options.use_llm:
             current_llm_description_hashes = fetch_enriched_content_hashes(
                 content_hashes,
@@ -298,7 +323,10 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     pdf_stats = PdfEnrichmentStats()
     llm_stats = LLMEnrichmentStats()
     llm_client = None
-    if options.heavy_enrichment and options.use_llm:
+    # The public description is a lightweight product requirement of every
+    # scan. PDF/OCR can be disabled independently with --no-heavy-enrichment;
+    # only --no-llm explicitly disables the Replicate synthesis.
+    if options.use_llm:
         try:
             llm_client = create_llm_client()
         except LLMClientUnavailable as exc:
@@ -406,7 +434,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             and not _llm_description_already_current(sale, current_llm_description_hashes)
             and sale.source_url not in failed_urls
         ]
-        if options.heavy_enrichment and options.use_llm
+        if options.use_llm
         else []
     )
     llm_targets_before_limit = len(llm_targets)
@@ -485,13 +513,18 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     cadastre_upserted = 0
     dpe_upserted = 0
     supabase_cleaned_past = 0
+    supabase_deleted_secondary = 0
     supabase_reconciled_duplicates = 0
     supabase_deleted_expired = 0
     supabase_deleted_vench_without_surface = 0
+    outcome_bridge_scanned = 0
+    outcome_bridge_created = 0
+    outcome_bridge_reused = 0
     publication_failed = False
     summary = {
         "collected": len(raw_sales),
         "collected_by_source": raw_by_source,
+        "scrape_coverage": scrape_coverage,
         "normalized": len(normalized_observations),
         "deduplicated": len(canonical_sales),
         "skipped_detail": skipped_detail,
@@ -525,6 +558,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                         errors.setdefault("dpe", []).append(str(exc))
             upserted = max(early_upserted, final_upserted)
             observations_upserted = max(early_observations_upserted, final_observations_upserted)
+            # Fail closed before every path below that can delete catalogue
+            # rows. The database also rejects deletion of any unbridged sale.
+            outcome_bridge = bridge_auction_sales_before_cleanup(settings)
+            outcome_bridge_scanned = outcome_bridge.scanned_count
+            outcome_bridge_created = outcome_bridge.created_count
+            outcome_bridge_reused = outcome_bridge.reused_count
+            supabase_deleted_secondary = delete_secondary_sales_in_supabase(app_ready)
             if settings.get("dedupe_reconcile_enabled", True):
                 supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase(
                     limit=int(settings.get("dedupe_reconcile_max_rows") or 2000)
@@ -543,7 +583,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                     "final_observations_upserted": final_observations_upserted,
                     "cadastre_upserted": cadastre_upserted,
                     "dpe_upserted": dpe_upserted,
+                    "outcome_bridge_scanned": outcome_bridge_scanned,
+                    "outcome_bridge_created": outcome_bridge_created,
+                    "outcome_bridge_reused": outcome_bridge_reused,
                     "marked_past_in_run": lifecycle_stats.marked_past,
+                    "deleted_secondary_sales": supabase_deleted_secondary,
                     "reconciled_duplicate_sales": supabase_reconciled_duplicates,
                     "marked_past_in_supabase": supabase_cleaned_past,
                     "deleted_expired_sales": supabase_deleted_expired,
@@ -560,6 +604,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print("Immojudis data pipeline summary")
     print(f"- collected: {len(raw_sales)}")
     print(f"- collected_by_source: {raw_by_source}")
+    print(f"- scrape_coverage: {scrape_coverage}")
     print(f"- normalized: {len(normalized_observations)}")
     print(f"- deduplicated: {len(canonical_sales)}")
     print(f"- skipped_detail: {skipped_detail}")
@@ -571,7 +616,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     print(f"- final_upserted: {final_upserted}")
     print(f"- cadastre_upserted: {cadastre_upserted}")
     print(f"- dpe_upserted: {dpe_upserted}")
+    print(f"- outcome_bridge_scanned: {outcome_bridge_scanned}")
+    print(f"- outcome_bridge_created: {outcome_bridge_created}")
+    print(f"- outcome_bridge_reused: {outcome_bridge_reused}")
     print(f"- marked_past_in_run: {lifecycle_stats.marked_past}")
+    print(f"- deleted_secondary_sales: {supabase_deleted_secondary}")
     print(f"- reconciled_duplicate_sales: {supabase_reconciled_duplicates}")
     print(f"- marked_past_in_supabase: {supabase_cleaned_past}")
     print(f"- deleted_expired_sales: {supabase_deleted_expired}")
@@ -906,7 +955,10 @@ def _backfill_document_price_from_known(
     if not isinstance(known_payload, dict):
         return 0
     extraction = known_payload.get("starting_price_extraction")
-    if not isinstance(extraction, dict) or extraction.get("version") != DOCUMENT_FACTS_VERSION:
+    if not isinstance(extraction, dict) or extraction.get("version") not in {
+        DOCUMENT_FACTS_VERSION,
+        "document_facts_v1_starting_price",
+    }:
         return 0
 
     known_price = parse_price(known.get("starting_price_eur"))
@@ -928,8 +980,12 @@ def _backfill_document_price_from_known(
     if sale.get("starting_price_extraction") != extraction:
         sale["starting_price_extraction"] = extraction
         copied += 1
-    if sale.get("document_facts_version") != DOCUMENT_FACTS_VERSION:
-        sale["document_facts_version"] = DOCUMENT_FACTS_VERSION
+    known_facts_version = known_payload.get("document_facts_version") or extraction.get("version")
+    if sale.get("document_facts_version") != known_facts_version:
+        # Preserve the last version that actually analyzed the document. Do not
+        # mark it current here: the version check must still schedule the new
+        # surface-reasoning pass while the verified price remains protected.
+        sale["document_facts_version"] = known_facts_version
         copied += 1
     return copied
 
@@ -1049,6 +1105,25 @@ def _enabled_scrapers(
     return enabled
 
 
+def _configured_page_limit(source_name: str, settings: dict[str, object]) -> int | None:
+    key_by_source = {
+        "licitor": "licitor_max_pages",
+        "vench": "vench_max_pages",
+        "info_encheres": "info_encheres_max_pages",
+        "encheres_publiques": "encheres_publiques_max_pages",
+        "cessions_etat": "cessions_etat_max_pages",
+        "encheres_immobilieres": "encheres_immobilieres_max_pages",
+        "notaires": "notaires_max_pages",
+    }
+    key = key_by_source.get(source_name)
+    if not key:
+        return None
+    try:
+        return int(settings[key])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _timed_scrape(name: str, fn: Callable[[], ScrapeResult]) -> tuple[ScrapeResult, float]:
     started = time.perf_counter()
     result = fn()
@@ -1062,7 +1137,19 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     if geocode:
         geocode_sale(sale)
     fill_tribunal(sale)
+    classify_sale_procedure(sale)
+    surface_context = _surface_reasoning_context_for_sale(sale)
+    if surface_context:
+        extract_and_apply_deterministic_surface_reasoning(sale, surface_context)
     normalize_asset_features(sale)
+
+
+def _surface_reasoning_context_for_sale(sale: AuctionSale) -> str:
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    source_blocks = payload.get("source_blocks")
+    block_values = list(source_blocks.values()) if isinstance(source_blocks, dict) else []
+    values: list[object] = [sale.title, sale.description, sale.raw_text, payload.get("source_description"), *block_values]
+    return clean_text("\n".join(str(value) for value in values if value)) or ""
 
 
 def _needs_heavy_enrichment(
@@ -1265,6 +1352,9 @@ def _add_llm_stats(total: LLMEnrichmentStats, item: LLMEnrichmentStats) -> None:
     total.occupancy_extracted += item.occupancy_extracted
     total.occupancy_detected += item.occupancy_detected
     total.risks_detected += item.risks_detected
+    total.fact_chunks_analyzed += item.fact_chunks_analyzed
+    total.structured_surface_verified += item.structured_surface_verified
+    total.calculated_surface_verified += item.calculated_surface_verified
     total.error_messages.extend(item.error_messages)
     total.unavailable = total.unavailable or item.unavailable
 
@@ -1309,7 +1399,10 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
     parser.add_argument(
         "--no-heavy-enrichment",
         action="store_true",
-        help="Publie les annonces sans PDF/OCR/LLM. Utile pour un scrape rapide orienté visibilité front.",
+        help=(
+            "Publie les annonces sans PDF/OCR lourd. La synthèse Qwen courte reste active; "
+            "ajoutez --no-llm pour la désactiver explicitement."
+        ),
     )
     parser.add_argument("--no-upsert", action="store_true", help="N'écrit pas dans Supabase.")
     parser.add_argument("--limit", type=int, default=None, help="Limite le nombre d'annonces brutes traitées.")

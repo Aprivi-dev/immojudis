@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import { legalConfigurationStatus } from "@/lib/legal-documents";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
 export type ReadinessArea =
@@ -11,7 +12,8 @@ export type ReadinessArea =
   | "access"
   | "email"
   | "pipeline"
-  | "operations";
+  | "operations"
+  | "compliance";
 
 export type ReadinessItem = {
   key: string;
@@ -54,6 +56,12 @@ export type OperationalHealthReadiness = {
   status: ReadinessStatus;
   schedulerActive: boolean;
   schedulerSchedule: string | null;
+  sloTargetPercent: number;
+  sloWindowDays: number;
+  successfulRunCount: number | null;
+  failedRunCount: number | null;
+  totalRunCount: number | null;
+  successRatePercent: number | null;
   openAlertCount: number | null;
   criticalOpenAlertCount: number | null;
   pendingDeliveryCount: number | null;
@@ -73,8 +81,10 @@ export type AdminOperationalReadinessResponse = {
   webhookUrl: string | null;
 };
 
-export const EXPECTED_LATEST_MIGRATION_VERSION = "20260727185139";
-export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v6_display";
+export const EXPECTED_LATEST_MIGRATION_VERSION = "20260820144541";
+export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v9_qwen2_7b_scan_display";
+export const OPERATIONAL_HEALTH_SLO_TARGET_PERCENT = 99.5;
+export const OPERATIONAL_HEALTH_SLO_WINDOW_DAYS = 30;
 
 const EXPECTED_CRONS = [
   "/api/cron/smart-alerts",
@@ -134,19 +144,33 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
     env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN,
     env.GITHUB_ACTIONS_DISPATCH_TOKEN,
   );
+  const legalStatus = legalConfigurationStatus(env);
 
   return [
+    {
+      key: "compliance.publisher",
+      area: "compliance",
+      label: "Identité légale et médiation",
+      status: legalStatus.ready ? "ready" : "blocked",
+      detail: legalStatus.ready
+        ? "L’éditeur, les contacts et le médiateur sont publiables dans les documents contractuels."
+        : `${legalStatus.missing.length} mention(s) obligatoire(s) restent à configurer ; le checkout est suspendu.`,
+      action: legalStatus.ready ? null : `Configurer ${legalStatus.missing.join(", ")}.`,
+    },
     {
       key: "billing.checkout.analyse",
       area: "billing",
       label: "Checkout Analyse",
-      status: stripeSecret && appUrl ? "ready" : "blocked",
+      status:
+        stripeSecret && appUrl && legalStatus.ready && emailConfig.configured ? "ready" : "blocked",
       detail:
-        stripeSecret && appUrl
-          ? "Le checkout Analyse peut encaisser 29 € et ouvrir 30 jours d'accès."
-          : "Le checkout Analyse attend encore sa clé Stripe et l'URL canonique.",
+        stripeSecret && appUrl && legalStatus.ready && emailConfig.configured
+          ? "Le checkout Analyse peut encaisser 29 €, conserver la preuve contractuelle et ouvrir 30 jours d'accès."
+          : "Le checkout Analyse attend Stripe, son URL canonique, ses mentions juridiques ou le canal de confirmation contractuelle.",
       action:
-        stripeSecret && appUrl ? null : "Configurer STRIPE_SECRET_KEY et NEXT_PUBLIC_APP_URL.",
+        stripeSecret && appUrl && legalStatus.ready && emailConfig.configured
+          ? null
+          : "Configurer Stripe, Resend, NEXT_PUBLIC_APP_URL et les variables NEXT_PUBLIC_LEGAL_*.",
     },
     {
       key: "billing.webhook",
@@ -440,6 +464,21 @@ async function readOperationalHealthReadiness(
       from public.operational_job_runs
       where job_name = 'operational-health'
     `;
+    const [slo] = await sql<
+      Array<{
+        successful_run_count: number;
+        failed_run_count: number;
+        total_run_count: number;
+      }>
+    >`
+      select
+        count(*) filter (where status = 'success')::int as successful_run_count,
+        count(*) filter (where status = 'failed')::int as failed_run_count,
+        count(*) filter (where status in ('success', 'failed'))::int as total_run_count
+      from public.operational_job_runs
+      where job_name = 'operational-health'
+        and started_at >= now() - interval '30 days'
+    `;
     const alertRows = await sql<
       Array<{
         alert_key: string;
@@ -470,6 +509,13 @@ async function readOperationalHealthReadiness(
     const criticalOpenAlertCount = counts?.critical_open_alert_count ?? 0;
     const pendingDeliveryCount = counts?.pending_delivery_count ?? 0;
     const failedDeliveryCount = counts?.failed_delivery_count ?? 0;
+    const successfulRunCount = slo?.successful_run_count ?? 0;
+    const failedRunCount = slo?.failed_run_count ?? 0;
+    const totalRunCount = slo?.total_run_count ?? 0;
+    const successRatePercent =
+      totalRunCount > 0 ? Number(((successfulRunCount / totalRunCount) * 100).toFixed(3)) : null;
+    const sloMet =
+      successRatePercent != null && successRatePercent >= OPERATIONAL_HEALTH_SLO_TARGET_PERCENT;
     const lastHealthRunAt = latestRun?.latest_at ?? null;
     const lastRunFresh = Boolean(
       lastHealthRunAt && Date.now() - new Date(lastHealthRunAt).getTime() <= 30 * 60 * 1000,
@@ -477,7 +523,7 @@ async function readOperationalHealthReadiness(
     const status: ReadinessStatus =
       !schedulerActive || failedDeliveryCount > 0 || criticalOpenAlertCount > 0
         ? "blocked"
-        : openAlertCount > 0 || pendingDeliveryCount > 0 || !lastRunFresh
+        : openAlertCount > 0 || pendingDeliveryCount > 0 || !lastRunFresh || !sloMet
           ? "warning"
           : "ready";
 
@@ -485,6 +531,12 @@ async function readOperationalHealthReadiness(
       status,
       schedulerActive,
       schedulerSchedule: scheduler?.schedule ?? null,
+      sloTargetPercent: OPERATIONAL_HEALTH_SLO_TARGET_PERCENT,
+      sloWindowDays: OPERATIONAL_HEALTH_SLO_WINDOW_DAYS,
+      successfulRunCount,
+      failedRunCount,
+      totalRunCount,
+      successRatePercent,
       openAlertCount,
       criticalOpenAlertCount,
       pendingDeliveryCount,
@@ -505,6 +557,8 @@ async function readOperationalHealthReadiness(
         pendingDeliveryCount,
         failedDeliveryCount,
         lastRunFresh,
+        successRatePercent,
+        sloTargetPercent: OPERATIONAL_HEALTH_SLO_TARGET_PERCENT,
       }),
     };
   } catch (error) {
@@ -562,7 +616,10 @@ export function operationalHealthItem(readiness: OperationalHealthReadiness): Re
           ? "Réparer le canal externe puis relancer /api/cron/operational-health."
           : readiness.criticalOpenAlertCount
             ? "Consulter les incidents ouverts et appliquer le runbook correspondant."
-            : "Vérifier le scheduler Supabase et la dernière exécution du contrôle de santé.",
+            : readiness.successRatePercent == null ||
+                readiness.successRatePercent < readiness.sloTargetPercent
+              ? "Analyser les exécutions en échec sur 30 jours et confirmer le retour au SLO."
+              : "Vérifier le scheduler Supabase et la dernière exécution du contrôle de santé.",
   };
 }
 
@@ -616,6 +673,12 @@ function unavailableOperationalHealth(detail: string): OperationalHealthReadines
     status: "warning",
     schedulerActive: false,
     schedulerSchedule: null,
+    sloTargetPercent: OPERATIONAL_HEALTH_SLO_TARGET_PERCENT,
+    sloWindowDays: OPERATIONAL_HEALTH_SLO_WINDOW_DAYS,
+    successfulRunCount: null,
+    failedRunCount: null,
+    totalRunCount: null,
+    successRatePercent: null,
     openAlertCount: null,
     criticalOpenAlertCount: null,
     pendingDeliveryCount: null,
@@ -633,6 +696,8 @@ function operationalHealthDetail({
   pendingDeliveryCount,
   failedDeliveryCount,
   lastRunFresh,
+  successRatePercent,
+  sloTargetPercent,
 }: {
   schedulerActive: boolean;
   openAlertCount: number;
@@ -640,6 +705,8 @@ function operationalHealthDetail({
   pendingDeliveryCount: number;
   failedDeliveryCount: number;
   lastRunFresh: boolean;
+  successRatePercent: number | null;
+  sloTargetPercent: number;
 }): string {
   if (!schedulerActive) return "Le contrôle de santé toutes les 15 minutes est absent ou inactif.";
   if (failedDeliveryCount > 0) {
@@ -653,7 +720,11 @@ function operationalHealthDetail({
     return `${pendingDeliveryCount} notification(s) externe(s) attendent leur livraison.`;
   }
   if (!lastRunFresh) return "La dernière mesure de santé date de plus de 30 minutes.";
-  return "Le scheduler, les SLO et le canal externe sont opérationnels.";
+  if (successRatePercent == null) return "Le SLO ne peut pas encore être calculé sans exécution.";
+  if (successRatePercent < sloTargetPercent) {
+    return `Le contrôle de santé atteint ${successRatePercent.toFixed(3)} % sur 30 jours, sous le SLO de ${sloTargetPercent} %.`;
+  }
+  return `Le scheduler, le canal externe et le SLO (${successRatePercent.toFixed(3)} % sur 30 jours) sont opérationnels.`;
 }
 
 function overallStatus(items: ReadinessItem[]): ReadinessStatus {

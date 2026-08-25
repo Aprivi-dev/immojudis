@@ -331,6 +331,7 @@ describe("property report sharing", () => {
     expect(plan.hasAnalysisAccess).toBe(true);
     expect(plan.features.realtimeAlertChanges).toBe("included");
     expect(plan.features.workspaceCollaboration).toBe("included");
+    expect(plan.features.outcomeGraph).toBe("included");
     expect(plan.limits.workspaceCollaborators).toBeNull();
     expect(plan.limits.watchedZones).toBeNull();
     expect(plan.limits.apiKeys).toBeNull();
@@ -353,6 +354,7 @@ describe("property report sharing", () => {
     const plan = await resolvePlanEntitlements(auth);
 
     expect(plan.plan).toBe("analyse");
+    expect(plan.features.outcomeGraph).toBe("included");
     expect(plan.limits.apiKeys).toBe(2);
     expect(plan.limits.watchedZones).toBe(25);
     expect(plan.limits.workspaceCollaborators).toBe(25);

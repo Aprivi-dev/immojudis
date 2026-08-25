@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { AdminQualityRouteClient } from "../../_route-clients/AdminQualityRouteClient";
+import { AuthGate } from "@/components/AuthGate";
+import { AdminQualityPage } from "@/routes/admin.quality";
 
 export const metadata: Metadata = {
   title: "Qualite des donnees",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <AdminQualityRouteClient />;
+  return (
+    <AuthGate>
+      <AdminQualityPage />
+    </AuthGate>
+  );
 }

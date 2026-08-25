@@ -16,10 +16,11 @@ on:
         required: false
         default: false
         type: boolean
-  schedule:
-    # DGFiP/data.gouv publish DVF updates semestrially around April and October.
-    - cron: "15 3 10 4,10 *"
-
+      replace_existing:
+        description: "Replace the DVF table through COPY. Full imports only; never combine with a row limit."
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 
@@ -42,6 +43,7 @@ jobs:
       REQUESTED_RESOURCE_URL: ${{ github.event.inputs.resource_url }}
       REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
       REQUESTED_DRY_RUN: ${{ github.event.inputs.dry_run }}
+      REQUESTED_REPLACE_EXISTING: ${{ github.event.inputs.replace_existing }}
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -76,6 +78,12 @@ jobs:
           requested_url = (os.environ.get("REQUESTED_RESOURCE_URL") or "").strip()
           requested_limit = (os.environ.get("REQUESTED_LIMIT") or "").strip()
           dry_run = (os.environ.get("REQUESTED_DRY_RUN") or "").lower() == "true"
+          replace_existing = (
+            os.environ.get("REQUESTED_REPLACE_EXISTING") or ""
+          ).lower() == "true"
+
+          if replace_existing and requested_limit:
+            raise RuntimeError("replace_existing cannot be combined with limit.")
 
           if not dry_run and not os.environ.get("SUPABASE_DB_URL"):
             raise RuntimeError("SUPABASE_DB_URL is required unless dry_run=true.")
@@ -138,6 +146,8 @@ jobs:
             command = ["python", "-m", "src.dvf_import", str(target), "--source-url", url]
             if dry_run:
               command.append("--dry-run")
+            if replace_existing:
+              command.append("--replace-existing")
             if requested_limit:
               command.extend(["--limit", requested_limit])
 

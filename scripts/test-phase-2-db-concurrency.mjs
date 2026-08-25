@@ -120,7 +120,13 @@ async function seedFixtures() {
       delete from auth.users
       where id in (${refreshUserId}, ${paymentUserId}, ${ownerUserId}, ${collaboratorUserId})
     `;
+    // Test-fixture teardown must not manufacture permanent Outcome bridges.
+    // This local/admin-only transaction bypasses the production deletion guard
+    // for the four deterministic fixture IDs, then restores normal triggers
+    // before any invariant under test is exercised.
+    await sql.unsafe("set local session_replication_role = replica");
     await sql`delete from public.auction_sales where id in ${sql(saleIds)}`;
+    await sql.unsafe("set local session_replication_role = origin");
     await sql`
       insert into auth.users (
         id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -280,7 +286,10 @@ async function cleanupFixtures() {
   await admin`delete from auth.users where id in (${refreshUserId}, ${paymentUserId}, ${ownerUserId}, ${collaboratorUserId})`.catch(
     () => undefined,
   );
-  await admin`delete from public.auction_sales where id in ${admin(saleIds)}`.catch(
-    () => undefined,
-  );
+  await admin
+    .begin(async (sql) => {
+      await sql.unsafe("set local session_replication_role = replica");
+      await sql`delete from public.auction_sales where id in ${sql(saleIds)}`;
+    })
+    .catch(() => undefined);
 }

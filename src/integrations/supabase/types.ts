@@ -560,6 +560,188 @@ export type Database = {
           },
         ];
       };
+      commercial_acceptances: {
+        Row: {
+          accepted_at: string;
+          amount_cents: number;
+          archived_until: string | null;
+          checkout_created_at: string | null;
+          checkout_session_id: string | null;
+          currency: string;
+          evidence: Json;
+          id: string;
+          immediate_performance_requested: boolean;
+          offer_code: string;
+          payment_obligation_acknowledged: boolean;
+          privacy_sha256: string;
+          privacy_version: string;
+          purpose: string;
+          request_id: string | null;
+          requester_email_hash: string | null;
+          terms_accepted: boolean;
+          terms_sha256: string;
+          terms_version: string;
+          user_agent_hash: string | null;
+          user_id: string | null;
+          withdrawal_information_acknowledged: boolean;
+        };
+        Insert: {
+          accepted_at?: string;
+          amount_cents: number;
+          archived_until?: string | null;
+          checkout_created_at?: string | null;
+          checkout_session_id?: string | null;
+          currency: string;
+          evidence?: Json;
+          id?: string;
+          immediate_performance_requested: boolean;
+          offer_code: string;
+          payment_obligation_acknowledged: boolean;
+          privacy_sha256: string;
+          privacy_version: string;
+          purpose?: string;
+          request_id?: string | null;
+          requester_email_hash?: string | null;
+          terms_accepted: boolean;
+          terms_sha256: string;
+          terms_version: string;
+          user_agent_hash?: string | null;
+          user_id?: string | null;
+          withdrawal_information_acknowledged: boolean;
+        };
+        Update: {
+          accepted_at?: string;
+          amount_cents?: number;
+          archived_until?: string | null;
+          checkout_created_at?: string | null;
+          checkout_session_id?: string | null;
+          currency?: string;
+          evidence?: Json;
+          id?: string;
+          immediate_performance_requested?: boolean;
+          offer_code?: string;
+          payment_obligation_acknowledged?: boolean;
+          privacy_sha256?: string;
+          privacy_version?: string;
+          purpose?: string;
+          request_id?: string | null;
+          requester_email_hash?: string | null;
+          terms_accepted?: boolean;
+          terms_sha256?: string;
+          terms_version?: string;
+          user_agent_hash?: string | null;
+          user_id?: string | null;
+          withdrawal_information_acknowledged?: boolean;
+        };
+        Relationships: [];
+      };
+      commercial_confirmation_deliveries: {
+        Row: {
+          acceptance_id: string;
+          attempt_count: number;
+          checkout_session_id: string;
+          created_at: string;
+          error_message: string | null;
+          id: string;
+          paid_at: string;
+          provider_message_id: string | null;
+          recipient_hash: string | null;
+          sent_at: string | null;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          acceptance_id: string;
+          attempt_count?: number;
+          checkout_session_id: string;
+          created_at?: string;
+          error_message?: string | null;
+          id?: string;
+          paid_at: string;
+          provider_message_id?: string | null;
+          recipient_hash?: string | null;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        Update: {
+          acceptance_id?: string;
+          attempt_count?: number;
+          checkout_session_id?: string;
+          created_at?: string;
+          error_message?: string | null;
+          id?: string;
+          paid_at?: string;
+          provider_message_id?: string | null;
+          recipient_hash?: string | null;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "commercial_confirmation_deliveries_acceptance_id_fkey";
+            columns: ["acceptance_id"];
+            isOneToOne: true;
+            referencedRelation: "commercial_acceptances";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      data_subject_requests: {
+        Row: {
+          acknowledged_at: string;
+          completed_at: string | null;
+          due_at: string;
+          id: string;
+          identity_status: string;
+          message: string | null;
+          metadata: Json;
+          operator_notes: string | null;
+          request_type: string;
+          requester_email: string;
+          resolution_code: string | null;
+          status: string;
+          submitted_at: string;
+          updated_at: string;
+          user_id: string | null;
+        };
+        Insert: {
+          acknowledged_at?: string;
+          completed_at?: string | null;
+          due_at?: string;
+          id?: string;
+          identity_status?: string;
+          message?: string | null;
+          metadata?: Json;
+          operator_notes?: string | null;
+          request_type: string;
+          requester_email: string;
+          resolution_code?: string | null;
+          status?: string;
+          submitted_at?: string;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          acknowledged_at?: string;
+          completed_at?: string | null;
+          due_at?: string;
+          id?: string;
+          identity_status?: string;
+          message?: string | null;
+          metadata?: Json;
+          operator_notes?: string | null;
+          request_type?: string;
+          requester_email?: string;
+          resolution_code?: string | null;
+          status?: string;
+          submitted_at?: string;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Relationships: [];
+      };
       data_refresh_requests: {
         Row: {
           completed_at: string | null;
@@ -670,10 +852,15 @@ export type Database = {
           error_message: string | null;
           estimate: Json | null;
           input_fingerprint: string;
+          last_error_code: string | null;
+          last_finished_at: string | null;
           last_started_at: string | null;
           model_version: string | null;
           model_version_id: string | null;
           next_refresh_at: string;
+          priority: number;
+          refresh_reason: string;
+          requested_at: string | null;
           segment: "apartment" | "house" | "building" | "commercial" | "land" | "parking" | null;
           source_updated_at: string | null;
           status: "pending" | "processing" | "ready" | "insufficient_data" | "failed";
@@ -695,10 +882,15 @@ export type Database = {
           error_message?: string | null;
           estimate?: Json | null;
           input_fingerprint: string;
+          last_error_code?: string | null;
+          last_finished_at?: string | null;
           last_started_at?: string | null;
           model_version?: string | null;
           model_version_id?: string | null;
           next_refresh_at?: string;
+          priority?: number;
+          refresh_reason?: string;
+          requested_at?: string | null;
           segment?: "apartment" | "house" | "building" | "commercial" | "land" | "parking" | null;
           source_updated_at?: string | null;
           status?: "pending" | "processing" | "ready" | "insufficient_data" | "failed";
@@ -720,10 +912,15 @@ export type Database = {
           error_message?: string | null;
           estimate?: Json | null;
           input_fingerprint?: string;
+          last_error_code?: string | null;
+          last_finished_at?: string | null;
           last_started_at?: string | null;
           model_version?: string | null;
           model_version_id?: string | null;
           next_refresh_at?: string;
+          priority?: number;
+          refresh_reason?: string;
+          requested_at?: string | null;
           segment?: "apartment" | "house" | "building" | "commercial" | "land" | "parking" | null;
           source_updated_at?: string | null;
           status?: "pending" | "processing" | "ready" | "insufficient_data" | "failed";
@@ -782,9 +979,14 @@ export type Database = {
           primary_source: string | null;
           property_type: string | null;
           quality_flags: Json | null;
+          raw_payload: Json | null;
           risk_notes: string | null;
           rooms_count: number | null;
           sale_date: string | null;
+          sale_legal_framework: string;
+          sale_procedure: Json;
+          sale_venue_type: string;
+          sale_verification_status: string;
           score_version: string | null;
           source_name: string | null;
           source_url: string | null;
@@ -795,6 +997,7 @@ export type Database = {
           surface_evidence: string | null;
           surface_scope: string | null;
           surface_source: string | null;
+          surface_m2: number | null;
           title: string | null;
           tribunal: string | null;
           tribunal_code: string | null;
@@ -831,9 +1034,14 @@ export type Database = {
           primary_source?: string | null;
           property_type?: string | null;
           quality_flags?: Json | null;
+          raw_payload?: Json | null;
           risk_notes?: string | null;
           rooms_count?: number | null;
           sale_date?: string | null;
+          sale_legal_framework?: string;
+          sale_procedure?: Json;
+          sale_venue_type?: string;
+          sale_verification_status?: string;
           score_version?: string | null;
           source_name?: string | null;
           source_url?: string | null;
@@ -844,6 +1052,7 @@ export type Database = {
           surface_evidence?: string | null;
           surface_scope?: string | null;
           surface_source?: string | null;
+          surface_m2?: number | null;
           title?: string | null;
           tribunal?: string | null;
           tribunal_code?: string | null;
@@ -880,9 +1089,14 @@ export type Database = {
           primary_source?: string | null;
           property_type?: string | null;
           quality_flags?: Json | null;
+          raw_payload?: Json | null;
           risk_notes?: string | null;
           rooms_count?: number | null;
           sale_date?: string | null;
+          sale_legal_framework?: string;
+          sale_procedure?: Json;
+          sale_venue_type?: string;
+          sale_verification_status?: string;
           score_version?: string | null;
           source_name?: string | null;
           source_url?: string | null;
@@ -893,6 +1107,7 @@ export type Database = {
           surface_evidence?: string | null;
           surface_scope?: string | null;
           surface_source?: string | null;
+          surface_m2?: number | null;
           title?: string | null;
           tribunal?: string | null;
           tribunal_code?: string | null;
@@ -995,7 +1210,6 @@ export type Database = {
           address: string | null;
           built_surface_m2: number | null;
           city: string | null;
-          created_at: string;
           department: string | null;
           dvf_property_type_code: string | null;
           id: string;
@@ -1003,7 +1217,6 @@ export type Database = {
           insee_code: string | null;
           land_surface_m2: number | null;
           latitude: number | null;
-          location: unknown | null;
           longitude: number | null;
           lots_count: number | null;
           mutation_nature: string | null;
@@ -1011,21 +1224,16 @@ export type Database = {
           postal_code: string | null;
           price_per_m2: number | null;
           property_type: string | null;
-          raw_payload: Json;
           rooms_count: number | null;
           sale_date: string;
           source: string;
-          source_last_seen_at: string | null;
           source_mutation_id: string;
-          source_url: string | null;
           total_price_eur: number;
-          updated_at: string;
         };
         Insert: {
           address?: string | null;
           built_surface_m2?: number | null;
           city?: string | null;
-          created_at?: string;
           department?: string | null;
           dvf_property_type_code?: string | null;
           id?: string;
@@ -1033,7 +1241,6 @@ export type Database = {
           insee_code?: string | null;
           land_surface_m2?: number | null;
           latitude?: number | null;
-          location?: unknown | null;
           longitude?: number | null;
           lots_count?: number | null;
           mutation_nature?: string | null;
@@ -1041,21 +1248,16 @@ export type Database = {
           postal_code?: string | null;
           price_per_m2?: number | null;
           property_type?: string | null;
-          raw_payload?: Json;
           rooms_count?: number | null;
           sale_date: string;
           source?: string;
-          source_last_seen_at?: string | null;
           source_mutation_id: string;
-          source_url?: string | null;
           total_price_eur: number;
-          updated_at?: string;
         };
         Update: {
           address?: string | null;
           built_surface_m2?: number | null;
           city?: string | null;
-          created_at?: string;
           department?: string | null;
           dvf_property_type_code?: string | null;
           id?: string;
@@ -1063,7 +1265,6 @@ export type Database = {
           insee_code?: string | null;
           land_surface_m2?: number | null;
           latitude?: number | null;
-          location?: unknown | null;
           longitude?: number | null;
           lots_count?: number | null;
           mutation_nature?: string | null;
@@ -1071,15 +1272,11 @@ export type Database = {
           postal_code?: string | null;
           price_per_m2?: number | null;
           property_type?: string | null;
-          raw_payload?: Json;
           rooms_count?: number | null;
           sale_date?: string;
           source?: string;
-          source_last_seen_at?: string | null;
           source_mutation_id?: string;
-          source_url?: string | null;
           total_price_eur?: number;
-          updated_at?: string;
         };
         Relationships: [
           {
@@ -1087,6 +1284,71 @@ export type Database = {
             columns: ["import_batch_id"];
             isOneToOne: false;
             referencedRelation: "dvf_import_batches";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      valuation_estimate_attempts: {
+        Row: {
+          actionable: boolean | null;
+          attempt_number: number;
+          auction_sale_id: string;
+          comparable_count: number | null;
+          confidence_score: number | null;
+          created_at: string;
+          details: Json;
+          engine_kind: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          id: string;
+          input_fingerprint: string;
+          latency_ms: number;
+          outcome: "ready" | "insufficient_data" | "failed" | "superseded";
+          request_source: string;
+          segment: string | null;
+        };
+        Insert: {
+          actionable?: boolean | null;
+          attempt_number: number;
+          auction_sale_id: string;
+          comparable_count?: number | null;
+          confidence_score?: number | null;
+          created_at?: string;
+          details?: Json;
+          engine_kind?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          id?: string;
+          input_fingerprint: string;
+          latency_ms: number;
+          outcome: "ready" | "insufficient_data" | "failed" | "superseded";
+          request_source: string;
+          segment?: string | null;
+        };
+        Update: {
+          actionable?: boolean | null;
+          attempt_number?: number;
+          auction_sale_id?: string;
+          comparable_count?: number | null;
+          confidence_score?: number | null;
+          created_at?: string;
+          details?: Json;
+          engine_kind?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          id?: string;
+          input_fingerprint?: string;
+          latency_ms?: number;
+          outcome?: "ready" | "insufficient_data" | "failed" | "superseded";
+          request_source?: string;
+          segment?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "valuation_estimate_attempts_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
             referencedColumns: ["id"];
           },
         ];
@@ -1818,10 +2080,12 @@ export type Database = {
             | "sales.favorite_added"
             | "sales.favorite_removed"
             | "sales.statistics_viewed"
+            | "tribunal.statistics_viewed"
             | "bid_ceiling.calculated"
             | "dvf.comparables_viewed"
             | "valuation.backtest_viewed"
             | "valuation.estimated"
+            | "outcome_graph.viewed"
             | "workspace.audience_tracking_viewed"
             | "sale_changes.monitored"
             | "lawyer.referral_requested"
@@ -1846,10 +2110,12 @@ export type Database = {
             | "sales.favorite_added"
             | "sales.favorite_removed"
             | "sales.statistics_viewed"
+            | "tribunal.statistics_viewed"
             | "bid_ceiling.calculated"
             | "dvf.comparables_viewed"
             | "valuation.backtest_viewed"
             | "valuation.estimated"
+            | "outcome_graph.viewed"
             | "workspace.audience_tracking_viewed"
             | "sale_changes.monitored"
             | "lawyer.referral_requested"
@@ -1874,10 +2140,12 @@ export type Database = {
             | "sales.favorite_added"
             | "sales.favorite_removed"
             | "sales.statistics_viewed"
+            | "tribunal.statistics_viewed"
             | "bid_ceiling.calculated"
             | "dvf.comparables_viewed"
             | "valuation.backtest_viewed"
             | "valuation.estimated"
+            | "outcome_graph.viewed"
             | "workspace.audience_tracking_viewed"
             | "sale_changes.monitored"
             | "lawyer.referral_requested"
@@ -2645,6 +2913,622 @@ export type Database = {
           },
         ];
       };
+      information_agent_cases: {
+        Row: {
+          body_text: string;
+          completed_at: string | null;
+          created_at: string;
+          created_by: string;
+          failure_reason: string | null;
+          id: string;
+          inbound_token: string;
+          initiator_mission_id: string | null;
+          metadata: Json;
+          missing_information: string[];
+          normalized_recipient_email: string;
+          provider_message_id: string | null;
+          question_keys: string[];
+          recipient_email: string;
+          recipient_kind: "source_lawyer" | "source_contact" | "manual_professional";
+          recipient_name: string | null;
+          replied_at: string | null;
+          sale_id: string;
+          sent_at: string | null;
+          status: "draft" | "sending" | "sent" | "replied" | "review" | "completed" | "failed";
+          subject: string;
+          updated_at: string;
+        };
+        Insert: {
+          body_text: string;
+          completed_at?: string | null;
+          created_at?: string;
+          created_by: string;
+          failure_reason?: string | null;
+          id?: string;
+          inbound_token?: string;
+          initiator_mission_id?: string | null;
+          metadata?: Json;
+          missing_information?: string[];
+          normalized_recipient_email: string;
+          provider_message_id?: string | null;
+          question_keys: string[];
+          recipient_email: string;
+          recipient_kind?: "source_lawyer" | "source_contact" | "manual_professional";
+          recipient_name?: string | null;
+          replied_at?: string | null;
+          sale_id: string;
+          sent_at?: string | null;
+          status?: "draft" | "sending" | "sent" | "replied" | "review" | "completed" | "failed";
+          subject: string;
+          updated_at?: string;
+        };
+        Update: {
+          body_text?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          created_by?: string;
+          failure_reason?: string | null;
+          id?: string;
+          inbound_token?: string;
+          initiator_mission_id?: string | null;
+          metadata?: Json;
+          missing_information?: string[];
+          normalized_recipient_email?: string;
+          provider_message_id?: string | null;
+          question_keys?: string[];
+          recipient_email?: string;
+          recipient_kind?: "source_lawyer" | "source_contact" | "manual_professional";
+          recipient_name?: string | null;
+          replied_at?: string | null;
+          sale_id?: string;
+          sent_at?: string | null;
+          status?: "draft" | "sending" | "sent" | "replied" | "review" | "completed" | "failed";
+          subject?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      information_agent_case_subscribers: {
+        Row: {
+          case_id: string;
+          is_initiator: boolean;
+          last_notified_at: string | null;
+          mission_id: string;
+          notify_on_reply: boolean;
+          requested_question_keys: string[];
+          subscribed_at: string;
+          user_id: string;
+        };
+        Insert: {
+          case_id: string;
+          is_initiator?: boolean;
+          last_notified_at?: string | null;
+          mission_id: string;
+          notify_on_reply?: boolean;
+          requested_question_keys?: string[];
+          subscribed_at?: string;
+          user_id: string;
+        };
+        Update: {
+          case_id?: string;
+          is_initiator?: boolean;
+          last_notified_at?: string | null;
+          mission_id?: string;
+          notify_on_reply?: boolean;
+          requested_question_keys?: string[];
+          subscribed_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      information_agent_evidence_assets: {
+        Row: {
+          case_id: string;
+          created_at: string;
+          id: string;
+          message_id: string;
+          metadata: Json;
+          mime_type: string;
+          original_filename: string;
+          provider_attachment_id: string | null;
+          review_status: "pending" | "accepted" | "rejected";
+          rights_status: "unverified" | "authorized" | "restricted";
+          sale_id: string;
+          sha256: string;
+          size_bytes: number;
+          storage_bucket: string;
+          storage_path: string;
+        };
+        Insert: {
+          case_id: string;
+          created_at?: string;
+          id?: string;
+          message_id: string;
+          metadata?: Json;
+          mime_type: string;
+          original_filename: string;
+          provider_attachment_id?: string | null;
+          review_status?: "pending" | "accepted" | "rejected";
+          rights_status?: "unverified" | "authorized" | "restricted";
+          sale_id: string;
+          sha256: string;
+          size_bytes: number;
+          storage_bucket?: string;
+          storage_path: string;
+        };
+        Update: {
+          case_id?: string;
+          created_at?: string;
+          id?: string;
+          message_id?: string;
+          metadata?: Json;
+          mime_type?: string;
+          original_filename?: string;
+          provider_attachment_id?: string | null;
+          review_status?: "pending" | "accepted" | "rejected";
+          rights_status?: "unverified" | "authorized" | "restricted";
+          sale_id?: string;
+          sha256?: string;
+          size_bytes?: number;
+          storage_bucket?: string;
+          storage_path?: string;
+        };
+        Relationships: [];
+      };
+      information_agent_email_templates: {
+        Row: {
+          blocks: Json;
+          created_at: string;
+          created_by: string | null;
+          id: string;
+          name: string;
+          published_at: string | null;
+          published_by: string | null;
+          revision: number;
+          status: "draft" | "published" | "archived";
+          subject_template: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          blocks: Json;
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          name?: string;
+          published_at?: string | null;
+          published_by?: string | null;
+          revision?: number;
+          status?: "draft" | "published" | "archived";
+          subject_template: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          blocks?: Json;
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          name?: string;
+          published_at?: string | null;
+          published_by?: string | null;
+          revision?: number;
+          status?: "draft" | "published" | "archived";
+          subject_template?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
+      information_agent_evidence_extractions: {
+        Row: {
+          asset_id: string;
+          attempts: number;
+          available_at: string;
+          case_id: string;
+          completed_at: string | null;
+          created_at: string;
+          detected_mime_type: string | null;
+          document_kind: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          extracted_facts: Json;
+          extracted_text: string | null;
+          id: string;
+          is_encrypted: boolean;
+          locked_at: string | null;
+          message_id: string;
+          metadata: Json;
+          page_count: number | null;
+          pages: Json;
+          processor: string;
+          processor_version: string;
+          sale_id: string;
+          started_at: string | null;
+          status:
+            | "queued"
+            | "processing"
+            | "completed"
+            | "needs_password"
+            | "unsupported"
+            | "failed";
+          summary: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          asset_id: string;
+          attempts?: number;
+          available_at?: string;
+          case_id: string;
+          completed_at?: string | null;
+          created_at?: string;
+          detected_mime_type?: string | null;
+          document_kind?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          extracted_facts?: Json;
+          extracted_text?: string | null;
+          id?: string;
+          is_encrypted?: boolean;
+          locked_at?: string | null;
+          message_id: string;
+          metadata?: Json;
+          page_count?: number | null;
+          pages?: Json;
+          processor?: string;
+          processor_version?: string;
+          sale_id: string;
+          started_at?: string | null;
+          status?:
+            | "queued"
+            | "processing"
+            | "completed"
+            | "needs_password"
+            | "unsupported"
+            | "failed";
+          summary?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          asset_id?: string;
+          attempts?: number;
+          available_at?: string;
+          case_id?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          detected_mime_type?: string | null;
+          document_kind?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          extracted_facts?: Json;
+          extracted_text?: string | null;
+          id?: string;
+          is_encrypted?: boolean;
+          locked_at?: string | null;
+          message_id?: string;
+          metadata?: Json;
+          page_count?: number | null;
+          pages?: Json;
+          processor?: string;
+          processor_version?: string;
+          sale_id?: string;
+          started_at?: string | null;
+          status?:
+            | "queued"
+            | "processing"
+            | "completed"
+            | "needs_password"
+            | "unsupported"
+            | "failed";
+          summary?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      information_agent_fact_candidates: {
+        Row: {
+          case_id: string;
+          confidence: number;
+          created_at: string;
+          display_value: string;
+          evidence_asset_id: string | null;
+          evidence_excerpt: string | null;
+          extraction_method: string;
+          fact_key:
+            | "surface_m2"
+            | "land_surface_m2"
+            | "rooms_count"
+            | "occupancy_status"
+            | "visit_information"
+            | "sale_date"
+            | "starting_price_eur"
+            | "energy_diagnostics"
+            | "property_type"
+            | "address"
+            | "document"
+            | "photo";
+          id: string;
+          message_id: string;
+          metadata: Json;
+          proposed_value: Json;
+          review_notes: string | null;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          sale_id: string;
+          source_locator: string | null;
+          source_page: number | null;
+          status: "pending" | "accepted" | "rejected" | "conflict";
+          updated_at: string;
+        };
+        Insert: {
+          case_id: string;
+          confidence: number;
+          created_at?: string;
+          display_value: string;
+          evidence_asset_id?: string | null;
+          evidence_excerpt?: string | null;
+          extraction_method?: string;
+          fact_key:
+            | "surface_m2"
+            | "land_surface_m2"
+            | "rooms_count"
+            | "occupancy_status"
+            | "visit_information"
+            | "sale_date"
+            | "starting_price_eur"
+            | "energy_diagnostics"
+            | "property_type"
+            | "address"
+            | "document"
+            | "photo";
+          id?: string;
+          message_id: string;
+          metadata?: Json;
+          proposed_value: Json;
+          review_notes?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          sale_id: string;
+          source_locator?: string | null;
+          source_page?: number | null;
+          status?: "pending" | "accepted" | "rejected" | "conflict";
+          updated_at?: string;
+        };
+        Update: {
+          case_id?: string;
+          confidence?: number;
+          created_at?: string;
+          display_value?: string;
+          evidence_asset_id?: string | null;
+          evidence_excerpt?: string | null;
+          extraction_method?: string;
+          fact_key?:
+            | "surface_m2"
+            | "land_surface_m2"
+            | "rooms_count"
+            | "occupancy_status"
+            | "visit_information"
+            | "sale_date"
+            | "starting_price_eur"
+            | "energy_diagnostics"
+            | "property_type"
+            | "address"
+            | "document"
+            | "photo";
+          id?: string;
+          message_id?: string;
+          metadata?: Json;
+          proposed_value?: Json;
+          review_notes?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          sale_id?: string;
+          source_locator?: string | null;
+          source_page?: number | null;
+          status?: "pending" | "accepted" | "rejected" | "conflict";
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      information_agent_missions: {
+        Row: {
+          ai_disclosure_version: string;
+          approved_at: string | null;
+          approved_message_sha256: string | null;
+          body_text: string;
+          case_id: string | null;
+          completed_at: string | null;
+          created_at: string;
+          failure_reason: string | null;
+          followup_count: number;
+          id: string;
+          last_followup_at: string | null;
+          metadata: Json;
+          missing_information: string[];
+          privacy_version: string;
+          provider_message_id: string | null;
+          question_keys: string[];
+          recipient_email: string;
+          recipient_kind: "source_lawyer" | "source_contact" | "manual_professional";
+          recipient_name: string | null;
+          replied_at: string | null;
+          reply_to_email: string | null;
+          sale_id: string | null;
+          sale_snapshot: Json;
+          sent_at: string | null;
+          share_requester_email: boolean;
+          status:
+            | "draft"
+            | "approved"
+            | "sending"
+            | "sent"
+            | "subscribed"
+            | "replied"
+            | "completed"
+            | "failed"
+            | "cancelled";
+          subject: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          ai_disclosure_version?: string;
+          approved_at?: string | null;
+          approved_message_sha256?: string | null;
+          body_text: string;
+          case_id?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          failure_reason?: string | null;
+          followup_count?: number;
+          id?: string;
+          last_followup_at?: string | null;
+          metadata?: Json;
+          missing_information?: string[];
+          privacy_version: string;
+          provider_message_id?: string | null;
+          question_keys: string[];
+          recipient_email: string;
+          recipient_kind?: "source_lawyer" | "source_contact" | "manual_professional";
+          recipient_name?: string | null;
+          replied_at?: string | null;
+          reply_to_email?: string | null;
+          sale_id?: string | null;
+          sale_snapshot?: Json;
+          sent_at?: string | null;
+          share_requester_email?: boolean;
+          status?:
+            | "draft"
+            | "approved"
+            | "sending"
+            | "sent"
+            | "subscribed"
+            | "replied"
+            | "completed"
+            | "failed"
+            | "cancelled";
+          subject: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          ai_disclosure_version?: string;
+          approved_at?: string | null;
+          approved_message_sha256?: string | null;
+          body_text?: string;
+          case_id?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          failure_reason?: string | null;
+          followup_count?: number;
+          id?: string;
+          last_followup_at?: string | null;
+          metadata?: Json;
+          missing_information?: string[];
+          privacy_version?: string;
+          provider_message_id?: string | null;
+          question_keys?: string[];
+          recipient_email?: string;
+          recipient_kind?: "source_lawyer" | "source_contact" | "manual_professional";
+          recipient_name?: string | null;
+          replied_at?: string | null;
+          reply_to_email?: string | null;
+          sale_id?: string | null;
+          sale_snapshot?: Json;
+          sent_at?: string | null;
+          share_requester_email?: boolean;
+          status?:
+            | "draft"
+            | "approved"
+            | "sending"
+            | "sent"
+            | "subscribed"
+            | "replied"
+            | "completed"
+            | "failed"
+            | "cancelled";
+          subject?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_missions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      information_agent_messages: {
+        Row: {
+          attachments: Json;
+          body_text: string;
+          case_id: string | null;
+          created_at: string;
+          delivery_status: "draft" | "queued" | "sent" | "received" | "failed";
+          direction: "outbound" | "inbound";
+          from_email: string | null;
+          id: string;
+          message_kind: "initial" | "followup" | "reply" | "manual_note";
+          metadata: Json;
+          mission_id: string;
+          provider_message_id: string | null;
+          received_at: string | null;
+          sent_at: string | null;
+          subject: string;
+          to_email: string | null;
+          user_id: string;
+        };
+        Insert: {
+          attachments?: Json;
+          body_text: string;
+          case_id?: string | null;
+          created_at?: string;
+          delivery_status: "draft" | "queued" | "sent" | "received" | "failed";
+          direction: "outbound" | "inbound";
+          from_email?: string | null;
+          id?: string;
+          message_kind: "initial" | "followup" | "reply" | "manual_note";
+          metadata?: Json;
+          mission_id: string;
+          provider_message_id?: string | null;
+          received_at?: string | null;
+          sent_at?: string | null;
+          subject: string;
+          to_email?: string | null;
+          user_id: string;
+        };
+        Update: {
+          attachments?: Json;
+          body_text?: string;
+          case_id?: string | null;
+          created_at?: string;
+          delivery_status?: "draft" | "queued" | "sent" | "received" | "failed";
+          direction?: "outbound" | "inbound";
+          from_email?: string | null;
+          id?: string;
+          message_kind?: "initial" | "followup" | "reply" | "manual_note";
+          metadata?: Json;
+          mission_id?: string;
+          provider_message_id?: string | null;
+          received_at?: string | null;
+          sent_at?: string | null;
+          subject?: string;
+          to_email?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_messages_mission_id_fkey";
+            columns: ["mission_id"];
+            isOneToOne: false;
+            referencedRelation: "information_agent_missions";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       lawyer_referral_requests: {
         Row: {
           admin_notes: string | null;
@@ -2972,12 +3856,84 @@ export type Database = {
       v_auction_sales_app_preview: {
         Row: {
           id: string | null;
+          sale_venue_type: string | null;
+          sale_verification_status: string | null;
           starting_price_eur: number | null;
         };
         Relationships: [];
       };
     };
     Functions: {
+      approve_information_agent_mission_bounded: {
+        Args: { p_message_sha256: string; p_mission_id: string; p_user_id: string };
+        Returns: {
+          approved_at: string;
+          case_id: string;
+          inbound_token: string;
+          mission_id: string;
+          should_send: boolean;
+          usage_count: number;
+        }[];
+      };
+      claim_information_agent_evidence_extractions: {
+        Args: { p_limit?: number };
+        Returns: Database["public"]["Tables"]["information_agent_evidence_extractions"]["Row"][];
+      };
+      publish_information_agent_email_template: {
+        Args: { p_admin_id: string; p_template_id: string };
+        Returns: Database["public"]["Tables"]["information_agent_email_templates"]["Row"];
+      };
+      review_information_agent_fact_candidate: {
+        Args: {
+          p_decision: string;
+          p_fact_id: string;
+          p_notes?: string | null;
+          p_reviewer_id: string;
+        };
+        Returns: Json;
+      };
+      stage_information_agent_evidence_publication: {
+        Args: { p_fact_id: string; p_public_path: string; p_public_url: string };
+        Returns: Json;
+      };
+      subscribe_information_agent_mission: {
+        Args: { p_mission_id: string; p_user_id: string };
+        Returns: {
+          case_id: string;
+          case_status: string;
+          inbound_token: string;
+          mission_status: string;
+        }[];
+      };
+      claim_auction_sale_market_estimate: {
+        Args: {
+          p_auction_sale_id: string;
+          p_lease_seconds?: number;
+          p_now?: string;
+        };
+        Returns: Json;
+      };
+      claim_auction_sale_market_estimates: {
+        Args: {
+          p_lease_seconds?: number;
+          p_limit?: number;
+          p_now?: string;
+        };
+        Returns: Json;
+      };
+      enqueue_auction_sale_market_estimate: {
+        Args: {
+          p_auction_sale_id: string;
+          p_now?: string;
+          p_priority?: number;
+          p_reason?: string;
+        };
+        Returns: Json;
+      };
+      evaluate_market_valuation_health: {
+        Args: { p_now?: string };
+        Returns: Json;
+      };
       grant_analysis_access_from_checkout: {
         Args: {
           p_amount_total: number | null;
@@ -3022,6 +3978,32 @@ export type Database = {
           id: string;
           starting_price_eur: number | null;
           total_count: number;
+        }[];
+      };
+      search_dvf_market_comparables: {
+        Args: {
+          p_latitude: number;
+          p_limit?: number;
+          p_longitude: number;
+          p_minimum_date: string;
+          p_radius_m: number;
+          p_segment: string;
+        };
+        Returns: {
+          built_surface_m2: number | null;
+          distance_m: number;
+          dvf_property_type_code: string | null;
+          id: string;
+          land_surface_m2: number | null;
+          latitude: number;
+          longitude: number;
+          mutation_nature: string | null;
+          parcel_id: string | null;
+          price_per_m2: number | null;
+          property_type: string | null;
+          sale_date: string;
+          source_mutation_id: string;
+          total_price_eur: number;
         }[];
       };
     };

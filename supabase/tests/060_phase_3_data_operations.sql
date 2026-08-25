@@ -1,6 +1,6 @@
 begin;
 
-select plan(20);
+select plan(30);
 
 select has_extension('pg_cron', 'pg_cron is available for the 15-minute health scheduler');
 select has_extension('pg_net', 'pg_net is available for the authenticated health callback');
@@ -41,6 +41,47 @@ select ok(
     'EXECUTE'
   ),
   'the Vault-backed scheduler callback is reserved to postgres'
+);
+
+select ok(
+  to_regclass('public.auction_sales_department_sale_date_idx') is not null,
+  'the canonical department and sale date index survives infrastructure changes'
+);
+
+select ok(
+  to_regclass('public.auction_sales_investment_score_idx') is not null,
+  'the canonical investment score index survives infrastructure changes'
+);
+
+select ok(
+  to_regclass('public.auction_sales_lat_lng_idx') is not null,
+  'the canonical map bounding-box index survives infrastructure changes'
+);
+
+select ok(
+  to_regclass('public.v_auction_map_pins') is not null,
+  'the canonical map pins view survives infrastructure changes'
+);
+
+select is(
+  obj_description('public.dvf_transactions_source_mutation_uidx'::regclass, 'pg_class'),
+  'One canonical DVF transaction per source mutation; local and parcel source rows are aggregated by the importer.',
+  'the DVF replacement index keeps its canonical metadata'
+);
+
+select ok(
+  has_table_privilege(
+    'service_role',
+    'public.auction_sales_investment_candidates',
+    'SELECT'
+  ),
+  'the trusted worker can read investment candidates'
+);
+
+select ok(
+  has_table_privilege('authenticated', 'public.v_auction_map_pins', 'SELECT')
+  and not has_table_privilege('authenticated', 'public.v_auction_map_pins', 'TRUNCATE'),
+  'authenticated map access is strictly read-only'
 );
 
 set local role service_role;
@@ -91,15 +132,13 @@ insert into public.dvf_transactions (
   source,
   source_mutation_id,
   sale_date,
-  total_price_eur,
-  source_last_seen_at
+  total_price_eur
 ) values (
   '76000000-0000-4000-8000-000000000001',
   'DVF',
   'phase-3-test',
   '2026-06-30',
-  150000,
-  '2026-07-27T09:00:00Z'::timestamptz
+  150000
 );
 
 select lives_ok(
@@ -111,6 +150,12 @@ select is(
   (public.evaluate_operational_health('2026-07-27T10:15:00Z'::timestamptz)->>'ok')::boolean,
   true,
   'the baseline meets every operational health objective'
+);
+
+select is(
+  (public.evaluate_operational_health('2026-07-27T10:15:00Z'::timestamptz)->>'dvf_transactions')::bigint,
+  1::bigint,
+  'the DVF health signal detects data without an exact table scan'
 );
 
 delete from public.operational_job_runs where job_name = 'sale-change-monitor';
@@ -178,15 +223,44 @@ insert into public.operational_job_runs (
   finished_at,
   duration_ms
 ) values (
-  'sale-change-monitor',
+  'operational-health',
   'success',
-  '2026-07-27T10:18:00Z'::timestamptz,
-  '2026-07-27T10:19:00Z'::timestamptz,
+  '2026-07-27T16:18:00Z'::timestamptz,
+  '2026-07-27T16:19:00Z'::timestamptz,
   60000
 );
 
 select lives_ok(
-  $$select public.evaluate_operational_health('2026-07-27T10:20:00Z'::timestamptz)$$,
+  $$select public.evaluate_operational_health('2026-07-27T16:20:00Z'::timestamptz)$$,
+  'an unchanged open incident can be reevaluated after six hours'
+);
+
+select is(
+  (
+    select status || ':' || notification_event || ':' || notification_status
+    from public.operational_alerts
+    where alert_key = 'cron.stale'
+  ),
+  'open:opened:delivered',
+  'an unchanged incident does not queue a repetitive reminder'
+);
+
+insert into public.operational_job_runs (
+  job_name,
+  status,
+  started_at,
+  finished_at,
+  duration_ms
+) values (
+  'sale-change-monitor',
+  'success',
+  '2026-07-27T16:20:00Z'::timestamptz,
+  '2026-07-27T16:21:00Z'::timestamptz,
+  60000
+);
+
+select lives_ok(
+  $$select public.evaluate_operational_health('2026-07-27T16:22:00Z'::timestamptz)$$,
   'recovery is evaluated'
 );
 

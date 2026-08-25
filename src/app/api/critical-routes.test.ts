@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -6,10 +7,16 @@ const mocks = vi.hoisted(() => ({
   exportCsv: vi.fn(),
   exportFeed: vi.fn(),
   webhook: vi.fn(),
+  checkout: vi.fn(),
+  portal: vi.fn(),
+  resolveCheckoutPlan: vi.fn(() => "analysis"),
   listRefresh: vi.fn(),
   requestRefresh: vi.fn(),
   parseRefreshList: vi.fn((value) => value),
   parseRefreshRequest: vi.fn((value) => value),
+  listReports: vi.fn(),
+  saveReport: vi.fn(),
+  parseReportRequest: vi.fn((value) => value),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -21,18 +28,30 @@ vi.mock("@/lib/sale-exports", () => ({
   exportSalesCsv: mocks.exportCsv,
   exportSalesApiFeed: mocks.exportFeed,
 }));
-vi.mock("@/lib/billing", () => ({ handleStripeWebhook: mocks.webhook }));
+vi.mock("@/lib/billing", () => ({
+  handleStripeWebhook: mocks.webhook,
+  createPlanCheckoutSession: mocks.checkout,
+  createBillingPortalSession: mocks.portal,
+  resolveCheckoutPlanCode: mocks.resolveCheckoutPlan,
+}));
 vi.mock("@/lib/data-refresh", () => ({
   dataRefreshListQuerySchema: { parse: mocks.parseRefreshList },
   dataRefreshRequestSchema: { parse: mocks.parseRefreshRequest },
   listDataRefreshRequests: mocks.listRefresh,
   requestDataRefresh: mocks.requestRefresh,
 }));
+vi.mock("@/lib/property-reports", () => ({
+  listPropertyReports: mocks.listReports,
+  savePropertyReport: mocks.saveReport,
+  propertyReportRequestSchema: { parse: mocks.parseReportRequest },
+}));
 
 import { POST as stripeWebhook } from "@/app/api/stripe/webhook/route";
 import { GET as exportCsv } from "@/app/api/sales/export/route";
 import { GET as exportFeed } from "@/app/api/sales/feed/route";
 import { POST as requestRefresh } from "@/app/api/data-refresh/route";
+import { POST as createCheckout } from "@/app/api/billing/checkout/route";
+import { GET as listReports } from "@/app/api/property-reports/route";
 
 describe("critical API route contracts", () => {
   beforeEach(() => {
@@ -102,6 +121,51 @@ describe("critical API route contracts", () => {
     expect(response.status).toBe(503);
     expect(body).toMatchObject({ code: "CONFIGURATION_ERROR" });
     expect(JSON.stringify(body)).not.toContain("STRIPE_WEBHOOK_SECRET");
+  });
+
+  it("redacts checkout configuration failures and preserves correlation", async () => {
+    mocks.requireAuth.mockResolvedValue({ userId: "user-1" });
+    mocks.checkout.mockRejectedValue(new Error("STRIPE_SECRET_KEY configuration missing"));
+
+    const response = await createCheckout(
+      new Request("https://example.test/api/billing/checkout", {
+        method: "POST",
+        headers: { "x-request-id": "checkout-12345678" },
+        body: JSON.stringify({
+          plan: "analysis",
+          consent: {
+            termsAccepted: true,
+            termsVersion: LEGAL_DOCUMENTS.terms.version,
+            privacyVersion: LEGAL_DOCUMENTS.privacy.version,
+            paymentObligationAcknowledged: true,
+            immediatePerformanceRequested: true,
+            withdrawalInformationAcknowledged: true,
+          },
+        }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("x-request-id")).toBe("checkout-12345678");
+    expect(body).toMatchObject({ code: "CONFIGURATION_ERROR" });
+    expect(JSON.stringify(body)).not.toContain("STRIPE_SECRET_KEY");
+  });
+
+  it("returns a stable authentication error for property reports", async () => {
+    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+
+    const response = await listReports(
+      new Request("https://example.test/api/property-reports", {
+        headers: { "x-request-id": "reports-12345678" },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "AUTH_REQUIRED",
+      requestId: "reports-12345678",
+    });
   });
 
   it("maps plan rights failures to a stable forbidden response", async () => {

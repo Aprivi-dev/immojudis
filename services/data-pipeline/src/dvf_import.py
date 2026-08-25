@@ -6,10 +6,11 @@ import gzip
 import hashlib
 import json
 import logging
+import time
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from itertools import chain
 from pathlib import Path
@@ -28,7 +29,11 @@ from src.storage.supabase_client import _postgres_connect
 LOGGER = logging.getLogger(__name__)
 
 DVF_SOURCE = "DVF"
+DVF_MARKET_MUTATION_MARKERS = ("vente",)
+DVF_ADJUDICATION_MUTATION_MARKERS = ("adjudication",)
 DEFAULT_BATCH_SIZE = 1_000
+DEFAULT_REPLACEMENT_BATCH_SIZE = 25_000
+FAILURE_FINALIZATION_RETRY_DELAYS_SECONDS = (0, 2, 4, 8, 16, 30)
 TEXT_EXTENSIONS = {".csv", ".txt"}
 GZIP_EXTENSION = ".gz"
 CSV_DELIMITERS = ("|", ";", ",", "\t")
@@ -37,7 +42,6 @@ DVF_TRANSACTION_COLUMNS = (
     "import_batch_id",
     "source",
     "source_mutation_id",
-    "source_url",
     "sale_date",
     "mutation_nature",
     "total_price_eur",
@@ -55,9 +59,6 @@ DVF_TRANSACTION_COLUMNS = (
     "parcel_id",
     "latitude",
     "longitude",
-    "raw_payload",
-    "source_last_seen_at",
-    "updated_at",
 )
 
 
@@ -67,15 +68,28 @@ class DvfImportOptions:
     source_url: str | None = None
     batch_size: int = DEFAULT_BATCH_SIZE
     limit: int | None = None
+    replace_existing: bool = False
     dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class DvfSourceArtifact:
+    file_name: str
+    sha256: str
+    members: tuple[str, ...]
 
 
 @dataclass
 class DvfImportSummary:
     file_name: str
+    source_artifact_sha256: str | None = None
+    source_members: tuple[str, ...] = ()
     parsed_rows: int = 0
     valid_rows: int = 0
     skipped_rows: int = 0
+    collapsed_rows: int = 0
+    skipped_complex_mutations: int = 0
+    canonical_rows: int = 0
     upserted_rows: int = 0
     batch_id: str | None = None
     period_start: date | None = None
@@ -85,54 +99,92 @@ class DvfImportSummary:
 
 def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
     path = options.path
-    summary = DvfImportSummary(file_name=path.name)
+    if options.replace_existing and options.limit is not None:
+        raise ValueError("A replacement DVF import cannot be combined with a row limit.")
+    artifact = inspect_dvf_source(path)
+    summary = DvfImportSummary(
+        file_name=path.name,
+        source_artifact_sha256=artifact.sha256,
+        source_members=artifact.members,
+    )
     rows = iter_dvf_rows(path)
     settings = load_settings()
     db_url = settings.get("supabase_db_url")
     if not options.dry_run and not db_url:
         raise RuntimeError("SUPABASE_DB_URL is required to import DVF transactions.")
 
+    transactions = _iter_canonical_transactions(
+        _iter_normalized_transactions(rows, options, summary),
+        summary,
+    )
+
     if options.dry_run:
-        for transaction in _iter_normalized_transactions(rows, options, summary):
+        for transaction in transactions:
             _record_period(summary, transaction["sale_date"])
         return summary
 
-    now = datetime.now(UTC).isoformat()
-    with _postgres_connect(str(db_url)) as connection:
+    connection = _postgres_connect(str(db_url))
+    try:
         batch_id = _create_import_batch(
             connection,
             file_name=path.name,
             source_url=options.source_url,
             metadata={
                 "path": str(path),
+                "source_artifact_sha256": artifact.sha256,
+                "source_members": list(artifact.members),
                 "limit": options.limit,
                 "batch_size": options.batch_size,
+                "replace_existing": options.replace_existing,
             },
         )
         summary.batch_id = batch_id
         connection.commit()
         try:
+            if options.replace_existing:
+                _prepare_replacement_import(connection)
             payload: list[dict[str, object]] = []
-            for transaction in _iter_normalized_transactions(rows, options, summary):
+            for transaction in transactions:
                 transaction["import_batch_id"] = batch_id
-                transaction["source_last_seen_at"] = now
-                transaction["updated_at"] = now
                 payload.append(transaction)
                 _record_period(summary, transaction["sale_date"])
                 if len(payload) >= options.batch_size:
-                    _upsert_transactions(connection, payload)
-                    summary.upserted_rows += len(payload)
+                    _commit_transaction_batch(
+                        connection,
+                        batch_id,
+                        payload,
+                        summary,
+                        replace_existing=options.replace_existing,
+                    )
                     payload = []
             if payload:
-                _upsert_transactions(connection, payload)
-                summary.upserted_rows += len(payload)
+                _commit_transaction_batch(
+                    connection,
+                    batch_id,
+                    payload,
+                    summary,
+                    replace_existing=options.replace_existing,
+                )
+            if options.replace_existing:
+                _restore_dvf_indexes(connection)
             _finish_import_batch(connection, summary)
+            connection.commit()
         except Exception as exc:
             summary.errors.append(str(exc))
-            connection.rollback()
-            _fail_import_batch(connection, batch_id, str(exc))
-            connection.commit()
+            try:
+                _finalize_failed_import(
+                    str(db_url),
+                    connection,
+                    batch_id,
+                    str(exc),
+                    restore_indexes=options.replace_existing,
+                )
+            except Exception as finalization_exc:
+                summary.errors.append(f"failure finalization failed: {finalization_exc}")
+                LOGGER.exception("DVF import failure could not be finalized")
             raise
+    finally:
+        _close_connection(connection)
     return summary
 
 
@@ -150,9 +202,64 @@ def iter_dvf_rows(path: Path) -> Iterator[dict[str, str]]:
         yield from _iter_text_rows(handle)
 
 
-def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> dict[str, object] | None:
+def iter_dvf_market_comparables(
+    path: Path,
+    *,
+    source_url: str | None = None,
+    limit: int | None = None,
+) -> Iterator[dict[str, object]]:
+    """Yield canonical free-market ``Vente`` rows without any database write.
+
+    This is deliberately separate from the adjudication candidate stream.
+    Unsupported mutation natures, including VEFA, never enter this iterator.
+    """
+    options = DvfImportOptions(
+        path=path,
+        source_url=source_url,
+        limit=limit,
+        dry_run=True,
+    )
+    summary = DvfImportSummary(file_name=path.name)
+    yield from _iter_canonical_transactions(
+        _iter_normalized_transactions(iter_dvf_rows(path), options, summary),
+        summary,
+    )
+
+
+def inspect_dvf_source(path: Path) -> DvfSourceArtifact:
+    """Content-address a local DVF source and list its data members."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+
+    if path.suffix.lower() == ".zip":
+        with zipfile.ZipFile(path) as archive:
+            members = tuple(
+                sorted(
+                    name
+                    for name in archive.namelist()
+                    if not name.endswith("/") and Path(name).suffix.lower() in TEXT_EXTENSIONS
+                )
+            )
+    else:
+        members = (path.name,)
+    return DvfSourceArtifact(
+        file_name=path.name,
+        sha256=digest.hexdigest(),
+        members=members,
+    )
+
+
+def normalize_dvf_row(
+    row: dict[str, str],
+    *,
+    source_url: str | None = None,
+    mutation_markers: tuple[str, ...] = DVF_MARKET_MUTATION_MARKERS,
+) -> dict[str, object] | None:
     mutation_nature = clean_text(first_value(row, "nature_mutation", "libnatmut"))
-    if mutation_nature and "vente" not in mutation_nature.lower():
+    accepted_natures = {marker.casefold() for marker in mutation_markers}
+    if not mutation_nature or mutation_nature.casefold() not in accepted_natures:
         return None
 
     sale_date = parse_date(first_value(row, "date_mutation", "datemut"))
@@ -173,30 +280,46 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
         return None
 
     source_mutation_id = clean_text(first_value(row, "id_mutation", "idmutinvar"))
-    parcel_id = clean_text(first_value(row, "id_parcelle", "l_idpar"))
+    parcel_id = clean_text(first_value(row, "id_parcelle", "l_idpar")) or build_official_dvf_parcel_id(row)
     if not source_mutation_id:
         source_mutation_id = stable_mutation_id(row)
 
     address = compact_address(
         [
-            first_value(row, "adresse_numero", "numero_voie"),
-            first_value(row, "adresse_suffixe", "suffixe"),
-            first_value(row, "adresse_nom_voie", "voie"),
+            first_value(row, "adresse_numero", "numero_voie", "no_voie"),
+            first_value(row, "adresse_suffixe", "suffixe", "b/t/q"),
+            official_dvf_street_name(row),
         ]
     )
     postal_code = clean_text(first_value(row, "code_postal", "postal_code"))
-    department = clean_text(first_value(row, "code_departement", "department")) or department_from_postal_code(postal_code)
+    department = clean_text(first_value(row, "code_departement", "department")) or department_from_postal_code(
+        postal_code
+    )
     raw_payload = {
         key: row[key]
         for key in (
-            "id_mutation",
             "numero_disposition",
+            "no_disposition",
             "code_nature_culture",
             "nature_culture",
             "ancien_id_parcelle",
         )
         if row.get(key) not in ("", None)
     }
+    lot_aliases = (
+        ("lot1_numero", "1er_lot"),
+        ("lot2_numero", "2eme_lot"),
+        ("lot3_numero", "3eme_lot"),
+        ("lot4_numero", "4eme_lot"),
+        ("lot5_numero", "5eme_lot"),
+    )
+    lot_numbers = [
+        lot_number
+        for aliases in lot_aliases
+        if (lot_number := clean_text(first_value(row, *aliases))) is not None
+    ]
+    if lot_numbers:
+        raw_payload["lot_numbers"] = lot_numbers
 
     return {
         "import_batch_id": None,
@@ -210,21 +333,17 @@ def normalize_dvf_row(row: dict[str, str], *, source_url: str | None = None) -> 
         "land_surface_m2": land_surface,
         "property_type": property_type,
         "dvf_property_type_code": property_type_code,
-        "rooms_count": nonnegative_int_value(
-            first_value(row, "nombre_pieces_principales", "nb_pieces_principales")
-        ),
-        "lots_count": nonnegative_int_value(first_value(row, "nombre_lots", "nb_lots")),
+        "rooms_count": nonnegative_int_value(first_value(row, "nombre_pieces_principales", "nb_pieces_principales")),
+        "lots_count": nonnegative_int_value(first_value(row, "nombre_lots", "nombre_de_lots", "nb_lots")),
         "address": address,
         "city": clean_text(first_value(row, "nom_commune", "commune", "city")),
         "postal_code": postal_code,
-        "insee_code": clean_text(first_value(row, "code_commune", "insee_code")),
+        "insee_code": build_official_dvf_insee_code(row),
         "department": department,
         "parcel_id": parcel_id,
         "latitude": decimal_value(first_value(row, "latitude", "lat")),
         "longitude": decimal_value(first_value(row, "longitude", "lon")),
         "raw_payload": raw_payload,
-        "source_last_seen_at": None,
-        "updated_at": None,
     }
 
 
@@ -233,10 +352,40 @@ def _iter_normalized_transactions(
     options: DvfImportOptions,
     summary: DvfImportSummary,
 ) -> Iterator[dict[str, object]]:
+    current_group_signature: tuple[str, ...] | None = None
+    current_derived_mutation_id: str | None = None
+
     for row in rows:
         if options.limit is not None and summary.parsed_rows >= options.limit:
             break
         summary.parsed_rows += 1
+        explicit_mutation_id = clean_text(first_value(row, "id_mutation", "idmutinvar"))
+        if explicit_mutation_id is None:
+            group_signature = raw_dvf_mutation_group_signature(row)
+            if group_signature != current_group_signature:
+                # The raw annual export has no durable mutation id. The
+                # 1-based source record anchor prevents distinct contiguous
+                # groups from colliding while keeping memory bounded.
+                identity_signature = (
+                    *raw_dvf_mutation_identity_signature(row),
+                    f"source_record:{summary.parsed_rows}",
+                )
+                current_derived_mutation_id = derived_dvf_mutation_id(
+                    identity_signature,
+                    occurrence=1,
+                )
+                current_group_signature = group_signature
+        else:
+            current_group_signature = None
+            current_derived_mutation_id = None
+        if summary.parsed_rows % 250_000 == 0:
+            LOGGER.info(
+                "DVF progress: parsed=%s valid=%s canonical=%s skipped=%s",
+                summary.parsed_rows,
+                summary.valid_rows,
+                summary.canonical_rows,
+                summary.skipped_rows,
+            )
         try:
             transaction = normalize_dvf_row(row, source_url=options.source_url)
         except Exception as exc:
@@ -246,8 +395,150 @@ def _iter_normalized_transactions(
         if transaction is None:
             summary.skipped_rows += 1
             continue
+        if explicit_mutation_id is None:
+            transaction["source_mutation_id"] = current_derived_mutation_id
         summary.valid_rows += 1
         yield transaction
+
+
+def _iter_canonical_transactions(
+    transactions: Iterator[dict[str, object]],
+    summary: DvfImportSummary,
+) -> Iterator[dict[str, object]]:
+    """Collapse the source's repeated local/parcel lines to one mutation row.
+
+    The official geolocated DVF resource is ordered by mutation identifier and
+    repeats the mutation price for every local and parcel line. Keeping those
+    rows separately both inflates storage and gives complex sales excessive
+    statistical weight. Mutations containing more than one distinct built
+    property are deliberately excluded because the shared price cannot be
+    allocated reliably between them.
+    """
+
+    group: list[dict[str, object]] = []
+    current_mutation_id: str | None = None
+
+    for transaction in transactions:
+        mutation_id = str(transaction["source_mutation_id"])
+        if group and mutation_id != current_mutation_id:
+            canonical = canonicalize_dvf_transaction_group(group)
+            if canonical is None:
+                summary.skipped_complex_mutations += 1
+                summary.collapsed_rows += len(group)
+            else:
+                summary.collapsed_rows += len(group) - 1
+                summary.canonical_rows += 1
+                yield canonical
+            group = []
+        group.append(transaction)
+        current_mutation_id = mutation_id
+
+    if not group:
+        return
+    canonical = canonicalize_dvf_transaction_group(group)
+    if canonical is None:
+        summary.skipped_complex_mutations += 1
+        summary.collapsed_rows += len(group)
+        return
+    summary.collapsed_rows += len(group) - 1
+    summary.canonical_rows += 1
+    yield canonical
+
+
+def canonicalize_dvf_transaction_group(
+    transactions: list[dict[str, object]],
+) -> dict[str, object] | None:
+    if not transactions:
+        return None
+
+    sale_dates = {transaction.get("sale_date") for transaction in transactions}
+    prices = {transaction.get("total_price_eur") for transaction in transactions}
+    if len(sale_dates) != 1 or len(prices) != 1:
+        return None
+
+    built_transactions: dict[tuple[object, ...], dict[str, object]] = {}
+    land_transactions: list[dict[str, object]] = []
+    for transaction in transactions:
+        code = transaction.get("dvf_property_type_code")
+        if code == "211":
+            land_transactions.append(transaction)
+            continue
+        if transaction.get("built_surface_m2") is None:
+            continue
+        raw_payload = transaction.get("raw_payload")
+        lots = ()
+        if isinstance(raw_payload, dict):
+            raw_lots = raw_payload.get("lot_numbers")
+            if isinstance(raw_lots, list):
+                lots = tuple(str(value) for value in raw_lots)
+        signature = (
+            code,
+            transaction.get("parcel_id"),
+            transaction.get("built_surface_m2"),
+            transaction.get("rooms_count"),
+            transaction.get("address"),
+            lots,
+        )
+        built_transactions.setdefault(signature, transaction)
+
+    if len(built_transactions) > 1:
+        return None
+    if built_transactions:
+        representative = next(iter(built_transactions.values()))
+    elif land_transactions:
+        representative = max(
+            land_transactions,
+            key=lambda transaction: transaction.get("land_surface_m2") or Decimal(0),
+        )
+    else:
+        return None
+
+    canonical = dict(representative)
+    parcel_ids = sorted({str(parcel_id) for transaction in transactions if (parcel_id := transaction.get("parcel_id"))})
+    canonical["parcel_id"] = representative.get("parcel_id") or (parcel_ids[0] if parcel_ids else None)
+    canonical["land_surface_m2"] = _aggregate_land_surface(transactions)
+    latitude, longitude = _aggregate_coordinates(transactions)
+    canonical["latitude"] = latitude
+    canonical["longitude"] = longitude
+    canonical["lots_count"] = max(
+        (int(value) for transaction in transactions if (value := transaction.get("lots_count")) is not None),
+        default=None,
+    )
+
+    raw_payload = dict(canonical.get("raw_payload") or {})
+    if len(transactions) > 1:
+        raw_payload["source_row_count"] = len(transactions)
+    if len(parcel_ids) > 1:
+        raw_payload["parcel_ids"] = parcel_ids
+    canonical["raw_payload"] = raw_payload
+    return canonical
+
+
+def _aggregate_land_surface(transactions: list[dict[str, object]]) -> Decimal | None:
+    surfaces_by_parcel: dict[str, Decimal] = {}
+    for transaction in transactions:
+        surface = transaction.get("land_surface_m2")
+        if not isinstance(surface, Decimal):
+            continue
+        parcel_key = str(transaction.get("parcel_id") or "__unidentified__")
+        surfaces_by_parcel[parcel_key] = max(surfaces_by_parcel.get(parcel_key, Decimal(0)), surface)
+    return sum(surfaces_by_parcel.values(), Decimal(0)) if surfaces_by_parcel else None
+
+
+def _aggregate_coordinates(
+    transactions: list[dict[str, object]],
+) -> tuple[Decimal | None, Decimal | None]:
+    coordinates = {
+        (latitude, longitude)
+        for transaction in transactions
+        if isinstance((latitude := transaction.get("latitude")), Decimal)
+        and isinstance((longitude := transaction.get("longitude")), Decimal)
+    }
+    if not coordinates:
+        return None, None
+    latitude = sum((coordinate[0] for coordinate in coordinates), Decimal(0)) / len(coordinates)
+    longitude = sum((coordinate[1] for coordinate in coordinates), Decimal(0)) / len(coordinates)
+    return latitude, longitude
 
 
 def _iter_zip_rows(path: Path) -> Iterator[dict[str, str]]:
@@ -314,6 +605,76 @@ def compact_address(parts: list[str | None]) -> str | None:
     return clean_text(" ".join(part for part in cleaned if part))
 
 
+def official_dvf_street_name(row: dict[str, str]) -> str | None:
+    explicit = clean_text(first_value(row, "adresse_nom_voie"))
+    if explicit:
+        return explicit
+    return compact_address(
+        [
+            first_value(row, "type_de_voie"),
+            first_value(row, "voie"),
+        ]
+    )
+
+
+def raw_dvf_mutation_group_signature(row: dict[str, str]) -> tuple[str, ...]:
+    """Best available contiguous grouping key for raw DGFiP exports.
+
+    Raw annual DVF archives do not expose a durable mutation identifier. The
+    signature therefore remains explicitly derived and must only be used while
+    rows are in their official source order.
+    """
+    price = decimal_value(first_value(row, "valeur_fonciere", "valeurfonc"))
+    return (
+        clean_text(first_value(row, "date_mutation", "datemut")) or "",
+        format(price, "f") if price is not None else "",
+        clean_text(first_value(row, "nature_mutation", "libnatmut")) or "",
+        clean_text(first_value(row, "no_disposition", "numero_disposition")) or "",
+        clean_text(first_value(row, "identifiant_de_document", "identifiant_document")) or "",
+        clean_text(first_value(row, "reference_document")) or "",
+        clean_text(first_value(row, "code_departement")) or "",
+        clean_text(first_value(row, "code_commune", "insee_code")) or "",
+    )
+
+
+def raw_dvf_mutation_identity_signature(row: dict[str, str]) -> tuple[str, ...]:
+    """Return the price-free part of the derived source identity.
+
+    Keeping price out lets a corrected official amount version the same source
+    candidate instead of manufacturing a new identity.
+    """
+    group_signature = raw_dvf_mutation_group_signature(row)
+    return (
+        group_signature[0],
+        *group_signature[2:],
+        build_official_dvf_parcel_id(row) or "",
+        clean_text(first_value(row, "no_voie", "adresse_numero", "numero_voie")) or "",
+        clean_text(first_value(row, "b/t/q", "adresse_suffixe", "suffixe")) or "",
+        official_dvf_street_name(row) or "",
+        clean_text(first_value(row, "1er_lot", "lot1_numero")) or "",
+        clean_text(first_value(row, "identifiant_local")) or "",
+    )
+
+
+def derived_dvf_mutation_id(
+    identity_signature: tuple[str, ...],
+    *,
+    occurrence: int,
+) -> str:
+    if occurrence < 1:
+        raise ValueError("DVF mutation occurrence must be positive")
+    payload = json.dumps(
+        {
+            "identity_signature": identity_signature,
+            "occurrence": occurrence,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return f"dvf-derived:{hashlib.sha256(payload.encode()).hexdigest()[:32]}"
+
+
 def decimal_value(value: str | None) -> Decimal | None:
     if value is None:
         return None
@@ -362,9 +723,7 @@ def normalized_property_type_code(
         return "111" if built_surface is not None else None
     if code == "2" or any(token in text for token in ("appartement", "studio", "apartment")):
         return "121" if built_surface is not None else None
-    if code == "4" or any(
-        token in text for token in ("local industriel", "local commercial", "commerce", "bureau")
-    ):
+    if code == "4" or any(token in text for token in ("local industriel", "local commercial", "commerce", "bureau")):
         return "141" if built_surface is not None else None
     if code is None and not text and built_surface is None and land_surface is not None and land_surface > 0:
         return "211"
@@ -389,6 +748,30 @@ def department_from_postal_code(postal_code: str | None) -> str | None:
     if postal_code.startswith("97") or postal_code.startswith("98"):
         return postal_code[:3]
     return postal_code[:2] if len(postal_code) >= 2 else None
+
+
+def build_official_dvf_insee_code(row: dict[str, str]) -> str | None:
+    explicit = clean_text(first_value(row, "insee_code", "code_insee"))
+    if explicit:
+        return explicit
+    commune = clean_text(first_value(row, "code_commune"))
+    department = clean_text(first_value(row, "code_departement"))
+    if not commune:
+        return None
+    if len(commune) >= 5 or not department:
+        return commune
+    return f"{department}{commune.zfill(3)}"
+
+
+def build_official_dvf_parcel_id(row: dict[str, str]) -> str | None:
+    department = clean_text(first_value(row, "code_departement"))
+    commune = clean_text(first_value(row, "code_commune"))
+    section = clean_text(first_value(row, "section"))
+    plan = clean_text(first_value(row, "no_plan", "numero_plan"))
+    if not department or not commune or not section or not plan:
+        return None
+    prefix = clean_text(first_value(row, "prefixe_de_section", "prefixe_section")) or "000"
+    return f"{department}{commune.zfill(3)}{prefix.zfill(3)}{section.zfill(2)}{plan.zfill(4)}".upper()
 
 
 def stable_mutation_id(row: dict[str, str]) -> str:
@@ -447,7 +830,16 @@ def _finish_import_batch(connection: Any, summary: DvfImportSummary) -> None:
                 summary.upserted_rows,
                 summary.period_start,
                 summary.period_end,
-                Jsonb({"parsed_rows": summary.parsed_rows, "skipped_rows": summary.skipped_rows}),
+                Jsonb(
+                    {
+                        "parsed_rows": summary.parsed_rows,
+                        "valid_rows": summary.valid_rows,
+                        "skipped_rows": summary.skipped_rows,
+                        "collapsed_rows": summary.collapsed_rows,
+                        "skipped_complex_mutations": summary.skipped_complex_mutations,
+                        "canonical_rows": summary.canonical_rows,
+                    }
+                ),
                 summary.batch_id,
             ),
         )
@@ -465,6 +857,209 @@ def _fail_import_batch(connection: Any, batch_id: str, error_message: str) -> No
         )
 
 
+def _finalize_failed_import(
+    db_url: str,
+    connection: Any,
+    batch_id: str,
+    error_message: str,
+    *,
+    restore_indexes: bool,
+) -> None:
+    """Persist a failed batch even when Supabase restarted the original session."""
+    working_connection: Any | None = connection
+    last_error: Exception | None = None
+
+    for attempt, delay_seconds in enumerate(FAILURE_FINALIZATION_RETRY_DELAYS_SECONDS, start=1):
+        if delay_seconds:
+            time.sleep(delay_seconds)
+        try:
+            if working_connection is None:
+                working_connection = _postgres_connect(db_url)
+            else:
+                try:
+                    working_connection.rollback()
+                except Exception:
+                    _close_connection(working_connection)
+                    working_connection = _postgres_connect(db_url)
+
+            if restore_indexes:
+                try:
+                    _restore_dvf_indexes(working_connection)
+                    working_connection.commit()
+                except Exception as restore_exc:
+                    try:
+                        working_connection.rollback()
+                    except Exception as rollback_exc:
+                        raise restore_exc from rollback_exc
+                    if _is_transient_postgres_error(restore_exc):
+                        raise
+                    LOGGER.exception("DVF index restoration failed after import error")
+
+            _fail_import_batch(working_connection, batch_id, error_message)
+            working_connection.commit()
+            if working_connection is not connection:
+                _close_connection(working_connection)
+            return
+        except Exception as exc:
+            last_error = exc
+            if working_connection is not None:
+                _close_connection(working_connection)
+            working_connection = None
+            if (
+                attempt >= len(FAILURE_FINALIZATION_RETRY_DELAYS_SECONDS)
+                or not _is_transient_postgres_error(exc)
+            ):
+                break
+            LOGGER.warning(
+                "DVF failure finalization lost its database session; retrying (%s/%s): %s",
+                attempt,
+                len(FAILURE_FINALIZATION_RETRY_DELAYS_SECONDS),
+                exc,
+            )
+
+    if last_error is not None:
+        raise last_error
+
+
+def _is_transient_postgres_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "administrator command",
+            "cannot connect now",
+            "connection has been closed",
+            "connection is lost",
+            "connection refused",
+            "closed unexpectedly",
+            "database system is starting up",
+            "server closed the connection",
+            "timeout expired",
+        )
+    )
+
+
+def _close_connection(connection: Any) -> None:
+    try:
+        connection.close()
+    except Exception:
+        pass
+
+
+def _prepare_replacement_import(connection: Any) -> None:
+    """Reset the DVF-only table before a fast, explicitly requested full reload."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select exists(select 1 from public.dvf_transactions where source <> %s limit 1)",
+            (DVF_SOURCE,),
+        )
+        row = cursor.fetchone()
+        if row and bool(row[0]):
+            raise RuntimeError("DVF replacement refused because the table contains another source.")
+        cursor.execute("truncate table public.dvf_transactions")
+        cursor.execute("drop index if exists public.dvf_transactions_source_mutation_uidx")
+        cursor.execute("drop index if exists public.dvf_transactions_sale_date_idx")
+        cursor.execute("drop index if exists public.dvf_transactions_department_sale_date_idx")
+        cursor.execute("drop index if exists public.dvf_transactions_lat_lng_idx")
+        cursor.execute("set synchronous_commit = off")
+        cursor.execute("set statement_timeout = 0")
+    connection.commit()
+
+
+def _restore_dvf_indexes(connection: Any) -> None:
+    """Build query and integrity indexes once, after the sequential COPY."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            create unique index if not exists dvf_transactions_source_mutation_uidx
+              on public.dvf_transactions (source, source_mutation_id)
+            """
+        )
+        cursor.execute(
+            """
+            comment on index public.dvf_transactions_source_mutation_uidx is
+              'One canonical DVF transaction per source mutation; local and parcel source rows are aggregated by the importer.'
+            """
+        )
+        cursor.execute(
+            """
+            create index if not exists dvf_transactions_sale_date_idx
+              on public.dvf_transactions (sale_date desc)
+            """
+        )
+        cursor.execute(
+            """
+            create index if not exists dvf_transactions_department_sale_date_idx
+              on public.dvf_transactions (department, sale_date desc)
+            """
+        )
+        cursor.execute(
+            """
+            create index if not exists dvf_transactions_lat_lng_idx
+              on public.dvf_transactions (latitude, longitude)
+              where latitude is not null and longitude is not null
+            """
+        )
+
+
+def _commit_transaction_batch(
+    connection: Any,
+    batch_id: str,
+    payload: list[dict[str, object]],
+    summary: DvfImportSummary,
+    *,
+    replace_existing: bool = False,
+) -> None:
+    if replace_existing:
+        _copy_transactions(connection, payload)
+    else:
+        _upsert_transactions(connection, payload)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            update public.dvf_import_batches
+            set imported_rows = imported_rows + %s,
+                metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+                  'parsed_rows', %s,
+                  'valid_rows', %s,
+                  'skipped_rows', %s,
+                  'collapsed_rows', %s,
+                  'skipped_complex_mutations', %s,
+                  'canonical_rows', %s
+                ),
+                updated_at = now()
+            where id = %s
+            """,
+            (
+                len(payload),
+                summary.parsed_rows,
+                summary.valid_rows,
+                summary.skipped_rows,
+                summary.collapsed_rows,
+                summary.skipped_complex_mutations,
+                summary.canonical_rows,
+                batch_id,
+            ),
+        )
+    connection.commit()
+    summary.upserted_rows += len(payload)
+
+
+def _copy_transactions(connection: Any, payload: list[dict[str, object]]) -> None:
+    if not payload:
+        return
+    if sql is None:
+        raise RuntimeError("psycopg is required for direct Postgres writes")
+    columns = list(DVF_TRANSACTION_COLUMNS)
+    copy_statement = sql.SQL("copy public.dvf_transactions ({columns}) from stdin").format(
+        columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
+    )
+    with connection.cursor() as cursor:
+        with cursor.copy(copy_statement) as copy:
+            for row in payload:
+                copy.write_row([postgres_value(row.get(column)) for column in columns])
+
+
 def _upsert_transactions(connection: Any, payload: list[dict[str, object]]) -> None:
     if not payload:
         return
@@ -474,21 +1069,23 @@ def _upsert_transactions(connection: Any, payload: list[dict[str, object]]) -> N
     insert_statement = sql.SQL(
         """
         insert into public.dvf_transactions ({columns})
-        values ({values})
-        on conflict (source, source_mutation_id, coalesce(parcel_id, '')) do update set {updates}
+        values {values}
+        on conflict (source, source_mutation_id) do update set {updates}
         """
     ).format(
         columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
-        values=sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+        values=sql.SQL(", ").join(
+            sql.SQL("({})").format(sql.SQL(", ").join(sql.Placeholder() for _ in columns)) for _ in payload
+        ),
         updates=sql.SQL(", ").join(
             sql.SQL("{} = excluded.{}").format(sql.Identifier(column), sql.Identifier(column))
             for column in columns
-            if column not in {"source", "source_mutation_id", "parcel_id"}
+            if column not in {"source", "source_mutation_id"}
         ),
     )
-    rows = [tuple(postgres_value(row.get(column)) for column in columns) for row in payload]
+    values = [postgres_value(row.get(column)) for row in payload for column in columns]
     with connection.cursor() as cursor:
-        cursor.executemany(insert_statement, rows)
+        cursor.execute(insert_statement, values)
 
 
 def postgres_value(value: object) -> object:
@@ -500,10 +1097,15 @@ def postgres_value(value: object) -> object:
 def print_summary(summary: DvfImportSummary) -> None:
     print("DVF import summary")
     print(f"- file: {summary.file_name}")
+    print(f"- source_artifact_sha256: {summary.source_artifact_sha256 or 'n/a'}")
+    print(f"- source_members: {', '.join(summary.source_members) or 'n/a'}")
     print(f"- batch_id: {summary.batch_id or 'dry-run'}")
     print(f"- parsed_rows: {summary.parsed_rows}")
     print(f"- valid_rows: {summary.valid_rows}")
     print(f"- skipped_rows: {summary.skipped_rows}")
+    print(f"- collapsed_rows: {summary.collapsed_rows}")
+    print(f"- skipped_complex_mutations: {summary.skipped_complex_mutations}")
+    print(f"- canonical_rows: {summary.canonical_rows}")
     print(f"- upserted_rows: {summary.upserted_rows}")
     print(f"- period: {summary.period_start or 'n/a'} -> {summary.period_end or 'n/a'}")
     if summary.errors:
@@ -521,6 +1123,11 @@ def parse_args() -> argparse.Namespace:
         help="Taille des lots d'upsert. Défaut: DVF_IMPORT_BATCH_SIZE ou 1000.",
     )
     parser.add_argument("--limit", type=int, default=None, help="Nombre maximum de lignes lues pour un test.")
+    parser.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help="Recharge intégralement la table DVF avec COPY (incompatible avec --limit).",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Parse et valide sans écrire dans Supabase.")
     return parser.parse_args()
 
@@ -529,12 +1136,15 @@ def main() -> int:
     args = parse_args()
     settings = load_settings()
     batch_size = args.batch_size or int(settings.get("dvf_import_batch_size") or DEFAULT_BATCH_SIZE)
+    if args.replace_existing and args.batch_size is None:
+        batch_size = max(batch_size, DEFAULT_REPLACEMENT_BATCH_SIZE)
     summary = import_dvf_file(
         DvfImportOptions(
             path=args.path,
             source_url=args.source_url,
             batch_size=max(1, batch_size),
             limit=args.limit,
+            replace_existing=args.replace_existing,
             dry_run=args.dry_run,
         )
     )

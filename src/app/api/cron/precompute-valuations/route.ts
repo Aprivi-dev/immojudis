@@ -6,7 +6,7 @@ export const maxDuration = 300;
 export async function GET(request: Request) {
   return runMonitoredCron(request, "precompute-valuations", () =>
     runSaleValuationPrecomputeBatch({
-      limit: positiveNumberFromEnv("VALUATION_PRECOMPUTE_BATCH_LIMIT") ?? 25,
+      limit: positiveNumberFromEnv("VALUATION_PRECOMPUTE_BATCH_LIMIT") ?? 75,
     }),
   );
 }

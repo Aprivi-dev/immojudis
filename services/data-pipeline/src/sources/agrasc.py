@@ -11,6 +11,7 @@ from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_sett
 from src.normalize import clean_text, strip_accents
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
+from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://agrasc.gouv.fr"
 LIST_URL = f"{BASE_URL}/ventes-aux-encheres"
@@ -54,7 +55,11 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
             if sale.get("department") in TARGET_DEPARTMENTS:
                 raw_sales.append(sale)
 
-    return ScrapeResult(validate_raw_sales("agrasc", unique_dicts(raw_sales, "source_url"), errors), errors)
+    return ScrapeResult(
+        validate_raw_sales("agrasc", unique_dicts(raw_sales, "source_url"), errors),
+        errors,
+        getattr(client, "coverage_metrics", lambda: {})(),
+    )
 
 
 def parse_agrasc_html(html: str, page_url: str = LIST_URL) -> list[dict[str, Any]]:
@@ -181,12 +186,13 @@ def _extract_land_surface(text: str | None) -> str | None:
 def _extract_images(card: Tag, page_url: str) -> list[str]:
     urls: list[str] = []
     for image in card.find_all("img"):
-        src = clean_text(image.get("data-src") or image.get("src"))
-        if not src:
-            continue
-        absolute = urljoin(page_url, src)
-        if _looks_like_property_image(absolute) and absolute not in urls:
-            urls.append(absolute)
+        for candidate in html_image_candidates(image):
+            src = clean_text(candidate)
+            if not src:
+                continue
+            absolute = urljoin(page_url, src)
+            if _looks_like_property_image(absolute) and absolute not in urls:
+                urls.append(absolute)
     return urls
 
 

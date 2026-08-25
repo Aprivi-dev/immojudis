@@ -32,11 +32,11 @@ export function mapboxPreviewCamera(mode: MapboxPreviewMode): MapboxPreviewCamer
 }
 
 export function mapboxPreviewModeLabel(mode: MapboxPreviewMode) {
-  return mode === "aerial3d" ? "Vue 3D Mapbox" : "Vue rue Mapbox";
+  return mode === "aerial3d" ? "Vue aérienne 3D Mapbox" : "Vue 3D du quartier";
 }
 
 export function mapboxPreviewLoadingLabel(mode: MapboxPreviewMode) {
   return mode === "aerial3d"
-    ? "Chargement de la vue 3D Mapbox..."
-    : "Chargement de la vue rue Mapbox...";
+    ? "Chargement de la vue aérienne 3D Mapbox..."
+    : "Chargement de la vue 3D du quartier...";
 }
