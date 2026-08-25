@@ -1,36 +1,22 @@
 "use client";
 
-import { createFileRoute } from "@/lib/router-compat";
+import { useSearchParams } from "next/navigation";
 import { AnalysisSaleDetailView } from "@/components/SimplifiedSaleDetailView";
-import {
-  EXAMPLE_SALE,
-  EXAMPLE_SALE_RECORDS,
-  isExampleSaleKey,
-  type ExampleSaleKey,
-} from "@/lib/example-sale";
-import { saleSeoTitle } from "@/lib/seo";
+import type { MarketEstimate } from "@/lib/market.functions";
+import type { AuctionSale } from "@/lib/types";
 
-export const Route = createFileRoute("/annonce-exemple")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    bien: isExampleSaleKey(search.bien) ? search.bien : ("bordeaux" as const),
-  }),
-  head: () => ({
-    meta: [
-      { title: saleSeoTitle(EXAMPLE_SALE) },
-      { property: "og:title", content: saleSeoTitle(EXAMPLE_SALE) },
-      {
-        name: "description",
-        content:
-          "Consultez une annonce Immojudis d'exemple avec photos fictives, pieces analysees, risques, marche local et mise plafond.",
-      },
-    ],
-  }),
-  component: ExampleSalePage,
-});
-
-export function ExampleSalePage() {
-  const { bien } = Route.useSearch<{ bien: ExampleSaleKey }>();
-  const example = EXAMPLE_SALE_RECORDS[bien];
+export function ExampleSalePage({
+  examples,
+}: {
+  examples: Record<
+    "bordeaux" | "nantes" | "toulouse",
+    { sale: AuctionSale; marketEstimate: MarketEstimate }
+  >;
+}) {
+  const requestedKey = useSearchParams().get("bien");
+  const exampleKey =
+    requestedKey === "nantes" || requestedKey === "toulouse" ? requestedKey : "bordeaux";
+  const example = examples[exampleKey];
 
   return (
     <AnalysisSaleDetailView

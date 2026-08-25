@@ -3492,9 +3492,11 @@
   line-height: 1.45;
 }
 
-.ij-plan-card li svg {
-  margin-top: 0.1rem;
+.ij-plan-card li::before {
+  content: "✓";
+  margin-top: 0.02rem;
   color: #1e40af;
+  font-weight: 700;
 }
 
 .ij-plans-cta {
@@ -4680,7 +4682,7 @@
   text-transform: none;
 }
 
-.ij-plan-card li svg {
+.ij-plan-card li::before {
   color: #f2b76f;
 }
 
