@@ -119,11 +119,11 @@ paths:
       operationId: getTribunalJudicialActivityDirectory
       summary: Parcourir les profils publics des tribunaux suivis
       description: >-
-        Annuaire public des tribunaux disposant d'au moins une vente judiciaire
-        contrôlée dans la fenêtre. Chaque profil conserve ses échantillons, ses
+        Observatoire public organisé France, ressort judiciaire, puis tribunal.
+        Il ne retient que les tribunaux disposant d'au moins une vente judiciaire
+        contrôlée dans la fenêtre. Chaque niveau conserve ses échantillons, ses
         fourchettes centrales de mise à prix et d'anticipation, ainsi que ses
-        limites de couverture. Aucune ligne d'annonce ou preuve source n'est
-        renvoyée.
+        limites de couverture. Aucune ligne d'annonce ou preuve source n'est renvoyée.
       parameters:
         - name: historyMonths
           in: query
@@ -135,7 +135,7 @@ paths:
             default: 36
       responses:
         "200":
-          description: Annuaire agrégé des profils par tribunal.
+          description: Agrégats nationaux, couverture par ressort et profils tribunal.
           headers:
             Cache-Control:
               schema:
@@ -754,7 +754,7 @@ components:
     TribunalJudicialActivityDirectoryResponse:
       type: object
       additionalProperties: false
-      required: [period, totals, tribunals, provenance]
+      required: [period, totals, national, regions, tribunals, provenance]
       properties:
         period:
           type: object
@@ -790,6 +790,13 @@ components:
             upcomingSales90Days:
               type: integer
               minimum: 0
+        national:
+          $ref: "#/components/schemas/TribunalJudicialActivityScopeOverview"
+        regions:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TribunalJudicialActivityRegionOverview"
         tribunals:
           type: array
           maxItems: 250
@@ -798,17 +805,111 @@ components:
         provenance:
           type: object
           additionalProperties: false
-          required: [generatedAt, directoryVersion, includesOnlyExactActiveCourts]
+          required:
+            - generatedAt
+            - directoryVersion
+            - includesOnlyExactActiveCourts
+            - aggregationOrder
           properties:
             generatedAt:
               type: string
               format: date-time
             directoryVersion:
               type: string
-              const: tribunal_judicial_activity_directory_v1
+              const: tribunal_judicial_activity_directory_v2
             includesOnlyExactActiveCourts:
               type: boolean
               const: true
+            aggregationOrder:
+              type: string
+              const: national_region_tribunal
+    TribunalJudicialActivityScopeOverview:
+      type: object
+      additionalProperties: false
+      required:
+        - observedPastSales
+        - upcomingSales
+        - upcomingSales90Days
+        - startingPriceRangeEur
+        - discoveryLeadRangeDays
+        - visitCoverage
+        - coverage
+      properties:
+        observedPastSales:
+          type: integer
+          minimum: 0
+        upcomingSales:
+          type: integer
+          minimum: 0
+        upcomingSales90Days:
+          type: integer
+          minimum: 0
+        startingPriceRangeEur:
+          $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+        discoveryLeadRangeDays:
+          $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+        visitCoverage:
+          $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [trackedCourts, publishableCourtProfiles, rate]
+          properties:
+            trackedCourts:
+              type: integer
+              minimum: 0
+            publishableCourtProfiles:
+              type: integer
+              minimum: 0
+            rate:
+              type: number
+              minimum: 0
+              maximum: 1
+    TribunalJudicialActivityRegionOverview:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - observedPastSales
+        - upcomingSales
+        - upcomingSales90Days
+        - startingPriceRangeEur
+        - discoveryLeadRangeDays
+        - visitCoverage
+        - coverage
+      properties:
+        name:
+          type: string
+        observedPastSales:
+          type: integer
+          minimum: 0
+        upcomingSales:
+          type: integer
+          minimum: 0
+        upcomingSales90Days:
+          type: integer
+          minimum: 0
+        startingPriceRangeEur:
+          $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+        discoveryLeadRangeDays:
+          $ref: "#/components/schemas/TribunalJudicialActivityRangeMetric"
+        visitCoverage:
+          $ref: "#/components/schemas/TribunalJudicialActivityMetric"
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [trackedCourts, publishableCourtProfiles, rate]
+          properties:
+            trackedCourts:
+              type: integer
+              minimum: 0
+            publishableCourtProfiles:
+              type: integer
+              minimum: 0
+            rate:
+              type: number
+              minimum: 0
+              maximum: 1
     TribunalStatisticsAdjustmentMethod:
       type: string
       enum:

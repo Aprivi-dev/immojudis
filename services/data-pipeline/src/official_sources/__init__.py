@@ -21,6 +21,18 @@ from .judilibre import (
     JudilibreSearchQuery,
     JudilibreTransaction,
 )
+from .justice_activity import (
+    JusticeActivityClient,
+    JusticeActivityMetric,
+    JusticeActivityParseResult,
+    JusticeActivitySchemaError,
+    JusticeActivitySourceError,
+    JusticeJurisdictionActivityRecord,
+    parse_activity_metric,
+    parse_available_years,
+    parse_justice_activity_html,
+    parse_source_version,
+)
 from .justice_open_data import (
     JusticeOpenDataParseResult,
     JusticeOpenDataSchemaError,
@@ -45,6 +57,12 @@ __all__ = [
     "JudilibreTransaction",
     "JusticeOpenDataParseResult",
     "JusticeOpenDataSchemaError",
+    "JusticeActivityClient",
+    "JusticeActivityMetric",
+    "JusticeActivityParseResult",
+    "JusticeActivitySchemaError",
+    "JusticeActivitySourceError",
+    "JusticeJurisdictionActivityRecord",
     "enrich_hearing_candidates_with_court_references",
     "parse_encheres_publiques_courts_csv",
     "parse_encheres_publiques_csv",
@@ -52,4 +70,8 @@ __all__ = [
     "parse_justice_competences_csv",
     "parse_justice_open_data_csv",
     "parse_justice_structures_csv",
+    "parse_available_years",
+    "parse_justice_activity_html",
+    "parse_activity_metric",
+    "parse_source_version",
 ]

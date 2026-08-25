@@ -72,18 +72,24 @@ type SaleDetailProps = {
   sale: AuctionSale;
   marketEstimateOverride?: MarketEstimate | null;
   returnTo?: string;
+  backLabel?: string;
+  publicDemo?: boolean;
 };
 
 export function AnalysisSaleDetailView({
   sale,
   marketEstimateOverride = null,
   returnTo = "/sales",
+  backLabel = "Retour aux ventes",
+  publicDemo = false,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
       sale={sale}
       marketEstimateOverride={marketEstimateOverride}
       returnTo={returnTo}
+      backLabel={backLabel}
+      publicDemo={publicDemo}
       access="analysis"
     />
   );
@@ -97,6 +103,8 @@ function SimplifiedSaleDetailView({
   sale,
   marketEstimateOverride = null,
   returnTo,
+  backLabel = "Retour aux ventes",
+  publicDemo = false,
   access,
 }: SaleDetailProps & { access: "discovery" | "analysis" }) {
   const [calculationOpen, setCalculationOpen] = useState(false);
@@ -132,11 +140,11 @@ function SimplifiedSaleDetailView({
     <main className="min-h-screen bg-[#eef7ff] text-brand-navy">
       <div className="mx-auto max-w-[1460px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <Link
-          to={returnTo ?? "/sales"}
+          href={returnTo ?? "/sales"}
           className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          Retour aux ventes
+          {backLabel}
         </Link>
 
         {access === "analysis" &&
@@ -201,6 +209,7 @@ function SimplifiedSaleDetailView({
           surface={surface}
           calculationOpen={calculationOpen}
           onCalculationOpenChange={setCalculationOpen}
+          publicDemo={publicDemo}
         />
       ) : (
         <>
@@ -673,6 +682,7 @@ function AnalysisContent({
   surface,
   calculationOpen,
   onCalculationOpenChange,
+  publicDemo,
 }: {
   sale: AuctionSale;
   marketEstimate: MarketEstimate | null;
@@ -681,9 +691,10 @@ function AnalysisContent({
   surface: number | null;
   calculationOpen: boolean;
   onCalculationOpenChange: (open: boolean) => void;
+  publicDemo: boolean;
 }) {
-  const forecastQuery = useOutcomeGraphForecast(sale.id);
-  const showTribunalHistory = saleIsTribunalVenue(sale);
+  const forecastQuery = useOutcomeGraphForecast(sale.id, !publicDemo);
+  const showTribunalHistory = !publicDemo && saleIsTribunalVenue(sale);
   const hasVerifiedForecast = forecastQuery.data?.forecast.status === "ready";
   const navigationItems = [
     ["#summary", "Synthèse"],
@@ -725,7 +736,7 @@ function AnalysisContent({
       <RisksAndDocuments sale={sale} />
       <div className="border-b border-brand-navy/10 bg-[#eef7ff]">
         <div className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-          <InformationRequestAgent sale={sale} />
+          <InformationRequestAgent sale={sale} previewOnly={publicDemo} />
         </div>
       </div>
       <LawyerSection sale={sale} />

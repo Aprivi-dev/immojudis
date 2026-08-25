@@ -22,10 +22,11 @@ import {
   type OutcomeGraphQuantiles,
 } from "@/lib/outcome-graph";
 
-export function useOutcomeGraphForecast(saleId: string) {
+export function useOutcomeGraphForecast(saleId: string, enabled = true) {
   return useQuery({
     queryKey: ["outcome-graph", saleId],
     queryFn: () => fetchOutcomeGraphForecast({ saleId }),
+    enabled,
     staleTime: 5 * 60_000,
     retry: false,
   });

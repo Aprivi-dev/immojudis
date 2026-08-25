@@ -23,6 +23,7 @@ const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 export function TribunalJudicialActivityExplorer() {
   const [historyMonths, setHistoryMonths] = useState<TribunalJudicialActivityHistoryMonths>(36);
   const [search, setSearch] = useState("");
+  const [selectedRegion, setSelectedRegion] = useState("");
   const [selectedCourtCode, setSelectedCourtCode] = useState("");
   const [selectedPropertyType, setSelectedPropertyType] = useState("");
   const query = useQuery({
@@ -34,12 +35,14 @@ export function TribunalJudicialActivityExplorer() {
   const normalizedSearch = normalizeSearch(search);
   const filteredTribunals = useMemo(
     () =>
-      (query.data?.tribunals ?? []).filter((tribunal) =>
-        normalizeSearch(
-          `${tribunal.court.name} ${tribunal.court.code} ${tribunal.court.judicialRegion ?? ""}`,
-        ).includes(normalizedSearch),
+      (query.data?.tribunals ?? []).filter(
+        (tribunal) =>
+          (!selectedRegion || tribunal.court.judicialRegion === selectedRegion) &&
+          normalizeSearch(
+            `${tribunal.court.name} ${tribunal.court.code} ${tribunal.court.judicialRegion ?? ""}`,
+          ).includes(normalizedSearch),
       ),
-    [normalizedSearch, query.data?.tribunals],
+    [normalizedSearch, query.data?.tribunals, selectedRegion],
   );
   const selected =
     filteredTribunals.find((tribunal) => tribunal.court.code === selectedCourtCode) ??
@@ -55,20 +58,24 @@ export function TribunalJudicialActivityExplorer() {
         <div className="mx-auto max-w-[1260px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
             <Landmark className="h-4 w-4" aria-hidden />
-            Ventes judiciaires suivies par Immojudis
+            Observatoire des ventes judiciaires
           </p>
           <h1 className="mt-3 max-w-5xl font-display text-4xl font-medium leading-tight sm:text-5xl lg:text-6xl">
-            À quoi s’attendre selon le tribunal ?
+            La France d’abord, puis chaque tribunal
           </h1>
           <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
-            Comparez les mises à prix observées, l’anticipation avant l’audience et le rythme des
-            ventes. Les fourchettes représentent les 50 % d’annonces centrales du tribunal : elles
+            Commencez par les repères nationaux, mesurez la couverture par ressort, puis ouvrez le
+            détail d’un tribunal. Les fourchettes représentent les 50 % d’annonces centrales : elles
             ne sont ni une estimation du bien, ni un plafond d’enchère.
           </p>
 
           {query.data ? (
-            <dl className="mt-8 grid max-w-4xl border-y border-brand-navy/12 sm:grid-cols-3">
+            <dl className="mt-8 grid max-w-5xl border-y border-brand-navy/12 sm:grid-cols-2 lg:grid-cols-4">
               <SummaryValue label="Tribunaux suivis" value={query.data.totals.trackedCourts} />
+              <SummaryValue
+                label="Ventes historiques observées"
+                value={query.data.totals.observedPastSales}
+              />
               <SummaryValue label="Ventes à venir" value={query.data.totals.upcomingSales} />
               <SummaryValue
                 label="Dans les 90 jours"
@@ -80,6 +87,19 @@ export function TribunalJudicialActivityExplorer() {
       </header>
 
       <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+        {query.data ? <NationalOverview data={query.data} /> : null}
+        {query.data?.regions.length ? (
+          <RegionalCoverage
+            data={query.data}
+            selectedRegion={selectedRegion}
+            onRegionChange={(region) => {
+              setSelectedRegion(region);
+              setSelectedCourtCode("");
+              setSelectedPropertyType("");
+            }}
+          />
+        ) : null}
+
         <section aria-label="Choisir un tribunal" className="grid gap-4 lg:grid-cols-[1fr_auto]">
           <label>
             <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
@@ -127,7 +147,8 @@ export function TribunalJudicialActivityExplorer() {
         {query.isError ? <ExplorerError onRetry={() => void query.refetch()} /> : null}
         {!query.isLoading && !query.isError && !filteredTribunals.length ? (
           <p className="mt-8 border-y border-brand-navy/12 bg-white px-4 py-8 text-sm">
-            Aucun tribunal suivi ne correspond à « {search} ».
+            Aucun tribunal suivi ne correspond aux filtres sélectionnés
+            {search ? ` pour « ${search} »` : ""}.
           </p>
         ) : null}
 
@@ -145,6 +166,145 @@ export function TribunalJudicialActivityExplorer() {
         ) : null}
       </div>
     </main>
+  );
+}
+
+function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryData }) {
+  const national = data.national;
+  return (
+    <section aria-labelledby="national-overview-title" className="mb-10">
+      <div className="flex flex-col gap-3 border-b border-brand-navy/14 pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+            Niveau 1 · France entière
+          </p>
+          <h2
+            id="national-overview-title"
+            className="mt-2 font-display text-3xl font-semibold sm:text-4xl"
+          >
+            Repères nationaux
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/62">
+            Toutes les annonces retenues sont judiciaires, vérifiées ou recoupées et rattachées à un
+            tribunal actif du référentiel Justice.
+          </p>
+        </div>
+        <p className="text-xs font-semibold text-brand-navy/58">
+          Historique de {data.period.historyMonths} mois
+        </p>
+      </div>
+
+      <div className="mt-6 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-white md:grid-cols-2 xl:grid-cols-4">
+        <ProfileMetric
+          icon={BarChart3}
+          label="Mise à prix médiane · France"
+          value={formatCurrencyMedian(national.startingPriceRangeEur)}
+          detail={formatCurrencyRange(national.startingPriceRangeEur)}
+        />
+        <ProfileMetric
+          icon={Clock3}
+          label="Anticipation médiane · France"
+          value={formatDaysMedian(national.discoveryLeadRangeDays)}
+          detail={formatDaysRange(national.discoveryLeadRangeDays)}
+        />
+        <ProfileMetric
+          icon={CalendarDays}
+          label="Ventes observées dans l’historique"
+          value={formatNumber(national.observedPastSales)}
+          detail={`${formatNumber(national.upcomingSales)} ventes à venir suivies`}
+        />
+        <ProfileMetric
+          icon={ShieldCheck}
+          label="Couverture des profils tribunal"
+          value={formatPercent(national.coverage.rate)}
+          detail={`${national.coverage.publishableCourtProfiles} sur ${national.coverage.trackedCourts} avec prix et délai publiables`}
+        />
+      </div>
+
+      <p className="mt-4 text-xs leading-relaxed text-brand-navy/55">
+        Ces agrégats décrivent le catalogue suivi par Immojudis. Les prix d’adjudication et taux
+        d’issue relèvent d’un corpus de preuve séparé et restent masqués tant que ses seuils ne sont
+        pas atteints.
+      </p>
+    </section>
+  );
+}
+
+type TribunalJudicialActivityDirectoryData = Awaited<
+  ReturnType<typeof fetchTribunalJudicialActivityDirectory>
+>;
+
+function RegionalCoverage({
+  data,
+  selectedRegion,
+  onRegionChange,
+}: {
+  data: TribunalJudicialActivityDirectoryData;
+  selectedRegion: string;
+  onRegionChange: (region: string) => void;
+}) {
+  return (
+    <section
+      aria-labelledby="regional-coverage-title"
+      className="mb-10 border-y border-brand-navy/14 py-7"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+            Niveau 2 · Ressorts judiciaires
+          </p>
+          <h2
+            id="regional-coverage-title"
+            className="mt-2 font-display text-2xl font-semibold sm:text-3xl"
+          >
+            Où les données sont-elles assez denses ?
+          </h2>
+        </div>
+        {selectedRegion ? (
+          <button
+            type="button"
+            onClick={() => onRegionChange("")}
+            className="text-left text-sm font-semibold underline underline-offset-4"
+          >
+            Revenir à toute la France
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" role="list">
+        {data.regions.map((region) => (
+          <div key={region.name} role="listitem">
+            <button
+              type="button"
+              aria-pressed={selectedRegion === region.name}
+              onClick={() => onRegionChange(selectedRegion === region.name ? "" : region.name)}
+              className={`h-full w-full rounded-lg border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+                selectedRegion === region.name
+                  ? "border-brand-navy bg-brand-navy text-white"
+                  : "border-brand-navy/12 bg-white hover:border-gold/50"
+              }`}
+            >
+              <span className="font-display text-xl font-semibold">{region.name}</span>
+              <span
+                className={`mt-2 block text-xs ${
+                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/58"
+                }`}
+              >
+                {region.coverage.publishableCourtProfiles}/{region.coverage.trackedCourts} profils
+                publiables · {region.upcomingSales} ventes à venir
+              </span>
+              <span
+                className={`mt-3 block text-sm font-semibold ${
+                  selectedRegion === region.name ? "text-white" : "text-gold-soft"
+                }`}
+              >
+                Mise médiane {formatCurrencyMedian(region.startingPriceRangeEur)}
+              </span>
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -402,6 +562,13 @@ function formatCurrency(value: number): string {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatPercent(value: number): string {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "percent",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 function formatDate(value: string | null): string {
