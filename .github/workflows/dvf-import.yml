@@ -21,10 +21,6 @@ on:
         required: false
         default: false
         type: boolean
-  schedule:
-    # DGFiP/data.gouv publish DVF updates semestrially around April and October.
-    - cron: "15 3 10 4,10 *"
-
 permissions:
   contents: read
 
@@ -83,9 +79,8 @@ jobs:
           requested_limit = (os.environ.get("REQUESTED_LIMIT") or "").strip()
           dry_run = (os.environ.get("REQUESTED_DRY_RUN") or "").lower() == "true"
           replace_existing = (
-            os.environ.get("GITHUB_EVENT_NAME") == "schedule"
-            or (os.environ.get("REQUESTED_REPLACE_EXISTING") or "").lower() == "true"
-          )
+            os.environ.get("REQUESTED_REPLACE_EXISTING") or ""
+          ).lower() == "true"
 
           if replace_existing and requested_limit:
             raise RuntimeError("replace_existing cannot be combined with limit.")
