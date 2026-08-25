@@ -13,7 +13,7 @@ describe("SaleVisual", () => {
     vi.unstubAllEnvs();
   });
 
-  it("avance vers le satellite Mapbox lorsqu'une photo distante échoue", async () => {
+  it("utilise le satellite Mapbox comme visuel principal lorsqu'une adresse est géolocalisée", async () => {
     vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
     vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
 
@@ -24,18 +24,33 @@ describe("SaleVisual", () => {
       />,
     );
 
-    const photo = screen.getByRole("img", { name: "Appartement à Nice" });
-    expect(screen.queryByText("Photo de l'annonce")).toBeNull();
-
-    fireEvent.error(photo);
-
-    const satellite = await screen.findByRole("img", {
+    const satellite = screen.getByRole("img", {
       name: "Vue aérienne de Appartement à Nice",
     });
     expect(satellite.getAttribute("src")).toContain("/mapbox/satellite-v9/static/");
 
     fireEvent.load(satellite);
     expect(await screen.findByText("Vue aérienne Mapbox")).toBeTruthy();
+  });
+
+  it("conserve une photo additionnelle du bien lorsque le satellite Mapbox échoue", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+
+    const additionalPhoto = "https://images.example.test/photo-annonce.jpg";
+    render(<SaleVisual sale={saleWithMedia(additionalPhoto)} title="Maison à Bordeaux" />);
+
+    fireEvent.error(
+      screen.getByRole("img", {
+        name: "Vue aérienne de Maison à Bordeaux",
+      }),
+    );
+
+    const photo = await screen.findByRole("img", { name: "Maison à Bordeaux" });
+    expect(photo.getAttribute("src")).toBe(additionalPhoto);
+
+    fireEvent.load(photo);
+    expect(await screen.findByText("Photo du bien")).toBeTruthy();
   });
 
   it("récupère une erreur d'image survenue avant l'hydratation", async () => {

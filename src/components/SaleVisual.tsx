@@ -11,6 +11,8 @@ type SaleVisualProps = {
   locked?: boolean;
   className?: string;
   eager?: boolean;
+  mapWidth?: number;
+  mapHeight?: number;
 };
 
 type VisualCandidate = {
@@ -32,6 +34,8 @@ export function SaleVisual({
   locked = false,
   className = "",
   eager = false,
+  mapWidth = 896,
+  mapHeight = 672,
 }: SaleVisualProps) {
   const photos = locked ? [] : propertyImages(sale.media);
   const hasCoordinates = sale.latitude != null && sale.longitude != null;
@@ -42,8 +46,8 @@ export function SaleVisual({
           lat: sale.latitude as number,
           lng: sale.longitude as number,
           zoom: 17,
-          width: 896,
-          height: 672,
+          width: mapWidth,
+          height: mapHeight,
         })
       : "";
   const sectorMapUrl =
@@ -52,22 +56,22 @@ export function SaleVisual({
           lat: sale.latitude as number,
           lng: sale.longitude as number,
           zoom: 12,
-          width: 896,
-          height: 672,
+          width: mapWidth,
+          height: mapHeight,
         })
       : "";
   const candidates: VisualCandidate[] = [
-    ...photos.map((photo) => ({
-      kind: "photo" as const,
-      url: photo.url,
-      label: "Photo de l'annonce",
-    })),
     ...(satelliteUrl
       ? [{ kind: "satellite" as const, url: satelliteUrl, label: "Vue aérienne Mapbox" }]
       : []),
     ...(sectorMapUrl
       ? [{ kind: "map" as const, url: sectorMapUrl, label: "Carte du secteur Mapbox" }]
       : []),
+    ...photos.map((photo) => ({
+      kind: "photo" as const,
+      url: photo.url,
+      label: "Photo du bien",
+    })),
   ];
   const imageRef = useRef<HTMLImageElement>(null);
   const [selection, setSelection] = useState<VisualSelection>({

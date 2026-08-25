@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "Annonce exemple",
   description: "Exemple de fiche analysee Immojudis.",
   alternates: { canonical: "/annonce-exemple" },
+  robots: { index: false, follow: false },
 };
 
 export default function Page() {
