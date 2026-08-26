@@ -1,6 +1,6 @@
 # Supabase Security Advisor triage
 
-Last reviewed: 2026-08-25 on the production project.
+Last reviewed: 2026-08-26 on the production project.
 
 This runbook records the advisor findings that cannot be resolved safely with a
 mechanical schema change. Re-run the Security Advisor after every database or
@@ -13,6 +13,10 @@ Auth deployment and revisit every accepted finding when its boundary changes.
 - `public.log_auction_sale_change()` has an empty `search_path` and cannot be
   executed directly by `public`, `anon`, `authenticated`, or `service_role`.
   The trigger remains the only supported invocation path.
+- `authenticator` runs `public.enforce_data_api_object_boundary()` before every
+  PostgREST request. The invoker-safe hook denies `anon` and `authenticated`
+  access to `spatial_ref_sys` and every `st_estimatedextent` overload while
+  leaving application and trusted server-side endpoints unchanged.
 
 ## Intentional application boundaries
 
@@ -61,9 +65,12 @@ extensions report `extrelocatable = false`. Consequently:
   Data API schema, and application network calls remain inside private cron
   functions.
 
-The Data API must not expose `public.spatial_ref_sys` or
-`public.st_estimatedextent`. Recheck those two toggles after PostGIS upgrades,
-because extension upgrades may restore platform grants.
+The Dashboard can stage removals for `public.spatial_ref_sys` and
+`public.st_estimatedextent`, but the hosted platform does not persist them:
+both objects are owned by the non-inheritable `supabase_admin` role. Their
+Advisor findings therefore remain platform-owned. The PostgREST pre-request
+hook is the application-controlled compensating boundary; recheck its live 403
+responses after PostGIS or platform upgrades.
 
 ## Verification checklist
 
@@ -74,5 +81,9 @@ because extension upgrades may restore platform grants.
 4. Confirm Auth reports leaked-password protection enabled.
 5. Confirm the Data API exposes only `public` and `graphql_public`, never
    `app_private` or `net`.
-6. Re-run Supabase Security Advisor and reconcile every ERROR/WARN with this
+6. Confirm `authenticator` has
+   `pgrst.db_pre_request=public.enforce_data_api_object_boundary`, then verify
+   anonymous REST requests to `spatial_ref_sys` and
+   `rpc/st_estimatedextent` return HTTP 403.
+7. Re-run Supabase Security Advisor and reconcile every ERROR/WARN with this
    file rather than dismissing new findings by name alone.
