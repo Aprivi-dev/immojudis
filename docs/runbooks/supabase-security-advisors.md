@@ -14,9 +14,11 @@ Auth deployment and revisit every accepted finding when its boundary changes.
   executed directly by `public`, `anon`, `authenticated`, or `service_role`.
   The trigger remains the only supported invocation path.
 - `authenticator` runs `public.enforce_data_api_object_boundary()` before every
-  PostgREST request. The invoker-safe hook denies `anon` and `authenticated`
-  access to `spatial_ref_sys` and every `st_estimatedextent` overload while
-  leaving application and trusted server-side endpoints unchanged.
+  resolved PostgREST request. The invoker-safe hook denies `anon` and
+  `authenticated` access to the `spatial_ref_sys` and `st_estimatedextent`
+  paths while leaving application and trusted server-side endpoints unchanged.
+  The current `st_estimatedextent` overloads have unnamed arguments and are not
+  routable by PostgREST; they return `PGRST202`/HTTP 404 before the hook runs.
 
 ## Intentional application boundaries
 
@@ -83,7 +85,10 @@ responses after PostGIS or platform upgrades.
    `app_private` or `net`.
 6. Confirm `authenticator` has
    `pgrst.db_pre_request=public.enforce_data_api_object_boundary`, then verify
-   anonymous REST requests to `spatial_ref_sys` and
-   `rpc/st_estimatedextent` return HTTP 403.
+   an anonymous REST request to `spatial_ref_sys` returns SQLSTATE `42501`
+   (HTTP 401 for `anon`; HTTP 403 for an authenticated JWT), and
+   `rpc/st_estimatedextent` remains unroutable with `PGRST202`/HTTP 404. The
+   pgTAP test also simulates the authenticated hook path so a future PostGIS
+   signature change remains denied.
 7. Re-run Supabase Security Advisor and reconcile every ERROR/WARN with this
    file rather than dismissing new findings by name alone.
