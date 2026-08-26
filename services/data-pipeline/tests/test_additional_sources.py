@@ -1137,6 +1137,14 @@ def test_parse_notaires_detail_api_payload_extracts_rich_fields() -> None:
     assert detail["source_blocks"]["nb_etages"] == 1
 
 
+def test_notary_from_text_keeps_french_letters_and_rejects_math_symbols() -> None:
+    assert notaires._notary_from_text("Me Élodie D'ŒUVRE, notaire à Bordeaux.") == "Me Élodie D'ŒUVRE"
+    assert notaires._notary_from_text("MAÎTRE ÉLODIE D’ŒUVRE, notaire à Bordeaux.") == "Me ÉLODIE D’ŒUVRE"
+    assert notaires._notary_from_text("Me Élodie D'ŒUVRE×FAUSSE, notaire à Bordeaux.") is None
+    assert notaires._notary_from_text("Me Élodie D'ŒUVRE÷FAUSSE, notaire à Bordeaux.") is None
+    assert notaires._notary_from_text("Me Élodie KFAUSSE, notaire à Bordeaux.") is None
+
+
 def test_parse_notaires_detail_prefers_precise_text_surface_and_ignores_visit_ui_state() -> None:
     payload = json.dumps(
         {

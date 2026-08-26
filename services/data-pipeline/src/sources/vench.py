@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup, Tag
 
 from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.normalize import (
+    LATIN_LETTERS_PATTERN,
     SURFACE_VALUE_PATTERN,
     clean_text,
     extract_department,
@@ -510,8 +511,13 @@ def _extract_address_block(page_text: str) -> str | None:
             candidates.append(following)
             if len(candidates) >= 3:
                 break
-        candidate_text = re.sub(r"\bVoir\s+la\s+carte\b", "", " ".join(candidates), flags=re.I)
-        match = re.search(r"\b(\d{5}\s+[A-ZÀ-ŸA-Za-z' -]+)\b", candidate_text)
+        candidate_text = _text(
+            re.sub(r"\bVoir\s+la\s+carte\b", "", " ".join(candidates), flags=re.I)
+        ) or ""
+        match = re.search(
+            rf"\b(\d{{5}}\s+[{LATIN_LETTERS_PATTERN}'’ -]+)\b(?=$|[,.;])",
+            candidate_text,
+        )
         if match:
             return _text(match.group(1))
     return None

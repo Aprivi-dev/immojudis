@@ -80,6 +80,15 @@ def test_parse_info_encheres_detail_html_extracts_documents_and_location() -> No
     assert raw["source_images"] == ["https://www.info-encheres.com/images/maison.jpg"]
 
 
+def test_extract_postal_city_keeps_french_letters_and_rejects_math_symbols() -> None:
+    assert info_encheres._extract_postal_city("40230 L'Haÿ-les-Roses") == (
+        "40230",
+        "L'Haÿ-les-Roses",
+    )
+    assert info_encheres._extract_postal_city("75000 Paris×Faubourg") == (None, None)
+    assert info_encheres._extract_postal_city("75000 Paris÷Faubourg") == (None, None)
+
+
 def test_parse_info_encheres_detail_filters_site_assets_from_images() -> None:
     html = """
     <html>

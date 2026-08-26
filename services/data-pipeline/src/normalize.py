@@ -79,6 +79,7 @@ PROPERTY_TYPE_CODE_MAP = {
 
 VALID_STATUSES = {"upcoming", "past", "adjudicated", "unknown"}
 SURFACE_VALUE_PATTERN = r"([0-9]+(?:[\s.][0-9]{3})*(?:[,.][0-9]+)?|[0-9]+(?:[,.][0-9]+)?)"
+LATIN_LETTERS_PATTERN = r"A-Za-zÀ-ÖØ-öø-ÿŒœŸ"
 
 
 def make_sale_signature(sale_date: object, price: object) -> str:

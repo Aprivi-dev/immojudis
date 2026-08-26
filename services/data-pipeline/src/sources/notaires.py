@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 import httpx
 
 from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
-from src.normalize import SURFACE_VALUE_PATTERN, clean_text, parse_surface
+from src.normalize import LATIN_LETTERS_PATTERN, SURFACE_VALUE_PATTERN, clean_text, parse_surface
 from src.raw_models import validate_raw_sales
 from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
 
@@ -671,7 +671,11 @@ def _notary_from_text(value: str | None) -> str | None:
     text = clean_text(value)
     if not text:
         return None
-    match = re.search(r"\bM(?:e|a[iî]tre)\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿa-zà-ÿ' -]+?),\s+notaire\b", text, re.I)
+    match = re.search(
+        rf"\b(?ai:M(?:e|a[iîÎ]tre))\s+"
+        rf"([{LATIN_LETTERS_PATTERN}][{LATIN_LETTERS_PATTERN}'’ -]+?),\s+notaire\b",
+        text,
+    )
     return clean_text(f"Me {match.group(1)}") if match else None
 
 
