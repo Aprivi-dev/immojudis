@@ -255,6 +255,14 @@ def test_parse_vench_detail_html_removes_map_cta_from_address() -> None:
     assert raw["source_blocks"]["adresse"] == "95110 Sannois"
 
 
+def test_extract_address_block_keeps_french_letters_and_rejects_math_symbols() -> None:
+    assert vench._extract_address_block("Adresse\n94240 L'Haÿ-les-Roses\nDATE DE L'AUDIENCE") == (
+        "94240 L'Haÿ-les-Roses"
+    )
+    assert vench._extract_address_block("Adresse\n95110 Sannois×Faubourg\nDATE DE L'AUDIENCE") is None
+    assert vench._extract_address_block("Adresse\n95110 Sannois÷Faubourg\nDATE DE L'AUDIENCE") is None
+
+
 def test_parse_vench_detail_html_keeps_generic_national_tribunal_without_inconsistency() -> None:
     html = """
     <div id="page-heading"><h1>UNE MAISON D'HABITATION &bull; Sannois</h1></div>

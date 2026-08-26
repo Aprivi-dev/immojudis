@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import (
+    LATIN_LETTERS_PATTERN,
     SURFACE_VALUE_PATTERN,
     clean_text,
     extract_department,
@@ -498,7 +499,10 @@ def _extract_after(text: str, pattern: str) -> str | None:
 def _extract_postal_city(address: str | None) -> tuple[str | None, str | None]:
     if not address:
         return None, None
-    match = re.search(r"\b(\d{5})\s+([A-ZÀ-ŸA-Za-z' -]+)", address)
+    match = re.search(
+        rf"\b(\d{{5}})\s+([{LATIN_LETTERS_PATTERN}'’ -]+)\b(?=$|[,.;])",
+        address,
+    )
     if not match:
         return None, None
     return match.group(1), _title_case_city(match.group(2))
