@@ -2,4 +2,4 @@
 h3==4.5.0
 lightgbm==4.6.0
 mapie==1.4.1
-scikit-learn==1.7.2
+scikit-learn==1.9.0
