@@ -83,13 +83,44 @@ class ReplicateClient:
         prompt = _user_prompt_for_model(str(self.model), system_prompt, user_prompt)
         attempts = 1 if _is_display_description_prompt(system_prompt) else 2
         for attempt in range(attempts):
-            prediction = self._create_prediction(prompt, system_prompt=system_prompt)
-            output = self._wait_for_output(prediction)
-            raw_response = _stringify_output(output)
+            from src.storage.supabase_client import llm_usage_budget_available
+
+            settings = load_settings()
+            if not llm_usage_budget_available(int(settings.get("replicate_max_calls_per_hour") or 0)):
+                raise LLMClientUnavailable("Hourly Replicate prediction budget exhausted")
             try:
-                return parse_json_response(raw_response)
-            except ValueError as exc:
-                fallback = _display_description_payload_from_text(system_prompt, raw_response)
+                prediction = self._create_prediction(prompt, system_prompt=system_prompt)
+                output = self._wait_for_output(prediction)
+                raw_response = _stringify_output(output)
+                parsed = parse_json_response(raw_response)
+                self._record_usage(
+                    prediction,
+                    request_kind="display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction",
+                    attempt_number=attempt + 1,
+                    prompt_chars=len(prompt),
+                    system_prompt_chars=len(system_prompt),
+                    output_chars=len(raw_response),
+                    succeeded=True,
+                )
+                return parsed
+            except Exception as exc:
+                self._record_usage(
+                    locals().get("prediction") or {},
+                    request_kind="display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction",
+                    attempt_number=attempt + 1,
+                    prompt_chars=len(prompt),
+                    system_prompt_chars=len(system_prompt),
+                    output_chars=0,
+                    succeeded=False,
+                    error_message=str(exc),
+                )
+                if not isinstance(exc, ValueError):
+                    raise
+                fallback = (
+                    _display_description_payload_from_text(system_prompt, raw_response)
+                    if "raw_response" in locals()
+                    else None
+                )
                 if fallback is not None:
                     return fallback
                 last_error = exc
@@ -104,6 +135,38 @@ class ReplicateClient:
                 )
         retry_label = "after retry" if attempts > 1 else "without retry"
         raise ValueError(f"Replicate returned invalid JSON {retry_label}: {last_error}")
+
+    def _record_usage(
+        self,
+        prediction: dict[str, Any],
+        *,
+        request_kind: str,
+        attempt_number: int,
+        prompt_chars: int,
+        system_prompt_chars: int,
+        output_chars: int,
+        succeeded: bool,
+        error_message: str | None = None,
+    ) -> None:
+        # Import lazily to avoid coupling the HTTP client to storage at import time.
+        from src.storage.supabase_client import record_llm_usage_event
+
+        record_llm_usage_event(
+            {
+                "provider": "replicate",
+                "model": str(self.model or ""),
+                "prediction_id": prediction.get("id"),
+                "request_kind": request_kind,
+                "attempt_number": attempt_number,
+                "prompt_chars": prompt_chars,
+                "system_prompt_chars": system_prompt_chars,
+                "output_chars": output_chars,
+                "input_tokens_estimate": max(0, round((prompt_chars + system_prompt_chars) / 4)),
+                "output_tokens_estimate": max(0, round(output_chars / 4)),
+                "succeeded": succeeded,
+                "error_message": (error_message or "")[:1000] or None,
+            }
+        )
 
     def _create_prediction(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
         owner, model_name = _split_replicate_model(str(self.model))

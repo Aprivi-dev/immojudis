@@ -133,7 +133,7 @@ def test_queued_runner_defaults_missing_llm_flag_to_automatic(monkeypatch, capsy
     assert "llm=True" in capsys.readouterr().out
 
 
-def test_queued_runner_forces_llm_for_legacy_disabled_scroll(monkeypatch, capsys) -> None:
+def test_queued_runner_respects_disabled_llm_on_queued_scroll(monkeypatch, capsys) -> None:
     captured = {}
 
     monkeypatch.setattr(queued_runner, "fail_stale_running_runs_in_supabase", lambda: 0)
@@ -153,8 +153,8 @@ def test_queued_runner_forces_llm_for_legacy_disabled_scroll(monkeypatch, capsys
     monkeypatch.setattr(queued_runner, "run_pipeline", fake_run_pipeline)
 
     assert queued_runner.main() == 0
-    assert captured == {"use_llm": True, "heavy_enrichment": True}
-    assert "llm=True" in capsys.readouterr().out
+    assert captured == {"use_llm": False, "heavy_enrichment": False}
+    assert "llm=False" in capsys.readouterr().out
 
 
 def test_queued_runner_processes_data_refresh_when_no_full_run(monkeypatch, capsys) -> None:

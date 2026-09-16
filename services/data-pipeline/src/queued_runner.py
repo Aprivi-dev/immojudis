@@ -109,10 +109,8 @@ def main() -> int:
 
     run_id = str(run.get("id") or "")
     source = str(run.get("source") or "all")
-    # Every queued scroll must produce the public AI display description. Older
-    # queued rows may still carry use_llm=false, so the worker treats the flag as
-    # legacy metadata and enforces the current product rule here.
-    use_llm = True
+    # The run flag is authoritative: a no-LLM run must not spend Replicate credit.
+    use_llm = bool(run.get("use_llm", True))
 
     if not run_id:
         print("Queued run has no id; skipping.")
@@ -292,6 +290,15 @@ def run_enrichment_queue_batch(
                 _finish_job(job, succeeded=True)
             continue
         job_types = {str(job.get("job_type") or "") for job in sale_jobs}
+        if job_types & {"fact_extraction", "display_description"} and settings.get("llm_enabled", True) is False:
+            for job in sale_jobs:
+                _finish_job(
+                    job,
+                    succeeded=False,
+                    cancelled=True,
+                    error_message="LLM disabled; no Replicate call made",
+                )
+            continue
         try:
             if "pdf" in job_types and sale.documents and not documents_are_current(sale):
                 pdf_stats = enrich_sale_from_pdfs(sale)

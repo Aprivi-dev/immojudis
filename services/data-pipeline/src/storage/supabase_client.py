@@ -876,10 +876,58 @@ def _claim_retry_after_seconds(value: str | None) -> float | None:
     return seconds
 
 
+def record_llm_usage_event(event: dict[str, Any]) -> None:
+    """Persist LLM telemetry without storing prompts or source documents."""
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return
+    try:
+        response = httpx.post(
+            f"{str(url).rstrip('/')}/rest/v1/llm_usage_events",
+            headers=_rest_headers(str(key), prefer="return=minimal"),
+            json=event,
+            timeout=15,
+        )
+        response.raise_for_status()
+    except Exception as exc:
+        LOGGER.warning("Could not persist LLM usage telemetry: %s", exc)
+
+
+def llm_usage_budget_available(max_calls_per_hour: int) -> bool:
+    """Return false when the configured hourly prediction budget is exhausted."""
+    if max_calls_per_hour <= 0:
+        return True
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        return True
+    try:
+        response = httpx.get(
+            f"{str(url).rstrip('/')}/rest/v1/llm_usage_events",
+            params={
+                "select": "id",
+                "created_at": f"gte.{(datetime.now(UTC) - timedelta(hours=1)).isoformat()}",
+                "limit": str(max_calls_per_hour + 1),
+            },
+            headers={**_rest_headers(str(key)), "Prefer": "count=exact"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        count_text = response.headers.get("content-range", "").rsplit("/", 1)[-1]
+        return count_text == "*" or int(count_text) < max_calls_per_hour
+    except Exception as exc:
+        LOGGER.warning("Could not check LLM usage budget: %s", exc)
+        return True
+
+
 def finish_auction_enrichment_job_in_supabase(
     job_id: str,
     *,
     succeeded: bool,
+    cancelled: bool = False,
     error_message: str | None = None,
     attempt_count: int | None = None,
     locked_at: str | datetime | None = None,
@@ -891,14 +939,15 @@ def finish_auction_enrichment_job_in_supabase(
     if not url or not key or not job_id:
         return
     now = datetime.now(UTC)
+    status = "cancelled" if cancelled else ("completed" if succeeded else "failed")
     payload: dict[str, Any] = {
-        "status": "completed" if succeeded else "failed",
+        "status": status,
         "completed_at": now.isoformat() if succeeded else None,
         "locked_at": None,
         "last_error": None if succeeded else (error_message or "enrichment failed")[:1000],
         "updated_at": now.isoformat(),
     }
-    if not succeeded:
+    if not succeeded and not cancelled:
         retry_at = now + timedelta(minutes=30)
         if retry_not_before:
             try:
