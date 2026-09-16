@@ -667,6 +667,29 @@ create table if not exists auction_enrichment_jobs (
   unique (source_url, job_type, input_hash)
 );
 
+create table if not exists llm_usage_events (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  provider text not null default 'replicate',
+  model text not null,
+  prediction_id text,
+  request_kind text not null,
+  attempt_number integer not null default 1,
+  prompt_chars integer not null default 0,
+  system_prompt_chars integer not null default 0,
+  output_chars integer not null default 0,
+  input_tokens_estimate integer not null default 0,
+  output_tokens_estimate integer not null default 0,
+  succeeded boolean not null default false,
+  error_message text
+);
+
+alter table llm_usage_events enable row level security;
+revoke all on table llm_usage_events from anon, authenticated;
+grant select, insert on table llm_usage_events to service_role;
+create index if not exists llm_usage_events_created_at_idx on llm_usage_events(created_at desc);
+create index if not exists llm_usage_events_kind_created_at_idx on llm_usage_events(request_kind, created_at desc);
+
 create table if not exists auction_risk_occurrences (
   id uuid primary key default gen_random_uuid(),
   source_url text not null references auction_sales(source_url) on delete cascade,
@@ -750,19 +773,34 @@ create table if not exists auction_sale_history (
   id uuid primary key default gen_random_uuid(),
   source_url text not null,
   changed_at timestamptz default now(),
-  old_row jsonb,
-  new_row jsonb
+  changed_fields jsonb not null default '{}'::jsonb
 );
 
 create or replace function public.log_auction_sale_change()
 returns trigger
 language plpgsql
+security invoker
 set search_path = ''
 as $$
+declare
+  changed jsonb;
 begin
-  if (to_jsonb(old) - 'updated_at' - 'last_seen_at') is distinct from (to_jsonb(new) - 'updated_at' - 'last_seen_at') then
-    insert into public.auction_sale_history (source_url, old_row, new_row)
-    values (new.source_url, to_jsonb(old), to_jsonb(new));
+  select coalesce(jsonb_object_agg(current_value.key,
+    case when jsonb_typeof(current_value.value) in ('object', 'array')
+      or pg_column_size(current_value.value) > 2048
+      then jsonb_build_object('kind','changed_value_fingerprint',
+        'size_bytes',pg_column_size(current_value.value),
+        'md5',md5(current_value.value::text))
+      else current_value.value end), '{}'::jsonb)
+  into changed
+  from jsonb_each(to_jsonb(new)) as current_value(key, value)
+  left join jsonb_each(to_jsonb(old)) as previous_value(key, value)
+    on previous_value.key = current_value.key
+  where current_value.key not in ('updated_at', 'last_seen_at')
+    and current_value.value is distinct from previous_value.value;
+  if changed <> '{}'::jsonb then
+    insert into public.auction_sale_history (source_url, changed_fields)
+    values (new.source_url, changed);
   end if;
   return new;
 end;

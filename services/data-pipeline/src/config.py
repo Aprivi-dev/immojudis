@@ -144,6 +144,9 @@ def load_settings() -> dict[str, str | float | None]:
         "replicate_wait_seconds": int(os.getenv("REPLICATE_WAIT_SECONDS", "60")),
         "replicate_cancel_after": os.getenv("REPLICATE_CANCEL_AFTER", "5m"),
         "replicate_max_retries": int(os.getenv("REPLICATE_MAX_RETRIES", "4")),
+        "replicate_max_calls_per_hour": max(
+            0, int(os.getenv("REPLICATE_MAX_CALLS_PER_HOUR", "60"))
+        ),
         "replicate_retry_backoff_seconds": float(os.getenv("REPLICATE_RETRY_BACKOFF_SECONDS", "30")),
         "replicate_retry_max_sleep_seconds": float(os.getenv("REPLICATE_RETRY_MAX_SLEEP_SECONDS", "60")),
         # Les appels LLM restent espacés globalement pour éviter les rafales
