@@ -559,11 +559,13 @@ def create_run_in_supabase(source: str, use_llm: bool, run_id: str | None = None
         "use_llm": use_llm,
         "started_at": datetime.now(UTC).isoformat(),
     }
-    response = httpx.post(
+    response = _postgrest_request_with_retries(
+        "POST",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        "auction_runs",
         headers=_rest_headers(str(key), prefer="return=representation"),
         json=payload,
-        timeout=30,
+        timeout=POSTGREST_TIMEOUT,
     )
     if response.is_error:
         LOGGER.warning("Supabase run creation failed: %s", response.text)
@@ -585,12 +587,14 @@ def start_existing_run_in_supabase(run_id: str, source: str, use_llm: bool) -> s
         "started_at": datetime.now(UTC).isoformat(),
         "finished_at": None,
     }
-    response = httpx.patch(
+    response = _postgrest_request_with_retries(
+        "PATCH",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        "auction_runs",
         params={"id": f"eq.{run_id}"},
         headers=_rest_headers(str(key), prefer="return=minimal"),
         json=payload,
-        timeout=30,
+        timeout=POSTGREST_TIMEOUT,
     )
     if response.is_error:
         LOGGER.warning("Supabase run start failed: %s", response.text)
@@ -1139,12 +1143,14 @@ def finish_run_in_supabase(
         "summary": summary,
         "errors": errors or {},
     }
-    response = httpx.patch(
+    response = _postgrest_request_with_retries(
+        "PATCH",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        "auction_runs",
         params={"id": f"eq.{run_id}"},
         headers=_rest_headers(str(key), prefer="return=minimal"),
         json=_sanitize_postgrest_payload(payload),
-        timeout=30,
+        timeout=POSTGREST_TIMEOUT,
     )
     if response.is_error:
         LOGGER.warning("Supabase run finish failed: %s", response.text)
@@ -1165,12 +1171,14 @@ def update_run_progress_in_supabase(
     payload: dict[str, Any] = {"summary": summary}
     if errors is not None:
         payload["errors"] = errors
-    response = httpx.patch(
+    response = _postgrest_request_with_retries(
+        "PATCH",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        "auction_runs",
         params={"id": f"eq.{run_id}", "status": "eq.running"},
         headers=_rest_headers(str(key), prefer="return=minimal"),
         json=_sanitize_postgrest_payload(payload),
-        timeout=30,
+        timeout=POSTGREST_TIMEOUT,
     )
     if response.is_error:
         LOGGER.warning("Supabase run progress update failed: %s", response.text)
@@ -2408,10 +2416,12 @@ def _unique_source_urls(source_urls: list[str]) -> list[str]:
 
 def _postgrest_request_with_retries(method: str, endpoint: str, table: str, **kwargs: Any) -> httpx.Response:
     last_timeout: httpx.TimeoutException | None = None
+    request_method = getattr(httpx, method.lower())
     for attempt in range(1, POSTGREST_UPSERT_RETRIES + 1):
         try:
-            response = httpx.request(method, endpoint, **kwargs)
-            if response.status_code not in POSTGREST_RETRYABLE_STATUS_CODES or attempt == POSTGREST_UPSERT_RETRIES:
+            response = request_method(endpoint, **kwargs)
+            status_code = getattr(response, "status_code", 200 if not response.is_error else 500)
+            if status_code not in POSTGREST_RETRYABLE_STATUS_CODES or attempt == POSTGREST_UPSERT_RETRIES:
                 return response
             LOGGER.warning(
                 "Supabase %s %s returned %s on attempt %s/%s; retrying",
