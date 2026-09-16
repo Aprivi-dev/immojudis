@@ -1247,6 +1247,25 @@ def test_postgres_connect_disables_prepared_statements_for_pooler(monkeypatch) -
     }
 
 
+def test_postgres_connect_retries_transient_pool_checkout(monkeypatch) -> None:
+    calls = 0
+    connection = object()
+
+    class Psycopg:
+        def connect(self, *_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            if calls < 3:
+                raise RuntimeError("ECHECKOUTTIMEOUT: unable to check out connection from the pool")
+            return connection
+
+    monkeypatch.setattr(supabase_client, "psycopg", Psycopg())
+    monkeypatch.setattr(supabase_client.time, "sleep", lambda _seconds: None)
+
+    assert supabase_client._postgres_connect("postgresql://example") is connection
+    assert calls == 3
+
+
 def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
     sales = [
         normalize_sale(

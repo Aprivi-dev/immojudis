@@ -58,6 +58,7 @@ CLAIM_RPC_RETRY_DELAYS = (1.0, 3.0, 5.0)
 CLAIM_RPC_MAX_WAIT_SECONDS = 60.0
 POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE = 50
 POSTGRES_CONNECT_TIMEOUT = 15
+POSTGRES_CONNECT_RETRY_DELAYS = (1.0, 3.0, 8.0)
 EXPIRED_SALE_DELETE_TABLES = (
     "auction_observations",
     "auction_enrichment_jobs",
@@ -2039,11 +2040,37 @@ def _postgres_upsert(
 def _postgres_connect(db_url: str) -> Any:
     if psycopg is None:
         raise RuntimeError("psycopg is required for direct Postgres writes")
-    return psycopg.connect(
-        db_url,
-        connect_timeout=POSTGRES_CONNECT_TIMEOUT,
-        prepare_threshold=None,
-    )
+    for attempt, delay in enumerate((0.0, *POSTGRES_CONNECT_RETRY_DELAYS), start=1):
+        if delay:
+            time.sleep(delay)
+        try:
+            return psycopg.connect(
+                db_url,
+                connect_timeout=POSTGRES_CONNECT_TIMEOUT,
+                prepare_threshold=None,
+            )
+        except Exception as exc:
+            message = str(exc).lower()
+            transient = any(
+                marker in message
+                for marker in (
+                    "checkouttime",
+                    "connection pool",
+                    "connection timeout",
+                    "connection reset",
+                    "connection refused",
+                    "closed unexpectedly",
+                )
+            )
+            if not transient or attempt > len(POSTGRES_CONNECT_RETRY_DELAYS):
+                raise
+            LOGGER.warning(
+                "Transient PostgreSQL connection failure; retrying attempt=%s/%s: %s",
+                attempt,
+                len(POSTGRES_CONNECT_RETRY_DELAYS) + 1,
+                exc,
+            )
+    raise AssertionError("unreachable")
 
 
 def _postgres_value(column: str, value: object) -> object:
