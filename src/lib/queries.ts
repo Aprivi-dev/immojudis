@@ -89,6 +89,40 @@ export const SALE_LIST_COLUMNS = [
   "updated_at",
 ].join(",");
 
+// Fields needed by the search result card only. Keep heavy descriptions,
+// documents, source payloads and analysis evidence on the detail route.
+export const SALE_CARD_COLUMNS = [
+  "sale_venue_type",
+  "sale_legal_framework",
+  "sale_verification_status",
+  "id",
+  "title",
+  "city",
+  "department",
+  "address",
+  "tribunal",
+  "tribunal_name",
+  "tribunal_city",
+  "property_type",
+  "starting_price_eur",
+  "sale_date",
+  "latitude",
+  "longitude",
+  "occupancy_status",
+  "habitable_surface_m2",
+  "carrez_surface_m2",
+  "app_surface_m2",
+  "app_surface_kind",
+  "surface_scope",
+  "rooms_count",
+  "bedrooms_count",
+  "bathrooms_count",
+  "investment_score",
+  "risks",
+  "media",
+  "status",
+].join(",");
+
 const SALE_PREVIEW_COLUMNS = [
   "id",
   "starting_price_eur",
@@ -368,6 +402,30 @@ export async function getSales(
   let q = db
     .from(catalogView)
     .select(SALE_LIST_COLUMNS)
+    .order(s.column, { ascending: s.ascending, nullsFirst: false })
+    .range(offset, offset + limit - 1);
+
+  q = applyAuthenticatedSaleFilters(q, filters);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as unknown as AuctionSale[];
+}
+
+export async function getSalesForSearch(
+  filters: SaleFilters = {},
+  limit = 100,
+  sort: SortKey = "date_asc",
+  offset = 0,
+  options: { discovery?: boolean } = {},
+): Promise<AuctionSale[]> {
+  if (!assertCloudConfigured()) return [];
+
+  const s = SORT_MAP[sort];
+  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  let q = supabase
+    .from(catalogView)
+    .select(SALE_CARD_COLUMNS)
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
 

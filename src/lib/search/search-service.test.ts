@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getSales, getSalesWithCoords, rpc } = vi.hoisted(() => ({
+const { getSales, getSalesForSearch, getSalesWithCoords, rpc } = vi.hoisted(() => ({
   getSales: vi.fn(),
+  getSalesForSearch: vi.fn(),
   getSalesWithCoords: vi.fn(),
   rpc: vi.fn(),
 }));
@@ -12,6 +13,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 
 vi.mock("@/lib/queries", () => ({
   getSales,
+  getSalesForSearch,
   getSalesCount: vi.fn(),
   getSalesWithCoords,
 }));
@@ -21,6 +23,7 @@ import { fetchSearchCount, fetchSearchMapResults, fetchSearchResults } from "./s
 describe("public preview search service", () => {
   beforeEach(() => {
     getSales.mockReset();
+    getSalesForSearch.mockReset();
     getSalesWithCoords.mockReset();
     rpc.mockReset();
   });
@@ -84,7 +87,7 @@ describe("public preview search service", () => {
   });
 
   it("fetches only the requested authenticated page with a real offset", async () => {
-    getSales.mockResolvedValue([]);
+    getSalesForSearch.mockResolvedValue([]);
 
     await fetchSearchResults({
       search: { page: 3, limit: 24, sort: "newest" },
@@ -92,7 +95,7 @@ describe("public preview search service", () => {
       discovery: true,
     });
 
-    expect(getSales).toHaveBeenCalledWith(expect.any(Object), 24, "date_desc", 48, {
+    expect(getSalesForSearch).toHaveBeenCalledWith(expect.any(Object), 24, "date_desc", 48, {
       discovery: true,
     });
   });
@@ -142,7 +145,7 @@ describe("public preview search service", () => {
       source_name: "Dossier de démonstration Immojudis",
     };
     const realSale = { id: "49deebe5-bbba-4c8a-9f4e-237a2edbae94" };
-    getSales.mockResolvedValue([example, realSale]);
+    getSalesForSearch.mockResolvedValue([example, realSale]);
     getSalesWithCoords.mockResolvedValue([realSale, example]);
 
     await expect(fetchSearchResults({ search: {}, preview: false })).resolves.toEqual([realSale]);
