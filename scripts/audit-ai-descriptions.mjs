@@ -12,7 +12,8 @@ const ENV_FILES = [
   ".env.vercel-production.local",
 ];
 const PAGE_SIZE = 1_000;
-const DEFAULT_PROMPT_VERSION = "auction_llm_v9_qwen2_7b_scan_display";
+const DEFAULT_PROMPT_VERSION = "auction_llm_v10_structured_display";
+const DEFAULT_DISPLAY_PROMPT_VERSION = "auction_display_v9_public_summary";
 const args = new Set(process.argv.slice(2));
 const jsonOutput = args.has("--json");
 const noFail = args.has("--no-fail");
@@ -22,6 +23,10 @@ loadEnvFiles();
 
 const expectedPromptVersion =
   valueFromArg("--prompt-version") || process.env.LLM_PROMPT_VERSION || DEFAULT_PROMPT_VERSION;
+const expectedDisplayPromptVersion =
+  valueFromArg("--display-prompt-version") ||
+  process.env.LLM_DISPLAY_PROMPT_VERSION ||
+  DEFAULT_DISPLAY_PROMPT_VERSION;
 
 const supabaseUrl = firstFilledEnv(
   process.env.SUPABASE_URL,
@@ -96,6 +101,7 @@ function buildReport(rows) {
       total: 0,
       missingDescription: 0,
       promptVersionMismatch: 0,
+      displayPromptVersionMismatch: 0,
       tooShort: 0,
       invalidDisplay: 0,
     };
@@ -103,7 +109,7 @@ function buildReport(rows) {
 
     const description = clean(payload.llm_display_description);
     const promptVersion = clean(payload.llm_prompt_version);
-    const reasons = displayAuditIssues(payload);
+    const reasons = displayAuditIssues(payload, expectedDisplayPromptVersion);
     if (reasons.length) sourceStats.invalidDisplay += 1;
     if (!description) {
       sourceStats.missingDescription += 1;
@@ -113,6 +119,9 @@ function buildReport(rows) {
     if (promptVersion !== expectedPromptVersion) {
       sourceStats.promptVersionMismatch += 1;
       reasons.push(`prompt_version:${promptVersion || "missing"}`);
+    }
+    if (clean(payload.llm_display_prompt_version) !== expectedDisplayPromptVersion) {
+      sourceStats.displayPromptVersionMismatch += 1;
     }
 
     if (reasons.length) {
@@ -139,16 +148,22 @@ function buildReport(rows) {
     0,
   );
   const tooShort = [...bySource.values()].reduce((sum, source) => sum + source.tooShort, 0);
+  const displayPromptVersionMismatch = [...bySource.values()].reduce(
+    (sum, source) => sum + source.displayPromptVersionMismatch,
+    0,
+  );
 
   return {
     checkedAt: new Date().toISOString(),
     expectedPromptVersion,
+    expectedDisplayPromptVersion,
     scope: activeOnly ? "active_or_upcoming" : "all",
     total: rows.length,
     ok: gaps.length === 0,
     invalidDisplay: [...bySource.values()].reduce((sum, source) => sum + source.invalidDisplay, 0),
     missingDescription,
     promptVersionMismatch,
+    displayPromptVersionMismatch,
     tooShort,
     bySource: [...bySource.values()].sort(
       (a, b) =>
@@ -166,9 +181,11 @@ function printHumanReport(report) {
   console.log(`- checked_at: ${report.checkedAt}`);
   console.log(`- scope: ${report.scope}`);
   console.log(`- expected_prompt_version: ${report.expectedPromptVersion}`);
+  console.log(`- expected_display_prompt_version: ${report.expectedDisplayPromptVersion}`);
   console.log(`- total_sales: ${report.total}`);
   console.log(`- missing_llm_display_description: ${report.missingDescription}`);
   console.log(`- prompt_version_mismatch: ${report.promptVersionMismatch}`);
+  console.log(`- display_prompt_version_mismatch: ${report.displayPromptVersionMismatch}`);
   console.log(`- invalid_display: ${report.invalidDisplay}`);
   console.log(`- short_llm_display_description: ${report.tooShort}`);
 
@@ -176,7 +193,7 @@ function printHumanReport(report) {
     console.log("\nBy source");
     for (const source of report.bySource.slice(0, 12)) {
       console.log(
-        `- ${source.source}: total=${source.total}, missing=${source.missingDescription}, prompt_mismatch=${source.promptVersionMismatch}, short=${source.tooShort}`,
+        `- ${source.source}: total=${source.total}, missing=${source.missingDescription}, prompt_mismatch=${source.promptVersionMismatch}, display_prompt_mismatch=${source.displayPromptVersionMismatch}, short=${source.tooShort}`,
       );
     }
   }

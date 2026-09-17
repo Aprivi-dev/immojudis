@@ -676,6 +676,7 @@ def test_enrich_sale_with_llm_can_use_display_description_mode(tmp_path, monkeyp
     assert "investment_facts" not in client.user_prompt
     assert "display_description" in client.user_prompt
     assert sale.raw_payload["llm_display_description"].startswith("Maison à Bordeaux")
+    assert sale.raw_payload["llm_display_prompt_version"] == "auction_display_v9_public_summary"
     assert sale.raw_payload["llm_prompt_version"] == "auction_llm_v6_display_test"
 
 

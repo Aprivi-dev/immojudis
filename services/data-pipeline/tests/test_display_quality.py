@@ -19,6 +19,18 @@ def test_legacy_display_needs_quality_revalidation(status):
     assert not has_current_display(payload, 'v1')
 
 
+def test_current_display_requires_the_display_prompt_version_when_requested():
+    payload = {
+        'llm_display_description': 'Maison de 120 m². ' * 8,
+        'llm_prompt_version': 'v1',
+        'llm_display_quality_version': DISPLAY_QUALITY_VERSION,
+        'llm_display_status': 'accepted',
+    }
+    assert not has_current_display(payload, 'v1', 'display-v1')
+    payload['llm_display_prompt_version'] = 'display-v1'
+    assert has_current_display(payload, 'v1', 'display-v1')
+
+
 def test_source_constraints_preserve_negation_and_uncertainty():
     source = 'Maison avec jardin. Aucune servitude connue à ce jour. Certaines parcelles seraient non constructibles.'
     text, quotes = preserve_source_constraints('Maison avec jardin.', source, max_chars=850, max_words=115)

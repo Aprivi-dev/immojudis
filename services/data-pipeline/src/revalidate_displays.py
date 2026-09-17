@@ -13,7 +13,9 @@ from src.storage.supabase_client import fetch_sales_needing_llm_descriptions, up
 def revalidate_cached_displays(limit: int = 1000) -> dict[str, int]:
     if not 1 <= limit <= 5000:
         raise ValueError('Revalidation limit must be between 1 and 5000')
-    version = str(load_settings()['llm_prompt_version'])
+    settings = load_settings()
+    version = str(settings['llm_prompt_version'])
+    display_version = str(settings['llm_display_prompt_version'])
     sales = fetch_sales_needing_llm_descriptions(limit=limit, prompt_version=version)
     report = {'selected': len(sales), 'revalidated': 0, 'rejected': 0, 'without_cache': 0, 'persisted': 0}
     for sale in sales:
@@ -22,7 +24,7 @@ def revalidate_cached_displays(limit: int = 1000) -> dict[str, int]:
             continue
         before = json.dumps(sale.to_storage_dict(), sort_keys=True, default=str)
         apply_cached_llm_extraction_to_sale(sale, prompt_version=version)
-        valid = has_current_display(sale.raw_payload, version)
+        valid = has_current_display(sale.raw_payload, version, display_version)
         report['revalidated' if valid else 'rejected'] += 1
         if before != json.dumps(sale.to_storage_dict(), sort_keys=True, default=str):
             count = upsert_sales_to_supabase([sale], refresh_last_seen=False)

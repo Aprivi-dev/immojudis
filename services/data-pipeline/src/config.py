@@ -18,7 +18,7 @@ DEFAULT_REPLICATE_MODEL = (
     "zsxkib/qwen2-7b-instruct:"
     "5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4"
 )
-DEFAULT_LLM_PROMPT_VERSION = "auction_llm_v9_qwen2_7b_scan_display"
+DEFAULT_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display"
 
 FRANCE_DEPARTMENTS = (
     *(f"{department:02d}" for department in range(1, 96)),
@@ -176,7 +176,7 @@ def load_settings() -> dict[str, str | float | None]:
             0,
             float(os.getenv("PIPELINE_LLM_FAILURE_COOLDOWN_HOURS", "24")),
         ),
-        "pipeline_idle_llm_backfill_enabled": os.getenv("PIPELINE_IDLE_LLM_BACKFILL_ENABLED", "true").lower()
+        "pipeline_idle_llm_backfill_enabled": os.getenv("PIPELINE_IDLE_LLM_BACKFILL_ENABLED", "false").lower()
         in {"1", "true", "yes", "on"},
         "pipeline_enrichment_queue_enabled": os.getenv("PIPELINE_ENRICHMENT_QUEUE_ENABLED", "true").lower()
         in {"1", "true", "yes", "on"},
@@ -197,8 +197,8 @@ def load_settings() -> dict[str, str | float | None]:
             DEFAULT_LLM_PROMPT_VERSION,
         ),
         "llm_fact_prompt_version": os.getenv("LLM_FACT_PROMPT_VERSION", "auction_facts_v1"),
-        "llm_display_prompt_version": os.getenv("LLM_DISPLAY_PROMPT_VERSION", "auction_display_v8"),
-        "llm_extraction_mode": os.getenv("LLM_EXTRACTION_MODE", "display_description").lower(),
+        "llm_display_prompt_version": os.getenv("LLM_DISPLAY_PROMPT_VERSION", "auction_display_v9_public_summary"),
+        "llm_extraction_mode": os.getenv("LLM_EXTRACTION_MODE", "structured_then_display").lower(),
         "llm_pdf_max_chars": int(os.getenv("LLM_PDF_MAX_CHARS", "12000")),
         "llm_fact_chunk_chars": max(3000, int(os.getenv("LLM_FACT_CHUNK_CHARS", "12000"))),
         # 0 means every collected source block and extracted PDF page is analyzed.

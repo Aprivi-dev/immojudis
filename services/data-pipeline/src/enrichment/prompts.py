@@ -161,17 +161,22 @@ def build_user_prompt(context_text: str) -> str:
 
 def build_display_description_prompt(context_text: str) -> str:
     return (
-        "Voici le contexte extrait d'une vente immobilière judiciaire. "
+        "Voici un contexte validé ou explicitement documenté concernant une vente immobilière judiciaire. "
         "Produis uniquement une synthèse d'affichage publique, sans extraction de due diligence complète.\n\n"
         "Règles obligatoires :\n"
         "- Utilise uniquement les faits explicitement présents dans le contexte.\n"
         "- Un seul paragraphe en français naturel, sans titre, sans markdown, sans retour à la ligne.\n"
         "- Ton neutre, factuel et homogène, sans promesse de rentabilité ni conseil juridique.\n"
-        "- Priorise les contraintes explicites et incertitudes (occupation, urbanisme, indivision, régularisation, travaux), puis type de bien, localisation, surface et composition.\n"
+        "- Commence par identifier le type de bien et sa localisation.\n"
+        "- Présente ensuite la nature de la vente, la date et la mise à prix uniquement si elles sont fiables et présentes.\n"
+        "- Présente ensuite la surface avec son type exact, la composition et les annexes.\n"
+        "- Termine par l'occupation puis les contraintes et incertitudes explicites (urbanisme, indivision, régularisation, servitudes, travaux).\n"
+        "- Ne commence par un risque que s'il est majeur ou susceptible de modifier immédiatement la décision.\n"
         "- Ne transpose pas un chiffre entre surface habitable, terrain, prix, charges mensuelles ou annuelles. Conserve son unité et sa portée.\n"
+        "- Ne rattache jamais une information à un lot si le contexte ne permet pas de l'identifier clairement.\n"
         "- N’ajoute aucune formule commerciale comme exceptionnel, idéal ou sans risque.\n"
         "- En cas de contradiction ou d'information peu fiable, omets le point ou mentionne sobrement qu'il est à vérifier.\n"
-        "- Vise 70 à 105 mots. Si le contexte est pauvre, reste plus court.\n\n"
+        "- Vise 80 à 120 mots. Si le contexte est pauvre, reste plus court.\n\n"
         "Schéma JSON attendu, sans markdown et sans commentaire :\n"
         "{\n"
         '  "display_description": "paragraphe public ou null",\n'
