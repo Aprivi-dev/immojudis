@@ -25,3 +25,16 @@ test("recorded source constraints must actually appear", () => {
   );
   assert.deepEqual(displayAuditIssues(valid), []);
 });
+
+test("display prompt version is audited when an expected version is provided", () => {
+  assert.deepEqual(displayAuditIssues(valid, "auction_display_v9_public_summary"), [
+    "display_prompt_version:missing",
+  ]);
+  assert.deepEqual(
+    displayAuditIssues(
+      { ...valid, llm_display_prompt_version: "auction_display_v9_public_summary" },
+      "auction_display_v9_public_summary",
+    ),
+    [],
+  );
+});

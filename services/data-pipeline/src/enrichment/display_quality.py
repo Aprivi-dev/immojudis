@@ -15,7 +15,11 @@ SOURCE_CONSTRAINT_RE = re.compile(
 )
 
 
-def has_current_display(payload: Any, prompt_version: str | None = None) -> bool:
+def has_current_display(
+    payload: Any,
+    prompt_version: str | None = None,
+    display_prompt_version: str | None = None,
+) -> bool:
     if not isinstance(payload, dict):
         return False
     text = payload.get("llm_display_description")
@@ -24,6 +28,10 @@ def has_current_display(payload: Any, prompt_version: str | None = None) -> bool
         and payload.get("llm_display_quality_version") == DISPLAY_QUALITY_VERSION
         and payload.get("llm_display_status") in {"accepted", "fallback"}
         and (not prompt_version or payload.get("llm_prompt_version") == prompt_version)
+        and (
+            not display_prompt_version
+            or payload.get("llm_display_prompt_version") == display_prompt_version
+        )
     )
 
 

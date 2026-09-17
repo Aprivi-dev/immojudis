@@ -82,7 +82,7 @@ export type AdminOperationalReadinessResponse = {
 };
 
 export const EXPECTED_LATEST_MIGRATION_VERSION = "20260820144541";
-export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v9_qwen2_7b_scan_display";
+export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display";
 export const OPERATIONAL_HEALTH_SLO_TARGET_PERCENT = 99.5;
 export const OPERATIONAL_HEALTH_SLO_WINDOW_DAYS = 30;
 

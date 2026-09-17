@@ -439,10 +439,10 @@ REPLICATE_MIN_INTERVAL_SECONDS=1
 REPLICATE_THINKING_BUDGET=0
 REPLICATE_DYNAMIC_THINKING=false
 REPLICATE_THINKING_LEVEL=low
-LLM_PROMPT_VERSION=auction_llm_v9_qwen2_7b_scan_display
+LLM_PROMPT_VERSION=auction_llm_v10_structured_display
 LLM_FACT_PROMPT_VERSION=auction_facts_v1
-LLM_DISPLAY_PROMPT_VERSION=auction_display_v8
-LLM_EXTRACTION_MODE=display_description
+LLM_DISPLAY_PROMPT_VERSION=auction_display_v9_public_summary
+LLM_EXTRACTION_MODE=structured_then_display
 LLM_PDF_MAX_CHARS=12000
 LLM_FACT_CHUNK_CHARS=12000
 LLM_FACT_MAX_CHUNKS=0
@@ -455,9 +455,12 @@ PIPELINE_LLM_MAX_TARGETS=0
 PIPELINE_LLM_BACKFILL_MAX_TARGETS=20
 ```
 
-Les options `PIPELINE_IDLE_LLM_BACKFILL_ENABLED` et
-`PIPELINE_ENRICHMENT_QUEUE_ENABLED` ne sont pas configurées dans le workflow de
-production. Le worker manuel utilise explicitement `python -m src.queued_runner --enrichment-only`, sans passer par le backfill idle.
+`PIPELINE_IDLE_LLM_BACKFILL_ENABLED` vaut `false` par défaut : les anciennes
+annonces ne sont donc pas régénérées automatiquement. Pour lancer un backfill
+historique, il faut utiliser explicitement `python -m src.main
+--backfill-llm-descriptions`. Le worker manuel utilise
+`python -m src.queued_runner --enrichment-only` et la file d’enrichissement
+reste indépendante de ce backfill global.
 
 Le provider Replicate appelle l'API HTTP officielle avec `Authorization: Bearer $REPLICATE_API_TOKEN` et l'endpoint `/v1/models/{owner}/{model}/predictions`.
 Pour Gemini via Replicate, le client envoie le prompt système dans `system_instruction` et limite la réponse à du JSON validé ensuite par Pydantic.

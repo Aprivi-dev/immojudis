@@ -1632,7 +1632,12 @@ def _fetch_dedupe_candidate_sales(
 
 
 def _has_current_llm_description(raw_payload: Any, prompt_version: str | None) -> bool:
-    return has_current_display(raw_payload, prompt_version)
+    settings = load_settings()
+    return has_current_display(
+        raw_payload,
+        prompt_version,
+        str(settings.get("llm_display_prompt_version") or "") or None,
+    )
 
 
 def _has_recent_llm_description_failure(

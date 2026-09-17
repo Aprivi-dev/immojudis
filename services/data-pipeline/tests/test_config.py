@@ -74,13 +74,13 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["pipeline_llm_backfill_max_targets"] == 20
     assert settings["pipeline_llm_backfill_progress_every"] == 5
     assert settings["pipeline_llm_failure_cooldown_hours"] == 24
-    assert settings["pipeline_idle_llm_backfill_enabled"] is True
+    assert settings["pipeline_idle_llm_backfill_enabled"] is False
     assert settings["pipeline_enrichment_queue_enabled"] is True
     assert settings["pipeline_enrichment_queue_batch_size"] == 10
-    assert settings["llm_prompt_version"] == "auction_llm_v9_qwen2_7b_scan_display"
+    assert settings["llm_prompt_version"] == "auction_llm_v10_structured_display"
     assert settings["llm_fact_prompt_version"] == "auction_facts_v1"
-    assert settings["llm_display_prompt_version"] == "auction_display_v8"
-    assert settings["llm_extraction_mode"] == "display_description"
+    assert settings["llm_display_prompt_version"] == "auction_display_v9_public_summary"
+    assert settings["llm_extraction_mode"] == "structured_then_display"
     assert settings["llm_pdf_max_chars"] == 12000
     assert settings["llm_fact_chunk_chars"] == 12000
     assert settings["llm_fact_max_chunks"] == 0

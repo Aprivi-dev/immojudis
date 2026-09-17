@@ -251,7 +251,7 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
         queued_runner,
         "enrich_sale_with_llm",
         lambda current, client, **kwargs: calls.append("facts_then_display")
-        or current.raw_payload.update({"llm_display_description": "Description vérifiée. " * 5, "llm_display_quality_version": DISPLAY_QUALITY_VERSION, "llm_display_status": "accepted", "llm_prompt_version": queued_runner.load_settings()["llm_prompt_version"], "llm_fact_coverage": {"complete": True}})
+            or current.raw_payload.update({"llm_display_description": "Description vérifiée. " * 5, "llm_display_quality_version": DISPLAY_QUALITY_VERSION, "llm_display_status": "accepted", "llm_prompt_version": queued_runner.load_settings()["llm_prompt_version"], "llm_display_prompt_version": "auction_display_v9_public_summary", "llm_fact_coverage": {"complete": True}})
         or SimpleNamespace(unavailable=False, valid_json=1, error_messages=[]),
     )
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: calls.append("geocode"))
@@ -313,17 +313,18 @@ def test_enrichment_queue_marks_every_sale_job_failed_on_extraction_error(monkey
 
 
 def test_enrichment_queue_does_not_pay_twice_for_scan_description(monkeypatch) -> None:
-    prompt_version = "auction_llm_v9_qwen2_7b_scan_display"
+    prompt_version = "auction_llm_v10_structured_display"
     sale = AuctionSale(
         source_name="avoventes",
         source_url="https://example.test/already-summarized",
         description="Appartement de 42 m² situé à Bordeaux.",
-        raw_payload={
-            "llm_display_description": "Appartement de 42 m² situé à Bordeaux. " * 3,
-            "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
-            "llm_display_status": "accepted",
-            "llm_prompt_version": prompt_version,
-        },
+            raw_payload={
+                "llm_display_description": "Appartement de 42 m² situé à Bordeaux. " * 3,
+                "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
+                "llm_display_status": "accepted",
+                "llm_prompt_version": prompt_version,
+                "llm_display_prompt_version": "auction_display_v9_public_summary",
+            },
     )
     finished: list[tuple[str, bool, str | None]] = []
 

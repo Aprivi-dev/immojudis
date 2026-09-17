@@ -146,7 +146,7 @@ UNUSABLE_SOURCE_DESCRIPTION_RE = re.compile(
     r"pour\s+consulter\s+l['’]int[ée]gralit[ée]|vous\s+devez\s+[êe]tre\s+abonn[ée]",
     re.I,
 )
-DISPLAY_DESCRIPTION_MAX_WORDS = 115
+DISPLAY_DESCRIPTION_MAX_WORDS = 125
 DISPLAY_DESCRIPTION_MAX_CHARS = 850
 DISPLAY_DESCRIPTION_MIN_CONFIDENCE = 0.55
 PROPERTY_TYPE_DISPLAY_LABELS = {
@@ -400,6 +400,9 @@ def enrich_sale_with_llm(
                 build_display_description_prompt(full_evidence_context),
             )
             extraction = LLMExtraction.model_validate(raw)
+            sale.raw_payload["llm_display_prompt_version"] = str(
+                settings.get("llm_display_prompt_version") or prompt_version
+            )
             if not _normalize_display_description(extraction.display_description):
                 stats.errors += 1
                 stats.error_messages.append("Model returned an empty display description; derived fallback only")
@@ -1247,6 +1250,9 @@ def _apply_extraction_to_sale(
             and not sale.raw_payload.get("operator_land_surface_conflict")
             and not display_check["issues"]):
         sale.raw_payload["llm_display_status"] = "accepted"
+        sale.raw_payload["llm_display_prompt_version"] = str(
+            load_settings().get("llm_display_prompt_version") or prompt_version or ""
+        )
         sale.raw_payload["llm_display_description"] = display_description
         sale.raw_payload["llm_display_description_word_count"] = len(display_description.split())
     else:
@@ -1254,6 +1260,9 @@ def _apply_extraction_to_sale(
         fallback_display_description = _fallback_display_description(reference_sale if display_check["issues"] else sale, LLMExtraction() if display_check["issues"] else extraction)
         if fallback_display_description:
             sale.raw_payload["llm_display_status"] = "fallback"
+            sale.raw_payload["llm_display_prompt_version"] = str(
+                load_settings().get("llm_display_prompt_version") or prompt_version or ""
+            )
             sale.raw_payload["llm_display_description"] = (fallback_display_description + " Surface du terrain à clarifier entre les champs de la source."
                                                                if sale.raw_payload.get("operator_land_surface_conflict") else fallback_display_description)
             sale.raw_payload["llm_display_description_word_count"] = len(fallback_display_description.split())

@@ -1468,7 +1468,14 @@ def _needs_llm_display_description_refresh(
     current_prompt_version = clean_payload_text(
         prompt_version if prompt_version is not None else load_settings().get("llm_prompt_version")
     )
-    return not has_current_display(sale.raw_payload, current_prompt_version)
+    current_display_prompt_version = clean_payload_text(
+        load_settings().get("llm_display_prompt_version")
+    )
+    return not has_current_display(
+        sale.raw_payload,
+        current_prompt_version,
+        current_display_prompt_version,
+    )
 
 
 def _sale_has_llm_context(sale: AuctionSale) -> bool:
