@@ -1,4 +1,4 @@
-import { getSales, getSalesCount, getSalesWithCoords } from "@/lib/queries";
+import { getSales, getSalesCount, getSalesForSearch, getSalesWithCoords } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { geocodeAddress } from "@/lib/geo";
@@ -47,7 +47,7 @@ export async function fetchSearchResults({
   const perPage = search.limit ?? DEFAULT_SEARCH_LIMIT;
   const offset = (page - 1) * perPage;
   return excludeHomepageExampleSales(
-    await getSales(
+    await getSalesForSearch(
       dataFiltersFromSearch(search),
       perPage,
       dataSortFromSearch(search.sort),
@@ -193,6 +193,8 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
     const rows: AuctionSale[] = [];
     const batchSize = 100;
     for (let offset = 0; offset < 10000; offset += batchSize) {
+      // Advanced client-side filters need fields intentionally omitted from
+      // the lightweight card projection (DPE, visits, documents, evidence).
       const batch = await getSales(
         dataFiltersFromSearch(criteria),
         batchSize,
