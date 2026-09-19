@@ -14,15 +14,9 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import X from "lucide-react/dist/esm/icons/x.js";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@/lib/router-compat";
 
 export type AdminSection =
@@ -79,6 +73,18 @@ export function AdminShell({
   children: ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const navigationDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = navigationDialog.current;
+    if (!mobileOpen || !dialog) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialog.showModal();
+    return () => {
+      dialog.close();
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileOpen]);
 
   return (
     <main className="admin-console min-h-screen bg-[#f5f9fd] text-[#132238]">
@@ -93,28 +99,41 @@ export function AdminShell({
       <div className="min-w-0 lg:pl-[15rem]">
         <header className="admin-topbar">
           <div className="flex min-w-0 items-start gap-3">
-            <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-              <DialogTrigger asChild>
+            <button
+              type="button"
+              aria-label="Ouvrir la navigation administrateur"
+              aria-haspopup="dialog"
+              aria-expanded={mobileOpen}
+              onClick={() => setMobileOpen(true)}
+              className="mt-1 grid size-10 shrink-0 place-items-center rounded-lg border border-[#132238]/15 bg-white text-[#132238] lg:hidden"
+            >
+              <Menu className="size-5" />
+            </button>
+            <dialog
+              ref={navigationDialog}
+              aria-label="Navigation administrateur"
+              onCancel={() => setMobileOpen(false)}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) setMobileOpen(false);
+              }}
+              className="fixed inset-y-0 left-0 m-0 h-dvh max-h-none w-[min(20rem,88vw)] max-w-none overflow-hidden border-0 bg-[#132238] p-0 text-white backdrop:bg-[#132238]/45 backdrop:backdrop-blur-sm"
+            >
+              <div className="h-full">
                 <button
                   type="button"
-                  aria-label="Ouvrir la navigation administrateur"
-                  className="mt-1 grid size-10 shrink-0 place-items-center rounded-lg border border-[#132238]/15 bg-white text-[#132238] lg:hidden"
+                  aria-label="Fermer la navigation"
+                  onClick={() => setMobileOpen(false)}
+                  className="absolute right-4 top-4 grid size-8 place-items-center rounded-lg hover:bg-white/10"
                 >
-                  <Menu className="size-5" />
+                  <X className="size-4" />
                 </button>
-              </DialogTrigger>
-              <DialogContent className="left-0 top-0 h-dvh w-[min(20rem,88vw)] max-w-none translate-x-0 translate-y-0 rounded-none border-0 bg-[#132238] p-0 text-white sm:rounded-none">
-                <DialogTitle className="sr-only">Navigation administrateur</DialogTitle>
-                <DialogDescription className="sr-only">
-                  Accédez aux outils et aux réglages ImmoJudis.
-                </DialogDescription>
                 <AdminSidebarContent
                   activeSection={activeSection}
                   adminEmail={adminEmail}
                   onNavigate={() => setMobileOpen(false)}
                 />
-              </DialogContent>
-            </Dialog>
+              </div>
+            </dialog>
             <div className="min-w-0">
               <h1 className="font-display text-[clamp(2.35rem,4vw,3.25rem)] font-medium leading-[0.98] text-[#132238]">
                 {title}

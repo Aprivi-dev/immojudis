@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { AdminSettingsPage } from "@/components/admin/AdminSettingsPage";
 import { createFileRoute, Link } from "@/lib/router-compat";
 import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
@@ -191,11 +192,21 @@ const REFRESH_QUERY_KEYS: Record<AdminDashboardView, ReadonlyArray<readonly unkn
   compliance: [["admin-privacy-requests"], ["admin-readiness"]],
 };
 
+// Keep every console view in one client entry graph so shared navigation and
+// dependencies are emitted once instead of duplicating them for configuration.
 export function AdminDashboardPage({
   initialView = "overview",
 }: {
-  initialView?: AdminDashboardView;
+  initialView?: AdminDashboardView | "settings";
 }) {
+  return initialView === "settings" ? (
+    <AdminSettingsPage />
+  ) : (
+    <AdminDashboardContent initialView={initialView} />
+  );
+}
+
+function AdminDashboardContent({ initialView = "overview" }: { initialView?: AdminDashboardView }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [source, setSource] = useState<AdminScrollSource>("all");
