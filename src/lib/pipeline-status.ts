@@ -8,6 +8,17 @@ export type PipelineSourceState = {
   suspended_until: string | null;
   suspension_reason: string | null;
   last_error: string | null;
+  last_attempt_at?: string | null;
+  coverage?: {
+    scoped_inventory_complete?: boolean;
+    inventory_scope?: string;
+    publication_status?: string;
+    publication_pending?: number;
+    publication_failed?: number;
+    publication_published?: number;
+    observed_at?: string;
+    stop_reason?: string;
+  };
 };
 export type PipelineControlSettings = {
   enabled: boolean;

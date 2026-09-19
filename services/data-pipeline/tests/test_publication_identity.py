@@ -3,7 +3,11 @@ import os
 import pytest
 
 from src.normalize import normalize_sale
-from src.publication_identity import merge_revision, resolve_publication_identities
+from src.publication_identity import (
+    ensure_room_bedroom_consistency,
+    merge_revision,
+    resolve_publication_identities,
+)
 from src.reviewed_aliases import registry_from_rows
 from src.storage.supabase_client import _postgres_connect
 
@@ -27,6 +31,104 @@ def test_old_checkpoint_cannot_regress_newer_source_price():
     result = merge_revision(current, old)
     assert result.starting_price_eur == 200000
     assert result.raw_payload['source_checks'] == current.raw_payload['source_checks']
+
+
+def test_same_url_cross_source_keeps_canonical_source_and_source_evidence():
+    existing = sale('https://example.test/shared')
+    existing.source_name = 'agrasc'
+    existing.primary_source = 'agrasc'
+    existing.raw_payload['source_checks']['https://example.test/shared']['source_name'] = 'agrasc'
+    incoming = sale('https://example.test/shared', price=125000, checked='2026-09-12T12:00:00Z')
+    incoming.source_name = 'notaires'
+    incoming.raw_payload['source_checks']['https://example.test/shared']['source_name'] = 'notaires'
+
+    result = merge_revision(existing, incoming)
+
+    assert result.source_name == 'agrasc'
+    assert result.primary_source == 'agrasc'
+    assert result.starting_price_eur == 125000
+    assert {row.get('source_name') for row in result.observations} == {'agrasc', 'notaires'}
+    assert result.raw_payload['source_checks']['https://example.test/shared']['checked_at'] == '2026-09-12T12:00:00Z'
+    assert result.raw_payload['source_checks_by_source']['agrasc']['https://example.test/shared']['source_name'] == 'agrasc'
+    assert result.raw_payload['source_checks_by_source']['notaires']['https://example.test/shared']['checked_at'] == '2026-09-12T12:00:00Z'
+
+
+def test_same_url_cross_source_keeps_newer_canonical_check_when_incoming_is_old():
+    existing = sale('https://example.test/shared-old', checked='2026-09-12T13:00:00Z')
+    existing.source_name = 'agrasc'
+    existing.raw_payload['source_checks']['https://example.test/shared-old']['source_name'] = 'agrasc'
+    incoming = sale('https://example.test/shared-old', checked='2026-09-12T12:00:00Z')
+    incoming.raw_payload['source_checks']['https://example.test/shared-old']['checked_at'] = '2026-09-12T12:00:00Z'
+    incoming.source_name = 'notaires'
+    incoming.raw_payload['source_checks']['https://example.test/shared-old']['source_name'] = 'notaires'
+
+    result = merge_revision(existing, incoming)
+
+    assert result.raw_payload['source_checks']['https://example.test/shared-old']['source_name'] == 'agrasc'
+    assert result.raw_payload['source_checks_by_source']['notaires']['https://example.test/shared-old']['source_name'] == 'notaires'
+
+
+def test_same_source_refresh_can_remove_a_fact_from_the_source():
+    existing = sale('https://example.test/revision')
+    existing.address = '12 rue Victor Hugo'
+    incoming = sale('https://example.test/revision', checked='2026-09-12T12:00:00Z')
+    incoming.address = None
+
+    result = merge_revision(existing, incoming)
+
+    assert result.address is None
+
+
+def test_same_source_refresh_replaces_stale_embedded_observation():
+    existing = sale('https://example.test/observation')
+    existing.observations = [{
+        'source_name': 'licitor',
+        'source_url': existing.source_url,
+        'external_id': 'lot-1',
+        'raw_payload': {'title': 'old'},
+    }]
+    incoming = sale(existing.source_url, checked='2026-09-12T12:00:00Z')
+    incoming.observations = [{
+        'source_name': 'licitor',
+        'source_url': existing.source_url,
+        'external_id': 'lot-1',
+        'raw_payload': {'title': 'new'},
+    }]
+
+    result = merge_revision(existing, incoming)
+
+    assert result.observations == [incoming.observations[0]]
+
+
+def test_room_bedroom_merge_conflict_is_null_and_recorded():
+    existing = sale('https://example.test/rooms')
+    existing.rooms_count = 3
+    existing.bedrooms_count = 2
+    incoming = sale('https://example.test/rooms', checked='2026-09-12T12:00:00Z')
+    incoming.rooms_count = 3
+    incoming.bedrooms_count = 4
+
+    result = merge_revision(existing, incoming)
+
+    assert result.rooms_count is None
+    assert result.bedrooms_count is None
+    assert 'rooms_bedrooms_conflict' in result.quality_flags
+    evidence = result.raw_payload['rooms_bedrooms_conflict_evidence']
+    assert evidence['rooms_count'] == 3
+    assert evidence['bedrooms_count'] == 4
+    assert any(item['bedrooms_count'] == 2 for item in evidence['source_values'])
+
+
+def test_room_bedroom_consistency_clears_invalid_direct_sale():
+    invalid = sale('https://example.test/direct-rooms')
+    invalid.rooms_count = 3
+    invalid.bedrooms_count = 4
+
+    ensure_room_bedroom_consistency(invalid)
+
+    assert invalid.rooms_count is None
+    assert invalid.bedrooms_count is None
+    assert invalid.raw_payload['source_conflicts'][0]['code'] == 'rooms_below_bedrooms'
 
 
 def test_targeted_alias_publication_reuses_existing_identity_under_lock():
