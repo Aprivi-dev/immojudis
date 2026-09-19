@@ -7,6 +7,7 @@ import os
 import re
 import tempfile
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal
@@ -31,6 +32,8 @@ from src.enrichment.surface_reasoning import (
     extract_surface_facts_from_text,
     merge_extracted_assets,
 )
+from src.llm_cache import load_cached_result, save_cached_result
+from src.llm_requests import llm_request_context
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.pdf_enrichment import sale_storage_id
@@ -149,6 +152,7 @@ UNUSABLE_SOURCE_DESCRIPTION_RE = re.compile(
 DISPLAY_DESCRIPTION_MAX_WORDS = 125
 DISPLAY_DESCRIPTION_MAX_CHARS = 850
 DISPLAY_DESCRIPTION_MIN_CONFIDENCE = 0.55
+_MISSING = object()
 PROPERTY_TYPE_DISPLAY_LABELS = {
     "apartment": "Appartement",
     "house": "Maison",
@@ -329,7 +333,25 @@ class LLMEnrichmentStats:
     structured_surface_verified: int = 0
     calculated_surface_verified: int = 0
     unavailable: bool = False
+    deferred: bool = False
+    progress_made: bool = False
     error_messages: list[str] = field(default_factory=list)
+
+
+class LLMEnrichmentDeferred(PipelineBudgetExhausted):
+    """A bounded enrichment pass made progress and should be retried soon.
+
+    This is deliberately a ``PipelineBudgetExhausted`` subclass so queue
+    workers can release the lease without consuming a retry attempt.  A
+    progressive pass is not a failed extraction: its checkpoints are valid,
+    but the public result must wait for the remaining chunks.
+    """
+
+    def __init__(self, message: str, *, stats: LLMEnrichmentStats | None = None) -> None:
+        super().__init__(message)
+        self.next_attempt_at = datetime.now(UTC) + timedelta(minutes=5)
+        self.progress_made = True
+        self.stats = stats
 
 
 def enrich_sale_with_llm(
@@ -353,59 +375,80 @@ def enrich_sale_with_llm(
     if extraction_mode == "display_description":
         contexts = [load_llm_context_for_sale(sale, max_chars=int(settings["llm_pdf_max_chars"]))]
     else:
+        if sale.documents and not _has_pdf_fact_cache(sale):
+            stats.errors += 1
+            stats.error_messages.append("Fact extraction deferred: PDF text cache is missing or incomplete")
+            return stats
+        # Always inspect the complete input set.  ``llm_fact_max_chunks`` is a
+        # paid-call budget for this invocation, not a coverage limit.  The
+        # planner below skips cached chunks and spends the budget on the next
+        # uncached chunks, so later passes can make forward progress.
         contexts = load_llm_fact_context_chunks_for_sale(
             sale,
             chunk_chars=int(settings.get("llm_fact_chunk_chars") or 12000),
-            max_chunks=int(settings.get("llm_fact_max_chunks") or 0),
+            max_chunks=0,
         )
     fact_contexts = [context for context in contexts if context]
     if not fact_contexts:
         return stats
-    context_complete = (sale.raw_payload.get("llm_fact_context_coverage") or {}).get("complete") is not False
-    if extraction_mode != "display_description" and not context_complete:
-        stats.errors += 1
-        stats.error_messages.append("Fact context truncated by the configured chunk budget")
-    full_evidence_context = "\n\n".join(fact_contexts)
 
     client = client or create_llm_client()
-    if not client.is_available():
-        stats.unavailable = True
-        return stats
-
-    stats.analyzed += 1
-    model_name = str(getattr(client, "model", "") or "")
+    model_name = str(getattr(client, "model", "") or settings.get("replicate_model") or "")
     prompt_version = str(settings["llm_prompt_version"])
-    cache_key = _llm_cache_key(
-        full_evidence_context,
-        model_name,
-        prompt_version=f"{prompt_version}:{extraction_mode}:{SURFACE_REASONING_VERSION}:complete_v2:{settings.get('llm_fact_prompt_version')}:{settings.get('llm_display_prompt_version')}",
-    )
-    cached = _load_cached_extraction(sale, cache_key, output_dir) if settings["incremental_enrichment"] and not stats.errors else None
-    if cached is not None:
-        extraction = cached
-        stats.valid_json += 1
-        if extraction_mode != "display_description":
-            sale.raw_payload["llm_fact_coverage"] = {"total_chunks": len(fact_contexts), "successful_chunks": len(fact_contexts), "failed_chunks": 0, "complete": True}
-        _apply_extraction_to_sale(sale, extraction, stats, full_evidence_context, prompt_version=prompt_version)
-        sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
-        if extraction.assets:
-            sale.raw_payload["llm_fact_extraction"] = extraction.model_dump(mode="json")
-        sale.raw_payload["llm_cache_hit"] = True
-        return stats
+    incremental = bool(settings.get("incremental_enrichment"))
 
+    # Display synthesis is a separate stage.  Its key contains only the exact
+    # display context, model and display prompt/quality versions, so a facts
+    # cache hit never masquerades as a display cache hit (and vice versa).
     if extraction_mode == "display_description":
+        display_context = "\n\n".join(fact_contexts)
+        retained_facts = _validated_extraction_payload(sale.raw_payload.get("llm_fact_extraction"))
+        if retained_facts is not None and has_current_fact_analysis(sale):
+            # A fresh runner may have lost the local PDF text while validated
+            # facts remain current in the database. Keep documentary risks and
+            # occupation qualifiers in the synthesis without paying for facts
+            # again. This builder omits prior narrative/financial summaries and
+            # supplies the current sale price/date explicitly.
+            display_context = _build_validated_display_context(
+                sale, retained_facts, fallback_context=display_context,
+            )
+        display_prompt_version = str(settings.get("llm_display_prompt_version") or prompt_version)
+        display_key = _display_cache_key(display_context, model_name, display_prompt_version)
+        display_extraction = (
+            _load_display_cache(display_key, output_dir, model_name, incremental)
+            if incremental
+            else None
+        )
+        if display_extraction is not None:
+            stats.analyzed = 1
+            stats.valid_json = 1
+            _apply_extraction_to_sale(
+                sale,
+                display_extraction,
+                stats,
+                display_context,
+                prompt_version=prompt_version,
+            )
+            sale.raw_payload["llm_extraction"] = display_extraction.model_dump(mode="json")
+            sale.raw_payload["llm_cache_hit"] = True
+            return stats
+        if not client.is_available():
+            stats.unavailable = True
+            return stats
+        stats.analyzed = 1
         try:
-            raw = client.generate_json(
-                DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
-                build_display_description_prompt(full_evidence_context),
-            )
+            with _llm_request_context(sale, stage="display", reason="cache_miss"):
+                raw = client.generate_json(
+                    DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
+                    build_display_description_prompt(display_context),
+                )
             extraction = LLMExtraction.model_validate(raw)
-            sale.raw_payload["llm_display_prompt_version"] = str(
-                settings.get("llm_display_prompt_version") or prompt_version
-            )
+            sale.raw_payload["llm_display_prompt_version"] = display_prompt_version
             if not _normalize_display_description(extraction.display_description):
                 stats.errors += 1
                 stats.error_messages.append("Model returned an empty display description; derived fallback only")
+            elif incremental:
+                _save_display_cache(display_key, extraction, output_dir, model_name)
         except PipelineBudgetExhausted:
             raise
         except Exception as exc:
@@ -413,57 +456,196 @@ def enrich_sale_with_llm(
             stats.errors += 1
             stats.error_messages.append(_llm_error_message(sale, exc))
             return stats
-    else:
-        chunk_extractions: list[LLMExtraction] = []
-        failed_chunks = 0
-        for index, context in enumerate(fact_contexts, start=1):
-            try:
-                chunk_key = _llm_cache_key(context, model_name, f"facts_complete_v2:{settings.get('llm_fact_prompt_version')}:{SURFACE_REASONING_VERSION}")
-                chunk_path = output_dir / "chunks" / f"{chunk_key}.json"
-                chunk = _read_fact_chunk(chunk_path) if settings["incremental_enrichment"] else None
-                if chunk is None:
-                    raw = client.generate_json(SYSTEM_PROMPT, build_user_prompt(context))
-                    chunk = LLMExtraction.model_validate(raw)
-                    _atomic_json(chunk_path, chunk.model_dump(mode="json"))
-                chunk_extractions.append(chunk)
-                stats.fact_chunks_analyzed += 1
-            except PipelineBudgetExhausted:
-                raise
-            except Exception as exc:
-                failed_chunks += 1
-                stats.errors += 1
-                stats.error_messages.append(
-                    f"{_llm_error_message(sale, exc)} [fact chunk {index}/{len(fact_contexts)}]"
-                )
-        if not chunk_extractions:
-            return stats
-        extraction = _merge_llm_extractions(chunk_extractions)
-        if failed_chunks:
-            extraction = _downgrade_extraction_completeness(extraction)
-        sale.raw_payload["llm_fact_coverage"] = {
-            "total_chunks": len(fact_contexts),
-            "successful_chunks": len(chunk_extractions),
-            "failed_chunks": failed_chunks,
-            "complete": failed_chunks == 0 and context_complete,
-        }
-        sale.raw_payload["llm_fact_prompt_version"] = str(
-            settings.get("llm_fact_prompt_version") or prompt_version
-        )
 
-        if extraction_mode in {"structured_then_display", "full"}:
-            display_context = _build_validated_display_context(
+        stats.valid_json += 1
+        _apply_extraction_to_sale(sale, extraction, stats, display_context, prompt_version=prompt_version)
+        if not stats.errors:
+            _save_extraction(
                 sale,
                 extraction,
-                fallback_context=load_llm_context_for_sale(
-                    sale,
-                    max_chars=int(settings.get("llm_display_context_chars") or 12000),
-                ),
+                output_dir,
+                cache_key=display_key,
+                model=model_name,
+                prompt_version=display_prompt_version,
             )
+        sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
+        sale.raw_payload["llm_cache_hit"] = False
+        if stats.errors:
+            sale.raw_payload.pop("llm_prompt_version", None)
+        return stats
+
+    context_coverage = sale.raw_payload.get("llm_fact_context_coverage") or {}
+    context_complete = context_coverage.get("complete") is not False
+    if not context_complete:
+        stats.errors += 1
+        stats.error_messages.append("Fact context truncated by the configured chunk budget")
+    full_evidence_context = "\n\n".join(fact_contexts)
+    fact_prompt_version = str(settings.get("llm_fact_prompt_version") or prompt_version)
+    fact_input_key = _fact_input_cache_key(full_evidence_context, model_name, fact_prompt_version)
+    legacy_entry = (
+        _load_legacy_extraction(
+            sale,
+            output_dir,
+            full_evidence_context,
+            model_name,
+            extraction_mode,
+            prompt_version,
+            fact_prompt_version,
+        )
+        if incremental and context_complete
+        else None
+    )
+    chunk_extractions_by_index: dict[int, LLMExtraction] = {}
+    pending_chunks: list[tuple[int, str, str, Path]] = []
+    cache_hits = len(fact_contexts) if legacy_entry is not None else 0
+
+    # Read every checkpoint before applying this pass's paid-call budget.  A
+    # cached first page therefore cannot consume the budget intended for the
+    # next uncached page.
+    if legacy_entry is None:
+        for index, context in enumerate(fact_contexts, start=1):
+            chunk_key = _fact_chunk_cache_key(context, model_name, fact_prompt_version)
+            chunk_path = output_dir / "chunks" / f"{chunk_key}.json"
+            chunk = (
+                _load_fact_chunk(chunk_key, chunk_path, output_dir, model_name, incremental)
+                if incremental
+                else None
+            )
+            if chunk is None:
+                pending_chunks.append((index, context, chunk_key, chunk_path))
+            else:
+                cache_hits += 1
+                chunk_extractions_by_index[index] = chunk
+                stats.fact_chunks_analyzed += 1
+    else:
+        stats.fact_chunks_analyzed = len(fact_contexts)
+
+    # A progressive budget is meaningful only when checkpoints are enabled;
+    # with incremental enrichment disabled, process the complete input in one
+    # pass instead of repeatedly paying for the same first window.
+    max_new_chunks = max(0, int(settings.get("llm_fact_max_chunks") or 0)) if incremental else 0
+    selected_pending = pending_chunks if max_new_chunks == 0 else pending_chunks[:max_new_chunks]
+    remaining_pending = pending_chunks[len(selected_pending):]
+    if selected_pending and not client.is_available():
+        stats.unavailable = True
+        return stats
+    stats.analyzed = 1 if (selected_pending or chunk_extractions_by_index or legacy_entry) else 0
+
+    failed_chunks = 0
+    newly_cached_chunks = 0
+    for index, context, chunk_key, chunk_path in selected_pending:
+        try:
+            with _llm_request_context(sale, stage="facts", reason="chunk_cache_miss"):
+                raw = client.generate_json(SYSTEM_PROMPT, build_user_prompt(context))
+            # An empty but schema-valid object is still a successful analysis.
+            # Persisting it prevents the same absence from being paid for on
+            # every retry.
+            chunk = LLMExtraction.model_validate(raw)
+            _save_fact_chunk(chunk_key, chunk, chunk_path, output_dir, model_name, incremental)
+            chunk_extractions_by_index[index] = chunk
+            stats.fact_chunks_analyzed += 1
+            newly_cached_chunks += 1
+            stats.progress_made = True
+        except PipelineBudgetExhausted:
+            raise
+        except Exception as exc:
+            failed_chunks += 1
+            stats.errors += 1
+            stats.error_messages.append(
+                f"{_llm_error_message(sale, exc)} [fact chunk {index}/{len(fact_contexts)}]"
+            )
+
+    chunk_extractions = [legacy_entry[0]] if legacy_entry is not None else [
+        chunk_extractions_by_index[index]
+        for index in range(1, len(fact_contexts) + 1)
+        if index in chunk_extractions_by_index
+    ]
+    complete = context_complete and failed_chunks == 0 and not remaining_pending
+    coverage = {
+        "total_chunks": len(fact_contexts),
+        "successful_chunks": len(fact_contexts) if legacy_entry is not None else len(chunk_extractions),
+        "failed_chunks": failed_chunks,
+        "remaining_chunks": len(remaining_pending),
+        "complete": complete,
+    }
+    if not complete:
+        # Do not apply partial facts or synthesize a fallback display.  A
+        # bounded pass is deferred without consuming a queue retry whenever it
+        # checkpointed at least one new chunk; failed chunks remain uncached
+        # and are retried on the next pass.
+        if (
+            remaining_pending
+            and newly_cached_chunks > 0
+            and max_new_chunks > 0
+        ):
+            stats.deferred = True
+            stats.progress_made = True
+            raise LLMEnrichmentDeferred(
+                f"Fact extraction checkpointed {newly_cached_chunks} new chunks; "
+                f"{len(remaining_pending) + failed_chunks} remain",
+                stats=stats,
+            )
+        sale.raw_payload["llm_fact_coverage"] = coverage
+        sale.raw_payload["llm_fact_prompt_version"] = fact_prompt_version
+        if not chunk_extractions:
+            return stats
+        stats.valid_json += 1
+        return stats
+
+    extraction = legacy_entry[0] if legacy_entry is not None else _merge_llm_extractions(chunk_extractions)
+    sale.raw_payload["llm_fact_coverage"] = coverage
+    sale.raw_payload["llm_fact_prompt_version"] = fact_prompt_version
+    sale.raw_payload["llm_fact_input_key"] = fact_input_key
+    sale.raw_payload["llm_fact_context_manifest"] = _fact_context_manifest(
+        sale,
+        model=model_name,
+        fact_prompt_version=fact_prompt_version,
+    )
+
+    display_cache_hit = False
+    if extraction_mode in {"structured_then_display", "full"}:
+        display_context = _build_validated_display_context(
+            sale,
+            extraction,
+            fallback_context=load_llm_context_for_sale(
+                sale,
+                max_chars=int(settings.get("llm_display_context_chars") or 12000),
+            ),
+        )
+        display_prompt_version = str(settings.get("llm_display_prompt_version") or prompt_version)
+        display_key = _display_cache_key(display_context, model_name, display_prompt_version)
+        display_extraction = None
+        if (
+            legacy_entry is not None
+            and legacy_entry[1].endswith(f":{display_prompt_version}")
+            and _normalize_display_description(legacy_entry[0].display_description)
+        ):
+            # The legacy aggregate is accepted only when its own metadata
+            # proves the display prompt is still current.  Promote that exact
+            # result into the stage-specific cache for future workers.
+            display_extraction = legacy_entry[0]
+            if incremental:
+                _save_display_cache(display_key, display_extraction, output_dir, model_name)
+        elif incremental:
+            display_extraction = _load_display_cache(display_key, output_dir, model_name, incremental)
+        if display_extraction is not None:
+            display_cache_hit = True
+            extraction.display_description = display_extraction.display_description
+            if "display_description" in display_extraction.confidence:
+                extraction.confidence["display_description"] = display_extraction.confidence[
+                    "display_description"
+                ]
+            sale.raw_payload["llm_display_prompt_version"] = display_prompt_version
+        else:
+            if not client.is_available():
+                stats.unavailable = True
+                return stats
             try:
-                display_raw = client.generate_json(
-                    DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
-                    build_display_description_prompt(display_context),
-                )
+                with _llm_request_context(sale, stage="display", reason="cache_miss"):
+                    display_raw = client.generate_json(
+                        DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
+                        build_display_description_prompt(display_context),
+                    )
                 display_extraction = LLMExtraction.model_validate(display_raw)
                 if not _normalize_display_description(display_extraction.display_description):
                     raise ValueError("Model returned an empty display description")
@@ -472,9 +654,9 @@ def enrich_sale_with_llm(
                     extraction.confidence["display_description"] = display_extraction.confidence[
                         "display_description"
                     ]
-                sale.raw_payload["llm_display_prompt_version"] = str(
-                    settings.get("llm_display_prompt_version") or prompt_version
-                )
+                sale.raw_payload["llm_display_prompt_version"] = display_prompt_version
+                if incremental:
+                    _save_display_cache(display_key, display_extraction, output_dir, model_name)
             except PipelineBudgetExhausted:
                 raise
             except Exception as exc:
@@ -483,13 +665,30 @@ def enrich_sale_with_llm(
                 stats.error_messages.append(_llm_error_message(sale, exc))
 
     stats.valid_json += 1
-    if not stats.errors:
-        _save_extraction(sale, extraction, output_dir, cache_key=cache_key, model=model_name, prompt_version=prompt_version)
     _apply_extraction_to_sale(sale, extraction, stats, full_evidence_context, prompt_version=prompt_version)
     sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
-    if extraction_mode != "display_description":
-        sale.raw_payload["llm_fact_extraction"] = extraction.model_dump(mode="json")
-    sale.raw_payload["llm_cache_hit"] = False
+    sale.raw_payload["llm_fact_extraction"] = extraction.model_dump(mode="json")
+    sale.raw_payload["llm_cache_hit"] = bool(cache_hits == len(fact_contexts) and display_cache_hit)
+    if not stats.errors:
+        # Keep the legacy sale-scoped artifact for existing consumers.  The
+        # stage-specific files above are authoritative for cost avoidance.
+        legacy_prompt_version = (
+            f"{prompt_version}:{extraction_mode}:{SURFACE_REASONING_VERSION}:complete_v2:"
+            f"{fact_prompt_version}:{settings.get('llm_display_prompt_version')}"
+        )
+        legacy_cache_key = _llm_cache_key(
+            full_evidence_context,
+            model_name,
+            prompt_version=legacy_prompt_version,
+        )
+        _save_extraction(
+            sale,
+            extraction,
+            output_dir,
+            cache_key=legacy_cache_key,
+            model=model_name,
+            prompt_version=legacy_prompt_version,
+        )
     if stats.errors:
         sale.raw_payload.pop("llm_prompt_version", None)
     return stats
@@ -578,6 +777,57 @@ def load_llm_fact_context_chunks_for_sale(
         "chunk_chars": chunk_chars,
     }
     return chunks
+
+
+def has_current_fact_analysis(sale: AuctionSale) -> bool:
+    """Return whether the sale has complete facts for its current evidence.
+
+    The comparison is content-addressed and excludes the display stage.  When
+    a worker has no local PDF text cache, a persisted document/source manifest
+    is accepted only when it still matches the current document identities and
+    source evidence fingerprint.  A source-only fallback therefore cannot
+    accidentally certify a previously document-backed analysis.
+    """
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    coverage = raw_payload.get("llm_fact_coverage") or {}
+    input_key = clean_text(raw_payload.get("llm_fact_input_key"))
+    if not input_key or coverage.get("complete") is not True:
+        return False
+    manifest = raw_payload.get("llm_fact_context_manifest")
+    if not isinstance(manifest, dict):
+        manifest = None
+    if manifest is not None and not _manifest_matches_current(sale, manifest):
+        return False
+    document_path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
+    if sale.documents and not document_path.exists():
+        return bool(manifest and manifest.get("documents") and _manifest_matches_current(sale, manifest))
+
+    previous_context_coverage = raw_payload.get("llm_fact_context_coverage", _MISSING)
+    try:
+        contexts = load_llm_fact_context_chunks_for_sale(
+            sale,
+            chunk_chars=int(load_settings().get("llm_fact_chunk_chars") or 12000),
+            max_chunks=0,
+        )
+    finally:
+        # This helper is used by selection code and must stay read-only.  The
+        # loader records diagnostics for normal enrichment, but a freshness
+        # check should not create a partial public state.
+        if previous_context_coverage is _MISSING:
+            raw_payload.pop("llm_fact_context_coverage", None)
+        else:
+            raw_payload["llm_fact_context_coverage"] = previous_context_coverage
+    if not contexts or (sale.documents and not (raw_payload.get("document_analysis") or {}).get("documents_extracted")):
+        return False
+    settings = load_settings()
+    model = str(settings.get("replicate_model") or "")
+    prompt_version = str(settings.get("llm_fact_prompt_version") or settings.get("llm_prompt_version") or "")
+    expected = _fact_input_cache_key("\n\n".join(contexts), model, prompt_version)
+    if expected == input_key and not raw_payload.get("source_content_changed"):
+        return True
+    if manifest is not None and _manifest_matches_current(sale, manifest):
+        return True
+    return False
 
 
 def _all_source_fact_sections(sale: AuctionSale) -> list[str]:
@@ -1036,6 +1286,51 @@ def _load_cached_extraction(sale: AuctionSale, cache_key: str, output_dir: Path)
         return None
 
 
+def _load_legacy_extraction(
+    sale: AuctionSale,
+    output_dir: Path,
+    context: str,
+    model: str,
+    extraction_mode: str,
+    prompt_version: str,
+    fact_prompt_version: str,
+) -> tuple[LLMExtraction, str] | None:
+    """Read a pre-stage-split aggregate only when its exact key still matches."""
+    path = output_dir / f"{sale_storage_id(sale)}.json"
+    payload = _read_json_mapping(path) if path.exists() else None
+    if not payload:
+        return None
+    cache = payload.get("_cache")
+    if not isinstance(cache, dict):
+        return None
+    if str(cache.get("model") or "") != model:
+        return None
+    cached_prompt_version = clean_text(cache.get("prompt_version"))
+    expected_prefix = (
+        f"{prompt_version}:{extraction_mode}:{SURFACE_REASONING_VERSION}:complete_v2:"
+        f"{fact_prompt_version}:"
+    )
+    if cached_prompt_version.startswith(expected_prefix):
+        key_prompt_version = cached_prompt_version
+    else:
+        # The pre-stage-split writer stored only the base prompt version in
+        # metadata while hashing the complete versioned string.  Reconstruct
+        # that exact key to promote compatible old artifacts without trusting
+        # their generated display text after a prompt-version change.
+        key_prompt_version = (
+            f"{prompt_version}:{extraction_mode}:{SURFACE_REASONING_VERSION}:complete_v2:"
+            f"{fact_prompt_version}:{load_settings().get('llm_display_prompt_version')}"
+        )
+        if cached_prompt_version != prompt_version:
+            return None
+    if cache.get("key") != _llm_cache_key(context, model, key_prompt_version):
+        return None
+    extraction = _validated_extraction_payload(payload)
+    if extraction is None:
+        return None
+    return extraction, key_prompt_version
+
+
 def _llm_cache_key(context: str, model: str, prompt_version: str = "auction_llm_v1") -> str:
     digest = hashlib.sha256()
     digest.update(model.encode("utf-8"))
@@ -1044,6 +1339,426 @@ def _llm_cache_key(context: str, model: str, prompt_version: str = "auction_llm_
     digest.update(b"\0")
     digest.update(context.encode("utf-8"))
     return digest.hexdigest()
+
+
+def _fact_chunk_cache_key(context: str, model: str, prompt_version: str) -> str:
+    return _llm_cache_key(
+        context,
+        model,
+        f"facts_complete_v2:{prompt_version}:{SURFACE_REASONING_VERSION}",
+    )
+
+
+def _fact_input_cache_key(context: str, model: str, prompt_version: str) -> str:
+    """Identify the exact complete fact input, independent of display output."""
+    return _llm_cache_key(
+        context,
+        model,
+        f"facts_input_v1:{prompt_version}:{SURFACE_REASONING_VERSION}",
+    )
+
+
+def _display_cache_key(context: str, model: str, prompt_version: str) -> str:
+    return _llm_cache_key(
+        context,
+        model,
+        f"display_v1:{prompt_version}:{DISPLAY_QUALITY_VERSION}",
+    )
+
+
+def _load_durable_cache(cache_key: str, *, stage: str) -> dict[str, Any] | None:
+    # PipelineBudgetExhausted is intentionally allowed to propagate.  The
+    # queue then defers the job instead of paying for a request whose cache
+    # state could not be checked.
+    payload = load_cached_result(cache_key, stage=stage)
+    return payload if isinstance(payload, dict) else None
+
+
+def _save_durable_cache(
+    cache_key: str,
+    payload: dict[str, Any],
+    *,
+    stage: str,
+    model: str,
+) -> None:
+    # As above, a durable-cache write failure is a queue deferral signal.  The
+    # local checkpoint is written first by the caller and can be promoted on
+    # the next attempt.
+    save_cached_result(cache_key, payload, stage=stage, model=model)
+
+
+def _read_json_mapping(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _payload_without_cache_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if key != "_cache"}
+
+
+def _validated_extraction_payload(payload: Any) -> LLMExtraction | None:
+    if not isinstance(payload, dict):
+        return None
+    try:
+        return LLMExtraction.model_validate(_payload_without_cache_metadata(payload))
+    except Exception:
+        return None
+
+
+def _load_fact_chunk(
+    cache_key: str,
+    local_path: Path,
+    output_dir: Path,
+    model: str,
+    incremental: bool,
+) -> LLMExtraction | None:
+    if not incremental:
+        return None
+    local_payload = _read_json_mapping(local_path) if local_path.exists() else None
+    local_extraction = _validated_extraction_payload(local_payload)
+    if local_extraction is not None:
+        # Promote old local checkpoints so workers can recover after the local
+        # filesystem is replaced by a fresh runner.
+        _save_durable_cache(
+            cache_key,
+            local_extraction.model_dump(mode="json"),
+            stage="facts",
+            model=model,
+        )
+        return local_extraction
+
+    durable_payload = _load_durable_cache(cache_key, stage="facts")
+    durable_extraction = _validated_extraction_payload(durable_payload)
+    if durable_extraction is None:
+        return None
+    _atomic_json(local_path, durable_extraction.model_dump(mode="json"))
+    return durable_extraction
+
+
+def _save_fact_chunk(
+    cache_key: str,
+    extraction: LLMExtraction,
+    local_path: Path,
+    output_dir: Path,
+    model: str,
+    incremental: bool,
+) -> None:
+    if not incremental:
+        return
+    payload = extraction.model_dump(mode="json")
+    _atomic_json(local_path, payload)
+    _save_durable_cache(cache_key, payload, stage="facts", model=model)
+
+
+def _load_display_cache(
+    cache_key: str,
+    output_dir: Path,
+    model: str,
+    incremental: bool,
+) -> LLMExtraction | None:
+    if not incremental:
+        return None
+    local_path = output_dir / "display" / f"{cache_key}.json"
+    local_payload = _read_json_mapping(local_path) if local_path.exists() else None
+    local_extraction = _validated_extraction_payload(local_payload)
+    if local_extraction is not None and _normalize_display_description(local_extraction.display_description):
+        _save_durable_cache(
+            cache_key,
+            local_extraction.model_dump(mode="json"),
+            stage="display",
+            model=model,
+        )
+        return local_extraction
+
+    durable_payload = _load_durable_cache(cache_key, stage="display")
+    durable_extraction = _validated_extraction_payload(durable_payload)
+    if durable_extraction is None or not _normalize_display_description(durable_extraction.display_description):
+        return None
+    _atomic_json(local_path, durable_extraction.model_dump(mode="json"))
+    return durable_extraction
+
+
+def _save_display_cache(
+    cache_key: str,
+    extraction: LLMExtraction,
+    output_dir: Path,
+    model: str,
+) -> None:
+    payload = extraction.model_dump(mode="json")
+    _atomic_json(output_dir / "display" / f"{cache_key}.json", payload)
+    _save_durable_cache(cache_key, payload, stage="display", model=model)
+
+
+def _llm_request_context(sale: AuctionSale, *, stage: str, reason: str):
+    """Attach bounded sale/job metadata to the external request."""
+    fields: dict[str, Any] = {
+        "source_url": sale.source_url,
+        "auction_id": sale.id or sale.external_id,
+        "stage": stage,
+        "reason": reason,
+    }
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    job_id = raw_payload.get("llm_job_id") or raw_payload.get("enrichment_job_id")
+    if job_id:
+        fields["job_id"] = job_id
+    return llm_request_context(**fields)
+
+
+def _document_identity_key(documents: list[dict[str, Any]]) -> str:
+    identities = sorted(
+        (str(item.get("url") or ""), str(item.get("label") or ""))
+        for item in documents
+        if isinstance(item, dict)
+    )
+    return hashlib.sha256(json.dumps(identities, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _load_pdf_fact_cache_items(sale: AuctionSale) -> list[dict[str, Any]]:
+    path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+    except (OSError, json.JSONDecodeError):
+        return []
+    if isinstance(payload, dict):
+        payload = [payload]
+    return [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
+
+
+def _pdf_item_text_sha256(item: dict[str, Any]) -> str | None:
+    parts: list[str] = []
+    text = item.get("text")
+    if isinstance(text, str) and text:
+        parts.append(f"text\n{text}")
+    pages = item.get("pages")
+    if isinstance(pages, list):
+        for index, page in enumerate(pages):
+            if not isinstance(page, dict) or not isinstance(page.get("text"), str):
+                continue
+            parts.append(f"page:{index}:{page.get('page')}\n{page['text']}")
+    if not parts:
+        return None
+    return hashlib.sha256("\n\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def _pdf_fact_manifest_documents(pdf_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    documents: list[dict[str, Any]] = []
+    for item in pdf_items:
+        text = clean_text(item.get("text"))
+        pages = item.get("pages")
+        page_texts = [
+            page
+            for page in pages or []
+            if isinstance(page, dict) and clean_text(page.get("text"))
+        ] if isinstance(pages, list) else []
+        if not text and not page_texts:
+            continue
+        documents.append(
+            {
+                "url": clean_text(item.get("url")),
+                "label": clean_text(item.get("label")),
+                "document_type": clean_text(item.get("document_type")),
+                "sha256": clean_text(item.get("sha256")),
+                "text_sha256": _pdf_item_text_sha256(item),
+                "page_count": len(pages) if isinstance(pages, list) else None,
+            }
+        )
+    return sorted(
+        documents,
+        key=lambda item: (str(item.get("url") or ""), str(item.get("label") or "")),
+    )
+
+
+def _fact_context_manifest(
+    sale: AuctionSale,
+    *,
+    model: str | None = None,
+    fact_prompt_version: str | None = None,
+) -> dict[str, Any]:
+    source_fingerprint = _source_evidence_fingerprint(sale)
+    manifest: dict[str, Any] = {
+        "source_fingerprint": source_fingerprint,
+        "document_identity": _document_identity_key(sale.documents),
+        "model": model or str(load_settings().get("replicate_model") or ""),
+        "fact_prompt_version": fact_prompt_version or str(
+            load_settings().get("llm_fact_prompt_version")
+            or load_settings().get("llm_prompt_version")
+            or ""
+        ),
+        "surface_reasoning_version": SURFACE_REASONING_VERSION,
+        "documents": [],
+    }
+    manifest["documents"] = _pdf_fact_manifest_documents(_load_pdf_fact_cache_items(sale))
+    analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+    if isinstance(analysis, dict):
+        manifest["document_input_fingerprint"] = analysis.get("input_fingerprint")
+        profiles = []
+        for profile in analysis.get("profiles") or []:
+            if not isinstance(profile, dict):
+                continue
+            profiles.append(
+                {
+                    "url": clean_text(profile.get("url")),
+                    "sha256": clean_text(profile.get("sha256")),
+                    "extraction_status": clean_text(profile.get("extraction_status")),
+                    "complete": profile.get("complete") is not False,
+                }
+            )
+        manifest["document_profiles"] = sorted(
+            profiles,
+            key=lambda item: (str(item.get("url") or ""), str(item.get("sha256") or "")),
+        )
+    source_checks = sale.raw_payload.get("source_checks") if isinstance(sale.raw_payload, dict) else None
+    if isinstance(source_checks, dict):
+        manifest["source_checks"] = sorted(
+            [
+                {
+                    "url": str(url),
+                    "evidence_fingerprint": clean_text(check.get("evidence_fingerprint"))
+                    or clean_text(check.get("fingerprint")),
+                }
+                for url, check in source_checks.items()
+                if isinstance(check, dict)
+            ],
+            key=lambda item: str(item.get("url") or ""),
+        )
+    return manifest
+
+
+def _source_evidence_fingerprint(sale: AuctionSale) -> str:
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    source_checks = raw_payload.get("source_checks")
+    if isinstance(source_checks, dict):
+        check = source_checks.get(sale.source_url)
+        if isinstance(check, dict):
+            evidence_fingerprint = clean_text(check.get("evidence_fingerprint"))
+            if evidence_fingerprint:
+                return evidence_fingerprint
+            legacy_fingerprint = clean_text(check.get("fingerprint"))
+            if legacy_fingerprint:
+                return legacy_fingerprint
+    return hashlib.sha256(
+        "\n\n".join(_all_source_fact_sections(sale)).encode("utf-8")
+    ).hexdigest()
+
+
+def _has_pdf_fact_cache(sale: AuctionSale) -> bool:
+    """Require extracted PDF text before a document-backed fact pass."""
+    if not sale.documents:
+        return True
+    path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, list) or not payload:
+        return False
+    return any(
+        isinstance(item, dict)
+        and (
+            bool(clean_text(item.get("text")))
+            or any(bool(clean_text(page.get("text"))) for page in item.get("pages") or [] if isinstance(page, dict))
+        )
+        for item in payload
+    )
+
+
+def _current_source_checks(sale: AuctionSale) -> list[dict[str, str]]:
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    source_checks = raw_payload.get("source_checks")
+    if not isinstance(source_checks, dict):
+        return []
+    return sorted(
+        [
+            {
+                "url": str(url),
+                "evidence_fingerprint": clean_text(check.get("evidence_fingerprint"))
+                or clean_text(check.get("fingerprint")),
+            }
+            for url, check in source_checks.items()
+            if isinstance(check, dict)
+        ],
+        key=lambda item: str(item.get("url") or ""),
+    )
+
+
+def _manifest_matches_current(sale: AuctionSale, manifest: dict[str, Any]) -> bool:
+    settings = load_settings()
+    if manifest.get("model") != str(settings.get("replicate_model") or ""):
+        return False
+    current_fact_prompt_version = str(
+        settings.get("llm_fact_prompt_version") or settings.get("llm_prompt_version") or ""
+    )
+    if manifest.get("fact_prompt_version") != current_fact_prompt_version:
+        return False
+    if manifest.get("surface_reasoning_version") != SURFACE_REASONING_VERSION:
+        return False
+    if manifest.get("document_identity") != _document_identity_key(sale.documents):
+        return False
+    current_checks = _current_source_checks(sale)
+    manifest_checks = manifest.get("source_checks")
+    if current_checks or manifest_checks:
+        if not isinstance(manifest_checks, list) or current_checks != manifest_checks:
+            return False
+    elif _source_evidence_fingerprint(sale) != manifest.get("source_fingerprint"):
+        return False
+
+    analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+    if sale.documents:
+        if not isinstance(analysis, dict) or int(analysis.get("documents_extracted") or 0) <= 0:
+            return False
+        if int(analysis.get("failed_documents") or 0) > 0:
+            return False
+        manifest_input_fingerprint = manifest.get("document_input_fingerprint")
+        current_input_fingerprint = analysis.get("input_fingerprint")
+        if (
+            manifest_input_fingerprint
+            or current_input_fingerprint
+        ) and manifest_input_fingerprint != current_input_fingerprint:
+            return False
+        current_profiles = []
+        for profile in analysis.get("profiles") or []:
+            if not isinstance(profile, dict):
+                continue
+            sha256 = clean_text(profile.get("sha256"))
+            if not sha256:
+                return False
+            current_profiles.append(
+                {
+                    "url": clean_text(profile.get("url")),
+                    "sha256": sha256,
+                    "extraction_status": clean_text(profile.get("extraction_status")),
+                    "complete": profile.get("complete") is not False,
+                }
+            )
+        current_profiles.sort(key=lambda item: (str(item.get("url") or ""), str(item.get("sha256") or "")))
+        manifest_profiles = manifest.get("document_profiles")
+        document_urls = {clean_text(document.get("url")) for document in sale.documents if isinstance(document, dict)}
+        if (
+            not current_profiles
+            or not isinstance(manifest_profiles, list)
+            or not manifest_profiles
+            or len(current_profiles) != len(manifest_profiles)
+            or any(not item.get("sha256") for item in current_profiles)
+            or not document_urls.issubset({clean_text(item.get("url")) for item in current_profiles})
+            or current_profiles != manifest_profiles
+        ):
+            return False
+        # A document byte profile alone cannot detect an OCR/parser refresh
+        # that keeps the source PDF unchanged.  When the local extracted text
+        # is available, require the persisted content hash as well.  Workers
+        # without local files rely on the byte/profile hashes above.
+        pdf_path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
+        if pdf_path.exists():
+            current_documents = _pdf_fact_manifest_documents(_load_pdf_fact_cache_items(sale))
+            manifest_documents = manifest.get("documents")
+            if not isinstance(manifest_documents, list) or current_documents != manifest_documents:
+                return False
+    return True
 
 
 def _llm_error_message(sale: AuctionSale, exc: Exception) -> str:
@@ -1139,6 +1854,13 @@ def _build_validated_display_context(
         "property_type": extraction.property_type or sale.property_type,
         "rooms_count": extraction.rooms_count or sale.rooms_count,
         "bedrooms_count": extraction.bedrooms_count or sale.bedrooms_count,
+        "starting_price_eur": (
+            str(sale.starting_price_eur) if sale.starting_price_eur is not None else None
+        ),
+        "sale_date": sale.sale_date.isoformat() if sale.sale_date is not None else None,
+        "adjudication_price_eur": (
+            str(sale.adjudication_price_eur) if sale.adjudication_price_eur is not None else None
+        ),
         "occupancy_status": extraction.occupancy_status or sale.occupancy_status,
         "occupancy_details": extraction.occupancy_details,
         "assets": [asset.model_dump(mode="json") for asset in extraction.assets],

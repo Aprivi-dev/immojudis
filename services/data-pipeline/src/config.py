@@ -140,6 +140,7 @@ def load_settings() -> dict[str, str | float | None]:
         "replicate_model": os.getenv("REPLICATE_MODEL", DEFAULT_REPLICATE_MODEL),
         "replicate_temperature": float(os.getenv("REPLICATE_TEMPERATURE", "0.1")),
         "replicate_max_tokens": int(os.getenv("REPLICATE_MAX_TOKENS", "512")),
+        "replicate_fact_max_tokens": max(512, int(os.getenv("REPLICATE_FACT_MAX_TOKENS", "4096"))),
         "replicate_timeout_seconds": float(os.getenv("REPLICATE_TIMEOUT_SECONDS", "180")),
         "replicate_wait_seconds": int(os.getenv("REPLICATE_WAIT_SECONDS", "60")),
         "replicate_cancel_after": os.getenv("REPLICATE_CANCEL_AFTER", "5m"),

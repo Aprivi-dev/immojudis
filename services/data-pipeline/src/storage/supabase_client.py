@@ -298,6 +298,8 @@ def _transaction_write(table: str, payload: list[dict[str, object]], on_conflict
 
 
 def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> None:
+    from src.enrichment.extract_structured import has_current_fact_analysis
+
     settings = load_settings()
     prompt_version = str(settings.get("llm_prompt_version") or "")
     jobs = []
@@ -322,7 +324,7 @@ def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> Non
         if not _has_current_llm_description(sale.raw_payload, prompt_version) or sale.raw_payload.get("source_content_changed"):
             kinds.append(("display_description", revision, 20))
         analysis = sale.raw_payload.get("document_analysis") or {}
-        if analysis.get("documents_extracted") and (
+        if analysis.get("documents_extracted") and not has_current_fact_analysis(sale) and (
             not sale.app_surface_m2 or sale.occupancy_status in {None, "unknown"}
             or sale.raw_payload.get("source_conflicts")
             or (sale.raw_payload.get("surface_analysis") or {}).get("contradictions")

@@ -11,11 +11,13 @@ from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.config import load_settings
 from src.dpe import enrich_dpe_sales
-from src.enrichment.extract_structured import enrich_sale_with_llm
+from src.enrichment.extract_structured import LLMEnrichmentDeferred, enrich_sale_with_llm, has_current_fact_analysis
 from src.enrichment.llm_client import create_llm_client
+from src.enrichment.operational_display import refresh_operational_display
 from src.freshness import documents_are_current
 from src.geocode import geocode_sale
 from src.information_agent_evidence import run_information_agent_evidence_batch
+from src.llm_requests import llm_request_context
 from src.main import (
     SOURCE_NAMES,
     PipelineOptions,
@@ -305,6 +307,7 @@ def run_enrichment_queue_batch(
                 if pdf_stats.errors or (sale.raw_payload.get("document_analysis") or {}).get("failed_documents"):
                     raise RuntimeError("Document extraction incomplete; retry required")
             if job_types & {"fact_extraction", "display_description"}:
+                refresh_operational_display(sale)
                 # The early scan upsert enqueues a safety-net job before the
                 # inline Qwen call. If the final upsert already persisted the
                 # current synthesis, completing that job without another paid
@@ -313,10 +316,19 @@ def run_enrichment_queue_batch(
                     sale,
                     prompt_version=prompt_version,
                 )
-                if not (description_current and "fact_extraction" not in job_types):
+                facts_needed = "fact_extraction" in job_types and not has_current_fact_analysis(sale)
+                if not description_current or facts_needed:
                     if llm_client is None:
                         llm_client = create_llm_client()
-                    llm_stats = enrich_sale_with_llm(sale, client=llm_client, **({"extraction_mode": "structured_then_display"} if "fact_extraction" in job_types else {}))
+                    with llm_request_context(
+                        source_url=source_url,
+                        job_id=str(sale_jobs[0]["id"]),
+                        reason="new_fact_evidence" if facts_needed else "missing_or_stale_display",
+                    ):
+                        llm_stats = enrich_sale_with_llm(
+                            sale, client=llm_client,
+                            extraction_mode="structured_then_display" if facts_needed else "display_description",
+                        )
                     if llm_stats.unavailable or not llm_stats.valid_json or getattr(llm_stats, "errors", 0):
                         detail = (
                             llm_stats.error_messages[-1]
@@ -330,6 +342,7 @@ def run_enrichment_queue_batch(
                         raise RuntimeError("Fact extraction coverage incomplete")
             if "display_description" in job_types or "fact_extraction" in job_types:
                 sale.raw_payload.pop("source_content_changed", None)
+                sale.raw_payload.pop("source_operational_changed", None)
             if sale.latitude is None or sale.longitude is None:
                 geocode_sale(sale)
             fill_tribunal(sale)
@@ -358,6 +371,10 @@ def run_enrichment_queue_batch(
                 LOGGER.warning("PDF extraction made no progress for %s", source_url)
                 for job in sale_jobs:
                     _finish_job(job, succeeded=False, error_message=message)
+            continue
+        except LLMEnrichmentDeferred as exc:
+            defer_budget_jobs(sale_jobs, exc)
+            LOGGER.info("Fact analysis checkpointed; remaining chunks deferred: %s", source_url)
             continue
         except PipelineBudgetExhausted as exc:
             defer_budget_jobs(enrichment_jobs, exc)

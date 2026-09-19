@@ -11,7 +11,7 @@ DISPLAY_QUALITY_VERSION = "display_quality_20260911_v3"
 SOURCE_CONSTRAINT_RE = re.compile(
     r"\b(?:non[\s-]+constructibles?|inconstructibles?|emplacements?\s+r[ée]serv[ée]s?|"
     r"servitudes?|arr[êe]t[ée]\s+(?:de\s+)?(?:p[ée]ril|mise\s+en\s+s[ée]curit[ée])|"
-    r"indivis(?:e|es)?|r[ée]gularisation|droit de pr[ée]emption|occupation sans titre|insalubrit[ée]|interdiction\s+d['’]habiter|squatt[ée]s?)\b", re.I,
+    r"indivis(?:e|es|ion)?|r[ée]gularisation|droit de pr[ée]emption|occupation sans titre|insalubrit[ée]|interdiction\s+d['’]habiter|squatt[ée]s?)\b", re.I,
 )
 
 

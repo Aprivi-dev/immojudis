@@ -1,22 +1,33 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
 import threading
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from src.config import load_settings
+from src.llm_requests import (
+    RESERVATION_KEY,
+    LLMRequestTransportAmbiguous,
+    current_llm_request_context,
+    record_llm_request,
+    release_llm_request,
+    reserve_llm_request,
+)
 from src.pipeline_usage import record_prediction, reserve_prediction
 
 LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 _LAST_REPLICATE_REQUEST_AT = 0.0
 _REPLICATE_REQUEST_LOCK = threading.Lock()
+_REQUEST_METADATA: ContextVar[dict[str, Any] | None] = ContextVar("replicate_request_metadata", default=None)
 
 
 class LLMClientUnavailable(RuntimeError):
@@ -39,6 +50,7 @@ class ReplicateClient:
     thinking_budget: int | None = None
     dynamic_thinking: bool | None = None
     thinking_level: str | None = None
+    fact_max_tokens: int | None = None
 
     def __post_init__(self) -> None:
         settings = load_settings()
@@ -72,6 +84,11 @@ class ReplicateClient:
             else bool(settings["replicate_dynamic_thinking"])
         )
         self.thinking_level = self.thinking_level or str(settings.get("replicate_thinking_level") or "low")
+        self.fact_max_tokens = (
+            self.fact_max_tokens
+            if self.fact_max_tokens is not None
+            else int(settings.get("replicate_fact_max_tokens") or self.max_tokens or 512)
+        )
 
     def is_available(self) -> bool:
         return bool(self.api_token and self.model)
@@ -83,11 +100,8 @@ class ReplicateClient:
         prompt = _user_prompt_for_model(str(self.model), system_prompt, user_prompt)
         attempts = 1 if _is_display_description_prompt(system_prompt) else 2
         for attempt in range(attempts):
-            from src.storage.supabase_client import llm_usage_budget_available
-
-            settings = load_settings()
-            if not llm_usage_budget_available(int(settings.get("replicate_max_calls_per_hour") or 0)):
-                raise LLMClientUnavailable("Hourly Replicate prediction budget exhausted")
+            prediction: dict[str, Any] | None = None
+            raw_response: str | None = None
             try:
                 prediction = self._create_prediction(prompt, system_prompt=system_prompt)
                 output = self._wait_for_output(prediction)
@@ -104,21 +118,26 @@ class ReplicateClient:
                 )
                 return parsed
             except Exception as exc:
-                self._record_usage(
-                    locals().get("prediction") or {},
-                    request_kind="display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction",
-                    attempt_number=attempt + 1,
-                    prompt_chars=len(prompt),
-                    system_prompt_chars=len(system_prompt),
-                    output_chars=0,
-                    succeeded=False,
-                    error_message=str(exc),
-                )
+                # Budget/storage failures and transport failures occur before a
+                # new prediction is available.  They must not be recorded as a
+                # paid model attempt or counted against the hourly budget.
+                if prediction is not None:
+                    self._record_usage(
+                        prediction,
+                        request_kind="display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction",
+                        attempt_number=attempt + 1,
+                        prompt_chars=len(prompt),
+                        system_prompt_chars=len(system_prompt),
+                        output_chars=len(raw_response or ""),
+                        succeeded=False,
+                        error_message=str(exc),
+                        exception=exc,
+                    )
                 if not isinstance(exc, ValueError):
                     raise
                 fallback = (
-                    _display_description_payload_from_text(system_prompt, raw_response)
-                    if "raw_response" in locals()
+                    _display_description_payload_from_text(system_prompt, raw_response or "")
+                    if raw_response is not None
                     else None
                 )
                 if fallback is not None:
@@ -147,26 +166,70 @@ class ReplicateClient:
         output_chars: int,
         succeeded: bool,
         error_message: str | None = None,
+        exception: Exception | None = None,
     ) -> None:
         # Import lazily to avoid coupling the HTTP client to storage at import time.
+        reservation_id = prediction.get(RESERVATION_KEY)
+        # For real HTTP requests the reservation row is the telemetry row.  A
+        # mocked _create_prediction in local tests has no reservation and keeps
+        # the old best-effort event path for backwards compatibility.
+        if reservation_id:
+            input_chars = (
+                prompt_chars + system_prompt_chars
+                if _is_gemini_model(str(self.model or "")) or _is_qwen_model(str(self.model or ""))
+                else prompt_chars
+            )
+            record_llm_request(
+                str(reservation_id),
+                status=(
+                    "succeeded"
+                    if succeeded
+                    else _request_failure_status(
+                        prediction,
+                        exception=exception,
+                        output_chars=output_chars,
+                    )
+                ),
+                prediction_id=prediction.get("id"),
+                succeeded=succeeded,
+                prompt_chars=prompt_chars,
+                system_prompt_chars=system_prompt_chars,
+                output_chars=output_chars,
+                input_tokens_estimate=max(0, round(input_chars / 4)),
+                output_tokens_estimate=max(0, round(output_chars / 4)),
+                error_message=error_message,
+            )
+            return
+
         from src.storage.supabase_client import record_llm_usage_event
 
-        record_llm_usage_event(
-            {
-                "provider": "replicate",
-                "model": str(self.model or ""),
-                "prediction_id": prediction.get("id"),
-                "request_kind": request_kind,
-                "attempt_number": attempt_number,
-                "prompt_chars": prompt_chars,
-                "system_prompt_chars": system_prompt_chars,
-                "output_chars": output_chars,
-                "input_tokens_estimate": max(0, round((prompt_chars + system_prompt_chars) / 4)),
-                "output_tokens_estimate": max(0, round(output_chars / 4)),
-                "succeeded": succeeded,
-                "error_message": (error_message or "")[:1000] or None,
-            }
-        )
+        context = current_llm_request_context()
+        event = {
+            "provider": "replicate",
+            "model": str(self.model or ""),
+            "prediction_id": prediction.get("id"),
+            "request_kind": request_kind,
+            "attempt_number": attempt_number,
+            "prompt_chars": prompt_chars,
+            "system_prompt_chars": system_prompt_chars,
+            "output_chars": output_chars,
+            "input_tokens_estimate": max(
+                0,
+                round(
+                    (
+                        prompt_chars + system_prompt_chars
+                        if _is_gemini_model(str(self.model or "")) or _is_qwen_model(str(self.model or ""))
+                        else prompt_chars
+                    )
+                    / 4
+                ),
+            ),
+            "output_tokens_estimate": max(0, round(output_chars / 4)),
+            "succeeded": succeeded,
+            "error_message": (error_message or "")[:1000] or None,
+            **{key: context[key] for key in ("sale_id", "job_id", "source_url", "stage", "reason") if key in context},
+        }
+        record_llm_usage_event(event)
 
     def _create_prediction(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
         owner, model_name = _split_replicate_model(str(self.model))
@@ -189,16 +252,76 @@ class ReplicateClient:
             # endpoint. Pinning the version also protects the scan output from
             # an upstream model image changing without notice.
             payload["version"] = model_reference
-        response = self._post_with_retries(endpoint, headers=headers, payload=payload)
-        return response.json()
+        metadata_token = _REQUEST_METADATA.set(
+            {
+                "request_kind": "display_description"
+                if _is_display_description_prompt(system_prompt or "")
+                else "fact_extraction",
+                "prompt_chars": len(prompt),
+                "system_prompt_chars": len(system_prompt or ""),
+            }
+        )
+        try:
+            response = self._post_with_retries(endpoint, headers=headers, payload=payload)
+        finally:
+            _REQUEST_METADATA.reset(metadata_token)
+        try:
+            prediction = response.json()
+        except Exception as exc:
+            record_llm_request(
+                getattr(response, "_llm_request_reservation_id", None),
+                status="ambiguous",
+                prompt_chars=len(prompt),
+                system_prompt_chars=len(system_prompt or ""),
+                error_message=str(exc),
+            )
+            raise LLMRequestTransportAmbiguous(
+                "Replicate returned an unreadable successful response; provider reconciliation is required"
+            ) from exc
+        if not _prediction_payload_is_complete(prediction):
+            error = RuntimeError("Replicate prediction response is missing its id, status or polling URL")
+            record_llm_request(
+                getattr(response, "_llm_request_reservation_id", None),
+                status="ambiguous",
+                prompt_chars=len(prompt),
+                system_prompt_chars=len(system_prompt or ""),
+                error_message=str(error),
+            )
+            raise LLMRequestTransportAmbiguous(
+                "Replicate returned an incomplete successful response; provider reconciliation is required"
+            ) from error
+        reservation_id = getattr(response, "_llm_request_reservation_id", None)
+        if reservation_id:
+            prediction[RESERVATION_KEY] = reservation_id
+        return prediction
 
     def _post_with_retries(self, endpoint: str, headers: dict[str, str], payload: dict[str, Any]) -> httpx.Response:
         attempts = max(1, int(self.max_retries or 1))
         last_response: httpx.Response | None = None
-        last_error: Exception | None = None
+        settings = load_settings()
+        metadata = _REQUEST_METADATA.get() or {}
+        request_kind = str(metadata.get("request_kind") or "fact_extraction")
+        prompt_chars = int(metadata.get("prompt_chars") or 0)
+        system_prompt_chars = int(metadata.get("system_prompt_chars") or 0)
         for attempt in range(1, attempts + 1):
             self._respect_min_interval()
-            reservation = reserve_prediction(str(self.model))
+            reservation_id = reserve_llm_request(
+                provider="replicate",
+                model=str(self.model),
+                request_kind=request_kind,
+                attempt_number=attempt,
+                max_calls_per_hour=int(settings.get("replicate_max_calls_per_hour") or 0),
+                request_key=_request_key_for_payload(str(self.model), payload),
+            )
+            reservation = None
+            try:
+                # Keep the autonomous run budget in place.  If it rejects this
+                # request, release the hourly reservation because no POST was
+                # sent and therefore no external call was consumed.
+                reservation = reserve_prediction(str(self.model))
+            except Exception as exc:
+                release_llm_request(reservation_id, reason=f"autonomous reservation rejected: {exc}")
+                raise
             try:
                 response = httpx.post(
                     endpoint,
@@ -207,10 +330,28 @@ class ReplicateClient:
                     timeout=float(self.timeout_seconds or 180),
                 )
                 self._mark_request_finished()
-                if response.status_code not in RETRYABLE_STATUS_CODES:
-                    response.raise_for_status()
-                    record_prediction(response.json(), reservation=reservation)
-                    return response
+            except httpx.TransportError as exc:
+                self._mark_request_finished()
+                record_llm_request(
+                    reservation_id,
+                    status="ambiguous",
+                    prompt_chars=prompt_chars,
+                    system_prompt_chars=system_prompt_chars,
+                    error_message=str(exc),
+                )
+                raise LLMRequestTransportAmbiguous(
+                    "Replicate POST transport outcome is ambiguous; manual/provider reconciliation is required"
+                ) from exc
+
+            response._llm_request_reservation_id = reservation_id
+            if response.status_code == 429:
+                record_llm_request(
+                    reservation_id,
+                    status="rate_limited",
+                    prompt_chars=prompt_chars,
+                    system_prompt_chars=system_prompt_chars,
+                    error_message=_response_error_message(response),
+                )
                 last_response = response
                 sleep_seconds = _retry_sleep_seconds(
                     attempt=attempt,
@@ -219,28 +360,59 @@ class ReplicateClient:
                     max_sleep_seconds=float(self.retry_max_sleep_seconds or 180),
                 )
                 LOGGER.warning(
-                    "Replicate returned %s; retrying in %.1fs (%s/%s)",
-                    response.status_code,
+                    "Replicate returned 429; retrying in %.1fs (%s/%s)",
                     sleep_seconds,
                     attempt,
                     attempts,
                 )
-            except (httpx.ConnectError, httpx.ReadError, httpx.TimeoutException) as exc:
-                self._mark_request_finished()
-                last_error = exc
-                sleep_seconds = _retry_sleep_seconds(
-                    attempt=attempt,
-                    response=None,
-                    backoff_seconds=float(self.retry_backoff_seconds or 20),
-                    max_sleep_seconds=float(self.retry_max_sleep_seconds or 180),
+            else:
+                if response.status_code >= 400:
+                    record_llm_request(
+                        reservation_id,
+                        status=_response_request_status(response.status_code),
+                        prompt_chars=prompt_chars,
+                        system_prompt_chars=system_prompt_chars,
+                        error_message=_response_error_message(response),
+                    )
+                    response.raise_for_status()
+                try:
+                    response_payload = response.json()
+                except Exception as exc:
+                    record_llm_request(
+                        reservation_id,
+                        status="ambiguous",
+                        prompt_chars=prompt_chars,
+                        system_prompt_chars=system_prompt_chars,
+                        error_message=str(exc),
+                    )
+                    raise LLMRequestTransportAmbiguous(
+                        "Replicate returned an unreadable successful response; provider reconciliation is required"
+                    ) from exc
+                if not _prediction_payload_is_complete(response_payload):
+                    error = RuntimeError("Replicate prediction response is missing its id, status or polling URL")
+                    record_llm_request(
+                        reservation_id,
+                        status="ambiguous",
+                        prompt_chars=prompt_chars,
+                        system_prompt_chars=system_prompt_chars,
+                        error_message=str(error),
+                    )
+                    raise LLMRequestTransportAmbiguous(
+                        "Replicate returned an incomplete successful response; provider reconciliation is required"
+                    ) from error
+                record_llm_request(
+                    reservation_id,
+                    status="reserved",
+                    prediction_id=str(response_payload.get("id")),
+                    prompt_chars=prompt_chars,
+                    system_prompt_chars=system_prompt_chars,
                 )
-                LOGGER.warning("Replicate request failed; retrying in %.1fs (%s/%s): %s", sleep_seconds, attempt, attempts, exc)
+                record_prediction(response_payload, reservation=reservation)
+                return response
             if attempt < attempts:
                 time.sleep(sleep_seconds)
         if last_response is not None:
             last_response.raise_for_status()
-        if last_error is not None:
-            raise last_error
         raise RuntimeError("Replicate request failed without response")
 
     def _respect_min_interval(self) -> None:
@@ -263,13 +435,14 @@ class ReplicateClient:
         return
 
     def _input_payload(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
+        max_tokens = self._max_tokens_for_prompt(system_prompt)
         if _is_gemini_model(str(self.model)):
             payload = {
                 "prompt": prompt,
                 "system_instruction": system_prompt or "",
                 "temperature": float(self.temperature if self.temperature is not None else 0),
                 "top_p": 1,
-                "max_output_tokens": int(self.max_tokens or 8192),
+                "max_output_tokens": int(max_tokens or 8192),
             }
             if _is_gemini_3_model(str(self.model)):
                 payload["thinking_level"] = (
@@ -284,7 +457,7 @@ class ReplicateClient:
                 "prompt": prompt,
                 "system_prompt": system_prompt or "",
                 "model_type": "Qwen2-7B-Instruct",
-                "max_new_tokens": min(int(self.max_tokens or 512), 32768),
+                "max_new_tokens": min(int(max_tokens or 512), 32768),
                 # This Cog model validates temperature with a minimum of 0.1.
                 "temperature": max(
                     0.1,
@@ -298,7 +471,7 @@ class ReplicateClient:
             return {
                 "prompt": prompt,
                 "system_prompt": system_prompt or "",
-                "max_tokens": int(self.max_tokens or 8192),
+                "max_tokens": int(max_tokens or 8192),
                 "temperature": float(self.temperature if self.temperature is not None else 0),
                 "top_p": 0.8,
                 "presence_penalty": 0,
@@ -306,12 +479,17 @@ class ReplicateClient:
             }
         return {
             "prompt": prompt,
-            "max_tokens": int(self.max_tokens or 4096),
+            "max_tokens": int(max_tokens or 4096),
             "temperature": float(self.temperature if self.temperature is not None else 0.1),
             "top_p": 1,
             "presence_penalty": 0,
             "frequency_penalty": 0,
         }
+
+    def _max_tokens_for_prompt(self, system_prompt: str | None) -> int:
+        if system_prompt and _is_fact_extraction_prompt(system_prompt):
+            return int(self.fact_max_tokens or self.max_tokens or 512)
+        return int(self.max_tokens or 512)
 
     def _wait_for_output(self, prediction: dict[str, Any]) -> Any:
         record_prediction(prediction)
@@ -328,16 +506,37 @@ class ReplicateClient:
         with httpx.Client(timeout=20) as client:
             while status not in {"succeeded", "failed", "canceled", "aborted"}:
                 if time.monotonic() > timeout_at:
-                    raise TimeoutError("Replicate prediction timed out")
+                    raise LLMRequestTransportAmbiguous(
+                        "Replicate prediction polling timed out; provider reconciliation is required"
+                    )
                 time.sleep(2)
-                response = client.get(get_url, headers={"Authorization": f"Bearer {self.api_token}"})
-                response.raise_for_status()
-                prediction = response.json()
+                try:
+                    response = client.get(get_url, headers={"Authorization": f"Bearer {self.api_token}"})
+                    response.raise_for_status()
+                    polled_prediction = response.json()
+                except LLMRequestTransportAmbiguous:
+                    raise
+                except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+                    raise LLMRequestTransportAmbiguous(
+                        "Replicate prediction polling outcome is ambiguous; provider reconciliation is required"
+                    ) from exc
+                if not isinstance(polled_prediction, dict):
+                    raise LLMRequestTransportAmbiguous(
+                        "Replicate prediction polling response is incomplete; provider reconciliation is required"
+                    )
+                # Keep the reservation id and expose a confirmed terminal
+                # status to generate_json, while retaining the original
+                # prediction object used by its telemetry finalizer.
+                prediction.update(polled_prediction)
                 if prediction.get("status") in {"succeeded", "failed", "canceled", "aborted"}:
                     record_prediction(prediction)
                 status = prediction.get("status")
             if status != "succeeded":
                 raise RuntimeError(f"Replicate prediction {status}: {prediction.get('error')}")
+            if "output" not in prediction:
+                raise LLMRequestTransportAmbiguous(
+                    "Replicate prediction succeeded without an output; provider reconciliation is required"
+                )
             return prediction.get("output")
 
 
@@ -458,6 +657,80 @@ def _display_description_payload_from_text(system_prompt: str, raw_response: str
 
 def _is_display_description_prompt(system_prompt: str) -> bool:
     return "MODE SYNTHESE STRICTE" in system_prompt.upper()
+
+
+def _is_fact_extraction_prompt(system_prompt: str) -> bool:
+    return "MODE EXTRACTION STRICTE" in system_prompt.upper()
+
+
+def _response_error_message(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        message = payload.get("detail") or payload.get("message") or payload.get("error")
+        if message:
+            return str(message)[:500]
+    try:
+        text = str(response.text or "")
+    except Exception:  # pragma: no cover - defensive for test doubles.
+        text = ""
+    return _response_excerpt(text, max_chars=500) or f"HTTP {response.status_code}"
+
+
+def _response_request_status(status_code: int) -> str:
+    # A gateway timeout or server error can still mean that Replicate accepted
+    # the request.  Persist it as unresolved so a queue retry hits the request
+    # key guard instead of sending a possible duplicate.
+    if status_code in {408, 500, 502, 503, 504}:
+        return "ambiguous"
+    return "failed"
+
+
+def _prediction_payload_is_complete(payload: Any) -> bool:
+    if not isinstance(payload, dict) or not payload.get("id"):
+        return False
+    status = payload.get("status")
+    if status == "succeeded":
+        return "output" in payload
+    if status in {"failed", "canceled", "aborted"}:
+        return True
+    if status not in {"starting", "processing", "queued"}:
+        return False
+    urls = payload.get("urls")
+    return isinstance(urls, dict) and bool(urls.get("get"))
+
+
+def _request_failure_status(
+    prediction: dict[str, Any],
+    *,
+    exception: Exception | None,
+    output_chars: int,
+) -> str:
+    if isinstance(exception, LLMRequestTransportAmbiguous):
+        return "ambiguous"
+    status = prediction.get("status")
+    if status in {"failed", "canceled", "aborted"}:
+        return "failed"
+    # A completed output that is not valid JSON is an ordinary model result
+    # and may use the existing bounded JSON retry.  Polling/transport failures
+    # keep the reservation ambiguous so that retrying the job cannot duplicate
+    # a prediction that may still be running.
+    if status == "succeeded" or (isinstance(exception, ValueError) and output_chars > 0):
+        return "failed"
+    return "ambiguous"
+
+
+def _request_key_for_payload(model: str, payload: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        {"model": model, "payload": payload},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _display_description_text_from_jsonish(raw_response: str) -> str | None:
