@@ -5,6 +5,7 @@ import Save from "lucide-react/dist/esm/icons/save.js";
 import { useState } from "react";
 import { toast } from "sonner";
 import { fetchAdminSubscriptions, grantAdminSubscription } from "@/lib/client-api";
+import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-subscription-datetime";
 import type {
   AdminSubscriptionGrantInput,
   AdminSubscriptionSummary,
@@ -276,7 +277,7 @@ function emptySubscriptionForm(): SubscriptionFormState {
     target: "",
     planCode: "analyse",
     status: "active",
-    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+    currentPeriodEnd: formatDateTimeLocalInput(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
     note: "",
   };
 }
@@ -286,7 +287,7 @@ function formToInput(form: SubscriptionFormState): AdminSubscriptionGrantInput {
     target: form.target,
     planCode: form.planCode,
     status: form.status,
-    currentPeriodEnd: form.currentPeriodEnd,
+    currentPeriodEnd: dateTimeLocalToUtcIso(form.currentPeriodEnd),
     note: form.note,
   };
 }

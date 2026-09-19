@@ -1,5 +1,6 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { fetchPipelineStatus, setPipelineSourceEnabled } from "@/lib/client-api";
 
 const labels: Record<string, string> = {
@@ -21,29 +22,71 @@ export function AdminPipelinePanel() {
     queryKey: ["admin-pipeline"],
     queryFn: fetchPipelineStatus,
     refetchInterval: 60_000,
+    staleTime: 30_000,
+    retry: 1,
   });
   const mutation = useMutation({
     mutationFn: ({ source, enabled }: { source: string; enabled: boolean }) =>
       setPipelineSourceEnabled(source, enabled),
-    onSuccess: () => client.invalidateQueries({ queryKey: ["admin-pipeline"] }),
+    onSuccess: async (_, variables) => {
+      toast.success(
+        `${variables.source} : planification ${variables.enabled ? "activée" : "suspendue"}.`,
+      );
+      await client.invalidateQueries({ queryKey: ["admin-pipeline"] });
+    },
   });
   if (query.isPending) return <p role="status">Chargement de la supervision…</p>;
-  if (query.error) return <p role="alert">{query.error.message}</p>;
+  if (!query.data)
+    return (
+      <div className="rounded-xl border bg-white p-5">
+        <p role="alert" className="text-sm text-red-700">
+          La supervision des sources est indisponible. {query.error?.message}
+        </p>
+        <button
+          type="button"
+          className="admin-button-secondary mt-3"
+          disabled={query.isFetching}
+          onClick={() => void query.refetch()}
+        >
+          Réessayer
+        </button>
+      </div>
+    );
   const data = query.data;
   return (
     <section
       className="mb-4 rounded-xl border bg-white p-5 space-y-4"
       aria-labelledby="pipeline-title"
     >
-      <div>
-        <h2 id="pipeline-title" className="text-lg font-semibold">
-          Collecte automatique par source
-        </h2>
-        <p className="text-sm text-slate-600">
-          {data.control.enabled ? "Planification active" : "Planification suspendue"} · Observation
-          : {date(data.control.observation_started_at)}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="pipeline-title" className="text-lg font-semibold">
+            Collecte automatique par source
+          </h2>
+          <p className="text-sm text-slate-600">
+            {data.control.enabled ? "Planification active" : "Planification suspendue"} ·
+            Observation : {date(data.control.observation_started_at)}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="admin-button-secondary"
+          disabled={query.isFetching}
+          onClick={() => void query.refetch()}
+        >
+          {query.isFetching ? "Actualisation…" : "Actualiser les sources"}
+        </button>
       </div>
+      {query.error ? (
+        <p role="alert" className="text-sm text-amber-800">
+          Actualisation impossible. Les dernières données reçues restent affichées.
+        </p>
+      ) : null}
+      <p className="text-sm leading-6 text-slate-600">
+        Activez uniquement les sources à inclure dans les prochaines collectes. Une source activée
+        peut rester temporairement bloquée par son délai de reprise. Les états ci-dessous décrivent
+        la dernière observation.
+      </p>
       <p className="text-sm">
         Aujourd’hui (UTC) : {data.usage.ai_requests} appels IA, coût estimé{" "}
         {data.usage.ai_estimated_usd.toFixed(3)} $ / plafond {data.usage.daily_ai_budget_usd} $.{" "}
@@ -60,6 +103,12 @@ export function AdminPipelinePanel() {
         (L40S, vérifié le 12/09/2026).
       </p>
       {mutation.error ? <p role="alert">{mutation.error.message}</p> : null}
+      {!data.sources.length ? (
+        <p className="rounded-lg bg-slate-50 p-4 text-sm">
+          Aucune source configurée. Consultez les diagnostics des services pour vérifier
+          l’installation du pipeline.
+        </p>
+      ) : null}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
@@ -118,7 +167,11 @@ export function AdminPipelinePanel() {
                       : "Non mesuré"}
                   </td>
                   <td className="p-2">
+                    <span className="mb-2 block text-xs font-medium">
+                      {source.enabled ? "Activée" : "Suspendue"}
+                    </span>
                     <button
+                      type="button"
                       className="rounded border px-3 py-1 disabled:opacity-50"
                       disabled={mutation.isPending}
                       onClick={() =>

@@ -1,8 +1,8 @@
 "use client";
 
-import { AdminPipelinePanel } from "@/components/admin/AdminPipelinePanel";
+import dynamic from "next/dynamic";
 import { createFileRoute, Link } from "@/lib/router-compat";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import Bot from "lucide-react/dist/esm/icons/bot.js";
@@ -25,12 +25,6 @@ import {
   AdminShell,
   type AdminSection,
 } from "@/components/admin/AdminShell";
-import { AdminReadinessPanel } from "@/components/admin/AdminReadinessPanel";
-import { AdminLawyerReferralRequestsPanel } from "@/components/admin/AdminLawyerReferralRequestsPanel";
-import { AdminPrivacyRequestsPanel } from "@/components/admin/AdminPrivacyRequestsPanel";
-import { AdminReferencedLawyersPanel } from "@/components/admin/AdminReferencedLawyersPanel";
-import { AdminSubscriptionsPanel } from "@/components/admin/AdminSubscriptionsPanel";
-import { AdminInformationAgentTemplatePanel } from "@/components/admin/AdminInformationAgentTemplatePanel";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json, Tables } from "@/integrations/supabase/types";
@@ -48,9 +42,14 @@ import {
 } from "@/lib/admin.functions";
 
 type RunnerMode = AdminDashboardData["runner"]["mode"];
-export type AdminDashboardView = Exclude<AdminSection, "quality">;
+export type AdminDashboardView = Exclude<AdminSection, "quality" | "settings">;
 type PublicationRequest = Tables<"listing_publication_requests">;
 type PublicationRequestStatus = PublicationRequest["status"];
+
+type AdminPublicationQueryResult = {
+  requests: PublicationRequest[];
+  hasMore: boolean;
+};
 
 type UploadedPublicationDocument = {
   bucket?: string;
@@ -62,6 +61,52 @@ type UploadedPublicationDocument = {
 };
 
 const PUBLICATION_DOCUMENT_BUCKET = "listing-request-documents";
+const PUBLICATION_PAGE_SIZE = 30;
+
+const LazyAdminPipelinePanel = dynamic(
+  () => import("@/components/admin/AdminPipelinePanel").then((module) => module.AdminPipelinePanel),
+  { loading: () => <AdminPanelLoading label="la supervision du pipeline" /> },
+);
+const LazyAdminReadinessPanel = dynamic(
+  () =>
+    import("@/components/admin/AdminReadinessPanel").then((module) => module.AdminReadinessPanel),
+  { loading: () => <AdminPanelLoading label="le diagnostic de préparation" /> },
+);
+const LazyAdminLawyerReferralRequestsPanel = dynamic(
+  () =>
+    import("@/components/admin/AdminLawyerReferralRequestsPanel").then(
+      (module) => module.AdminLawyerReferralRequestsPanel,
+    ),
+  { loading: () => <AdminPanelLoading label="les demandes avocat" /> },
+);
+const LazyAdminPrivacyRequestsPanel = dynamic(
+  () =>
+    import("@/components/admin/AdminPrivacyRequestsPanel").then(
+      (module) => module.AdminPrivacyRequestsPanel,
+    ),
+  { loading: () => <AdminPanelLoading label="les demandes de conformité" /> },
+);
+const LazyAdminReferencedLawyersPanel = dynamic(
+  () =>
+    import("@/components/admin/AdminReferencedLawyersPanel").then(
+      (module) => module.AdminReferencedLawyersPanel,
+    ),
+  { loading: () => <AdminPanelLoading label="le réseau d’avocats" /> },
+);
+const LazyAdminSubscriptionsPanel = dynamic(
+  () =>
+    import("@/components/admin/AdminSubscriptionsPanel").then(
+      (module) => module.AdminSubscriptionsPanel,
+    ),
+  { loading: () => <AdminPanelLoading label="les abonnements" /> },
+);
+const LazyAdminInformationAgentTemplatePanel = dynamic(
+  () =>
+    import("@/components/admin/AdminInformationAgentTemplatePanel").then(
+      (module) => module.AdminInformationAgentTemplatePanel,
+    ),
+  { loading: () => <AdminPanelLoading label="le template agent" /> },
+);
 
 const SOURCE_OPTIONS: Array<{ value: AdminScrollSource; label: string }> = [
   { value: "all", label: "Toutes les sources" },
@@ -128,6 +173,24 @@ const VIEW_COPY: Record<
   },
 };
 
+const REFRESH_QUERY_KEYS: Record<AdminDashboardView, ReadonlyArray<readonly unknown[]>> = {
+  overview: [
+    ["admin-dashboard"],
+    ["admin-publication-requests"],
+    ["admin-subscriptions"],
+    ["admin-lawyer-referral-requests"],
+    ["admin-privacy-requests"],
+    ["admin-readiness"],
+  ],
+  operations: [["admin-dashboard"], ["admin-pipeline"]],
+  // Refreshing this key remounts the editor from the server response and can discard a dirty draft.
+  agent: [],
+  publications: [["admin-publication-requests"]],
+  clients: [["admin-subscriptions"]],
+  lawyers: [["admin-lawyer-referral-requests"], ["admin-referenced-lawyers"]],
+  compliance: [["admin-privacy-requests"], ["admin-readiness"]],
+};
+
 export function AdminDashboardPage({
   initialView = "overview",
 }: {
@@ -141,38 +204,43 @@ export function AdminDashboardPage({
   const [operationsTab, setOperationsTab] = useState<OperationsTab>("collections");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [publicationStatus, setPublicationStatus] = useState<PublicationFilter>("all");
+  const [publicationLimit, setPublicationLimit] = useState(PUBLICATION_PAGE_SIZE);
   const [lawyerTab, setLawyerTab] = useState<LawyerTab>("referrals");
   const dashboardEnabled = initialView === "overview" || initialView === "operations";
   const publicationEnabled = initialView === "overview" || initialView === "publications";
 
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["admin-dashboard"],
     queryFn: () => fetchAdminDashboard(),
     staleTime: 30_000,
     enabled: dashboardEnabled,
+    retry: 1,
   });
 
-  const {
-    data: publicationRequests = [],
-    isLoading: publicationRequestsLoading,
-    error: publicationRequestsError,
-    refetch: refetchPublicationRequests,
-    isFetching: publicationRequestsFetching,
-  } = useQuery({
-    queryKey: ["admin-publication-requests"],
-    queryFn: async () => {
+  const publicationRequestsQuery = useQuery<AdminPublicationQueryResult>({
+    queryKey: ["admin-publication-requests", publicationLimit],
+    queryFn: async (): Promise<AdminPublicationQueryResult> => {
       const { data: requests, error: requestsError } = await supabase
         .from("listing_publication_requests")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(30);
+        .limit(publicationLimit + 1);
 
       if (requestsError) throw requestsError;
-      return (requests ?? []) as PublicationRequest[];
+      const rows = (requests ?? []) as PublicationRequest[];
+      return {
+        requests: rows.slice(0, publicationLimit),
+        hasMore: rows.length > publicationLimit,
+      };
     },
     staleTime: 30_000,
     enabled: publicationEnabled,
+    placeholderData: (previous) => previous,
+    retry: 1,
   });
+  const publicationRequests = publicationRequestsQuery.data?.requests ?? [];
+  const publicationRequestsLoading = publicationRequestsQuery.isLoading;
+  const publicationRequestsError = publicationRequestsQuery.error;
 
   const subscriptionsOverviewQuery = useQuery({
     queryKey: ["admin-subscriptions"],
@@ -191,6 +259,12 @@ export function AdminDashboardPage({
     queryFn: fetchAdminPrivacyRequests,
     staleTime: 30_000,
     enabled: initialView === "overview",
+  });
+
+  const activeRefreshKeys = REFRESH_QUERY_KEYS[initialView];
+  const activeQueriesFetching = useIsFetching({
+    type: "active",
+    predicate: (query) => activeRefreshKeys.some((queryKey) => query.queryKey[0] === queryKey[0]),
   });
 
   const startMutation = useMutation({
@@ -282,40 +356,51 @@ export function AdminDashboardPage({
       : true;
     return matchesStatus && matchesSearch;
   });
-  const activeSubscriptions =
-    subscriptionsOverviewQuery.data?.subscriptions.filter((subscription) =>
-      ["active", "trialing"].includes(subscription.status),
-    ).length ?? 0;
-  const openReferrals =
-    referralsOverviewQuery.data?.requests.filter((request) =>
-      ["new", "manual_review", "sent_to_lawyer"].includes(request.status),
-    ).length ?? 0;
-  const openPrivacyRequests =
-    privacyOverviewQuery.data?.requests.filter(
-      (request) => !["completed", "rejected"].includes(request.status),
-    ) ?? [];
-  const overduePrivacyRequests = openPrivacyRequests.filter(
-    (request) => new Date(request.dueAt) < new Date(),
-  ).length;
-  const pendingPublications = publicationRequests.filter(
-    (request) => request.status === "pending",
-  ).length;
+  const activeSubscriptions = subscriptionsOverviewQuery.data
+    ? subscriptionsOverviewQuery.data.subscriptions.filter((subscription) =>
+        ["active", "trialing"].includes(subscription.status),
+      ).length
+    : null;
+  const openReferrals = referralsOverviewQuery.data
+    ? referralsOverviewQuery.data.requests.filter((request) =>
+        ["new", "manual_review", "sent_to_lawyer"].includes(request.status),
+      ).length
+    : null;
+  const openPrivacyRequests = privacyOverviewQuery.data
+    ? privacyOverviewQuery.data.requests.filter(
+        (request) => !["completed", "rejected"].includes(request.status),
+      )
+    : null;
+  const overduePrivacyRequests = openPrivacyRequests
+    ? openPrivacyRequests.filter((request) => new Date(request.dueAt) < new Date()).length
+    : null;
+  const pendingPublications = publicationRequestsQuery.data
+    ? publicationRequests.filter((request) => request.status === "pending").length
+    : null;
   const overviewPriorities = buildOverviewPriorities({
     pendingPublications,
     openReferrals,
-    openPrivacyRequests: openPrivacyRequests.length,
+    openPrivacyRequests: openPrivacyRequests?.length ?? null,
     overduePrivacyRequests,
-    aiBackfillRemaining: aiBackfillRemaining ?? 0,
-    failedRuns: data?.stats.failedRuns ?? 0,
+    aiBackfillRemaining,
+    failedRuns: data?.stats.failedRuns ?? null,
   });
+  const overviewSecondaryQueries = [
+    publicationRequestsQuery,
+    subscriptionsOverviewQuery,
+    referralsOverviewQuery,
+    privacyOverviewQuery,
+  ];
+  const overviewSecondaryLoading =
+    initialView === "overview" && overviewSecondaryQueries.some((query) => query.isLoading);
+  const overviewSecondaryErrors = overviewSecondaryQueries.flatMap((query) =>
+    query.error ? [queryErrorMessage(query.error, "Données secondaires indisponibles")] : [],
+  );
   const refreshCurrentView = () => {
-    if (dashboardEnabled) void refetch();
-    if (publicationEnabled) void refetchPublicationRequests();
-    if (initialView === "overview") {
-      void subscriptionsOverviewQuery.refetch();
-      void referralsOverviewQuery.refetch();
-      void privacyOverviewQuery.refetch();
-    }
+    return queryClient.refetchQueries({
+      type: "active",
+      predicate: (query) => activeRefreshKeys.some((queryKey) => query.queryKey[0] === queryKey[0]),
+    });
   };
   const searchable = ["overview", "operations", "publications"].includes(initialView);
 
@@ -328,8 +413,8 @@ export function AdminDashboardPage({
       searchValue={searchQuery}
       searchPlaceholder={copy.searchPlaceholder}
       onSearchChange={searchable ? setSearchQuery : undefined}
-      onRefresh={dashboardEnabled || publicationEnabled ? refreshCurrentView : undefined}
-      isRefreshing={isFetching || publicationRequestsFetching}
+      onRefresh={activeRefreshKeys.length ? refreshCurrentView : undefined}
+      isRefreshing={activeQueriesFetching > 0}
       primaryAction={
         initialView === "overview" ? (
           <AdminPrimaryButton
@@ -347,26 +432,37 @@ export function AdminDashboardPage({
       }
     >
       {error ? (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error instanceof Error ? error.message : "Erreur de chargement admin"}
-        </div>
+        <AdminQueryErrorNotice
+          className="mb-4"
+          error={error}
+          fallback="Erreur de chargement admin"
+          hasData={Boolean(data)}
+          isRetrying={activeQueriesFetching > 0}
+          onRetry={() => void refreshCurrentView()}
+        />
       ) : null}
 
       {initialView === "overview" ? (
         <AdminOverview
           data={data}
           isLoading={isLoading}
+          error={error}
           latestRun={latestRun}
           activeSubscriptions={activeSubscriptions}
+          activeSubscriptionsLoading={subscriptionsOverviewQuery.isLoading}
+          activeSubscriptionsError={subscriptionsOverviewQuery.error}
           aiBackfillRemaining={aiBackfillRemaining}
           priorities={overviewPriorities}
+          prioritiesLoading={overviewSecondaryLoading}
+          priorityErrors={overviewSecondaryErrors}
           filteredRuns={filteredRuns}
+          onRetry={() => void refreshCurrentView()}
         />
       ) : null}
 
       {initialView === "operations" ? (
         <>
-          <AdminPipelinePanel />
+          <LazyAdminPipelinePanel />
           <AdminOperations
             data={data}
             isLoading={isLoading}
@@ -387,15 +483,20 @@ export function AdminDashboardPage({
         </>
       ) : null}
 
-      {initialView === "agent" ? <AdminInformationAgentTemplatePanel /> : null}
+      {initialView === "agent" ? <LazyAdminInformationAgentTemplatePanel /> : null}
 
       {initialView === "publications" ? (
         <AdminPublications
           requests={filteredPublicationRequests}
-          totalRequests={publicationRequests.length}
+          totalRequests={publicationRequestsQuery.data ? publicationRequests.length : null}
           pendingCount={pendingPublications}
           loading={publicationRequestsLoading}
           error={publicationRequestsError}
+          fetching={publicationRequestsQuery.isFetching}
+          hasMore={publicationRequestsQuery.data?.hasMore ?? false}
+          limit={publicationLimit}
+          onLoadMore={() => setPublicationLimit((limit) => limit + PUBLICATION_PAGE_SIZE)}
+          onRetry={() => void publicationRequestsQuery.refetch()}
           filter={publicationStatus}
           onFilterChange={setPublicationStatus}
           reviewPending={reviewMutation.isPending}
@@ -403,7 +504,7 @@ export function AdminDashboardPage({
         />
       ) : null}
 
-      {initialView === "clients" ? <AdminSubscriptionsPanel /> : null}
+      {initialView === "clients" ? <LazyAdminSubscriptionsPanel /> : null}
 
       {initialView === "lawyers" ? (
         <AdminLawyers activeTab={lawyerTab} onTabChange={setLawyerTab} />
@@ -411,8 +512,8 @@ export function AdminDashboardPage({
 
       {initialView === "compliance" ? (
         <div className="space-y-6">
-          <AdminPrivacyRequestsPanel />
-          <AdminReadinessPanel />
+          <LazyAdminPrivacyRequestsPanel />
+          <LazyAdminReadinessPanel />
         </div>
       ) : null}
     </AdminShell>
@@ -438,15 +539,15 @@ function buildOverviewPriorities({
   aiBackfillRemaining,
   failedRuns,
 }: {
-  pendingPublications: number;
-  openReferrals: number;
-  openPrivacyRequests: number;
-  overduePrivacyRequests: number;
-  aiBackfillRemaining: number;
-  failedRuns: number;
+  pendingPublications: number | null;
+  openReferrals: number | null;
+  openPrivacyRequests: number | null;
+  overduePrivacyRequests: number | null;
+  aiBackfillRemaining: number | null;
+  failedRuns: number | null;
 }): OverviewPriority[] {
   const priorities: OverviewPriority[] = [];
-  if (pendingPublications > 0) {
+  if (pendingPublications != null && pendingPublications > 0) {
     priorities.push({
       label: `${pendingPublications} demande${pendingPublications > 1 ? "s" : ""} de publication`,
       context: "Annonces professionnelles en attente de validation",
@@ -454,7 +555,7 @@ function buildOverviewPriorities({
       href: "/admin/publications",
     });
   }
-  if (openReferrals > 0) {
+  if (openReferrals != null && openReferrals > 0) {
     priorities.push({
       label: `${openReferrals} mise${openReferrals > 1 ? "s" : ""} en relation avocat`,
       context: "Demandes ouvertes à attribuer ou à suivre",
@@ -462,7 +563,7 @@ function buildOverviewPriorities({
       href: "/admin/lawyers",
     });
   }
-  if (openPrivacyRequests > 0) {
+  if (openPrivacyRequests != null && openPrivacyRequests > 0) {
     priorities.push({
       label: `${openPrivacyRequests} demande${openPrivacyRequests > 1 ? "s" : ""} de conformité`,
       context: overduePrivacyRequests
@@ -472,7 +573,7 @@ function buildOverviewPriorities({
       href: "/admin/compliance",
     });
   }
-  if (failedRuns > 0) {
+  if (failedRuns != null && failedRuns > 0) {
     priorities.push({
       label: `${failedRuns} run${failedRuns > 1 ? "s" : ""} en échec`,
       context: "Une vérification des erreurs est nécessaire",
@@ -480,7 +581,7 @@ function buildOverviewPriorities({
       href: "/admin/operations",
     });
   }
-  if (aiBackfillRemaining > 0) {
+  if (aiBackfillRemaining != null && aiBackfillRemaining > 0) {
     priorities.push({
       label: `${aiBackfillRemaining} synthèse${aiBackfillRemaining > 1 ? "s" : ""} IA à traiter`,
       context: "Annonces actives à aligner sur la version attendue",
@@ -491,29 +592,92 @@ function buildOverviewPriorities({
   return priorities.slice(0, 5);
 }
 
+function queryErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function AdminPanelLoading({ label }: { label: string }) {
+  return (
+    <AdminPanel className="flex min-h-36 items-center justify-center p-6 text-sm text-[#132238]/60">
+      <span role="status">Chargement de {label}…</span>
+    </AdminPanel>
+  );
+}
+
+function AdminQueryErrorNotice({
+  className = "",
+  error,
+  fallback,
+  hasData,
+  isRetrying,
+  onRetry,
+}: {
+  className?: string;
+  error: unknown;
+  fallback: string;
+  hasData: boolean;
+  isRetrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      className={`rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 ${className}`}
+      role="alert"
+    >
+      <div>
+        {hasData
+          ? "Actualisation impossible. Les dernières données reçues restent affichées."
+          : queryErrorMessage(error, fallback)}
+      </div>
+      <button
+        type="button"
+        className="admin-button-secondary mt-3"
+        disabled={isRetrying}
+        onClick={onRetry}
+      >
+        {isRetrying ? "Nouvelle tentative…" : "Réessayer"}
+      </button>
+    </div>
+  );
+}
+
 function AdminOverview({
   data,
   isLoading,
+  error,
   latestRun,
   activeSubscriptions,
+  activeSubscriptionsLoading,
+  activeSubscriptionsError,
   aiBackfillRemaining,
   priorities,
+  prioritiesLoading,
+  priorityErrors,
   filteredRuns,
+  onRetry,
 }: {
   data?: AdminDashboardData;
   isLoading: boolean;
+  error: unknown;
   latestRun: AuctionRun | null;
-  activeSubscriptions: number;
+  activeSubscriptions: number | null;
+  activeSubscriptionsLoading: boolean;
+  activeSubscriptionsError: unknown;
   aiBackfillRemaining: number | null;
   priorities: OverviewPriority[];
+  prioritiesLoading: boolean;
+  priorityErrors: string[];
   filteredRuns: AuctionRun[];
+  onRetry: () => void;
 }) {
-  const failedRuns = data?.stats.failedRuns ?? 0;
-  const healthy = failedRuns === 0;
+  const failedRuns = data?.stats.failedRuns ?? null;
+  const healthState =
+    isLoading && !data ? "loading" : error && !data ? "error" : error && data ? "stale" : "ready";
+  const healthy = healthState === "ready" && !error && failedRuns === 0;
   const aiStats = data?.stats.aiDescriptions;
   const completion = aiStats?.activeOrUpcoming
     ? Math.round((aiStats.ready / aiStats.activeOrUpcoming) * 100)
-    : 0;
+    : null;
 
   return (
     <div className="space-y-3">
@@ -521,18 +685,49 @@ function AdminOverview({
         <AdminPanel className="flex min-h-44 items-center gap-5 p-6">
           <span
             className={`grid size-14 shrink-0 place-items-center rounded-full ${
-              healthy ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"
+              healthState === "loading"
+                ? "bg-slate-300 text-white"
+                : healthy
+                  ? "bg-emerald-600 text-white"
+                  : "bg-amber-500 text-white"
             }`}
           >
-            {healthy ? <CheckCircle className="size-8" /> : <AlertTriangle className="size-7" />}
+            {healthState === "loading" ? (
+              <RefreshCw className="size-7 animate-spin" />
+            ) : healthy ? (
+              <CheckCircle className="size-8" />
+            ) : (
+              <AlertTriangle className="size-7" />
+            )}
           </span>
           <div>
             <h2 className="text-xl font-semibold text-[#132238]">
-              {healthy ? "Tous les systèmes sont opérationnels" : "Une intervention est requise"}
+              {healthState === "loading"
+                ? "Vérification de la santé…"
+                : healthState === "error"
+                  ? "État de santé indisponible"
+                  : healthState === "stale"
+                    ? "Données de santé potentiellement obsolètes"
+                    : healthy
+                      ? "Aucun échec récent détecté"
+                      : "Une intervention est requise"}
             </h2>
             <p className="mt-2 text-sm text-[#132238]/60">
-              Vérifié {data?.checkedAt ? formatRelativeTime(data.checkedAt) : "à l’instant"}
+              {data?.checkedAt
+                ? `${error ? "Dernière vérification" : "Vérifié"} ${formatRelativeTime(data.checkedAt)} · santé calculée sur les exécutions récentes`
+                : "Les résultats apparaîtront après la vérification du dashboard."}
             </p>
+            {healthState === "error" ? (
+              <button type="button" className="admin-button-secondary mt-3" onClick={onRetry}>
+                Réessayer
+              </button>
+            ) : null}
+            <Link
+              to="/admin/settings"
+              className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#a96126]"
+            >
+              Configuration rapide <ChevronRight className="size-4" />
+            </Link>
           </div>
         </AdminPanel>
 
@@ -541,34 +736,63 @@ function AdminOverview({
             title="Activité du pipeline"
             description="Volumes intégrés lors des dernières exécutions"
           />
-          <PipelineActivityChart runs={data?.runs ?? []} />
+          {isLoading && !data ? (
+            <p className="mt-3 text-sm text-[#132238]/58" role="status">
+              Chargement de l’activité…
+            </p>
+          ) : data ? (
+            <PipelineActivityChart runs={data.runs} />
+          ) : (
+            <p className="mt-3 text-sm text-red-700">Activité indisponible.</p>
+          )}
         </AdminPanel>
       </div>
 
       <AdminPanel className="grid divide-y divide-[#132238]/10 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
         <OverviewMetric
           icon={<ScrollText />}
-          value={isLoading ? "…" : formatInteger(data?.stats.sales ?? 0)}
+          value={isLoading && !data ? "…" : data ? formatInteger(data.stats.sales) : "—"}
           label="Annonces"
         />
         <OverviewMetric
           icon={<CheckCircle />}
-          value={isLoading ? "…" : `${completion}%`}
+          value={isLoading && !data ? "…" : completion == null ? "—" : `${completion}%`}
           label="Synthèses IA prêtes"
           tone="green"
         />
         <OverviewMetric
           icon={<Bot />}
-          value={isLoading ? "…" : formatInteger(aiBackfillRemaining ?? 0)}
+          value={
+            isLoading && !data
+              ? "…"
+              : aiBackfillRemaining == null
+                ? "—"
+                : formatInteger(aiBackfillRemaining)
+          }
           label="Synthèses IA à traiter"
           tone="copper"
         />
         <OverviewMetric
           icon={<Activity />}
-          value={formatInteger(activeSubscriptions)}
+          value={
+            activeSubscriptionsLoading && activeSubscriptions == null
+              ? "…"
+              : activeSubscriptions == null
+                ? "—"
+                : formatInteger(activeSubscriptions)
+          }
           label="Accès actifs"
         />
       </AdminPanel>
+
+      {activeSubscriptionsError ? (
+        <div
+          className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+          role="status"
+        >
+          Accès actifs indisponibles pour le moment. Les autres indicateurs restent consultables.
+        </div>
+      ) : null}
 
       <div className="grid gap-3 xl:grid-cols-[1.55fr_0.75fr]">
         <AdminPanel className="overflow-hidden">
@@ -578,30 +802,55 @@ function AdminOverview({
               description="Les actions qui demandent une décision administrateur"
             />
           </div>
-          {priorities.length ? (
-            <div className="divide-y divide-[#132238]/10">
-              {priorities.map((priority) => (
-                <div
-                  key={`${priority.href}-${priority.label}`}
-                  className="grid gap-3 px-5 py-4 md:grid-cols-[1.1fr_1.2fr_auto_auto] md:items-center"
-                >
-                  <strong className="text-sm text-[#132238]">{priority.label}</strong>
-                  <span className="text-sm text-[#132238]/62">{priority.context}</span>
-                  <span
-                    className={`w-fit rounded px-2 py-1 text-xs font-medium ${
-                      priority.urgency === "high"
-                        ? "bg-red-50 text-red-700"
-                        : "bg-amber-50 text-amber-700"
-                    }`}
-                  >
-                    {priority.urgency === "high" ? "Élevée" : "Moyenne"}
-                  </span>
-                  <Link to={priority.href} className="admin-button-secondary min-h-9 px-3 py-1.5">
-                    Ouvrir
-                  </Link>
-                </div>
-              ))}
+          {prioritiesLoading && !priorities.length ? (
+            <div
+              className="flex min-h-44 items-center justify-center p-6 text-center text-sm text-[#132238]/60"
+              role="status"
+            >
+              Chargement des priorités…
             </div>
+          ) : priorityErrors.length && !priorities.length ? (
+            <div className="p-6 text-sm text-amber-800" role="status">
+              <p>Les priorités sont partiellement indisponibles.</p>
+              <button type="button" className="admin-button-secondary mt-3" onClick={onRetry}>
+                Réessayer
+              </button>
+            </div>
+          ) : priorities.length ? (
+            <>
+              {priorityErrors.length ? (
+                <div
+                  className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-800"
+                  role="status"
+                >
+                  Certaines priorités n’ont pas pu être vérifiées. Les éléments affichés peuvent
+                  être incomplets.
+                </div>
+              ) : null}
+              <div className="divide-y divide-[#132238]/10">
+                {priorities.map((priority) => (
+                  <div
+                    key={`${priority.href}-${priority.label}`}
+                    className="grid gap-3 px-5 py-4 md:grid-cols-[1.1fr_1.2fr_auto_auto] md:items-center"
+                  >
+                    <strong className="text-sm text-[#132238]">{priority.label}</strong>
+                    <span className="text-sm text-[#132238]/62">{priority.context}</span>
+                    <span
+                      className={`w-fit rounded px-2 py-1 text-xs font-medium ${
+                        priority.urgency === "high"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      {priority.urgency === "high" ? "Élevée" : "Moyenne"}
+                    </span>
+                    <Link to={priority.href} className="admin-button-secondary min-h-9 px-3 py-1.5">
+                      Ouvrir
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="flex min-h-44 items-center justify-center p-6 text-center text-sm text-[#132238]/60">
               Aucune action prioritaire pour le moment.
@@ -611,7 +860,11 @@ function AdminOverview({
 
         <AdminPanel className="p-5">
           <AdminSectionHeading title="Dernière collecte" />
-          {latestRun ? <LatestRun run={latestRun} /> : <EmptyState label="Aucun run trouvé" />}
+          {latestRun ? (
+            <LatestRun run={latestRun} />
+          ) : (
+            <EmptyState label={data ? "Aucun run trouvé" : "Données indisponibles"} />
+          )}
           <Link
             to="/admin/operations"
             className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-[#a96126]"
@@ -626,14 +879,18 @@ function AdminOverview({
           <div className="border-b border-[#132238]/10 px-5 py-4">
             <AdminSectionHeading title="Activité récente" />
           </div>
-          <RecentRunsTable runs={filteredRuns.slice(0, 5)} isLoading={isLoading} />
+          <RecentRunsTable
+            runs={filteredRuns.slice(0, 5)}
+            isLoading={isLoading}
+            hasData={Boolean(data)}
+          />
         </AdminPanel>
         <AdminPanel className="p-5">
           <AdminSectionHeading title="Santé du pipeline" />
           <div className="mt-4 divide-y divide-[#132238]/10">
-            <PipelineStat label="Runs en file" value={data?.stats.queuedRuns ?? 0} />
-            <PipelineStat label="Runs actifs" value={data?.stats.runningRuns ?? 0} />
-            <PipelineStat label="Échecs récents" value={failedRuns} danger={failedRuns > 0} />
+            <PipelineStat label="Runs en file" value={data?.stats.queuedRuns ?? null} />
+            <PipelineStat label="Runs actifs" value={data?.stats.runningRuns ?? null} />
+            <PipelineStat label="Échecs récents" value={failedRuns} danger={Boolean(failedRuns)} />
           </div>
           <Link
             to="/admin/operations"
@@ -644,7 +901,7 @@ function AdminOverview({
         </AdminPanel>
       </div>
 
-      <AdminReadinessPanel />
+      <LazyAdminReadinessPanel />
     </div>
   );
 }
@@ -848,16 +1105,16 @@ function AdminOperations({
             description="Signaux calculés à partir des exécutions récentes"
           />
           <div className="mt-5 divide-y divide-[#132238]/10">
-            <PipelineStat label="Runs en file" value={data?.stats.queuedRuns ?? 0} />
-            <PipelineStat label="Runs actifs" value={data?.stats.runningRuns ?? 0} />
+            <PipelineStat label="Runs en file" value={data?.stats.queuedRuns ?? null} />
+            <PipelineStat label="Runs actifs" value={data?.stats.runningRuns ?? null} />
             <PipelineStat
               label="Runs échoués récents"
-              value={data?.stats.failedRuns ?? 0}
+              value={data?.stats.failedRuns ?? null}
               danger={(data?.stats.failedRuns ?? 0) > 0}
             />
             <PipelineStat
               label="Synthèses IA à traiter"
-              value={data?.stats.aiDescriptions.backfillRemaining ?? 0}
+              value={data?.stats.aiDescriptions.backfillRemaining ?? null}
             />
           </div>
         </AdminPanel>
@@ -871,17 +1128,27 @@ function AdminPublications({
   totalRequests,
   pendingCount,
   loading,
+  fetching,
   error,
+  hasMore,
+  limit,
+  onLoadMore,
+  onRetry,
   filter,
   onFilterChange,
   reviewPending,
   onReview,
 }: {
   requests: PublicationRequest[];
-  totalRequests: number;
-  pendingCount: number;
+  totalRequests: number | null;
+  pendingCount: number | null;
   loading: boolean;
+  fetching: boolean;
   error: unknown;
+  hasMore: boolean;
+  limit: number;
+  onLoadMore: () => void;
+  onRetry: () => void;
   filter: PublicationFilter;
   onFilterChange: (filter: PublicationFilter) => void;
   reviewPending: boolean;
@@ -895,7 +1162,11 @@ function AdminPublications({
       <div className="border-b border-[#132238]/10 p-5">
         <AdminSectionHeading
           title="File de validation"
-          description={`${pendingCount} demande${pendingCount > 1 ? "s" : ""} en attente sur ${totalRequests}`}
+          description={
+            pendingCount == null || totalRequests == null
+              ? "Nombre de demandes indisponible"
+              : `${pendingCount} demande${pendingCount > 1 ? "s" : ""} en attente sur ${totalRequests}`
+          }
           action={
             <div className="flex flex-wrap gap-1 rounded-lg bg-[#132238]/[0.04] p-1">
               {(
@@ -925,8 +1196,23 @@ function AdminPublications({
       </div>
 
       {error ? (
-        <div className="m-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error instanceof Error ? error.message : "Erreur de chargement des demandes"}
+        <div
+          className="m-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          role="alert"
+        >
+          <p>
+            {requests.length
+              ? "Actualisation impossible. Les demandes affichées peuvent être obsolètes."
+              : queryErrorMessage(error, "Erreur de chargement des demandes")}
+          </p>
+          <button
+            type="button"
+            className="admin-button-secondary mt-3"
+            onClick={onRetry}
+            disabled={loading}
+          >
+            {loading ? "Nouvelle tentative…" : "Réessayer"}
+          </button>
         </div>
       ) : null}
 
@@ -944,9 +1230,26 @@ function AdminPublications({
           ))
         ) : (
           <div className="py-16 text-center text-sm text-[#132238]/58">
-            Aucune demande ne correspond aux filtres.
+            {error
+              ? "Les demandes sont indisponibles pour le moment."
+              : "Aucune demande ne correspond aux filtres."}
           </div>
         )}
+        {hasMore && !loading && !error ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#132238]/10 pt-4">
+            <span className="text-xs text-[#132238]/58">
+              {requests.length} demandes affichées · limite actuelle {limit}
+            </span>
+            <button
+              type="button"
+              className="admin-button-secondary"
+              onClick={onLoadMore}
+              disabled={fetching}
+            >
+              {fetching ? "Chargement…" : `Charger ${PUBLICATION_PAGE_SIZE} de plus`}
+            </button>
+          </div>
+        ) : null}
       </div>
     </AdminPanel>
   );
@@ -986,9 +1289,9 @@ function AdminLawyers({
         </button>
       </div>
       {activeTab === "referrals" ? (
-        <AdminLawyerReferralRequestsPanel />
+        <LazyAdminLawyerReferralRequestsPanel />
       ) : (
-        <AdminReferencedLawyersPanel />
+        <LazyAdminReferencedLawyersPanel />
       )}
     </div>
   );
@@ -1092,9 +1395,20 @@ function OverviewMetric({
   );
 }
 
-function RecentRunsTable({ runs, isLoading }: { runs: AuctionRun[]; isLoading: boolean }) {
-  if (isLoading) {
+function RecentRunsTable({
+  runs,
+  isLoading,
+  hasData,
+}: {
+  runs: AuctionRun[];
+  isLoading: boolean;
+  hasData: boolean;
+}) {
+  if (isLoading && !hasData) {
     return <div className="p-5 text-sm text-[#132238]/58">Chargement de l’activité…</div>;
+  }
+  if (!hasData) {
+    return <div className="p-5 text-sm text-red-700">Activité indisponible.</div>;
   }
   if (!runs.length) {
     return <div className="p-5 text-sm text-[#132238]/58">Aucune exécution trouvée.</div>;
@@ -1136,14 +1450,14 @@ function PipelineStat({
   danger = false,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   danger?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between py-4 text-sm">
       <span className="text-[#132238]/68">{label}</span>
       <strong className={`text-xl tabular-nums ${danger ? "text-red-600" : "text-[#1f67b6]"}`}>
-        {formatInteger(value)}
+        {value == null ? "—" : formatInteger(value)}
       </strong>
     </div>
   );
@@ -1227,6 +1541,7 @@ function RunDetails({
   onRestart: (source: string | null) => void;
   restartPending: boolean;
 }) {
+  const [showLogs, setShowLogs] = useState(false);
   if (!run) {
     return (
       <AdminPanel className="flex min-h-96 items-center justify-center p-6 text-sm text-[#132238]/58">
@@ -1265,11 +1580,17 @@ function RunDetails({
         {stages.map(([label, value], index) => (
           <div key={label} className="relative flex items-center gap-3 text-sm">
             {index < stages.length - 1 ? (
-              <span className="absolute left-[0.47rem] top-5 h-5 w-px bg-emerald-300" />
+              <span
+                className={`absolute left-[0.47rem] top-5 h-5 w-px ${
+                  runStageState(run, index) === "complete" ? "bg-emerald-300" : "bg-[#132238]/15"
+                }`}
+              />
             ) : null}
-            <CheckCircle className="relative z-10 size-4 shrink-0 text-emerald-600" />
+            <RunStageIcon state={runStageState(run, index)} />
             <span className="flex-1 text-[#132238]">{label}</span>
-            <span className="tabular-nums text-[#132238]/58">{value}</span>
+            <span className="tabular-nums text-[#132238]/58">
+              {value} · {runStageLabel(runStageState(run, index))}
+            </span>
           </div>
         ))}
         {errorCount(run.errors) > 0 ? (
@@ -1304,18 +1625,85 @@ function RunDetails({
       <div className="mt-6 grid grid-cols-2 gap-3">
         <button
           type="button"
-          onClick={() => toast.info("Les détails disponibles sont affichés dans le résumé du run.")}
+          onClick={() => setShowLogs((current) => !current)}
           className="admin-button-secondary"
+          aria-expanded={showLogs}
         >
-          Voir les logs
+          {showLogs ? "Masquer les détails" : "Afficher les détails"}
         </button>
         <AdminPrimaryButton disabled={restartPending} onClick={() => onRestart(run.source)}>
           {restartPending ? <RefreshCw className="size-4 animate-spin" /> : null}
           Relancer
         </AdminPrimaryButton>
       </div>
+      {showLogs ? (
+        <div className="mt-4 grid gap-4 rounded-lg border border-[#132238]/10 bg-[#132238]/[0.025] p-4 text-xs">
+          <div>
+            <h3 className="font-semibold text-[#132238]">Résumé JSON</h3>
+            <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[#132238]/72">
+              {JSON.stringify(run.summary, null, 2)}
+            </pre>
+          </div>
+          <div>
+            <h3 className="font-semibold text-[#132238]">Erreurs JSON</h3>
+            <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[#132238]/72">
+              {JSON.stringify(run.errors, null, 2)}
+            </pre>
+          </div>
+        </div>
+      ) : null}
     </AdminPanel>
   );
+}
+
+type RunStageState = "complete" | "failed" | "running" | "pending" | "unknown";
+
+function runStageState(run: AuctionRun, index: number): RunStageState {
+  const summaryKeys = ["collected", "deduplicated", "upserted"];
+  const key = summaryKeys[index];
+  const hasValue = key ? typeof run.summary[key] === "number" : false;
+
+  if (run.status === "failed") {
+    const failedStage = failedRunStageIndex(run);
+    if (failedStage == null) return "unknown";
+    if (index === failedStage) return "failed";
+    return index < failedStage && hasValue ? "complete" : "unknown";
+  }
+  if (run.status === "succeeded") return hasValue ? "complete" : "unknown";
+  if (run.status === "running") return hasValue ? "complete" : index === 0 ? "running" : "pending";
+  if (run.status === "queued") return "pending";
+  return hasValue ? "complete" : "unknown";
+}
+
+function failedRunStageIndex(run: AuctionRun): number | null {
+  for (const key of Object.keys(run.errors)) {
+    const normalized = key.toLocaleLowerCase("fr-FR");
+    if (/(collect|source|scrap)/.test(normalized)) return 0;
+    if (/(dedup|duplicat)/.test(normalized)) return 1;
+    if (/(upsert|write|supabase|persist)/.test(normalized)) return 2;
+  }
+  return null;
+}
+
+function runStageLabel(state: RunStageState): string {
+  if (state === "complete") return "terminée";
+  if (state === "failed") return "en échec";
+  if (state === "running") return "en cours";
+  if (state === "pending") return "en attente";
+  return "non déterminée";
+}
+
+function RunStageIcon({ state }: { state: RunStageState }) {
+  if (state === "complete") {
+    return <CheckCircle className="relative z-10 size-4 shrink-0 text-emerald-600" />;
+  }
+  if (state === "failed") {
+    return <XCircle className="relative z-10 size-4 shrink-0 text-red-600" />;
+  }
+  if (state === "running") {
+    return <RefreshCw className="relative z-10 size-4 shrink-0 animate-spin text-sky-600" />;
+  }
+  return <AlertTriangle className="relative z-10 size-4 shrink-0 text-amber-600" />;
 }
 
 function RunSummaryNumber({ value, label }: { value: string; label: string }) {

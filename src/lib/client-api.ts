@@ -124,6 +124,7 @@ import type {
   InformationAgentEmailTemplatePreview,
   InformationAgentEmailTemplateWorkspace,
 } from "@/lib/information-agent-email-template";
+import type { PipelineControlSettings, PipelineStatus } from "@/lib/pipeline-status";
 
 async function authHeaders(): Promise<HeadersInit> {
   const {
@@ -214,6 +215,7 @@ export async function fetchOutcomeGraphForecast(args: {
 
 export async function fetchValuationAdminOverview(): Promise<ValuationAdminResponse> {
   const response = await fetch("/api/admin/valuation-models", {
+    signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });
   return readJson<ValuationAdminResponse>(response);
@@ -1098,7 +1100,10 @@ export async function createPrivacyRequestClient(
 }
 
 export async function fetchAdminPrivacyRequests(): Promise<PrivacyRequestAdminListResponse> {
-  const response = await fetch("/api/admin/privacy-requests", { headers: await authHeaders() });
+  const response = await fetch("/api/admin/privacy-requests", {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+  });
   return readJson<PrivacyRequestAdminListResponse>(response);
 }
 
@@ -1124,6 +1129,7 @@ export async function openBillingPortal(): Promise<BillingSessionResponse> {
 
 export async function fetchAdminDashboard(): Promise<AdminDashboardData> {
   const response = await fetch("/api/admin/dashboard", {
+    signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });
 
@@ -1132,6 +1138,7 @@ export async function fetchAdminDashboard(): Promise<AdminDashboardData> {
 
 export async function fetchAdminInformationAgentEmailTemplate(): Promise<InformationAgentEmailTemplateWorkspace> {
   const response = await fetch("/api/admin/information-agent/template", {
+    signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
     cache: "no-store",
   });
@@ -1174,6 +1181,7 @@ export async function publishAdminInformationAgentEmailTemplateDraft(
 
 export async function fetchAdminDataQuality(): Promise<DataQualityReport> {
   const response = await fetch("/api/admin/data-quality", {
+    signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });
 
@@ -1197,6 +1205,7 @@ export async function startAdminScrollRequest(args: {
 
 export async function fetchAdminReadiness(): Promise<AdminOperationalReadinessResponse> {
   const response = await fetch("/api/admin/readiness", {
+    signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });
 
@@ -1205,6 +1214,7 @@ export async function fetchAdminReadiness(): Promise<AdminOperationalReadinessRe
 
 export async function fetchAdminReferencedLawyers(): Promise<AdminReferencedLawyerListResponse> {
   const response = await fetch("/api/admin/lawyers", {
+    signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });
 
@@ -1228,6 +1238,7 @@ export async function saveAdminReferencedLawyer(args: {
 
 export async function fetchAdminLawyerReferralRequests(): Promise<AdminLawyerReferralListResponse> {
   const response = await fetch("/api/admin/lawyer-referrals", {
+    signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });
 
@@ -1251,6 +1262,7 @@ export async function updateAdminLawyerReferralRequest(args: {
 
 export async function fetchAdminSubscriptions(): Promise<AdminSubscriptionListResponse> {
   const response = await fetch("/api/admin/subscriptions", {
+    signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });
 
@@ -1304,9 +1316,13 @@ export async function revokeApiKey(args: { keyId: string }): Promise<void> {
   await readJson<{ key: unknown }>(response);
 }
 
-export async function fetchPipelineStatus(): Promise<import("./pipeline-status").PipelineStatus> {
+export async function fetchPipelineStatus(): Promise<PipelineStatus> {
   return readJson(
-    await fetch("/api/admin/pipeline", { headers: await authHeaders(), cache: "no-store" }),
+    await fetch("/api/admin/pipeline", {
+      signal: AbortSignal.timeout(30_000),
+      headers: await authHeaders(),
+      cache: "no-store",
+    }),
   );
 }
 export async function setPipelineSourceEnabled(source: string, enabled: boolean): Promise<void> {
@@ -1317,4 +1333,20 @@ export async function setPipelineSourceEnabled(source: string, enabled: boolean)
       body: JSON.stringify({ source, enabled }),
     }),
   );
+}
+
+export async function updatePipelineControl(
+  changes: Partial<PipelineControlSettings>,
+): Promise<PipelineStatus["control"]> {
+  const response = await fetch("/api/admin/pipeline/control", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify(changes),
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  return readJson<PipelineStatus["control"]>(response);
 }
