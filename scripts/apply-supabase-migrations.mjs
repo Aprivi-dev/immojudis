@@ -128,11 +128,6 @@ if (remoteOnly.length) {
     console.error(
       `  - ${version}${migration?.name ? `_${migration.name}` : ""}${contentComparison}`,
     );
-    if (migration?.statements?.length && migration.statementSha256 !== localDigest) {
-      console.error(
-        `    remote-statements-base64: ${Buffer.from(migration.statements.join("\n")).toString("base64")}`,
-      );
-    }
   }
   console.error("[supabase-migrations] Add the missing local migration file(s) before applying.");
   process.exit(1);
@@ -177,12 +172,12 @@ function sqlArray(values) {
 }
 
 function fileSha256(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+  return createHash("sha256").update(readFileSync(path, "utf8").trimEnd()).digest("hex");
 }
 
 function statementsSha256(statements) {
   if (!Array.isArray(statements)) return null;
-  return createHash("sha256").update(statements.join("")).digest("hex");
+  return createHash("sha256").update(statements.join("").trimEnd()).digest("hex");
 }
 
 function unquote(value) {
@@ -253,12 +248,11 @@ function createPsqlRunner(dbUrl, psqlBin) {
         lines.map((line) => {
           const separator = line.indexOf("|");
           return separator === -1
-            ? { version: line, name: "", statementSha256: null, statements: null }
+            ? { version: line, name: "", statementSha256: null }
             : {
                 version: line.slice(0, separator),
                 name: line.slice(separator + 1),
                 statementSha256: null,
-                statements: null,
               };
         }),
       );
@@ -301,7 +295,6 @@ async function createPostgresJsRunner(dbUrl) {
           version: String(row.version).trim(),
           name: String(row.name || "").trim(),
           statementSha256: statementsSha256(row.statements),
-          statements: Array.isArray(row.statements) ? row.statements.map(String) : null,
         }))
         .filter(({ version }) => Boolean(version));
     },
