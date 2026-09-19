@@ -155,6 +155,11 @@ insert into public.auction_sales (
   now()
 );
 
+-- auth.users is intentionally not writable by service_role. Create the RLS
+-- fixtures as the local database owner, then switch to application roles for
+-- the access assertions below.
+reset role;
+
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
   created_at, updated_at, raw_app_meta_data, raw_user_meta_data
