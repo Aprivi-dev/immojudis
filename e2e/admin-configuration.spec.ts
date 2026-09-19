@@ -11,6 +11,7 @@ type MockOptions = {
   pipelineFailures?: number;
   controlFailure?: boolean;
   dashboardPending?: boolean;
+  collectionErrors?: boolean;
 };
 
 type MockState = {
@@ -29,6 +30,30 @@ type MockState = {
 };
 
 test.describe("admin configuration", () => {
+  test("distinguishes publication errors, resumed collection and scoped inventory", async ({
+    page,
+  }, testInfo) => {
+    await prepareAdminPage(page, { collectionErrors: true });
+    await page.goto("/admin/settings");
+    await page.getByRole("tab", { name: "Sources de données" }).click();
+    await expect(page.getByRole("row", { name: /notaires/ })).toContainText(
+      "Publication partielle",
+    );
+    await expect(page.getByRole("row", { name: /petites_affiches/ })).toContainText(
+      "Collecte à reprendre",
+    );
+    await expect(page.getByRole("row", { name: /agrasc/ })).toContainText(
+      "Catalogue accessible vérifié",
+    );
+    await expect(page.getByRole("row", { name: /agrasc/ })).toContainText(
+      "archives sans lien exclues",
+    );
+    expect(await page.locator("[data-nextjs-dialog], .vite-error-overlay").count()).toBe(0);
+    await page.screenshot({
+      path: testInfo.outputPath("source-collection-status.png"),
+      fullPage: true,
+    });
+  });
   test("loads settings, blocks invalid values, and sends the changed payload", async ({
     page,
   }, testInfo) => {
@@ -255,7 +280,7 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
         await route.fulfill({ status: 503, json: { error: "Supervision indisponible" } });
         return;
       }
-      await route.fulfill({ status: 200, json: pipelinePayload(state) });
+      await route.fulfill({ status: 200, json: pipelinePayload(state, options.collectionErrors) });
       return;
     }
 
@@ -308,7 +333,7 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
   return state;
 }
 
-function pipelinePayload(state: MockState) {
+function pipelinePayload(state: MockState, collectionErrors = false) {
   return {
     control: state.control,
     sources: [
@@ -323,7 +348,31 @@ function pipelinePayload(state: MockState) {
         suspension_reason: null,
         last_error: null,
       },
-    ],
+    ].flatMap((source) =>
+      collectionErrors
+        ? [
+            {
+              ...source,
+              source_name: "notaires",
+              last_error: "source_name is immutable",
+              coverage: { publication_published: 173, publication_pending: 23 },
+            },
+            {
+              ...source,
+              source_name: "petites_affiches",
+              availability: "unavailable",
+              last_error: "Execution budget exceeded",
+              coverage: { publication_published: 343, publication_pending: 12 },
+            },
+            {
+              ...source,
+              source_name: "agrasc",
+              availability: "partial",
+              coverage: { scoped_inventory_complete: true },
+            },
+          ]
+        : [source],
+    ),
     observations: [],
     alerts: [],
     usage: {

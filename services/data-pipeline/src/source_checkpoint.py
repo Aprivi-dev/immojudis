@@ -6,12 +6,22 @@ import copy
 import hashlib
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
+from typing import Any
 
 from psycopg.types.json import Jsonb
 
 from src.config import load_settings
+
+# Checkpoint retention is deliberately independent from source freshness.  A
+# detail captured by an interrupted run may be reusable after the source's
+# normal freshness window, while ``_checkpoint_checked_at`` must continue to
+# describe when that detail was actually fetched.  The existing cleanup jobs
+# retain these rows for 24 hours, so keep the reader aligned with that policy.
+CHECKPOINT_RETENTION = "24 hours"
+MAX_CHECKPOINT_REUSE_AGE = timedelta(hours=24)
+CURSOR_PREFIX = "__source_cursor__:"
 
 
 @lru_cache(maxsize=1)
@@ -24,10 +34,70 @@ def _context():
     with _postgres_connect(str(db_url)) as db:
         rows = db.execute("""select distinct on(c.source_url) c.source_url,c.signature,c.payload,c.observed_at
           from public.auction_collection_checkpoints c join public.auction_runs r on r.id=c.run_id
-          where r.status='failed' and c.observed_at>now()-interval '6 hours'
+          where r.status='failed' and c.observed_at>now()-interval '24 hours'
             and r.source=(select source from public.auction_runs where id=%s)
           order by c.source_url,c.observed_at desc""", (run_id,)).fetchall()
-    return str(db_url),run_id,{url:(signature,payload,observed) for url,signature,payload,observed in rows}
+    details = {}
+    cursors = {}
+    for url, signature, payload, observed in rows:
+        if str(url).startswith(CURSOR_PREFIX):
+            cursors[str(url)[len(CURSOR_PREFIX):]] = payload if isinstance(payload, dict) else {}
+        else:
+            details[url] = (signature, payload, observed)
+    return str(db_url), run_id, details, cursors
+
+
+def load_source_cursor(partition: str) -> dict[str, Any] | None:
+    """Return the newest durable cursor for a source partition, if any.
+
+    Cursors are stored beside detail checkpoints so this change works with
+    the deployed checkpoint table and survives a process kill between pages.
+    The current run id remains the write target; ``_context`` reads only a
+    previous failed run, preventing a partially written cursor from being
+    treated as a completed scan in the same run.
+    """
+    context = _context()
+    if not context:
+        return None
+    cursor = context[3].get(str(partition))
+    return copy.deepcopy(cursor) if isinstance(cursor, dict) else None
+
+
+def save_source_cursor(partition: str, payload: dict[str, Any]) -> bool:
+    """Persist a page/departure cursor with independent retention time."""
+    context = _context()
+    if not context:
+        return False
+    retained_at = datetime.now(UTC)
+    cursor = json.loads(json.dumps(payload, default=str))
+    cursor.setdefault("schema_version", "petites_affiches_cursor_v1")
+    cursor["cursor_retained_at"] = retained_at.isoformat()
+    source_url = f"{CURSOR_PREFIX}{partition}"
+    from src.storage.supabase_client import _postgres_connect
+
+    with _postgres_connect(context[0]) as db:
+        with db.transaction():
+            db.execute("""insert into public.auction_collection_checkpoints
+                (run_id,source_url,signature,payload,observed_at)
+                values(%s,%s,%s,%s,%s) on conflict(run_id,source_url) do update set
+                  signature=excluded.signature,payload=excluded.payload,observed_at=excluded.observed_at""",
+                (context[1], source_url, "source_cursor_v1", Jsonb(cursor), retained_at))
+    return True
+
+
+def _stored_checked_at(payload: object, fallback: datetime) -> datetime:
+    if isinstance(payload, dict):
+        value = payload.get("_checkpoint_checked_at")
+        if isinstance(value, datetime) and value.tzinfo:
+            return value.astimezone(UTC)
+        if isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                parsed = None
+            if parsed is not None and parsed.tzinfo:
+                return parsed.astimezone(UTC)
+    return fallback.astimezone(UTC) if fallback.tzinfo else fallback.replace(tzinfo=UTC)
 
 
 def restore_detail(sale: dict) -> bool:
@@ -42,8 +112,17 @@ def restore_detail(sale: dict) -> bool:
     cached = context[2].get(str(sale.get('source_url') or ''))
     if cached is None or cached[0] != signature:
         return False
+    # ``observed_at`` is retention metadata.  Reusing it as a freshness check
+    # would make an old checkpoint look newly fetched, so prefer the dated
+    # marker stored in the payload and only fall back for legacy rows.
+    if not isinstance(cached[1], dict):
+        return False
+    checked_at = _stored_checked_at(cached[1], cached[2])
+    age = datetime.now(UTC) - checked_at
+    if age < timedelta(0) or age > MAX_CHECKPOINT_REUSE_AGE:
+        return False
     sale.update(cached[1])
-    sale['_checkpoint_checked_at'] = cached[2].isoformat()
+    sale['_checkpoint_checked_at'] = checked_at.isoformat()
     sale['_checkpoint_restored'] = True
     return True
 
@@ -82,9 +161,14 @@ class CheckpointSales(list):
 
     def append(self, sale):
         context = _context()
-        if context and sale.get('_checkpoint_signature') and not (sale.get('_detail_fetch_failed') or sale.get('_known_unchanged') or sale.get('operator_detail_status') == 'failed'):
+        if (context and sale.get('_checkpoint_signature') and not sale.get('_checkpoint_restored')
+                and not (sale.get('_detail_fetch_failed') or sale.get('_known_unchanged')
+                         or sale.get('operator_detail_status') == 'failed')):
             from src.storage.supabase_client import _postgres_connect
-            observed = sale.setdefault('_checkpoint_checked_at', datetime.now(UTC).isoformat())
+            sale.setdefault('_checkpoint_checked_at', datetime.now(UTC).isoformat())
+            # Retention is refreshed when a checkpoint is committed, but the
+            # source-check timestamp above is intentionally left untouched.
+            observed = datetime.now(UTC)
             payload = json.loads(json.dumps(sale, default=str))
             if self._db is None:
                 connection_context = _postgres_connect(context[0])

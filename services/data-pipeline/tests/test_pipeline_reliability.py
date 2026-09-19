@@ -6,7 +6,13 @@ import httpx
 import pytest
 
 from src.dedupe import merge_duplicate_sales
-from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
+from src.freshness import (
+    SOURCE_EXTRACTION_VERSION,
+    detail_is_fresh,
+    document_fingerprint,
+    documents_are_current,
+    record_source_checks,
+)
 from src.normalize import normalize_sale
 from src.pdf_enrichment import download_documents
 from src.sources.common import PaginationCoverage
@@ -28,6 +34,28 @@ def test_source_check_expires_and_content_change_invalidates_enrichment():
     assert changed['superseded_analysis']['description'] == 'Ancienne analyse : bien libre'
     known[raw["source_url"]]["raw_payload"]["source_checks"][raw["source_url"]]["checked_at"] = (datetime.now(UTC) - timedelta(days=2)).isoformat()
     assert not detail_is_fresh(known[raw["source_url"]], raw["source_url"])
+
+
+@pytest.mark.parametrize("marker", ["identity_mismatch", "quarantined"])
+def test_identity_mismatch_or_quarantine_never_counts_as_fresh_detail(marker):
+    source_url = "https://example.test/mismatched"
+    row = {
+        "status": "active",
+        "raw_payload": {
+            "source_checks": {
+                source_url: {
+                    "checked_at": datetime.now(UTC).isoformat(),
+                    "extractor_version": SOURCE_EXTRACTION_VERSION,
+                }
+            }
+        },
+    }
+    if marker == "identity_mismatch":
+        row["raw_payload"]["source_identity_mismatch"] = True
+    else:
+        row["status"] = "quarantined"
+
+    assert not detail_is_fresh(row, source_url)
 
 
 def test_document_identity_and_failures_invalidate_analysis():

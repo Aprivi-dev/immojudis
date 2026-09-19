@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from psycopg.types.json import Jsonb
 
 from src.autonomous_runner import next_attempt
 from src.storage.supabase_client import _postgres_connect
@@ -140,6 +141,43 @@ def test_interrupted_detail_collection_reuses_only_matching_checkpoint(monkeypat
             assert datetime.fromisoformat(resumed['_checkpoint_checked_at']) == datetime.fromisoformat(checked_at)
             changed = {**listing,'starting_price_eur':11000}
             assert source_checkpoint.restore_detail(changed) is False
+        finally:
+            source_checkpoint._context.cache_clear()
+            db.rollback()
+
+
+def test_interrupted_detail_collection_reuses_checkpoint_after_nine_hours_without_refreshing_freshness(monkeypatch):
+    from contextlib import nullcontext
+
+    from src import source_checkpoint
+    from src.storage import supabase_client
+
+    url = os.getenv('PIPELINE_TEST_DB_URL')
+    if not url:
+        pytest.skip('Requires disposable PostgreSQL')
+    with _postgres_connect(url) as db:
+        try:
+            setup(db)
+            old = str(db.execute("insert into auction_runs(source,status) values('petites_affiches','failed') returning id").fetchone()[0])
+            listing = {'source_url': 'https://example.test/pa-1', 'source_name': 'petites_affiches', 'starting_price_eur': 10000}
+            signature = source_checkpoint.hashlib.sha256(
+                source_checkpoint.json.dumps(listing, sort_keys=True, default=str).encode()
+            ).hexdigest()
+            checked_at = datetime.now(UTC) - timedelta(hours=9)
+            payload = {**listing, '_checkpoint_checked_at': checked_at.isoformat(), 'raw_text': 'durable detail'}
+            db.execute("""insert into auction_collection_checkpoints
+                (run_id,source_url,signature,payload,observed_at)
+                values(%s,%s,%s,%s,now()-interval '9 hours')""",
+                (old, listing['source_url'], signature, Jsonb(payload)))
+            new = str(db.execute("insert into auction_runs(source,status) values('petites_affiches','running') returning id").fetchone()[0])
+            monkeypatch.setenv('PIPELINE_AUTONOMOUS_RUN_ID', new)
+            monkeypatch.setattr(source_checkpoint, 'load_settings', lambda: {'supabase_db_url': url})
+            monkeypatch.setattr(supabase_client, '_postgres_connect', lambda _: nullcontext(db))
+            source_checkpoint._context.cache_clear()
+            resumed = dict(listing)
+            assert source_checkpoint.restore_detail(resumed) is True
+            assert resumed['raw_text'] == 'durable detail'
+            assert resumed['_checkpoint_checked_at'] == checked_at.isoformat()
         finally:
             source_checkpoint._context.cache_clear()
             db.rollback()

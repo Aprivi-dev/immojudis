@@ -250,7 +250,7 @@ def test_light_pipeline_geocodes_and_reupserts_when_heavy_enrichment_disabled(mo
 
 
 @pytest.mark.parametrize(
-    "source,limit,global_cleanup", [("all", None, True), ("avoventes", None, False), ("all", 10, False)]
+    "source,limit,global_cleanup", [("all", None, True), ("avoventes", None, False), ("all", 10, False), ("agrasc", None, False)]
 )
 def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch, source, limit, global_cleanup) -> None:
     summary_capture: dict[str, object] = {}
@@ -266,6 +266,10 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch, 
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "scrape_agrasc_aquitaine_result", lambda: ScrapeResult(
+        [{**_raw_sale(), "source_name": "agrasc"}], [],
+        {"coverage_complete": False, "scoped_inventory_complete": True},
+    ))
     monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
     monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
     monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
@@ -325,6 +329,10 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch, 
     assert summary_capture["deleted_expired_sales"] == (3 if global_cleanup else 0)
     assert summary_capture["deleted_secondary_sales"] == (1 if global_cleanup else 0)
     assert summary_capture["outcome_bridge_scanned"] == (3 if global_cleanup else 0)
+    if source == "agrasc":
+        assert summary_capture["stage_status"]["collection"] == "scoped_complete"
+        assert summary_capture["completion_status"] == "partial_success"
+        assert not any(name in calls for name in expected_cleanup)
 
 
 @pytest.mark.parametrize("collection_failed", [False, True])
@@ -1111,3 +1119,15 @@ def test_surface_context_deduplicates_copied_fields_without_losing_distinct_evid
                        description=repeated, raw_text=repeated,
                        raw_payload={'source_description': repeated, 'source_blocks': {'extra': 'Terrain 500 m².'}})
     assert main._surface_reasoning_context_for_sale(sale) == repeated + '\nTerrain 500 m².'
+
+
+def test_mismatched_detail_never_rehydrates_previous_contaminated_content():
+    raw = {'source_url': 'https://example.test/9486', 'description': 'List card',
+           'source_identity_mismatch': True, '_detail_fetch_failed': True}
+    known = {raw['source_url']: {'description': 'Wrong property 9490 with a longer description',
+                               'surface_m2': 999, 'raw_payload': {'llm_display_description': 'Wrong summary'}}}
+    assert main._hydrate_known_unchanged_sales([raw], known) == 0
+    assert main._preserve_known_enrichment_payloads([raw], known) == 0
+    assert raw['description'] == 'List card'
+    assert 'surface_m2' not in raw
+    assert 'llm_display_description' not in raw

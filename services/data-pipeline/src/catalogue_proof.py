@@ -300,5 +300,17 @@ class CatalogueEvidence:
             certificate['public_discovery_certified'] = False
             certificate['addressable_public_inventory_certified'] = False
             certificate['all_discovered_announcements_emitted'] = False
+        # AGRASC keeps sold archive cards without URLs. Their dated evidence is
+        # retained above; certifying the addressable scope must never certify
+        # the entire public inventory or authorize catalogue cleanup.
+        scoped_complete = bool(
+            self.source == 'agrasc'
+            and pagination_complete
+            and certificate['addressable_public_inventory_certified']
+            and not certificate['unhandled_public_urls']
+            and not certificate['invalid_exclusion_urls']
+        )
         return {'certificate': certificate, 'coverage_complete': bool(
-            pagination_complete and certificate['all_discovered_announcements_emitted'])}
+            pagination_complete and certificate['all_discovered_announcements_emitted']),
+            'scoped_inventory_complete': scoped_complete,
+            'inventory_scope': 'addressable_public_catalogue' if scoped_complete else 'public_catalogue'}
