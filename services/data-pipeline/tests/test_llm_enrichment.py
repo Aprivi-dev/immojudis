@@ -462,7 +462,11 @@ def test_replicate_client_uses_pinned_predictions_endpoint_for_qwen2_7b(monkeypa
 
     class FakeResponse:
         def json(self):
-            return {"id": "prediction-test", "status": "starting"}
+            return {
+                "id": "prediction-test",
+                "status": "starting",
+                "urls": {"get": "https://api.replicate.com/v1/predictions/prediction-test"},
+            }
 
     def fake_post(endpoint, *, headers, payload):
         captured["endpoint"] = endpoint

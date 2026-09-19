@@ -92,6 +92,8 @@ jobs:
       REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
       REPLICATE_TEMPERATURE: 0.1
       REPLICATE_MAX_TOKENS: 512
+      # Structured evidence needs room for valid JSON; summaries remain short.
+      REPLICATE_FACT_MAX_TOKENS: 4096
       LLM_EXTRACTION_MODE: display_description
       LLM_PROMPT_VERSION: auction_llm_v9_qwen2_7b_scan_display
       LLM_FACT_PROMPT_VERSION: auction_facts_v1
