@@ -18,6 +18,10 @@ try {
         title: document.title,
         url: location.href,
         chars: document.body.innerText.length,
+        inventoryTotals: document.body.innerText.match(/\d+\s+biens en ventes?/gi) ?? [],
+        paginationButtons: [...document.querySelectorAll("button")]
+          .filter((button) => /^(?:\d+|[<>]|\.\.\.)$/.test(button.textContent.trim()))
+          .map((button) => button.outerHTML),
         links: [...document.querySelectorAll("a[href]")]
           .map((a) => a.href)
           .filter((h) => h.includes("/ventes/") || h.includes("/biens-en-vente")),
