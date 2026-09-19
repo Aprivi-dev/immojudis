@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,7 +117,17 @@ if (remoteOnly.length) {
   );
   for (const version of remoteOnly) {
     const migration = remoteMigrations.find((candidate) => candidate.version === version);
-    console.error(`  - ${version}${migration?.name ? `_${migration.name}` : ""}`);
+    const localNameMatch = migration?.name
+      ? migrations.find((candidate) => candidate.name === migration.name)
+      : null;
+    const localDigest = localNameMatch ? fileSha256(localNameMatch.path) : null;
+    const contentComparison =
+      migration?.statementSha256 && localDigest
+        ? `; content ${migration.statementSha256 === localDigest ? "matches" : "differs from"} ${localNameMatch.file}`
+        : "";
+    console.error(
+      `  - ${version}${migration?.name ? `_${migration.name}` : ""}${contentComparison}`,
+    );
   }
   console.error("[supabase-migrations] Add the missing local migration file(s) before applying.");
   process.exit(1);
@@ -158,6 +169,15 @@ function sqlLiteral(value) {
 
 function sqlArray(values) {
   return `array[${values.map(sqlLiteral).join(", ")}]::text[]`;
+}
+
+function fileSha256(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function statementsSha256(statements) {
+  if (!Array.isArray(statements)) return null;
+  return createHash("sha256").update(statements.join("")).digest("hex");
 }
 
 function unquote(value) {
@@ -228,8 +248,12 @@ function createPsqlRunner(dbUrl, psqlBin) {
         lines.map((line) => {
           const separator = line.indexOf("|");
           return separator === -1
-            ? { version: line, name: "" }
-            : { version: line.slice(0, separator), name: line.slice(separator + 1) };
+            ? { version: line, name: "", statementSha256: null }
+            : {
+                version: line.slice(0, separator),
+                name: line.slice(separator + 1),
+                statementSha256: null,
+              };
         }),
       );
     },
@@ -261,7 +285,7 @@ async function createPostgresJsRunner(dbUrl) {
     async listAppliedMigrations() {
       const rows = await retryTransientConnection(
         () => sql`
-          select version, coalesce(name, '') as name
+          select version, coalesce(name, '') as name, statements
           from supabase_migrations.schema_migrations
           order by version
         `,
@@ -270,6 +294,7 @@ async function createPostgresJsRunner(dbUrl) {
         .map((row) => ({
           version: String(row.version).trim(),
           name: String(row.name || "").trim(),
+          statementSha256: statementsSha256(row.statements),
         }))
         .filter(({ version }) => Boolean(version));
     },
