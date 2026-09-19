@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AuthGate } from "@/components/AuthGate";
-import { AdminSettingsPage } from "@/components/admin/AdminSettingsPage";
+import { AdminDashboardPage } from "@/routes/admin";
 
 export const metadata: Metadata = {
   title: "Configuration admin — ImmoJudis",
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default function Page() {
   return (
     <AuthGate>
-      <AdminSettingsPage />
+      <AdminDashboardPage initialView="settings" />
     </AuthGate>
   );
 }
