@@ -9,6 +9,12 @@ export type PipelineSourceState = {
   suspension_reason: string | null;
   last_error: string | null;
 };
+export type PipelineControlSettings = {
+  enabled: boolean;
+  source_details_enabled: boolean;
+  max_ai_predictions_per_run: number;
+  daily_ai_budget_usd: number;
+};
 export type PipelineStatus = {
   usage: {
     ai_requests: number;
@@ -18,7 +24,10 @@ export type PipelineStatus = {
     runner_seconds: number;
   };
   sources: PipelineSourceState[];
-  control: { enabled: boolean; observation_started_at: string | null };
+  control: PipelineControlSettings & {
+    observation_started_at: string | null;
+    updated_at: string;
+  };
   observations: Array<{
     source_name: string;
     observed_at: string;

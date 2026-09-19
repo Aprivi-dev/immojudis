@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
 import {
@@ -19,10 +19,14 @@ import {
 const TEMPLATE_QUERY_KEY = ["admin-information-agent-email-template"] as const;
 
 export function AdminInformationAgentTemplatePanel() {
+  const [editorDirty, setEditorDirty] = useState(false);
   const templateQuery = useQuery({
     queryKey: TEMPLATE_QUERY_KEY,
     queryFn: fetchAdminInformationAgentEmailTemplate,
     staleTime: 30_000,
+    // Never replace an editor workspace while it contains unsaved changes.
+    enabled: !editorDirty,
+    refetchOnWindowFocus: false,
   });
 
   if (templateQuery.isLoading) {
@@ -53,30 +57,49 @@ export function AdminInformationAgentTemplatePanel() {
     );
   }
 
-  const source = templateQuery.data.draft ?? templateQuery.data.published;
   return (
-    <InformationAgentTemplateEditor
-      key={`${source.id}-${source.updatedAt}`}
-      workspace={templateQuery.data}
-    />
+    <InformationAgentTemplateEditor workspace={templateQuery.data} onDirtyChange={setEditorDirty} />
   );
 }
 
 function InformationAgentTemplateEditor({
   workspace,
+  onDirtyChange,
 }: {
   workspace: InformationAgentEmailTemplateWorkspace;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const source = workspace.draft ?? workspace.published;
-  const [template, setTemplate] = useState<InformationAgentEmailTemplateContent>(() => ({
-    name: source.name,
-    subjectTemplate: source.subjectTemplate,
-    blocks: source.blocks.map((block) => ({ ...block })),
-  }));
+  const sourceKey = `${source.id}:${source.updatedAt}`;
+  const lastSyncedSourceKey = useRef(sourceKey);
+  const [template, setTemplate] = useState<InformationAgentEmailTemplateContent>(() =>
+    templateContentFromWorkspace(workspace),
+  );
   const [dirty, setDirty] = useState(false);
   const [publicationConfirmed, setPublicationConfirmed] = useState(false);
   const [preview, setPreview] = useState<InformationAgentEmailTemplatePreview | null>(null);
+
+  useEffect(() => {
+    if (dirty || lastSyncedSourceKey.current === sourceKey) return;
+
+    lastSyncedSourceKey.current = sourceKey;
+    setTemplate(templateContentFromWorkspace(workspace));
+    setPreview(null);
+    setPublicationConfirmed(false);
+  }, [dirty, sourceKey, workspace]);
+
+  useEffect(() => {
+    if (!dirty) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [dirty]);
 
   const previewMutation = useMutation({
     mutationFn: () => previewAdminInformationAgentEmailTemplate(template),
@@ -93,7 +116,9 @@ function InformationAgentTemplateEditor({
       }),
     onSuccess: (response) => {
       queryClient.setQueryData(TEMPLATE_QUERY_KEY, response);
+      setTemplate(templateContentFromWorkspace(response));
       setDirty(false);
+      onDirtyChange(false);
       setPublicationConfirmed(false);
       toast.success("Brouillon enregistré.");
     },
@@ -123,6 +148,7 @@ function InformationAgentTemplateEditor({
   ) => {
     setTemplate(updater);
     setDirty(true);
+    onDirtyChange(true);
     setPublicationConfirmed(false);
   };
   const updateBlock = (blockId: InformationAgentEmailBlock["id"], content: string) => {
@@ -146,7 +172,11 @@ function InformationAgentTemplateEditor({
   };
 
   return (
-    <div className="space-y-4">
+    <fieldset
+      disabled={saveMutation.isPending || publishMutation.isPending}
+      aria-label="Modèle de prise de contact"
+      className="min-w-0 space-y-4 border-0 p-0"
+    >
       <AdminPanel className="p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
@@ -274,7 +304,7 @@ function InformationAgentTemplateEditor({
             </div>
 
             <div className="mt-5 flex flex-col gap-3 border-t border-[#132238]/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-[#132238]/55">
+              <p className="text-xs text-[#132238]/55" role="status" aria-live="polite">
                 {dirty ? "Modifications non enregistrées" : "Brouillon synchronisé"}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -423,8 +453,19 @@ function InformationAgentTemplateEditor({
           </AdminPanel>
         </div>
       </div>
-    </div>
+    </fieldset>
   );
+}
+
+function templateContentFromWorkspace(
+  workspace: InformationAgentEmailTemplateWorkspace,
+): InformationAgentEmailTemplateContent {
+  const source = workspace.draft ?? workspace.published;
+  return {
+    name: source.name,
+    subjectTemplate: source.subjectTemplate,
+    blocks: source.blocks.map((block) => ({ ...block })),
+  };
 }
 
 function EditorField({ label, children }: { label: string; children: ReactNode }) {
