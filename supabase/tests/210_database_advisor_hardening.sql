@@ -29,14 +29,18 @@ select ok(
   'authenticated callers cannot execute the history trigger directly'
 );
 
-select ok(
-  not has_function_privilege(
-    'service_role',
-    'public.log_auction_sale_change()',
-    'EXECUTE'
-  ),
+-- The compact-history migration grants EXECUTE to the service role, but a
+-- trigger function still cannot be invoked outside a table-trigger context.
+set local role service_role;
+
+select throws_ok(
+  'select public.log_auction_sale_change()',
+  '0A000',
+  'trigger functions can only be called as triggers',
   'the service role cannot bypass the table update path by invoking the trigger directly'
 );
+
+reset role;
 
 select ok(
   exists (
@@ -76,11 +80,10 @@ select is(
     select count(*)::integer
     from public.auction_sale_history
     where source_url = 'https://example.test/advisor-hardening/sale'
-      and old_row->>'title' = 'Before hardening test update'
-      and new_row->>'title' = 'After hardening test update'
+      and changed_fields = '{"title": "After hardening test update"}'::jsonb
   ),
   1,
-  'trusted table updates still append exactly one history row'
+  'trusted table updates append exactly one compact history row containing only changed facts'
 );
 
 select * from finish();
