@@ -19,6 +19,18 @@ SOURCE_FACT_FIELDS = (
     "has_pool", "has_air_conditioning", "has_double_glazing", "risk_notes", "latitude", "longitude",
 )
 
+SOURCE_OPERATIONAL_FIELDS = frozenset({
+    "visit_dates", "sale_date", "starting_price_eur", "status",
+    "adjudication_price_eur", "source_sale_schedule",
+})
+
+
+def source_evidence_fingerprint(content: dict) -> str:
+    # Text is intentionally kept verbatim: changing a price inside prose may
+    # also change a legal condition and must not be heuristically stripped.
+    evidence = {key: content.get(key) for key in SOURCE_FACT_FIELDS if key not in SOURCE_OPERATIONAL_FIELDS}
+    return hashlib.sha256(json.dumps(evidence, sort_keys=True, default=str).encode()).hexdigest()
+
 
 def timestamp_is_fresh(value: object, *, hours: float = 24, now: datetime | None = None) -> bool:
     try:
@@ -63,10 +75,12 @@ def record_source_checks(raw_sales: list, known: dict) -> None:
         snapshot = sale.get('source_factual_snapshot') or {}
         content = {key: snapshot[key] if key in snapshot else sale.get(key) for key in SOURCE_FACT_FIELDS}
         fingerprint = hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()
+        evidence_fingerprint = source_evidence_fingerprint(content)
         old = previous.get(url) or {}
-        payload["source_checks"][url] = {"checked_at": sale.get("_checkpoint_checked_at") or datetime.now(UTC).isoformat(), "source_name": sale.get("source_name"), "fingerprint": fingerprint, "extractor_version": SOURCE_EXTRACTION_VERSION}
+        payload["source_checks"][url] = {"checked_at": sale.get("_checkpoint_checked_at") or datetime.now(UTC).isoformat(), "source_name": sale.get("source_name"), "fingerprint": fingerprint, "evidence_fingerprint": evidence_fingerprint, "extractor_version": SOURCE_EXTRACTION_VERSION}
         if old.get("fingerprint") != fingerprint:
-            invalidate_analysis(payload, "source_content_changed")
+            operational_only = old.get("evidence_fingerprint") == evidence_fingerprint
+            invalidate_analysis(payload, "source_operational_changed" if operational_only else "source_content_changed", preserve_facts=operational_only)
 
 
 def documents_are_current(sale: Any) -> bool:
@@ -78,9 +92,13 @@ def documents_are_current(sale: Any) -> bool:
     )
 
 
-def invalidate_analysis(payload: dict, reason: str) -> None:
+def invalidate_analysis(payload: dict, reason: str, *, preserve_facts: bool = False) -> None:
     """Retain dated evidence, never publish the superseded synthesis as current."""
     payload["source_content_changed"] = True
+    if preserve_facts:
+        payload["source_operational_changed"] = True
+    else:
+        payload.pop("source_operational_changed", None)
     if payload.get("llm_display_description"):
         payload["superseded_analysis"] = {
             "description": payload.pop("llm_display_description"),
@@ -89,6 +107,14 @@ def invalidate_analysis(payload: dict, reason: str) -> None:
             "reason": reason,
         }
     payload["llm_display_status"] = "pending"
-    for key in ("document_facts_version", "llm_prompt_version", "llm_fact_prompt_version",
-                "llm_fact_extraction", "llm_extraction", "llm_due_diligence", "investment_analysis"):
+    keys = ["llm_prompt_version", "llm_extraction", "llm_due_diligence", "investment_analysis"]
+    if not preserve_facts:
+        keys.extend(["document_facts_version", "llm_fact_prompt_version", "llm_fact_extraction",
+                     "llm_fact_coverage", "llm_fact_input_key", "llm_fact_context_manifest", "llm_fact_context_coverage"])
+    elif isinstance(payload.get("llm_fact_extraction"), dict):
+        # Retain validated facts, never an old generated paragraph or financial
+        # narrative bundled with an earlier extraction.
+        payload["llm_fact_extraction"] = {**payload["llm_fact_extraction"],
+                                         "display_description": None, "summary": None, "investor_notes": None}
+    for key in keys:
         payload.pop(key, None)

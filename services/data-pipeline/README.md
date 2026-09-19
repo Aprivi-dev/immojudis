@@ -432,6 +432,8 @@ REPLICATE_TIMEOUT_SECONDS=180
 REPLICATE_WAIT_SECONDS=60
 REPLICATE_CANCEL_AFTER=5m
 REPLICATE_MAX_RETRIES=4
+REPLICATE_MAX_TOKENS=512
+REPLICATE_FACT_MAX_TOKENS=4096
 REPLICATE_RETRY_BACKOFF_SECONDS=30
 REPLICATE_RETRY_MAX_SLEEP_SECONDS=60
 REPLICATE_MIN_INTERVAL_SECONDS=1
@@ -478,6 +480,22 @@ Le mode `structured_then_display` reste disponible pour une campagne
 d'extraction factuelle complète. Il analyse alors les blocs et pages en
 segments traçables avant une seconde passe de rédaction, mais il est plus long
 et plus coûteux que le mode utilisé par les scans ordinaires.
+
+Le budget `LLM_FACT_MAX_CHUNKS` limite désormais les **nouveaux blocs** analysés
+par passage. Les blocs déjà analysés sont réutilisés et les suivants sont repris
+au passage suivant, sans consommer les tentatives d'échec de la file. La synthèse
+n'est rédigée qu'après une couverture complète. Une information absente dans un
+document analysé reste inconnue ; elle ne justifie pas une nouvelle analyse du
+même contenu.
+
+Les résultats validés sont conservés dans `llm_analysis_cache` sur Supabase,
+par empreinte de contenu et par étape, en complément du cache local. Une panne
+du cache distant reporte le travail au lieu de provoquer de nouveaux appels IA.
+Les réservations de budget sont atomiques et les appels sont rattachés à leur
+annonce, étape et motif. Une réponse réseau ambiguë ne déclenche pas une nouvelle
+prédiction immédiatement. Les synthèses conservent leur plafond de 512 tokens ;
+l'extraction structurée dispose d'un plafond distinct de 4096 tokens afin de
+pouvoir terminer son JSON.
 
 Chaque pièce ou lot est extrait séparément avec valeur, catégorie, document,
 page et citation. Le LLM ne réalise pas l'addition : le module déterministe

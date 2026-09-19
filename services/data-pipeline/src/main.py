@@ -26,8 +26,10 @@ from src.enrichment.extract_structured import (
     apply_cached_llm_extraction_to_sale,
     enrich_sale_with_llm,
     extract_source_description,
+    has_current_fact_analysis,
 )
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
+from src.enrichment.operational_display import refresh_operational_display
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
 from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
@@ -165,10 +167,14 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_fact_prompt_version",
     "llm_display_prompt_version",
     "llm_fact_coverage",
+    "llm_fact_input_key",
+    "llm_fact_context_manifest",
     "llm_fact_context_coverage",
     "llm_display_description",
     "llm_display_description_word_count",
     "llm_display_status",
+    "llm_display_origin",
+    "source_operational_changed",
     "llm_display_quality_version",
     "llm_display_source_constraints",
     "llm_display_evidence_check",
@@ -418,6 +424,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     prompt_version = str(settings["llm_prompt_version"])
     if options.use_llm:
         for sale in app_ready:
+            if refresh_operational_display(sale):
+                cached_llm_display_refreshed += 1
+                continue
             if _needs_llm_display_description_refresh(
                 sale,
                 prompt_version=prompt_version,
@@ -511,6 +520,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                     _mark_llm_description_failure(sale, sale_llm_stats, prompt_version=prompt_version)
                 elif not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
                     sale.raw_payload.pop("source_content_changed", None)
+                    sale.raw_payload.pop("source_operational_changed", None)
                     _clear_llm_description_failure(sale)
                 if options.upsert:
                     _checkpoint_enrichment(sale)
@@ -1336,6 +1346,8 @@ def _needs_structured_heavy_enrichment(sale: AuctionSale) -> bool:
         return False
     if sale.documents and (sale.raw_payload.get("document_facts_version") != DOCUMENT_FACTS_VERSION or not documents_are_current(sale)):
         return True
+    if has_current_fact_analysis(sale):
+        return False
     has_surface = any(
         (
             sale.app_surface_m2,
