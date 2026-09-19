@@ -25,8 +25,8 @@ ROOT = Path(__file__).resolve().parents[3]
 BUDGET_MIGRATION = next((ROOT / "supabase/migrations").glob("*_llm_request_budget.sql"))
 CACHE_MIGRATION = next((ROOT / "supabase/migrations").glob("*_llm_analysis_cache.sql"))
 DAILY_BUDGET_MIGRATION = ROOT / "supabase/migrations/20260912125514_pipeline_usage_budget.sql"
-LLM_USAGE_MIGRATION = ROOT / "supabase/migrations/20260916143341_llm_usage_tracking_and_queue_guards.sql"
-LLM_TOKEN_MIGRATION = ROOT / "supabase/migrations/20260916144149_add_llm_token_estimates.sql"
+LLM_USAGE_MIGRATION = ROOT / "supabase/migrations/20260916143556_llm_usage_tracking_and_queue_guards.sql"
+LLM_TOKEN_MIGRATION = ROOT / "supabase/migrations/20260916144159_add_llm_token_estimates.sql"
 LOCAL_TEST_HOSTS = {"127.0.0.1", "localhost"}
 PINNED_MODEL = (
     "zsxkib/qwen2-7b-instruct:"
