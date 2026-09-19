@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,7 +106,8 @@ if (!dbUrl) {
 
 const runner = await createRunner(dbUrl);
 
-const remoteVersions = new Set(await runner.listAppliedVersions());
+const remoteMigrations = await runner.listAppliedMigrations();
+const remoteVersions = new Set(remoteMigrations.map(({ version }) => version));
 
 const localVersions = new Set(migrations.map((migration) => migration.version));
 const remoteOnly = [...remoteVersions].filter((version) => !localVersions.has(version));
@@ -113,7 +115,20 @@ if (remoteOnly.length) {
   console.error(
     "[supabase-migrations] Remote migration history contains versions missing locally:",
   );
-  for (const version of remoteOnly) console.error(`  - ${version}`);
+  for (const version of remoteOnly) {
+    const migration = remoteMigrations.find((candidate) => candidate.version === version);
+    const localNameMatch = migration?.name
+      ? migrations.find((candidate) => candidate.name === migration.name)
+      : null;
+    const localDigest = localNameMatch ? fileSha256(localNameMatch.path) : null;
+    const contentComparison =
+      migration?.statementSha256 && localDigest
+        ? `; content ${migration.statementSha256 === localDigest ? "matches" : "differs from"} ${localNameMatch.file}`
+        : "";
+    console.error(
+      `  - ${version}${migration?.name ? `_${migration.name}` : ""}${contentComparison}`,
+    );
+  }
   console.error("[supabase-migrations] Add the missing local migration file(s) before applying.");
   process.exit(1);
 }
@@ -154,6 +169,15 @@ function sqlLiteral(value) {
 
 function sqlArray(values) {
   return `array[${values.map(sqlLiteral).join(", ")}]::text[]`;
+}
+
+function fileSha256(path) {
+  return createHash("sha256").update(readFileSync(path, "utf8").trimEnd()).digest("hex");
+}
+
+function statementsSha256(statements) {
+  if (!Array.isArray(statements)) return null;
+  return createHash("sha256").update(statements.join("").trimEnd()).digest("hex");
 }
 
 function unquote(value) {
@@ -208,18 +232,29 @@ function createPsqlRunner(dbUrl, psqlBin) {
   const connectionUrl = withDatabaseConnectTimeout(dbUrl);
   console.log(`[supabase-migrations] Using psql runner: ${psqlBin}`);
   return {
-    listAppliedVersions() {
+    listAppliedMigrations() {
       return Promise.resolve(
         psql(connectionUrl, psqlBin, [
           "--tuples-only",
           "--no-align",
           "--command",
-          "select version from supabase_migrations.schema_migrations order by version;",
+          "select version || '|' || coalesce(name, '') from supabase_migrations.schema_migrations order by version;",
         ])
           .stdout.trim()
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean),
+      ).then((lines) =>
+        lines.map((line) => {
+          const separator = line.indexOf("|");
+          return separator === -1
+            ? { version: line, name: "", statementSha256: null }
+            : {
+                version: line.slice(0, separator),
+                name: line.slice(separator + 1),
+                statementSha256: null,
+              };
+        }),
       );
     },
     applyFile(path) {
@@ -247,15 +282,21 @@ async function createPostgresJsRunner(dbUrl) {
   console.log("[supabase-migrations] Using Postgres.js runner.");
 
   return {
-    async listAppliedVersions() {
+    async listAppliedMigrations() {
       const rows = await retryTransientConnection(
         () => sql`
-          select version
+          select version, coalesce(name, '') as name, statements
           from supabase_migrations.schema_migrations
           order by version
         `,
       );
-      return rows.map((row) => String(row.version).trim()).filter(Boolean);
+      return rows
+        .map((row) => ({
+          version: String(row.version).trim(),
+          name: String(row.name || "").trim(),
+          statementSha256: statementsSha256(row.statements),
+        }))
+        .filter(({ version }) => Boolean(version));
     },
     async applyFile(path) {
       await sql.unsafe(readFileSync(path, "utf8"));
