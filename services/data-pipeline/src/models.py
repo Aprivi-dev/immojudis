@@ -67,6 +67,13 @@ class AuctionSale(BaseModel):
     score_version: str | None = None
     score_confidence: Decimal | None = None
     score_factors: list[dict[str, Any]] = Field(default_factory=list)
+    premium_readiness_score: int | None = None
+    premium_readiness_status: str | None = None
+    premium_readiness_policy_version: str | None = None
+    premium_readiness_factors: dict[str, Any] = Field(default_factory=dict)
+    premium_readiness_blockers: list[str] = Field(default_factory=list)
+    premium_readiness_missing_fields: list[str] = Field(default_factory=list)
+    premium_readiness_evaluated_at: datetime | None = None
     quality_flags: list[str] = Field(default_factory=list)
     raw_text: str | None = None
     raw_payload: dict[str, Any] = Field(default_factory=dict)

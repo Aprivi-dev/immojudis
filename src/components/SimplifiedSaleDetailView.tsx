@@ -1,7 +1,6 @@
 "use client";
 
 import { ListingQualityNotice } from "@/components/ListingQualityNotice";
-import { DeferredInformationRequest } from "@/components/DeferredInformationRequest";
 import { ListingPhoto } from "@/components/ListingPhoto";
 
 import { useMemo, useRef, useState } from "react";
@@ -261,14 +260,16 @@ function SimplifiedSaleDetailView({
                 Estimation suspendue : données contradictoires
               </h2>
               <p className="mt-3 text-sm">{valuationConflict}</p>
-              <a
-                href={access === "analysis" ? "#information-agent" : "#rendez-vous"}
-                className="mt-3 inline-block underline"
-              >
-                {access === "analysis"
-                  ? "Faire vérifier les caractéristiques"
-                  : "Consulter les coordonnées du dossier"}
-              </a>
+              {access === "analysis" ? (
+                <p className="mt-3 text-sm text-amber-950">
+                  Les caractéristiques seront vérifiées par ImmoJudis avant toute mise à jour de
+                  cette analyse.
+                </p>
+              ) : (
+                <a href="#rendez-vous" className="mt-3 inline-block underline">
+                  Consulter les coordonnées du dossier
+                </a>
+              )}
             </div>
           ) : access === "analysis" && isTribunalSale ? (
             <AnalysisDecisionPanel
@@ -803,7 +804,6 @@ function AnalysisContent({
   simulation: BidSimulationSnapshot | null;
   onSimulationChange: (snapshot: BidSimulationSnapshot) => void;
 }) {
-  const { user } = useAuth();
   const valuationConflict = listingValuationConflict(sale);
   const tribunalSale = saleIsTribunalVenue(sale);
   const forecastQuery = useOutcomeGraphForecast(
@@ -875,12 +875,9 @@ function AnalysisContent({
             {collectSaleDocuments(sale).length > 0 ? (
               <DocumentsList documents={collectSaleDocuments(sale)} />
             ) : (
-              <a
-                href="#information-agent"
-                className="inline-flex min-h-11 items-center text-sm font-medium text-brand-navy underline underline-offset-4"
-              >
-                Demander les pièces du dossier
-              </a>
+              <p role="status" className="text-sm text-brand-navy/70">
+                Les pièces vérifiées apparaîtront ici lorsqu’elles seront disponibles.
+              </p>
             )}
           </div>
         </details>
@@ -965,15 +962,7 @@ function AnalysisContent({
         </div>
         <SaleProcedurePanel sale={sale} />
       </div>
-      <div className="border-b border-brand-navy/10 bg-[#eef7ff]">
-        <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8">
-          <DeferredInformationRequest
-            key={`${sale.id}-${user?.id ?? "anonymous"}`}
-            sale={sale}
-            previewOnly={publicDemo}
-          />
-        </div>
-      </div>
+      <InformationAvailabilityNotice />
       <LawyerSection sale={sale} />
     </>
   );
@@ -1236,8 +1225,11 @@ function RisksAndDocuments({ sale }: { sale: AuctionSale }) {
           ? `${documents.length} pièce(s) consultable(s)`
           : "Aucune pièce attachée",
       complete: documents.length > 0,
-      href: documents.length > 0 ? "#documents" : "#information-agent",
-      action: documents.length > 0 ? "Consulter les pièces" : "Demander les pièces manquantes",
+      href: documents.length > 0 ? "#documents" : null,
+      action:
+        documents.length > 0
+          ? "Consulter les pièces"
+          : "Pièces complémentaires à confirmer par ImmoJudis.",
     },
   ];
 
@@ -1261,12 +1253,16 @@ function RisksAndDocuments({ sale }: { sale: AuctionSale }) {
               </div>
               <div className="space-y-2 pl-8 text-sm text-brand-navy/75 sm:pl-0">
                 <div>{row.source}</div>
-                <a
-                  href={row.href}
-                  className="inline-block font-medium text-brand-navy underline underline-offset-4"
-                >
-                  {row.action}
-                </a>
+                {row.href ? (
+                  <a
+                    href={row.href}
+                    className="inline-block font-medium text-brand-navy underline underline-offset-4"
+                  >
+                    {row.action}
+                  </a>
+                ) : (
+                  <span className="inline-block text-sm text-brand-navy/70">{row.action}</span>
+                )}
               </div>
               <div
                 className={`flex items-center gap-2 pl-8 text-sm font-medium sm:pl-0 ${
@@ -1338,8 +1334,8 @@ function riskRow(risk: SaleRisk) {
     source,
     status: risk.severity != null && risk.severity >= 4 ? "Prioritaire" : "À vérifier",
     complete: false,
-    href: "#information-agent",
-    action: "Demander une confirmation",
+    href: null,
+    action: "Confirmation nécessaire avant de poursuivre.",
   };
 }
 
@@ -1402,15 +1398,17 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
                 Voir les avocats disponibles
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </a>
-            ) : (
+            ) : hasOrganizerContact ? (
               <a
-                href={hasOrganizerContact ? "#rendez-vous" : "#information-agent"}
+                href="#rendez-vous"
                 className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft sm:mt-0"
               >
-                {hasOrganizerContact
-                  ? "Consulter les coordonnées du dossier"
-                  : "Demander les coordonnées"}
+                Consulter les coordonnées du dossier
               </a>
+            ) : (
+              <p className="mt-4 text-sm text-brand-navy/70 sm:mt-0">
+                Coordonnées à confirmer par ImmoJudis.
+              </p>
             )}
           </div>
           {isPersistedSale && isJudicial && !saleStatus ? (
@@ -1418,6 +1416,30 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
               <LawyerReferralButton saleId={sale.id} className="min-h-11 w-full sm:w-auto" />
             </div>
           ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function InformationAvailabilityNotice() {
+  return (
+    <section
+      aria-labelledby="information-availability-title"
+      className="border-b border-brand-navy/10 bg-[#eef7ff]"
+    >
+      <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8">
+        <div className="rounded-lg border border-[#a9c9df] bg-white p-5 shadow-sm sm:p-7">
+          <h2
+            id="information-availability-title"
+            className="font-display text-2xl font-semibold text-brand-navy"
+          >
+            Informations complémentaires
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/70">
+            Les enrichissements sont initiés et validés par ImmoJudis. Les informations et pièces
+            confirmées seront ajoutées à cette annonce lorsqu’elles seront disponibles.
+          </p>
         </div>
       </div>
     </section>

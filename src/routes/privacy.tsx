@@ -49,10 +49,10 @@ const processingRows = [
     retention: "Durée du traitement puis archivage limité aux délais de preuve applicables",
   },
   {
-    purpose: "Enquête dossier supervisée",
-    data: "Email du demandeur, coordonnées professionnelles publiques ou renseignées, annonce, questions, messages, réponses et preuve de validation",
+    purpose: "Enrichissement de dossier supervisé par ImmoJudis",
+    data: "Annonce, informations manquantes, coordonnées professionnelles, questions, messages, réponses, pièces et décisions de validation",
     basis:
-      "Exécution du service demandé ; consentement pour communiquer l’adresse email de réponse",
+      "Intérêt légitime à fiabiliser le catalogue ; les échanges externes sont déclenchés et validés par un administrateur",
     retention:
       "Pendant le suivi ; sans activité, brouillons purgés après 6 mois et échanges après 24 mois",
   },
@@ -149,10 +149,10 @@ export function PrivacyPage() {
               Les données sont accessibles aux personnes habilitées d’Immojudis et, selon le besoin,
               à Supabase (authentification et base), Vercel (hébergement, journaux et mesure de
               performance), Stripe (paiement), Resend (emails), aux avocats référencés uniquement
-              lorsqu’une mise en relation est demandée et à l’intermédiaire professionnel choisi par
-              l’utilisateur lorsqu’il valide une enquête dossier. Dans ce dernier cas, seuls le
-              message relu, la référence publique de l’annonce et l’email de réponse accepté sont
-              transmis. Les prestataires agissent dans la limite de leurs missions contractuelles.
+              lorsqu’une mise en relation est demandée et à l’intermédiaire professionnel contacté
+              par ImmoJudis après validation par un administrateur. Dans ce dernier cas, seules les
+              informations nécessaires à l’enrichissement du dossier et au suivi de la réponse sont
+              transmises. Les prestataires agissent dans la limite de leurs missions contractuelles.
             </p>
           </PrivacySection>
 
@@ -182,10 +182,11 @@ export function PrivacyPage() {
               Les scores, estimations et synthèses automatisées assistent la lecture d’un dossier,
               mais ne produisent aucune décision juridique ou financière opposable et n’empêchent
               pas l’accès à une vente. Ils doivent être vérifiés à partir des sources affichées et
-              des pièces officielles. L’agent d’enquête peut détecter des informations manquantes et
-              préparer un email, mais l’utilisateur choisit le destinataire, peut modifier le texte
-              et doit autoriser chaque envoi. Le message indique au destinataire qu’il a été préparé
-              avec un système d’IA.
+              des pièces officielles. Des outils d’IA peuvent détecter des informations manquantes
+              et préparer un projet d’email pour revue administrative. Tout contact externe et toute
+              intégration d’information sont déclenchés puis validés par un administrateur ; aucune
+              demande n’est lancée directement par un utilisateur Premium. Le message indique au
+              destinataire qu’il a été préparé avec un système d’IA.
             </p>
           </PrivacySection>
 

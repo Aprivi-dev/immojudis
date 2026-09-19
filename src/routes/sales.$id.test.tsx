@@ -34,7 +34,7 @@ vi.mock("@/components/DiscoverySaleDetailView", () => ({
 vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   AnalysisSaleDetailView: () => (
     <div
-      id="information-agent"
+      id="proofs"
       ref={(node) => {
         if (node) node.scrollIntoView = mocks.scroll;
       }}
@@ -55,7 +55,7 @@ afterEach(() => {
 });
 describe("listing access resolution", () => {
   it("restores a deep-link anchor after asynchronous access and listing resolution", async () => {
-    window.history.replaceState(null, "", "/sales/sale#information-agent");
+    window.history.replaceState(null, "", "/sales/sale#proofs");
     mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
     mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -108,7 +108,7 @@ describe("listing access resolution", () => {
   });
 
   it("offers reconnection to the current listing after session rejection", async () => {
-    window.history.replaceState(null, "", "/sales/sale#information-agent");
+    window.history.replaceState(null, "", "/sales/sale#proofs");
     mocks.authenticated = false;
     mocks.authError = "Session non vérifiée";
     mocks.preview.mockResolvedValue(null);
@@ -120,7 +120,7 @@ describe("listing access resolution", () => {
     );
     expect(screen.getByRole("heading", { name: "Connexion à renouveler" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Se reconnecter" }).getAttribute("href")).toBe(
-      "/login?redirect=%2Fsales%2Fsale%23information-agent",
+      "/login?redirect=%2Fsales%2Fsale%23proofs",
     );
     expect(mocks.sale).not.toHaveBeenCalled();
   });

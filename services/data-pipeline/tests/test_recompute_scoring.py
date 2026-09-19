@@ -46,6 +46,86 @@ def test_fetch_sales_uses_retrying_postgrest_transport(monkeypatch) -> None:
     assert all(call["table"] == "auction_sales" for call in calls)
 
 
+def test_fetch_sales_can_target_only_active_unassessed_readiness(monkeypatch) -> None:
+    monkeypatch.setattr(
+        recompute_module,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    captured: dict[str, object] = {}
+
+    class Response:
+        is_error = False
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return []
+
+    def fake_request(_method, _endpoint, **kwargs):
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", fake_request)
+
+    recompute_module._fetch_sales(
+        source=None,
+        limit=None,
+        readiness_unassessed_only=True,
+    )
+
+    assert captured["params"]["premium_readiness_status"] == "eq.unassessed"
+    assert captured["params"]["status"] == "in.(upcoming,unknown,postponed)"
+
+
+def test_readiness_backfill_persists_incomplete_rows_without_publication_admission(monkeypatch) -> None:
+    row = {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "source_name": "test",
+        "source_url": "https://example.test/incomplete",
+        "updated_at": "2026-09-19T08:00:00+00:00",
+    }
+    sale = AuctionSale(source_name=row["source_name"], source_url=row["source_url"])
+    writes: list[dict[str, object]] = []
+
+    monkeypatch.setattr(recompute_module, "_load_env_fallbacks", lambda: None)
+    monkeypatch.setattr(recompute_module, "_fetch_sales", lambda **_kwargs: [row])
+    monkeypatch.setattr(recompute_module, "_sale_from_storage_row", lambda _row: sale)
+    monkeypatch.setattr(
+        recompute_module,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+
+    class Response:
+        is_error = False
+        status_code = 204
+        text = ""
+
+    def fake_request(method, _endpoint, **kwargs):
+        writes.append({"method": method, **kwargs})
+        return Response()
+
+    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", fake_request)
+
+    assert recompute_module.backfill_catalogue_readiness() == 0
+    assert writes[0]["method"] == "PATCH"
+    assert writes[0]["params"] == {
+        "id": f"eq.{row['id']}",
+        "updated_at": f"eq.{row['updated_at']}",
+    }
+    assert writes[0]["json"]["premium_readiness_status"] == "internal_only"
+    assert "id" not in writes[0]["json"]
+    assert "source_name" not in writes[0]["json"]
+
+
 def test_merge_refetched_source_details_preserves_and_extends_evidence() -> None:
     merged = recompute_module._merge_refetched_source_details(
         {

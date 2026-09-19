@@ -31,9 +31,6 @@ vi.mock("@/components/BillingActions", () => ({
   BillingActions: () => <button>Découvrir l’offre Analyse</button>,
 }));
 vi.mock("@/components/DocumentsList", () => ({ DocumentsList: () => <p>Pièces du dossier</p> }));
-vi.mock("@/components/InformationRequestAgent", () => ({
-  InformationRequestAgent: () => <div id="information-agent">Enquête réservée à l’analyse</div>,
-}));
 vi.mock("@/components/LawyerReferralButton", () => ({
   LawyerReferralButton: () => <button>Contacter un avocat</button>,
 }));
@@ -52,7 +49,6 @@ vi.mock("next/dynamic", () => ({
       onClose,
       saleId,
       sale,
-      previewOnly,
       marketEstimateOverride,
       forecastQuery,
       premium,
@@ -61,15 +57,11 @@ vi.mock("next/dynamic", () => ({
       onClose?: () => void;
       saleId?: string;
       sale?: AuctionSale;
-      previewOnly?: boolean;
       marketEstimateOverride?: unknown;
       forecastQuery?: unknown;
       premium?: boolean;
     }) {
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
-      if (sale && previewOnly !== undefined) {
-        return <div id="information-agent">Enquête réservée à l’analyse</div>;
-      }
       if (sale && marketEstimateOverride === undefined) {
         return (
           <section id="tribunal-history" data-premium={premium ? "true" : "false"}>
@@ -201,9 +193,8 @@ describe("integrated listing", () => {
     expect(contacts.textContent).toContain("Organisateur à confirmer");
     expect(contacts.textContent).toContain("Coordonnées non renseignées");
     expect(contacts.textContent).not.toContain("Interlocuteur indiqué dans le dossier");
-    expect(contacts.querySelector('a[href="#information-agent"]')?.textContent).toContain(
-      "Demander les coordonnées",
-    );
+    expect(contacts.querySelector('a[href="#information-agent"]')).toBeNull();
+    expect(contacts.textContent).toContain("Coordonnées à confirmer par ImmoJudis.");
   });
 
   it("links a named organizer to the actual contact details", () => {
@@ -384,6 +375,15 @@ describe("integrated listing", () => {
     expect(screen.getByRole("dialog", { name: "Galerie photos" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Fermer les photos" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  it("replaces premium information requests with a neutral availability notice", () => {
+    const { container } = renderDetail("analysis");
+    expect(screen.getByRole("heading", { name: "Informations complémentaires" })).toBeTruthy();
+    expect(
+      screen.getByText(/Les enrichissements sont initiés et validés par ImmoJudis/),
+    ).toBeTruthy();
+    expect(container.querySelectorAll('a[href="#information-agent"]')).toHaveLength(0);
+    expect(container.querySelector("#information-agent")).toBeNull();
   });
   it("opens the existing advanced simulator from its primary action", () => {
     const { container } = renderDetail("analysis");

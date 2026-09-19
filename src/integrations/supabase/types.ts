@@ -742,6 +742,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      catalogue_readiness_policy: {
+        Row: {
+          enforcement_enabled: boolean;
+          internal_only_max: number;
+          minimum_score_confidence: number;
+          policy_version: string;
+          premium_ready_min: number;
+          singleton: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          enforcement_enabled?: boolean;
+          internal_only_max?: number;
+          minimum_score_confidence?: number;
+          policy_version?: string;
+          premium_ready_min?: number;
+          singleton?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          enforcement_enabled?: boolean;
+          internal_only_max?: number;
+          minimum_score_confidence?: number;
+          policy_version?: string;
+          premium_ready_min?: number;
+          singleton?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
       data_refresh_requests: {
         Row: {
           completed_at: string | null;
@@ -946,6 +979,68 @@ export type Database = {
           },
         ];
       };
+      auction_sale_readiness_history: {
+        Row: {
+          blockers: Json;
+          evaluated_at: string | null;
+          factors: Json;
+          id: number;
+          missing_fields: Json;
+          override_at: string | null;
+          override_by: string | null;
+          override_decision: string | null;
+          override_expires_at: string | null;
+          override_reason: string | null;
+          policy_version: string | null;
+          readiness_score: number | null;
+          readiness_status: string;
+          recorded_at: string;
+          sale_id: string;
+        };
+        Insert: {
+          blockers?: Json;
+          evaluated_at?: string | null;
+          factors?: Json;
+          id?: never;
+          missing_fields?: Json;
+          override_at?: string | null;
+          override_by?: string | null;
+          override_decision?: string | null;
+          override_expires_at?: string | null;
+          override_reason?: string | null;
+          policy_version?: string | null;
+          readiness_score?: number | null;
+          readiness_status: string;
+          recorded_at?: string;
+          sale_id: string;
+        };
+        Update: {
+          blockers?: Json;
+          evaluated_at?: string | null;
+          factors?: Json;
+          id?: never;
+          missing_fields?: Json;
+          override_at?: string | null;
+          override_by?: string | null;
+          override_decision?: string | null;
+          override_expires_at?: string | null;
+          override_reason?: string | null;
+          policy_version?: string | null;
+          readiness_score?: number | null;
+          readiness_status?: string;
+          recorded_at?: string;
+          sale_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_sale_readiness_history_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       auction_sales: {
         Row: {
           address: string | null;
@@ -975,6 +1070,18 @@ export type Database = {
           media: Json | null;
           occupancy_status: string | null;
           parking_count: number | null;
+          premium_readiness_blockers: Json;
+          premium_readiness_evaluated_at: string | null;
+          premium_readiness_factors: Json;
+          premium_readiness_missing_fields: Json;
+          premium_readiness_override: string | null;
+          premium_readiness_override_at: string | null;
+          premium_readiness_override_by: string | null;
+          premium_readiness_override_expires_at: string | null;
+          premium_readiness_override_reason: string | null;
+          premium_readiness_policy_version: string | null;
+          premium_readiness_score: number | null;
+          premium_readiness_status: string;
           postal_code: string | null;
           primary_source: string | null;
           property_type: string | null;
@@ -1030,6 +1137,18 @@ export type Database = {
           longitude?: number | null;
           occupancy_status?: string | null;
           parking_count?: number | null;
+          premium_readiness_blockers?: Json;
+          premium_readiness_evaluated_at?: string | null;
+          premium_readiness_factors?: Json;
+          premium_readiness_missing_fields?: Json;
+          premium_readiness_override?: string | null;
+          premium_readiness_override_at?: string | null;
+          premium_readiness_override_by?: string | null;
+          premium_readiness_override_expires_at?: string | null;
+          premium_readiness_override_reason?: string | null;
+          premium_readiness_policy_version?: string | null;
+          premium_readiness_score?: number | null;
+          premium_readiness_status?: string;
           postal_code?: string | null;
           primary_source?: string | null;
           property_type?: string | null;
@@ -1085,6 +1204,18 @@ export type Database = {
           longitude?: number | null;
           occupancy_status?: string | null;
           parking_count?: number | null;
+          premium_readiness_blockers?: Json;
+          premium_readiness_evaluated_at?: string | null;
+          premium_readiness_factors?: Json;
+          premium_readiness_missing_fields?: Json;
+          premium_readiness_override?: string | null;
+          premium_readiness_override_at?: string | null;
+          premium_readiness_override_by?: string | null;
+          premium_readiness_override_expires_at?: string | null;
+          premium_readiness_override_reason?: string | null;
+          premium_readiness_policy_version?: string | null;
+          premium_readiness_score?: number | null;
+          premium_readiness_status?: string;
           postal_code?: string | null;
           primary_source?: string | null;
           property_type?: string | null;
@@ -3880,6 +4011,31 @@ export type Database = {
       };
     };
     Functions: {
+      catalogue_readiness_allows_premium: {
+        Args: {
+          p_override: string | null;
+          p_override_expires_at: string | null;
+          p_readiness_status: string;
+        };
+        Returns: boolean;
+      };
+      clear_auction_sale_readiness_override: {
+        Args: { p_sale_id: string };
+        Returns: Database["public"]["Tables"]["auction_sales"]["Row"];
+      };
+      set_auction_sale_readiness_override: {
+        Args: {
+          p_decision: string;
+          p_expires_at?: string | null;
+          p_reason: string;
+          p_sale_id: string;
+        };
+        Returns: Database["public"]["Tables"]["auction_sales"]["Row"];
+      };
+      set_catalogue_readiness_enforcement: {
+        Args: { p_enabled: boolean };
+        Returns: Database["public"]["Tables"]["catalogue_readiness_policy"]["Row"];
+      };
       save_sale_analysis_set: {
         Args: { p_metadata: Json; p_items: Json; p_set_id?: string };
         Returns: Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
@@ -3893,6 +4049,16 @@ export type Database = {
           mission_id: string;
           should_send: boolean;
           usage_count: number;
+        }[];
+      };
+      approve_information_agent_mission_admin: {
+        Args: { p_admin_id: string; p_message_sha256: string; p_mission_id: string };
+        Returns: {
+          approved_at: string;
+          case_id: string;
+          inbound_token: string;
+          mission_id: string;
+          should_send: boolean;
         }[];
       };
       claim_information_agent_evidence_extractions: {

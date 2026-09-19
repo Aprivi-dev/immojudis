@@ -89,6 +89,13 @@ create table if not exists auction_sales (
   score_version text,
   score_confidence numeric,
   score_factors jsonb default '[]'::jsonb,
+  premium_readiness_score smallint,
+  premium_readiness_status text not null default 'unassessed',
+  premium_readiness_policy_version text,
+  premium_readiness_factors jsonb not null default '{}'::jsonb,
+  premium_readiness_blockers jsonb not null default '[]'::jsonb,
+  premium_readiness_missing_fields jsonb not null default '[]'::jsonb,
+  premium_readiness_evaluated_at timestamptz,
   quality_flags jsonb default '[]'::jsonb,
   raw_text text,
   raw_payload jsonb,
@@ -150,6 +157,13 @@ alter table auction_sales add column if not exists investment_summary text;
 alter table auction_sales add column if not exists score_version text;
 alter table auction_sales add column if not exists score_confidence numeric;
 alter table auction_sales add column if not exists score_factors jsonb default '[]'::jsonb;
+alter table auction_sales add column if not exists premium_readiness_score smallint;
+alter table auction_sales add column if not exists premium_readiness_status text not null default 'unassessed';
+alter table auction_sales add column if not exists premium_readiness_policy_version text;
+alter table auction_sales add column if not exists premium_readiness_factors jsonb not null default '{}'::jsonb;
+alter table auction_sales add column if not exists premium_readiness_blockers jsonb not null default '[]'::jsonb;
+alter table auction_sales add column if not exists premium_readiness_missing_fields jsonb not null default '[]'::jsonb;
+alter table auction_sales add column if not exists premium_readiness_evaluated_at timestamptz;
 alter table auction_sales add column if not exists quality_flags jsonb default '[]'::jsonb;
 alter table auction_sales add column if not exists observations jsonb default '[]'::jsonb;
 alter table auction_sales add column if not exists last_run_id uuid;
@@ -911,6 +925,12 @@ begin
   end if;
   if not exists (select 1 from pg_constraint where conname = 'auction_sales_score_confidence_check') then
     alter table auction_sales add constraint auction_sales_score_confidence_check check (score_confidence is null or (score_confidence >= 0 and score_confidence <= 1));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'auction_sales_premium_readiness_score_check') then
+    alter table auction_sales add constraint auction_sales_premium_readiness_score_check check (premium_readiness_score is null or premium_readiness_score between 0 and 100);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'auction_sales_premium_readiness_status_check') then
+    alter table auction_sales add constraint auction_sales_premium_readiness_status_check check (premium_readiness_status in ('unassessed','internal_only','needs_enrichment','premium_ready'));
   end if;
   if not exists (select 1 from pg_constraint where conname = 'auction_sales_rooms_bedrooms_check') then
     alter table auction_sales add constraint auction_sales_rooms_bedrooms_check check (rooms_count is null or bedrooms_count is null or rooms_count >= bedrooms_count);

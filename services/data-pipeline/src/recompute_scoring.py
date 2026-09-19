@@ -12,6 +12,7 @@ import httpx
 from dotenv import load_dotenv
 
 from src.asset_normalization import normalize_asset_features
+from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import ROOT_DIR, load_settings
 from src.geocode import geocode_sale
 from src.normalize import normalize_sale
@@ -124,6 +125,85 @@ def recompute_scoring(
             len(failures),
         )
         return 1
+    return 0
+
+
+def backfill_catalogue_readiness(
+    *,
+    source: str | None = None,
+    limit: int | None = None,
+    batch_size: int = 100,
+    dry_run: bool = False,
+) -> int:
+    """Score every active unassessed row, including rows rejected by publication admission."""
+
+    _load_env_fallbacks()
+    rows = _fetch_sales(
+        source=source,
+        limit=limit,
+        readiness_unassessed_only=True,
+    )
+    updates: list[dict[str, Any]] = []
+    statuses: Counter[str] = Counter()
+    for row in rows:
+        sale = _sale_from_storage_row(row)
+        result = apply_catalogue_readiness(sale)
+        statuses[result.status] += 1
+        updates.append(
+            {
+                "id": row["id"],
+                "observed_updated_at": row.get("updated_at"),
+                "values": {
+                    "premium_readiness_score": result.score,
+                    "premium_readiness_status": result.status,
+                    "premium_readiness_policy_version": result.policy_version,
+                    "premium_readiness_factors": result.factors,
+                    "premium_readiness_blockers": result.blockers,
+                    "premium_readiness_missing_fields": result.missing_fields,
+                    "premium_readiness_evaluated_at": sale.premium_readiness_evaluated_at.isoformat(),
+                },
+            }
+        )
+
+    print("Catalogue readiness backfill")
+    print(f"- mode: {'dry-run' if dry_run else 'patch'}")
+    print(f"- sales: {len(updates)}")
+    print(f"- statuses: {dict(statuses)}")
+    if dry_run or not updates:
+        return 0
+
+    settings = load_settings()
+    supabase_url = str(settings["supabase_url"] or "").rstrip("/")
+    api_key = str(settings["supabase_service_role_key"] or "")
+    if not supabase_url or not api_key:
+        raise RuntimeError("Supabase URL/service role key are missing")
+    endpoint = f"{supabase_url}/rest/v1/auction_sales"
+    headers = {
+        "apikey": api_key,
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+    }
+    for batch in _chunks(updates, max(1, batch_size)):
+        for update in batch:
+            params = {"id": f"eq.{update['id']}"}
+            if update["observed_updated_at"]:
+                params["updated_at"] = f"eq.{update['observed_updated_at']}"
+            response = _postgrest_request_with_retries(
+                "PATCH",
+                endpoint,
+                table="auction_sales",
+                params=params,
+                headers=headers,
+                json=update["values"],
+                timeout=120,
+            )
+            if response.is_error:
+                raise httpx.HTTPStatusError(
+                    f"{response.status_code} readiness backfill response: {response.text}",
+                    request=response.request,
+                    response=response,
+                )
     return 0
 
 
@@ -401,7 +481,9 @@ def _load_env_fallbacks() -> None:
     load_dotenv(ROOT_DIR.parents[1] / "apps" / "scout" / ".env.local")
 
 
-def _fetch_sales(*, source: str | None, limit: int | None) -> list[dict[str, Any]]:
+def _fetch_sales(
+    *, source: str | None, limit: int | None, readiness_unassessed_only: bool = False
+) -> list[dict[str, Any]]:
     settings = load_settings()
     supabase_url = str(settings["supabase_url"] or "").rstrip("/")
     api_key = str(settings["supabase_service_role_key"] or "")
@@ -429,6 +511,9 @@ def _fetch_sales(*, source: str | None, limit: int | None) -> list[dict[str, Any
         }
         if source:
             params["source_name"] = f"eq.{source}"
+        if readiness_unassessed_only:
+            params["premium_readiness_status"] = "eq.unassessed"
+            params["status"] = "in.(upcoming,unknown,postponed)"
         response = _postgrest_request_with_retries(
             "GET",
             endpoint,
@@ -597,6 +682,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Relit les pages sources publiques des procédures encore indéterminées.",
     )
+    parser.add_argument(
+        "--readiness-unassessed-only",
+        action="store_true",
+        help="Backfill borné des seules annonces actives encore non évaluées pour le catalogue Premium.",
+    )
     return parser.parse_args()
 
 
@@ -609,6 +699,15 @@ if __name__ == "__main__":
         raise SystemExit(repair_invalid_sale_procedures(source=args.source, limit=args.limit))
     if args.verify_only:
         raise SystemExit(verify_persisted_sale_procedures(source=args.source, limit=args.limit))
+    if args.readiness_unassessed_only:
+        raise SystemExit(
+            backfill_catalogue_readiness(
+                source=args.source,
+                limit=args.limit,
+                batch_size=args.batch_size,
+                dry_run=args.dry_run,
+            )
+        )
     raise SystemExit(
         recompute_scoring(
             source=args.source,
