@@ -32,7 +32,7 @@ type MockState = {
 test.describe("admin configuration", () => {
   test("distinguishes publication errors, resumed collection and scoped inventory", async ({
     page,
-  }) => {
+  }, testInfo) => {
     await prepareAdminPage(page, { collectionErrors: true });
     await page.goto("/admin/settings");
     await page.getByRole("tab", { name: "Sources de données" }).click();
@@ -50,7 +50,7 @@ test.describe("admin configuration", () => {
     );
     expect(await page.locator("[data-nextjs-dialog], .vite-error-overlay").count()).toBe(0);
     await page.screenshot({
-      path: "/private/tmp/immojudis-source-collection-status.png",
+      path: testInfo.outputPath("source-collection-status.png"),
       fullPage: true,
     });
   });
