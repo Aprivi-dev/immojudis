@@ -43,6 +43,11 @@ on:
         required: false
         default: false
         type: boolean
+      readiness_only:
+        description: "Evaluate only active sales still unassessed for the Premium catalogue"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -72,8 +77,14 @@ jobs:
             echo "confirm_target must be exactly: production" >&2
             exit 1
           fi
-          if [ "${{ inputs.repair_only }}" = "true" ] && [ "${{ inputs.refresh_unknown_only }}" = "true" ]; then
-            echo "repair_only and refresh_unknown_only are mutually exclusive" >&2
+          selected_modes=0
+          for mode in "${{ inputs.repair_only }}" "${{ inputs.refresh_unknown_only }}" "${{ inputs.readiness_only }}"; do
+            if [ "$mode" = "true" ]; then
+              selected_modes=$((selected_modes + 1))
+            fi
+          done
+          if [ "$selected_modes" -gt 1 ]; then
+            echo "repair_only, refresh_unknown_only and readiness_only are mutually exclusive" >&2
             exit 1
           fi
 
@@ -91,6 +102,7 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Restore verified Justice reference cache
+        if: ${{ !inputs.readiness_only }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: services/data-pipeline/data/raw/outcome_sources/justice_courts
@@ -99,10 +111,11 @@ jobs:
             immojudis-justice-reference-${{ runner.os }}-
 
       - name: Refresh and verify official Justice references
+        if: ${{ !inputs.readiness_only }}
         run: python -m src.official_sources.justice_reference_sync
 
       - name: Validate recompute without writing
-        if: ${{ !inputs.repair_only && !inputs.refresh_unknown_only }}
+        if: ${{ !inputs.repair_only && !inputs.refresh_unknown_only && !inputs.readiness_only }}
         env:
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
@@ -117,14 +130,46 @@ jobs:
           fi
           python -m src.recompute_scoring "${args[@]}"
 
+      - name: Validate catalogue readiness without writing
+        if: ${{ inputs.readiness_only }}
+        env:
+          REQUESTED_SOURCE: ${{ inputs.source }}
+          REQUESTED_LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          args=(--readiness-unassessed-only --batch-size 100 --dry-run)
+          if [ "$REQUESTED_SOURCE" != "all" ]; then
+            args+=(--source "$REQUESTED_SOURCE")
+          fi
+          if [ -n "$REQUESTED_LIMIT" ]; then
+            args+=(--limit "$REQUESTED_LIMIT")
+          fi
+          python -m src.recompute_scoring "${args[@]}"
+
       - name: Publish recomputed sales
-        if: ${{ !inputs.dry_run && !inputs.repair_only && !inputs.refresh_unknown_only }}
+        if: ${{ !inputs.dry_run && !inputs.repair_only && !inputs.refresh_unknown_only && !inputs.readiness_only }}
         env:
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
           set -euo pipefail
           args=(--batch-size 20 --geocode-missing --geocode-workers 4)
+          if [ "$REQUESTED_SOURCE" != "all" ]; then
+            args+=(--source "$REQUESTED_SOURCE")
+          fi
+          if [ -n "$REQUESTED_LIMIT" ]; then
+            args+=(--limit "$REQUESTED_LIMIT")
+          fi
+          python -m src.recompute_scoring "${args[@]}"
+
+      - name: Publish catalogue readiness
+        if: ${{ !inputs.dry_run && inputs.readiness_only }}
+        env:
+          REQUESTED_SOURCE: ${{ inputs.source }}
+          REQUESTED_LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          args=(--readiness-unassessed-only --batch-size 100)
           if [ "$REQUESTED_SOURCE" != "all" ]; then
             args+=(--source "$REQUESTED_SOURCE")
           fi
@@ -150,7 +195,7 @@ jobs:
           python -m src.recompute_scoring "${args[@]}"
 
       - name: Repair and verify persisted sale procedures
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && !inputs.readiness_only }}
         env:
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}

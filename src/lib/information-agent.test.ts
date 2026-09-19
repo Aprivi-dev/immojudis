@@ -1,22 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildInformationRequestDraft,
+  createAdminInformationAgentDraft,
   detectInformationGaps,
-  informationAgentActionSchema,
+  informationAgentAdminActionSchema,
   informationAgentCreateSchema,
 } from "@/lib/information-agent";
 import type { AuctionSale } from "@/lib/types";
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: vi.fn(), rpc: vi.fn() },
-}));
-
-vi.mock("@/lib/property-reports", () => ({
-  resolvePlanEntitlements: vi.fn(),
-}));
-
-vi.mock("@/lib/rate-limit", () => ({
-  enforceUserRateLimit: vi.fn(),
 }));
 
 describe("supervised information agent", () => {
@@ -49,7 +42,7 @@ describe("supervised information agent", () => {
     expect(draft.bodyText).not.toMatch(/plafond d.enchère|budget de l.utilisateur/i);
   });
 
-  it("requires an explicit approval and email-sharing choice for every send", () => {
+  it("requires explicit admin approval for every send", () => {
     const base = {
       action: "approve_and_send",
       missionId: "22222222-2222-4222-8222-222222222222",
@@ -60,20 +53,35 @@ describe("supervised information agent", () => {
     };
 
     expect(
-      informationAgentActionSchema.safeParse({
-        ...base,
-        approvalConfirmed: true,
-        shareRequesterEmail: true,
-      }).success,
-    ).toBe(true);
-    expect(
-      informationAgentActionSchema.safeParse({
+      informationAgentAdminActionSchema.safeParse({
         ...base,
         approvalConfirmed: false,
-        shareRequesterEmail: true,
       }).success,
     ).toBe(false);
     expect(informationAgentCreateSchema.safeParse({ saleId: base.missionId }).success).toBe(true);
+  });
+
+  it("accepts the admin send approval without a requester-email sharing flag", () => {
+    const result = informationAgentAdminActionSchema.safeParse({
+      action: "approve_and_send",
+      missionId: "22222222-2222-4222-8222-222222222222",
+      approvalConfirmed: true,
+      recipientEmail: "cabinet@example.test",
+      recipientName: "Maître Dupont",
+      subject: "Demande de pièces",
+      bodyText: "Bonjour, pourriez-vous transmettre les pièces du dossier ?",
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects the admin draft workflow for non-admin auth", async () => {
+    await expect(
+      createAdminInformationAgentDraft({
+        auth: { isAdmin: false } as never,
+        input: { saleId: "11111111-1111-4111-8111-111111111111" },
+      }),
+    ).rejects.toThrow("Forbidden: accès administrateur requis.");
   });
 });
 

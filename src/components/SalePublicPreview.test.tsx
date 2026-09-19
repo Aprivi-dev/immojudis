@@ -44,14 +44,14 @@ describe("SalePublicPreview", () => {
         saleId="sale-1"
         preview={{ id: "sale-1" } as AuctionSale}
         returnTo="/sales?city=Toulouse"
-        requestedHash="#information-agent"
+        requestedHash="#proofs"
       />,
     );
     const href = screen
       .getByRole("link", { name: /Voir gratuitement le dossier/ })
       .getAttribute("href")!;
     expect(new URL(href, "https://example.test").searchParams.get("redirect")).toBe(
-      "/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#information-agent",
+      "/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs",
     );
   });
 

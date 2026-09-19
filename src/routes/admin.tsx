@@ -101,10 +101,10 @@ const LazyAdminSubscriptionsPanel = dynamic(
     ),
   { loading: () => <AdminPanelLoading label="les abonnements" /> },
 );
-const LazyAdminInformationAgentTemplatePanel = dynamic(
+const LazyAdminInformationAgentWorkspace = dynamic(
   () =>
-    import("@/components/admin/AdminInformationAgentTemplatePanel").then(
-      (module) => module.AdminInformationAgentTemplatePanel,
+    import("@/components/admin/AdminInformationAgentWorkspace").then(
+      (module) => module.AdminInformationAgentWorkspace,
     ),
   { loading: () => <AdminPanelLoading label="le template agent" /> },
 );
@@ -494,7 +494,7 @@ function AdminDashboardContent({ initialView = "overview" }: { initialView?: Adm
         </>
       ) : null}
 
-      {initialView === "agent" ? <LazyAdminInformationAgentTemplatePanel /> : null}
+      {initialView === "agent" ? <LazyAdminInformationAgentWorkspace /> : null}
 
       {initialView === "publications" ? (
         <AdminPublications

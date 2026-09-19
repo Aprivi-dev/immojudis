@@ -17,10 +17,7 @@ import {
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
-import { featureIncluded, type PlanCode } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSale } from "@/lib/property-report/repository";
-import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { propertyImages } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
@@ -101,12 +98,14 @@ const editableMessageFields = {
   bodyText: z.string().trim().min(20).max(8000),
 };
 
-export const informationAgentActionSchema = z.discriminatedUnion("action", [
+// The admin workflow deliberately does not expose the former end-user consent
+// flag. Admins are the sole initiators of these requests and the requester
+// email is never shared with the professional contact.
+export const informationAgentAdminActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("approve_and_send"),
     missionId: z.string().uuid(),
     approvalConfirmed: z.literal(true),
-    shareRequesterEmail: z.literal(true),
     ...editableMessageFields,
   }),
   z.object({
@@ -122,8 +121,7 @@ export const informationAgentActionSchema = z.discriminatedUnion("action", [
 ]);
 
 export type InformationAgentCreateInput = z.input<typeof informationAgentCreateSchema>;
-export type InformationAgentActionInput = z.input<typeof informationAgentActionSchema>;
-export type InformationAgentActionPayload = z.output<typeof informationAgentActionSchema>;
+export type InformationAgentAdminActionPayload = z.output<typeof informationAgentAdminActionSchema>;
 
 export type InformationAgentGap = {
   key: InformationAgentQuestionKey;
@@ -163,26 +161,16 @@ export type InformationAgentFact = {
   reviewedAt: string | null;
 };
 
-export type InformationAgentQuota = {
-  limit: number | null;
-  used: number;
-  remaining: number | null;
-  windowDays: 30;
-};
-
-export type InformationAgentResponse = {
+export type InformationAgentAdminResponse = {
   ok: true;
   mission: InformationAgentMission;
   gaps: InformationAgentGap[];
-  quota: InformationAgentQuota;
-  plan: { code: PlanCode; label: string };
   facts: InformationAgentFact[];
 };
 
-export type InformationAgentListResponse = {
+export type InformationAgentAdminListResponse = {
   ok: true;
   missions: InformationAgentMission[];
-  quota: InformationAgentQuota;
   facts: InformationAgentFact[];
 };
 
@@ -255,20 +243,23 @@ export function buildInformationRequestDraft({
   });
 }
 
-export async function createInformationAgentDraft({
+/**
+ * Creates a mission for the internal admin enrichment workflow.
+ *
+ * This intentionally does not resolve plan entitlements, consume a user
+ * rate-limit bucket, or create a requester subscription. The admin account is
+ * the mission owner for traceability and the canonical case is still created
+ * through the existing subscription RPC so inbound webhook routing remains
+ * unchanged.
+ */
+export async function createAdminInformationAgentDraft({
   auth,
   input,
 }: {
   auth: SupabaseAuthContext;
   input: z.output<typeof informationAgentCreateSchema>;
-}): Promise<InformationAgentResponse> {
-  const plan = await requireInformationAgentAccess(auth);
-  await enforceUserRateLimit({
-    userId: auth.userId,
-    bucketKey: "information-agent.draft",
-    limit: 10,
-    windowSeconds: 60,
-  });
+}): Promise<InformationAgentAdminResponse> {
+  requireInformationAgentAdmin(auth);
 
   const [sale, emailTemplate] = await Promise.all([
     getSale(auth.supabase, input.saleId),
@@ -291,10 +282,6 @@ export async function createInformationAgentDraft({
     questionKeys,
     template: emailTemplate.content,
   });
-  const quota = await readInformationAgentQuota(
-    auth.userId,
-    plan.limits.informationAgentMissionsPer30Days,
-  );
 
   const { data, error } = await supabaseAdmin
     .from("information_agent_missions")
@@ -304,6 +291,7 @@ export async function createInformationAgentDraft({
       recipient_kind: sale.lawyer_name || extractedEmail ? "source_lawyer" : "manual_professional",
       recipient_name: recipientName || null,
       recipient_email: recipientEmail,
+      share_requester_email: false,
       subject: draft.subject,
       body_text: draft.bodyText,
       question_keys: questionKeys,
@@ -311,7 +299,8 @@ export async function createInformationAgentDraft({
       sale_snapshot: saleSnapshot(sale),
       privacy_version: LEGAL_DOCUMENTS.privacy.version,
       metadata: {
-        draft_source: "deterministic_gap_analysis",
+        draft_source: "admin_deterministic_gap_analysis",
+        initiated_by_admin: auth.userId,
         email_content_template_id: emailTemplate.id,
         email_content_template_revision: emailTemplate.revision,
       },
@@ -330,98 +319,75 @@ export async function createInformationAgentDraft({
     ok: true,
     mission: missionFromRow(subscribedMission),
     gaps,
-    quota,
-    plan: { code: plan.plan, label: plan.label },
     facts: await listFactsForCases(subscribedMission.case_id ? [subscribedMission.case_id] : []),
   };
 }
 
-export async function listInformationAgentMissions({
+export async function listAdminInformationAgentMissions({
   auth,
   saleId,
 }: {
   auth: SupabaseAuthContext;
   saleId?: string;
-}): Promise<InformationAgentListResponse> {
-  const plan = await requireInformationAgentAccess(auth);
+}): Promise<InformationAgentAdminListResponse> {
+  requireInformationAgentAdmin(auth);
   let query = supabaseAdmin
     .from("information_agent_missions")
     .select("*")
     .eq("user_id", auth.userId)
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(100);
   if (saleId) query = query.eq("sale_id", saleId);
 
-  const [{ data, error }, quota] = await Promise.all([
-    query,
-    readInformationAgentQuota(auth.userId, plan.limits.informationAgentMissionsPer30Days),
-  ]);
+  const { data, error } = await query;
   if (error) throw error;
   const rows = data ?? [];
   return {
     ok: true,
     missions: rows.map(missionFromRow),
-    quota,
     facts: await listFactsForCases(
       rows.flatMap((mission) => (mission.case_id ? [mission.case_id] : [])),
     ),
   };
 }
 
-export async function runInformationAgentAction({
+export async function runAdminInformationAgentAction({
   auth,
   input,
   fetchImpl = fetch,
 }: {
   auth: SupabaseAuthContext;
-  input: InformationAgentActionPayload;
+  input: InformationAgentAdminActionPayload;
   fetchImpl?: typeof fetch;
-}): Promise<InformationAgentListResponse> {
-  const plan = await requireInformationAgentAccess(auth);
-  await enforceUserRateLimit({
-    userId: auth.userId,
-    bucketKey: "information-agent.action",
-    limit: 8,
-    windowSeconds: 60,
-  });
+}): Promise<InformationAgentAdminListResponse> {
+  requireInformationAgentAdmin(auth);
 
   if (input.action === "approve_and_send") {
-    await approveAndSendMission({ auth, input, fetchImpl });
+    await approveAndSendMission({ adminId: auth.userId, input, fetchImpl });
   } else if (input.action === "record_reply") {
-    await recordMissionReply({ auth, input });
+    await recordMissionReply({ adminId: auth.userId, input });
   } else {
-    await cancelMission({ auth, missionId: input.missionId });
+    await cancelMission({ adminId: auth.userId, missionId: input.missionId });
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("information_agent_missions")
-    .select("*")
-    .eq("user_id", auth.userId)
-    .eq("id", input.missionId)
-    .single();
-  if (error) throw error;
-
+  const mission = await loadOwnedMission(auth.userId, input.missionId);
   return {
     ok: true,
-    missions: [missionFromRow(data)],
-    quota: await readInformationAgentQuota(
-      auth.userId,
-      plan.limits.informationAgentMissionsPer30Days,
-    ),
-    facts: await listFactsForCases(data.case_id ? [data.case_id] : []),
+    missions: [missionFromRow(mission)],
+    facts: await listFactsForCases(mission.case_id ? [mission.case_id] : []),
   };
 }
 
 async function approveAndSendMission({
-  auth,
+  adminId,
   input,
   fetchImpl,
 }: {
-  auth: SupabaseAuthContext;
-  input: Extract<InformationAgentActionPayload, { action: "approve_and_send" }>;
+  adminId: string;
+  input: Extract<InformationAgentAdminActionPayload, { action: "approve_and_send" }>;
   fetchImpl: typeof fetch;
 }) {
-  const mission = await loadOwnedMission(auth.userId, input.missionId);
+  const mission = await loadOwnedMission(adminId, input.missionId);
   if (mission.status !== "draft" && mission.status !== "failed") {
     throw new Error("Requête invalide : cette enquête ne peut plus être modifiée.");
   }
@@ -438,34 +404,20 @@ async function approveAndSendMission({
       failure_reason: null,
     })
     .eq("id", mission.id)
-    .eq("user_id", auth.userId)
+    .eq("user_id", mission.user_id)
     .in("status", ["draft", "failed"])
     .select("*")
     .single();
   if (editError) throw editError;
 
   const { error: subscribeError } = await supabaseAdmin.rpc("subscribe_information_agent_mission", {
-    p_user_id: auth.userId,
+    p_user_id: mission.user_id,
     p_mission_id: mission.id,
   });
   if (subscribeError) throw subscribeError;
-  const subscribedMission = await loadOwnedMission(auth.userId, mission.id);
+  const subscribedMission = await loadOwnedMission(adminId, mission.id);
   const messageHash = approvalFingerprint(subscribedMission);
-  const { data: approvalRows, error: approvalError } = await supabaseAdmin.rpc(
-    "approve_information_agent_mission_bounded",
-    {
-      p_user_id: auth.userId,
-      p_mission_id: mission.id,
-      p_message_sha256: messageHash,
-    },
-  );
-  if (approvalError) {
-    if (approvalError.message.includes("INFORMATION_AGENT_MONTHLY_LIMIT")) {
-      throw new Error("Trop de demandes : les 3 enquêtes disponibles sur 30 jours sont utilisées.");
-    }
-    throw new Error(approvalError.message || "Approbation de l'enquête impossible.");
-  }
-  const approval = approvalRows?.[0];
+  const approval = await approveInformationAgentMissionForAdmin(subscribedMission, messageHash);
   if (!approval) throw new Error("Approbation de l'enquête impossible.");
   if (!approval.should_send) return;
 
@@ -499,7 +451,7 @@ async function approveAndSendMission({
     const { error: messageError } = await supabaseAdmin.from("information_agent_messages").insert({
       mission_id: mission.id,
       case_id: approval.case_id,
-      user_id: auth.userId,
+      user_id: mission.user_id,
       direction: "outbound",
       message_kind: "initial",
       delivery_status: "sent",
@@ -517,7 +469,7 @@ async function approveAndSendMission({
       },
     });
     if (messageError) throw messageError;
-    await updateMissionOrThrow(mission.id, auth.userId, {
+    await updateMissionOrThrow(mission.id, mission.user_id, {
       status: "sent",
       sent_at: sentAt,
       provider_message_id: delivery.id,
@@ -531,7 +483,7 @@ async function approveAndSendMission({
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message.slice(0, 1000) : "Envoi impossible.";
-    await updateMissionOrThrow(mission.id, auth.userId, {
+    await updateMissionOrThrow(mission.id, mission.user_id, {
       status: "failed",
       failure_reason: detail,
       metadata: { ...asObject(edited.metadata), last_send_attempt_at: sendingAt },
@@ -545,13 +497,13 @@ async function approveAndSendMission({
 }
 
 async function recordMissionReply({
-  auth,
+  adminId,
   input,
 }: {
-  auth: SupabaseAuthContext;
-  input: Extract<InformationAgentActionPayload, { action: "record_reply" }>;
+  adminId: string;
+  input: Extract<InformationAgentAdminActionPayload, { action: "record_reply" }>;
 }) {
-  const mission = await loadOwnedMission(auth.userId, input.missionId);
+  const mission = await loadOwnedMission(adminId, input.missionId);
   if (!(["sent", "replied"] as MissionRow["status"][]).includes(mission.status)) {
     throw new Error("Requête invalide : aucune réponse ne peut être rattachée à cette enquête.");
   }
@@ -559,7 +511,7 @@ async function recordMissionReply({
   const { error } = await supabaseAdmin.from("information_agent_messages").insert({
     mission_id: mission.id,
     case_id: mission.case_id,
-    user_id: auth.userId,
+    user_id: mission.user_id,
     direction: "inbound",
     message_kind: "reply",
     delivery_status: "received",
@@ -571,7 +523,7 @@ async function recordMissionReply({
     metadata: { imported_manually: true, content_trust: "untrusted" },
   });
   if (error) throw error;
-  await updateMissionOrThrow(mission.id, auth.userId, {
+  await updateMissionOrThrow(mission.id, mission.user_id, {
     status: "replied",
     replied_at: receivedAt,
   });
@@ -580,29 +532,19 @@ async function recordMissionReply({
   }
 }
 
-async function cancelMission({
-  auth,
-  missionId,
-}: {
-  auth: SupabaseAuthContext;
-  missionId: string;
-}) {
-  const mission = await loadOwnedMission(auth.userId, missionId);
+async function cancelMission({ adminId, missionId }: { adminId: string; missionId: string }) {
+  const mission = await loadOwnedMission(adminId, missionId);
   if (!(["draft", "failed"] as MissionRow["status"][]).includes(mission.status)) {
     throw new Error("Requête invalide : un message déjà envoyé ne peut pas être annulé.");
   }
-  await updateMissionOrThrow(mission.id, auth.userId, {
+  await updateMissionOrThrow(mission.id, mission.user_id, {
     status: "cancelled",
     completed_at: new Date().toISOString(),
   });
 }
 
-async function requireInformationAgentAccess(auth: SupabaseAuthContext) {
-  const plan = await resolvePlanEntitlements(auth);
-  if (!featureIncluded(plan.plan, "property.informationAgent")) {
-    throw new Error("L'enquête dossier est réservée au plan Analyse.");
-  }
-  return plan;
+function requireInformationAgentAdmin(auth: SupabaseAuthContext): void {
+  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
 }
 
 async function loadOwnedMission(userId: string, missionId: string): Promise<MissionRow> {
@@ -616,6 +558,32 @@ async function loadOwnedMission(userId: string, missionId: string): Promise<Miss
   return data;
 }
 
+type InformationAgentApproval = {
+  case_id: string;
+  should_send: boolean;
+  inbound_token: string;
+};
+
+/**
+ * Approves an admin mission without calling the user quota RPC. The existing
+ * case/subscriber model is retained so inbound Resend replies continue to be
+ * routed and reviewed exactly as before.
+ */
+async function approveInformationAgentMissionForAdmin(
+  mission: MissionRow,
+  messageHash: string,
+): Promise<InformationAgentApproval> {
+  const { data, error } = await supabaseAdmin.rpc("approve_information_agent_mission_admin", {
+    p_admin_id: mission.user_id,
+    p_mission_id: mission.id,
+    p_message_sha256: messageHash,
+  });
+  if (error) throw new Error(error.message || "Approbation admin impossible.");
+  const approval = data?.[0];
+  if (!approval) throw new Error("Approbation admin impossible.");
+  return approval;
+}
+
 async function updateMissionOrThrow(
   missionId: string,
   userId: string,
@@ -627,27 +595,6 @@ async function updateMissionOrThrow(
     .eq("id", missionId)
     .eq("user_id", userId);
   if (error) throw error;
-}
-
-async function readInformationAgentQuota(
-  userId: string,
-  limit: number | null,
-): Promise<InformationAgentQuota> {
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
-  const { count, error } = await supabaseAdmin
-    .from("information_agent_missions")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .gte("approved_at", since)
-    .in("status", ["approved", "sending", "sent", "replied", "completed"]);
-  if (error) throw error;
-  const used = count ?? 0;
-  return {
-    limit,
-    used,
-    remaining: limit == null ? null : Math.max(0, limit - used),
-    windowDays: 30,
-  };
 }
 
 function missionFromRow(row: MissionRow): InformationAgentMission {

@@ -16,6 +16,7 @@ from typing import Any
 from src.admission import has_price_or_surface, is_expired
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
+from src.catalogue_readiness import apply_catalogue_readiness
 from src.collection_evidence import record_items, record_sale_decisions
 from src.config import load_settings
 from src.dedupe import merge_duplicate_sales
@@ -1322,6 +1323,7 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     if surface_context:
         extract_and_apply_deterministic_surface_reasoning(sale, surface_context)
     normalize_asset_features(sale)
+    apply_catalogue_readiness(sale)
 
 
 def _surface_reasoning_context_for_sale(sale: AuctionSale) -> str:

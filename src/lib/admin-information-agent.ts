@@ -1,6 +1,56 @@
 import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import {
+  createAdminInformationAgentDraft,
+  informationAgentAdminActionSchema,
+  informationAgentCreateSchema,
+  informationAgentListQuerySchema,
+  listAdminInformationAgentMissions,
+  runAdminInformationAgentAction,
+  type InformationAgentAdminActionPayload,
+  type InformationAgentAdminListResponse,
+  type InformationAgentAdminResponse,
+} from "@/lib/information-agent";
+
+export const adminInformationAgentCreateSchema = informationAgentCreateSchema;
+export const adminInformationAgentActionSchema = informationAgentAdminActionSchema;
+export const adminInformationAgentListQuerySchema = informationAgentListQuerySchema;
+
+export type AdminInformationAgentAction = InformationAgentAdminActionPayload;
+
+export async function listAdminInformationAgentMissionsForToken({
+  authToken,
+  saleId,
+}: {
+  authToken: string;
+  saleId?: string;
+}): Promise<InformationAgentAdminListResponse> {
+  const auth = await requireAdmin(authToken);
+  return listAdminInformationAgentMissions({ auth, saleId });
+}
+
+export async function createAdminInformationAgentMissionForToken({
+  authToken,
+  input,
+}: {
+  authToken: string;
+  input: z.output<typeof adminInformationAgentCreateSchema>;
+}): Promise<InformationAgentAdminResponse> {
+  const auth = await requireAdmin(authToken);
+  return createAdminInformationAgentDraft({ auth, input });
+}
+
+export async function runAdminInformationAgentMissionActionForToken({
+  authToken,
+  input,
+}: {
+  authToken: string;
+  input: AdminInformationAgentAction;
+}): Promise<InformationAgentAdminListResponse> {
+  const auth = await requireAdmin(authToken);
+  return runAdminInformationAgentAction({ auth, input });
+}
 
 export const adminInformationAgentReviewSchema = z.object({
   factId: z.string().uuid(),
@@ -12,27 +62,26 @@ export type AdminInformationAgentReviewInput = z.output<typeof adminInformationA
 
 export async function listAdminInformationAgentReview(authToken: string) {
   await requireAdmin(authToken);
-  const [{ data: facts, error: factsError }, { data: cases, error: casesError }] =
-    await Promise.all([
-      supabaseAdmin
-        .from("information_agent_fact_candidates")
-        .select("*")
-        .in("status", ["pending", "conflict"])
-        .order("created_at", { ascending: true })
-        .limit(100),
-      supabaseAdmin
+  const { data: facts, error: factsError } = await supabaseAdmin
+    .from("information_agent_fact_candidates")
+    .select("*")
+    .in("status", ["pending", "conflict"])
+    .order("created_at", { ascending: true })
+    .limit(100);
+  if (factsError) throw factsError;
+
+  const caseIds = [...new Set((facts ?? []).map((fact) => fact.case_id))];
+  const { data: cases, error: casesError } = caseIds.length
+    ? await supabaseAdmin
         .from("information_agent_cases")
         .select(
           "id,sale_id,status,recipient_name,recipient_email,subject,sent_at,replied_at,updated_at",
         )
-        .in("status", ["replied", "review"])
+        .in("id", caseIds)
         .order("updated_at", { ascending: false })
-        .limit(100),
-    ]);
-  if (factsError) throw factsError;
+    : { data: [], error: null };
   if (casesError) throw casesError;
 
-  const caseIds = [...new Set((facts ?? []).map((fact) => fact.case_id))];
   const { data: assets, error: assetsError } = caseIds.length
     ? await supabaseAdmin
         .from("information_agent_evidence_assets")
@@ -61,6 +110,10 @@ export async function listAdminInformationAgentReview(authToken: string) {
     extractions: extractions ?? [],
   };
 }
+
+export type AdminInformationAgentReviewResponse = Awaited<
+  ReturnType<typeof listAdminInformationAgentReview>
+>;
 
 export async function reviewAdminInformationAgentFact({
   authToken,
