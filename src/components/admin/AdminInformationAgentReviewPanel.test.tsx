@@ -75,8 +75,8 @@ describe("AdminInformationAgentReviewPanel", () => {
     expect(screen.getByText(/cabinet@example\.test/)).toBeTruthy();
     expect(screen.getByText(/Dossier 33333333/)).toBeTruthy();
     expect(screen.getByText(/Informations complémentaires/)).toBeTruthy();
-    expect(
-      screen.getByRole("link", { name: /Voir l’annonce 11111111/ }).getAttribute("href"),
-    ).toBe("/sales/11111111-1111-4111-8111-111111111111");
+    expect(screen.getByRole("link", { name: /Voir l’annonce 11111111/ }).getAttribute("href")).toBe(
+      "/sales/11111111-1111-4111-8111-111111111111",
+    );
   });
 });

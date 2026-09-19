@@ -196,13 +196,24 @@ def assess_catalogue_readiness(sale: AuctionSale) -> CatalogueReadiness:
 def apply_catalogue_readiness(sale: AuctionSale) -> CatalogueReadiness:
     """Evaluate and persist readiness fields on an ``AuctionSale``."""
     result = assess_catalogue_readiness(sale)
+    materially_changed = any(
+        (
+            sale.premium_readiness_score != result.score,
+            sale.premium_readiness_status != result.status,
+            sale.premium_readiness_policy_version != result.policy_version,
+            sale.premium_readiness_factors != result.factors,
+            sale.premium_readiness_blockers != result.blockers,
+            sale.premium_readiness_missing_fields != result.missing_fields,
+        )
+    )
     sale.premium_readiness_score = result.score
     sale.premium_readiness_status = result.status
     sale.premium_readiness_policy_version = result.policy_version
     sale.premium_readiness_factors = result.factors
     sale.premium_readiness_blockers = result.blockers
     sale.premium_readiness_missing_fields = result.missing_fields
-    sale.premium_readiness_evaluated_at = datetime.now(UTC)
+    if materially_changed or sale.premium_readiness_evaluated_at is None:
+        sale.premium_readiness_evaluated_at = datetime.now(UTC)
     return result
 
 

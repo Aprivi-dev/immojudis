@@ -77,6 +77,16 @@ def test_complete_sale_is_premium_ready_and_explainable() -> None:
     assert sale.premium_readiness_evaluated_at.tzinfo is UTC
 
 
+def test_repeated_identical_evaluation_preserves_timestamp() -> None:
+    sale = _complete_sale()
+
+    apply_catalogue_readiness(sale)
+    evaluated_at = sale.premium_readiness_evaluated_at
+    apply_catalogue_readiness(sale)
+
+    assert sale.premium_readiness_evaluated_at == evaluated_at
+
+
 def test_mid_score_sale_is_kept_for_enrichment() -> None:
     sale = _complete_sale(
         documents=[],
