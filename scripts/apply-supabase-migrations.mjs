@@ -105,7 +105,8 @@ if (!dbUrl) {
 
 const runner = await createRunner(dbUrl);
 
-const remoteVersions = new Set(await runner.listAppliedVersions());
+const remoteMigrations = await runner.listAppliedMigrations();
+const remoteVersions = new Set(remoteMigrations.map(({ version }) => version));
 
 const localVersions = new Set(migrations.map((migration) => migration.version));
 const remoteOnly = [...remoteVersions].filter((version) => !localVersions.has(version));
@@ -113,7 +114,10 @@ if (remoteOnly.length) {
   console.error(
     "[supabase-migrations] Remote migration history contains versions missing locally:",
   );
-  for (const version of remoteOnly) console.error(`  - ${version}`);
+  for (const version of remoteOnly) {
+    const migration = remoteMigrations.find((candidate) => candidate.version === version);
+    console.error(`  - ${version}${migration?.name ? `_${migration.name}` : ""}`);
+  }
   console.error("[supabase-migrations] Add the missing local migration file(s) before applying.");
   process.exit(1);
 }
@@ -208,18 +212,25 @@ function createPsqlRunner(dbUrl, psqlBin) {
   const connectionUrl = withDatabaseConnectTimeout(dbUrl);
   console.log(`[supabase-migrations] Using psql runner: ${psqlBin}`);
   return {
-    listAppliedVersions() {
+    listAppliedMigrations() {
       return Promise.resolve(
         psql(connectionUrl, psqlBin, [
           "--tuples-only",
           "--no-align",
           "--command",
-          "select version from supabase_migrations.schema_migrations order by version;",
+          "select version || '|' || coalesce(name, '') from supabase_migrations.schema_migrations order by version;",
         ])
           .stdout.trim()
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean),
+      ).then((lines) =>
+        lines.map((line) => {
+          const separator = line.indexOf("|");
+          return separator === -1
+            ? { version: line, name: "" }
+            : { version: line.slice(0, separator), name: line.slice(separator + 1) };
+        }),
       );
     },
     applyFile(path) {
@@ -247,15 +258,20 @@ async function createPostgresJsRunner(dbUrl) {
   console.log("[supabase-migrations] Using Postgres.js runner.");
 
   return {
-    async listAppliedVersions() {
+    async listAppliedMigrations() {
       const rows = await retryTransientConnection(
         () => sql`
-          select version
+          select version, coalesce(name, '') as name
           from supabase_migrations.schema_migrations
           order by version
         `,
       );
-      return rows.map((row) => String(row.version).trim()).filter(Boolean);
+      return rows
+        .map((row) => ({
+          version: String(row.version).trim(),
+          name: String(row.name || "").trim(),
+        }))
+        .filter(({ version }) => Boolean(version));
     },
     async applyFile(path) {
       await sql.unsafe(readFileSync(path, "utf8"));
