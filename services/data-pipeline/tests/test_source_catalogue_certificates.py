@@ -131,6 +131,8 @@ def test_agrasc_sold_unlinked_cards_are_counted_as_addressable_only(monkeypatch)
     assert len(certificate["partitions"][0]["unlinked_public_cards"]) == 1
     assert certificate["partitions"][0]["unlinked_public_cards"][0]["sold"] is True
     assert result.coverage["coverage_complete"] is False
+    assert result.coverage["scoped_inventory_complete"] is True
+    assert result.coverage["inventory_scope"] == "addressable_public_catalogue"
 
 
 def test_agrasc_unknown_unlinked_cards_never_certify_inventory(monkeypatch) -> None:
@@ -143,3 +145,4 @@ def test_agrasc_unknown_unlinked_cards_never_certify_inventory(monkeypatch) -> N
     assert certificate["addressable_public_inventory_certified"] is False
     assert certificate["partitions"][0]["unlinked_public_cards"][0]["sold"] is False
     assert result.coverage["coverage_complete"] is False
+    assert result.coverage["scoped_inventory_complete"] is False

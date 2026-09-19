@@ -171,13 +171,57 @@ def finish_source(db_url: str, run_id: str) -> None:
             return
         summary, errors = summary or {}, errors or {}
         coverage = (summary.get('scrape_coverage') or {}).get(source) or {}
+        coverage = dict(coverage)
         problems = errors.get(source) or []
         previous = db.execute('select consecutive_failures from public.auction_source_state where source_name=%s for update', (source,)).fetchone()
         failures = previous[0] + 1 if problems or status == 'failed' else 0
         denied = bool(coverage.get('access_denials')) or any('403' in str(e) or '401' in str(e) for e in problems)
-        availability = 'access_denied' if denied else 'unavailable' if (problems or status == 'failed') and not coverage.get('listings_emitted') else 'partial' if coverage.get('coverage_complete') is not True else 'available'
-        pending = db.execute("select count(*) from public.auction_collection_items where run_id=%s and decision in ('discovered','normalized','admitted','publication_failed','normalization_failed')", (run_id,)).fetchone()[0]
-        complete = coverage.get('coverage_complete') is True
+        publication_counts = dict(db.execute("""select decision,count(*)
+            from public.auction_collection_items where run_id=%s and source_name=%s group by decision""",
+            (run_id, source)).fetchall())
+        publication_published = int(publication_counts.get('published', 0))
+        publication_pending = sum(int(publication_counts.get(decision, 0)) for decision in (
+            'discovered', 'normalized', 'admitted', 'publication_failed', 'normalization_failed'))
+        publication_failed = int(publication_counts.get('publication_failed', 0)) + int(publication_counts.get('normalization_failed', 0))
+        if publication_failed:
+            publication_status = 'failed'
+        elif publication_pending:
+            publication_status = 'pending'
+        elif status == 'failed':
+            publication_status = 'partial' if publication_published else 'failed'
+        else:
+            publication_status = 'complete'
+        coverage.update({
+            'publication_status': publication_status,
+            'publication_pending': publication_pending,
+            'publication_published': publication_published,
+            'publication_failed': publication_failed,
+            'observed_at': datetime.now(UTC).isoformat(),
+        })
+        scoped_complete = bool(
+            coverage.get('scoped_inventory_complete') is True
+            or (
+                coverage.get('inventory_scope') == 'addressable_public_catalogue'
+                and isinstance(coverage.get('certificate'), dict)
+                and coverage['certificate'].get('addressable_public_inventory_certified') is True
+                and coverage['certificate'].get('all_discovered_announcements_emitted') is True
+            )
+        )
+        global_complete = coverage.get('coverage_complete') is True
+        has_progress = bool(
+            coverage.get('listings_emitted')
+            or publication_published
+            or publication_pending
+            or publication_failed
+        )
+        availability = (
+            'access_denied' if denied
+            else 'unavailable' if (problems or status == 'failed') and not has_progress
+            else 'partial' if not global_complete or scoped_complete
+            else 'available'
+        )
+        pending = publication_pending
+        complete = global_complete
         publication_complete = complete and not pending and status == 'succeeded'
         now = datetime.now(UTC)
         if failures:
@@ -202,6 +246,8 @@ def finish_source(db_url: str, run_id: str) -> None:
             (availability,Jsonb(coverage),json.dumps(problems or errors,ensure_ascii=False)[:2000] if failures else None,
              failures,deadline,deadline if denied or coverage.get('retry_not_before') else None,
              complete,publication_complete,source,run_id))
+        db.execute("""update public.auction_runs set summary=coalesce(summary,'{}') || %s
+            where id=%s""", (Jsonb({'scrape_coverage': {source: coverage}}), run_id))
 
 
 def record_source_presence(db, run_id: str, source: str, availability: str, complete: bool) -> None:
@@ -249,6 +295,10 @@ def execute(run_id: str) -> int:
             raise ValueError('Unknown scheduled source')
         command = [sys.executable,'-m','src.main','--source',source,'--run-id',run_id,'--no-llm','--no-heavy-enrichment']
         budget = 35 * 60
+        if source == 'petites_affiches':
+            # Leave time for the main process to flush factual publications and
+            # persist the partial run before the scheduler's hard kill.
+            env['PETITES_AFFICHES_SOURCE_BUDGET_SECONDS'] = str(budget - 5 * 60)
     failure = None
     execution_started = datetime.now(UTC)
     try:
@@ -259,13 +309,28 @@ def execute(run_id: str) -> int:
     except Exception as exc:
         code, failure = 1, str(exc)[:1000]
     with _postgres_connect(db_url) as db:
+        existing_summary = db.execute('select summary from public.auction_runs where id=%s', (run_id,)).fetchone()[0] or {}
         summary = {"scheduler_budget_seconds":budget,"execution_seconds":(datetime.now(UTC)-execution_started).total_seconds()}
         if source == 'enrichment-queue':
             counts = dict(db.execute("select status,count(*) from public.auction_enrichment_jobs where updated_at>=%s group by status", (execution_started,)).fetchall())
             summary['enrichment_jobs'] = counts
             if counts.get('failed'):
                 code, failure = 1, 'One or more enrichment jobs failed; retained for bounded retry'
-        summary['completion_status'] = 'interrupted' if code else 'complete'
+        existing_completion = existing_summary.get('completion_status') if isinstance(existing_summary, dict) else None
+        existing_coverage = (existing_summary.get('scrape_coverage') or {}).get(source, {}) if isinstance(existing_summary, dict) else {}
+        source_budget_stop = bool(isinstance(existing_coverage, dict) and existing_coverage.get('budget_exhausted'))
+        # A source can finish its bounded collection and publish a useful
+        # partial result with exit code 0. Preserve that explicit status instead
+        # of replacing it with the scheduler's transport status.
+        if source_budget_stop:
+            summary['completion_status'] = 'partial_success'
+            summary['stop_reason'] = 'source_budget_exhausted'
+        elif code:
+            summary['completion_status'] = 'interrupted'
+        elif existing_completion in {'partial_success', 'partial', 'scoped_partial', 'incomplete'}:
+            summary['completion_status'] = existing_completion
+        else:
+            summary['completion_status'] = 'complete'
         db.execute("""update public.auction_runs set status=%s,finished_at=now(),updated_at=now(),
             errors=coalesce(errors,'{}') || %s,
             summary=coalesce(summary,'{}') || %s

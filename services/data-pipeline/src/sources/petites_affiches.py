@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+import time
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup, Tag
 
+from src import source_checkpoint
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
 from src.normalize import SURFACE_VALUE_PATTERN, clean_text
@@ -36,6 +39,112 @@ DETAIL_FIELDS = {
     "raw_image_url",
     "source_images",
 }
+SOURCE_BUDGET_ENV = "PETITES_AFFICHES_SOURCE_BUDGET_SECONDS"
+CURSOR_SCHEMA = "petites_affiches_cursor_v1"
+
+
+def _source_budget_deadline() -> float | None:
+    raw = os.getenv(SOURCE_BUDGET_ENV)
+    if not raw:
+        return None
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return None
+    return time.monotonic() + seconds if seconds > 0 else None
+
+
+def _source_budget_expired(deadline: float | None) -> bool:
+    return deadline is not None and time.monotonic() >= deadline
+
+
+def _cursor_pages(cursor: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(cursor, dict):
+        return []
+    return [page for page in cursor.get("inventory_pages", []) if isinstance(page, dict)]
+
+
+def _cursor_parsed_urls(cursor: dict[str, Any] | None) -> dict[str, set[str]]:
+    if not isinstance(cursor, dict) or not isinstance(cursor.get("parsed_urls"), dict):
+        return {}
+    return {
+        str(partition): {str(url) for url in urls if url}
+        for partition, urls in cursor["parsed_urls"].items()
+        if isinstance(urls, list)
+    }
+
+
+def _restore_catalogue_cursor(catalogue: CatalogueEvidence, cursor: dict[str, Any] | None) -> None:
+    """Restore evidence only as a dated snapshot; callers gate certification."""
+    pages = _cursor_pages(cursor)
+    parsed_urls = _cursor_parsed_urls(cursor)
+    for proof in pages:
+        catalogue.pages.append(proof)
+    for partition, urls in parsed_urls.items():
+        catalogue.parsed.setdefault(partition, set()).update(urls)
+
+
+def _restore_linked_pages(pages: LinkedPages, cursor: dict[str, Any] | None) -> bool:
+    if not isinstance(cursor, dict) or cursor.get("scan_complete") is not False:
+        return False
+    seen = [str(url) for url in cursor.get("seen_pages", []) if url]
+    pending = [str(url) for url in cursor.get("pending_pages", []) if url]
+    if not seen and not pending:
+        return False
+    pages.seen = set(seen)
+    pages.pending = pending
+    try:
+        pages.fetched = max(0, int(cursor.get("pages_fetched", len(seen))))
+    except (TypeError, ValueError):
+        pages.fetched = len(seen)
+    return True
+
+
+def _save_page_cursor(
+    partition: str,
+    department: str | None,
+    pages: LinkedPages,
+    completed_proofs: list[dict[str, Any]],
+    parsed_urls: dict[str, set[str]],
+    *,
+    current_page: str | None = None,
+    current_page_observed: bool = False,
+    resumed: bool = False,
+    scan_complete: bool = False,
+) -> None:
+    """Commit progress after a whole detail page, or put a partial page back.
+
+    A page is added to the certificate snapshot only after every card on the
+    page has either been enriched or has a durable matching detail checkpoint.
+    If the source budget interrupts a page, that page stays pending so the next
+    run cannot skip un-emitted URLs.
+    """
+    seen = list(dict.fromkeys(str(url) for url in pages.seen if url))
+    pending = list(dict.fromkeys(str(url) for url in pages.pending if url))
+    fetched = pages.fetched
+    if current_page is not None:
+        seen = [url for url in seen if url != current_page]
+        pending = [current_page, *[url for url in pending if url != current_page]]
+        if current_page_observed:
+            fetched = max(0, fetched - 1)
+    payload = {
+        "schema_version": CURSOR_SCHEMA,
+        "source_name": "petites_affiches",
+        "partition": partition,
+        "department": department,
+        "scan_complete": bool(scan_complete and not pending),
+        "resumed_from_checkpoint": bool(resumed),
+        "pages_fetched": fetched,
+        "seen_pages": seen,
+        "pending_pages": pending,
+        "inventory_pages": completed_proofs,
+        "parsed_urls": {key: sorted(values) for key, values in parsed_urls.items()},
+        "last_completed_page": completed_proofs[-1].get("page_index") if completed_proofs else None,
+    }
+    try:
+        source_checkpoint.save_source_cursor(partition, payload)
+    except Exception:  # pragma: no cover - persistence failures are source/runtime dependent
+        LOGGER.warning("Unable to persist Petites Affiches cursor for %s", partition, exc_info=True)
 
 
 def scrape_petites_affiches_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
@@ -46,6 +155,7 @@ def scrape_petites_affiches_aquitaine_result(
     max_pages: int | None = None, known: dict[str, str] | None = None
 ) -> ScrapeResult:
     settings = load_settings()
+    deadline = _source_budget_deadline()
     client = PoliteHttpClient(
         base_url=BASE_URL,
         user_agent=str(settings["browser_user_agent"]),
@@ -60,25 +170,64 @@ def scrape_petites_affiches_aquitaine_result(
     partitions: list[dict[str, Any]] = []
     catalogue = CatalogueEvidence("petites_affiches")
     seen_sales: set[str] = set()
-    for department in _department_filters():
+    budget_exhausted = False
+    resumed_partitions: set[str] = set()
+    departments = _department_filters()
+    for department_index, department in enumerate(departments):
         partition = f"department:{department or 'all'}"
         pages = LinkedPages(LIST_URL, "", 1, max_pages or 100,
                             path_pattern=r"/encheres-immobilieres/ventes-aux-encheres-immobilieres-p(\d+)\.html")
+        try:
+            cursor = source_checkpoint.load_source_cursor(partition)
+        except Exception:  # pragma: no cover - database availability is runtime dependent
+            LOGGER.warning("Unable to load Petites Affiches cursor for %s", partition, exc_info=True)
+            cursor = None
+        resumed = _restore_linked_pages(pages, cursor)
+        if resumed:
+            resumed_partitions.add(partition)
+            _restore_catalogue_cursor(catalogue, cursor)
+            completed_proofs = _cursor_pages(cursor)
+            parsed_urls = _cursor_parsed_urls(cursor)
+        else:
+            # A cursor which reached its end belongs to a prior interrupted
+            # snapshot. Start a fresh inventory scan and do not carry its old
+            # proofs into the next cursor.
+            completed_proofs = []
+            parsed_urls = {}
+        # Keep the partition's evidence separate from other departments.  The
+        # certificate is reconstructed from these dated page proofs only after
+        # the page's details have been fully handled.
+        parsed_urls.setdefault(partition, set())
+        page_pending = False
         for page_url in pages:
+            if _source_budget_expired(deadline):
+                budget_exhausted = True
+                page_pending = True
+                _save_page_cursor(partition, department, pages, completed_proofs, parsed_urls,
+                                  current_page=page_url, resumed=resumed)
+                break
             try:
                 html = (_fetch_listing(client, department) if page_url == LIST_URL
                         else _fetch_listing(client, department, page_url))
             except Exception as exc:
                 LOGGER.error("Petites Affiches list fetch failed for %s: %s", page_url, exc)
                 errors.append(f"{page_url}: {exc}")
+                page_pending = True
+                _save_page_cursor(partition, department, pages, completed_proofs, parsed_urls,
+                                  current_page=page_url, resumed=resumed)
                 break
             pages.observe(html, page_url)
             page_sales = parse_petites_affiches_html(html, page_url=page_url, fallback_department=department)
             # Certify every department POST before the global URL deduplication.
             # A URL repeated by two department partitions is still evidence in
             # both public catalogues and must not hide a partial partition.
-            catalogue.observe(html, page_url, page_sales, partition=partition)
+            proof = catalogue.observe(html, page_url, page_sales, partition=partition)
+            page_pending = False
             for sale in page_sales:
+                if _source_budget_expired(deadline):
+                    budget_exhausted = True
+                    page_pending = True
+                    break
                 url = str(sale.get("source_url"))
                 if url in seen_sales:
                     continue
@@ -86,12 +235,60 @@ def scrape_petites_affiches_aquitaine_result(
                 if should_fetch_detail(sale, known):
                     _enrich_sale_from_detail(client, sale, errors)
                 raw_sales.append(sale)
-        partitions.append({"department": department, "partition": partition, **pages.metrics()})
+            if page_pending:
+                _save_page_cursor(partition, department, pages, completed_proofs, parsed_urls,
+                                  current_page=page_url, current_page_observed=True, resumed=resumed)
+                break
+            completed_proofs.append(proof)
+            parsed_urls[partition].update(
+                str(sale.get("source_url")) for sale in page_sales if sale.get("source_url")
+            )
+            metrics = pages.metrics()
+            _save_page_cursor(partition, department, pages, completed_proofs, parsed_urls,
+                              resumed=resumed, scan_complete=metrics["linked_pages_complete"])
+            if _source_budget_expired(deadline):
+                budget_exhausted = True
+                break
+        partition_metrics = pages.metrics()
+        if page_pending or budget_exhausted:
+            partition_metrics = {
+                **partition_metrics,
+                "linked_pages_complete": False,
+                "coverage_complete": False,
+                "stop_reason": "source_budget_exhausted" if budget_exhausted else partition_metrics["stop_reason"],
+            }
+        partitions.append({"department": department, "partition": partition, **partition_metrics})
+        if budget_exhausted:
+            # Preserve an explicit incomplete record for every department not
+            # visited in this process.  Omitting them would let an empty suffix
+            # accidentally pass the catalogue proof.
+            for remaining in departments[department_index + 1 :]:
+                partitions.append({
+                    "department": remaining,
+                    "partition": f"department:{remaining or 'all'}",
+                    "pages_fetched": 0,
+                    "linked_pages_complete": False,
+                    "pending_pages": 1,
+                    "coverage_complete": False,
+                    "stop_reason": "source_budget_exhausted",
+                })
+            break
 
     pagination_incomplete = [item for item in partitions if not item["linked_pages_complete"]]
     pagination_metrics = {
-        "coverage_complete": False if pagination_incomplete else None,
-        "stop_reason": "partition_pagination_incomplete" if pagination_incomplete else "published_links_exhausted",
+        # A resumed run carries old page proofs for evidence and diagnosis,
+        # but cannot certify the current public inventory until a fresh scan
+        # revalidates those pages. The following run starts from page one once
+        # this cursor reaches its end.
+        "coverage_complete": False if pagination_incomplete or resumed_partitions else None,
+        "stop_reason": "source_budget_exhausted" if budget_exhausted
+        else "partition_pagination_incomplete" if pagination_incomplete
+        else "resumed_snapshot_requires_revalidation" if resumed_partitions
+        else "published_links_exhausted",
+        "budget_exhausted": budget_exhausted,
+        "source_budget_seconds": None if deadline is None else max(0, round(deadline - time.monotonic(), 3)),
+        "cursor_resumed_partitions": sorted(resumed_partitions),
+        "cursor_revalidated": not resumed_partitions,
     }
     validated_sales = validate_raw_sales("petites_affiches", unique_dicts(raw_sales, "source_url"), errors)
     catalogue_metrics = catalogue.metrics(
@@ -101,7 +298,7 @@ def scrape_petites_affiches_aquitaine_result(
         scope={"public": "configured_departments", "configured": "target_departments"},
     )
 
-    return ScrapeResult(
+    result = ScrapeResult(
         validated_sales,
         errors,
         {**getattr(client, "coverage_metrics", lambda: {})(),
@@ -110,6 +307,13 @@ def scrape_petites_affiches_aquitaine_result(
          "linked_pages_complete": not pagination_incomplete,
          **catalogue_metrics},
     )
+    if budget_exhausted:
+        # ScrapeResult marks any error as ``source_errors``; retain the more
+        # actionable bounded-stop reason when both happened in one run.
+        result.coverage["coverage_complete"] = False
+        result.coverage["stop_reason"] = "source_budget_exhausted"
+        result.coverage["budget_exhausted"] = True
+    return result
 
 
 def _department_filters() -> tuple[str | None, ...]:

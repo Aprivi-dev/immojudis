@@ -2,15 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchPipelineStatus, setPipelineSourceEnabled } from "@/lib/client-api";
-
-const labels: Record<string, string> = {
-  available: "Disponible",
-  unavailable: "Indisponible",
-  access_denied: "Accès refusé",
-  partial: "Collecte partielle",
-  unknown: "Non vérifiée",
-  unchecked: "Non vérifiée",
-};
+import { pipelineSourceStatus } from "@/lib/pipeline-source-status";
 function date(value: string | null) {
   return value && Number.isFinite(Date.parse(value))
     ? new Date(value).toLocaleString("fr-FR")
@@ -127,11 +119,18 @@ export function AdminPipelinePanel() {
                 (item) => item.source_name === source.source_name,
               )?.metrics;
               const ratio = metrics?.freshness_ratio;
+              const status = pipelineSourceStatus(source);
               return (
                 <tr key={source.source_name} className="border-t align-top">
                   <th className="p-2 font-medium">{source.source_name}</th>
                   <td className="p-2">
-                    {labels[source.availability] ?? source.availability}
+                    {status.label}
+                    {status.detail ? (
+                      <p className="max-w-xs text-xs text-slate-600">{status.detail}</p>
+                    ) : null}
+                    {source.last_attempt_at ? (
+                      <p className="text-xs">Dernière tentative : {date(source.last_attempt_at)}</p>
+                    ) : null}
                     {source.last_error ? (
                       <details>
                         <summary className="cursor-pointer text-red-700">Erreur</summary>
@@ -139,9 +138,22 @@ export function AdminPipelinePanel() {
                       </details>
                     ) : null}
                   </td>
-                  <td className="p-2">{date(source.last_inventory_complete_at)}</td>
+                  <td className="p-2">
+                    {date(source.last_inventory_complete_at)}
+                    {source.coverage?.scoped_inventory_complete ? (
+                      <p className="max-w-xs text-xs">
+                        Périmètre accessible complet ; archives sans lien exclues.
+                      </p>
+                    ) : null}
+                  </td>
                   <td className="p-2">
                     {date(source.last_publication_complete_at)}
+                    {typeof source.coverage?.publication_published === "number" ? (
+                      <p className="text-xs">
+                        Dernier passage : {source.coverage.publication_published} publiées,{" "}
+                        {source.coverage.publication_pending ?? 0} à finaliser.
+                      </p>
+                    ) : null}
                     {typeof metrics?.discovery_to_publication_p95_seconds === "number" ? (
                       <p>
                         Délai de publication, p95 :{" "}
@@ -182,6 +194,8 @@ export function AdminPipelinePanel() {
                     </button>
                     {source.suspended_until ? (
                       <p>Reprise au plus tôt : {date(source.suspended_until)}</p>
+                    ) : source.last_error ? (
+                      <p>Reprise possible à partir du : {date(source.next_inventory_at)}</p>
                     ) : null}
                   </td>
                 </tr>

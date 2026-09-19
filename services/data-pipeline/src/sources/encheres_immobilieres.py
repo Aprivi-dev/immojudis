@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
+from src.catalogue_proof import public_page_proof
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.enrichment.surface_reasoning import extract_surface_facts_from_text
 from src.normalize import clean_text, has_rented_occupancy_signal, no_lease_occupancy_status, strip_accents
@@ -91,6 +92,7 @@ def scrape_encheres_immobilieres_aquitaine_result(
     max_pages = max_pages or int(settings["encheres_immobilieres_max_pages"])
 
     errors: list[str] = []
+    detail_failures: list[dict[str, Any]] = []
     raw_sales: list[dict[str, Any]] = CheckpointSales()
     pagination = PaginationCoverage()
     for page_url in _list_urls(max_pages):
@@ -101,18 +103,43 @@ def scrape_encheres_immobilieres_aquitaine_result(
             errors.append(f"{page_url}: {exc}")
             break
         page_sales = parse_encheres_immobilieres_html(html)
-        if not pagination.accept(page_sales):
+        page_proof = public_page_proof("encheres_immobilieres", html, page_url)
+        advertised_totals = page_proof.get("advertised_totals") or []
+        expected_total = advertised_totals[0] if len(advertised_totals) == 1 else None
+        page_urls = {
+            str(sale.get("source_url"))
+            for sale in page_sales
+            if sale.get("source_url")
+        }
+        terminal = bool(
+            page_sales
+            and (
+                page_proof.get("page_index") in set(page_proof.get("advertised_last_pages") or [])
+                or (
+                    expected_total is not None
+                    and len(pagination.seen | page_urls) == expected_total
+                )
+            )
+        )
+        if not pagination.accept(page_sales, terminal=terminal, expected_total=expected_total):
             break
         for sale in page_sales:
             if sale.get("department") in TARGET_DEPARTMENTS:
                 if should_fetch_detail(sale, known):
-                    _enrich_sale_from_detail(client, sale, errors)
+                    _enrich_sale_from_detail(client, sale, errors, detail_failures)
                 raw_sales.append(sale)
+        if pagination.exhausted:
+            break
 
+    coverage = pagination.metrics()
+    coverage["detail_failures"] = detail_failures
+    coverage["detail_identity_mismatches"] = sum(
+        failure.get("kind") == "identity_mismatch" for failure in detail_failures
+    )
     return ScrapeResult(
         validate_raw_sales("encheres_immobilieres", unique_dicts(raw_sales, "source_url"), errors),
         errors,
-        {**getattr(client, "coverage_metrics", lambda: {})(), **pagination.metrics()},
+        {**getattr(client, "coverage_metrics", lambda: {})(), **coverage},
     )
 
 
@@ -215,7 +242,12 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
     }
 
 
-def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> None:
+def _enrich_sale_from_detail(
+    client: PoliteHttpClient,
+    sale: dict[str, Any],
+    errors: list[str],
+    detail_failures: list[dict[str, Any]] | None = None,
+) -> None:
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
@@ -228,6 +260,31 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
         sale["source_detail_status"] = "failed"
         return
     detail = parse_encheres_immobilieres_detail_html(html, source_url)
+    listing_external_id = _identity_value(sale.get("external_id"))
+    detail_external_id = _identity_value(detail.get("external_id"))
+    if listing_external_id and detail_external_id and listing_external_id != detail_external_id:
+        mismatch = {
+            "kind": "identity_mismatch",
+            "source_url": source_url,
+            "listing_external_id": listing_external_id,
+            "detail_external_id": detail_external_id,
+        }
+        if detail_failures is not None:
+            detail_failures.append(mismatch)
+        sale["_detail_fetch_failed"] = True
+        sale["source_detail_status"] = "failed"
+        sale["source_detail_failure_reason"] = "identity_mismatch"
+        sale["source_identity_mismatch"] = mismatch
+        quality_flags = sale.get("quality_flags") if isinstance(sale.get("quality_flags"), list) else []
+        if "source_identity_mismatch" not in quality_flags:
+            sale["quality_flags"] = [*quality_flags, "source_identity_mismatch"]
+        LOGGER.warning(
+            "EncheresImmobilieres detail identity mismatch for %s: listing=%s detail=%s",
+            source_url,
+            listing_external_id,
+            detail_external_id,
+        )
+        return
     for key in DETAIL_OVERRIDE_FIELDS:
         value = detail.get(key)
         if value in (None, "", []):
@@ -252,6 +309,11 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
             sale[key] = f"{sale['raw_text']}\n{value}"
         elif not sale.get(key) or key in {"description", "visit_dates", "lawyer_contact", "tribunal", "occupancy_status"}:
             sale[key] = value
+
+
+def _identity_value(value: object) -> str | None:
+    text = clean_text(value)
+    return text.casefold() if text else None
 
 
 def _rendered_listing_sales(html: str) -> list[dict[str, Any]]:

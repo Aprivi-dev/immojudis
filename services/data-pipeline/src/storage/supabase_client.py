@@ -391,11 +391,18 @@ def upsert_sales_to_supabase(
 
 def _write_sale_revisions(sales: list[AuctionSale], settings: dict, *, refresh_last_seen: bool) -> int:
     """Write all catalogue tables inside the caller's admission/version boundary."""
+    from src.publication_identity import ensure_room_bedroom_consistency
+
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
     now = datetime.now(UTC).isoformat()
     payload = []
     for sale in sales:
+        # Normalization can happen after identity resolution (for example in
+        # a detail/enrichment path).  Recheck the SQL invariant immediately
+        # before serializing the parent row so a contradictory pair is stored
+        # as evidence plus NULLs instead of aborting the whole publication.
+        ensure_room_bedroom_consistency(sale)
         reason = quarantine_reason(sale)
         if reason:
             sale.raw_payload["publication_quarantine"] = reason
@@ -1220,7 +1227,13 @@ def upsert_extractions_to_supabase(sales: list[AuctionSale]) -> int:
 
 
 def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
-    sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
+    sales = [
+        sale for sale in sales
+        if has_price_or_surface(sale)
+        and not is_expired(sale)
+        and sale.status != 'quarantined'
+        and not quarantine_reason(sale)
+    ]
     if not sales:
         return 0
     settings = load_settings()
@@ -1321,10 +1334,17 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
         return 0
     if db_url:
         try:
-            _postgres_upsert(str(db_url), "auction_observations", payload, on_conflict="source_url")
-            return len(payload)
+            persisted = _postgres_upsert(str(db_url), "auction_observations", payload, on_conflict="source_url")
+            return persisted if isinstance(persisted, int) else len(payload)
         except Exception as exc:
-            LOGGER.warning("Direct Postgres auction_observations upsert failed; falling back to REST: %s", exc)
+            # The direct path is the only path that can lock the parent and
+            # child in one transaction.  Falling back here would reintroduce
+            # the orphan race this guard is intended to close.
+            LOGGER.error("Direct Postgres auction_observations upsert failed; refusing an unguarded REST write: %s", exc)
+            raise
+    payload = _rest_parented_observation_payload(str(url), str(key), payload)
+    if not payload:
+        return 0
     _postgrest_upsert(str(url), str(key), "auction_observations", payload, on_conflict="source_url")
     return len(payload)
 
@@ -2022,16 +2042,143 @@ def _delete_secondary_sale_rows_with_postgres(db_url: str, sales: list[AuctionSa
     return len(deletable_ids)
 
 
+def _rest_parented_observation_payload(
+    supabase_url: str,
+    api_key: str,
+    payload: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Filter REST observations against exact canonical parent rows.
+
+    REST has no transaction spanning the parent read and child write.  The
+    production path therefore requires direct PostgreSQL; this fallback still
+    fails closed when the parent read is unavailable and relies on the FK for
+    the remaining concurrent-delete race.
+    """
+    canonical_urls = sorted({
+        str(row.get('canonical_source_url'))
+        for row in payload
+        if row.get('canonical_source_url')
+    })
+    if not canonical_urls:
+        return []
+    response = _postgrest_request_with_retries(
+        "GET",
+        f"{supabase_url.rstrip('/')}/rest/v1/auction_sales",
+        "auction_sales",
+        params={
+            "select": "source_url",
+            "source_url": _postgrest_in_filter(canonical_urls),
+        },
+        headers=_rest_headers(api_key, prefer="count=none"),
+        timeout=POSTGREST_TIMEOUT,
+    )
+    if response.is_error:
+        raise httpx.HTTPStatusError(
+            f"{response.status_code} response from Supabase auction_sales parent check: {response.text}",
+            request=response.request,
+            response=response,
+        )
+    rows = response.json()
+    existing = {
+        str(row.get('source_url'))
+        for row in rows
+        if isinstance(row, dict) and row.get('source_url')
+    }
+    return [row for row in payload if str(row.get('canonical_source_url') or '') in existing]
+
+
+def _parented_observation_payload(connection: Any, payload: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Return observations whose canonical URL has a locked catalogue parent.
+
+    An identity merge may quarantine an incoming sale without persisting its
+    URL.  Observations are written after the sale call by the collector, so
+    this check is deliberately repeated here.  ``FOR KEY SHARE`` keeps a
+    concurrent parent deletion from slipping between the check and the child
+    upsert; aliases already recorded in ``source_urls`` are rewritten to the
+    locked canonical URL.
+    """
+    canonical_urls = sorted({
+        str(row.get('canonical_source_url'))
+        for row in payload
+        if row.get('canonical_source_url')
+    })
+    if not canonical_urls:
+        return []
+    def as_text(value: object) -> str:
+        if isinstance(value, bytes):
+            return value.decode('utf-8', errors='replace')
+        return str(value)
+
+    parents = connection.execute(
+        """
+        select source_url, source_urls
+        from public.auction_sales
+        where source_url = any(%s) or source_urls ?| %s
+        for key share
+        """,
+        (canonical_urls, canonical_urls),
+    ).fetchall()
+    parent_by_candidate: dict[str, set[str]] = {}
+    for parent_url, aliases in parents:
+        parent = as_text(parent_url)
+        parent_by_candidate.setdefault(parent, set()).add(parent)
+        if isinstance(aliases, list):
+            for alias in aliases:
+                if alias:
+                    parent_by_candidate.setdefault(as_text(alias), set()).add(parent)
+
+    eligible: list[dict[str, object]] = []
+    for row in payload:
+        candidate = str(row.get('canonical_source_url') or '')
+        matches = parent_by_candidate.get(candidate, set())
+        if len(matches) != 1:
+            LOGGER.warning(
+                "Skipping observation without one locked canonical parent: %s",
+                candidate,
+            )
+            continue
+        canonical = next(iter(matches))
+        eligible.append({**row, 'canonical_source_url': canonical})
+    return eligible
+
+
+def _postgres_upsert_observations_with_parent_guard(
+    db_url: str,
+    payload: list[dict[str, object]],
+    on_conflict: str,
+) -> int:
+    connection = _PUBLICATION_CONNECTION.get()
+    if connection is not None:
+        eligible = _parented_observation_payload(connection, payload)
+        if not eligible:
+            return 0
+        _transaction_write("auction_observations", eligible, on_conflict)
+        return len(eligible)
+
+    with _postgres_connect(db_url) as connection:
+        eligible = _parented_observation_payload(connection, payload)
+        if not eligible:
+            return 0
+        token = _PUBLICATION_CONNECTION.set(connection)
+        try:
+            _transaction_write("auction_observations", eligible, on_conflict)
+        finally:
+            _PUBLICATION_CONNECTION.reset(token)
+        return len(eligible)
+
+
 def _postgres_upsert(
     db_url: str,
     table: str,
     payload: list[dict[str, object]],
     on_conflict: str,
-) -> None:
+) -> int | None:
     if psycopg is None or sql is None:
         raise RuntimeError("psycopg is required for direct Postgres writes")
     if not payload:
-        return
+        return 0
+    if table == "auction_observations":
+        return _postgres_upsert_observations_with_parent_guard(db_url, payload, on_conflict)
     columns = list(payload[0].keys())
     insert_statement = sql.SQL(
         "insert into {} ({}) values ({}) on conflict ({}) do update set {}"
@@ -2050,6 +2197,7 @@ def _postgres_upsert(
     with _postgres_connect(db_url) as connection:
         with connection.cursor() as cursor:
             cursor.executemany(insert_statement, rows)
+    return None
 
 
 def _postgres_connect(db_url: str) -> Any:

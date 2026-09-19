@@ -45,6 +45,8 @@ def timestamp_is_fresh(value: object, *, hours: float = 24, now: datetime | None
 
 def detail_is_fresh(row: dict[str, Any], source_url: str) -> bool:
     payload = row.get("raw_payload") or {}
+    if payload.get("source_identity_mismatch") or str(row.get("status") or "").casefold() == "quarantined":
+        return False
     checks = payload.get("source_checks") or {}
     check = checks.get(source_url) or {}
     if check.get("extractor_version") != SOURCE_EXTRACTION_VERSION:

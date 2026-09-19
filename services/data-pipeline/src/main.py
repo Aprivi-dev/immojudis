@@ -290,6 +290,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     configure_publisher()
     collection_failed = any(errors.get(name) for name in scrapers)
     coverage_incomplete = any(item.get("coverage_complete") is False for item in scrape_coverage.values())
+    scoped_collection_complete = bool(
+        options.source == "agrasc"
+        and not collection_failed
+        and scrape_coverage.get("agrasc", {}).get("scoped_inventory_complete") is True
+    )
     timings["scrape_total_seconds"] = round(time.perf_counter() - scrape_overall_started, 2)
 
     # Les scrapers peuvent sauter une fiche détail inchangée. On garde quand
@@ -602,7 +607,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         "timings": timings,
         "heavy_enrichment_enabled": options.heavy_enrichment,
         "stage_status": {
-            "collection": "failed" if collection_failed else "partial" if coverage_incomplete else "unverified" if any(item.get("coverage_complete") is None for item in scrape_coverage.values()) else "complete",
+            "collection": "failed" if collection_failed else "scoped_complete" if coverage_incomplete and scoped_collection_complete else "partial" if coverage_incomplete else "unverified" if any(item.get("coverage_complete") is None for item in scrape_coverage.values()) else "complete",
             "enrichment": "partial" if pdf_stats.errors or llm_stats.errors or llm_stats.unavailable or timings.get("pdf_targets_deferred") or timings.get("llm_targets_deferred") else "complete",
             "publication": "pending",
         },
@@ -632,7 +637,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             observations_upserted = max(early_observations_upserted, final_observations_upserted)
             # Fail closed before every path below that can delete catalogue
             # rows. The database also rejects deletion of any unbridged sale.
-            if collection_failed or coverage_incomplete:
+            if collection_failed or (coverage_incomplete and not scoped_collection_complete):
                 raise RuntimeError("Collection incomplete; catalogue cleanup is disabled.")
             # Bounded/source refreshes publish only; all destructive maintenance
             # requires a complete catalogue archive and an unbounded global scan.
@@ -673,7 +678,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                     "deleted_vench_without_surface": supabase_deleted_vench_without_surface,
                 }
             )
-            summary["completion_status"] = "partial_success" if any(errors.values()) or llm_stats.unavailable or timings.get("pdf_targets_deferred") or timings.get("llm_targets_deferred") else "complete"
+            summary["completion_status"] = "partial_success" if coverage_incomplete or any(errors.values()) or llm_stats.unavailable or timings.get("pdf_targets_deferred") or timings.get("llm_targets_deferred") else "complete"
             summary["stage_status"]["publication"] = "complete"
             finish_run_in_supabase(run_id, "succeeded", summary, errors)
         except Exception as exc:
@@ -985,6 +990,10 @@ def _hydrate_known_unchanged_sales(
 ) -> int:
     skipped = 0
     for sale in raw_sales:
+        if sale.get("source_identity_mismatch"):
+            # A previous scrape may contain the same mismatched detail. Do not
+            # reintroduce it while quarantining a newly detected conflict.
+            continue
         if not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed"):
             continue
         skipped += int(bool(sale.get("_known_unchanged")))
@@ -1004,6 +1013,8 @@ def _preserve_known_enrichment_payloads(
 ) -> int:
     preserved = 0
     for sale in raw_sales:
+        if sale.get("source_identity_mismatch"):
+            continue
         source_url = str(sale.get("source_url") or "")
         known = known_details.get(source_url)
         known = known or {}

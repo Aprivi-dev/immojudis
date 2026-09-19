@@ -625,6 +625,40 @@ def test_upsert_sales_via_rest_does_not_delete_secondary_rows(monkeypatch) -> No
     assert calls == ["upsert", "normalized", "assets"]
 
 
+def test_upsert_sales_neutralizes_room_bedroom_contradiction_before_storage(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_immobilieres",
+            "source_url": "https://example.test/inconsistent-rooms",
+            "starting_price_eur": 10000,
+        }
+    )
+    sale.rooms_count = 3
+    sale.bedrooms_count = 4
+    captured: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_upsert_with_rest",
+        lambda _url, _key, payload: captured.extend(payload),
+    )
+    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables_with_rest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *args, **kwargs: None)
+
+    assert supabase_client.upsert_sales_to_supabase([sale]) == 1
+
+    assert captured[0]["rooms_count"] is None
+    assert captured[0]["bedrooms_count"] is None
+    assert captured[0]["raw_payload"]["rooms_bedrooms_conflict_evidence"]["rooms_count"] == 3
+
+
 def test_upsert_sales_registers_verified_competent_court_before_sale(monkeypatch) -> None:
     assignment = CompetentCourtAssignment(
         insee_code="01187",

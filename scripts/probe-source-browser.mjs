@@ -5,29 +5,33 @@ const browser = await chromium.launch({ headless: process.env.HEADED !== "1" });
 const context = await browser.newContext({ locale: "fr-FR" });
 const page = await context.newPage();
 const results = [];
+const urls =
+  process.env.PROBE_SOURCE === "encheres_immobilieres"
+    ? ["https://encheresimmobilieres.fr/biens-en-vente"]
+    : ["https://www.encheres-publiques.com/ventes/immobilier"];
 try {
-  for (const url of [
-    "https://www.encheres-publiques.com/ventes/immobilier",
-    "https://encheres-publiques.com/ventes/immobilier",
-  ]) {
+  for (const url of urls) {
     try {
+      const started = Date.now();
       const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
-      await page
-        .waitForFunction(
-          () => !/just a moment|un instant|attention required/i.test(document.title),
-          null,
-          { timeout: 15000 },
-        )
-        .catch(() => {});
       const result = await page.evaluate(() => ({
         title: document.title,
         url: location.href,
         chars: document.body.innerText.length,
+        inventoryTotals: document.body.innerText.match(/\d+\s+biens en ventes?/gi) ?? [],
+        paginationButtons: [...document.querySelectorAll("button")]
+          .filter((button) => /^(?:\d+|[<>]|\.\.\.)$/.test(button.textContent.trim()))
+          .map((button) => button.outerHTML),
         links: [...document.querySelectorAll("a[href]")]
           .map((a) => a.href)
-          .filter((h) => h.includes("/ventes/")),
+          .filter((h) => h.includes("/ventes/") || h.includes("/biens-en-vente")),
       }));
-      results.push({ requestedUrl: url, status: response?.status(), ...result });
+      results.push({
+        requestedUrl: url,
+        status: response?.status(),
+        elapsedMs: Date.now() - started,
+        ...result,
+      });
     } catch (error) {
       results.push({ requestedUrl: url, error: error.message });
     }

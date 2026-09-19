@@ -1,6 +1,14 @@
 name: Read-only source browser probe
 on:
   workflow_dispatch:
+    inputs:
+      source:
+        description: "Source to probe once without publication"
+        default: encheres_immobilieres
+        type: choice
+        options:
+          - encheres_immobilieres
+          - encheres_publiques
 permissions:
   contents: read
 jobs:
@@ -16,6 +24,8 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: node scripts/probe-source-browser.mjs
+        env:
+          PROBE_SOURCE: ${{ inputs.source }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
