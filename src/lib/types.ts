@@ -64,6 +64,13 @@ export type AuctionSale = {
   score_version: string | null;
   score_confidence: number | null;
   score_factors: SaleScoreFactor[] | null;
+  premium_readiness_score?: number | null;
+  premium_readiness_status?: "unassessed" | "internal_only" | "needs_enrichment" | "premium_ready";
+  premium_readiness_policy_version?: string | null;
+  premium_readiness_factors?: Record<string, unknown> | null;
+  premium_readiness_blockers?: string[] | null;
+  premium_readiness_missing_fields?: string[] | null;
+  premium_readiness_evaluated_at?: string | null;
   risk_notes: string | null;
   source_name: string | null;
   source_url: string | null;

@@ -27,6 +27,14 @@ import type {
   AdminSubscriptionListResponse,
 } from "@/lib/admin-subscriptions";
 import type { AdminOperationalReadinessResponse } from "@/lib/admin-readiness";
+import type {
+  AdminCatalogueReadinessAction,
+  CatalogueReadinessOverview,
+} from "@/lib/admin-catalogue-readiness";
+import type {
+  AdminInformationAgentReviewInput,
+  AdminInformationAgentReviewResponse,
+} from "@/lib/admin-information-agent";
 import type { AlertEvaluationResponse, AlertMatchSummary } from "@/lib/alert-matches";
 import type { BidCeilingAnalysisResponse, BidCeilingRequestInput } from "@/lib/bid-ceiling";
 import type { EnvironmentalContextResponse } from "@/lib/environment.functions";
@@ -114,10 +122,10 @@ import type {
   PrivacyRequestSummary,
 } from "@/lib/privacy-requests";
 import type {
-  InformationAgentActionInput,
+  InformationAgentAdminActionPayload,
+  InformationAgentAdminListResponse,
+  InformationAgentAdminResponse,
   InformationAgentCreateInput,
-  InformationAgentListResponse,
-  InformationAgentResponse,
 } from "@/lib/information-agent";
 import type {
   InformationAgentEmailTemplateContent,
@@ -148,39 +156,6 @@ async function readJson<T>(response: Response): Promise<T> {
   }
 
   return payload as T;
-}
-
-export async function fetchInformationAgentMissions(args: {
-  saleId: string;
-}): Promise<InformationAgentListResponse> {
-  const search = new URLSearchParams({ saleId: args.saleId });
-  const response = await fetch(`/api/information-agent?${search.toString()}`, {
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-  return readJson<InformationAgentListResponse>(response);
-}
-
-export async function createInformationAgentDraftClient(args: {
-  data: InformationAgentCreateInput;
-}): Promise<InformationAgentResponse> {
-  const response = await fetch("/api/information-agent", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(args.data),
-  });
-  return readJson<InformationAgentResponse>(response);
-}
-
-export async function runInformationAgentActionClient(args: {
-  data: InformationAgentActionInput;
-}): Promise<InformationAgentListResponse> {
-  const response = await fetch("/api/information-agent", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(args.data),
-  });
-  return readJson<InformationAgentListResponse>(response);
 }
 
 export async function fetchPrecomputedMarketEstimate(args: {
@@ -1143,6 +1118,89 @@ export async function fetchAdminInformationAgentEmailTemplate(): Promise<Informa
     cache: "no-store",
   });
   return readJson<InformationAgentEmailTemplateWorkspace>(response);
+}
+
+export async function fetchAdminCatalogueReadiness(args?: {
+  offset?: number;
+  limit?: number;
+}): Promise<CatalogueReadinessOverview> {
+  const search = new URLSearchParams();
+  if (args?.offset != null) search.set("offset", String(args.offset));
+  if (args?.limit != null) search.set("limit", String(args.limit));
+  const suffix = search.size ? `?${search.toString()}` : "";
+  const response = await fetch(`/api/admin/catalogue-readiness${suffix}`, {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<CatalogueReadinessOverview>(response);
+}
+
+export async function runAdminCatalogueReadinessActionClient(
+  data: AdminCatalogueReadinessAction,
+): Promise<CatalogueReadinessOverview> {
+  const response = await fetch("/api/admin/catalogue-readiness", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<CatalogueReadinessOverview>(response);
+}
+
+export async function fetchAdminInformationAgentMissions(args?: {
+  saleId?: string;
+}): Promise<InformationAgentAdminListResponse> {
+  const search = new URLSearchParams();
+  if (args?.saleId) search.set("saleId", args.saleId);
+  const suffix = search.size ? `?${search.toString()}` : "";
+  const response = await fetch(`/api/admin/information-agent/missions${suffix}`, {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<InformationAgentAdminListResponse>(response);
+}
+
+export async function createAdminInformationAgentMission(
+  data: InformationAgentCreateInput,
+): Promise<InformationAgentAdminResponse> {
+  const response = await fetch("/api/admin/information-agent/missions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<InformationAgentAdminResponse>(response);
+}
+
+export async function runAdminInformationAgentMissionAction(
+  data: InformationAgentAdminActionPayload,
+): Promise<InformationAgentAdminListResponse> {
+  const response = await fetch("/api/admin/information-agent/missions", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<InformationAgentAdminListResponse>(response);
+}
+
+export async function fetchAdminInformationAgentReview(): Promise<AdminInformationAgentReviewResponse> {
+  const response = await fetch("/api/admin/information-agent", {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<AdminInformationAgentReviewResponse>(response);
+}
+
+export async function reviewAdminInformationAgentFactClient(
+  data: AdminInformationAgentReviewInput,
+): Promise<{ ok: true; result: unknown }> {
+  const response = await fetch("/api/admin/information-agent", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<{ ok: true; result: unknown }>(response);
 }
 
 export async function previewAdminInformationAgentEmailTemplate(

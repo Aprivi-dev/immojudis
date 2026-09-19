@@ -33,6 +33,7 @@ from src.asset_normalization import (
     build_auction_surfaces_row,
     extract_risk_occurrences_from_text,
 )
+from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
 from src.court_competence import tribunal_reference_rows
 from src.dedupe import merge_duplicate_sales
@@ -83,6 +84,9 @@ POSTGRES_JSON_COLUMNS = {
     "visit_dates",
     "documents",
     "score_factors",
+    "premium_readiness_factors",
+    "premium_readiness_blockers",
+    "premium_readiness_missing_fields",
     "quality_flags",
     "raw_payload",
     "observations",
@@ -145,6 +149,13 @@ UPSERT_COLUMNS = (
     "score_version",
     "score_confidence",
     "score_factors",
+    "premium_readiness_score",
+    "premium_readiness_status",
+    "premium_readiness_policy_version",
+    "premium_readiness_factors",
+    "premium_readiness_blockers",
+    "premium_readiness_missing_fields",
+    "premium_readiness_evaluated_at",
     "quality_flags",
     "raw_text",
     "raw_payload",
@@ -348,6 +359,8 @@ def upsert_sales_to_supabase(
     refresh_last_seen: bool = True,
 ) -> int:
     sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
+    for sale in sales:
+        apply_catalogue_readiness(sale)
     if not sales:
         return 0
     settings = load_settings()
@@ -403,6 +416,7 @@ def _write_sale_revisions(sales: list[AuctionSale], settings: dict, *, refresh_l
         # before serializing the parent row so a contradictory pair is stored
         # as evidence plus NULLs instead of aborting the whole publication.
         ensure_room_bedroom_consistency(sale)
+        apply_catalogue_readiness(sale)
         reason = quarantine_reason(sale)
         if reason:
             sale.raw_payload["publication_quarantine"] = reason
