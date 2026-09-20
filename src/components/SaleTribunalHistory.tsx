@@ -209,9 +209,11 @@ function AdjudicationPriceStatistics({
         Du prix de départ au prix adjugé
       </h3>
       <p className="mt-3 max-w-3xl text-sm leading-relaxed text-brand-navy/62">
-        Adjudications dont Licitor publie le prix. Les ventes sans prix publié, les issues inconnues
-        et les carences ne font pas partie de cet échantillon. Le type de bien de cette annonce est
-        présenté en priorité, au tribunal lorsqu’il est disponible, sinon à l’échelle nationale.
+        Prix déclarés par Licitor, source tierce non officielle. Ils ne sont pas vérifiés auprès du
+        greffe et ne prouvent pas le caractère définitif de la vente. Les ventes sans prix publié,
+        les issues inconnues et les carences ne font pas partie de cet échantillon. Le type de bien
+        de cette annonce est présenté en priorité, au tribunal lorsqu’il est disponible, sinon à
+        l’échelle nationale.
       </p>
 
       {loading ? (

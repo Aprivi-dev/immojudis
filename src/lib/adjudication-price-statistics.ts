@@ -8,6 +8,9 @@ const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 const probabilitySchema = z.number().min(0).max(1);
 
+export const ADJUDICATION_PRICE_STATISTICS_WARNING =
+  "Source tierce non officielle : prix publiés par Licitor, non vérifiés auprès du greffe et non présentés comme définitifs. Agrégats descriptifs uniquement, sans valeur prédictive ni estimation du bien.";
+
 export const adjudicationPriceStatisticsReliabilitySchema = z.enum([
   "limited",
   "descriptive",
@@ -60,9 +63,7 @@ export const adjudicationPriceStatisticsResponseSchema = z
         builtAt: isoDateTimeSchema,
         reviewedAt: isoDateTimeSchema,
         experimental: z.literal(true),
-        warning: z.literal(
-          "Statistiques descriptives sur trois ans, limitées aux adjudications dont Licitor publie le prix ; sans valeur prédictive ni estimation du bien.",
-        ),
+        warning: z.literal(ADJUDICATION_PRICE_STATISTICS_WARNING),
       })
       .strict(),
   })

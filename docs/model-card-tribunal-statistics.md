@@ -1,15 +1,17 @@
 # Statistiques par tribunal — model card
 
-_Version documentaire 0.6 — 20 septembre 2026. Cette fiche décrit des agrégats descriptifs expérimentaux. Elle ne vaut ni validation statistique externe, ni qualification de modèle prédictif fiable, ni autorisation de promesse commerciale._
+_Version documentaire 0.7 — 20 septembre 2026. Cette fiche décrit des agrégats descriptifs expérimentaux. Elle ne vaut ni validation statistique externe, ni qualification de modèle prédictif fiable, ni autorisation de promesse commerciale._
 
-## Deux familles d’indicateurs séparées
+## Trois familles d’indicateurs séparées
 
 Immojudis sépare strictement :
 
 1. l’**activité des annonces de ventes judiciaires**, disponible sur chaque annonce via
    `tribunal_judicial_activity_v2` ;
-2. les **résultats historiques des audiences**, construits par
-   `tribunal_statistics_builder_v1` uniquement après preuves et revues.
+2. les **résultats historiques canoniques des audiences**, construits par
+   `tribunal_statistics_builder_v1` uniquement après preuves et revues A/B ;
+3. un **repère complémentaire de prix publiés par Licitor**, source tierce de grade C,
+   limité à des agrégats descriptifs et jamais présenté comme une preuve officielle ou définitive.
 
 L’activité des annonces sépare deux populations qui ne sont jamais mélangées : l’historique observé
 des ventes passées et le pipeline des audiences à venir. Chaque population possède ses propres
@@ -102,6 +104,34 @@ Judilibre, DVF, annonces et catalogues peuvent produire des candidats ou des él
 - une annonce sans constat du résultat reste `unknown`.
 
 Les grades A/B et les revues réduisent le risque de labels erronés; ils ne garantissent ni exhaustivité territoriale, ni absence de biais de publication.
+
+### Voie séparée des prix publiés par Licitor
+
+L’accord téléphonique déclaré par le propriétaire d’Immojudis avec le responsable web de Licitor
+autorise l’utilisation statistique des prix publiés par Licitor. Cette autorisation est enregistrée
+dans un registre append-only, avec son auteur, sa date, sa portée et sa référence. Elle porte
+uniquement sur les agrégats de prix et ne transforme pas Licitor en source officielle.
+
+La voie `licitor_authorized_reported_price_v2` reste strictement séparée du registre Outcome Graph
+A/B. Chaque candidat conserve le grade C et doit correspondre exactement à sa capture et à sa
+version immuables. Seules les lignes « adjudicated » de tribunal avec date valide, mise à prix
+supérieure à 1 000 €, prix publié strictement positif, preuve de capture et URL source sont admises.
+Les incohérences de date, doublons conflictuels, reparses en échec, changements de résultat en
+attente et lots absents de la dernière capture sont exclus. Toute modification de capture exige une
+nouvelle attestation.
+
+Ces données :
+
+- servent uniquement à des agrégats nationaux ou par tribunal avec au moins 10 observations ;
+- ne prouvent ni le caractère définitif de l’adjudication, ni l’absence de surenchère ;
+- ne sont pas injectées dans les résultats canoniques, l’entraînement, la validation d’un modèle ou
+  une estimation individuelle ;
+- sont restituées comme « prix publiés par Licitor, non vérifiés auprès du greffe » avec leur période,
+  leur taille d’échantillon et un avertissement non prédictif.
+
+Le manifeste de chaque build lie les identifiants candidats, hashes de capture et hashes de version.
+Le build, son attestation de source et sa revue commerciale sont append-only. Sans correspondance
+exacte ou sans revue approuvée, aucune cellule n’est publiée.
 
 L’univers `eligibleRounds` n’est pas l’ensemble des audiences initiales matures. Il contient uniquement celles qui disposent, avant le cutoff, d’un snapshot de features admissible : `built_at`, `created_at`, `recorded_at` et `feature_cutoff_at` inférieurs ou égaux au cutoff, `retrospective = false` et `leakage_check_status = passed`. Une audience mature sans snapshot répondant à ces conditions est exclue avant la construction des dénominateurs. Le public reçoit uniquement le code statique `round_not_frozen_at_cutoff`; l’effectif exact est conservé dans le champ opérateur privé `unfrozen_round_count`, sans identifiant individuel.
 
