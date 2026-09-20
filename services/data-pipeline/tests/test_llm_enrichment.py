@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from src.enrichment import extract_structured as extraction
 from src.enrichment import llm_client as llm_client_module
 from src.enrichment.extract_structured import (
     LLMExtraction,
@@ -11,6 +12,7 @@ from src.enrichment.extract_structured import (
     extract_source_description,
     load_llm_context_for_sale,
     load_llm_fact_context_chunks_for_sale,
+    needs_fact_extraction,
 )
 from src.enrichment.llm_client import (
     ReplicateClient,
@@ -19,6 +21,7 @@ from src.enrichment.llm_client import (
     _user_prompt_for_model,
     parse_json_response,
 )
+from src.enrichment.surface_reasoning import reason_about_surfaces
 from src.normalize import normalize_sale
 from src.pdf_enrichment import sale_storage_id
 
@@ -227,6 +230,131 @@ def test_parse_json_response_handles_escaped_json_object_inside_text() -> None:
     }
 
 
+def test_parse_json_response_repairs_lossless_measurements_and_trailing_commas() -> None:
+    parsed = parse_json_response(
+        '{"surface_m2":"91,4 m²", "rooms_count":"T3", '
+        '"assets":[null, {"spaces":[null, {"space_label":"séjour", "value_m2":"19,5 m²"}]}], '
+        '"confidence":{"surface_m2":"0.8", "rooms_count":"n/a"},}'
+    )
+
+    assert parsed["surface_m2"] == 91.4
+    assert parsed["rooms_count"] == "T3"
+    assert parsed["assets"] == [{"spaces": [{"space_label": "séjour", "value_m2": 19.5}]}]
+    assert parsed["confidence"] == {"surface_m2": 0.8}
+
+
+def test_trailing_comma_repair_preserves_comma_brace_text_inside_string() -> None:
+    parsed = parse_json_response('{"note":"conserver, } tel quel", "surface_m2":"80 m²",}')
+
+    assert parsed == {"note": "conserver, } tel quel", "surface_m2": 80.0}
+
+
+def test_llm_extraction_salvages_valid_measurements_from_malformed_list_items() -> None:
+    extraction = LLMExtraction.model_validate(
+        {
+            "surface_m2": "surface inconnue",
+            "rooms_count": "T3",
+            "assets": [
+                None,
+                {
+                    "asset_id": "asset-main",
+                    "measurement_completeness": "complete",
+                    "spaces": [
+                        None,
+                        {"space_label": "séjour", "value_m2": "19,5 m²", "confidence": "0.92"},
+                        {"space_label": "garage", "value_m2": "non renseigné"},
+                        {"space_label": "erreur", "value_m2": "50000"},
+                    ],
+                },
+            ],
+            "confidence": {"surface_m2": "non renseigné", "rooms_count": 0.8},
+        }
+    )
+
+    assert extraction.surface_m2 is None
+    assert extraction.rooms_count == 3
+    assert len(extraction.assets) == 1
+    assert [space.space_label for space in extraction.assets[0].spaces] == ["séjour"]
+    assert extraction.assets[0].spaces[0].value_m2 == Decimal("19.50")
+    assert extraction.assets[0].spaces[0].confidence == 0.92
+    assert extraction.assets[0].measurement_completeness == "partial"
+    assert extraction.confidence == {"rooms_count": 0.8}
+
+
+def test_repaired_incomplete_room_set_never_becomes_verified_surface() -> None:
+    extraction = LLMExtraction.model_validate(
+        {
+            "assets": [
+                {
+                    "asset_id": "asset-main",
+                    "measurement_completeness": "complete",
+                    "spaces": [
+                        {
+                            "space_label": "séjour",
+                            "category": "habitable",
+                            "value_m2": 20,
+                            "included_in_habitable_sum": True,
+                            "confidence": 0.94,
+                            "evidence": {
+                                "quote": "Séjour 20 m²",
+                                "document_label": "PV descriptif",
+                                "page_number": 4,
+                            },
+                        },
+                        {
+                            "space_label": "chambre",
+                            "category": "habitable",
+                            "value_m2": 10,
+                            "included_in_habitable_sum": True,
+                            "confidence": 0.94,
+                            "evidence": {
+                                "quote": "chambre 10 m²",
+                                "document_label": "PV descriptif",
+                                "page_number": 4,
+                            },
+                        },
+                        None,
+                    ],
+                }
+            ]
+        }
+    )
+
+    result = reason_about_surfaces(
+        extraction.assets,
+        context="Séjour 20 m² et chambre 10 m².",
+        property_type="house",
+    )
+    calculated = [item for item in result.derivations if item.kind == "calculated_room_sum"]
+
+    assert extraction.assets[0].measurement_completeness == "partial"
+    assert calculated
+    assert all(item.validation_status == "partial" for item in calculated)
+
+
+def test_fact_extraction_selection_requires_current_documentary_gap(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://example.test/fact-selection",
+            "starting_price_eur": "80 000 €",
+        }
+    )
+    sale.raw_payload.update(
+        {
+            "document_analysis": {"documents_extracted": 1},
+            "surface_analysis": {"contradictions": []},
+        }
+    )
+    monkeypatch.setattr(extraction, "has_current_fact_analysis", lambda _: False)
+
+    assert needs_fact_extraction(sale) is True
+
+    sale.app_surface_m2 = Decimal("80")
+    sale.occupancy_status = "vacant"
+    assert needs_fact_extraction(sale) is False
+
+
 def test_replicate_client_formats_output_list_and_payload() -> None:
     client = ReplicateClient(
         api_token="replicate-token-test",
@@ -308,6 +436,39 @@ def test_replicate_client_accepts_jsonish_display_description(monkeypatch) -> No
             "rue de Goas Plat. Le bien est clos de murs"
         ),
         "confidence": {"display_description": 0.58},
+    }
+
+
+def test_replicate_client_repairs_schema_safe_output_without_retry(monkeypatch) -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="moonshotai/kimi-k2.5",
+        min_interval_seconds=0,
+    )
+    calls = 0
+
+    def fake_create_prediction(prompt: str, system_prompt: str | None = None):
+        nonlocal calls
+        calls += 1
+        return {"id": "prediction-test"}
+
+    monkeypatch.setattr(client, "_create_prediction", fake_create_prediction)
+    monkeypatch.setattr(
+        client,
+        "_wait_for_output",
+        lambda prediction: (
+            '{"surface_m2":"91,4 m²", "assets":[null], '
+            '"confidence":{"surface_m2":"0.8", "bad":"n/a"},}'
+        ),
+    )
+
+    payload = client.generate_json("MODE EXTRACTION STRICTE.", "Texte fourni")
+
+    assert calls == 1
+    assert payload == {
+        "surface_m2": 91.4,
+        "assets": [],
+        "confidence": {"surface_m2": 0.8},
     }
 
 

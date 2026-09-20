@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import httpx
 import pytest
 
@@ -152,6 +154,42 @@ def test_unresolved_request_key_is_fail_closed(monkeypatch) -> None:
             max_calls_per_hour=2,
             request_key="same-payload-key",
         )
+
+
+def test_deterministic_request_cooldown_has_dedicated_24_hour_error(monkeypatch) -> None:
+    def fake_post(url, **kwargs):
+        return httpx.Response(
+            400,
+            json={
+                "message": (
+                    "Unresolved deterministic LLM request key is blocked for 24 hours "
+                    "after invalid JSON or structured validation failure"
+                )
+            },
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(
+        llm_requests,
+        "load_settings",
+        lambda: _settings(
+            supabase_url="https://db.example.test",
+            supabase_service_role_key="service-key",
+        ),
+    )
+    monkeypatch.setattr(llm_requests.httpx, "post", fake_post)
+
+    with pytest.raises(llm_requests.LLMRequestDeterministicCooldown) as cooldown:
+        llm_requests.reserve_llm_request(
+            provider="replicate",
+            model="owner/model:v1",
+            request_kind="fact_extraction",
+            attempt_number=1,
+            max_calls_per_hour=2,
+            request_key="same-invalid-output",
+        )
+
+    assert cooldown.value.next_attempt_at > datetime.now(UTC) + timedelta(hours=23)
 
 
 def test_post_retries_known_429_with_a_new_reservation(monkeypatch) -> None:

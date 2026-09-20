@@ -85,8 +85,11 @@ jobs:
       PIPELINE_LLM_BACKFILL_MAX_TARGETS: 5
       PIPELINE_LLM_BACKFILL_PROGRESS_EVERY: 5
       REPLICATE_MIN_INTERVAL_SECONDS: 1
-      REPLICATE_WAIT_SECONDS: 1
-      REPLICATE_MAX_RETRIES: 2
+      # Let Replicate keep the POST open for the normal generation window. It
+      # reduces follow-up polling in the logs; it does not change provider
+      # runtime billing or cancel a prediction.
+      REPLICATE_WAIT_SECONDS: 60
+      REPLICATE_MAX_RETRIES: 1
       REPLICATE_MAX_CALLS_PER_HOUR: 60
       REPLICATE_RETRY_BACKOFF_SECONDS: 30
       REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
@@ -94,10 +97,12 @@ jobs:
       REPLICATE_MAX_TOKENS: 512
       # Structured evidence needs room for valid JSON; summaries remain short.
       REPLICATE_FACT_MAX_TOKENS: 4096
+      # Ordinary scans make one final display pass. The queue explicitly uses
+      # structured_then_display when a fact extraction is planned.
       LLM_EXTRACTION_MODE: display_description
-      LLM_PROMPT_VERSION: auction_llm_v9_qwen2_7b_scan_display
+      LLM_PROMPT_VERSION: auction_llm_v10_structured_display
       LLM_FACT_PROMPT_VERSION: auction_facts_v1
-      LLM_DISPLAY_PROMPT_VERSION: auction_display_v8
+      LLM_DISPLAY_PROMPT_VERSION: auction_display_v9_public_summary
       LLM_FACT_CHUNK_CHARS: 10000
       LLM_FACT_MAX_CHUNKS: 3
       LLM_DISPLAY_CONTEXT_CHARS: 8000

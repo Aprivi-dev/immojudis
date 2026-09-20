@@ -28,6 +28,7 @@ from src.enrichment.extract_structured import (
     enrich_sale_with_llm,
     extract_source_description,
     has_current_fact_analysis,
+    needs_fact_extraction,
 )
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
 from src.enrichment.operational_display import refresh_operational_display
@@ -491,9 +492,15 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         [
             sale
             for sale in app_ready
-            if _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
+            if _can_use_paid_llm(sale)
+            and _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
             and not _llm_description_already_current(sale, current_llm_description_hashes)
             and sale.source_url not in failed_urls
+            and not (
+                options.upsert
+                and settings.get("pipeline_enrichment_queue_enabled")
+                and needs_fact_extraction(sale)
+            )
         ]
         if options.use_llm
         else []
@@ -1352,6 +1359,12 @@ def _needs_heavy_enrichment(
     if use_llm and _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
         return True
     return _needs_structured_heavy_enrichment(sale)
+
+
+def _can_use_paid_llm(sale: AuctionSale) -> bool:
+    """Do not pay for a description until deterministic enrichment made the row publishable."""
+
+    return has_price_or_surface(sale) and not is_expired(sale)
 
 
 def _needs_structured_heavy_enrichment(sale: AuctionSale) -> bool:
