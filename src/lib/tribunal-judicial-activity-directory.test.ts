@@ -64,18 +64,18 @@ describe("tribunal judicial activity directory", () => {
       historyMonths: 36,
     });
 
-    expect(result.national.startingPriceRangeEur).toMatchObject({
+    expect(result.national.upcomingStartingPriceRangeEur).toMatchObject({
       status: "published",
       p50: 140_000,
       sampleSize: 10,
     });
     expect(result.national.coverage).toEqual({
       trackedCourts: 2,
-      publishableCourtProfiles: 2,
-      rate: 1,
+      publishableCourtProfiles: 0,
+      rate: 0,
     });
     expect(
-      result.regions.find((region) => region.name === "Aix")?.startingPriceRangeEur,
+      result.regions.find((region) => region.name === "Aix")?.upcomingStartingPriceRangeEur,
     ).toMatchObject({
       status: "published",
       p50: 60_000,

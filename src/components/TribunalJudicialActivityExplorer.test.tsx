@@ -29,7 +29,9 @@ describe("TribunalJudicialActivityExplorer", () => {
   it("présente la France puis les ressorts avant le détail tribunal", () => {
     render(<TribunalJudicialActivityExplorer />);
 
-    const nationalHeading = screen.getByRole("heading", { name: "Repères nationaux" });
+    const nationalHeading = screen.getByRole("heading", {
+      name: "Repères du périmètre suivi",
+    });
     const regionHeading = screen.getByRole("heading", {
       name: "Où les données sont-elles assez denses ?",
     });
@@ -41,7 +43,11 @@ describe("TribunalJudicialActivityExplorer", () => {
     expect(
       regionHeading.compareDocumentPosition(tribunalHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(screen.getByText("100 %")).toBeTruthy();
+    expect(screen.getByText("0 / 2")).toBeTruthy();
+    expect(screen.getByText(/Profils historiques publiables \/ tribunaux suivis/i)).toBeTruthy();
+    expect(screen.getByText(/ne mesure pas la couverture nationale/i)).toBeTruthy();
+    expect(screen.getAllByText("Historique observé").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Pipeline à venir").length).toBeGreaterThan(0);
     expect(screen.getByText(/corpus de preuve séparé/i)).toBeTruthy();
   });
 
@@ -50,7 +56,7 @@ describe("TribunalJudicialActivityExplorer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Paris/ }));
 
-    expect(screen.getByRole("heading", { name: "Repères nationaux" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Repères du périmètre suivi" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "TJ Paris" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /Marseille/ })).toBeNull();
     expect(screen.getByRole("button", { name: "Revenir à toute la France" })).toBeTruthy();
