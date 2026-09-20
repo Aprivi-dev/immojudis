@@ -801,6 +801,22 @@ def test_parse_args_can_select_llm_description_backfill() -> None:
     assert options.llm_backfill_statuses == ("active", "upcoming", "unknown")
 
 
+def test_unpublishable_sale_cannot_use_paid_llm() -> None:
+    missing_price_and_surface = AuctionSale(
+        source_name="notaires",
+        source_url="https://example.test/unpublishable",
+        title="Annonce sans prix ni surface",
+    )
+    publishable = AuctionSale(
+        source_name="notaires",
+        source_url="https://example.test/publishable",
+        starting_price_eur=10_000,
+    )
+
+    assert main._can_use_paid_llm(missing_price_and_surface) is False
+    assert main._can_use_paid_llm(publishable) is True
+
+
 def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
     settings = _settings()
     settings.update(

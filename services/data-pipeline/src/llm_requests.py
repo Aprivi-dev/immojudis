@@ -13,6 +13,7 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -46,6 +47,14 @@ class LLMRequestTransportAmbiguous(LLMRequestError):
 
 class LLMRequestUnresolved(LLMRequestTransportAmbiguous):
     """A recent reservation with the same logical request key is unresolved."""
+
+
+class LLMRequestDeterministicCooldown(LLMRequestError):
+    """An exact invalid-output request key is cooling down before retry."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.next_attempt_at = datetime.now(UTC) + timedelta(hours=24)
 
 
 _REQUEST_CONTEXT: ContextVar[dict[str, str] | None] = ContextVar(
@@ -196,6 +205,8 @@ def _reserve_via_rest(settings: dict[str, Any], payload: dict[str, Any]) -> str:
     )
     if response.status_code >= 400:
         message = _rpc_error_message(response)
+        if "deterministic" in message.lower() and "blocked" in message.lower():
+            raise LLMRequestDeterministicCooldown(message)
         if "unresolved" in message.lower() or "reconciliation" in message.lower():
             raise LLMRequestUnresolved(message)
         if "budget" in message.lower() or "hourly" in message.lower():
@@ -234,6 +245,8 @@ def _reserve_via_postgres(settings: dict[str, Any], payload: dict[str, Any]) -> 
             ).fetchone()
     except Exception as exc:
         message = str(exc)
+        if "deterministic" in message.lower() and "blocked" in message.lower():
+            raise LLMRequestDeterministicCooldown(message) from exc
         if "unresolved" in message.lower() or "reconciliation" in message.lower():
             raise LLMRequestUnresolved(message) from exc
         if "budget" in message.lower() or "hourly" in message.lower():
