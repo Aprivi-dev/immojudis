@@ -14,7 +14,7 @@ vi.mock("@/hooks/use-auth", () => ({ useAuth: () => auth }));
 vi.mock("@/lib/client-api", () => ({ fetchPrecomputedMarketEstimate: vi.fn() }));
 
 beforeEach(() => {
-  localStorage.clear();
+  window.localStorage.clear();
   auth.user = { id: "investor-a" };
   auth.loading = false;
 });
@@ -116,7 +116,7 @@ describe("saved ceiling simulations", () => {
     fireEvent.change(screen.getByRole("slider"), { target: { value: "19" } });
     save("Marge 19");
     const stored = parseBidHistory(
-      localStorage.getItem(bidStorageKey("history", "investor-a", EXAMPLE_SALE.id)),
+      window.localStorage.getItem(bidStorageKey("history", "investor-a", EXAMPLE_SALE.id)),
     );
     expect(stored[0].inputs.customSafetyDiscountPct).toBe(19);
     expect(stored[0].result.safetyDiscountPct).toBe(19);
@@ -135,7 +135,7 @@ describe("saved ceiling simulations", () => {
     const history = screen.getByRole("region", { name: "Historique des simulations" });
     expect(within(history).getAllByRole("row")).toHaveLength(3);
     const stored = parseBidHistory(
-      localStorage.getItem(bidStorageKey("history", "investor-a", EXAMPLE_SALE.id)),
+      window.localStorage.getItem(bidStorageKey("history", "investor-a", EXAMPLE_SALE.id)),
     );
     expect(stored).toHaveLength(2);
     expect(stored[0].result.maxBid).toBeGreaterThan(stored[1].result.maxBid);
@@ -151,7 +151,7 @@ describe("saved ceiling simulations", () => {
     expect(screen.queryByRole("button", { name: "Reprendre Offensif initial" })).toBeNull();
     expect(
       parseBidHistory(
-        localStorage.getItem(bidStorageKey("history", "investor-a", EXAMPLE_SALE.id)),
+        window.localStorage.getItem(bidStorageKey("history", "investor-a", EXAMPLE_SALE.id)),
       ),
     ).toHaveLength(1);
   });
@@ -182,7 +182,7 @@ describe("saved ceiling simulations", () => {
     save("Démo anonyme");
     expect(
       parseBidHistory(
-        localStorage.getItem(bidStorageKey("history", "guest-demo", EXAMPLE_SALE.id)),
+        window.localStorage.getItem(bidStorageKey("history", "guest-demo", EXAMPLE_SALE.id)),
       ),
     ).toHaveLength(1);
   });
@@ -190,7 +190,7 @@ describe("saved ceiling simulations", () => {
     auth.loading = true;
     renderAssistant();
     expect(screen.getByRole("status").textContent).toContain("Chargement du simulateur");
-    expect(localStorage.length).toBe(0);
+    expect(window.localStorage.length).toBe(0);
   });
   it("shows storage failure without claiming that a snapshot was saved", () => {
     renderAssistant();

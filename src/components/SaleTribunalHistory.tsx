@@ -113,7 +113,7 @@ export function SaleTribunalHistory({
             détection par Immojudis jusqu’à la vente, pas la date de publication officielle.
           </p>
           <div className="mt-8">
-            <ScopeHeading level="Niveau 1 · France entière" title="Repères nationaux" />
+            <ScopeHeading level="Niveau 1 · Périmètre suivi" title="Repères du catalogue suivi" />
             {directoryQuery.isLoading ? (
               <ScopeSkeleton />
             ) : directoryQuery.isError || !directoryQuery.data ? (
@@ -152,10 +152,8 @@ export function SaleTribunalHistory({
                 }
                 detail="Immojudis publiera ce niveau lorsque le rattachement au référentiel officiel et l’échantillon du même tribunal auront été contrôlés ; aucune statistique approximative n’est substituée."
               />
-            ) : isTribunalProfilePublishable(tribunalQuery.data) ? (
-              <JudicialActivity activity={tribunalQuery.data} sale={sale} />
             ) : (
-              <InsufficientTribunalData activity={tribunalQuery.data} />
+              <JudicialActivity activity={tribunalQuery.data} sale={sale} />
             )}
           </div>
         </details>
@@ -211,9 +209,9 @@ function AdjudicationPriceStatistics({
         Du prix de départ au prix adjugé
       </h3>
       <p className="mt-3 max-w-3xl text-sm leading-relaxed text-brand-navy/62">
-        Résultats publiés par Licitor. Le type de bien de cette annonce est présenté en priorité, au
-        tribunal lorsqu’il est disponible, sinon à l’échelle nationale. Les écarts de surface,
-        d’état, d’occupation et de localisation restent à prendre en compte.
+        Adjudications dont Licitor publie le prix. Les ventes sans prix publié, les issues inconnues
+        et les carences ne font pas partie de cet échantillon. Le type de bien de cette annonce est
+        présenté en priorité, au tribunal lorsqu’il est disponible, sinon à l’échelle nationale.
       </p>
 
       {loading ? (
@@ -292,7 +290,7 @@ function RelevantAdjudications({
         {propertyTypeLabel(selected.propertyType)} · {local ? scope.label : "Échantillon national"}
       </h4>
       <p className="mt-2 text-sm text-slate-600">
-        {distribution.sampleSize.toLocaleString("fr-FR")} résultats ·{" "}
+        {distribution.sampleSize.toLocaleString("fr-FR")} prix adjugés publiés ·{" "}
         {formatDate(scope.periodStart)} → {formatDate(scope.periodEnd)} · Source : Licitor
       </p>
       {!local ? (
@@ -314,9 +312,9 @@ function RelevantAdjudications({
           detail="Prix adjugé / mise à prix ; aucune prévision individuelle"
         />
         <HistoryMetric
-          label="Au-dessus de la mise · même type"
+          label="Même type · prix publiés au-dessus de la mise"
           value={formatPercent(aboveCount / distribution.sampleSize)}
-          detail={`${aboveCount.toLocaleString("fr-FR")} sur ${distribution.sampleSize.toLocaleString("fr-FR")} résultats`}
+          detail={`${aboveCount.toLocaleString("fr-FR")} sur ${distribution.sampleSize.toLocaleString("fr-FR")} adjudications avec prix connu`}
         />
       </dl>
     </section>
@@ -350,7 +348,8 @@ function AdjudicationPriceScope({
           <h4 className="mt-1 font-display text-xl font-semibold text-brand-navy">{heading}</h4>
         </div>
         <span className="rounded-md border border-brand-navy/12 bg-[#f8fbfe] px-3 py-2 text-xs font-semibold text-brand-navy/65">
-          {scope.sampleSize.toLocaleString("fr-FR")} adjudications · {reliabilityLabel(scope)}
+          {scope.sampleSize.toLocaleString("fr-FR")} prix adjugés publiés ·{" "}
+          {reliabilityLabel(scope)}
         </span>
       </div>
       <LimitedAdjudicationSample sampleSize={scope.sampleSize} />
@@ -362,14 +361,14 @@ function AdjudicationPriceScope({
           accent
         />
         <HistoryMetric
-          label="Au-dessus de la mise"
+          label="Prix publiés au-dessus de la mise"
           value={formatPercent(scope.metrics.aboveStartingRate)}
-          detail="Prix adjugé strictement supérieur"
+          detail="Parmi les adjudications avec prix Licitor connu"
         />
         <HistoryMetric
-          label="Au moins doublé"
+          label="Prix publiés au moins doublés"
           value={formatPercent(scope.metrics.atLeastDoubleRate)}
-          detail="Prix adjugé ≥ 2 × mise"
+          detail="Parmi les adjudications avec prix Licitor connu"
         />
         <HistoryMetric
           label="Prix adjugé médian"
@@ -493,34 +492,66 @@ function NationalActivity({ data }: { data: TribunalJudicialActivityDirectoryRes
   const { national, period } = data;
   return (
     <>
+      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+        Historique observé
+      </p>
       <dl className="mt-6 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 lg:grid-cols-4">
         <HistoryMetric
-          label="Mise à prix médiane · France"
+          label="Mise à prix médiane · historique"
           value={formatRangeMedianCurrency(national.startingPriceRangeEur)}
           detail={formatRangeCurrency(national.startingPriceRangeEur, "tous biens confondus")}
           accent
         />
         <HistoryMetric
-          label="Détection → vente · France"
+          label="Détection → vente · historique"
           value={formatRangeMedianDays(national.discoveryLeadRangeDays)}
           detail={formatRangeDays(national.discoveryLeadRangeDays)}
         />
         <HistoryMetric
           label="Ventes passées observées"
           value={formatNumberValue(national.observedPastSales)}
-          detail={`${formatNumberValue(national.upcomingSales)} ventes à venir suivies`}
+          detail={`Depuis le ${formatDate(period.historyStart)}`}
         />
         <HistoryMetric
-          label="Visite annoncée · France"
+          label="Profils historiques publiables"
+          value={`${formatNumberValue(national.coverage.publishableCourtProfiles)} / ${formatNumberValue(national.coverage.trackedCourts)}`}
+          detail="Parmi les tribunaux suivis, pas une couverture nationale"
+        />
+      </dl>
+
+      <p className="mt-6 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+        Pipeline à venir
+      </p>
+      <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 lg:grid-cols-4">
+        <HistoryMetric
+          label="Mise à prix médiane · à venir"
+          value={formatRangeMedianCurrency(national.upcomingStartingPriceRangeEur)}
+          detail={formatRangeCurrency(
+            national.upcomingStartingPriceRangeEur,
+            "tous biens confondus",
+          )}
+          accent
+        />
+        <HistoryMetric
+          label="Détection → audience · à venir"
+          value={formatRangeMedianDays(national.upcomingDiscoveryLeadRangeDays)}
+          detail={formatRangeDays(national.upcomingDiscoveryLeadRangeDays)}
+        />
+        <HistoryMetric
+          label="Ventes à venir suivies"
+          value={formatNumberValue(national.upcomingSales)}
+          detail={`${formatNumberValue(national.upcomingSales90Days)} dans les 90 prochains jours`}
+        />
+        <HistoryMetric
+          label="Visite annoncée · à venir"
           value={formatPercentMetric(national.visitCoverage)}
           detail={sampleLabel(national.visitCoverage, "annonce")}
         />
       </dl>
 
       <p className="mt-3 text-xs leading-relaxed text-brand-navy/70">
-        Historique observé depuis le {formatDate(period.historyStart)} ·{" "}
-        {national.coverage.trackedCourts}{" "}
-        {national.coverage.trackedCourts > 1 ? "tribunaux suivis" : "tribunal suivi"}.
+        Les deux périodes sont calculées séparément. Les annonces futures n’alimentent jamais les
+        fourchettes historiques.
       </p>
     </>
   );
@@ -535,7 +566,7 @@ function JudicialActivity({
 }) {
   const { court, period, reliability } = activity;
   const metrics = activity.activity;
-  const dominantPropertyType = metrics.topPropertyTypes[0];
+  const dominantUpcomingPropertyType = metrics.upcomingTopPropertyTypes[0];
   const propertyBenchmark = sale.property_type
     ? metrics.propertyTypeBenchmarks.find(
         (benchmark) => benchmark.propertyType === sale.property_type,
@@ -569,6 +600,10 @@ function JudicialActivity({
         <ReliabilityBadge level={reliability.level} label={reliability.label} />
       </div>
 
+      {!isTribunalProfilePublishable(activity) ? (
+        <InsufficientTribunalData activity={activity} />
+      ) : null}
+
       {priceComparison ? (
         <div className="mt-6 border-l-4 border-gold-soft bg-[#fffaf2] px-4 py-4">
           <p className="text-sm font-semibold text-brand-navy">{priceComparison}</p>
@@ -579,25 +614,53 @@ function JudicialActivity({
         </div>
       ) : null}
 
-      <dl className="mt-6 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 lg:grid-cols-4">
+      <p className="mt-6 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+        Historique observé
+      </p>
+      <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-3">
+        <HistoryMetric
+          label="Ventes passées observées"
+          value={formatNumberValue(metrics.observedPastSales)}
+          detail={`Depuis le ${formatDate(period.historyStart)}`}
+        />
+        <HistoryMetric
+          label="Mise à prix médiane · historique tribunal"
+          value={formatRangeMedianCurrency(priceRange)}
+          detail={formatRangeCurrency(priceRange, benchmarkScope)}
+          accent
+        />
+        <HistoryMetric
+          label="Détection → vente · historique tribunal"
+          value={formatRangeMedianDays(leadRange)}
+          detail={formatRangeDays(leadRange)}
+        />
+      </dl>
+
+      <p className="mt-7 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+        Pipeline à venir
+      </p>
+      <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 lg:grid-cols-4">
         <HistoryMetric
           label="Ventes à venir suivies"
           value={formatNumberValue(metrics.upcomingSales)}
           detail={`${formatNumberValue(metrics.upcomingSales90Days)} dans les 90 prochains jours`}
         />
         <HistoryMetric
-          label="Mise à prix médiane · Tribunal"
-          value={formatRangeMedianCurrency(priceRange)}
-          detail={formatRangeCurrency(priceRange, benchmarkScope)}
+          label="Mise à prix médiane · à venir"
+          value={formatRangeMedianCurrency(metrics.upcomingStartingPriceRangeEur)}
+          detail={formatRangeCurrency(
+            metrics.upcomingStartingPriceRangeEur,
+            "tous biens confondus",
+          )}
           accent
         />
         <HistoryMetric
-          label="Détection → vente · Tribunal"
-          value={formatRangeMedianDays(leadRange)}
-          detail={formatRangeDays(leadRange)}
+          label="Détection → audience · à venir"
+          value={formatRangeMedianDays(metrics.upcomingDiscoveryLeadRangeDays)}
+          detail={formatRangeDays(metrics.upcomingDiscoveryLeadRangeDays)}
         />
         <HistoryMetric
-          label="Visite annoncée · Tribunal"
+          label="Visite annoncée · à venir"
           value={formatPercentMetric(metrics.visitCoverage)}
           detail={sampleLabel(metrics.visitCoverage, "annonce")}
         />
@@ -628,17 +691,16 @@ function JudicialActivity({
           icon={ShieldCheck}
           label="Type de bien le plus suivi"
           value={
-            dominantPropertyType
-              ? `${propertyTypeLabel(dominantPropertyType.propertyType)} · ${formatPercent(dominantPropertyType.share)}`
+            dominantUpcomingPropertyType
+              ? `${propertyTypeLabel(dominantUpcomingPropertyType.propertyType)} · ${formatPercent(dominantUpcomingPropertyType.share)}`
               : "Non publié"
           }
         />
       </dl>
 
       <p className="mt-4 text-xs leading-relaxed text-brand-navy/70">
-        {metrics.observedPastSales} vente{metrics.observedPastSales > 1 ? "s" : ""} passée
-        {metrics.observedPastSales > 1 ? "s" : ""} suivie
-        {metrics.observedPastSales > 1 ? "s" : ""} depuis le {formatDate(period.historyStart)}.
+        L’historique et le pipeline sont calculés séparément. Les annonces à venir n’alimentent pas
+        les médianes historiques.
       </p>
     </>
   );
@@ -714,11 +776,10 @@ function InsufficientTribunalData({ activity }: { activity: TribunalJudicialActi
       <div>
         <p className="font-semibold">Profil local en cours de consolidation</p>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed">
-          Les statistiques de {activity.court.name} seront affichées ici lorsque au moins{" "}
+          Les repères historiques de {activity.court.name} seront affichés lorsque au moins{" "}
           {TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE} mises à prix et{" "}
           {TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE} délais de découverte contrôlés seront disponibles.
-          Les repères France peuvent servir de comparaison uniquement lorsqu’ils sont publiés ; leur
-          absence ne permet aucune conclusion sur ce tribunal.
+          Le pipeline à venir reste présenté séparément lorsqu’il est suffisamment renseigné.
         </p>
       </div>
     </div>

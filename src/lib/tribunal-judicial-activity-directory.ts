@@ -48,6 +48,8 @@ const scopeOverviewSchema = z
     upcomingSales90Days: z.number().int().nonnegative(),
     startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
     discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
+    upcomingStartingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
+    upcomingDiscoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
     visitCoverage: tribunalJudicialActivityMetricSchema,
     coverage: scopeCoverageSchema,
   })
@@ -262,6 +264,8 @@ function buildScopeOverview(input: {
     upcomingSales90Days: aggregate.activity.upcomingSales90Days,
     startingPriceRangeEur: aggregate.activity.startingPriceRangeEur,
     discoveryLeadRangeDays: aggregate.activity.discoveryLeadRangeDays,
+    upcomingStartingPriceRangeEur: aggregate.activity.upcomingStartingPriceRangeEur,
+    upcomingDiscoveryLeadRangeDays: aggregate.activity.upcomingDiscoveryLeadRangeDays,
     visitCoverage: aggregate.activity.visitCoverage,
     coverage: {
       trackedCourts,

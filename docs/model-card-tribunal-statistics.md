@@ -1,23 +1,25 @@
 # Statistiques par tribunal — model card
 
-_Version documentaire 0.5 — 20 août 2026. Cette fiche décrit des agrégats descriptifs expérimentaux. Elle ne vaut ni validation statistique externe, ni qualification de modèle prédictif fiable, ni autorisation de promesse commerciale._
+_Version documentaire 0.6 — 20 septembre 2026. Cette fiche décrit des agrégats descriptifs expérimentaux. Elle ne vaut ni validation statistique externe, ni qualification de modèle prédictif fiable, ni autorisation de promesse commerciale._
 
 ## Deux familles d’indicateurs séparées
 
 Immojudis sépare strictement :
 
 1. l’**activité des annonces de ventes judiciaires**, disponible sur chaque annonce via
-   `tribunal_judicial_activity_v1` ;
+   `tribunal_judicial_activity_v2` ;
 2. les **résultats historiques des audiences**, construits par
    `tribunal_statistics_builder_v1` uniquement après preuves et revues.
 
-L’activité des annonces décrit ce qu’Immojudis suit actuellement : ventes à venir, audiences proches,
-mise à prix médiane et fourchette interquartile, visites annoncées, anticipation entre détection
-Immojudis et audience, cadence des audiences et typologie des biens. Les repères sont calculés au
-niveau du tribunal et, à partir de cinq observations, par type de bien. Elle ne
-doit jamais être interprétée comme un taux d’adjudication ou une mesure exhaustive du greffe. Seules
-les annonces explicitement judiciaires, confirmées ou recoupées, et rattachées exactement à un
-tribunal actif du référentiel Justice sont retenues. Les médianes sont masquées sous cinq observations.
+L’activité des annonces sépare deux populations qui ne sont jamais mélangées : l’historique observé
+des ventes passées et le pipeline des audiences à venir. Chaque population possède ses propres
+mises à prix, fourchettes interquartiles, délais entre détection Immojudis et audience, et typologies
+de biens. Les visites annoncées, prochaines audiences et cadences décrivent uniquement le pipeline.
+Les repères sont calculés au niveau du tribunal et, à partir de cinq observations dans la population
+concernée, par type de bien. Ils ne doivent jamais être interprétés comme un taux d’adjudication ou
+une mesure exhaustive du greffe. Seules les annonces explicitement judiciaires, confirmées ou
+recoupées, et rattachées exactement à un tribunal actif du référentiel Justice sont retenues. Les
+médianes sont masquées sous cinq observations.
 
 La fourchette dite « centrale » va du 25e au 75e percentile et contient donc la moitié des annonces
 retenues. Elle décrit la distribution des mises **initiales**, pas les prix d’adjudication. La comparaison

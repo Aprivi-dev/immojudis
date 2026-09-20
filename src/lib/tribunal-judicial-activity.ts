@@ -7,7 +7,7 @@ export class TribunalCourtUnresolvedError extends Error {
   }
 }
 
-export const TRIBUNAL_JUDICIAL_ACTIVITY_BUILDER_VERSION = "tribunal_judicial_activity_v1" as const;
+export const TRIBUNAL_JUDICIAL_ACTIVITY_BUILDER_VERSION = "tribunal_judicial_activity_v2" as const;
 export const TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE = 5;
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
@@ -112,6 +112,15 @@ const propertyTypeBenchmarkSchema = z
   })
   .strict();
 
+const upcomingPropertyTypeBenchmarkSchema = z
+  .object({
+    propertyType: z.string().min(1),
+    upcomingSales: z.number().int().positive(),
+    startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
+    discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
+  })
+  .strict();
+
 export const tribunalJudicialActivityResponseSchema = z
   .object({
     court: z
@@ -138,13 +147,19 @@ export const tribunalJudicialActivityResponseSchema = z
         nextSaleAt: isoDateTimeSchema.nullable(),
         medianStartingPriceEur: tribunalJudicialActivityMetricSchema,
         startingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
+        upcomingMedianStartingPriceEur: tribunalJudicialActivityMetricSchema,
+        upcomingStartingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
         visitCoverage: tribunalJudicialActivityMetricSchema,
         medianDiscoveryLeadDays: tribunalJudicialActivityMetricSchema,
         discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
+        upcomingMedianDiscoveryLeadDays: tribunalJudicialActivityMetricSchema,
+        upcomingDiscoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
         medianLotsPerHearingDay: tribunalJudicialActivityMetricSchema,
         medianDaysBetweenHearingDays: tribunalJudicialActivityMetricSchema,
         topPropertyTypes: z.array(propertyTypeShareSchema).max(3),
+        upcomingTopPropertyTypes: z.array(propertyTypeShareSchema).max(3),
         propertyTypeBenchmarks: z.array(propertyTypeBenchmarkSchema).max(12),
+        upcomingPropertyTypeBenchmarks: z.array(upcomingPropertyTypeBenchmarkSchema).max(12),
       })
       .strict(),
     reliability: z
@@ -196,6 +211,10 @@ export type TribunalJudicialActivitySale = {
   firstSeenAt: string | null;
 };
 
+type ParsedTribunalJudicialActivitySale = TribunalJudicialActivitySale & {
+  parsedSaleDate: Date;
+};
+
 export function judicialActivityPeriod(
   asOf: Date,
   historyMonths: TribunalJudicialActivityHistoryMonths,
@@ -217,8 +236,8 @@ export function buildTribunalJudicialActivity(input: {
   const { historyStart, upcomingEnd } = judicialActivityPeriod(asOf, historyMonths);
   const upcoming90End = new Date(asOf.getTime() + 90 * 24 * 60 * 60 * 1_000);
   const seenIds = new Set<string>();
-  const past: Array<TribunalJudicialActivitySale & { parsedSaleDate: Date }> = [];
-  const upcoming: Array<TribunalJudicialActivitySale & { parsedSaleDate: Date }> = [];
+  const past: ParsedTribunalJudicialActivitySale[] = [];
+  const upcoming: ParsedTribunalJudicialActivitySale[] = [];
 
   for (const sale of input.sales) {
     if (seenIds.has(sale.id)) throw new Error("Duplicate sale in judicial activity input.");
@@ -243,31 +262,15 @@ export function buildTribunalJudicialActivity(input: {
       left.parsedSaleDate.getTime() - right.parsedSaleDate.getTime() ||
       left.id.localeCompare(right.id),
   );
-  const benchmarkSales = [...past, ...upcoming];
-  const prices = benchmarkSales
-    .map((sale) => sale.startingPriceEur)
-    .filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
-  const leadDays = benchmarkSales.flatMap((sale) => {
-    if (!sale.firstSeenAt) return [];
-    const firstSeen = new Date(sale.firstSeenAt);
-    if (!Number.isFinite(firstSeen.getTime())) return [];
-    const days = (sale.parsedSaleDate.getTime() - firstSeen.getTime()) / (24 * 60 * 60 * 1_000);
-    return days >= 0 && days <= 365 ? [days] : [];
-  });
+  const observedPrices = startingPrices(past);
+  const upcomingPrices = startingPrices(upcoming);
+  const observedLeadDays = discoveryLeadDays(past);
+  const upcomingLeadDays = discoveryLeadDays(upcoming);
   const visits = upcoming.filter((sale) => hasVisitDate(sale.visitDates)).length;
   const hearingDayCounts = new Map<string, number>();
-  const propertyCounts = new Map<string, number>();
-  const propertySales = new Map<string, typeof benchmarkSales>();
   for (const sale of upcoming) {
     const day = parisDateKey(sale.parsedSaleDate);
     hearingDayCounts.set(day, (hearingDayCounts.get(day) ?? 0) + 1);
-  }
-  for (const sale of benchmarkSales) {
-    const propertyType = sale.propertyType?.trim() || "other";
-    propertyCounts.set(propertyType, (propertyCounts.get(propertyType) ?? 0) + 1);
-    const existing = propertySales.get(propertyType);
-    if (existing) existing.push(sale);
-    else propertySales.set(propertyType, [sale]);
   }
   const hearingDays = [...hearingDayCounts.keys()].sort();
   const hearingDayIntervals = hearingDays.slice(1).map((day, index) => {
@@ -292,11 +295,18 @@ export function buildTribunalJudicialActivity(input: {
       upcomingSales90Days: upcoming.filter((sale) => sale.parsedSaleDate < upcoming90End).length,
       upcomingHearingDays: hearingDayCounts.size,
       nextSaleAt: upcoming[0]?.parsedSaleDate.toISOString() ?? null,
-      medianStartingPriceEur: sampleMetric(prices, median(prices)),
-      startingPriceRangeEur: rangeMetric(prices),
+      // Existing price and lead fields are deliberately historical-only. This
+      // keeps existing consumers from presenting future pipeline rows as
+      // observed history.
+      medianStartingPriceEur: sampleMetric(observedPrices, median(observedPrices)),
+      startingPriceRangeEur: rangeMetric(observedPrices),
+      upcomingMedianStartingPriceEur: sampleMetric(upcomingPrices, median(upcomingPrices)),
+      upcomingStartingPriceRangeEur: rangeMetric(upcomingPrices),
       visitCoverage: sampleMetric(upcoming, upcoming.length > 0 ? visits / upcoming.length : null),
-      medianDiscoveryLeadDays: sampleMetric(leadDays, median(leadDays)),
-      discoveryLeadRangeDays: rangeMetric(leadDays),
+      medianDiscoveryLeadDays: sampleMetric(observedLeadDays, median(observedLeadDays)),
+      discoveryLeadRangeDays: rangeMetric(observedLeadDays),
+      upcomingMedianDiscoveryLeadDays: sampleMetric(upcomingLeadDays, median(upcomingLeadDays)),
+      upcomingDiscoveryLeadRangeDays: rangeMetric(upcomingLeadDays),
       medianLotsPerHearingDay: sampleMetric(
         [...hearingDayCounts.values()],
         median([...hearingDayCounts.values()]),
@@ -307,49 +317,19 @@ export function buildTribunalJudicialActivity(input: {
         median(hearingDayIntervals),
         3,
       ),
-      topPropertyTypes:
-        benchmarkSales.length >= TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE
-          ? [...propertyCounts.entries()]
-              .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-              .slice(0, 3)
-              .map(([propertyType, count]) => ({
-                propertyType,
-                count,
-                share: round(count / benchmarkSales.length, 6),
-              }))
-          : [],
-      propertyTypeBenchmarks: [...propertySales.entries()]
-        .sort((left, right) => right[1].length - left[1].length || left[0].localeCompare(right[0]))
-        .slice(0, 12)
-        .map(([propertyType, sales]) => {
-          const typePrices = sales
-            .map((sale) => sale.startingPriceEur)
-            .filter(
-              (value): value is number => value != null && Number.isFinite(value) && value > 0,
-            );
-          const typeLeadDays = sales.flatMap((sale) => {
-            if (!sale.firstSeenAt) return [];
-            const firstSeen = new Date(sale.firstSeenAt);
-            if (!Number.isFinite(firstSeen.getTime())) return [];
-            const days =
-              (sale.parsedSaleDate.getTime() - firstSeen.getTime()) / (24 * 60 * 60 * 1_000);
-            return days >= 0 && days <= 365 ? [days] : [];
-          });
-          return {
-            propertyType,
-            observedSales: sales.length,
-            startingPriceRangeEur: rangeMetric(typePrices),
-            discoveryLeadRangeDays: rangeMetric(typeLeadDays),
-          };
-        }),
+      topPropertyTypes: topPropertyTypes(past),
+      upcomingTopPropertyTypes: topPropertyTypes(upcoming),
+      propertyTypeBenchmarks: observedPropertyTypeBenchmarks(past),
+      upcomingPropertyTypeBenchmarks: upcomingPropertyTypeBenchmarks(upcoming),
     },
     reliability: {
-      ...reliability(benchmarkSales.length),
-      currentSampleSize: benchmarkSales.length,
+      ...reliability(past.length),
+      currentSampleSize: past.length,
       exactCourtMatch: true,
       limitations: [
         "Comptage des annonces judiciaires suivies par Immojudis, sans garantie d’exhaustivité nationale.",
         "Les annonces en attente, conflictuelles, sans date plausible ou sans tribunal exactement rattaché sont exclues.",
+        "Les indicateurs historiques utilisent uniquement les ventes passées observées; le pipeline à venir est présenté séparément.",
         "Les taux d’adjudication, de surenchère et les prix finaux restent masqués sans résultats contrôlés suffisants.",
       ],
     },
@@ -362,6 +342,71 @@ export function buildTribunalJudicialActivity(input: {
     },
   };
   return tribunalJudicialActivityResponseSchema.parse(response);
+}
+
+function startingPrices(sales: ParsedTribunalJudicialActivitySale[]): number[] {
+  return sales
+    .map((sale) => sale.startingPriceEur)
+    .filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
+}
+
+function discoveryLeadDays(sales: ParsedTribunalJudicialActivitySale[]): number[] {
+  return sales.flatMap((sale) => {
+    if (!sale.firstSeenAt) return [];
+    const firstSeen = new Date(sale.firstSeenAt);
+    if (!Number.isFinite(firstSeen.getTime())) return [];
+    const days = (sale.parsedSaleDate.getTime() - firstSeen.getTime()) / (24 * 60 * 60 * 1_000);
+    return days >= 0 && days <= 365 ? [days] : [];
+  });
+}
+
+function propertyTypeSales(
+  sales: ParsedTribunalJudicialActivitySale[],
+): Map<string, ParsedTribunalJudicialActivitySale[]> {
+  const grouped = new Map<string, ParsedTribunalJudicialActivitySale[]>();
+  for (const sale of sales) {
+    const propertyType = sale.propertyType?.trim() || "other";
+    const existing = grouped.get(propertyType);
+    if (existing) existing.push(sale);
+    else grouped.set(propertyType, [sale]);
+  }
+  return grouped;
+}
+
+function topPropertyTypes(sales: ParsedTribunalJudicialActivitySale[]) {
+  if (sales.length < TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE) return [];
+  return [...propertyTypeSales(sales).entries()]
+    .sort((left, right) => right[1].length - left[1].length || left[0].localeCompare(right[0]))
+    .slice(0, 3)
+    .map(([propertyType, groupedSales]) => ({
+      propertyType,
+      count: groupedSales.length,
+      share: round(groupedSales.length / sales.length, 6),
+    }));
+}
+
+function observedPropertyTypeBenchmarks(sales: ParsedTribunalJudicialActivitySale[]) {
+  return [...propertyTypeSales(sales).entries()]
+    .sort((left, right) => right[1].length - left[1].length || left[0].localeCompare(right[0]))
+    .slice(0, 12)
+    .map(([propertyType, groupedSales]) => ({
+      propertyType,
+      observedSales: groupedSales.length,
+      startingPriceRangeEur: rangeMetric(startingPrices(groupedSales)),
+      discoveryLeadRangeDays: rangeMetric(discoveryLeadDays(groupedSales)),
+    }));
+}
+
+function upcomingPropertyTypeBenchmarks(sales: ParsedTribunalJudicialActivitySale[]) {
+  return [...propertyTypeSales(sales).entries()]
+    .sort((left, right) => right[1].length - left[1].length || left[0].localeCompare(right[0]))
+    .slice(0, 12)
+    .map(([propertyType, groupedSales]) => ({
+      propertyType,
+      upcomingSales: groupedSales.length,
+      startingPriceRangeEur: rangeMetric(startingPrices(groupedSales)),
+      discoveryLeadRangeDays: rangeMetric(discoveryLeadDays(groupedSales)),
+    }));
 }
 
 function sampleMetric(
