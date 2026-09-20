@@ -2,6 +2,7 @@ import { z } from "zod";
 import { adjudicationEnrichmentSchema } from "@/lib/adjudication-distributions";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
+  ADJUDICATION_PRICE_STATISTICS_WARNING,
   adjudicationPriceStatisticsReliability,
   adjudicationPriceStatisticsResponseSchema,
   type AdjudicationPriceStatisticsResponse,
@@ -155,8 +156,7 @@ export async function getAdjudicationPriceStatisticsForSale(
         builtAt: national.built_at,
         reviewedAt: national.reviewed_at,
         experimental: true,
-        warning:
-          "Statistiques descriptives sur trois ans, limitées aux adjudications dont Licitor publie le prix ; sans valeur prédictive ni estimation du bien.",
+        warning: ADJUDICATION_PRICE_STATISTICS_WARNING,
       },
     });
   } catch {

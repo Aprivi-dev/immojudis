@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ADJUDICATION_PRICE_STATISTICS_WARNING,
   adjudicationPriceStatisticsReliability,
   adjudicationPriceStatisticsResponseSchema,
 } from "@/lib/adjudication-price-statistics";
@@ -42,8 +43,7 @@ function responseFixture(overrides: Record<string, unknown> = {}) {
       builtAt: "2026-09-07T12:00:00.000Z",
       reviewedAt: "2026-09-07T13:00:00.000Z",
       experimental: true,
-      warning:
-        "Statistiques descriptives sur trois ans, limitées aux adjudications dont Licitor publie le prix ; sans valeur prédictive ni estimation du bien.",
+      warning: ADJUDICATION_PRICE_STATISTICS_WARNING,
     },
     ...overrides,
   };
