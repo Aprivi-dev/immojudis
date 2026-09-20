@@ -175,6 +175,8 @@ describe("SaleTribunalHistory", () => {
     expect(screen.getAllByText("Prix publiés au moins doublés")).toHaveLength(2);
     expect(screen.getAllByText("Prix adjugé médian")).toHaveLength(2);
     expect(screen.getAllByText("Mise à prix médiane")).toHaveLength(2);
+    expect(screen.getAllByText(/source tierce non officielle/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/ne prouvent pas le caractère définitif de la vente/i)).toBeTruthy();
     const text = container.textContent ?? "";
     expect(text.indexOf("France entière")).toBeLessThan(
       text.indexOf("Tribunal judiciaire de Marseille"),
@@ -354,7 +356,7 @@ function adjudicationStatistics(overrides: Record<string, unknown> = {}) {
       reviewedAt: "2026-09-07T13:00:00.000Z",
       experimental: true,
       warning:
-        "Statistiques descriptives sur trois ans, limitées aux adjudications dont Licitor publie le prix ; sans valeur prédictive ni estimation du bien.",
+        "Source tierce non officielle : prix publiés par Licitor, non vérifiés auprès du greffe et non présentés comme définitifs. Agrégats descriptifs uniquement, sans valeur prédictive ni estimation du bien.",
     },
     ...overrides,
   };

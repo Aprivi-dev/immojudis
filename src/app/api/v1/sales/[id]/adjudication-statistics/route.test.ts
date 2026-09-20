@@ -56,7 +56,7 @@ const statistics: AdjudicationPriceStatisticsResponse = {
     reviewedAt: "2026-09-07T13:00:00.000Z",
     experimental: true,
     warning:
-      "Statistiques descriptives sur trois ans, limitées aux adjudications dont Licitor publie le prix ; sans valeur prédictive ni estimation du bien.",
+      "Source tierce non officielle : prix publiés par Licitor, non vérifiés auprès du greffe et non présentés comme définitifs. Agrégats descriptifs uniquement, sans valeur prédictive ni estimation du bien.",
   },
 };
 

@@ -1,6 +1,6 @@
 # Statistiques par tribunal — runbook d’exploitation
 
-_Version 0.7 — 24 août 2026. Cette fonctionnalité est une restitution descriptive expérimentale. Elle ne constitue ni une prédiction individuelle, ni une garantie de prix ou d’issue._
+_Version 0.8 — 20 septembre 2026. Cette fonctionnalité est une restitution descriptive expérimentale. Elle ne constitue ni une prédiction individuelle, ni une garantie de prix ou d’issue._
 
 ## Résumé opérateur
 
@@ -50,6 +50,22 @@ en zéro activité.
 
 La priorisation des sources ouvertes et les tranches d’enrichissement sont suivies dans
 [`docs/statistics-data-enrichment-roadmap.md`](../statistics-data-enrichment-roadmap.md).
+
+### Repère Premium des prix publiés par Licitor
+
+La route distincte `GET /api/v1/sales/:id/adjudication-statistics` sert un repère de prix sur trois
+ans aux comptes Analyse/Premium. Cette voie n’est pas le builder Outcome Graph décrit ci-dessous :
+elle agrège uniquement des prix publiés par Licitor, source tierce non officielle de grade C.
+
+La publication exige simultanément une autorisation de réutilisation tracée, une attestation
+append-only de chaque capture/version courante, des contrôles structurels, un minimum de dix lignes,
+un manifeste de build et une revue approuvée. Les lignes sans prix, les carences, les dates ou
+montants invalides et les conflits critiques sont exclus. Un changement de capture ferme
+automatiquement l’éligibilité jusqu’à une nouvelle attestation.
+
+L’interface doit toujours indiquer que ces prix ne sont pas vérifiés auprès du greffe, ne prouvent
+pas la finalité procédurale et ne permettent aucune estimation individuelle. Cette voie ne doit
+jamais alimenter un outcome canonique, un entraînement ou une validation prédictive.
 
 En cas de doute sur la provenance, les dénominateurs, la revue ou le cutoff :
 
