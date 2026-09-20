@@ -25,6 +25,7 @@ def test_target_departments_can_be_overridden(monkeypatch) -> None:
 def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     for key in (
         "REPLICATE_MAX_TOKENS",
+        "REPLICATE_WAIT_SECONDS",
         "REPLICATE_MODEL",
         "REPLICATE_THINKING_LEVEL",
         "REPLICATE_MAX_RETRIES",
@@ -58,6 +59,7 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     settings = load_settings()
 
     assert settings["replicate_max_tokens"] == 512
+    assert settings["replicate_wait_seconds"] == 60
     assert settings["replicate_model"] == (
         "zsxkib/qwen2-7b-instruct:"
         "5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4"
@@ -88,3 +90,11 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["pdf_ocr_enabled"] is False
     assert settings["pdf_docling_enabled"] is False
     assert settings["pdf_max_documents_per_sale"] == 6
+
+
+def test_replicate_wait_seconds_stays_within_provider_header_limit(monkeypatch) -> None:
+    monkeypatch.setenv("REPLICATE_WAIT_SECONDS", "120")
+    assert load_settings()["replicate_wait_seconds"] == 60
+
+    monkeypatch.setenv("REPLICATE_WAIT_SECONDS", "0")
+    assert load_settings()["replicate_wait_seconds"] == 1

@@ -309,7 +309,7 @@ def _transaction_write(table: str, payload: list[dict[str, object]], on_conflict
 
 
 def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> None:
-    from src.enrichment.extract_structured import has_current_fact_analysis
+    from src.enrichment.extract_structured import needs_fact_extraction
 
     settings = load_settings()
     prompt_version = str(settings.get("llm_prompt_version") or "")
@@ -334,12 +334,7 @@ def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> Non
             kinds.append(("pdf", revision + str(last_success), 30))
         if not _has_current_llm_description(sale.raw_payload, prompt_version) or sale.raw_payload.get("source_content_changed"):
             kinds.append(("display_description", revision, 20))
-        analysis = sale.raw_payload.get("document_analysis") or {}
-        if analysis.get("documents_extracted") and not has_current_fact_analysis(sale) and (
-            not sale.app_surface_m2 or sale.occupancy_status in {None, "unknown"}
-            or sale.raw_payload.get("source_conflicts")
-            or (sale.raw_payload.get("surface_analysis") or {}).get("contradictions")
-        ):
+        if needs_fact_extraction(sale):
             kinds.append(("fact_extraction", revision, 25))
         for kind, fingerprint, priority in kinds:
             jobs.append({"source_url": sale.source_url, "job_type": kind,
@@ -1446,6 +1441,8 @@ def fetch_sales_needing_llm_descriptions(
     lets a bounded worker gradually cover older active/upcoming rows without
     making the main scrape run longer.
     """
+    from src.enrichment.extract_structured import needs_fact_extraction
+
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
@@ -1495,7 +1492,12 @@ def fetch_sales_needing_llm_descriptions(
             ):
                 continue
             sale = _auction_sale_from_row(row)
-            if sale is not None and has_price_or_surface(sale) and not is_expired(sale):
+            if (
+                sale is not None
+                and has_price_or_surface(sale)
+                and not is_expired(sale)
+                and not needs_fact_extraction(sale)
+            ):
                 selected.append(sale)
             if len(selected) >= limit:
                 break

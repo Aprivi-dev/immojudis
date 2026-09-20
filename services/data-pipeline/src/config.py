@@ -19,6 +19,11 @@ DEFAULT_REPLICATE_MODEL = (
     "5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4"
 )
 DEFAULT_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display"
+DEFAULT_LLM_FACT_PROMPT_VERSION = "auction_facts_v1"
+DEFAULT_LLM_DISPLAY_PROMPT_VERSION = "auction_display_v9_public_summary"
+DEFAULT_LLM_EXTRACTION_MODE = "structured_then_display"
+DEFAULT_REPLICATE_WAIT_SECONDS = 60
+MAX_REPLICATE_WAIT_SECONDS = 60
 
 FRANCE_DEPARTMENTS = (
     *(f"{department:02d}" for department in range(1, 96)),
@@ -142,7 +147,16 @@ def load_settings() -> dict[str, str | float | None]:
         "replicate_max_tokens": int(os.getenv("REPLICATE_MAX_TOKENS", "512")),
         "replicate_fact_max_tokens": max(512, int(os.getenv("REPLICATE_FACT_MAX_TOKENS", "4096"))),
         "replicate_timeout_seconds": float(os.getenv("REPLICATE_TIMEOUT_SECONDS", "180")),
-        "replicate_wait_seconds": int(os.getenv("REPLICATE_WAIT_SECONDS", "60")),
+        # Replicate's Prefer: wait header accepts at most 60 seconds. Keeping
+        # the bound here makes the effective setting explicit even before the
+        # HTTP client applies its own defensive clamp.
+        "replicate_wait_seconds": max(
+            1,
+            min(
+                MAX_REPLICATE_WAIT_SECONDS,
+                int(os.getenv("REPLICATE_WAIT_SECONDS", str(DEFAULT_REPLICATE_WAIT_SECONDS))),
+            ),
+        ),
         "replicate_cancel_after": os.getenv("REPLICATE_CANCEL_AFTER", "5m"),
         "replicate_max_retries": int(os.getenv("REPLICATE_MAX_RETRIES", "4")),
         "replicate_max_calls_per_hour": max(
@@ -197,9 +211,15 @@ def load_settings() -> dict[str, str | float | None]:
             "LLM_PROMPT_VERSION",
             DEFAULT_LLM_PROMPT_VERSION,
         ),
-        "llm_fact_prompt_version": os.getenv("LLM_FACT_PROMPT_VERSION", "auction_facts_v1"),
-        "llm_display_prompt_version": os.getenv("LLM_DISPLAY_PROMPT_VERSION", "auction_display_v9_public_summary"),
-        "llm_extraction_mode": os.getenv("LLM_EXTRACTION_MODE", "structured_then_display").lower(),
+        "llm_fact_prompt_version": os.getenv(
+            "LLM_FACT_PROMPT_VERSION", DEFAULT_LLM_FACT_PROMPT_VERSION
+        ),
+        "llm_display_prompt_version": os.getenv(
+            "LLM_DISPLAY_PROMPT_VERSION", DEFAULT_LLM_DISPLAY_PROMPT_VERSION
+        ),
+        "llm_extraction_mode": os.getenv(
+            "LLM_EXTRACTION_MODE", DEFAULT_LLM_EXTRACTION_MODE
+        ).lower(),
         "llm_pdf_max_chars": int(os.getenv("LLM_PDF_MAX_CHARS", "12000")),
         "llm_fact_chunk_chars": max(3000, int(os.getenv("LLM_FACT_CHUNK_CHARS", "12000"))),
         # 0 means every collected source block and extracted PDF page is analyzed.

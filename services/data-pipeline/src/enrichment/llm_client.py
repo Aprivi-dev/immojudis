@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import re
 import threading
 import time
@@ -581,12 +582,12 @@ def _combine_prompts(system_prompt: str, user_prompt: str) -> str:
 
 
 def parse_json_response(raw_response: str) -> dict[str, Any]:
-    text = raw_response.strip()
+    text = raw_response.strip().lstrip("\ufeff")
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?", "", text, flags=re.I).strip()
         text = re.sub(r"```$", "", text).strip()
     try:
-        value = json.loads(text)
+        value = _json_loads_with_safe_repairs(text)
     except json.JSONDecodeError as exc:
         escaped_value = _parse_escaped_json_response(text)
         if escaped_value is not None:
@@ -595,7 +596,204 @@ def parse_json_response(raw_response: str) -> dict[str, Any]:
             value = _parse_json_object_from_response_text(text, exc)
     if not isinstance(value, dict):
         raise ValueError("LLM response must be a JSON object")
-    return value
+    return repair_json_payload(value)
+
+
+_JSON_NUMERIC_KEYS = {
+    "surface_m2",
+    "value_m2",
+    "page_number",
+}
+_JSON_COUNT_KEYS = {"rooms_count", "bedrooms_count"}
+_JSON_MISSING_NUMBER_VALUES = {
+    "",
+    "-",
+    "?",
+    "na",
+    "n/a",
+    "none",
+    "null",
+    "unknown",
+    "inconnu",
+    "non renseigne",
+    "non renseigné",
+}
+_JSON_MEASUREMENT_SUFFIX_RE = re.compile(r"\s*(?:m(?:2|²)|mètres?\s+carrés?)\s*$", re.I)
+_JSON_NUMBER_RE = re.compile(r"^[+-]?(?:\d[\d\s\u00a0.,]*|[.,]\d+)$")
+
+
+def repair_json_payload(value: Any) -> Any:
+    """Apply only lossless, schema-agnostic repairs to a parsed LLM payload.
+
+    Model responses commonly contain ``null`` placeholders in arrays or use a
+    human-friendly representation for optional measurements.  These values are
+    not useful facts and can make the later Pydantic validation reject an
+    otherwise valuable response.  We remove only null array members and
+    normalize fields whose names unambiguously identify numeric values.  The
+    schema-specific salvage (for example, dropping one invalid room while
+    retaining the other rooms) lives in ``extract_structured``.
+    """
+
+    if isinstance(value, list):
+        return [repair_json_payload(item) for item in value if item is not None]
+    if not isinstance(value, dict):
+        return value
+
+    repaired: dict[str, Any] = {}
+    for key, item in value.items():
+        field_name = str(key)
+        if field_name in _JSON_NUMERIC_KEYS:
+            repaired[field_name] = _repair_json_number(field_name, item)
+        elif field_name in _JSON_COUNT_KEYS:
+            # ``LLMExtraction`` already understands values such as ``T3`` or
+            # ``2 chambres``.  Only normalize pure numeric strings here and
+            # leave richer count labels for the schema validator.
+            repaired[field_name] = _repair_json_count(item)
+        elif field_name == "confidence":
+            # Top-level extraction confidence is a mapping, while nested
+            # measurements/candidates carry a scalar confidence. Preserve
+            # both shapes so a safe repair never lowers a valid fact's score.
+            repaired[field_name] = (
+                _repair_json_confidence(item)
+                if isinstance(item, dict)
+                else _repair_json_confidence_score(item)
+            )
+        else:
+            repaired[field_name] = repair_json_payload(item)
+    return repaired
+
+
+def _json_loads_with_safe_repairs(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as original_exc:
+        # A trailing comma is unambiguous and can be repaired without
+        # inventing any model content.  Keep all other syntax errors on the
+        # existing retry path.
+        repaired = _remove_trailing_json_commas(text)
+        if repaired == text:
+            raise
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            raise original_exc from None
+
+
+def _remove_trailing_json_commas(text: str) -> str:
+    """Remove commas before ``}``/``]`` only when outside JSON strings."""
+
+    repaired: list[str] = []
+    in_string = False
+    escaped = False
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if in_string:
+            repaired.append(character)
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            index += 1
+            continue
+        if character == '"':
+            in_string = True
+            repaired.append(character)
+            index += 1
+            continue
+        if character == ",":
+            lookahead = index + 1
+            while lookahead < len(text) and text[lookahead].isspace():
+                lookahead += 1
+            if lookahead < len(text) and text[lookahead] in "}]":
+                index += 1
+                continue
+        repaired.append(character)
+        index += 1
+    return "".join(repaired)
+
+
+def _repair_json_number(field_name: str, value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        if not math.isfinite(float(value)):
+            return None
+        return value if float(value) > 0 else None
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip().lower()
+    if text in _JSON_MISSING_NUMBER_VALUES:
+        return None
+    if field_name in {"surface_m2", "value_m2"}:
+        text = _JSON_MEASUREMENT_SUFFIX_RE.sub("", text).strip()
+    if not _JSON_NUMBER_RE.fullmatch(text):
+        return None
+    compact = text.replace("\u00a0", " ").replace(" ", "")
+    if "," in compact and "." in compact:
+        # The last separator is the decimal separator; the other one is a
+        # thousands separator.  This handles both French and English forms.
+        decimal_separator = "," if compact.rfind(",") > compact.rfind(".") else "."
+        thousands_separator = "." if decimal_separator == "," else ","
+        compact = compact.replace(thousands_separator, "").replace(decimal_separator, ".")
+    elif "," in compact:
+        compact = compact.replace(",", ".")
+    try:
+        parsed = float(compact)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(parsed) or parsed <= 0:
+        return None
+    return parsed
+
+
+def _repair_json_count(value: Any) -> Any:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value if math.isfinite(float(value)) else None
+    if not isinstance(value, str):
+        return value
+    text = value.strip().lower()
+    if text in _JSON_MISSING_NUMBER_VALUES:
+        return None
+    if not re.fullmatch(r"[+-]?\d+(?:\.0+)?", text):
+        return value
+    try:
+        return int(float(text))
+    except ValueError:
+        return value
+
+
+def _repair_json_confidence(value: Any) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+    repaired: dict[str, float] = {}
+    for key, score in value.items():
+        if score is None or isinstance(score, bool):
+            continue
+        try:
+            parsed = float(score)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(parsed):
+            repaired[str(key)] = parsed
+    return repaired
+
+
+def _repair_json_confidence_score(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def _parse_json_object_from_response_text(text: str, original_exc: json.JSONDecodeError) -> dict[str, Any]:
@@ -605,7 +803,7 @@ def _parse_json_object_from_response_text(text: str, original_exc: json.JSONDeco
             f"No JSON object found in LLM response; response_excerpt={_response_excerpt(text)!r}"
         ) from original_exc
     try:
-        value = json.loads(match.group(0))
+        value = _json_loads_with_safe_repairs(match.group(0))
     except json.JSONDecodeError as exc:
         raise ValueError(
             f"Invalid JSON from LLM: {exc}; response_excerpt={_response_excerpt(text)!r}"
@@ -629,17 +827,17 @@ def _parse_escaped_json_response(text: str) -> dict[str, Any] | None:
 
     for candidate in candidates:
         try:
-            value = json.loads(candidate)
+            value = _json_loads_with_safe_repairs(candidate)
         except json.JSONDecodeError:
             match = re.search(r"\{.*\}", candidate, re.S)
             if not match:
                 continue
             try:
-                value = json.loads(match.group(0))
+                value = _json_loads_with_safe_repairs(match.group(0))
             except json.JSONDecodeError:
                 continue
         if isinstance(value, dict):
-            return value
+            return repair_json_payload(value)
     return None
 
 

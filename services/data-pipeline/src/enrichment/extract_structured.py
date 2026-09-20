@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
 from src.enrichment.display_evidence import verify_display_claims
 from src.enrichment.display_quality import DISPLAY_MIN_CHARS, DISPLAY_QUALITY_VERSION, preserve_source_constraints
-from src.enrichment.llm_client import ReplicateClient, create_llm_client
+from src.enrichment.llm_client import ReplicateClient, create_llm_client, repair_json_payload
 from src.enrichment.prompts import (
     DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
@@ -152,6 +152,8 @@ UNUSABLE_SOURCE_DESCRIPTION_RE = re.compile(
 DISPLAY_DESCRIPTION_MAX_WORDS = 125
 DISPLAY_DESCRIPTION_MAX_CHARS = 850
 DISPLAY_DESCRIPTION_MIN_CONFIDENCE = 0.55
+FACT_FAILURE_STAGE = "facts_failure"
+FACT_FAILURE_RETRY_HOURS = 24
 _MISSING = object()
 PROPERTY_TYPE_DISPLAY_LABELS = {
     "apartment": "Appartement",
@@ -217,6 +219,25 @@ class LLMExtraction(BaseModel):
     def normalize_property_type(cls, value: Any) -> Any:
         if isinstance(value, str) and value.lower() in {"", "null", "none"}:
             return None
+        if isinstance(value, str):
+            aliases = {
+                "appartement": "apartment",
+                "maison": "house",
+                "villa": "house",
+                "immeuble": "building",
+                "terrain": "land",
+                "local": "commercial",
+                "local commercial": "commercial",
+                "parking": "parking",
+                "stationnement": "parking",
+                "mixte": "mixed",
+                "bien mixte": "mixed",
+                "autre": "other",
+            }
+            normalized = aliases.get(value.lower().strip(), value.lower().strip())
+            return normalized if normalized in set(PropertyType.__args__) else None
+        if value is not None and not isinstance(value, str):
+            return None
         return value
 
     @field_validator("occupancy_status", mode="before")
@@ -232,24 +253,39 @@ class LLMExtraction(BaseModel):
                 "vacant": "vacant",
                 "inoccupé": "vacant",
                 "inoccupe": "vacant",
+                "occupied": "occupied",
                 "loué": "rented",
                 "loue": "rented",
                 "leased": "rented",
                 "tenant": "rented",
                 "locataire": "rented",
+                "rented": "rented",
                 "occupé": "occupied",
                 "occupe": "occupied",
                 "owner occupied": "owner_occupied",
+                "owner_occupied": "owner_occupied",
                 "propriétaire occupant": "owner_occupied",
                 "proprietaire occupant": "owner_occupied",
+                "squatted": "squatted",
+                "squatté": "squatted",
+                "squatte": "squatted",
             }
-            return aliases.get(lowered, value)
+            return aliases.get(lowered, lowered if lowered == "unknown" else None)
+        if value is not None and not isinstance(value, str):
+            return None
         return value
+
+    @field_validator("surface_m2", mode="before")
+    @classmethod
+    def normalize_optional_surface(cls, value: Any) -> Any:
+        return repair_json_payload({"surface_m2": value}).get("surface_m2")
 
     @field_validator("rooms_count", "bedrooms_count", mode="before")
     @classmethod
     def normalize_positive_count(cls, value: Any) -> Any:
         if value is None:
+            return None
+        if isinstance(value, bool):
             return None
         if isinstance(value, str):
             if value.lower() in {"", "null", "none", "unknown", "inconnu"}:
@@ -261,17 +297,30 @@ class LLMExtraction(BaseModel):
             return rooms if rooms > 0 else None
         return None
 
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def normalize_confidence_payload(cls, value: Any) -> dict[str, float]:
+        repaired = repair_json_payload({"confidence": value}).get("confidence")
+        return repaired if isinstance(repaired, dict) else {}
+
     @field_validator("confidence")
     @classmethod
     def clamp_confidence(cls, value: dict[str, float] | None) -> dict[str, float]:
         if not value:
             return {}
-        return {key: max(0.0, min(1.0, float(score))) for key, score in value.items()}
+        normalized: dict[str, float] = {}
+        for key, score in value.items():
+            try:
+                normalized[key] = max(0.0, min(1.0, float(score)))
+            except (TypeError, ValueError):
+                continue
+        return normalized
 
     @field_validator("evidence", mode="before")
     @classmethod
     def normalize_evidence(cls, value: Any) -> dict[str, Any]:
-        return value if isinstance(value, dict) else {}
+        repaired = repair_json_payload(value)
+        return repaired if isinstance(repaired, dict) else {}
 
     @field_validator("investment_facts", "contradictions", "analysis_questions", "scoring_guidance", mode="before")
     @classmethod
@@ -283,9 +332,7 @@ class LLMExtraction(BaseModel):
     @field_validator("assets", mode="before")
     @classmethod
     def normalize_assets(cls, value: Any) -> list[dict[str, Any]]:
-        if not isinstance(value, list):
-            return []
-        return [item for item in value if isinstance(item, dict)]
+        return _repair_asset_payloads(value)
 
     @field_validator("legal_risks", "physical_risks", "servitudes", mode="before")
     @classmethod
@@ -313,6 +360,119 @@ class LLMExtraction(BaseModel):
             if lowered in {"false", "non", "no", "unknown", "inconnu", ""}:
                 return False if lowered in {"false", "non", "no"} else None
         return None
+
+
+def _repair_asset_payloads(value: Any) -> list[dict[str, Any]]:
+    """Salvage valid assets and measurements without weakening their schema.
+
+    One malformed measurement must not invalidate all the other measurements
+    returned in the same model response.  Required measurement values and
+    labels are the only reasons to discard an item; optional malformed numbers
+    are converted to ``None`` by the shared JSON repair layer.
+    """
+
+    if not isinstance(value, list):
+        return []
+    assets: list[dict[str, Any]] = []
+    for raw_asset in value:
+        if not isinstance(raw_asset, dict):
+            continue
+        raw_spaces = raw_asset.get("spaces")
+        asset = repair_json_payload(raw_asset)
+        if not isinstance(asset, dict):
+            continue
+        if asset.get("asset_id") is None:
+            asset["asset_id"] = "asset-main"
+        completeness = str(asset.get("measurement_completeness") or "unknown").lower()
+        if completeness not in {"complete", "likely_complete", "partial", "unknown"}:
+            asset["measurement_completeness"] = "unknown"
+        repaired_spaces = _repair_surface_items(
+            asset.get("spaces"),
+            candidate=False,
+            asset_id=str(asset.get("asset_id") or "asset-main"),
+        )
+        asset["spaces"] = repaired_spaces
+        if (
+            isinstance(raw_spaces, list)
+            and len(repaired_spaces) < len(raw_spaces)
+            and completeness in {"complete", "likely_complete"}
+        ):
+            # The model claimed exhaustive coverage but at least one room
+            # measurement was unusable. Keep the valid rooms, while ensuring
+            # their sum can only be classified as partial downstream.
+            asset["measurement_completeness"] = "partial"
+        asset["explicit_surfaces"] = _repair_surface_items(
+            asset.get("explicit_surfaces"),
+            candidate=True,
+            asset_id=str(asset.get("asset_id") or "asset-main"),
+        )
+        assets.append(asset)
+    return assets
+
+
+def _repair_surface_items(
+    value: Any,
+    *,
+    candidate: bool,
+    asset_id: str,
+) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    repaired_items: list[dict[str, Any]] = []
+    for raw_item in value:
+        if not isinstance(raw_item, dict):
+            continue
+        item = repair_json_payload(raw_item)
+        if not isinstance(item, dict):
+            continue
+        value_m2 = item.get("value_m2")
+        maximum_m2 = 1_000_000 if candidate else 10_000
+        if (
+            not isinstance(value_m2, (int, float))
+            or isinstance(value_m2, bool)
+            or not 0 < float(value_m2) <= maximum_m2
+        ):
+            # A measurement without a numeric value cannot be used for a
+            # surface calculation. Values outside the strict downstream
+            # schema are equally unusable; discard only this item, not its
+            # asset or its other valid measurements.
+            continue
+        item.setdefault("asset_id", asset_id)
+        if item.get("asset_id") is None:
+            item["asset_id"] = asset_id
+        if not candidate:
+            if not clean_text(item.get("space_label")):
+                continue
+            item["space_label"] = clean_text(item.get("space_label"))
+            item.setdefault("extraction_method", "llm")
+            if item.get("extraction_method") is None:
+                item["extraction_method"] = "llm"
+            category = str(item.get("category") or "unknown").lower()
+            if category not in {"habitable", "circulation", "sanitary", "service", "annex", "exterior", "land", "unknown"}:
+                item["category"] = "unknown"
+        else:
+            if item.get("unit_as_written") is None:
+                item["unit_as_written"] = "m2"
+            kind = str(item.get("kind") or "unknown").lower()
+            if kind not in {
+                "explicit_carrez",
+                "explicit_habitable",
+                "explicit_total",
+                "explicit_built",
+                "calculated_room_sum",
+                "calculated_sale_sum",
+                "land",
+                "annex",
+                "unknown",
+            }:
+                item["kind"] = "unknown"
+            scope = str(item.get("scope") or "unknown").lower()
+            if scope not in {"sale", "asset", "lot", "level", "partial", "unknown"}:
+                item["scope"] = "unknown"
+        evidence = item.get("evidence")
+        item["evidence"] = evidence if isinstance(evidence, dict) else {}
+        repaired_items.append(item)
+    return repaired_items
 
 
 @dataclass
@@ -347,9 +507,15 @@ class LLMEnrichmentDeferred(PipelineBudgetExhausted):
     but the public result must wait for the remaining chunks.
     """
 
-    def __init__(self, message: str, *, stats: LLMEnrichmentStats | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        stats: LLMEnrichmentStats | None = None,
+        retry_after: datetime | None = None,
+    ) -> None:
         super().__init__(message)
-        self.next_attempt_at = datetime.now(UTC) + timedelta(minutes=5)
+        self.next_attempt_at = retry_after or (datetime.now(UTC) + timedelta(minutes=5))
         self.progress_made = True
         self.stats = stats
 
@@ -442,7 +608,7 @@ def enrich_sale_with_llm(
                     DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
                     build_display_description_prompt(display_context),
                 )
-            extraction = LLMExtraction.model_validate(raw)
+            extraction = _validated_llm_extraction(raw)
             sale.raw_payload["llm_display_prompt_version"] = display_prompt_version
             if not _normalize_display_description(extraction.display_description):
                 stats.errors += 1
@@ -526,21 +692,34 @@ def enrich_sale_with_llm(
     max_new_chunks = max(0, int(settings.get("llm_fact_max_chunks") or 0)) if incremental else 0
     selected_pending = pending_chunks if max_new_chunks == 0 else pending_chunks[:max_new_chunks]
     remaining_pending = pending_chunks[len(selected_pending):]
-    if selected_pending and not client.is_available():
-        stats.unavailable = True
-        return stats
     stats.analyzed = 1 if (selected_pending or chunk_extractions_by_index or legacy_entry) else 0
 
     failed_chunks = 0
     newly_cached_chunks = 0
+    blocked_failure_retry_after: datetime | None = None
+    non_deterministic_failure = False
     for index, context, chunk_key, chunk_path in selected_pending:
+        retry_after = _load_fact_failure_retry_after(chunk_key)
+        if retry_after is not None:
+            failed_chunks += 1
+            blocked_failure_retry_after = max(
+                blocked_failure_retry_after or retry_after,
+                retry_after,
+            )
+            stats.error_messages.append(
+                f"Fact chunk {index}/{len(fact_contexts)} deferred after a deterministic output failure"
+            )
+            continue
+        if not client.is_available():
+            stats.unavailable = True
+            return stats
         try:
             with _llm_request_context(sale, stage="facts", reason="chunk_cache_miss"):
                 raw = client.generate_json(SYSTEM_PROMPT, build_user_prompt(context))
             # An empty but schema-valid object is still a successful analysis.
             # Persisting it prevents the same absence from being paid for on
             # every retry.
-            chunk = LLMExtraction.model_validate(raw)
+            chunk = _validated_llm_extraction(raw)
             _save_fact_chunk(chunk_key, chunk, chunk_path, output_dir, model_name, incremental)
             chunk_extractions_by_index[index] = chunk
             stats.fact_chunks_analyzed += 1
@@ -554,6 +733,10 @@ def enrich_sale_with_llm(
             stats.error_messages.append(
                 f"{_llm_error_message(sale, exc)} [fact chunk {index}/{len(fact_contexts)}]"
             )
+            if _is_deterministic_fact_failure(exc):
+                _save_fact_failure_marker(chunk_key, model=model_name, error=exc)
+            else:
+                non_deterministic_failure = True
 
     chunk_extractions = [legacy_entry[0]] if legacy_entry is not None else [
         chunk_extractions_by_index[index]
@@ -568,6 +751,13 @@ def enrich_sale_with_llm(
         "remaining_chunks": len(remaining_pending),
         "complete": complete,
     }
+    if blocked_failure_retry_after is not None and not non_deterministic_failure:
+        stats.deferred = True
+        raise LLMEnrichmentDeferred(
+            f"Fact extraction deferred for {failed_chunks} deterministic chunk failure(s)",
+            stats=stats,
+            retry_after=blocked_failure_retry_after,
+        )
     if not complete:
         # Do not apply partial facts or synthesize a fallback display.  A
         # bounded pass is deferred without consuming a queue retry whenever it
@@ -646,7 +836,7 @@ def enrich_sale_with_llm(
                         DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
                         build_display_description_prompt(display_context),
                     )
-                display_extraction = LLMExtraction.model_validate(display_raw)
+                display_extraction = _validated_llm_extraction(display_raw)
                 if not _normalize_display_description(display_extraction.display_description):
                     raise ValueError("Model returned an empty display description")
                 extraction.display_description = display_extraction.display_description
@@ -707,7 +897,7 @@ def apply_cached_llm_extraction_to_sale(sale: AuctionSale, *, prompt_version: st
     if not isinstance(payload, dict):
         return False
     try:
-        extraction = LLMExtraction.model_validate(payload)
+        extraction = _validated_llm_extraction(payload)
     except Exception:
         return False
 
@@ -828,6 +1018,39 @@ def has_current_fact_analysis(sale: AuctionSale) -> bool:
     if manifest is not None and _manifest_matches_current(sale, manifest):
         return True
     return False
+
+
+def needs_fact_extraction(sale: AuctionSale) -> bool:
+    """Return whether current documentary evidence requires a fact pass.
+
+    This is the single selection predicate shared by publication, queue and
+    inline scan paths. Keeping it content-aware prevents a lightweight display
+    call immediately before the queue performs the authoritative fact pass and
+    final display synthesis.
+    """
+
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    analysis = raw_payload.get("document_analysis")
+    if not isinstance(analysis, dict):
+        return False
+    try:
+        documents_extracted = int(analysis.get("documents_extracted") or 0)
+    except (TypeError, ValueError):
+        return False
+    if documents_extracted <= 0 or has_current_fact_analysis(sale):
+        return False
+    surface_analysis = raw_payload.get("surface_analysis")
+    contradictions = (
+        surface_analysis.get("contradictions")
+        if isinstance(surface_analysis, dict)
+        else None
+    )
+    return bool(
+        not sale.app_surface_m2
+        or sale.occupancy_status in {None, "unknown"}
+        or raw_payload.get("source_conflicts")
+        or contradictions
+    )
 
 
 def _all_source_fact_sections(sale: AuctionSale) -> list[str]:
@@ -1261,7 +1484,7 @@ def _atomic_json(path: Path, payload: Any) -> None:
 
 def _read_fact_chunk(path: Path) -> LLMExtraction | None:
     try:
-        return LLMExtraction.model_validate(json.loads(path.read_text(encoding="utf-8")))
+        return _validated_llm_extraction(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, ValueError):
         return None
 
@@ -1281,7 +1504,7 @@ def _load_cached_extraction(sale: AuctionSale, cache_key: str, output_dir: Path)
         return None
     payload = {key: value for key, value in payload.items() if key != "_cache"}
     try:
-        return LLMExtraction.model_validate(payload)
+        return _validated_llm_extraction(payload)
     except Exception:
         return None
 
@@ -1387,6 +1610,52 @@ def _save_durable_cache(
     save_cached_result(cache_key, payload, stage=stage, model=model)
 
 
+def _load_fact_failure_retry_after(cache_key: str) -> datetime | None:
+    """Return the active deterministic-failure cooldown for one exact chunk."""
+
+    payload = _load_durable_cache(cache_key, stage=FACT_FAILURE_STAGE)
+    if not isinstance(payload, dict) or payload.get("kind") != "deterministic_failure":
+        return None
+    retry_after = payload.get("retry_after")
+    if not isinstance(retry_after, str) or not retry_after.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(retry_after.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    parsed = parsed.astimezone(UTC)
+    return parsed if parsed > datetime.now(UTC) else None
+
+
+def _save_fact_failure_marker(cache_key: str, *, model: str, error: Exception) -> datetime:
+    """Persist only deterministic model-output failures, never provider errors."""
+
+    retry_after = datetime.now(UTC) + timedelta(hours=FACT_FAILURE_RETRY_HOURS)
+    payload = {
+        "kind": "deterministic_failure",
+        "retry_after": retry_after.isoformat(),
+        "error_type": error.__class__.__name__,
+        # Persist only a non-reversible fingerprint. Validation messages can
+        # contain a model-output excerpt and the durable cache must not retain
+        # source/prompt content for a failed response.
+        "error_fingerprint": hashlib.sha256(str(error).encode("utf-8")).hexdigest(),
+    }
+    _save_durable_cache(cache_key, payload, stage=FACT_FAILURE_STAGE, model=model)
+    return retry_after
+
+
+def _is_deterministic_fact_failure(error: Exception) -> bool:
+    """Classify failures safe to suppress for the exact prompt/evidence key."""
+
+    # Pydantic/JSON validation errors inherit ValueError.  Provider failures,
+    # transport ambiguity and all budget/cache failures inherit
+    # PipelineBudgetExhausted or surface as RuntimeError/HTTP errors and must
+    # remain retryable instead of being memoized.
+    return isinstance(error, ValueError) and not isinstance(error, PipelineBudgetExhausted)
+
+
 def _read_json_mapping(path: Path) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1399,11 +1668,20 @@ def _payload_without_cache_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key != "_cache"}
 
 
+def _validated_llm_extraction(payload: Any) -> LLMExtraction:
+    """Repair safe model-output glitches before applying the strict schema."""
+
+    repaired = repair_json_payload(payload)
+    if not isinstance(repaired, dict):
+        raise ValueError("LLM extraction must be a JSON object")
+    return LLMExtraction.model_validate(repaired)
+
+
 def _validated_extraction_payload(payload: Any) -> LLMExtraction | None:
     if not isinstance(payload, dict):
         return None
     try:
-        return LLMExtraction.model_validate(_payload_without_cache_metadata(payload))
+        return _validated_llm_extraction(_payload_without_cache_metadata(payload))
     except Exception:
         return None
 

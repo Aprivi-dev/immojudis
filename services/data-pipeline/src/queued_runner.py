@@ -11,13 +11,18 @@ from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.config import load_settings
 from src.dpe import enrich_dpe_sales
-from src.enrichment.extract_structured import LLMEnrichmentDeferred, enrich_sale_with_llm, has_current_fact_analysis
+from src.enrichment.extract_structured import (
+    LLMEnrichmentDeferred,
+    enrich_sale_with_llm,
+    has_current_fact_analysis,
+    needs_fact_extraction,
+)
 from src.enrichment.llm_client import create_llm_client
 from src.enrichment.operational_display import refresh_operational_display
 from src.freshness import documents_are_current
 from src.geocode import geocode_sale
 from src.information_agent_evidence import run_information_agent_evidence_batch
-from src.llm_requests import llm_request_context
+from src.llm_requests import LLMRequestDeterministicCooldown, llm_request_context
 from src.main import (
     SOURCE_NAMES,
     PipelineOptions,
@@ -316,7 +321,15 @@ def run_enrichment_queue_batch(
                     sale,
                     prompt_version=prompt_version,
                 )
-                facts_needed = "fact_extraction" in job_types and not has_current_fact_analysis(sale)
+                fact_extraction_planned = (
+                    "fact_extraction" in job_types or needs_fact_extraction(sale)
+                )
+                facts_current = (
+                    has_current_fact_analysis(sale)
+                    if fact_extraction_planned
+                    else True
+                )
+                facts_needed = fact_extraction_planned and not facts_current
                 if not description_current or facts_needed:
                     if llm_client is None:
                         llm_client = create_llm_client()
@@ -338,7 +351,7 @@ def run_enrichment_queue_batch(
                         raise RuntimeError(detail)
                     if not sale.raw_payload.get("llm_display_description") or _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
                         raise RuntimeError("Missing or stale display description")
-                    if "fact_extraction" in job_types and not (sale.raw_payload.get("llm_fact_coverage") or {}).get("complete"):
+                    if fact_extraction_planned and not (sale.raw_payload.get("llm_fact_coverage") or {}).get("complete"):
                         raise RuntimeError("Fact extraction coverage incomplete")
             if "display_description" in job_types or "fact_extraction" in job_types:
                 sale.raw_payload.pop("source_content_changed", None)
@@ -375,6 +388,13 @@ def run_enrichment_queue_batch(
         except LLMEnrichmentDeferred as exc:
             defer_budget_jobs(sale_jobs, exc)
             LOGGER.info("Fact analysis checkpointed; remaining chunks deferred: %s", source_url)
+            continue
+        except LLMRequestDeterministicCooldown as exc:
+            # A deterministic output failure belongs to one exact sale/prompt
+            # key. Do not let its cooldown stall unrelated healthy sales from
+            # the same claimed batch.
+            defer_budget_jobs(sale_jobs, exc)
+            LOGGER.info("Deterministic LLM request cooldown deferred: %s", source_url)
             continue
         except PipelineBudgetExhausted as exc:
             defer_budget_jobs(enrichment_jobs, exc)

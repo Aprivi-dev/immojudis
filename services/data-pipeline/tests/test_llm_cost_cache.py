@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -118,6 +118,109 @@ def test_validated_absence_is_cached_as_a_successful_fact(tmp_path: Path, monkey
     assert sale.raw_payload["llm_fact_coverage"]["complete"] is True
     assert sale.raw_payload["llm_fact_input_key"]
     assert len(list((tmp_path / "chunks").glob("*.json"))) == 1
+
+
+def test_deterministic_fact_failure_is_cooled_down_without_repaying_the_chunk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
+    monkeypatch.setenv("LLM_FACT_MAX_CHUNKS", "1")
+    _patch_contexts(monkeypatch, ["chunk-A"])
+    failure_cache: dict[str, dict[str, object]] = {}
+
+    def load_cache(cache_key: str, *, stage: str) -> dict[str, object] | None:
+        if stage == extraction.FACT_FAILURE_STAGE:
+            return failure_cache.get(cache_key)
+        return None
+
+    def save_cache(
+        cache_key: str,
+        payload: dict[str, object],
+        *,
+        stage: str,
+        model: str,
+    ) -> None:
+        if stage == extraction.FACT_FAILURE_STAGE:
+            failure_cache[cache_key] = payload
+
+    monkeypatch.setattr(extraction, "load_cached_result", load_cache)
+    monkeypatch.setattr(extraction, "save_cached_result", save_cache)
+
+    class InvalidJsonClient(FakeClient):
+        def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
+            self.calls.append((system_prompt, user_prompt))
+            raise ValueError("invalid JSON after local parsing")
+
+    first_client = InvalidJsonClient()
+    first = enrich_sale_with_llm(
+        _sale(),
+        client=first_client,
+        output_dir=tmp_path,
+        extraction_mode="facts",
+    )
+
+    assert first.errors == 1
+    assert len(_fact_calls(first_client)) == 1
+    assert len(failure_cache) == 1
+    marker = next(iter(failure_cache.values()))
+    assert marker["kind"] == "deterministic_failure"
+    assert marker["retry_after"]
+
+    second_client = FakeClient()
+    with pytest.raises(LLMEnrichmentDeferred) as deferred:
+        enrich_sale_with_llm(
+            _sale(),
+            client=second_client,
+            output_dir=tmp_path / "fresh-runner",
+            extraction_mode="facts",
+        )
+
+    assert second_client.calls == []
+    assert deferred.value.next_attempt_at > datetime.now(UTC) + timedelta(hours=23)
+
+    marker["retry_after"] = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
+    third_client = FakeClient()
+    third = enrich_sale_with_llm(
+        _sale(),
+        client=third_client,
+        output_dir=tmp_path / "expired",
+        extraction_mode="facts",
+    )
+
+    assert third.errors == 0
+    assert len(_fact_calls(third_client)) == 1
+
+
+def test_provider_fact_failure_is_not_memoized(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
+    monkeypatch.setenv("LLM_FACT_MAX_CHUNKS", "1")
+    _patch_contexts(monkeypatch, ["chunk-A"])
+    saved_stages: list[str] = []
+    monkeypatch.setattr(extraction, "load_cached_result", lambda *_a, **_kw: None)
+    monkeypatch.setattr(
+        extraction,
+        "save_cached_result",
+        lambda *_a, stage, **_kw: saved_stages.append(stage),
+    )
+
+    class ProviderFailureClient(FakeClient):
+        def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
+            self.calls.append((system_prompt, user_prompt))
+            raise RuntimeError("Replicate prediction failed")
+
+    stats = enrich_sale_with_llm(
+        _sale(),
+        client=ProviderFailureClient(),
+        output_dir=tmp_path,
+        extraction_mode="facts",
+    )
+
+    assert stats.errors == 1
+    assert extraction.FACT_FAILURE_STAGE not in saved_stages
 
 
 def test_display_cache_version_does_not_invalidate_fact_chunks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

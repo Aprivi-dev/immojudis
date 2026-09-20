@@ -1,6 +1,6 @@
 begin;
 
-select plan(11);
+select plan(16);
 
 select ok(
   has_table_privilege('service_role', 'public.llm_usage_events', 'SELECT')
@@ -117,6 +117,81 @@ select is(
   ),
   'succeeded',
   'finalization records the provider outcome'
+);
+
+insert into public.llm_usage_events (
+  provider, model, request_kind, request_key, request_status, succeeded,
+  error_message, created_at
+) values
+  (
+    'replicate', 'test/model:v1', 'fact_extraction', 'invalid-json-key',
+    'failed', false, 'Replicate returned invalid JSON after retry', now() - interval '1 hour'
+  ),
+  (
+    'replicate', 'test/model:v1', 'fact_extraction', 'structured-validation-key',
+    'failed', false, '2 validation errors for LLMExtraction', now() - interval '1 hour'
+  ),
+  (
+    'replicate', 'test/model:v1', 'fact_extraction', 'provider-failure-key',
+    'failed', false, 'Replicate provider rejected the request with an invalid JSON body', now() - interval '1 hour'
+  ),
+  (
+    'replicate', 'test/model:v1', 'fact_extraction', 'expired-invalid-json-key',
+    'failed', false, 'Replicate returned invalid JSON after retry', now() - interval '25 hours'
+  );
+
+select throws_ok(
+  $$
+  select public.reserve_llm_request(
+    'replicate', 'test/model:v1', 'fact_extraction', 1, 100,
+    'invalid-json-key', null, null, null, 'facts', 'retry'
+  )
+  $$,
+  'P0001',
+  'Unresolved deterministic LLM request key is blocked for 24 hours after invalid JSON or structured validation failure; change evidence, prompt, or model before retry',
+  'an exact key with a recent invalid JSON failure is blocked'
+);
+
+select throws_ok(
+  $$
+  select public.reserve_llm_request(
+    'replicate', 'test/model:v1', 'fact_extraction', 1, 100,
+    'structured-validation-key', null, null, null, 'facts', 'retry'
+  )
+  $$,
+  'P0001',
+  'Unresolved deterministic LLM request key is blocked for 24 hours after invalid JSON or structured validation failure; change evidence, prompt, or model before retry',
+  'an exact key with a recent structured validation failure is blocked'
+);
+
+select lives_ok(
+  $$
+  select public.reserve_llm_request(
+    'replicate', 'test/model:v1', 'fact_extraction', 1, 100,
+    'provider-failure-key', null, null, null, 'facts', 'retry'
+  )
+  $$,
+  'provider failures remain retryable rather than entering the deterministic format guard'
+);
+
+select lives_ok(
+  $$
+  select public.reserve_llm_request(
+    'replicate', 'test/model:v1', 'fact_extraction', 1, 100,
+    'invalid-json-key-v2', null, null, null, 'facts', 'repaired_prompt'
+  )
+  $$,
+  'a changed request key remains eligible after a format failure'
+);
+
+select lives_ok(
+  $$
+  select public.reserve_llm_request(
+    'replicate', 'test/model:v1', 'fact_extraction', 1, 100,
+    'expired-invalid-json-key', null, null, null, 'facts', 'retry'
+  )
+  $$,
+  'a format failure older than the 24-hour window is retryable'
 );
 
 select throws_ok(
