@@ -61,12 +61,12 @@ export function TribunalJudicialActivityExplorer() {
             Observatoire des ventes judiciaires
           </p>
           <h1 className="mt-3 max-w-5xl font-display text-4xl font-medium leading-tight sm:text-5xl lg:text-6xl">
-            La France d’abord, puis chaque tribunal
+            Le périmètre suivi, puis chaque tribunal
           </h1>
           <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
-            Commencez par les repères nationaux, mesurez la couverture par ressort, puis ouvrez le
-            détail d’un tribunal. Les fourchettes représentent les 50 % d’annonces centrales : elles
-            ne sont ni une estimation du bien, ni un plafond d’enchère.
+            Distinguez l’historique observé des annonces passées et le pipeline des audiences à
+            venir, puis ouvrez le détail d’un tribunal. Les fourchettes représentent les 50 %
+            d’annonces centrales : elles ne sont ni une estimation du bien, ni un plafond d’enchère.
           </p>
 
           {query.data ? (
@@ -176,48 +176,104 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
       <div className="flex flex-col gap-3 border-b border-brand-navy/14 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
-            Niveau 1 · France entière
+            Niveau 1 · Périmètre suivi
           </p>
           <h2
             id="national-overview-title"
             className="mt-2 font-display text-3xl font-semibold sm:text-4xl"
           >
-            Repères nationaux
+            Repères du périmètre suivi
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/62">
-            Toutes les annonces retenues sont judiciaires, vérifiées ou recoupées et rattachées à un
-            tribunal actif du référentiel Justice.
+            Les annonces retenues sont judiciaires, vérifiées ou recoupées et rattachées à un
+            tribunal actif du référentiel Justice. Ce périmètre ne prétend pas couvrir toute la
+            France.
           </p>
         </div>
         <p className="text-xs font-semibold text-brand-navy/58">
-          Historique de {data.period.historyMonths} mois
+          Historique observé de {data.period.historyMonths} mois · pipeline à venir sur 12 mois
         </p>
       </div>
 
-      <div className="mt-6 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-white md:grid-cols-2 xl:grid-cols-4">
-        <ProfileMetric
-          icon={BarChart3}
-          label="Mise à prix médiane · France"
-          value={formatCurrencyMedian(national.startingPriceRangeEur)}
-          detail={formatCurrencyRange(national.startingPriceRangeEur)}
-        />
-        <ProfileMetric
-          icon={Clock3}
-          label="Anticipation médiane · France"
-          value={formatDaysMedian(national.discoveryLeadRangeDays)}
-          detail={formatDaysRange(national.discoveryLeadRangeDays)}
-        />
-        <ProfileMetric
-          icon={CalendarDays}
-          label="Ventes observées dans l’historique"
-          value={formatNumber(national.observedPastSales)}
-          detail={`${formatNumber(national.upcomingSales)} ventes à venir suivies`}
-        />
+      <div className="mt-6 grid gap-5 xl:grid-cols-2">
+        <section
+          className="rounded-lg border border-brand-navy/12 bg-white"
+          aria-labelledby="national-observed-title"
+        >
+          <div className="border-b border-brand-navy/10 px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+              Historique observé
+            </p>
+            <h3 id="national-observed-title" className="mt-1 font-display text-2xl font-semibold">
+              Annonces passées suivies
+            </h3>
+          </div>
+          <div className="grid md:grid-cols-2">
+            <ProfileMetric
+              icon={BarChart3}
+              label="Mise à prix médiane · historique"
+              value={formatCurrencyMedian(national.startingPriceRangeEur)}
+              detail={formatCurrencyRange(national.startingPriceRangeEur)}
+            />
+            <ProfileMetric
+              icon={Clock3}
+              label="Détection → vente · historique"
+              value={formatDaysMedian(national.discoveryLeadRangeDays)}
+              detail={formatDaysRange(national.discoveryLeadRangeDays)}
+            />
+          </div>
+          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/58">
+            {formatNumber(national.observedPastSales)} ventes passées observées depuis le{" "}
+            {formatDate(data.period.historyStart)}.
+          </p>
+        </section>
+
+        <section
+          className="rounded-lg border border-brand-navy/12 bg-white"
+          aria-labelledby="national-upcoming-title"
+        >
+          <div className="border-b border-brand-navy/10 px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+              Pipeline à venir
+            </p>
+            <h3 id="national-upcoming-title" className="mt-1 font-display text-2xl font-semibold">
+              Audiences programmées
+            </h3>
+          </div>
+          <div className="grid md:grid-cols-2">
+            <ProfileMetric
+              icon={BarChart3}
+              label="Mise à prix médiane · à venir"
+              value={formatCurrencyMedian(national.upcomingStartingPriceRangeEur)}
+              detail={formatCurrencyRange(national.upcomingStartingPriceRangeEur)}
+            />
+            <ProfileMetric
+              icon={Clock3}
+              label="Détection → audience · à venir"
+              value={formatDaysMedian(national.upcomingDiscoveryLeadRangeDays)}
+              detail={formatDaysRange(national.upcomingDiscoveryLeadRangeDays)}
+            />
+          </div>
+          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/58">
+            {formatNumber(national.upcomingSales)} ventes à venir suivies, dont{" "}
+            {formatNumber(national.upcomingSales90Days)} dans les 90 prochains jours.
+          </p>
+        </section>
+      </div>
+
+      <div className="mt-5 rounded-lg border border-brand-navy/12 bg-white p-5">
         <ProfileMetric
           icon={ShieldCheck}
-          label="Couverture des profils tribunal"
-          value={formatPercent(national.coverage.rate)}
-          detail={`${national.coverage.publishableCourtProfiles} sur ${national.coverage.trackedCourts} avec prix et délai publiables`}
+          label="Profils historiques publiables / tribunaux suivis"
+          value={
+            formatNumber(national.coverage.publishableCourtProfiles) +
+            " / " +
+            formatNumber(national.coverage.trackedCourts)
+          }
+          detail={
+            formatPercent(national.coverage.rate) +
+            " des tribunaux suivis ont à la fois un prix et un délai historiques publiables. Ce ratio ne mesure pas la couverture nationale."
+          }
         />
       </div>
 
@@ -291,14 +347,22 @@ function RegionalCoverage({
                 }`}
               >
                 {region.coverage.publishableCourtProfiles}/{region.coverage.trackedCourts} profils
-                publiables · {region.upcomingSales} ventes à venir
+                historiques publiables parmi les tribunaux suivis
               </span>
               <span
                 className={`mt-3 block text-sm font-semibold ${
                   selectedRegion === region.name ? "text-white" : "text-gold-soft"
                 }`}
               >
-                Mise médiane {formatCurrencyMedian(region.startingPriceRangeEur)}
+                Historique · mise médiane {formatCurrencyMedian(region.startingPriceRangeEur)}
+              </span>
+              <span
+                className={`mt-1 block text-xs ${
+                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/58"
+                }`}
+              >
+                Pipeline · {formatNumber(region.upcomingSales)} à venir · mise médiane{" "}
+                {formatCurrencyMedian(region.upcomingStartingPriceRangeEur)}
               </span>
             </button>
           </div>
@@ -365,9 +429,9 @@ function TribunalProfile({
 
       <div className="mt-7 flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm font-semibold">Affiner les repères de mise et de délai</p>
+          <p className="text-sm font-semibold">Affiner l’historique observé par type de bien</p>
           <p className="mt-1 text-xs text-brand-navy/55">
-            Les petits groupes restent masqués sous cinq annonces.
+            Les petits groupes restent masqués sous cinq annonces passées.
           </p>
         </div>
         <label className="sm:w-72">
@@ -387,32 +451,73 @@ function TribunalProfile({
         </label>
       </div>
 
-      <div className="mt-6 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-white md:grid-cols-2 xl:grid-cols-4">
-        <ProfileMetric
-          icon={BarChart3}
-          label={`Mise à prix médiane · ${scopeLabel}`}
-          value={formatCurrencyMedian(priceRange)}
-          detail={formatCurrencyRange(priceRange)}
-        />
-        <ProfileMetric
-          icon={Clock3}
-          label={`Anticipation médiane · ${scopeLabel}`}
-          value={formatDaysMedian(leadRange)}
-          detail={formatDaysRange(leadRange)}
-        />
-        <ProfileMetric
-          icon={CalendarDays}
-          label="Audience suivante suivie"
-          value={formatDate(tribunal.activity.nextSaleAt)}
-          detail={`${tribunal.activity.upcomingHearingDays} jours d’audience · ${tribunal.activity.upcomingSales} ventes`}
-        />
-        <ProfileMetric
-          icon={Landmark}
-          label="Rythme des audiences suivies"
-          value={formatCadence(tribunal.activity.medianDaysBetweenHearingDays)}
-          detail={`${formatMetricNumber(tribunal.activity.medianLotsPerHearingDay)} lots médians par jour`}
-        />
-      </div>
+      <section aria-labelledby="court-observed-title" className="mt-6">
+        <div className="mb-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+            Historique observé
+          </p>
+          <h3 id="court-observed-title" className="mt-1 font-display text-2xl font-semibold">
+            Annonces passées · {tribunal.period.historyMonths} mois
+          </h3>
+        </div>
+        <div className="grid overflow-hidden rounded-lg border border-brand-navy/12 bg-white md:grid-cols-3">
+          <ProfileMetric
+            icon={BarChart3}
+            label={`Mise à prix médiane · ${scopeLabel}`}
+            value={formatCurrencyMedian(priceRange)}
+            detail={formatCurrencyRange(priceRange)}
+          />
+          <ProfileMetric
+            icon={Clock3}
+            label={`Détection → vente · ${scopeLabel}`}
+            value={formatDaysMedian(leadRange)}
+            detail={formatDaysRange(leadRange)}
+          />
+          <ProfileMetric
+            icon={CalendarDays}
+            label="Ventes passées observées"
+            value={formatNumber(tribunal.activity.observedPastSales)}
+            detail={`Depuis le ${formatDate(tribunal.period.historyStart)}`}
+          />
+        </div>
+      </section>
+
+      <section aria-labelledby="court-upcoming-title" className="mt-7">
+        <div className="mb-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+            Pipeline à venir
+          </p>
+          <h3 id="court-upcoming-title" className="mt-1 font-display text-2xl font-semibold">
+            Audiences programmées sur les 12 prochains mois
+          </h3>
+        </div>
+        <div className="grid overflow-hidden rounded-lg border border-brand-navy/12 bg-white md:grid-cols-2 xl:grid-cols-4">
+          <ProfileMetric
+            icon={BarChart3}
+            label="Mise à prix médiane · à venir"
+            value={formatCurrencyMedian(tribunal.activity.upcomingStartingPriceRangeEur)}
+            detail={formatCurrencyRange(tribunal.activity.upcomingStartingPriceRangeEur)}
+          />
+          <ProfileMetric
+            icon={Clock3}
+            label="Détection → audience · à venir"
+            value={formatDaysMedian(tribunal.activity.upcomingDiscoveryLeadRangeDays)}
+            detail={formatDaysRange(tribunal.activity.upcomingDiscoveryLeadRangeDays)}
+          />
+          <ProfileMetric
+            icon={CalendarDays}
+            label="Audience suivante suivie"
+            value={formatDate(tribunal.activity.nextSaleAt)}
+            detail={`${formatNumber(tribunal.activity.upcomingSales90Days)} dans les 90 prochains jours`}
+          />
+          <ProfileMetric
+            icon={ShieldCheck}
+            label="Visite annoncée · à venir"
+            value={formatPercentMetric(tribunal.activity.visitCoverage)}
+            detail={sampleLabel(tribunal.activity.visitCoverage, "annonce")}
+          />
+        </div>
+      </section>
 
       <div className="mt-7 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)]">
         <section className="border-y border-brand-navy/12 py-6" aria-labelledby="interpret-title">
@@ -420,9 +525,10 @@ function TribunalProfile({
             Comment lire ces chiffres ?
           </h3>
           <p className="mt-3 text-sm leading-relaxed text-brand-navy/66">
-            La fourchette publiée va du 25e au 75e percentile : la moitié des annonces retenues se
-            situe à l’intérieur. Une mise à prix basse ne signifie pas que le bien sera adjugé à ce
-            montant. Les frais, l’état du bien et la concurrence restent déterminants.
+            Les fourchettes historiques vont du 25e au 75e percentile : la moitié des annonces
+            passées retenues se situe à l’intérieur. Une mise à prix basse ne signifie pas que le
+            bien sera adjugé à ce montant. Les frais, l’état du bien et la concurrence restent
+            déterminants.
           </p>
           <p className="mt-3 text-xs leading-relaxed text-brand-navy/54">
             Échantillons : {priceRange.sampleSize} mises à prix et {leadRange.sampleSize} délais ·
@@ -550,6 +656,26 @@ function formatMetricNumber(
   metric: TribunalJudicialActivityResponse["activity"]["medianLotsPerHearingDay"],
 ): string {
   return metric.status === "published" ? formatNumber(metric.value) : "Non publié";
+}
+
+function formatPercentMetric(
+  metric: TribunalJudicialActivityResponse["activity"]["visitCoverage"],
+): string {
+  return metric.status === "published" ? formatPercent(metric.value) : "Non publié";
+}
+
+function sampleLabel(
+  metric: TribunalJudicialActivityResponse["activity"]["visitCoverage"],
+  noun: string,
+): string {
+  return (
+    formatNumber(metric.sampleSize) +
+    " " +
+    noun +
+    (metric.sampleSize > 1 ? "s" : "") +
+    " retenue" +
+    (metric.sampleSize > 1 ? "s" : "")
+  );
 }
 
 function formatCurrency(value: number): string {

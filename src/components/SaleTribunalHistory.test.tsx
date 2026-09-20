@@ -43,16 +43,28 @@ const activity = buildTribunalJudicialActivity({
 
 const directory = buildTribunalJudicialActivityDirectory({
   courts: [activity.court],
-  sales: Array.from({ length: 5 }, (_, index) => ({
-    id: `sale-${index + 1}`,
-    tribunalCode: activity.court.code,
-    saleDate: new Date(Date.UTC(2026, 8, 1 + index)).toISOString(),
-    status: "upcoming",
-    startingPriceEur: 80_000 + index * 10_000,
-    propertyType: "apartment",
-    visitDates: [new Date(Date.UTC(2026, 7, 25 + index)).toISOString()],
-    firstSeenAt: new Date(Date.UTC(2026, 6, 1 + index)).toISOString(),
-  })),
+  sales: [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `past-sale-${index + 1}`,
+      tribunalCode: activity.court.code,
+      saleDate: new Date(Date.UTC(2026, 6, 1 + index)).toISOString(),
+      status: "past",
+      startingPriceEur: 70_000 + index * 10_000,
+      propertyType: "apartment",
+      visitDates: [],
+      firstSeenAt: new Date(Date.UTC(2026, 4, 1 + index)).toISOString(),
+    })),
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `upcoming-sale-${index + 1}`,
+      tribunalCode: activity.court.code,
+      saleDate: new Date(Date.UTC(2026, 8, 1 + index)).toISOString(),
+      status: "upcoming",
+      startingPriceEur: 80_000 + index * 10_000,
+      propertyType: "apartment",
+      visitDates: [new Date(Date.UTC(2026, 7, 25 + index)).toISOString()],
+      firstSeenAt: new Date(Date.UTC(2026, 6, 1 + index)).toISOString(),
+    })),
+  ],
   asOf: new Date("2026-08-20T12:00:00.000Z"),
   historyMonths: 36,
 });
@@ -104,7 +116,7 @@ describe("SaleTribunalHistory", () => {
     renderHistory(sale);
     openActivity();
 
-    expect(await screen.findByText("Mise à prix médiane · France")).toBeTruthy();
+    expect(await screen.findAllByText("Mise à prix médiane · à venir")).toHaveLength(2);
     expect(await screen.findByRole("heading", { name: "TJ Marseille" })).toBeTruthy();
     expect(mocks.fetchActivity).toHaveBeenCalledWith({
       saleId: sale.id,
@@ -112,7 +124,7 @@ describe("SaleTribunalHistory", () => {
     });
     expect(mocks.fetchDirectory).toHaveBeenCalledWith(36);
     expect(screen.getByText(/Profil local en cours de consolidation/)).toBeTruthy();
-    expect(screen.getByText(/uniquement lorsqu’ils sont publiés/i)).toBeTruthy();
+    expect(screen.getByText(/pipeline à venir reste présenté séparément/i)).toBeTruthy();
   });
 
   it("garde une section explicite lorsque le rattachement exact n’est pas encore publiable", async () => {
@@ -127,7 +139,7 @@ describe("SaleTribunalHistory", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText(/aucune statistique approximative n’est substituée/i)).toBeTruthy();
-    expect(await screen.findByText("Mise à prix médiane · France")).toBeTruthy();
+    expect(await screen.findAllByText("Mise à prix médiane · à venir")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /Réessayer.*consolidation/ })).toBeNull();
   });
 
@@ -137,8 +149,8 @@ describe("SaleTribunalHistory", () => {
     renderHistory(tribunalSaleWithoutPublishedCode());
     openActivity();
 
-    expect(await screen.findByText("Mise à prix médiane · Tribunal")).toBeTruthy();
-    expect(screen.getByText("Détection → vente · Tribunal")).toBeTruthy();
+    expect(await screen.findByText("Mise à prix médiane · historique tribunal")).toBeTruthy();
+    expect(screen.getByText("Détection → vente · historique tribunal")).toBeTruthy();
     expect(screen.queryByText(/Profil local en cours de consolidation/)).toBeNull();
   });
 
@@ -146,7 +158,7 @@ describe("SaleTribunalHistory", () => {
     renderHistory(tribunalSaleWithoutPublishedCode());
     openActivity();
 
-    expect(await screen.findByText("Mise à prix médiane · France")).toBeTruthy();
+    expect(await screen.findAllByText("Mise à prix médiane · à venir")).toHaveLength(2);
     expect(mocks.fetchAdjudicationStatistics).not.toHaveBeenCalled();
     expect(screen.queryByText("Du prix de départ au prix adjugé")).toBeNull();
   });
@@ -159,16 +171,16 @@ describe("SaleTribunalHistory", () => {
       "11111111-1111-4111-8111-111111111111",
     );
     expect(await screen.findAllByText("Multiplicateur médian")).toHaveLength(2);
-    expect(screen.getAllByText("Au-dessus de la mise")).toHaveLength(2);
-    expect(screen.getAllByText("Au moins doublé")).toHaveLength(2);
+    expect(screen.getAllByText("Prix publiés au-dessus de la mise")).toHaveLength(2);
+    expect(screen.getAllByText("Prix publiés au moins doublés")).toHaveLength(2);
     expect(screen.getAllByText("Prix adjugé médian")).toHaveLength(2);
     expect(screen.getAllByText("Mise à prix médiane")).toHaveLength(2);
     const text = container.textContent ?? "";
     expect(text.indexOf("France entière")).toBeLessThan(
       text.indexOf("Tribunal judiciaire de Marseille"),
     );
-    expect(screen.getByText(/3\s868 adjudications/)).toBeTruthy();
-    expect(screen.getByText(/152 adjudications/)).toBeTruthy();
+    expect(screen.getByText(/3\s868 prix adjugés publiés/)).toBeTruthy();
+    expect(screen.getByText(/152 prix adjugés publiés/)).toBeTruthy();
   });
 
   it("garde le niveau France sans révéler un petit échantillon tribunal", async () => {
@@ -177,8 +189,8 @@ describe("SaleTribunalHistory", () => {
     renderHistory(tribunalSaleWithoutPublishedCode(), true);
 
     expect(await screen.findByText(/Aucun échantillon publiable pour/)).toBeTruthy();
-    expect(screen.getByText(/3\s868 adjudications/)).toBeTruthy();
-    expect(screen.queryByText(/9 adjudications/)).toBeNull();
+    expect(screen.getByText(/3\s868 prix adjugés publiés/)).toBeTruthy();
+    expect(screen.queryByText(/9 prix adjugés publiés/)).toBeNull();
   });
 
   it("affiche l’état de validation tant que le build reste fermé", async () => {
@@ -204,10 +216,10 @@ describe("SaleTribunalHistory", () => {
       true,
     );
     const region = await screen.findByRole("region", { name: "Historique du même type de bien" });
-    expect(within(region).getByText(/^20 résultats/)).toBeTruthy();
+    expect(within(region).getByText(/^20 prix adjugés publiés/)).toBeTruthy();
     expect(within(region).getByText(/90.000/)).toBeTruthy();
     expect(within(region).queryByText(/50.000/)).toBeNull();
-    expect(within(region).getByText(/sur 20 résultats/)).toBeTruthy();
+    expect(within(region).getByText(/sur 20 adjudications avec prix connu/)).toBeTruthy();
     expect(within(region).getByText(/Échantillon limité : moins de 30 résultats/)).toBeTruthy();
     expect([...container.querySelectorAll("details")].every((item) => !item.open)).toBe(true);
     expect(screen.queryByText(/au-dessus de la médiane nationale/)).toBeNull();
@@ -225,7 +237,7 @@ describe("SaleTribunalHistory", () => {
     });
     renderHistory({ ...tribunalSaleWithoutPublishedCode(), property_type: "apartment" }, true);
     const region = await screen.findByRole("region", { name: "Historique du même type de bien" });
-    expect(within(region).getByText(/^100 résultats/)).toBeTruthy();
+    expect(within(region).getByText(/^100 prix adjugés publiés/)).toBeTruthy();
     expect(within(region).getByText(/Les données nationales sont présentées/)).toBeTruthy();
     expect(within(region).queryByText(/90.000/)).toBeNull();
     expect(within(region).queryByText(/Échantillon limité/)).toBeNull();
@@ -342,7 +354,7 @@ function adjudicationStatistics(overrides: Record<string, unknown> = {}) {
       reviewedAt: "2026-09-07T13:00:00.000Z",
       experimental: true,
       warning:
-        "Statistiques descriptives historiques sur trois ans, sans valeur prédictive ni estimation du bien.",
+        "Statistiques descriptives sur trois ans, limitées aux adjudications dont Licitor publie le prix ; sans valeur prédictive ni estimation du bien.",
     },
     ...overrides,
   };

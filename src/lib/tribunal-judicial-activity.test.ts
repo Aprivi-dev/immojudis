@@ -45,34 +45,50 @@ describe("tribunal judicial activity", () => {
       upcomingSales90Days: 4,
       upcomingHearingDays: 5,
       nextSaleAt: "2026-08-30T09:00:00.000Z",
-      medianStartingPriceEur: { status: "published", value: 45_000, sampleSize: 6 },
+      medianStartingPriceEur: { status: "insufficient_data", value: null, sampleSize: 1 },
       startingPriceRangeEur: {
+        status: "insufficient_data",
+        p25: null,
+        p50: null,
+        p75: null,
+        sampleSize: 1,
+      },
+      upcomingMedianStartingPriceEur: { status: "published", value: 40_000, sampleSize: 5 },
+      upcomingStartingPriceRangeEur: {
         status: "published",
-        p25: 32_500,
-        p50: 45_000,
-        p75: 57_500,
-        sampleSize: 6,
+        p25: 30_000,
+        p50: 40_000,
+        p75: 50_000,
+        sampleSize: 5,
       },
       visitCoverage: { status: "published", value: 0.8, sampleSize: 5 },
-      medianDiscoveryLeadDays: { status: "published", value: 25, sampleSize: 6 },
+      medianDiscoveryLeadDays: { status: "insufficient_data", value: null, sampleSize: 1 },
       discoveryLeadRangeDays: {
+        status: "insufficient_data",
+        p25: null,
+        p50: null,
+        p75: null,
+        sampleSize: 1,
+      },
+      upcomingMedianDiscoveryLeadDays: { status: "published", value: 30, sampleSize: 5 },
+      upcomingDiscoveryLeadRangeDays: {
         status: "published",
         p25: 20,
-        p50: 25,
-        p75: 37.5,
-        sampleSize: 6,
+        p50: 30,
+        p75: 40,
+        sampleSize: 5,
       },
       medianLotsPerHearingDay: { status: "published", value: 1, sampleSize: 5 },
       medianDaysBetweenHearingDays: { status: "published", value: 10, sampleSize: 4 },
     });
-    expect(result.activity.topPropertyTypes).toEqual([
-      { propertyType: "house", count: 3, share: 0.5 },
-      { propertyType: "apartment", count: 2, share: 0.333333 },
-      { propertyType: "land", count: 1, share: 0.166667 },
+    expect(result.activity.topPropertyTypes).toEqual([]);
+    expect(result.activity.upcomingTopPropertyTypes).toEqual([
+      { propertyType: "house", count: 3, share: 0.6 },
+      { propertyType: "apartment", count: 2, share: 0.4 },
     ]);
     expect(result.reliability).toMatchObject({
-      level: "indicative",
-      currentSampleSize: 6,
+      level: "insufficient_data",
+      currentSampleSize: 1,
       exactCourtMatch: true,
     });
     expect(result.period.historyStart).toBe("2023-08-01T00:00:00.000Z");
@@ -93,6 +109,11 @@ describe("tribunal judicial activity", () => {
     expect(result.activity.medianStartingPriceEur).toEqual({
       status: "insufficient_data",
       value: null,
+      sampleSize: 0,
+    });
+    expect(result.activity.upcomingMedianStartingPriceEur).toEqual({
+      status: "insufficient_data",
+      value: null,
       sampleSize: 2,
     });
     expect(result.activity.visitCoverage).toEqual({
@@ -102,6 +123,13 @@ describe("tribunal judicial activity", () => {
     });
     expect(result.activity.topPropertyTypes).toEqual([]);
     expect(result.activity.startingPriceRangeEur).toEqual({
+      status: "insufficient_data",
+      p25: null,
+      p50: null,
+      p75: null,
+      sampleSize: 0,
+    });
+    expect(result.activity.upcomingStartingPriceRangeEur).toEqual({
       status: "insufficient_data",
       p25: null,
       p50: null,
@@ -125,10 +153,11 @@ describe("tribunal judicial activity", () => {
       historyMonths: 36,
     });
 
-    expect(result.activity.propertyTypeBenchmarks).toEqual([
+    expect(result.activity.propertyTypeBenchmarks).toEqual([]);
+    expect(result.activity.upcomingPropertyTypeBenchmarks).toEqual([
       {
         propertyType: "apartment",
-        observedSales: 5,
+        upcomingSales: 5,
         startingPriceRangeEur: {
           status: "published",
           p25: 20_000,

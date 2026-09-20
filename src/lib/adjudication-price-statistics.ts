@@ -61,7 +61,7 @@ export const adjudicationPriceStatisticsResponseSchema = z
         reviewedAt: isoDateTimeSchema,
         experimental: z.literal(true),
         warning: z.literal(
-          "Statistiques descriptives historiques sur trois ans, sans valeur prédictive ni estimation du bien.",
+          "Statistiques descriptives sur trois ans, limitées aux adjudications dont Licitor publie le prix ; sans valeur prédictive ni estimation du bien.",
         ),
       })
       .strict(),

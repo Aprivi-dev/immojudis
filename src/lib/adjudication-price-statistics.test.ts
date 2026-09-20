@@ -43,7 +43,7 @@ function responseFixture(overrides: Record<string, unknown> = {}) {
       reviewedAt: "2026-09-07T13:00:00.000Z",
       experimental: true,
       warning:
-        "Statistiques descriptives historiques sur trois ans, sans valeur prédictive ni estimation du bien.",
+        "Statistiques descriptives sur trois ans, limitées aux adjudications dont Licitor publie le prix ; sans valeur prédictive ni estimation du bien.",
     },
     ...overrides,
   };

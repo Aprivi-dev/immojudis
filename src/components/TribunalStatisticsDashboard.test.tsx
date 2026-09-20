@@ -29,7 +29,16 @@ describe("TribunalStatisticsDashboard", () => {
     expect(screen.queryByText(/effective_starting_price_eur_claim_ineligible/)).toBeNull();
     expect(screen.getByRole("heading", { name: "Référence nationale" })).toBeTruthy();
     expect(screen.getByText(/ne forme aucun classement/i)).toBeTruthy();
+    expect(screen.getAllByText("Qualité globale : Description historique indicative")).toHaveLength(
+      2,
+    );
     expect(screen.getByText("Qualité variable selon la période.")).toBeTruthy();
+    expect(
+      screen.getByText("Prix final / valeur de marché pré-audience").closest("tr")?.textContent,
+    ).toContain("Non publié");
+    expect(screen.getByText("Report → nouvelle audience").closest("tr")?.textContent).toContain(
+      "Non publié",
+    );
   });
 
   it("filtre les tribunaux et transmet le changement de période", () => {
@@ -279,10 +288,10 @@ const bordeaux = {
     status: 40,
     initialPrice: 30,
     effectivePrice: 31,
-    marketPrice: 18,
+    marketPrice: null,
     surenchere: 25,
     resultDelay: 40,
-    postponementDelay: 14,
+    postponementDelay: null,
     doubleReviewed: 38,
   },
   flow: {
@@ -396,17 +405,7 @@ const bordeaux = {
       excludedCount: 3,
       exclusionReasons: { initial_starting_price_eur_claim_ineligible: 3 },
     },
-    finalToMarket: {
-      raw: { p10: 0.48, p50: 0.69, p90: 0.91 },
-      adjusted: { p10: 0.5, p50: 0.7, p90: 0.9 },
-      sampleSize: 18,
-      eligibleUniverse: 50,
-      unknownCount: 17,
-      method: "log_shrinkage",
-      parentSampleSize: 180,
-      excludedCount: 15,
-      exclusionReasons: { final_hammer_price_claim_ineligible: 15 },
-    },
+    finalToMarket: suppressedDistribution(),
   },
   delays: {
     hearingToKnownResult: {
@@ -420,17 +419,7 @@ const bordeaux = {
       excludedCount: 0,
       exclusionReasons: {},
     },
-    postponementToNextHearing: {
-      raw: { p10: 21, p50: 44, p90: 92 },
-      adjusted: { p10: 22, p50: 43, p90: 88 },
-      sampleSize: 14,
-      eligibleUniverse: 20,
-      unknownCount: 5,
-      method: "log_shrinkage",
-      parentSampleSize: 210,
-      excludedCount: 1,
-      exclusionReasons: { result_observed_at_claim_ineligible: 1 },
-    },
+    postponementToNextHearing: suppressedDistribution(),
   },
   fallback: {
     scope: "national",
@@ -469,17 +458,7 @@ const national = {
       method: "raw",
       parentSampleSize: 0,
     },
-    finalToMarket: {
-      sampleSize: null,
-      eligibleUniverse: null,
-      unknownCount: null,
-      raw: null,
-      adjusted: null,
-      method: "suppressed",
-      parentSampleSize: null,
-      excludedCount: null,
-      exclusionReasons: {},
-    },
+    finalToMarket: suppressedDistribution(),
   },
   delays: {
     hearingToKnownResult: {
@@ -487,17 +466,7 @@ const national = {
       method: "raw",
       parentSampleSize: 0,
     },
-    postponementToNextHearing: {
-      sampleSize: null,
-      eligibleUniverse: null,
-      unknownCount: null,
-      raw: null,
-      adjusted: null,
-      method: "suppressed",
-      parentSampleSize: null,
-      excludedCount: null,
-      exclusionReasons: {},
-    },
+    postponementToNextHearing: suppressedDistribution(),
   },
   fallback: { scope: "none", parentLabel: null, localWeight: 1 },
 } satisfies TribunalStatisticsItem;
@@ -519,4 +488,18 @@ function fixture(overrides: Record<string, unknown> = {}): TribunalStatisticsRes
     ...verifiedFixture,
     ...overrides,
   } as TribunalStatisticsResponse;
+}
+
+function suppressedDistribution() {
+  return {
+    sampleSize: null,
+    eligibleUniverse: null,
+    unknownCount: null,
+    raw: null,
+    adjusted: null,
+    method: "suppressed" as const,
+    parentSampleSize: null,
+    excludedCount: null,
+    exclusionReasons: {},
+  };
 }

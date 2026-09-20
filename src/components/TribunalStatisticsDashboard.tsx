@@ -686,7 +686,7 @@ function MethodAndLimits({
             <dd className="mt-1">{item.fallbackLabel ?? "Aucun fallback communiqué"}</dd>
           </div>
           <div>
-            <dt className="font-semibold text-brand-navy">Résultats doublement revus</dt>
+            <dt className="font-semibold text-brand-navy">Statuts d’issue doublement revus</dt>
             <dd className="mt-1">{formatInteger(item.doubleReviewed)}</dd>
           </div>
           <div>
@@ -726,8 +726,8 @@ function ReliabilityLabel({ level }: { level: ReliabilityLevel }) {
   const labels: Record<ReliabilityLevel, string> = {
     insufficient_data: "Données insuffisantes",
     smoothed: "Très lissée",
-    descriptive: "Confiance moyenne",
-    robust: "Potentiellement robuste",
+    descriptive: "Description historique indicative",
+    robust: "Robuste pour une description historique",
   };
   const classes: Record<ReliabilityLevel, string> = {
     insufficient_data: "border-brand-navy/15 bg-white text-brand-navy/62",
