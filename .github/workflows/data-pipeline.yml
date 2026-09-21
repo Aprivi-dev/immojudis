@@ -48,6 +48,11 @@ on:
         required: false
         default: false
         type: boolean
+      model_benchmark:
+        description: "Compare Replicate models on fixed synthetic cases without touching Supabase"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -55,12 +60,12 @@ permissions:
 
 concurrency:
   # Catalogue preservation and cleanup are deliberately single-writer.
-  group: ${{ inputs.publication_check && 'immojudis-publication-verification' || 'immojudis-data-pipeline' }}
+  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || 'immojudis-data-pipeline') }}
   cancel-in-progress: false
 
 jobs:
   run:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && !inputs.model_benchmark
     name: Run data pipeline
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -76,7 +81,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-      REPLICATE_MODEL: zsxkib/qwen2-7b-instruct:5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4
+      REPLICATE_MODEL: qwen/qwen3-7-plus
       PIPELINE_ENRICH_WORKERS: 2
       PIPELINE_LLM_WORKERS: 1
       PIPELINE_PDF_MAX_TARGETS: 10
@@ -240,3 +245,42 @@ jobs:
             services/data-pipeline/data/raw/docling_texts
             services/data-pipeline/data/processed/llm_extractions
           key: immojudis-data-pipeline-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+  model-benchmark:
+    if: github.event_name == 'workflow_dispatch' && inputs.model_benchmark
+    name: Compare Replicate models
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      LLM_PROVIDER: replicate
+      LLM_ENABLED: true
+      APP_ENV: benchmark
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.txt
+
+      - name: Install pipeline dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Compare existing and candidate models
+        run: python -m scripts.benchmark_replicate_models --output model-benchmark.json
+
+      - name: Save model comparison
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: replicate-model-benchmark
+          path: services/data-pipeline/model-benchmark.json
+          if-no-files-found: warn

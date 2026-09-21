@@ -319,7 +319,27 @@ class ReplicateClient:
                 # Keep the autonomous run budget in place.  If it rejects this
                 # request, release the hourly reservation because no POST was
                 # sent and therefore no external call was consumed.
-                reservation = reserve_prediction(str(self.model))
+                # UTF-8 bytes bound the prompt's token count conservatively;
+                # leave room for the provider's chat template as well.
+                model_input = payload.get("input") or {}
+                prompt_text = str(model_input.get("prompt") or "")
+                system_text = str(
+                    model_input.get("system_prompt") or model_input.get("system_instruction") or ""
+                )
+                output_cap = int(
+                    model_input.get("max_tokens")
+                    or model_input.get("max_output_tokens")
+                    or model_input.get("max_new_tokens")
+                    or self.max_tokens
+                    or 512
+                )
+                reservation = reserve_prediction(
+                    str(self.model),
+                    input_token_ceiling=len(prompt_text.encode("utf-8"))
+                    + len(system_text.encode("utf-8"))
+                    + 256,
+                    output_token_ceiling=output_cap,
+                )
             except Exception as exc:
                 release_llm_request(reservation_id, reason=f"autonomous reservation rejected: {exc}")
                 raise
@@ -408,7 +428,7 @@ class ReplicateClient:
                     prompt_chars=prompt_chars,
                     system_prompt_chars=system_prompt_chars,
                 )
-                record_prediction(response_payload, reservation=reservation)
+                record_prediction(response_payload, reservation=reservation, model=str(self.model))
                 return response
             if attempt < attempts:
                 time.sleep(sleep_seconds)
@@ -493,7 +513,7 @@ class ReplicateClient:
         return int(self.max_tokens or 512)
 
     def _wait_for_output(self, prediction: dict[str, Any]) -> Any:
-        record_prediction(prediction)
+        record_prediction(prediction, model=str(self.model))
         status = prediction.get("status")
         if status == "succeeded":
             return prediction.get("output")
@@ -530,7 +550,7 @@ class ReplicateClient:
                 # prediction object used by its telemetry finalizer.
                 prediction.update(polled_prediction)
                 if prediction.get("status") in {"succeeded", "failed", "canceled", "aborted"}:
-                    record_prediction(prediction)
+                    record_prediction(prediction, model=str(self.model))
                 status = prediction.get("status")
             if status != "succeeded":
                 raise RuntimeError(f"Replicate prediction {status}: {prediction.get('error')}")
