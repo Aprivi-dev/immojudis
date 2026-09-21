@@ -202,7 +202,13 @@ def _store_document_analysis_status(
         coverage_status = "rich"
         warning = "Les principales familles de documents sont disponibles pour l'analyse."
 
-    failed_documents = max(0, len(_select_documents_for_extraction(sale.documents, sale=sale)) - len(text_profiles))
+    selected_documents = _select_documents_for_extraction(sale.documents, sale=sale)
+    extracted_urls = {str(profile.get("url") or "") for profile in text_profiles}
+    failed_document_urls = list(dict.fromkeys(
+        str(document.get("url")) for document in selected_documents
+        if document.get("url") and str(document["url"]) not in extracted_urls
+    ))
+    failed_documents = max(0, len(selected_documents) - len(text_profiles))
     checked_at = datetime.now(UTC).isoformat()
     previous = sale.raw_payload.get("document_analysis") or {}
     last_successful_check_at = checked_at if not failed_documents else previous.get("last_successful_check_at")
@@ -211,6 +217,7 @@ def _store_document_analysis_status(
         "checked_at": checked_at,
         "input_fingerprint": document_fingerprint(sale.documents),
         "failed_documents": failed_documents,
+        "failed_document_urls": failed_document_urls,
         "coverage_status": coverage_status,
         "warning": warning,
         "documents_listed": len(sale.documents or []),

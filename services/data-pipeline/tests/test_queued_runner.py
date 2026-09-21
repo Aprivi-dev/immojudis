@@ -536,3 +536,41 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
     assert queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY) == 1
     assert bool(deferred) is should_defer
     assert finished == [] if should_defer else finished[0][1]['succeeded'] is False
+
+
+def test_failed_pdf_job_records_document_path_without_query_token(monkeypatch) -> None:
+    sale = normalize_sale({
+        "source_name": "vench",
+        "source_url": "https://www.vench.fr/vente-123.html",
+        "documents": [{"label": "PV", "url": "https://documents.test/pv.pdf?token=secret"}],
+    })
+    job = {"id": "job-pdf", "source_url": sale.source_url, "job_type": "pdf", "attempt_count": 1}
+    finished = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: [job],
+    )
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _url: sale)
+
+    def fail_pdf_extract(current_sale):
+        current_sale.raw_payload["document_analysis"] = {
+            "failed_documents": 1,
+            "failed_document_urls": ["https://documents.test/pv.pdf?token=secret"],
+        }
+        return SimpleNamespace(errors=1)
+
+    monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", fail_pdf_extract)
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY) == 1
+    message = finished[0][1]["error_message"]
+    assert "1 extraction errors, 1 failed documents" in message
+    assert "documents.test/pv.pdf" in message
+    assert "token=secret" not in message
