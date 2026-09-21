@@ -942,18 +942,12 @@ function AnalysisContent({
         </div>
       </section>
       {hasVerifiedForecast ? <OutcomeForecast forecastQuery={forecastQuery} /> : null}
-      {showTribunalHistory && valuationConflict ? (
-        <section
-          id="tribunal-history"
-          className="mx-auto max-w-[1260px] scroll-mt-36 px-4 py-8 sm:px-6 lg:px-8"
-        >
-          <h2 className="text-2xl font-semibold">Historique des enchères</h2>
-          <p className="mt-3">
-            Le type de bien doit être confirmé avant de sélectionner un historique comparable.
-          </p>
-        </section>
-      ) : showTribunalHistory ? (
-        <SaleTribunalHistory sale={sale} premium={adjudicationStatisticsEnabled} />
+      {showTribunalHistory ? (
+        <SaleTribunalHistory
+          sale={sale}
+          premium={adjudicationStatisticsEnabled}
+          propertyTypeVerified={!valuationConflict}
+        />
       ) : null}
       <div className={listingStyles.container}>
         <div className={listingStyles.lower}>

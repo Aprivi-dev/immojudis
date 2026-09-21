@@ -34,9 +34,11 @@ import type { AuctionSale } from "@/lib/types";
 export function SaleTribunalHistory({
   sale,
   premium = false,
+  propertyTypeVerified = true,
 }: {
   sale: AuctionSale;
   premium?: boolean;
+  propertyTypeVerified?: boolean;
 }) {
   const [activityRequested, setActivityRequested] = useState(false);
   const courtLabel = sale.tribunal_name?.trim() || sale.tribunal?.trim() || null;
@@ -92,11 +94,28 @@ export function SaleTribunalHistory({
             loading={adjudicationStatisticsQuery.isLoading}
             unavailable={adjudicationStatisticsQuery.isError}
             courtLabel={courtLabel}
-            propertyType={sale.property_type}
+            propertyType={propertyTypeVerified ? sale.property_type : null}
             onRetry={() => void adjudicationStatisticsQuery.refetch()}
             retrying={adjudicationStatisticsQuery.isFetching}
           />
-        ) : null}
+        ) : (
+          <div className="mt-8 rounded-lg border border-brand-navy/12 bg-[#f8fbfe] p-5">
+            <p className="font-semibold text-brand-navy">
+              Prix d’adjudication historiques · Offre Analyse
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-brand-navy/65">
+              Les membres Analyse consultent les prix publiés par Licitor pour la France et les
+              tribunaux dont l’échantillon est suffisant. Ces résultats restent distincts du prix
+              attendu pour ce bien.
+            </p>
+            <a
+              href="/accompagnement"
+              className="mt-3 inline-block text-sm font-semibold text-gold-soft underline underline-offset-4"
+            >
+              Découvrir l’offre Analyse
+            </a>
+          </div>
+        )}
 
         <details
           className="mt-6 rounded-lg border border-slate-200 p-5"
@@ -199,6 +218,11 @@ function AdjudicationPriceStatistics({
   onRetry: () => void;
   retrying: boolean;
 }) {
+  const hasRelevantType = Boolean(
+    propertyType &&
+    (data?.tribunal?.propertyTypes?.some((item) => item.propertyType === propertyType) ||
+      data?.national.propertyTypes?.some((item) => item.propertyType === propertyType)),
+  );
   return (
     <div className="mt-10 border-t border-brand-navy/12 pt-8">
       <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
@@ -227,20 +251,42 @@ function AdjudicationPriceStatistics({
         />
       ) : (
         <div className="mt-7 space-y-8">
-          <RelevantAdjudications data={data} propertyType={propertyType} courtLabel={courtLabel} />
-          <details className="rounded-lg border border-slate-200 p-5">
-            <summary className="cursor-pointer font-semibold text-brand-navy">
-              Détail historique tous biens confondus
-            </summary>
-            <p className="my-4 text-sm text-slate-600">
-              Ces montants et multiplicateurs ne prédisent pas le prix de cette annonce. Ne
-              multipliez pas sa mise à prix par le ratio historique pour en déduire une valeur.
-            </p>
-            <AdjudicationPriceScope heading="France entière" scope={data.national} />
-            {data.tribunal ? (
-              <AdjudicationPriceScope heading={data.tribunal.label} scope={data.tribunal} />
-            ) : null}
-          </details>
+          {hasRelevantType ? (
+            <RelevantAdjudications
+              data={data}
+              propertyType={propertyType}
+              courtLabel={courtLabel}
+            />
+          ) : (
+            <div>
+              <p className="mb-4 text-sm text-brand-navy/65">
+                {propertyType
+                  ? "Aucun échantillon publiable pour ce type de bien. Voici les résultats tous biens confondus, sans valeur d’estimation individuelle."
+                  : "Type de bien non confirmé : résultats tous biens confondus, sans comparaison individuelle."}
+              </p>
+              <div className="space-y-7">
+                <AdjudicationPriceScope heading="France entière" scope={data.national} />
+                {data.tribunal ? (
+                  <AdjudicationPriceScope heading={data.tribunal.label} scope={data.tribunal} />
+                ) : null}
+              </div>
+            </div>
+          )}
+          {hasRelevantType ? (
+            <details className="rounded-lg border border-slate-200 p-5">
+              <summary className="cursor-pointer font-semibold text-brand-navy">
+                Détail historique tous biens confondus
+              </summary>
+              <p className="my-4 text-sm text-slate-600">
+                Ces montants et multiplicateurs ne prédisent pas le prix de cette annonce. Ne
+                multipliez pas sa mise à prix par le ratio historique pour en déduire une valeur.
+              </p>
+              <AdjudicationPriceScope heading="France entière" scope={data.national} />
+              {data.tribunal ? (
+                <AdjudicationPriceScope heading={data.tribunal.label} scope={data.tribunal} />
+              ) : null}
+            </details>
+          ) : null}
           <p className="text-xs leading-relaxed text-brand-navy/70">
             Source : {data.meta.sourceLabel}. {data.meta.warning} Données préparées le{" "}
             {formatDate(data.meta.builtAt.slice(0, 10))}, validé le{" "}
