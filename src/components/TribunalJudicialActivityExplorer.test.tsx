@@ -10,6 +10,9 @@ import {
 const mocks = vi.hoisted(() => ({ useQuery: vi.fn() }));
 
 vi.mock("@tanstack/react-query", () => ({ useQuery: mocks.useQuery }));
+vi.mock("@/components/PremiumAdjudicationExplorer", () => ({
+  PremiumAdjudicationExplorer: () => <section aria-label="Résultats premium Licitor" />,
+}));
 
 import { TribunalJudicialActivityExplorer } from "./TribunalJudicialActivityExplorer";
 
@@ -48,7 +51,7 @@ describe("TribunalJudicialActivityExplorer", () => {
     expect(screen.getByText(/ne mesure pas la couverture nationale/i)).toBeTruthy();
     expect(screen.getAllByText("Historique observé").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Pipeline à venir").length).toBeGreaterThan(0);
-    expect(screen.getByText(/corpus de preuve séparé/i)).toBeTruthy();
+    expect(screen.getByText(/présentés séparément aux membres Analyse/i)).toBeTruthy();
   });
 
   it("filtre les tribunaux depuis un ressort sans perdre la vue nationale", () => {

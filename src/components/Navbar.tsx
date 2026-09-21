@@ -27,6 +27,7 @@ const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin" } as const;
 const HOME_NAV_ITEMS = [
   { to: "/comment-ca-marche", label: "Comment ça marche" },
   { to: "/sales", label: "Rechercher un bien" },
+  { to: "/tribunaux", label: "Statistiques des tribunaux" },
   { to: "/avocats", label: "Trouver un avocat" },
   { to: "/annonce-exemple", label: "Annonce exemple" },
   { to: "/accompagnement", label: "Offres" },

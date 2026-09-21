@@ -52,6 +52,7 @@ vi.mock("next/dynamic", () => ({
       marketEstimateOverride,
       forecastQuery,
       premium,
+      propertyTypeVerified,
     }: {
       images?: unknown[];
       onClose?: () => void;
@@ -60,11 +61,16 @@ vi.mock("next/dynamic", () => ({
       marketEstimateOverride?: unknown;
       forecastQuery?: unknown;
       premium?: boolean;
+      propertyTypeVerified?: boolean;
     }) {
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
       if (sale && marketEstimateOverride === undefined) {
         return (
-          <section id="tribunal-history" data-premium={premium ? "true" : "false"}>
+          <section
+            id="tribunal-history"
+            data-premium={premium ? "true" : "false"}
+            data-property-type-verified={propertyTypeVerified ? "true" : "false"}
+          >
             Historique du tribunal
           </section>
         );
@@ -304,7 +310,10 @@ describe("integrated listing", () => {
     expect(screen.queryByText("Simulateur de mise plafond chargé")).toBeNull();
     expect(screen.queryByText("Export PDF")).toBeNull();
     expect(screen.queryByText("Fourchette de valeur estimée", { exact: false })).toBeNull();
-    expect(screen.getByText("Le type de bien doit être confirmé", { exact: false })).toBeTruthy();
+    expect(document.querySelector("#tribunal-history")?.getAttribute("data-premium")).toBe("true");
+    expect(
+      document.querySelector("#tribunal-history")?.getAttribute("data-property-type-verified"),
+    ).toBe("false");
   });
   it.each([[], {}, [{ url: "javascript:alert(1)" }]])(
     "does not announce documents when no usable link exists: %j",
