@@ -1354,6 +1354,7 @@ def test_mixed_pdf_with_failed_page_remains_incomplete_in_document_profile(tmp_p
     analysis = sale.raw_payload["document_analysis"]
     assert analysis["documents_extracted"] == 0
     assert analysis["failed_documents"] == 1
+    assert analysis["failed_document_urls"] == ["https://example.test/mixed.pdf"]
     assert analysis["profiles"][0]["extraction_status"] == "incomplete"
 
 
@@ -2008,6 +2009,7 @@ def test_store_document_analysis_status_marks_partial_document_coverage() -> Non
 
     analysis = sale.raw_payload["document_analysis"]
     assert analysis["coverage_status"] == "partial"
+    assert analysis["failed_document_urls"] == ["https://example.test/ccv.pdf"]
     assert "diagnostics" in analysis["missing_core_documents"]
     assert analysis["official_documents_found"] is True
     assert analysis["profiles"][0]["family"] == "constat_et_description"

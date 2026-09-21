@@ -72,6 +72,106 @@ def test_postgrest_upsert_batch_retries_cloudflare_520(monkeypatch) -> None:
     assert len(attempts) == 2
 
 
+def test_postgrest_read_retries_cloudflare_521(monkeypatch) -> None:
+    responses = iter(
+        [
+            httpx.Response(521, request=httpx.Request("GET", "https://supabase.test/rest/v1/auction_sales")),
+            httpx.Response(200, request=httpx.Request("GET", "https://supabase.test/rest/v1/auction_sales")),
+        ]
+    )
+    attempts = []
+    monkeypatch.setattr(supabase_client.httpx, "get", lambda *_args, **_kwargs: attempts.append(1) or next(responses))
+    monkeypatch.setattr(supabase_client.time, "sleep", lambda _seconds: None)
+
+    response = supabase_client._postgrest_request_with_retries(
+        "GET", "https://supabase.test/rest/v1/auction_sales", "known_sale_details"
+    )
+
+    assert response.status_code == 200
+    assert len(attempts) == 2
+
+
+def test_known_sale_preflight_uses_postgres_when_configured(monkeypatch) -> None:
+    alias_id = "00000000-0000-0000-0000-000000000081"
+    canonical_id = "00000000-0000-0000-0000-000000000082"
+    alias_url = "https://cessions.test/mn222"
+    canonical_url = "https://notaires.test/mn222"
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: {
+        "supabase_url": "https://supabase.test",
+        "supabase_service_role_key": "secret",
+        "supabase_db_url": "postgresql://test",
+    })
+
+    class FakeDb:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query):
+            if "list_reviewed_publication_aliases" in query:
+                return SimpleNamespace(fetchall=lambda: [(
+                    alias_id, canonical_id, alias_url, canonical_url,
+                    "reviewed-pair", {}, "2026-09-13T08:33:51Z", "test",
+                )])
+            assert "select to_jsonb(sale)" in query
+            return SimpleNamespace(fetchall=lambda: [
+                ({"id": alias_id, "source_url": alias_url, "source_urls": []},),
+                ({"id": canonical_id, "source_url": canonical_url, "source_urls": []},),
+            ])
+
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: FakeDb())
+    monkeypatch.setattr(supabase_client.httpx, "get", lambda *_a, **_kw: pytest.fail("REST preflight used"))
+
+    details = supabase_client.fetch_known_sale_details()
+
+    assert details[alias_url]["id"] == canonical_id
+    assert details[canonical_url]["id"] == canonical_id
+
+
+def test_run_lifecycle_uses_postgres_after_cloudflare_521(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: {
+        "supabase_url": "https://supabase.test",
+        "supabase_service_role_key": "secret",
+        "supabase_db_url": "postgresql://test",
+    })
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_request_with_retries",
+        lambda *_args, **_kwargs: httpx.Response(521, request=httpx.Request("PATCH", "https://supabase.test")),
+    )
+    calls = []
+
+    class FakeDb:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params):
+            calls.append((query, params))
+            return SimpleNamespace(fetchone=lambda: ("run-1",))
+
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: FakeDb())
+
+    assert supabase_client.start_existing_run_in_supabase("run-1", "all", True) == "run-1"
+    supabase_client.finish_run_in_supabase(
+        "run-1", "failed", {"stage": "known_sale_lookup", "amount": Decimal("12.5")},
+        {"supabase": ["lookup\x00 failed"]},
+    )
+
+    assert len(calls) == 2
+    assert "status='running'" in calls[0][0]
+    assert calls[0][1] == ("all", True, "run-1")
+    assert "summary=coalesce(summary" in calls[1][0]
+    assert calls[1][1][0] == "failed"
+    assert calls[1][1][1].obj == {"stage": "known_sale_lookup", "amount": 12.5}
+    assert calls[1][1][2].obj == {"supabase": ["lookup failed"]}
+    assert calls[1][1][-1] == "run-1"
+
+
 def test_sanitize_postgrest_payload_removes_null_characters_recursively() -> None:
     payload = {
         "result": [
@@ -1573,7 +1673,8 @@ def test_fetch_sale_for_data_refresh_returns_auction_sale(monkeypatch) -> None:
                     "latitude": 44.84,
                     "longitude": -0.57,
                     "source_urls": ["https://example.test/sale"],
-                    "documents": [],
+                    "visit_dates": None,
+                    "documents": None,
                     "raw_payload": {},
                 }
             ]
@@ -1592,6 +1693,8 @@ def test_fetch_sale_for_data_refresh_returns_auction_sale(monkeypatch) -> None:
     assert sale.source_name == "avoventes"
     assert sale.source_url == "https://example.test/sale"
     assert float(sale.latitude or 0) == 44.84
+    assert sale.visit_dates == []
+    assert sale.documents == []
 
 
 def test_publication_commits_completed_batches_before_later_batch_failure(monkeypatch):
