@@ -228,7 +228,7 @@ def test_post_retries_known_429_with_a_new_reservation(monkeypatch) -> None:
         "reserve_llm_request",
         lambda **kwargs: reservation_calls.append(next(reservations)) or reservation_calls[-1],
     )
-    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model: None)
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: None)
     monkeypatch.setattr(
         llm_client,
         "record_llm_request",
@@ -260,7 +260,7 @@ def test_post_transport_error_is_ambiguous_and_not_retried(monkeypatch) -> None:
     telemetry: list[dict[str, object]] = []
 
     monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: "reservation-1")
-    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model: None)
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: None)
     monkeypatch.setattr(
         llm_client,
         "record_llm_request",
@@ -292,7 +292,7 @@ def test_successful_2xx_malformed_body_does_not_trigger_json_retry(monkeypatch) 
     telemetry: list[dict[str, object]] = []
 
     monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: "reservation-1")
-    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model: None)
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: None)
     monkeypatch.setattr(
         llm_client,
         "record_llm_request",
@@ -328,7 +328,7 @@ def test_successful_2xx_missing_polling_identity_does_not_trigger_retry(monkeypa
     telemetry: list[dict[str, object]] = []
 
     monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: "reservation-1")
-    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model: None)
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: None)
     monkeypatch.setattr(
         llm_client,
         "record_llm_request",
@@ -364,7 +364,7 @@ def test_polling_timeout_keeps_running_prediction_ambiguous(monkeypatch) -> None
     telemetry: list[dict[str, object]] = []
 
     monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: "reservation-1")
-    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model: None)
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: None)
     monkeypatch.setattr(
         llm_client,
         "record_llm_request",
@@ -414,7 +414,7 @@ def test_terminal_prediction_failure_is_finalized_as_failed(monkeypatch) -> None
     telemetry: list[dict[str, object]] = []
 
     monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: "reservation-1")
-    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model: None)
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: None)
     monkeypatch.setattr(
         llm_client,
         "record_llm_request",

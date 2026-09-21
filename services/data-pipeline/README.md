@@ -414,10 +414,12 @@ PDF_OCR_LANGUAGE=fra+eng
 ## Enrichissement LLM Replicate
 
 Le module `src/enrichment/` utilise Replicate pour rédiger la synthèse publique
-des biens pendant le scan qui les collecte. Le modèle par défaut est la version
-épinglée de `zsxkib/qwen2-7b-instruct` (Qwen2 7B Instruct). Ce modèle est adapté
-à une génération courte et économique ; l'épinglage évite qu'une nouvelle image
-du modèle modifie silencieusement le format des synthèses.
+des biens pendant le scan qui les collecte. Le modèle par défaut est
+`qwen/qwen3-7-plus`. Il a réussi les six cas synthétiques du comparatif du
+21 septembre 2026 avec un coût estimé inférieur à celui de l'ancien Qwen2.
+Les plafonds du pipeline réservent le coût maximal avant chaque appel autonome.
+Pour revenir à l'ancien modèle, définir explicitement `REPLICATE_MODEL` à sa
+version épinglée.
 
 Configuration :
 
@@ -425,7 +427,7 @@ Configuration :
 LLM_ENABLED=true
 LLM_PROVIDER=replicate
 REPLICATE_API_TOKEN=your-replicate-token
-REPLICATE_MODEL=zsxkib/qwen2-7b-instruct:5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4
+REPLICATE_MODEL=qwen/qwen3-7-plus
 REPLICATE_TEMPERATURE=0.1
 REPLICATE_MAX_TOKENS=512
 REPLICATE_TIMEOUT_SECONDS=180

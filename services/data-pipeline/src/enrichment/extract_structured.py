@@ -37,7 +37,7 @@ from src.llm_requests import llm_request_context
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.pdf_enrichment import sale_storage_id
-from src.pipeline_usage import PipelineBudgetExhausted
+from src.pipeline_usage import PINNED_MODEL, PipelineBudgetExhausted
 
 LOGGER = logging.getLogger(__name__)
 LLM_CONTEXT_KEYWORDS = (
@@ -1966,7 +1966,11 @@ def _current_source_checks(sale: AuctionSale) -> list[dict[str, str]]:
 
 def _manifest_matches_current(sale: AuctionSale, manifest: dict[str, Any]) -> bool:
     settings = load_settings()
-    if manifest.get("model") != str(settings.get("replicate_model") or ""):
+    current_model = str(settings.get("replicate_model") or "")
+    manifest_model = manifest.get("model")
+    if manifest_model != current_model and not (
+        current_model == "qwen/qwen3-7-plus" and manifest_model == PINNED_MODEL
+    ):
         return False
     current_fact_prompt_version = str(
         settings.get("llm_fact_prompt_version") or settings.get("llm_prompt_version") or ""

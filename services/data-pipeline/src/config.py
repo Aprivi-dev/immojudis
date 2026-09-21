@@ -14,10 +14,7 @@ PDF_TEXTS_DIR = RAW_DIR / "pdf_texts"
 PDF_DOCUMENT_TEXTS_DIR = PDF_TEXTS_DIR / "documents"
 DOCLING_TEXTS_DIR = RAW_DIR / "docling_texts"
 LLM_EXTRACTIONS_DIR = PROCESSED_DIR / "llm_extractions"
-DEFAULT_REPLICATE_MODEL = (
-    "zsxkib/qwen2-7b-instruct:"
-    "5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4"
-)
+DEFAULT_REPLICATE_MODEL = "qwen/qwen3-7-plus"
 DEFAULT_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display"
 DEFAULT_LLM_FACT_PROMPT_VERSION = "auction_facts_v1"
 DEFAULT_LLM_DISPLAY_PROMPT_VERSION = "auction_display_v9_public_summary"
