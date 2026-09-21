@@ -11,6 +11,7 @@ import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PremiumAdjudicationExplorer } from "@/components/PremiumAdjudicationExplorer";
 import { fetchTribunalJudicialActivityDirectory } from "@/lib/tribunal-judicial-activity-directory-client";
 import type {
   TribunalJudicialActivityHistoryMonths,
@@ -61,19 +62,19 @@ export function TribunalJudicialActivityExplorer() {
             Observatoire des ventes judiciaires
           </p>
           <h1 className="mt-3 max-w-5xl font-display text-4xl font-medium leading-tight sm:text-5xl lg:text-6xl">
-            Le périmètre suivi, puis chaque tribunal
+            Les adjudications, tribunal par tribunal
           </h1>
           <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
-            Distinguez l’historique observé des annonces passées et le pipeline des audiences à
-            venir, puis ouvrez le détail d’un tribunal. Les fourchettes représentent les 50 %
-            d’annonces centrales : elles ne sont ni une estimation du bien, ni un plafond d’enchère.
+            Explorez séparément les annonces suivies par Immojudis et les prix d’adjudication
+            historiques publiés par Licitor. Les membres Analyse peuvent comparer les résultats
+            nationaux et les tribunaux dont l’échantillon a été contrôlé.
           </p>
 
           {query.data ? (
             <dl className="mt-8 grid max-w-5xl border-y border-brand-navy/12 sm:grid-cols-2 lg:grid-cols-4">
               <SummaryValue label="Tribunaux suivis" value={query.data.totals.trackedCourts} />
               <SummaryValue
-                label="Ventes historiques observées"
+                label="Annonces passées suivies"
                 value={query.data.totals.observedPastSales}
               />
               <SummaryValue label="Ventes à venir" value={query.data.totals.upcomingSales} />
@@ -87,83 +88,87 @@ export function TribunalJudicialActivityExplorer() {
       </header>
 
       <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-        {query.data ? <NationalOverview data={query.data} /> : null}
-        {query.data?.regions.length ? (
-          <RegionalCoverage
-            data={query.data}
-            selectedRegion={selectedRegion}
-            onRegionChange={(region) => {
-              setSelectedRegion(region);
-              setSelectedCourtCode("");
-              setSelectedPropertyType("");
-            }}
-          />
-        ) : null}
+        <PremiumAdjudicationExplorer selectedCourtCode={selected?.court.code ?? null} />
 
-        <section aria-label="Choisir un tribunal" className="grid gap-4 lg:grid-cols-[1fr_auto]">
-          <label>
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
-              Rechercher un tribunal
-            </span>
-            <span className="relative mt-2 block">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/45"
-                aria-hidden
-              />
-              <Input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Marseille, Paris, Lyon…"
-                className="h-11 border-brand-navy/15 bg-white pl-10"
-              />
-            </span>
-          </label>
-          <fieldset>
-            <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
-              Historique observé
-            </legend>
-            <div className="mt-2 inline-flex rounded-md border border-brand-navy/15 bg-white p-1">
-              {WINDOWS.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={historyMonths === value}
-                  onClick={() => setHistoryMonths(value)}
-                  className={`min-h-9 rounded px-3 text-sm font-semibold ${
-                    historyMonths === value
-                      ? "bg-brand-navy text-white"
-                      : "text-brand-navy/65 hover:bg-brand-navy/5"
-                  }`}
-                >
-                  {value} mois
-                </button>
-              ))}
-            </div>
-          </fieldset>
-        </section>
+        <div className="mt-10">
+          {query.data ? <NationalOverview data={query.data} /> : null}
+          {query.data?.regions.length ? (
+            <RegionalCoverage
+              data={query.data}
+              selectedRegion={selectedRegion}
+              onRegionChange={(region) => {
+                setSelectedRegion(region);
+                setSelectedCourtCode("");
+                setSelectedPropertyType("");
+              }}
+            />
+          ) : null}
 
-        {query.isLoading ? <ExplorerSkeleton /> : null}
-        {query.isError ? <ExplorerError onRetry={() => void query.refetch()} /> : null}
-        {!query.isLoading && !query.isError && !filteredTribunals.length ? (
-          <p className="mt-8 border-y border-brand-navy/12 bg-white px-4 py-8 text-sm">
-            Aucun tribunal suivi ne correspond aux filtres sélectionnés
-            {search ? ` pour « ${search} »` : ""}.
-          </p>
-        ) : null}
+          <section aria-label="Choisir un tribunal" className="grid gap-4 lg:grid-cols-[1fr_auto]">
+            <label>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+                Rechercher un tribunal
+              </span>
+              <span className="relative mt-2 block">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/45"
+                  aria-hidden
+                />
+                <Input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Marseille, Paris, Lyon…"
+                  className="h-11 border-brand-navy/15 bg-white pl-10"
+                />
+              </span>
+            </label>
+            <fieldset>
+              <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+                Historique observé
+              </legend>
+              <div className="mt-2 inline-flex rounded-md border border-brand-navy/15 bg-white p-1">
+                {WINDOWS.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={historyMonths === value}
+                    onClick={() => setHistoryMonths(value)}
+                    className={`min-h-9 rounded px-3 text-sm font-semibold ${
+                      historyMonths === value
+                        ? "bg-brand-navy text-white"
+                        : "text-brand-navy/65 hover:bg-brand-navy/5"
+                    }`}
+                  >
+                    {value} mois
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          </section>
 
-        {selected ? (
-          <TribunalProfile
-            tribunal={selected}
-            tribunals={filteredTribunals}
-            selectedPropertyType={selectedType?.propertyType ?? ""}
-            onCourtChange={(courtCode) => {
-              setSelectedCourtCode(courtCode);
-              setSelectedPropertyType("");
-            }}
-            onPropertyTypeChange={setSelectedPropertyType}
-          />
-        ) : null}
+          {query.isLoading ? <ExplorerSkeleton /> : null}
+          {query.isError ? <ExplorerError onRetry={() => void query.refetch()} /> : null}
+          {!query.isLoading && !query.isError && !filteredTribunals.length ? (
+            <p className="mt-8 border-y border-brand-navy/12 bg-white px-4 py-8 text-sm">
+              Aucun tribunal suivi ne correspond aux filtres sélectionnés
+              {search ? ` pour « ${search} »` : ""}.
+            </p>
+          ) : null}
+
+          {selected ? (
+            <TribunalProfile
+              tribunal={selected}
+              tribunals={filteredTribunals}
+              selectedPropertyType={selectedType?.propertyType ?? ""}
+              onCourtChange={(courtCode) => {
+                setSelectedCourtCode(courtCode);
+                setSelectedPropertyType("");
+              }}
+              onPropertyTypeChange={setSelectedPropertyType}
+            />
+          ) : null}
+        </div>
       </div>
     </main>
   );
@@ -278,9 +283,9 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
       </div>
 
       <p className="mt-4 text-xs leading-relaxed text-brand-navy/55">
-        Ces agrégats décrivent le catalogue suivi par Immojudis. Les prix d’adjudication et taux
-        d’issue relèvent d’un corpus de preuve séparé et restent masqués tant que ses seuils ne sont
-        pas atteints.
+        Ces agrégats décrivent seulement le catalogue suivi par Immojudis. Les prix d’adjudication
+        déclarés par Licitor sont présentés séparément aux membres Analyse ; les taux d’issue
+        définitive ne sont pas déduits de ces prix.
       </p>
     </section>
   );
@@ -548,12 +553,12 @@ function TribunalProfile({
             id="outcome-title"
             className="mt-2 font-display text-2xl font-semibold text-amber-950"
           >
-            Écart prix final / mise à prix non publié
+            Issues définitives et délais de décision non publiés
           </h3>
           <p className="mt-3 text-sm leading-relaxed text-amber-950/75">
-            Immojudis rapproche Judilibre, DVF et les résultats de vente, puis impose une revue
-            humaine. Le tribunal n’affichera cette statistique qu’avec au moins dix résultats
-            définitifs suffisamment documentés.
+            Les prix déclarés par Licitor sont consultables dans le module Analyse ci-dessus. Ils ne
+            prouvent ni la décision judiciaire définitive, ni un délai de décision. Ces indicateurs
+            restent indisponibles faute d’un échantillon de décisions vérifiées.
           </p>
         </section>
       </div>

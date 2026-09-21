@@ -69,11 +69,49 @@ export const adjudicationPriceStatisticsResponseSchema = z
   })
   .strict();
 
+export const adjudicationPriceStatisticsDirectoryResponseSchema = z
+  .object({
+    national: adjudicationPriceStatisticsScopeSchema,
+    tribunals: z.array(adjudicationPriceStatisticsScopeSchema).max(250),
+    meta: adjudicationPriceStatisticsResponseSchema.shape.meta,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.national.scopeType !== "national") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["national"],
+        message: "National scope required",
+      });
+    }
+    const codes = new Set<string>();
+    for (const [index, tribunal] of value.tribunals.entries()) {
+      if (tribunal.scopeType !== "tribunal" || !tribunal.courtCode) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["tribunals", index],
+          message: "Exact tribunal scope required",
+        });
+      }
+      if (tribunal.courtCode && codes.has(tribunal.courtCode)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["tribunals", index],
+          message: "Duplicate tribunal",
+        });
+      }
+      if (tribunal.courtCode) codes.add(tribunal.courtCode);
+    }
+  });
+
 export type AdjudicationPriceStatisticsScope = z.infer<
   typeof adjudicationPriceStatisticsScopeSchema
 >;
 export type AdjudicationPriceStatisticsResponse = z.infer<
   typeof adjudicationPriceStatisticsResponseSchema
+>;
+export type AdjudicationPriceStatisticsDirectoryResponse = z.infer<
+  typeof adjudicationPriceStatisticsDirectoryResponseSchema
 >;
 
 export function adjudicationPriceStatisticsReliability(
