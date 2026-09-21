@@ -66,11 +66,11 @@ def reserve_prediction(model: str, *, input_token_ceiling: int, output_token_cei
 
 def _token_counts(prediction: dict, metrics: dict) -> tuple[int, int] | None:
     counts = []
-    for key, label in (
-        ('input_token_count', 'Input token count'),
-        ('output_token_count', 'Output token count'),
+    for keys, label in (
+        (('input_token_count', 'token_input_count'), 'Input token count'),
+        (('output_token_count', 'token_output_count'), 'Output token count'),
     ):
-        value = metrics.get(key)
+        value = next((metrics[key] for key in keys if metrics.get(key) is not None), None)
         if value is None:
             match = re.search(rf'(?im)^\s*{re.escape(label)}:\s*(\d+)\b', str(prediction.get('logs') or ''))
             value = int(match.group(1)) if match else None
@@ -100,7 +100,8 @@ def record_prediction(prediction: dict, *, reservation: str | None = None, model
         return
     from src.storage.supabase_client import _postgres_connect
     metrics = {key:value for key,value in (prediction.get('metrics') or {}).items()
-               if key in {'predict_time','total_time','input_token_count','output_token_count'}
+               if key in {'predict_time','total_time','input_token_count','output_token_count',
+                          'token_input_count','token_output_count'}
                and isinstance(value,(int,float)) and math.isfinite(value) and value>=0}
     model = model or str(prediction.get('model') or PINNED_MODEL)
     cost, rate_source = _prediction_cost(model, prediction, metrics)

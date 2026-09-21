@@ -19,6 +19,15 @@ def test_token_pricing_uses_provider_counts_and_keeps_logs_out_of_metrics() -> N
     assert "logs" not in metrics
 
 
+def test_qwen_pricing_uses_actual_replicate_metric_names() -> None:
+    metrics = {"token_input_count": 3000, "token_output_count": 500}
+    cost, _ = pipeline_usage._prediction_cost("qwen/qwen3-7-plus", {}, metrics)
+
+    assert cost == Decimal("0.0013785")
+    assert metrics["input_token_count"] == 3000
+    assert metrics["output_token_count"] == 500
+
+
 def test_token_pricing_recovers_counts_from_provider_logs_without_storing_logs() -> None:
     metrics: dict[str, int] = {}
     prediction = {"logs": "Generating...\nInput token count: 4600\nOutput token count: 1200\n"}
