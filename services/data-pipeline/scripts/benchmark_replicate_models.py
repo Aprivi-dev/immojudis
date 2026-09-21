@@ -26,6 +26,13 @@ from src.enrichment.prompts import (
 from src.pipeline_usage import PINNED_MODEL, _prediction_cost
 
 DEFAULT_MODELS = (PINNED_MODEL, "qwen/qwen3-7-plus", "google/gemini-2.5-flash")
+LONG_DOCUMENT_BACKGROUND = "\n".join(
+    f"Annexe administrative {number} : rappel de la procédure de publicité, des délais de consignation "
+    "et des modalités de consultation du cahier des conditions de vente. "
+    "La référence cadastrale et les mentions de voisinage de cette annexe ne décrivent pas "
+    "la surface ni l'occupation du bien mis en vente. "
+    for number in range(1, 32)
+)
 CASES = (
     {
         "id": "apartment_display",
@@ -88,6 +95,21 @@ CASES = (
             "Un commerce voisin a une surface de 155,56 m² et ne fait pas partie de la maison."
         ),
         "expected": {"property_type": "house", "surface_m2": 149.68, "occupancy_status": "unknown"},
+    },
+    {
+        "id": "long_document_facts",
+        "stage": "facts",
+        "context": (
+            "Avis initial : vente d'une maison à Tours. Un local commercial voisin de 173,40 m² "
+            "figure dans le même dossier, mais ne fait pas partie de la vente.\n"
+            + LONG_DOCUMENT_BACKGROUND
+            + "\nProcès-verbal descriptif du bien vendu : maison de trois chambres, "
+            "surface habitable explicitement mesurée à 84,20 m². "
+            "L'annonce la disait libre, mais le procès-verbal plus récent indique une occupation. "
+            "Ces sources se contredisent et l'occupation actuelle n'a pas été vérifiée."
+        ),
+        "expected": {"property_type": "house", "surface_m2": 84.20,
+                     "bedrooms_count": 3, "occupancy_status": "unknown"},
     },
 )
 
