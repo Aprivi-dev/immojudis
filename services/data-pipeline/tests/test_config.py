@@ -60,10 +60,7 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
 
     assert settings["replicate_max_tokens"] == 512
     assert settings["replicate_wait_seconds"] == 60
-    assert settings["replicate_model"] == (
-        "zsxkib/qwen2-7b-instruct:"
-        "5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4"
-    )
+    assert settings["replicate_model"] == "qwen/qwen3-7-plus"
     assert settings["replicate_thinking_level"] == "low"
     assert settings["replicate_max_retries"] == 4
     assert settings["replicate_retry_backoff_seconds"] == 30
