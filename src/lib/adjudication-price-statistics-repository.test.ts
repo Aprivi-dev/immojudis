@@ -8,6 +8,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 
 import {
   adjudicationPriceStatisticsEnabled,
+  getAdjudicationPriceStatisticsDirectory,
   getAdjudicationPriceStatisticsForSale,
 } from "@/lib/adjudication-price-statistics-repository";
 
@@ -262,6 +263,64 @@ describe("adjudication price statistics repository", () => {
     await expect(getAdjudicationPriceStatisticsForSale(SALE_ID)).rejects.toMatchObject({
       name: "AdjudicationPriceStatisticsUnavailableError",
     });
+  });
+
+  it("sert le répertoire des tribunaux du même build approuvé au seul endpoint premium", async () => {
+    const nationalQuery = fakeQuery({ data: storedRow(), error: null });
+    const tribunalsQuery = fakeQuery({
+      data: [
+        storedRow({
+          scope_type: "tribunal",
+          court_code: "bordeaux",
+          scope_label: "TJ Bordeaux",
+          sample_size: 146,
+        }),
+      ],
+      error: null,
+    });
+    serverFrom.mockReturnValueOnce(nationalQuery.query).mockReturnValueOnce(tribunalsQuery.query);
+
+    const directory = await getAdjudicationPriceStatisticsDirectory();
+
+    expect(directory.national.sampleSize).toBe(3868);
+    expect(directory.tribunals).toHaveLength(1);
+    expect(directory.tribunals[0]?.courtCode).toBe("bordeaux");
+    expect(tribunalsQuery.state.filters).toContainEqual(["build_id", BUILD_ID]);
+    expect(tribunalsQuery.state.filters).toContainEqual(["scope_type", "tribunal"]);
+    expect(JSON.stringify(directory)).not.toContain(BUILD_ID);
+  });
+
+  it("refuse un tribunal d’un autre build et les doublons de codes", async () => {
+    serverFrom
+      .mockReturnValueOnce(fakeQuery({ data: storedRow(), error: null }).query)
+      .mockReturnValueOnce(
+        fakeQuery({
+          data: [
+            storedRow({
+              scope_type: "tribunal",
+              court_code: "bordeaux",
+              build_id: "33333333-3333-4333-8333-333333333333",
+            }),
+          ],
+          error: null,
+        }).query,
+      );
+    await expect(getAdjudicationPriceStatisticsDirectory()).rejects.toThrow("invalid scope");
+
+    serverFrom
+      .mockReturnValueOnce(fakeQuery({ data: storedRow(), error: null }).query)
+      .mockReturnValueOnce(
+        fakeQuery({
+          data: [
+            storedRow({ scope_type: "tribunal", court_code: "bordeaux" }),
+            storedRow({ scope_type: "tribunal", court_code: "bordeaux" }),
+          ],
+          error: null,
+        }).query,
+      );
+    await expect(getAdjudicationPriceStatisticsDirectory()).rejects.toThrow(
+      "failed publication validation",
+    );
   });
 });
 

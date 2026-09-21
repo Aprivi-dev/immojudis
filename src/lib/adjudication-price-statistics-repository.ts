@@ -3,8 +3,10 @@ import { adjudicationEnrichmentSchema } from "@/lib/adjudication-distributions";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   ADJUDICATION_PRICE_STATISTICS_WARNING,
+  adjudicationPriceStatisticsDirectoryResponseSchema,
   adjudicationPriceStatisticsReliability,
   adjudicationPriceStatisticsResponseSchema,
+  type AdjudicationPriceStatisticsDirectoryResponse,
   type AdjudicationPriceStatisticsResponse,
   type AdjudicationPriceStatisticsScope,
 } from "@/lib/adjudication-price-statistics";
@@ -149,18 +151,67 @@ export async function getAdjudicationPriceStatisticsForSale(
     return adjudicationPriceStatisticsResponseSchema.parse({
       national: toPublicScope(national),
       tribunal: tribunal ? toPublicScope(tribunal) : null,
-      meta: {
-        sourceName: "licitor",
-        sourceLabel: "Résultats d’adjudication publiés par Licitor",
-        methodologyVersion: national.methodology_version,
-        builtAt: national.built_at,
-        reviewedAt: national.reviewed_at,
-        experimental: true,
-        warning: ADJUDICATION_PRICE_STATISTICS_WARNING,
-      },
+      meta: publicMeta(national),
     });
   } catch {
     throw unavailable("The reviewed adjudication-price response failed publication validation.");
+  }
+}
+
+export async function getAdjudicationPriceStatisticsDirectory(): Promise<AdjudicationPriceStatisticsDirectoryResponse> {
+  if (!adjudicationPriceStatisticsEnabled()) {
+    throw unavailable("Configuration: adjudication price statistics are disabled.");
+  }
+  const pinnedBuildId = process.env.ADJUDICATION_PRICE_STATISTICS_BUILD_ID?.trim() || null;
+  if (pinnedBuildId && !z.string().uuid().safeParse(pinnedBuildId).success) {
+    throw unavailable("Configuration: the pinned adjudication-price build ID is invalid.");
+  }
+
+  const nationalResult = await fetchNationalRow(pinnedBuildId);
+  if (nationalResult.error) {
+    throw unavailable(`National statistics lookup failed: ${nationalResult.error.message}`);
+  }
+  if (!nationalResult.data) {
+    throw unavailable("No reviewed national adjudication-price build is available.");
+  }
+  const national = parseStoredRow(nationalResult.data, "national");
+  if (
+    national.scope_type !== "national" ||
+    (pinnedBuildId && national.build_id !== pinnedBuildId)
+  ) {
+    throw unavailable("The reviewed national statistics row has an invalid scope.");
+  }
+
+  const tribunalResult = await statisticsAdmin
+    .from("published_adjudication_price_statistics")
+    .select(STORED_COLUMNS)
+    .eq("build_id", national.build_id)
+    .eq("scope_type", "tribunal")
+    .order("sample_size", { ascending: false })
+    .limit(250);
+  if (tribunalResult.error) {
+    throw unavailable(`Tribunal statistics lookup failed: ${tribunalResult.error.message}`);
+  }
+  if (!Array.isArray(tribunalResult.data)) {
+    throw unavailable("The reviewed tribunal statistics directory is invalid.");
+  }
+  const tribunals = tribunalResult.data.map((value) => parseStoredRow(value, "tribunal"));
+  if (
+    tribunals.some(
+      (row) =>
+        row.scope_type !== "tribunal" || row.build_id !== national.build_id || !row.court_code,
+    )
+  ) {
+    throw unavailable("The reviewed tribunal statistics directory has an invalid scope.");
+  }
+  try {
+    return adjudicationPriceStatisticsDirectoryResponseSchema.parse({
+      national: toPublicScope(national),
+      tribunals: tribunals.map(toPublicScope),
+      meta: publicMeta(national),
+    });
+  } catch {
+    throw unavailable("The reviewed tribunal statistics directory failed publication validation.");
   }
 }
 
@@ -228,6 +279,20 @@ function toPublicScope(row: z.output<typeof storedRowSchema>): AdjudicationPrice
       medianHammerPriceEur: row.median_hammer_price_eur,
       medianStartingPriceEur: row.median_starting_price_eur,
     },
+  };
+}
+
+function publicMeta(
+  row: z.output<typeof storedRowSchema>,
+): AdjudicationPriceStatisticsResponse["meta"] {
+  return {
+    sourceName: "licitor",
+    sourceLabel: "Résultats d’adjudication publiés par Licitor",
+    methodologyVersion: row.methodology_version,
+    builtAt: row.built_at,
+    reviewedAt: row.reviewed_at,
+    experimental: true,
+    warning: ADJUDICATION_PRICE_STATISTICS_WARNING,
   };
 }
 

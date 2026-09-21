@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/tribunal-judicial-activity-directory-client", () => ({
   fetchTribunalJudicialActivityDirectory: mocks.fetchDirectory,
 }));
+vi.mock("@/components/PremiumAdjudicationExplorer", () => ({
+  PremiumAdjudicationExplorer: () => <section aria-label="Résultats premium Licitor" />,
+}));
 
 vi.mock("@/lib/router-compat", () => ({
   createFileRoute: () => (options: unknown) => options,
@@ -46,7 +49,8 @@ describe("TribunalsPage", () => {
     expect(await screen.findByRole("heading", { name: "TJ Marseille" })).toBeTruthy();
     expect(screen.getByText(/Fourchette centrale 21 250 € – 23 750 €/i)).toBeTruthy();
     expect(screen.getByText(/Fourchette centrale 23 – 28 jours/i)).toBeTruthy();
-    expect(screen.getByText(/Écart prix final \/ mise à prix non publié/i)).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Résultats premium Licitor" })).toBeTruthy();
+    expect(screen.getByText(/Issues définitives et délais de décision non publiés/i)).toBeTruthy();
     expect(mocks.fetchDirectory).toHaveBeenCalledWith(36);
   });
 

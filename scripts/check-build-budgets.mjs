@@ -6,7 +6,9 @@ const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
 // The protected admin editor adds an isolated client route; keep a small global
 // allowance for it while enforcing a dedicated initial-load budget below.
 // Separate favorites and alerts routes add independently loaded client chunks.
-const MAX_TOTAL_CLIENT_JS_BYTES = 4_200_000;
+// The tribunal statistics explorer adds a dedicated, premium-only client view.
+// Keep its global allowance narrow; route-level initial-load budgets remain enforced.
+const MAX_TOTAL_CLIENT_JS_BYTES = 4_225_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -79,6 +81,13 @@ const routeBudgets = [
     routeKey: "/sales/[id]/page",
     entryKey: "[project]/src/app/sales/[id]/page",
     maxBytes: 660_000,
+  },
+  {
+    name: "tribunals",
+    manifest: ".next/server/app/tribunaux/page_client-reference-manifest.js",
+    routeKey: "/tribunaux/page",
+    entryKey: "[project]/src/app/tribunaux/page",
+    maxBytes: 600_000,
   },
   {
     name: "example",
