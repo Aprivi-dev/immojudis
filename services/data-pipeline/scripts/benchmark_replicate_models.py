@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.config import load_settings
 from src.enrichment.extract_structured import LLMExtraction
 from src.enrichment.llm_client import ReplicateClient
 from src.enrichment.prompts import (
@@ -23,7 +24,6 @@ from src.enrichment.prompts import (
     build_user_prompt,
 )
 from src.pipeline_usage import PINNED_MODEL, _prediction_cost
-from src.config import load_settings
 
 DEFAULT_MODELS = (PINNED_MODEL, "qwen/qwen3-7-plus", "google/gemini-2.5-flash")
 CASES = (
