@@ -34,8 +34,8 @@ begin
     -- Replicate has a higher Qwen input tier above 256K tokens.  Keep this
     -- reservation on the documented lower tier until that tier is explicitly
     -- priced and supported by the caller.
-    if p_input_token_ceiling is null or p_input_token_ceiling < 1 or p_input_token_ceiling > 262144 then
-      raise exception 'Input token ceiling must be between 1 and 262144 for Qwen3.7 Plus'
+    if p_input_token_ceiling is null or p_input_token_ceiling < 1 or p_input_token_ceiling > 256000 then
+      raise exception 'Input token ceiling must be between 1 and 256000 for Qwen3.7 Plus'
         using errcode = '22023';
     end if;
     v_input_rate := 0.276;

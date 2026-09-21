@@ -219,7 +219,7 @@ def test_four_argument_legacy_model_delegates_to_two_argument_reservation(
         ("unknown/provider-model", 1, 1, "no configured cost reservation"),
         (QWEN_MODEL, None, 1, "Input token ceiling"),
         (QWEN_MODEL, 0, 1, "Input token ceiling"),
-        (QWEN_MODEL, 262145, 1, "Input token ceiling"),
+        (QWEN_MODEL, 256001, 1, "Input token ceiling"),
         (QWEN_MODEL, 1, None, "Output token ceiling"),
         (QWEN_MODEL, 1, 0, "Output token ceiling"),
         (QWEN_MODEL, 1, 32769, "Output token ceiling"),
