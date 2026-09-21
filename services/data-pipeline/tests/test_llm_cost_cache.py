@@ -13,6 +13,7 @@ from src.enrichment.extract_structured import LLMEnrichmentDeferred, enrich_sale
 from src.enrichment.prompts import DISPLAY_DESCRIPTION_SYSTEM_PROMPT
 from src.models import AuctionSale
 from src.pdf_enrichment import sale_storage_id
+from src.pipeline_usage import PINNED_MODEL
 
 
 class FakeClient:
@@ -354,6 +355,22 @@ def test_fact_manifest_rejects_changed_evidence_or_versions(
     else:
         sale.raw_payload["source_checks"]["https://example.test/merged"]["evidence_fingerprint"] = "merged-b"
 
+    assert extraction.has_current_fact_analysis(sale) is False
+
+
+def test_qwen_rollout_reuses_unchanged_qwen2_facts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sale = _document_sale(tmp_path, monkeypatch)
+    contexts = extraction.load_llm_fact_context_chunks_for_sale(sale, chunk_chars=3000, max_chunks=0)
+    sale.raw_payload["llm_fact_input_key"] = extraction._fact_input_cache_key(
+        "\n\n".join(contexts), PINNED_MODEL, "facts-test"
+    )
+    sale.raw_payload["llm_fact_context_manifest"]["model"] = PINNED_MODEL
+    monkeypatch.setenv("REPLICATE_MODEL", "qwen/qwen3-7-plus")
+
+    assert extraction.has_current_fact_analysis(sale) is True
+    sale.raw_payload["source_checks"]["https://example.test/merged"]["evidence_fingerprint"] = "changed"
     assert extraction.has_current_fact_analysis(sale) is False
 
 
