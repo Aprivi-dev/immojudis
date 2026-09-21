@@ -217,6 +217,10 @@ class PipelineOptions:
     llm_backfill_statuses: tuple[str, ...] = ("active", "upcoming")
 
 
+class CollectionIncompleteError(RuntimeError):
+    """The observed inventory is insufficient for catalogue maintenance."""
+
+
 def run_pipeline(options: PipelineOptions | None = None) -> int:
     options = options or PipelineOptions()
     settings = load_settings()
@@ -646,7 +650,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             # Fail closed before every path below that can delete catalogue
             # rows. The database also rejects deletion of any unbridged sale.
             if collection_failed or (coverage_incomplete and not scoped_collection_complete):
-                raise RuntimeError("Collection incomplete; catalogue cleanup is disabled.")
+                raise CollectionIncompleteError("Collection incomplete; catalogue cleanup is disabled.")
             # Bounded/source refreshes publish only; all destructive maintenance
             # requires a complete catalogue archive and an unbounded global scan.
             if app_ready and options.source == "all" and options.limit is None:
@@ -689,6 +693,18 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             summary["completion_status"] = "partial_success" if coverage_incomplete or any(errors.values()) or llm_stats.unavailable or timings.get("pdf_targets_deferred") or timings.get("llm_targets_deferred") else "complete"
             summary["stage_status"]["publication"] = "complete"
             finish_run_in_supabase(run_id, "succeeded", summary, errors)
+        except CollectionIncompleteError as exc:
+            LOGGER.warning("Collection remains incomplete after safe publication: %s", exc)
+            errors.setdefault("collection", []).append(str(exc))
+            summary.update({
+                "upserted": upserted,
+                "observations_upserted": observations_upserted,
+                "global_cleanup_skipped": "collection_incomplete",
+                "completion_status": "partial_success" if upserted else "incomplete",
+            })
+            summary["stage_status"]["publication"] = "partial" if upserted else "skipped"
+            finish_run_in_supabase(run_id, "failed", summary, errors)
+            publication_failed = True
         except Exception as exc:
             LOGGER.exception("Supabase upsert failed: %s", exc)
             errors.setdefault("supabase", []).append(str(exc))

@@ -5,6 +5,7 @@ import os
 import sys
 import time
 from collections import defaultdict
+from urllib.parse import urlsplit
 
 from src.admission import is_expired
 from src.asset_normalization import normalize_asset_features
@@ -309,8 +310,17 @@ def run_enrichment_queue_batch(
         try:
             if "pdf" in job_types and sale.documents and not documents_are_current(sale):
                 pdf_stats = enrich_sale_from_pdfs(sale)
-                if pdf_stats.errors or (sale.raw_payload.get("document_analysis") or {}).get("failed_documents"):
-                    raise RuntimeError("Document extraction incomplete; retry required")
+                analysis = sale.raw_payload.get("document_analysis") or {}
+                if pdf_stats.errors or analysis.get("failed_documents"):
+                    failed_urls = analysis.get("failed_document_urls") or []
+                    failed_paths = [
+                        f"{urlsplit(str(url)).hostname}{urlsplit(str(url)).path}"[:180]
+                        for url in failed_urls[:3]
+                    ]
+                    detail = f"{pdf_stats.errors} extraction errors, {analysis.get('failed_documents', 0)} failed documents"
+                    if failed_paths:
+                        detail += f" ({', '.join(failed_paths)})"
+                    raise RuntimeError(f"Document extraction incomplete; retry required: {detail}")
             if job_types & {"fact_extraction", "display_description"}:
                 refresh_operational_display(sale)
                 # The early scan upsert enqueues a safety-net job before the

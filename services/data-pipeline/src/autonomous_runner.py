@@ -294,7 +294,9 @@ def execute(run_id: str) -> int:
         if source not in SOURCE_NAMES:
             raise ValueError('Unknown scheduled source')
         command = [sys.executable,'-m','src.main','--source',source,'--run-id',run_id,'--no-llm','--no-heavy-enrichment']
-        budget = 35 * 60
+        # Licitor's full public inventory took about 27 minutes to collect on
+        # 2026-09-21, leaving too little of the ordinary budget to publish it.
+        budget = (50 if source == 'licitor' else 35) * 60
         if source == 'petites_affiches':
             # Leave time for the main process to flush factual publications and
             # persist the partial run before the scheduler's hard kill.
@@ -314,8 +316,12 @@ def execute(run_id: str) -> int:
         if source == 'enrichment-queue':
             counts = dict(db.execute("select status,count(*) from public.auction_enrichment_jobs where updated_at>=%s group by status", (execution_started,)).fetchall())
             summary['enrichment_jobs'] = counts
-            if counts.get('failed'):
-                code, failure = 1, 'One or more enrichment jobs failed; retained for bounded retry'
+            exhausted = db.execute("""select count(*) from public.auction_enrichment_jobs
+                where updated_at>=%s and status='failed' and attempt_count>=max_attempts""",
+                (execution_started,)).fetchone()[0]
+            summary['enrichment_jobs_exhausted'] = exhausted
+            if exhausted:
+                code, failure = 1, 'One or more enrichment jobs exhausted their retry budget'
         existing_completion = existing_summary.get('completion_status') if isinstance(existing_summary, dict) else None
         existing_coverage = (existing_summary.get('scrape_coverage') or {}).get(source, {}) if isinstance(existing_summary, dict) else {}
         source_budget_stop = bool(isinstance(existing_coverage, dict) and existing_coverage.get('budget_exhausted'))
@@ -325,10 +331,14 @@ def execute(run_id: str) -> int:
         if source_budget_stop:
             summary['completion_status'] = 'partial_success'
             summary['stop_reason'] = 'source_budget_exhausted'
-        elif code:
-            summary['completion_status'] = 'interrupted'
         elif existing_completion in {'partial_success', 'partial', 'scoped_partial', 'incomplete'}:
             summary['completion_status'] = existing_completion
+        elif source == 'enrichment-queue' and exhausted:
+            summary['completion_status'] = 'retry_exhausted'
+        elif code:
+            summary['completion_status'] = 'interrupted'
+        elif source == 'enrichment-queue' and counts.get('failed'):
+            summary['completion_status'] = 'partial_success'
         else:
             summary['completion_status'] = 'complete'
         db.execute("""update public.auction_runs set status=%s,finished_at=now(),updated_at=now(),

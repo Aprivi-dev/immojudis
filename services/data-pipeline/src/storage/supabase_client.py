@@ -53,7 +53,7 @@ from src.urban_planning import build_urban_planning_signal_rows
 LOGGER = logging.getLogger(__name__)
 POSTGREST_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
 POSTGREST_UPSERT_RETRIES = 5
-POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 520, 522, 524}
+POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 CLAIM_RPC_ATTEMPTS = 4
 CLAIM_RPC_RETRY_DELAYS = (1.0, 3.0, 5.0)
 CLAIM_RPC_MAX_WAIT_SECONDS = 60.0
@@ -264,9 +264,18 @@ _PUBLICATION_CONNECTION: ContextVar[Any] = ContextVar("publication_connection", 
 
 def _fetch_reviewed_alias_registry(supabase_url: str, api_key: str) -> ReviewedAliasRegistry:
     """Load the reviewed alias relation and fail closed on any RPC failure."""
+    publication_connection = _PUBLICATION_CONNECTION.get()
+    if publication_connection is not None:
+        return load_reviewed_aliases(publication_connection)
+    db_url = load_settings().get("supabase_db_url")
+    if db_url:
+        with _postgres_connect(str(db_url)) as db:
+            return load_reviewed_aliases(db)
     try:
-        response = httpx.post(
+        response = _postgrest_request_with_retries(
+            "POST",
             f"{supabase_url.rstrip('/')}/rest/v1/rpc/list_reviewed_publication_aliases",
+            "reviewed_publication_aliases",
             headers=_rest_headers(api_key, prefer="count=none"),
             json={},
             timeout=30,
@@ -605,17 +614,32 @@ def start_existing_run_in_supabase(run_id: str, source: str, use_llm: bool) -> s
         "started_at": datetime.now(UTC).isoformat(),
         "finished_at": None,
     }
-    response = _postgrest_request_with_retries(
-        "PATCH",
-        f"{str(url).rstrip('/')}/rest/v1/auction_runs",
-        "auction_runs",
-        params={"id": f"eq.{run_id}"},
-        headers=_rest_headers(str(key), prefer="return=minimal"),
-        json=payload,
-        timeout=POSTGREST_TIMEOUT,
-    )
-    if response.is_error:
-        LOGGER.warning("Supabase run start failed: %s", response.text)
+    try:
+        response = _postgrest_request_with_retries(
+            "PATCH",
+            f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+            "auction_runs",
+            params={"id": f"eq.{run_id}"},
+            headers=_rest_headers(str(key), prefer="return=minimal"),
+            json=payload,
+            timeout=POSTGREST_TIMEOUT,
+        )
+    except httpx.TransportError as exc:
+        LOGGER.warning("Supabase run start transport failed: %s", exc)
+        response = None
+    if response is None or response.is_error:
+        if response is not None:
+            LOGGER.warning("Supabase run start failed (%s): %s", response.status_code, response.text[:200])
+        if (response is None or response.status_code in POSTGREST_RETRYABLE_STATUS_CODES) and settings.get("supabase_db_url"):
+            with _postgres_connect(str(settings["supabase_db_url"])) as db:
+                row = db.execute(
+                    """update public.auction_runs
+                       set status='running', source=%s, use_llm=%s, started_at=now(),
+                           finished_at=null, updated_at=now()
+                       where id=%s returning id""",
+                    (source, use_llm, run_id),
+                ).fetchone()
+            return run_id if row else None
         return None
     return run_id
 
@@ -1161,17 +1185,37 @@ def finish_run_in_supabase(
         "summary": summary,
         "errors": errors or {},
     }
-    response = _postgrest_request_with_retries(
-        "PATCH",
-        f"{str(url).rstrip('/')}/rest/v1/auction_runs",
-        "auction_runs",
-        params={"id": f"eq.{run_id}"},
-        headers=_rest_headers(str(key), prefer="return=minimal"),
-        json=_sanitize_postgrest_payload(payload),
-        timeout=POSTGREST_TIMEOUT,
-    )
-    if response.is_error:
-        LOGGER.warning("Supabase run finish failed: %s", response.text)
+    try:
+        response = _postgrest_request_with_retries(
+            "PATCH",
+            f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+            "auction_runs",
+            params={"id": f"eq.{run_id}"},
+            headers=_rest_headers(str(key), prefer="return=minimal"),
+            json=_sanitize_postgrest_payload(payload),
+            timeout=POSTGREST_TIMEOUT,
+        )
+    except httpx.TransportError as exc:
+        LOGGER.warning("Supabase run finish transport failed: %s", exc)
+        response = None
+    if response is None or response.is_error:
+        if response is not None:
+            LOGGER.warning("Supabase run finish failed (%s): %s", response.status_code, response.text[:200])
+        if (response is None or response.status_code in POSTGREST_RETRYABLE_STATUS_CODES) and settings.get("supabase_db_url"):
+            with _postgres_connect(str(settings["supabase_db_url"])) as db:
+                db.execute(
+                    """update public.auction_runs
+                       set status=%s, finished_at=now(), updated_at=now(),
+                           summary=coalesce(summary,'{}'::jsonb) || %s,
+                           errors=coalesce(errors,'{}'::jsonb) || %s
+                       where id=%s""",
+                    (
+                        status,
+                        Jsonb(_sanitize_postgrest_payload(summary)),
+                        Jsonb(_sanitize_postgrest_payload(errors or {})),
+                        run_id,
+                    ),
+                )
 
 
 def update_run_progress_in_supabase(
@@ -1786,6 +1830,10 @@ def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
     row = rows[0]
     if not row.get("source_name") or not row.get("source_url"):
         return None
+    # A few legacy rows contain SQL NULL rather than the JSON empty arrays
+    # required by AuctionSale. Pydantic defaults do not apply to explicit NULL.
+    row["visit_dates"] = row.get("visit_dates") or []
+    row["documents"] = row.get("documents") or []
     return AuctionSale(**row)
 
 
@@ -1794,42 +1842,57 @@ def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
-    if not url or not key:
-        return {}
-
-    reviewed_aliases = _fetch_reviewed_alias_registry(str(url), str(key))
-    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
-    all_rows: list[dict[str, Any]] = []
-    offset = 0
-    while True:
-        try:
-            response = httpx.get(
-                endpoint,
-                params={
-                    "select": KNOWN_SALE_DETAIL_SELECT,
-                    "limit": str(KNOWN_SALE_DETAIL_PAGE_SIZE),
-                    "offset": str(offset),
-                },
-                headers=_rest_headers(str(key), prefer="count=none"),
-                timeout=30,
-            )
-            if response.is_error:
-                raise RuntimeError(
-                    f"Could not fetch known sale details ({response.status_code}): {response.text[:200]}"
+    db_url = settings.get("supabase_db_url")
+    if db_url:
+        # The publication runner already requires PostgreSQL. Read its
+        # preflight snapshot there too, so a Data API outage cannot stop a
+        # collection before the first source is scraped.
+        with _postgres_connect(str(db_url)) as db:
+            reviewed_aliases = load_reviewed_aliases(db)
+            rows = db.execute(
+                f"select to_jsonb(sale) from (select {KNOWN_SALE_DETAIL_SELECT} "
+                "from public.auction_sales) sale"
+            ).fetchall()
+        all_rows = [row[0] for row in rows]
+    else:
+        if not url or not key:
+            return {}
+        reviewed_aliases = _fetch_reviewed_alias_registry(str(url), str(key))
+        endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
+        all_rows = []
+        offset = 0
+        while True:
+            try:
+                response = _postgrest_request_with_retries(
+                    "GET",
+                    endpoint,
+                    "known_sale_details",
+                    params={
+                        "select": KNOWN_SALE_DETAIL_SELECT,
+                        "limit": str(KNOWN_SALE_DETAIL_PAGE_SIZE),
+                        "offset": str(offset),
+                    },
+                    headers=_rest_headers(str(key), prefer="count=none"),
+                    timeout=30,
                 )
-            rows = response.json()
-            if not isinstance(rows, list):
-                raise ReviewedAliasRegistryError("Malformed auction_sales detail response")
-        except httpx.HTTPError as exc:
-            raise RuntimeError(f"Known sale detail lookup failed: {exc}") from exc
-        for row in rows:
-            if not isinstance(row, dict):
-                raise ReviewedAliasRegistryError("Malformed auction_sales detail row")
-            row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"))
-            all_rows.append(row)
-        if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
-            break
-        offset += KNOWN_SALE_DETAIL_PAGE_SIZE
+                if response.is_error:
+                    raise RuntimeError(
+                        f"Could not fetch known sale details ({response.status_code}): {response.text[:200]}"
+                    )
+                rows = response.json()
+                if not isinstance(rows, list):
+                    raise ReviewedAliasRegistryError("Malformed auction_sales detail response")
+            except httpx.HTTPError as exc:
+                raise RuntimeError(f"Known sale detail lookup failed: {exc}") from exc
+            all_rows.extend(rows)
+            if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
+                break
+            offset += KNOWN_SALE_DETAIL_PAGE_SIZE
+
+    for row in all_rows:
+        if not isinstance(row, dict):
+            raise ReviewedAliasRegistryError("Malformed auction_sales detail row")
+        row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"))
 
     details: dict[str, dict[str, Any]] = {}
     rows_by_id = {

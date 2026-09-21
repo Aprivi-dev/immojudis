@@ -337,7 +337,7 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch, 
 
 @pytest.mark.parametrize("collection_failed", [False, True])
 def test_pipeline_skips_every_cleanup_when_outcome_bridge_fails(monkeypatch, collection_failed) -> None:
-    finish_calls: list[tuple[str, dict[str, list[str]]]] = []
+    finish_calls: list[tuple[str, dict[str, object], dict[str, list[str]]]] = []
     cleanup_calls: list[str] = []
 
     monkeypatch.setattr(main, "load_settings", lambda: _settings())
@@ -345,7 +345,7 @@ def test_pipeline_skips_every_cleanup_when_outcome_bridge_fails(monkeypatch, col
     monkeypatch.setattr(
         main,
         "finish_run_in_supabase",
-        lambda run_id, status, summary, errors: finish_calls.append((status, errors)),
+        lambda run_id, status, summary, errors: finish_calls.append((status, summary, errors)),
     )
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
@@ -402,9 +402,13 @@ def test_pipeline_skips_every_cleanup_when_outcome_bridge_fails(monkeypatch, col
     assert result == 1
     assert cleanup_calls == []
     assert finish_calls[-1][0] == "failed"
-    assert finish_calls[-1][1]["supabase"] == [
-        "Collection incomplete; catalogue cleanup is disabled." if collection_failed else "bridge incomplete"
-    ]
+    if collection_failed:
+        assert finish_calls[-1][1]["completion_status"] == "partial_success"
+        assert finish_calls[-1][1]["stage_status"]["publication"] == "partial"
+        assert finish_calls[-1][2]["collection"] == ["Collection incomplete; catalogue cleanup is disabled."]
+        assert "supabase" not in finish_calls[-1][2]
+    else:
+        assert finish_calls[-1][2]["supabase"] == ["bridge incomplete"]
 
 
 def test_pipeline_returns_failure_when_final_supabase_publication_fails(monkeypatch) -> None:
