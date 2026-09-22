@@ -383,6 +383,7 @@ def upsert_sales_to_supabase(
     if db_url and _PUBLICATION_CONNECTION.get() is None:
         # All product tables for each bounded batch commit together. A failed transaction never falls
         # back to partially committed REST writes.
+        submitted_sales = sales
         with _postgres_connect(str(db_url)) as connection:
             connection.execute("select set_config('app.pipeline_queue_owner', 'python', true)")
             connection.execute("set local lock_timeout = '15s'")
@@ -397,22 +398,35 @@ def upsert_sales_to_supabase(
                 sales = _guard_enrichment_revision(connection, sales)
                 if not sales:
                     return 0
+            written_at = datetime.now(UTC)
             token = _PUBLICATION_CONNECTION.set(connection)
             try:
-                result = upsert_sales_to_supabase(sales, refresh_last_seen=refresh_last_seen)
-                return result
+                result = _write_sale_revisions(
+                    sales, settings, refresh_last_seen=refresh_last_seen, written_at=written_at,
+                )
             finally:
                 _PUBLICATION_CONNECTION.reset(token)
+        # The next enrichment write compares the in-memory version with the
+        # committed row. Identity resolution may write copies of the caller's
+        # sales, so advance both only after the transaction has committed.
+        written_urls = {sale.source_url for sale in sales}
+        for sale in (*submitted_sales, *sales):
+            if sale.source_url in written_urls:
+                sale.updated_at = written_at
+        return result
     return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
 
 
-def _write_sale_revisions(sales: list[AuctionSale], settings: dict, *, refresh_last_seen: bool) -> int:
+def _write_sale_revisions(
+    sales: list[AuctionSale], settings: dict, *, refresh_last_seen: bool,
+    written_at: datetime | None = None,
+) -> int:
     """Write all catalogue tables inside the caller's admission/version boundary."""
     from src.publication_identity import ensure_room_bedroom_consistency
 
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
-    now = datetime.now(UTC).isoformat()
+    now = (written_at or datetime.now(UTC)).isoformat()
     payload = []
     for sale in sales:
         # Normalization can happen after identity resolution (for example in
