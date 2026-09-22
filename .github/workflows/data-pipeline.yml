@@ -89,12 +89,14 @@ jobs:
       PIPELINE_LLM_MAX_TARGETS: 10
       PIPELINE_LLM_BACKFILL_MAX_TARGETS: 5
       PIPELINE_LLM_BACKFILL_PROGRESS_EVERY: 5
-      REPLICATE_MIN_INTERVAL_SECONDS: 1
+      # Replicate currently permits 6 prediction starts/minute with burst 1
+      # while the account credit is below $5. Leave a margin above 10 seconds.
+      REPLICATE_MIN_INTERVAL_SECONDS: 11
       # Let Replicate keep the POST open for the normal generation window. It
       # reduces follow-up polling in the logs; it does not change provider
       # runtime billing or cancel a prediction.
       REPLICATE_WAIT_SECONDS: 60
-      REPLICATE_MAX_RETRIES: 1
+      REPLICATE_MAX_RETRIES: 2
       REPLICATE_MAX_CALLS_PER_HOUR: 60
       REPLICATE_RETRY_BACKOFF_SECONDS: 30
       REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
