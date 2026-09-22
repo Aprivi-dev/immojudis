@@ -30,7 +30,12 @@ def main(*, report_only: bool = False) -> int:
             order by created_at desc limit 1
         """).fetchone()
         if latest:
-            report["latest_collection"] = dict(zip(("status", "coverage", "stages"), latest, strict=True))
+            status, coverage, stages = latest
+            report["latest_collection"] = {
+                "status": status,
+                "coverage": compact_coverage(coverage),
+                "stages": stages,
+            }
         report["stalled_runs"] = connection.execute("""
             select count(*) from public.auction_runs where status = 'running'
             and coalesce(started_at, created_at) < now() - interval '100 minutes'
@@ -54,6 +59,21 @@ def main(*, report_only: bool = False) -> int:
     if failed and report_only:
         print("::warning::Global pipeline health is degraded; see the backlog report and operational incidents. Collection status is reported separately.")
     return int(failed and not report_only)
+
+
+def compact_coverage(coverage: object) -> dict:
+    """Keep the health report small; full URL evidence stays in auction_runs."""
+    if not isinstance(coverage, dict):
+        return {}
+    fields = (
+        "coverage_complete", "errors", "stop_reason", "listings_emitted",
+        "requests_attempted", "requests_succeeded", "access_denials",
+    )
+    return {
+        source: {field: details[field] for field in fields if field in details}
+        for source, details in coverage.items()
+        if isinstance(details, dict)
+    }
 
 
 def health_failed(report: dict) -> bool:

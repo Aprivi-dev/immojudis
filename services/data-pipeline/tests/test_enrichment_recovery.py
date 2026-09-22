@@ -177,6 +177,20 @@ def test_health_fails_for_old_queue_stalled_runs_and_stale_sources():
     assert pipeline_health.health_failed({**base, 'sources': [{'stale': 1}]})
 
 
+def test_health_report_omits_large_coverage_url_evidence():
+    coverage = {
+        "licitor": {
+            "coverage_complete": True,
+            "listings_emitted": 580,
+            "certificate": {"public_parsed_urls": [f"https://example.test/{i}" for i in range(1000)]},
+        },
+    }
+
+    assert pipeline_health.compact_coverage(coverage) == {
+        "licitor": {"coverage_complete": True, "listings_emitted": 580},
+    }
+
+
 def test_stream_download_stops_at_limit():
     import httpx
     class Stream(httpx.SyncByteStream):

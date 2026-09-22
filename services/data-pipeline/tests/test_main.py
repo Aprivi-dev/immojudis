@@ -1151,3 +1151,15 @@ def test_mismatched_detail_never_rehydrates_previous_contaminated_content():
     assert raw['description'] == 'List card'
     assert 'surface_m2' not in raw
     assert 'llm_display_description' not in raw
+
+
+def test_superseded_enrichment_checkpoint_is_skipped(monkeypatch):
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/superseded",
+        starting_price_eur=10000,
+    )
+    monkeypatch.setattr(main, "_finalize_sale_for_app", lambda sale, **kwargs: None)
+    monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: 0)
+
+    assert main._checkpoint_enrichment(sale) is False

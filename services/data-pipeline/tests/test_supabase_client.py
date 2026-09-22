@@ -725,6 +725,44 @@ def test_upsert_sales_via_rest_does_not_delete_secondary_rows(monkeypatch) -> No
     assert calls == ["upsert", "normalized", "assets"]
 
 
+def test_committed_publication_version_allows_following_enrichment_checkpoint(monkeypatch) -> None:
+    sale = normalize_sale({
+        "source_name": "avoventes",
+        "source_url": "https://example.test/checkpoint",
+        "starting_price_eur": 10000,
+    })
+    stored_version = None
+
+    def execute(statement, params=None):
+        if "select updated_at from public.auction_sales" in str(statement):
+            return SimpleNamespace(fetchone=lambda: (stored_version,))
+        return SimpleNamespace(fetchone=lambda: None)
+
+    def write(table, payload, _conflict, **_kwargs):
+        nonlocal stored_version
+        if table == "auction_sales":
+            stored_version = datetime.fromisoformat(payload[0]["updated_at"])
+
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: {
+        "supabase_url": "https://supabase.test",
+        "supabase_service_role_key": "secret",
+        "supabase_db_url": "postgresql://example",
+    })
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _: nullcontext(SimpleNamespace(execute=execute)))
+    monkeypatch.setattr(supabase_client, "_transaction_write", write)
+    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables_with_rest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *args: None)
+    monkeypatch.setattr(
+        "src.publication_identity.resolve_publication_identities",
+        lambda _db, sales: [item.model_copy(deep=True) for item in sales],
+    )
+
+    assert supabase_client.upsert_sales_to_supabase([sale]) == 1
+    assert sale.updated_at == stored_version
+    assert supabase_client.upsert_sales_to_supabase([sale], refresh_last_seen=False) == 1
+    assert sale.updated_at == stored_version
+
+
 def test_upsert_sales_neutralizes_room_bedroom_contradiction_before_storage(monkeypatch) -> None:
     sale = normalize_sale(
         {

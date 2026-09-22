@@ -540,7 +540,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                     sale.raw_payload.pop("source_operational_changed", None)
                     _clear_llm_description_failure(sale)
                 if options.upsert:
-                    _checkpoint_enrichment(sale)
+                    try:
+                        _checkpoint_enrichment(sale)
+                    except Exception as exc:
+                        LOGGER.exception("LLM enrichment checkpoint failed for %s: %s", sale.source_url, exc)
+                        errors.setdefault("supabase", []).append(str(exc))
     timings["llm_seconds"] = round(time.perf_counter() - started, 2)
 
     # ── Phase 3 : finition (géocode réseau léger, tribunal, scoring) ─────────
@@ -928,7 +932,8 @@ def _checkpoint_enrichment(sale: AuctionSale) -> bool:
         return False
     _finalize_sale_for_app(sale, geocode=False)
     if upsert_sales_to_supabase([sale], refresh_last_seen=False) != 1:
-        raise RuntimeError(f"Enrichment checkpoint was not persisted: {sale.source_url}")
+        LOGGER.info("Skipped superseded enrichment checkpoint for %s", sale.source_url)
+        return False
     return True
 
 
