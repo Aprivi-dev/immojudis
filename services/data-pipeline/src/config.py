@@ -161,10 +161,9 @@ def load_settings() -> dict[str, str | float | None]:
         ),
         "replicate_retry_backoff_seconds": float(os.getenv("REPLICATE_RETRY_BACKOFF_SECONDS", "30")),
         "replicate_retry_max_sleep_seconds": float(os.getenv("REPLICATE_RETRY_MAX_SLEEP_SECONDS", "60")),
-        # Les appels LLM restent espacés globalement pour éviter les rafales
-        # Replicate, mais l'intervalle doit rester assez court pour que les
-        # backfills bornés ne passent pas l'essentiel du temps à dormir.
-        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "1")),
+        # Replicate may limit prediction creation to 6/minute with burst 1.
+        # Space starts above 10 seconds so normal scans avoid provider 429s.
+        "replicate_min_interval_seconds": float(os.getenv("REPLICATE_MIN_INTERVAL_SECONDS", "11")),
         "pipeline_enrich_workers": max(1, int(os.getenv("PIPELINE_ENRICH_WORKERS", "2"))),
         # Extractions PDF/OCR en parallèle (CPU + RAM : on reste prudent pour ne
         # pas saturer la mémoire du runner avec plusieurs Docling/OCR simultanés).
