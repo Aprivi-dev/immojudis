@@ -541,11 +541,11 @@ def upsert_cadastre_parcels_to_supabase(rows: list[dict[str, object]]) -> int:
         return 0
 
     now = datetime.now(UTC).isoformat()
-    payload = [
+    payload = _deduplicate_conflict_rows([
         _timestamped(dict(row), now)
         for row in rows
         if row.get("source_url") and row.get("parcel_key")
-    ]
+    ], ("source_url", "parcel_key"))
     if not payload:
         return 0
 
@@ -568,11 +568,11 @@ def upsert_dpe_diagnostics_to_supabase(rows: list[dict[str, object]]) -> int:
         return 0
 
     now = datetime.now(UTC).isoformat()
-    payload = [
+    payload = _deduplicate_conflict_rows([
         _timestamped(dict(row), now)
         for row in rows
         if row.get("source_url") and row.get("diagnostic_number")
-    ]
+    ], ("source_url", "diagnostic_number"))
     if not payload:
         return 0
 
@@ -584,6 +584,19 @@ def upsert_dpe_diagnostics_to_supabase(rows: list[dict[str, object]]) -> int:
         on_conflict="source_url,diagnostic_number",
     )
     return len(payload)
+
+
+def _deduplicate_conflict_rows(
+    rows: list[dict[str, object]], key_columns: tuple[str, ...],
+) -> list[dict[str, object]]:
+    """Match the result of sequential upserts before sending one PostgREST batch."""
+    unique: dict[tuple[object, ...], dict[str, object]] = {}
+    for row in rows:
+        conflict_key = tuple(row[column] for column in key_columns)
+        unique[conflict_key] = {**unique.get(conflict_key, {}), **row}
+    if len(unique) != len(rows):
+        LOGGER.info("Collapsed %s duplicate upsert rows for %s", len(rows) - len(unique), key_columns)
+    return list(unique.values())
 
 
 def create_run_in_supabase(source: str, use_llm: bool, run_id: str | None = None) -> str | None:
