@@ -1351,6 +1351,11 @@ def test_upsert_cadastre_parcels_uses_service_role_rest_upsert(monkeypatch) -> N
                 "section": "AB",
                 "parcel_number": "0123",
             },
+            {
+                "source_url": "https://example.test/sale",
+                "parcel_key": "33063-AB-0123",
+                "section": "AB corrected",
+            },
             {"source_url": "https://example.test/ignored"},
         ]
     )
@@ -1360,6 +1365,8 @@ def test_upsert_cadastre_parcels_uses_service_role_rest_upsert(monkeypatch) -> N
     assert calls[0][1] == "secret"
     assert calls[0][2] == "auction_cadastre_parcels"
     assert calls[0][3][0]["parcel_key"] == "33063-AB-0123"
+    assert calls[0][3][0]["section"] == "AB corrected"
+    assert calls[0][3][0]["parcel_number"] == "0123"
     assert calls[0][3][0]["updated_at"]
     assert calls[0][4] == "source_url,parcel_key"
 
@@ -1386,6 +1393,11 @@ def test_upsert_dpe_diagnostics_uses_service_role_rest_upsert(monkeypatch) -> No
                 "diagnostic_number": "2133E0178774F",
                 "dpe_class": "E",
             },
+            {
+                "source_url": "https://example.test/sale",
+                "diagnostic_number": "2133E0178774F",
+                "dpe_class": "D",
+            },
             {"source_url": "https://example.test/ignored"},
         ]
     )
@@ -1395,6 +1407,7 @@ def test_upsert_dpe_diagnostics_uses_service_role_rest_upsert(monkeypatch) -> No
     assert calls[0][1] == "secret"
     assert calls[0][2] == "auction_dpe_diagnostics"
     assert calls[0][3][0]["diagnostic_number"] == "2133E0178774F"
+    assert calls[0][3][0]["dpe_class"] == "D"
     assert calls[0][3][0]["updated_at"]
     assert calls[0][4] == "source_url,diagnostic_number"
 
