@@ -7,11 +7,14 @@ import {
 
 const values = {
   recipient_name: "Maître Dupont",
+  salutation: "Bonjour Maître Dupont,",
   sale_title: "Appartement T3 à Bordeaux",
+  sale_subject_title: "Appartement T3 à Bordeaux",
   sale_reference: "Appartement T3 à Bordeaux — 33000 Bordeaux — Tribunal judiciaire de Bordeaux",
   location: "33000 Bordeaux",
   tribunal: "Tribunal judiciaire de Bordeaux",
   hearing_date: "14 septembre 2026",
+  hearing_line: "Audience annoncée : 14 septembre 2026",
   starting_price: "85 000 €",
   questions: "- Le cahier des conditions de vente est-il disponible ?",
 };
@@ -25,7 +28,9 @@ describe("information agent email content template", () => {
 
     expect(rendered.subject).toContain("Appartement T3 à Bordeaux");
     expect(rendered.bodyText).toContain("Bonjour Maître Dupont");
+    expect(rendered.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(rendered.bodyText).toContain("cahier des conditions de vente");
+    expect(rendered.bodyText).not.toContain("utilisateur intéressé");
     expect(rendered.bodyText).not.toContain("{{");
   });
 

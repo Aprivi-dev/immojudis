@@ -1,7 +1,6 @@
 import * as React from "react";
 import {
   Body,
-  Button,
   Container,
   Head,
   Heading,
@@ -22,7 +21,7 @@ export type InformationRequestEmailProps = {
   appUrl?: string;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v1";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v2";
 
 type BodyBlock =
   | { kind: "paragraph"; lines: string[] }
@@ -37,8 +36,6 @@ const BRAND = {
   line: "#E7E1D6",
   paper: "#FFFFFF",
   canvas: "#F5F2EB",
-  green: "#17745B",
-  greenSoft: "#E8F5F0",
 };
 
 export function InformationRequestEmail({
@@ -49,25 +46,24 @@ export function InformationRequestEmail({
   appUrl = "https://immojudis.com",
 }: InformationRequestEmailProps) {
   const blocks = parseBodyBlocks(bodyText);
-  const replyHref = `mailto:${replyTo}?subject=${encodeURIComponent(`Re: ${subject}`)}`;
+  const replyHref = `mailto:${replyTo}`;
 
   return (
     <Html lang="fr">
       <Head />
-      <Preview>{`${subject} — demande transmise via ImmoJudis`}</Preview>
+      <Preview>{`Informations sur une vente judiciaire — ${subject}`}</Preview>
       <Body style={styles.body}>
         <Container style={styles.container}>
           <Section style={styles.topBar} />
           <Section style={styles.header}>
             <Text style={styles.wordmark}>IMMOJUDIS</Text>
             <Text style={styles.tagline}>Analyse des ventes immobilières judiciaires</Text>
-            <Text style={styles.validationBadge}>✓ Demande validée avant envoi</Text>
           </Section>
 
           <Section style={styles.content}>
-            <Text style={styles.eyebrow}>DEMANDE DOCUMENTAIRE SÉCURISÉE</Text>
+            <Text style={styles.eyebrow}>VÉRIFICATION D’UNE ANNONCE</Text>
             <Heading as="h1" style={styles.heading}>
-              Demande d’informations relative à une vente immobilière
+              Informations sur une vente judiciaire
             </Heading>
             <Text style={styles.reference}>Référence de suivi : {caseReference}</Text>
 
@@ -76,43 +72,6 @@ export function InformationRequestEmail({
             {blocks.map((block, blockIndex) => (
               <BodyBlockView key={`${block.kind}-${blockIndex}`} block={block} />
             ))}
-
-            <Section style={styles.replyPanel}>
-              <Text style={styles.replyTitle}>Vous pouvez répondre directement à cet email</Text>
-              <Text style={styles.replyCopy}>
-                Les PDF et photographies peuvent être joints à votre réponse. Ils seront conservés
-                dans un espace privé, analysés avec traçabilité puis contrôlés avant toute
-                intégration aux données ImmoJudis.
-              </Text>
-              <Button href={replyHref} style={styles.button}>
-                Répondre à la demande
-              </Button>
-              <Text style={styles.replyAddress}>
-                Adresse de réponse :{" "}
-                <Link href={replyHref} style={styles.inlineLink}>
-                  {replyTo}
-                </Link>
-              </Text>
-            </Section>
-
-            <Section style={styles.trustPanel}>
-              <Text style={styles.trustTitle}>Un traitement responsable et transparent</Text>
-              <Text style={styles.trustItem}>
-                <span style={styles.trustBullet}>01</span>
-                ImmoJudis est un service indépendant d’analyse des ventes immobilières judiciaires.
-                Ce message n’émane ni du tribunal ni d’une administration.
-              </Text>
-              <Text style={styles.trustItem}>
-                <span style={styles.trustBullet}>02</span>
-                L’adresse personnelle de l’utilisateur à l’origine de la demande n’est pas transmise
-                au destinataire.
-              </Text>
-              <Text style={styles.trustItemLast}>
-                <span style={styles.trustBullet}>03</span>
-                L’IA assiste la lecture des réponses ; les informations proposées restent soumises à
-                contrôle avant de modifier une annonce, une estimation ou une description.
-              </Text>
-            </Section>
           </Section>
 
           <Section style={styles.footer}>
@@ -126,10 +85,12 @@ export function InformationRequestEmail({
               </Link>
               {" · "}Référence {caseReference}
             </Text>
+            <Text style={styles.footerText}>
+              Adresse de réponse : <Link href={replyHref}>{replyTo}</Link>
+            </Text>
             <Text style={styles.footerLegal}>
-              Message préparé avec l’assistance d’un système d’IA et envoyé après validation
-              explicite d’un utilisateur ImmoJudis. Merci de ne transmettre que les documents que
-              vous êtes autorisé à communiquer.
+              ImmoJudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses
+              ; notre équipe vérifie les informations avant toute mise à jour de la fiche.
             </Text>
           </Section>
         </Container>
@@ -210,8 +171,9 @@ function parseBodyBlocks(bodyText: string): BodyBlock[] {
         return { kind: "questions" as const, lines };
       }
       if (
-        lines.length >= 2 &&
-        lines.every((line) => /^(Référence|Date annoncée|Mise à prix annoncée)\s*:/i.test(line))
+        lines.every((line) =>
+          /^(Référence|Audience annoncée|Date annoncée|Mise à prix annoncée)\s*:/i.test(line),
+        )
       ) {
         return { kind: "sale" as const, lines };
       }
@@ -247,16 +209,6 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: "0.08em",
   },
   tagline: { margin: "4px 0 14px", color: BRAND.muted, fontSize: "12px", lineHeight: "18px" },
-  validationBadge: {
-    display: "inline-block",
-    margin: 0,
-    padding: "6px 10px",
-    color: BRAND.green,
-    backgroundColor: BRAND.greenSoft,
-    borderRadius: "999px",
-    fontSize: "11px",
-    fontWeight: 700,
-  },
   content: { padding: "30px 34px 34px" },
   eyebrow: {
     margin: "0 0 9px",
@@ -303,43 +255,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   questionItem: { margin: "10px 0", color: "#303A50", fontSize: "14px", lineHeight: "22px" },
   questionNumber: { marginRight: "10px", color: BRAND.gold, fontSize: "11px", fontWeight: 700 },
-  replyPanel: {
-    margin: "26px 0 20px",
-    padding: "22px",
-    backgroundColor: BRAND.ink,
-    borderRadius: "11px",
-  },
-  replyTitle: { margin: "0 0 8px", color: "#FFFFFF", fontSize: "17px", fontWeight: 700 },
-  replyCopy: { margin: "0 0 18px", color: "#D7DDEA", fontSize: "13px", lineHeight: "20px" },
-  button: {
-    display: "inline-block",
-    padding: "12px 18px",
-    color: "#FFFFFF",
-    backgroundColor: BRAND.gold,
-    borderRadius: "7px",
-    fontSize: "14px",
-    fontWeight: 700,
-    textDecoration: "none",
-  },
-  replyAddress: { margin: "14px 0 0", color: "#AEB8CB", fontSize: "11px", lineHeight: "17px" },
-  inlineLink: { color: "#FFFFFF", textDecoration: "underline" },
-  trustPanel: {
-    padding: "20px 20px 8px",
-    backgroundColor: "#F9F8F5",
-    border: `1px solid ${BRAND.line}`,
-    borderRadius: "10px",
-  },
-  trustTitle: { margin: "0 0 14px", color: BRAND.ink, fontSize: "14px", fontWeight: 700 },
-  trustItem: {
-    margin: "0 0 12px",
-    paddingBottom: "12px",
-    color: BRAND.muted,
-    borderBottom: `1px solid ${BRAND.line}`,
-    fontSize: "12px",
-    lineHeight: "19px",
-  },
-  trustItemLast: { margin: "0 0 12px", color: BRAND.muted, fontSize: "12px", lineHeight: "19px" },
-  trustBullet: { marginRight: "8px", color: BRAND.gold, fontSize: "10px", fontWeight: 700 },
   footer: {
     padding: "24px 34px 28px",
     backgroundColor: "#F9F8F5",

@@ -7,8 +7,18 @@ export const INFORMATION_AGENT_EMAIL_VARIABLES = [
     example: "Maître Dupont",
   },
   {
+    key: "salutation",
+    label: "Formule d’appel adaptée au destinataire",
+    example: "Bonjour Maître Dupont,",
+  },
+  {
     key: "sale_title",
     label: "Titre de l’annonce",
+    example: "Appartement T3 à Bordeaux",
+  },
+  {
+    key: "sale_subject_title",
+    label: "Titre court pour l’objet",
     example: "Appartement T3 à Bordeaux",
   },
   {
@@ -30,6 +40,11 @@ export const INFORMATION_AGENT_EMAIL_VARIABLES = [
     key: "hearing_date",
     label: "Date d’audience",
     example: "14 septembre 2026",
+  },
+  {
+    key: "hearing_line",
+    label: "Ligne d’audience, omise si la date manque",
+    example: "Audience annoncée : 14 septembre 2026",
   },
   {
     key: "starting_price",
@@ -188,35 +203,34 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande d’informations — modèle initial",
-  subjectTemplate: "Demande d’informations — {{sale_title}} — audience du {{hearing_date}}",
+  name: "Demande de précisions sur une vente — version 2",
+  subjectTemplate: "{{sale_subject_title}} — précisions sur la vente",
   blocks: [
     {
       id: "greeting",
       kind: "dynamic",
       label: "Formule d’appel",
-      content: "Bonjour {{recipient_name}},",
+      content: "{{salutation}}",
     },
     {
       id: "identity",
       kind: "fixed",
       label: "Présentation ImmoJudis",
       content:
-        "ImmoJudis est un service indépendant d’analyse des ventes immobilières judiciaires. Nous vous contactons à la demande d’un utilisateur intéressé par cette vente, après validation explicite de sa demande.",
+        "Je vous contacte pour ImmoJudis, service indépendant d’information sur les ventes immobilières judiciaires. Nous vérifions la fiche de cette vente :",
     },
     {
       id: "sale_details",
       kind: "dynamic",
       label: "Informations de la vente",
-      content:
-        "Référence de l’annonce : {{sale_reference}}\nDate annoncée : {{hearing_date}}\nMise à prix annoncée : {{starting_price}}",
+      content: "Référence de l’annonce : {{sale_reference}}\n{{hearing_line}}",
     },
     {
       id: "request_intro",
       kind: "fixed",
       label: "Introduction de la demande",
       content:
-        "Afin de permettre une étude du dossier sur la base d’informations fiables et à jour, pourriez-vous nous préciser les éléments suivants ?",
+        "Pourriez-vous nous confirmer les points suivants ou nous transmettre les pièces disponibles ?",
     },
     {
       id: "questions",
@@ -229,14 +243,13 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Consignes de réponse",
       content:
-        "Vous pouvez répondre directement à cet email et y joindre les documents ou photographies que vous êtes autorisé à communiquer. Votre réponse sera conservée dans un espace privé, analysée avec traçabilité puis contrôlée avant toute intégration aux données ImmoJudis.",
+        "Une réponse partielle nous aidera déjà. Vous pouvez simplement répondre à cet email et joindre les pièces que vous êtes autorisé à transmettre. Si vous n’êtes pas le bon interlocuteur, pourriez-vous nous orienter ?",
     },
     {
       id: "closing",
       kind: "fixed",
       label: "Conclusion et signature",
-      content:
-        "Nous vous remercions par avance pour votre aide et restons à votre disposition si vous souhaitez préciser le périmètre de cette demande.\n\nCordialement,\nL’équipe ImmoJudis",
+      content: "Merci pour votre aide.\n\nBien cordialement,\nL’équipe ImmoJudis",
     },
   ],
 };
@@ -245,17 +258,17 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Identité et indépendance",
     description:
-      "Le bandeau ImmoJudis et la mention précisant que le message n’émane ni d’un tribunal ni d’une administration restent toujours affichés.",
+      "Le bandeau ImmoJudis et la mention précisant que le service n’agit pas au nom d’un tribunal restent toujours affichés.",
   },
   {
     title: "Transparence sur l’IA",
     description:
-      "Le destinataire est informé que l’IA assiste la lecture et qu’un contrôle précède toute modification de l’annonce ou de l’estimation.",
+      "Le destinataire est informé que l’IA aide à lire et classer les réponses et que l’équipe vérifie les informations avant toute mise à jour de la fiche.",
   },
   {
     title: "Confidentialité et droits",
     description:
-      "Le message rappelle que l’adresse de l’utilisateur reste privée et que seules les pièces autorisées peuvent être transmises.",
+      "Le message rappelle que seules les pièces autorisées peuvent être transmises et que la réponse doit suivre l’adresse liée au dossier.",
   },
 ] as const;
 

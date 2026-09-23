@@ -129,6 +129,25 @@ export type InformationAgentGap = {
   reason: string;
 };
 
+const INITIAL_QUESTION_PRIORITY: readonly InformationAgentQuestionKey[] = [
+  "documents",
+  "visit",
+  "occupancy",
+  "diagnostics",
+  "surface",
+  "photos",
+  "sale_terms",
+  "composition",
+];
+
+export function selectDefaultInformationAgentQuestionKeys(
+  gaps: readonly InformationAgentGap[],
+): InformationAgentQuestionKey[] {
+  if (!gaps.length) return ["documents", "visit", "occupancy"];
+  const missingKeys = new Set(gaps.map((gap) => gap.key));
+  return INITIAL_QUESTION_PRIORITY.filter((key) => missingKeys.has(key)).slice(0, 3);
+}
+
 export type InformationAgentMission = {
   id: string;
   caseId: string | null;
@@ -226,15 +245,19 @@ export function buildInformationRequestDraft({
   const location = [sale.postal_code, sale.city].filter(Boolean).join(" ");
   const hearing = formatDate(sale.sale_date);
   const reference = [title, location, sale.tribunal].filter(Boolean).join(" — ");
+  const trimmedRecipientName = recipientName?.replace(/\s+/g, " ").trim();
   return renderInformationAgentEmailContent({
     template,
     values: {
-      recipient_name: recipientName?.trim() || "Madame, Monsieur",
+      recipient_name: trimmedRecipientName || "Madame, Monsieur",
+      salutation: trimmedRecipientName ? `Bonjour ${trimmedRecipientName},` : "Madame, Monsieur,",
       sale_title: title,
+      sale_subject_title: shortenSubjectTitle(title),
       sale_reference: reference || title,
       location: location || "Localisation non précisée",
       tribunal: sale.tribunal || "Tribunal non précisé",
       hearing_date: hearing,
+      hearing_line: hearing === "Date à confirmer" ? "" : `Audience annoncée : ${hearing}`,
       starting_price: formatPrice(sale.starting_price_eur),
       questions: questionKeys
         .map((key) => `- ${INFORMATION_AGENT_QUESTIONS[key].question}`)
@@ -266,9 +289,7 @@ export async function createAdminInformationAgentDraft({
     getPublishedInformationAgentEmailTemplate(),
   ]);
   const gaps = detectInformationGaps(sale);
-  const defaultQuestions = gaps.length
-    ? gaps.map((gap) => gap.key)
-    : (["documents", "photos", "visit"] as InformationAgentQuestionKey[]);
+  const defaultQuestions = selectDefaultInformationAgentQuestionKeys(gaps);
   const questionKeys = uniqueQuestionKeys(input.questionKeys ?? defaultQuestions);
   const extractedEmail = extractEmail(sale.lawyer_contact);
   const recipientEmail = input.recipientEmail ?? extractedEmail;
@@ -391,6 +412,7 @@ async function approveAndSendMission({
   if (mission.status !== "draft" && mission.status !== "failed") {
     throw new Error("Requête invalide : cette enquête ne peut plus être modifiée.");
   }
+  assertInformationAgentOutboundEnabled();
 
   const { data: edited, error: editError } = await supabaseAdmin
     .from("information_agent_missions")
@@ -493,6 +515,12 @@ async function approveAndSendMission({
       failure_reason: detail,
     });
     throw error;
+  }
+}
+
+export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = process.env): void {
+  if (env.INFORMATION_AGENT_OUTBOUND_ENABLED !== "true") {
+    throw new Error("Envoi de l’agent désactivé pendant la phase de validation.");
   }
 }
 
@@ -700,6 +728,14 @@ function addGap(gaps: InformationAgentGap[], key: InformationAgentQuestionKey, r
 
 function uniqueQuestionKeys(keys: readonly InformationAgentQuestionKey[]) {
   return [...new Set(keys)].slice(0, 8);
+}
+
+function shortenSubjectTitle(title: string): string {
+  const normalized = title.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 70) return normalized;
+  const prefix = normalized.slice(0, 69);
+  const lastSpace = prefix.lastIndexOf(" ");
+  return `${(lastSpace >= 40 ? prefix.slice(0, lastSpace) : prefix).trimEnd()}…`;
 }
 
 function meaningfulList(value: unknown): unknown[] {

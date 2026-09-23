@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  assertInformationAgentOutboundEnabled,
   buildInformationRequestDraft,
   createAdminInformationAgentDraft,
   detectInformationGaps,
   informationAgentAdminActionSchema,
   informationAgentCreateSchema,
+  runAdminInformationAgentAction,
+  selectDefaultInformationAgentQuestionKeys,
 } from "@/lib/information-agent";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { AuctionSale } from "@/lib/types";
 
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -13,6 +17,58 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 describe("supervised information agent", () => {
+  it("keeps outbound email disabled until it is explicitly enabled", () => {
+    expect(() => assertInformationAgentOutboundEnabled({ NODE_ENV: "test" })).toThrow("désactivé");
+    expect(() =>
+      assertInformationAgentOutboundEnabled({
+        NODE_ENV: "test",
+        INFORMATION_AGENT_OUTBOUND_ENABLED: "false",
+      }),
+    ).toThrow("désactivé");
+    expect(() =>
+      assertInformationAgentOutboundEnabled({
+        NODE_ENV: "test",
+        INFORMATION_AGENT_OUTBOUND_ENABLED: "true",
+      }),
+    ).not.toThrow();
+  });
+
+  it("blocks the admin send action before any mutation or network call", async () => {
+    const query = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: "22222222-2222-4222-8222-222222222222", status: "draft" },
+        error: null,
+      }),
+    };
+    query.select.mockReturnValue(query);
+    query.eq.mockReturnValue(query);
+    vi.mocked(supabaseAdmin.from).mockReturnValue(query as never);
+    const fetchImpl = vi.fn();
+    vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", "false");
+    try {
+      await expect(
+        runAdminInformationAgentAction({
+          auth: { isAdmin: true, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } as never,
+          input: {
+            action: "approve_and_send",
+            missionId: "22222222-2222-4222-8222-222222222222",
+            approvalConfirmed: true,
+            recipientEmail: "contact@example.test",
+            subject: "Informations complémentaires",
+            bodyText: "Bonjour, merci de nous transmettre les informations du dossier.",
+          },
+          fetchImpl: fetchImpl as typeof fetch,
+        }),
+      ).rejects.toThrow("désactivé");
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(supabaseAdmin.from).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.mocked(supabaseAdmin.from).mockReset();
+    }
+  });
   it("detects the material gaps of an incomplete auction listing", () => {
     const gaps = detectInformationGaps(incompleteSale());
 
@@ -26,6 +82,11 @@ describe("supervised information agent", () => {
       "composition",
       "sale_terms",
     ]);
+    expect(selectDefaultInformationAgentQuestionKeys(gaps)).toEqual([
+      "documents",
+      "visit",
+      "occupancy",
+    ]);
   });
 
   it("builds a transparent, bounded draft without disclosing bidding capacity", () => {
@@ -35,11 +96,40 @@ describe("supervised information agent", () => {
       questionKeys: ["documents", "photos", "visit"],
     });
 
-    expect(draft.subject).toContain("audience du 14 septembre 2026");
-    expect(draft.bodyText).toContain("service indépendant d’analyse");
-    expect(draft.bodyText).toContain("contrôlée avant toute intégration");
+    expect(draft.subject).toBe("Appartement T3 à Bordeaux — précisions sur la vente");
+    expect(draft.bodyText).toContain("service indépendant d’information");
+    expect(draft.bodyText).toContain("Une réponse partielle nous aidera déjà");
+    expect(draft.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(draft.bodyText).toContain("cahier des conditions de vente");
+    expect(draft.bodyText).not.toContain("utilisateur intéressé");
     expect(draft.bodyText).not.toMatch(/plafond d.enchère|budget de l.utilisateur/i);
+  });
+
+  it("omits an unknown hearing date and uses a neutral greeting", () => {
+    const draft = buildInformationRequestDraft({
+      sale: { ...incompleteSale(), sale_date: null },
+      questionKeys: ["documents"],
+    });
+
+    expect(draft.subject).not.toContain("Date à confirmer");
+    expect(draft.bodyText).toContain("Madame, Monsieur,");
+    expect(draft.bodyText).not.toContain("Audience annoncée");
+    expect(draft.bodyText).not.toContain("Date à confirmer");
+  });
+
+  it("keeps a long sale title short in the email subject", () => {
+    const draft = buildInformationRequestDraft({
+      sale: {
+        ...incompleteSale(),
+        title:
+          "Appartement situé dans un immeuble ancien avec dépendances et plusieurs lots à Bordeaux",
+      },
+      questionKeys: ["documents"],
+    });
+
+    expect(draft.subject.length).toBeLessThanOrEqual(100);
+    expect(draft.subject).toContain("… — précisions sur la vente");
+    expect(draft.bodyText).toContain("plusieurs lots à Bordeaux");
   });
 
   it("requires explicit admin approval for every send", () => {
