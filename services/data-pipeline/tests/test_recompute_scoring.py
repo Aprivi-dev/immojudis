@@ -411,3 +411,38 @@ def test_persisted_sale_procedure_validation_detects_stale_but_well_formed_paylo
         "participation_mode differs from recompute",
         "rules differs from recompute",
     ]
+
+
+def test_persisted_sale_procedure_validation_detects_stale_state_sale_method() -> None:
+    row = {
+        "sale_venue_type": "state",
+        "sale_legal_framework": "state_sale",
+        "sale_verification_status": "cross_checked",
+        "sale_procedure": {
+            "schema_version": "sale_procedure_v1",
+            "ruleset_version": "fr_auction_participation_2026-08-20",
+            "venue_type": "state",
+            "legal_framework": "state_sale",
+            "participation_mode": "unknown",
+            "state_sale_method": "unknown",
+            "rules": {"lawyer_required": None},
+            "verification": {"status": "cross_checked"},
+        },
+    }
+    expected = AuctionSale(
+        source_name="cessions_etat",
+        source_url="https://example.test/state-sale",
+        sale_venue_type="state",
+        sale_legal_framework="state_sale",
+        sale_verification_status="cross_checked",
+        sale_procedure={
+            "ruleset_version": "fr_auction_participation_2026-08-20",
+            "participation_mode": "unknown",
+            "state_sale_method": "appel_offres",
+            "rules": {"lawyer_required": None},
+        },
+    )
+
+    assert _validate_persisted_sale_procedure(row, expected_sale=expected) == [
+        "state_sale_method differs from recompute",
+    ]

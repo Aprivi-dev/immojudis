@@ -80,12 +80,13 @@ describe("SalePublicPreview", () => {
       screen.getByRole("heading", { name: "Bien immobilier vendu chez le notaire" }),
     ).toBeTruthy();
     expect(screen.getAllByText("Vente notariale").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("Représentation à confirmer")).toBeTruthy();
+    expect(screen.getByText("Modalités à consulter dans le dossier")).toBeTruthy();
     expect(screen.getByText("Un seul catalogue, plusieurs procédures")).toBeTruthy();
     expect(container.textContent).toContain(
       "ventes immobilières au tribunal, chez le notaire et les ventes domaniales",
     );
     expect(container.textContent).not.toContain("confidential@example.test");
+    expect(container.textContent).not.toContain("mise plafond");
     expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
 
     const cta = screen.getByRole("link", { name: /Voir gratuitement le dossier/ });
@@ -93,12 +94,29 @@ describe("SalePublicPreview", () => {
     expect(cta.getAttribute("href")).toContain(encodeURIComponent("/sales/sale-1?from=%2Fsales"));
   });
 
-  it("keeps court-specific guidance and public court activity on tribunal sales", async () => {
-    renderPreview({ sale_venue_type: "tribunal", sale_verification_status: "verified" });
+  it("keeps court-specific guidance without exposing court statistics in the public teaser", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_verification_status: "verified",
+      tribunal_code: "tj-bordeaux",
+      tribunal_name: "Tribunal judiciaire de Bordeaux",
+    });
 
     expect(screen.getByText("Avocat obligatoire pour enchérir")).toBeTruthy();
     expect(screen.getByText(/audience d’adjudication/)).toBeTruthy();
-    expect(await screen.findByText("Activité publique du tribunal pour sale-1")).toBeTruthy();
+    expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
+  });
+
+  it("shows the domanial method before price and avoids promising auctions", () => {
+    const { container } = renderPreview({
+      sale_venue_type: "state",
+      sale_verification_status: "cross_checked",
+      starting_price_eur: null,
+    });
+    expect(screen.getByText("Mode de cession")).toBeTruthy();
+    expect(screen.getByText(/Prix non publié/)).toBeTruthy();
+    expect(container.textContent).not.toContain("estimation de votre mise plafond");
+    expect(container.textContent).not.toContain("L'inscription et les enchères");
   });
 
   it("has no structural accessibility violations", async () => {
