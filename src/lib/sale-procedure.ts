@@ -8,6 +8,12 @@ import type {
 } from "@/lib/types";
 
 const venueTypeSchema = z.enum(["tribunal", "notary", "state", "online", "unknown"]);
+const stateSaleMethodSchema = z.enum([
+  "adjudication",
+  "appel_offres",
+  "cession_amiable",
+  "unknown",
+]);
 const legalFrameworkSchema = z.enum([
   "judicial_seizure",
   "judicial_partition",
@@ -45,6 +51,10 @@ export const saleProcedureSchema = z
     schema_version: z.literal("sale_procedure_v1"),
     ruleset_version: z.string().min(1),
     venue_type: venueTypeSchema,
+    state_sale_method: z.preprocess(
+      (value) => (value == null ? "unknown" : value),
+      stateSaleMethodSchema,
+    ),
     legal_framework: legalFrameworkSchema,
     venue_name: z.string().nullable(),
     venue_address: z.string().nullable(),
@@ -96,10 +106,12 @@ export const saleProcedureSchema = z
 
 export type SaleProcedure = z.infer<typeof saleProcedureSchema>;
 export type SaleProcedureSource = z.infer<typeof sourceSchema>;
+export type StateSaleMethod = z.infer<typeof stateSaleMethodSchema>;
 
 export type SaleProcedurePresentation = {
   procedure: SaleProcedure | null;
   venueType: SaleVenueType;
+  stateSaleMethod: StateSaleMethod;
   legalFramework: SaleLegalFramework;
   verificationStatus: SaleVerificationStatus;
   verifiedAt: string | null;
@@ -145,6 +157,7 @@ export function getSaleProcedure(sale: AuctionSale): SaleProcedurePresentation {
   return {
     procedure,
     venueType,
+    stateSaleMethod: procedure?.state_sale_method ?? "unknown",
     legalFramework,
     verificationStatus,
     verifiedAt: procedure?.verification.verified_at ?? null,
@@ -238,6 +251,67 @@ export function saleProcedureIsConfirmed(procedure: SaleProcedurePresentation): 
 
 export function saleIsTribunalVenue(sale: AuctionSale): boolean {
   return getSaleProcedure(sale).venueType === "tribunal";
+}
+
+/**
+ * Tribunal statistics need both a confirmed venue and a court identifier that
+ * can be resolved without guessing from the property's address or city.
+ */
+export function saleHasVerifiedTribunal(sale: AuctionSale): boolean {
+  const procedure = getSaleProcedure(sale);
+  if (procedure.venueType !== "tribunal" || !saleProcedureIsConfirmed(procedure)) {
+    return false;
+  }
+
+  const qualityFlags = Array.isArray(sale.quality_flags)
+    ? sale.quality_flags.filter((flag): flag is string => typeof flag === "string")
+    : [];
+  if (
+    qualityFlags.some((flag) =>
+      [
+        "tribunal_competence_unverified",
+        "tribunal_competence_unresolved",
+        "tribunal_inconsistent",
+      ].includes(flag),
+    )
+  ) {
+    return false;
+  }
+
+  const hasVerifiedAssignmentFact = procedure.procedure?.verification.facts.some(
+    (fact) =>
+      fact.key === "competent_court" &&
+      (fact.status === "verified" || fact.status === "cross_checked") &&
+      Boolean(nonEmpty(fact.value)),
+  );
+  if (!hasVerifiedAssignmentFact) return false;
+
+  const hasCourtConflict = (sale.source_conflicts ?? []).some((conflict) => {
+    const field = conflict.field?.trim().toLocaleLowerCase("fr-FR");
+    return Boolean(
+      field &&
+      [
+        "tribunal",
+        "tribunal_code",
+        "tribunal_name",
+        "tribunal_city",
+        "sale_venue_type",
+        "sale_procedure",
+      ].includes(field),
+    );
+  });
+  return !hasCourtConflict;
+}
+
+export function stateSaleMethodLabel(
+  procedure: Pick<SaleProcedurePresentation, "stateSaleMethod">,
+): string {
+  return {
+    adjudication: "Adjudication",
+    appel_offres: "Appel d’offres",
+    cession_amiable: "Cession amiable",
+    unknown: "Mode de cession à confirmer",
+  }[procedure.stateSaleMethod];
 }
 
 export function saleLegalFrameworkLabel(framework: SaleLegalFramework): string {
@@ -350,4 +424,8 @@ function judicialGuarantee(startingPrice: number | null): number | null {
 
 function formatPercentNumber(value: number): string {
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value)} %`;
+}
+
+function nonEmpty(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }

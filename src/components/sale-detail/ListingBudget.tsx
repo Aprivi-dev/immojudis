@@ -14,20 +14,32 @@ export function ListingBudget({ sale }: { sale: AuctionSale }) {
   const price = positiveListingNumber(sale.starting_price_eur);
   const tribunal = procedure.venueType === "tribunal";
   const notary = procedure.venueType === "notary";
-  const items = [
-    ["Prix de départ", price == null ? "À confirmer" : formatPrice(price)],
-    ["Droits et taxes", "À confirmer"],
-    [tribunal ? "Frais préalables" : "Frais de vente", "Selon le dossier"],
-    [tribunal ? "Avocat" : notary ? "Notaire" : "Intervenants", "À chiffrer"],
-    ["Travaux", "À chiffrer"],
-  ];
+  const state = procedure.venueType === "state";
+  const items = state
+    ? [
+        ["Prix ou offre envisagée", price == null ? "À renseigner" : formatPrice(price)],
+        ["Frais de cession et taxes", "Selon l'annonce officielle"],
+        ["Frais propres au dossier", "À vérifier"],
+        ["Travaux", "À chiffrer"],
+      ]
+    : [
+        ["Prix de départ", price == null ? "À confirmer" : formatPrice(price)],
+        ["Droits et taxes", "À confirmer"],
+        [tribunal ? "Frais préalables" : "Frais de vente", "Selon le dossier"],
+        [tribunal ? "Avocat" : notary ? "Notaire" : "Intervenants", "À chiffrer"],
+        ["Travaux", "À chiffrer"],
+      ];
   return (
     <section id="budget" className={styles.section} aria-labelledby="listing-budget-title">
       <h2 id="listing-budget-title" className={styles.heading}>
         Préparer mon budget
       </h2>
       <div className={styles.card}>
-        <p className={styles.muted}>Sur la base de la mise à prix</p>
+        <p className={styles.muted}>
+          {state
+            ? "À partir du prix publié ou de votre offre envisagée"
+            : "Sur la base de la mise à prix"}
+        </p>
         <p className={styles.budgetPrice}>
           {price == null ? "Budget à compléter" : `${formatPrice(price)} + frais`}
         </p>
@@ -43,8 +55,9 @@ export function ListingBudget({ sale }: { sale: AuctionSale }) {
           ))}
         </dl>
         <p className={styles.notice}>
-          La mise à prix n’est ni le prix final ni un budget tout compris. Demandez le détail des
-          frais à l’interlocuteur du dossier.
+          {state
+            ? "Le prix publié, lorsqu'il existe, ne couvre pas nécessairement tous les frais. Confirmez-les dans l'annonce officielle."
+            : "La mise à prix n’est ni le prix final ni un budget tout compris. Demandez le détail des frais à l’interlocuteur du dossier."}
         </p>
         <a
           href={tribunal ? "/ventes-immobilieres-judiciaires#frais" : "#participation"}

@@ -310,10 +310,7 @@ describe("integrated listing", () => {
     expect(screen.queryByText("Simulateur de mise plafond chargé")).toBeNull();
     expect(screen.queryByText("Export PDF")).toBeNull();
     expect(screen.queryByText("Fourchette de valeur estimée", { exact: false })).toBeNull();
-    expect(document.querySelector("#tribunal-history")?.getAttribute("data-premium")).toBe("true");
-    expect(
-      document.querySelector("#tribunal-history")?.getAttribute("data-property-type-verified"),
-    ).toBe("false");
+    expect(document.querySelector("#tribunal-history")).toBeNull();
   });
   it.each([[], {}, [{ url: "javascript:alert(1)" }]])(
     "does not announce documents when no usable link exists: %j",
@@ -359,7 +356,7 @@ describe("integrated listing", () => {
     const { container } = renderDetail("analysis");
     const text = container.textContent ?? "";
     expect(text.indexOf("L’audience et les visites")).toBeLessThan(
-      text.indexOf("Votre analyse ImmoJudis"),
+      text.indexOf("Votre analyse d'adjudication"),
     );
     const sections = [
       "summary",
@@ -428,13 +425,42 @@ describe("integrated listing", () => {
         source_blocks: null,
       } as AuctionSale;
       const { container } = renderDetail("analysis", sale, false);
-      expect(screen.getByRole("heading", { name: "La vente et les visites" })).toBeTruthy();
+      expect(
+        screen.getByRole("heading", {
+          name:
+            venue === "notary"
+              ? "La séance notariale et les visites"
+              : venue === "state"
+                ? "Échéance, visites et service vendeur"
+                : "La vente et les visites",
+        }),
+      ).toBeTruthy();
       expect(screen.getByRole("heading", { name: "Marché local" })).toBeTruthy();
       expect(screen.queryByText("Votre mise plafond recommandée")).toBeNull();
       expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
       expect(container.querySelector("#calculation")).toBeNull();
       expect(screen.queryByText("Historique du tribunal")).toBeNull();
-      expect(mocks.forecast).toHaveBeenCalledWith(sale.id, false);
+      expect(container.textContent).not.toContain("Marché local, risques et mise plafond");
+      expect(mocks.forecast).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["notary", "state"] as const)(
+    "places the %s procedure ahead of the budget in Discovery",
+    (venue) => {
+      const { container } = renderDetail("discovery", {
+        ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+        sale_venue_type: venue,
+        sale_procedure: null,
+        source_blocks: null,
+      } as AuctionSale);
+      const participation = container.querySelector("#participation");
+      const budget = container.querySelector("#budget");
+      expect(participation).toBeTruthy();
+      expect(budget).toBeTruthy();
+      expect(
+        (participation?.compareDocumentPosition(budget!) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(container.textContent).not.toContain("Mise plafond avec travaux");
     },
   );
   it("preserves the no-photo and no-location states", () => {

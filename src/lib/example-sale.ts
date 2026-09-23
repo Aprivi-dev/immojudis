@@ -175,6 +175,13 @@ export const EXAMPLE_SALE = {
             evidence: ["Audience d'adjudication", "Référentiel Justice par commune INSEE"],
             source_url: null,
           },
+          {
+            key: "competent_court",
+            value: "Tribunal judiciaire de Bordeaux",
+            status: "cross_checked",
+            evidence: ["Fiche fictive Immojudis", "Référentiel Justice par commune INSEE"],
+            source_url: null,
+          },
         ],
         issues: [],
       },
@@ -515,6 +522,12 @@ function createExampleSale(config: ExampleSaleConfig): AuctionSale {
             ...procedure.rules.guarantee,
             amount_eur: guarantee,
           },
+        },
+        verification: {
+          ...procedure.verification,
+          facts: procedure.verification.facts.map((fact) =>
+            fact.key === "competent_court" ? { ...fact, value: config.tribunalName } : fact,
+          ),
         },
       },
     },

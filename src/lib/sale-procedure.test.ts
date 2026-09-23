@@ -4,9 +4,11 @@ import {
   guaranteeLabel,
   lawyerRequirementLabel,
   overbidLabel,
+  saleHasVerifiedTribunal,
   saleIsTribunalVenue,
   saleVerificationLabel,
   saleVenueLabel,
+  stateSaleMethodLabel,
 } from "@/lib/sale-procedure";
 import type { AuctionSale } from "@/lib/types";
 
@@ -173,4 +175,216 @@ describe("sale procedure presentation", () => {
       ),
     ).toBe(false);
   });
+
+  it.each([
+    ["adjudication", "Adjudication"],
+    ["appel_offres", "Appel d’offres"],
+    ["cession_amiable", "Cession amiable"],
+    ["unknown", "Mode de cession à confirmer"],
+  ] as const)("labels the state sale method %s", (method, label) => {
+    const presentation = getSaleProcedure(
+      sale({
+        sale_venue_type: "state",
+        sale_verification_status: "cross_checked",
+        tribunal: null,
+        tribunal_code: null,
+        tribunal_name: null,
+        tribunal_city: null,
+        sale_procedure: procedure({ state_sale_method: method }),
+      }),
+    );
+
+    expect(presentation.stateSaleMethod).toBe(method);
+    expect(stateSaleMethodLabel(presentation)).toBe(label);
+  });
+
+  it("keeps legacy procedures without a state method usable", () => {
+    const presentation = getSaleProcedure(
+      sale({
+        sale_venue_type: "state",
+        sale_verification_status: "cross_checked",
+        sale_procedure: procedure({ state_sale_method: null }),
+      }),
+    );
+
+    expect(presentation.stateSaleMethod).toBe("unknown");
+    expect(stateSaleMethodLabel(presentation)).toBe("Mode de cession à confirmer");
+  });
+
+  it("only confirms a tribunal when the venue, identifier, and source checks agree", () => {
+    expect(
+      saleHasVerifiedTribunal(
+        sale({
+          sale_venue_type: "tribunal",
+          sale_verification_status: "cross_checked",
+          tribunal_code: "bordeaux",
+          sale_procedure: procedure({
+            venue_type: "tribunal",
+            legal_framework: "judicial_seizure",
+            verification: {
+              status: "cross_checked",
+              verified_at: "2026-08-20T09:30:00Z",
+              case_source_count: 1,
+              case_sources: [],
+              regulatory_sources: [],
+              facts: [
+                {
+                  key: "competent_court",
+                  value: "TJ Bordeaux",
+                  status: "verified",
+                  evidence: ["justice_competence_insee_exact"],
+                  source_url: "https://www.data.gouv.fr/fr/datasets/competence-territoriale/",
+                },
+              ],
+              issues: [],
+            },
+          }),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      saleHasVerifiedTribunal(
+        sale({
+          sale_venue_type: "tribunal",
+          sale_verification_status: "verified",
+          tribunal_code: null,
+          sale_procedure: procedure({
+            venue_type: "tribunal",
+            legal_framework: "judicial_seizure",
+          }),
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      saleHasVerifiedTribunal(
+        sale({
+          sale_venue_type: "tribunal",
+          sale_verification_status: "verified",
+          tribunal_code: "bordeaux",
+          sale_procedure: procedure({
+            venue_type: "tribunal",
+            legal_framework: "judicial_seizure",
+            verification: {
+              status: "verified",
+              verified_at: "2026-08-20T09:30:00Z",
+              case_source_count: 1,
+              case_sources: [],
+              regulatory_sources: [],
+              facts: [
+                {
+                  key: "competent_court",
+                  value: "TJ Bordeaux",
+                  status: "verified",
+                  evidence: ["official court assignment"],
+                  source_url: "https://www.data.gouv.fr/fr/datasets/competence-territoriale/",
+                },
+              ],
+              issues: [],
+            },
+          }),
+          source_conflicts: [
+            { field: "tribunal_code", selected: "bordeaux", alternative: "paris" },
+          ],
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      saleHasVerifiedTribunal(
+        sale({
+          tribunal_code: "bordeaux",
+          sale_verification_status: "pending",
+          sale_procedure: procedure({
+            venue_type: "tribunal",
+            legal_framework: "judicial_seizure",
+          }),
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    "tribunal_competence_unverified",
+    "tribunal_competence_unresolved",
+    "tribunal_inconsistent",
+  ])("rejects a court code with the %s quality flag", (qualityFlag) => {
+    expect(
+      saleHasVerifiedTribunal(
+        sale({
+          sale_venue_type: "tribunal",
+          sale_verification_status: "cross_checked",
+          tribunal_code: "bordeaux",
+          quality_flags: [qualityFlag],
+          sale_procedure: procedure({
+            venue_type: "tribunal",
+            legal_framework: "judicial_seizure",
+            verification: {
+              status: "cross_checked",
+              verified_at: "2026-08-20T09:30:00Z",
+              case_source_count: 1,
+              case_sources: [],
+              regulatory_sources: [],
+              facts: [
+                {
+                  key: "competent_court",
+                  value: "TJ Bordeaux",
+                  status: "verified",
+                  evidence: ["official court assignment"],
+                  source_url: "https://www.data.gouv.fr/fr/datasets/competence-territoriale/",
+                },
+              ],
+              issues: [],
+            },
+          }),
+        }),
+      ),
+    ).toBe(false);
+  });
 });
+
+function procedure(overrides: Record<string, unknown> = {}) {
+  return {
+    schema_version: "sale_procedure_v1",
+    ruleset_version: "fr_auction_participation_2026-08-20",
+    venue_type: "state",
+    state_sale_method: "unknown",
+    legal_framework: "state_sale",
+    venue_name: "Vente immobilière de l'État",
+    venue_address: null,
+    participation_mode: "unknown",
+    organizer_name: "Direction de l'immobilier de l'État",
+    organizer_type: "state_service",
+    organizer_contact: null,
+    eligible_bar: null,
+    rules: {
+      lawyer_required: null,
+      lawyer_note: "Les modalités particulières de cette vente restent à confirmer.",
+      bid_method: "sale_specific",
+      guarantee: {
+        amount_eur: null,
+        rate_pct: null,
+        minimum_eur: null,
+        status: "pending_case_document",
+        note: "Consignation à confirmer dans les conditions de vente.",
+      },
+      financing_condition: null,
+      cooling_off_period: null,
+      payment_deadline_days: null,
+      overbid: {
+        allowed: null,
+        minimum_increase_pct: null,
+        window_days: null,
+        note: "Règle propre à la vente à confirmer.",
+      },
+    },
+    verification: {
+      status: "cross_checked",
+      verified_at: "2026-08-20T09:30:00Z",
+      case_source_count: 1,
+      case_sources: [],
+      regulatory_sources: [],
+      facts: [],
+      issues: [],
+    },
+    ...overrides,
+  };
+}

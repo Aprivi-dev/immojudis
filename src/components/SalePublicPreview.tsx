@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
@@ -14,17 +13,11 @@ import { Link } from "@/lib/router-compat";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
-  saleIsTribunalVenue,
   saleVerificationLabel,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
-
-const SaleTribunalHistory = dynamic(
-  () => import("@/components/SaleTribunalHistory").then((module) => module.SaleTribunalHistory),
-  { loading: () => <p className="p-6">Chargement de l’historique du tribunal…</p> },
-);
 
 const VENUE_COPY: Record<SaleVenueType, { title: string; explanation: string }> = {
   tribunal: {
@@ -40,7 +33,7 @@ const VENUE_COPY: Record<SaleVenueType, { title: string; explanation: string }> 
   state: {
     title: "Bien immobilier vendu par l’État",
     explanation:
-      "La vente est organisée par l’État ou un organisme public. L’inscription et les enchères suivent les conditions indiquées par le service vendeur ou sa plateforme.",
+      "La cession est organisée par l’État ou un organisme public. Elle peut suivre plusieurs procédures : les modalités figurent dans l’annonce officielle du service vendeur.",
   },
   online: {
     title: "Bien immobilier vendu aux enchères",
@@ -71,6 +64,45 @@ export function SalePublicPreview({
 }) {
   const procedure = getSaleProcedure(preview);
   const venueCopy = publicSaleVenueCopy(procedure.venueType);
+  const state = procedure.venueType === "state";
+  const notary = procedure.venueType === "notary";
+  const price = preview.starting_price_eur != null && preview.starting_price_eur > 0;
+  const priceBlock =
+    price || !state ? (
+      <div className={styles.priceBlock}>
+        <p className={styles.priceLabel}>{state ? "Prix publié" : "Mise à prix"}</p>
+        <p className={styles.price}>
+          {price ? formatPrice(preview.starting_price_eur) : "À confirmer"}
+        </p>
+        <p className={styles.priceNote}>
+          {state
+            ? "Vérifiez les conditions et frais dans l'annonce officielle"
+            : "Prix de départ, hors frais"}
+        </p>
+      </div>
+    ) : (
+      <p className={styles.priceUnavailable}>
+        Prix non publié · conditions à consulter dans l'annonce officielle
+      </p>
+    );
+  const factsBlock = (
+    <dl className={styles.facts}>
+      <div className={styles.fact}>
+        <dt>{state ? "Mode de cession" : "Type de vente"}</dt>
+        <dd>{state ? "À consulter dans le dossier" : saleVenueLabel(procedure.venueType)}</dd>
+      </div>
+      <div className={styles.fact}>
+        <dt>{state ? "Démarches" : notary ? "Participation" : "Pour enchérir"}</dt>
+        <dd>
+          {state
+            ? "Conditions précisées par le service vendeur"
+            : notary
+              ? "Modalités à consulter dans le dossier"
+              : lawyerRequirementLabel(procedure)}
+        </dd>
+      </div>
+    </dl>
+  );
 
   return (
     <main className={styles.page}>
@@ -80,7 +112,9 @@ export function SalePublicPreview({
           Retour aux ventes
         </Link>
 
-        <div className={styles.hero}>
+        <div
+          className={`${styles.hero} ${state ? styles.heroState : notary ? styles.heroNotary : ""}`}
+        >
           <section className={styles.summary} aria-labelledby="public-sale-title">
             <SaleProcedureBadge sale={preview} />
             <h1 id="public-sale-title" className={styles.title}>
@@ -91,20 +125,8 @@ export function SalePublicPreview({
               clairement comment la vente est organisée.
             </p>
 
-            <p className={styles.priceLabel}>Mise à prix</p>
-            <p className={styles.price}>{formatPrice(preview.starting_price_eur)}</p>
-            <p className={styles.priceNote}>Prix de départ, hors frais</p>
-
-            <dl className={styles.facts}>
-              <div className={styles.fact}>
-                <dt>Type de vente</dt>
-                <dd>{saleVenueLabel(procedure.venueType)}</dd>
-              </div>
-              <div className={styles.fact}>
-                <dt>Pour enchérir</dt>
-                <dd>{lawyerRequirementLabel(procedure)}</dd>
-              </div>
-            </dl>
+            {state || notary ? factsBlock : priceBlock}
+            {state || notary ? priceBlock : factsBlock}
           </section>
 
           <aside className={styles.procedure} aria-labelledby="public-procedure-title">
@@ -163,7 +185,11 @@ export function SalePublicPreview({
                 <Eye aria-hidden />
                 Visible maintenant
               </h3>
-              <p>Mise à prix, type de vente et niveau de vérification.</p>
+              <p>
+                {state
+                  ? "Type de vente, prix s'il est publié et niveau de vérification."
+                  : "Mise à prix, type de vente et niveau de vérification."}
+              </p>
             </div>
             <div className={`${styles.tier} ${styles.tierFree}`}>
               <h3 className={styles.tierTitle}>
@@ -177,12 +203,14 @@ export function SalePublicPreview({
                 <ChartNoAxesCombined aria-hidden />
                 Offre Analyse
               </h3>
-              <p>Marché local, risques du dossier et estimation de votre mise plafond.</p>
+              <p>
+                {procedure.venueType === "tribunal"
+                  ? "Marché local, risques du dossier et estimation de votre mise plafond."
+                  : "Marché local et risques du dossier lorsque les données le permettent."}
+              </p>
             </div>
           </div>
         </section>
-
-        {saleIsTribunalVenue(preview) ? <SaleTribunalHistory sale={preview} /> : null}
       </div>
     </main>
   );

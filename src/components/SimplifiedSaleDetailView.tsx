@@ -56,15 +56,18 @@ import {
   estimateWorksBudget,
 } from "@/lib/profitability";
 import { Link } from "@/lib/router-compat";
-import { listingCoordinates } from "@/lib/sale-listing";
+import { listingCoordinates, listingDate } from "@/lib/sale-listing";
+import { saleSession, saleWindow } from "@/lib/sale-window";
 import { propertyImages } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
   participationModeLabel,
+  saleHasVerifiedTribunal,
   saleIsTribunalVenue,
   saleProcedureIsConfirmed,
+  stateSaleMethodLabel,
 } from "@/lib/sale-procedure";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
@@ -152,6 +155,8 @@ function SimplifiedSaleDetailView({
       ? simulation
       : null;
   const isTribunalSale = saleIsTribunalVenue(sale);
+  const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
+  const venueType = getSaleProcedure(sale).venueType;
   const marketSurfaces = getMarketValuationSurfaces(sale);
   const surface = marketSurfaces.builtSurfaceM2;
   const marketQuery = useQuery({
@@ -216,8 +221,24 @@ function SimplifiedSaleDetailView({
         <div className={listingStyles.analysisHeading}>
           <ChartNoAxesCombined className="h-6 w-6 shrink-0 text-slate-500" aria-hidden />
           <div>
-            <h2 className={listingStyles.heading}>Votre analyse ImmoJudis</h2>
-            <p className={listingStyles.muted}>Marché local, risques et mise plafond</p>
+            <h2 className={listingStyles.heading}>
+              {isTribunalSale
+                ? "Votre analyse d'adjudication"
+                : venueType === "notary"
+                  ? "Votre dossier de vente notariale"
+                  : venueType === "state"
+                    ? "Votre dossier de cession domaniale"
+                    : "Votre dossier de vente"}
+            </h2>
+            <p className={listingStyles.muted}>
+              {isTribunalSale
+                ? "Audience, risques, marché et mise plafond"
+                : venueType === "notary"
+                  ? "Étude, conditions de participation, frais et pièces"
+                  : venueType === "state"
+                    ? "Mode de cession, dossier officiel et échéance"
+                    : "Conditions, risques et informations vérifiées"}
+            </p>
           </div>
         </div>
 
@@ -289,8 +310,8 @@ function SimplifiedSaleDetailView({
               }
               onAdjust={() => setCalculationOpen(true)}
             />
-          ) : access === "analysis" ? (
-            <SaleSpecificBudgetNotice />
+          ) : !isTribunalSale ? (
+            <NonJudicialDecisionPanel sale={sale} access={access} />
           ) : (
             <DiscoveryDecisionPanel worksBudget={surface == null ? null : worksBudget} />
           )}
@@ -319,22 +340,31 @@ function SimplifiedSaleDetailView({
       </div>
 
       {access === "analysis" ? (
-        <AnalysisContent
-          sale={sale}
-          marketEstimate={marketEstimate}
-          marketLoading={marketQuery.isLoading && marketEstimate == null}
-          recommendations={recommendations}
-          simulation={activeSimulation}
-          onSimulationChange={setSimulation}
-          surface={surface}
-          calculationOpen={calculationOpen}
-          onCalculationOpenChange={setCalculationOpen}
-          publicDemo={publicDemo}
-          adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
-        />
+        isTribunalSale ? (
+          <AnalysisContent
+            sale={sale}
+            marketEstimate={marketEstimate}
+            marketLoading={marketQuery.isLoading && marketEstimate == null}
+            recommendations={recommendations}
+            simulation={activeSimulation}
+            onSimulationChange={setSimulation}
+            surface={surface}
+            calculationOpen={calculationOpen}
+            onCalculationOpenChange={setCalculationOpen}
+            publicDemo={publicDemo}
+            adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+          />
+        ) : (
+          <NonJudicialAnalysisContent
+            sale={sale}
+            marketEstimate={marketEstimate}
+            marketLoading={marketQuery.isLoading && marketEstimate == null}
+          />
+        )
       ) : (
         <>
           <div className={listingStyles.container}>
+            {!isTribunalSale ? <SaleProcedurePanel sale={sale} /> : null}
             <div className={listingStyles.lower}>
               <div className={listingStyles.stack}>
                 <ListingDescription sale={sale} />
@@ -343,9 +373,9 @@ function SimplifiedSaleDetailView({
               <ListingBudget sale={sale} />
             </div>
 
-            <SaleProcedurePanel sale={sale} />
+            {isTribunalSale ? <SaleProcedurePanel sale={sale} /> : null}
           </div>
-          {isTribunalSale ? <SaleTribunalHistory sale={sale} /> : null}
+          {hasVerifiedTribunal ? <SaleTribunalHistory sale={sale} /> : null}
           <DiscoveryContinuation />
         </>
       )}
@@ -659,19 +689,82 @@ function AnalysisDecisionPanel({
   );
 }
 
-function SaleSpecificBudgetNotice() {
+function NonJudicialDecisionPanel({
+  sale,
+  access,
+}: {
+  sale: AuctionSale;
+  access: "analysis" | "discovery";
+}) {
+  const procedure = getSaleProcedure(sale);
+  const notary = procedure.venueType === "notary";
+  const state = procedure.venueType === "state";
+  const schedule = saleWindow(sale) ?? saleSession(sale);
+  const deadline = schedule?.closes_at ?? sale.sale_date;
+  const documentsCount = collectSaleDocuments(sale).length;
+  const facts = state
+    ? [
+        ["Mode de cession", stateSaleMethodLabel(procedure)],
+        ["Échéance annoncée", listingDate(deadline)],
+        ["Pièces jointes", documentsCount ? `${documentsCount} à consulter` : "À confirmer"],
+      ]
+    : notary
+      ? [
+          ["Étude ou organisateur", procedure.organizerName ?? "À confirmer"],
+          ["Participation", participationModeLabel(procedure.participationMode)],
+          ["Date ou période", listingDate(schedule?.opens_at ?? sale.sale_date)],
+        ]
+      : [
+          ["Organisateur", procedure.organizerName ?? "À confirmer"],
+          ["Participation", participationModeLabel(procedure.participationMode)],
+          ["Date", listingDate(sale.sale_date)],
+        ];
   return (
-    <div className={listingStyles.card}>
-      <h3 className="text-lg font-semibold">Un chiffrage adapté à cette vente</h3>
-      <p className={`${listingStyles.muted} mt-2`}>
-        Le calcul automatique de mise plafond utilise un modèle de frais de vente au tribunal. Pour
-        cette vente, vérifiez les frais auprès de l’organisateur et renseignez vos propres
-        hypothèses dans le simulateur de budget.
-      </p>
-      <a href="#budget" className={`${listingStyles.textLink} mt-2`}>
-        Préparer mon budget <ArrowRight className="h-4 w-4" aria-hidden />
-      </a>
-    </div>
+    <section
+      className="overflow-hidden rounded-[20px] border border-[#b9d0df] bg-white shadow-sm"
+      aria-label="Priorités de cette vente"
+    >
+      <div className="border-b border-[#d9e7ef] bg-[#eef7ff] px-5 py-5 sm:px-7">
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#946724]">
+          {state ? "Cession domaniale" : notary ? "Vente notariale" : "Vente à qualifier"}
+        </p>
+        <h3 className="mt-1 font-display text-2xl font-semibold text-brand-navy sm:text-3xl">
+          {state
+            ? "Commencez par les conditions du service vendeur"
+            : notary
+              ? "Commencez par le dossier de l'étude"
+              : "Vérifiez d'abord l'organisateur et la procédure"}
+        </h3>
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/75">
+          {state
+            ? "Les ventes domaniales suivent plusieurs modes de cession. Le prix, les délais et les pièces à remettre dépendent de l'annonce officielle."
+            : notary
+              ? "La séance, l'inscription, la garantie et les frais sont définis par l'étude pour cette vente."
+              : "Les modalités de participation restent à confirmer dans les sources du dossier."}
+        </p>
+      </div>
+      <div className="grid gap-3 p-5 sm:grid-cols-3 sm:p-7">
+        {facts.map(([label, value]) => (
+          <dl key={label} className="rounded-lg border border-slate-200 bg-[#fafcfd] p-4">
+            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+              {label}
+            </dt>
+            <dd className="mt-2 text-base font-semibold text-brand-navy">{value}</dd>
+          </dl>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 px-5 py-4 sm:px-7">
+        <a href="#participation" className={listingStyles.textLink}>
+          {state ? "Lire les conditions de cession" : "Voir les démarches de la vente"}
+          <ArrowRight className="h-4 w-4" aria-hidden />
+        </a>
+        {access === "discovery" ? (
+          <span className="text-xs text-slate-600">
+            L'offre Analyse détaille le marché et les risques lorsque les données le permettent.
+          </span>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -779,6 +872,137 @@ function DiscoveryContinuation() {
 
 type Recommendations = ReturnType<typeof computeRecommendedCeilings>;
 
+function SaleDocumentsSection({ sale }: { sale: AuctionSale }) {
+  const documents = collectSaleDocuments(sale);
+  return (
+    <section
+      id="documents"
+      aria-label="Pièces du dossier"
+      className="mx-auto max-w-[1260px] scroll-mt-36 px-4 pb-8 sm:px-6 lg:px-8"
+    >
+      <details className="group mt-4 rounded-lg border border-brand-navy/12 bg-white shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-5 sm:px-7">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-soft">
+            <FileText className="h-5 w-5" aria-hidden />
+          </span>
+          <span>
+            <span className="block font-display text-2xl font-semibold text-brand-navy">
+              Consulter les pièces du dossier
+            </span>
+            <span className="mt-1 block text-sm text-brand-navy/62">
+              {documents.length > 0
+                ? "Consultez les pièces jointes ; vérifiez leur nature et leur date."
+                : "Aucune pièce attachée à cette annonce pour le moment."}
+            </span>
+          </span>
+          <ChevronDown className="ml-auto h-5 w-5 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="border-t border-brand-navy/10 px-5 py-3 sm:px-7">
+          {documents.length > 0 ? (
+            <DocumentsList documents={documents} />
+          ) : (
+            <p role="status" className="text-sm text-brand-navy/70">
+              Les pièces vérifiées apparaîtront ici lorsqu’elles seront disponibles.
+            </p>
+          )}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function NonJudicialAnalysisContent({
+  sale,
+  marketEstimate,
+  marketLoading,
+}: {
+  sale: AuctionSale;
+  marketEstimate: MarketEstimate | null;
+  marketLoading: boolean;
+}) {
+  const venue = getSaleProcedure(sale).venueType;
+  const state = venue === "state";
+  const links = state
+    ? [
+        ["#risks", "Pièces et risques"],
+        ["#participation", "Cession"],
+        ["#rendez-vous", "Échéance"],
+        ["#budget", "Budget"],
+        ["#market", "Marché"],
+        ["#lawyer", "Service vendeur"],
+      ]
+    : [
+        ["#participation", "Conditions"],
+        ["#risks", "Pièces et risques"],
+        ["#rendez-vous", "Séance"],
+        ["#budget", "Budget"],
+        ["#market", "Marché"],
+        ["#lawyer", "Étude / contact"],
+      ];
+  const procedureBlock = (
+    <div className={listingStyles.container}>
+      <SaleProcedurePanel sale={sale} />
+    </div>
+  );
+  const documentsBlock = (
+    <>
+      <RisksAndDocuments sale={sale} />
+      <SaleDocumentsSection sale={sale} />
+    </>
+  );
+
+  return (
+    <>
+      <nav
+        aria-label="Sections de l’annonce"
+        className="sticky top-16 z-30 border-y border-brand-navy/10 bg-white/95 shadow-sm backdrop-blur"
+      >
+        <div className="mx-auto flex max-w-5xl justify-between overflow-x-auto px-4 sm:px-6">
+          {links.map(([href, label]) => (
+            <a
+              key={href}
+              href={href}
+              className="whitespace-nowrap border-b-2 border-transparent px-3 py-4 text-sm font-semibold text-brand-navy/68 hover:border-gold hover:text-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+      </nav>
+      {state ? documentsBlock : procedureBlock}
+      {state ? procedureBlock : documentsBlock}
+      <div className={listingStyles.container}>
+        <div className={listingStyles.lower}>
+          <div className={listingStyles.stack}>
+            <ListingDescription sale={sale} />
+            <ListingLocation sale={sale} />
+          </div>
+          <ListingBudget sale={sale} />
+        </div>
+      </div>
+      <section aria-label="Marché local" className="border-y border-brand-navy/10 bg-[#f4f6f9]">
+        <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8">
+          {marketEstimate?.actionable === true ? (
+            <MarketEvidence marketEstimate={marketEstimate} marketLoading={marketLoading} />
+          ) : (
+            <div
+              id="market"
+              className="scroll-mt-36 rounded-lg border border-slate-200 bg-white p-6"
+            >
+              <h2 className="font-display text-3xl font-semibold text-brand-navy">Marché local</h2>
+              <p className="mt-2 text-sm text-slate-700">
+                Références insuffisantes pour afficher une estimation exploitable sur cette vente.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+      <InformationAvailabilityNotice />
+      <LawyerSection sale={sale} />
+    </>
+  );
+}
+
 function AnalysisContent({
   sale,
   marketEstimate,
@@ -806,14 +1030,15 @@ function AnalysisContent({
 }) {
   const valuationConflict = listingValuationConflict(sale);
   const tribunalSale = saleIsTribunalVenue(sale);
+  const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
   const forecastQuery = useOutcomeGraphForecast(
     sale.id,
-    !publicDemo && tribunalSale && !valuationConflict,
+    !publicDemo && hasVerifiedTribunal && !valuationConflict,
   );
-  const showTribunalHistory = !publicDemo && tribunalSale;
+  const showTribunalHistory = !publicDemo && hasVerifiedTribunal;
   const hasVerifiedForecast =
     !publicDemo &&
-    tribunalSale &&
+    hasVerifiedTribunal &&
     !valuationConflict &&
     forecastQuery.data?.forecast.status === "ready";
   const navigationItems = [
@@ -1207,13 +1432,21 @@ function MarketFact({ icon, label, value }: { icon: ReactNode; label: string; va
 function RisksAndDocuments({ sale }: { sale: AuctionSale }) {
   const risks = sale.risks ?? [];
   const documents = collectSaleDocuments(sale);
+  const venueType = getSaleProcedure(sale).venueType;
   const rows = [
     ...risks.map((risk) => riskRow(risk)),
     {
       key: "documents",
       icon: <FileText className="h-5 w-5" />,
       label: "Pièces du dossier à consulter",
-      source: "Vérifiez notamment le cahier des conditions de vente",
+      source:
+        venueType === "tribunal"
+          ? "Vérifiez notamment le cahier des conditions de vente"
+          : venueType === "notary"
+            ? "Vérifiez le cahier des charges ou les conditions établies par l'étude"
+            : venueType === "state"
+              ? "Vérifiez l'annonce officielle et les conditions du service vendeur"
+              : "Vérifiez les conditions publiées par l'organisateur",
       status:
         documents.length > 0
           ? `${documents.length} pièce(s) consultable(s)`

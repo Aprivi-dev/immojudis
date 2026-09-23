@@ -38,6 +38,28 @@ _STATE_PATTERNS = (
     re.compile(r"\bcessions?\s+immobili[eè]res?\s+de\s+l['’][eé]tat\b", re.I),
     re.compile(r"\bdirection\s+de\s+l['’]immobilier\s+de\s+l['’][eé]tat\b", re.I),
 )
+_STATE_SALE_METHOD_PATTERNS = {
+    "adjudication": (
+        re.compile(r"\badjudication\b", re.I),
+        re.compile(r"\bvente\s+aux\s+ench[eè]res\b", re.I),
+    ),
+    "appel_offres": (
+        re.compile(r"\bappel\s+d['’]offres?\b", re.I),
+        re.compile(r"\boffres?\s+sous\s+pli\s+cachet[eé]\b", re.I),
+        re.compile(r"\bvente\s+(?:par\s+)?sous\s+pli\s+cachet[eé]\b", re.I),
+        re.compile(r"\bpli\s+cachet[eé]\b", re.I),
+        re.compile(
+            r"\bdate\s+limite\s+de\s+(?:r[eé]ception|remise)\s+des\s+offres\b",
+            re.I,
+        ),
+    ),
+    "cession_amiable": (
+        re.compile(r"\bcession\s+amiable\b", re.I),
+        re.compile(r"\bvente\s+amiable\b", re.I),
+        re.compile(r"\bcession\s+de\s+gr[eé]\s+[àa]\s+gr[eé]\b", re.I),
+        re.compile(r"\bvente\s+de\s+gr[eé]\s+[àa]\s+gr[eé]\b", re.I),
+    ),
+}
 
 
 def classify_sale_procedure(
@@ -70,6 +92,13 @@ def classify_sale_procedure(
     )
     rules_venue_type = venue_type if status in {"verified", "cross_checked"} else "unknown"
     legal_framework = _resolve_legal_framework(corpus, venue_type)
+    state_sale_method, state_sale_method_matches, state_sale_method_issues = _resolve_state_sale_method(
+        corpus,
+        source_name=sale.source_name,
+        legal_framework=legal_framework,
+        state_matches=state_matches,
+    )
+    issues.extend(state_sale_method_issues)
     participation_mode = _participation_mode(corpus, rules_venue_type)
     case_sources = _case_sources(sale)
     rules, regulatory_sources = _participation_rules(
@@ -86,12 +115,15 @@ def classify_sale_procedure(
         judicial_matches=judicial_matches,
         notarial_matches=notarial_matches,
         state_matches=state_matches,
+        state_sale_method=state_sale_method,
+        state_sale_method_matches=state_sale_method_matches,
     )
 
     procedure = {
         "schema_version": SALE_PROCEDURE_SCHEMA_VERSION,
         "ruleset_version": LEGAL_RULESET_VERSION,
         "venue_type": venue_type,
+        "state_sale_method": state_sale_method,
         "legal_framework": legal_framework,
         "venue_name": _venue_name(sale, venue_type),
         "venue_address": _venue_address(sale, venue_type=venue_type, status=status),
@@ -185,6 +217,41 @@ def _resolve_venue(
 
     issues.append("Le lieu et le mode de participation ne sont pas encore confirmés.")
     return "unknown", "pending", issues
+
+
+def _resolve_state_sale_method(
+    corpus: str,
+    *,
+    source_name: str,
+    legal_framework: str,
+    state_matches: list[str],
+) -> tuple[str, list[str], list[str]]:
+    """Extract a state sale method only from explicit source wording.
+
+    The state source publishes several different disposal procedures. Its
+    origin alone therefore never implies an adjudication or an auction.
+    """
+
+    if source_name != "cessions_etat" and legal_framework != "state_sale" and not state_matches:
+        return "unknown", [], []
+
+    matches_by_method = {
+        method: _matched_signals(corpus, patterns)
+        for method, patterns in _STATE_SALE_METHOD_PATTERNS.items()
+    }
+    detected_methods = [method for method, matches in matches_by_method.items() if matches]
+    if len(detected_methods) != 1:
+        if len(detected_methods) > 1:
+            return (
+                "unknown",
+                [signal for matches in matches_by_method.values() for signal in matches],
+                [
+                    "Le mode de cession domaniale comporte des mentions contradictoires ; il doit être confirmé dans l'avis officiel."
+                ],
+            )
+        return "unknown", [], []
+    method = detected_methods[0]
+    return method, matches_by_method[method], []
 
 
 def _participation_rules(
@@ -313,6 +380,8 @@ def _verification_facts(
     judicial_matches: list[str],
     notarial_matches: list[str],
     state_matches: list[str],
+    state_sale_method: str,
+    state_sale_method_matches: list[str],
 ) -> list[dict[str, Any]]:
     matches = judicial_matches or notarial_matches or state_matches
     facts = [
@@ -343,6 +412,16 @@ def _verification_facts(
                     str(assignment.get("mapping_method") or ""),
                 ],
                 "source_url": assignment.get("source_url"),
+            }
+        )
+    if state_sale_method != "unknown" or state_sale_method_matches:
+        facts.append(
+            {
+                "key": "state_sale_method",
+                "value": state_sale_method,
+                "status": "verified" if state_sale_method != "unknown" else "pending",
+                "evidence": state_sale_method_matches[:4],
+                "source_url": sale.source_url,
             }
         )
     return facts

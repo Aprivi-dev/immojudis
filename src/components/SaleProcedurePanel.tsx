@@ -20,6 +20,7 @@ import {
   saleProcedureIsConfirmed,
   saleVerificationLabel,
   saleVenueLabel,
+  stateSaleMethodLabel,
   type SaleProcedurePresentation,
 } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleVerificationStatus } from "@/lib/types";
@@ -69,17 +70,23 @@ export function SaleProcedureSummary({
         ) : null}
         <dl className={listingStyles.rows}>
           <div className={listingStyles.row}>
-            <dt>Cadre juridique</dt>
-            <dd>{saleLegalFrameworkLabel(procedure.legalFramework)}</dd>
+            <dt>{procedure.venueType === "state" ? "Mode de cession" : "Cadre juridique"}</dt>
+            <dd>
+              {procedure.venueType === "state"
+                ? stateSaleMethodLabel(procedure)
+                : saleLegalFrameworkLabel(procedure.legalFramework)}
+            </dd>
           </div>
           <div className={listingStyles.row}>
             <dt>Participation</dt>
             <dd>{participationModeLabel(procedure.participationMode)}</dd>
           </div>
-          <div className={listingStyles.row}>
-            <dt>Représentation</dt>
-            <dd>{lawyerRequirementLabel(procedure)}</dd>
-          </div>
+          {procedure.venueType !== "state" ? (
+            <div className={listingStyles.row}>
+              <dt>Représentation</dt>
+              <dd>{lawyerRequirementLabel(procedure)}</dd>
+            </div>
+          ) : null}
         </dl>
         <a href="#participation" className={`${listingStyles.textLink} mt-3`}>
           Voir les démarches et conditions de cette vente
@@ -104,7 +111,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 items-start gap-4">
             <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-brand-navy text-white">
-              {procedure.venueType === "tribunal" ? (
+              {procedure.venueType === "tribunal" || procedure.venueType === "state" ? (
                 <Landmark className="h-6 w-6" aria-hidden />
               ) : (
                 <Scale className="h-6 w-6" aria-hidden />
@@ -121,8 +128,9 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
                 {saleVenueLabel(procedure.venueType)}
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/75 sm:text-base">
-                {lawyerRequirementLabel(procedure)}. Immojudis réunit ici les démarches, délais et
-                justificatifs utiles pour participer sans devoir reconstituer la procédure.
+                {procedure.venueType === "state"
+                  ? `Mode de cession : ${stateSaleMethodLabel(procedure)}. Vérifiez les conditions publiées par le service vendeur avant toute démarche.`
+                  : `${lawyerRequirementLabel(procedure)}. Immojudis réunit ici les démarches, délais et justificatifs utiles pour participer.`}
               </p>
             </div>
           </div>
@@ -145,39 +153,70 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
             Ce que cela change pour vous
           </h3>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <ProcedureFact
-              icon={Scale}
-              label="Représentation"
-              value={lawyerRequirementLabel(procedure)}
-              detail={procedure.eligibleBar ?? procedure.lawyerNote}
-            />
+            {procedure.venueType === "state" ? (
+              <ProcedureFact
+                icon={Landmark}
+                label="Mode de cession"
+                value={stateSaleMethodLabel(procedure)}
+                detail="La procédure exacte et les critères de recevabilité figurent dans l'annonce officielle."
+              />
+            ) : (
+              <ProcedureFact
+                icon={Scale}
+                label="Représentation"
+                value={lawyerRequirementLabel(procedure)}
+                detail={procedure.eligibleBar ?? procedure.lawyerNote}
+              />
+            )}
             <ProcedureFact
               icon={WalletCards}
-              label="Consignation"
+              label={procedure.venueType === "state" ? "Dépôt ou garantie" : "Consignation"}
               value={guaranteeLabel(procedure)}
               detail={procedure.guaranteeNote}
             />
             <ProcedureFact
               icon={CalendarClock}
-              label="Paiement du prix"
-              value={paymentDeadlineLabel(procedure.paymentDeadlineDays)}
+              label={procedure.venueType === "state" ? "Règlement" : "Paiement du prix"}
+              value={
+                procedure.venueType === "tribunal"
+                  ? paymentDeadlineLabel(procedure.paymentDeadlineDays)
+                  : procedure.paymentDeadlineDays != null
+                    ? `${procedure.paymentDeadlineDays} jours selon les conditions de vente`
+                    : "À confirmer dans les conditions de vente"
+              }
               detail={
                 procedure.financingCondition === false
                   ? "Financement à sécuriser avant la vente : pas de condition suspensive usuelle."
                   : "Conditions de financement à confirmer dans le dossier."
               }
             />
-            <ProcedureFact
-              icon={FileCheck2}
-              label="Surenchère"
-              value={overbidLabel(procedure)}
-              detail={procedure.overbidNote}
-            />
+            {procedure.venueType !== "state" ? (
+              <ProcedureFact
+                icon={FileCheck2}
+                label="Surenchère"
+                value={overbidLabel(procedure)}
+                detail={procedure.overbidNote}
+              />
+            ) : (
+              <ProcedureFact
+                icon={FileCheck2}
+                label="Dossier officiel"
+                value="Conditions à consulter"
+                detail="Vérifiez le calendrier, les pièces à remettre et les frais propres à cette cession."
+              />
+            )}
           </div>
 
           <div className="mt-5 rounded-md border border-brand-navy/10 bg-[#eef7ff] p-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <CompactFact label="Lieu / organisme" value={procedure.venueName ?? "À confirmer"} />
+              <CompactFact
+                label={procedure.venueType === "state" ? "Service vendeur" : "Lieu / organisme"}
+                value={
+                  procedure.venueType === "state"
+                    ? (procedure.organizerName ?? procedure.venueName ?? "À confirmer")
+                    : (procedure.venueName ?? "À confirmer")
+                }
+              />
               <CompactFact
                 label="Mode de participation"
                 value={participationModeLabel(procedure.participationMode)}
@@ -186,14 +225,16 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
                 label="Cadre juridique"
                 value={saleLegalFrameworkLabel(procedure.legalFramework)}
               />
-              <CompactFact
-                label="Rétractation"
-                value={
-                  procedure.coolingOffPeriod === false
-                    ? "Aucun délai de rétractation"
-                    : "À confirmer"
-                }
-              />
+              {procedure.venueType !== "state" ? (
+                <CompactFact
+                  label="Rétractation"
+                  value={
+                    procedure.coolingOffPeriod === false
+                      ? "Aucun délai de rétractation"
+                      : "À confirmer"
+                  }
+                />
+              ) : null}
             </div>
             {procedure.venueAddress ? (
               <p className="mt-3 flex items-start gap-2 border-t border-brand-navy/10 pt-3 text-sm text-brand-navy/75">
@@ -393,7 +434,9 @@ function participationSteps(procedure: SaleProcedurePresentation) {
       {
         title: "Sécuriser le financement",
         detail:
-          "Aucun délai de rétractation ou condition suspensive usuelle ne protège l’adjudicataire.",
+          procedure.coolingOffPeriod === false && procedure.financingCondition === false
+            ? "Aucun délai de rétractation ni condition suspensive de financement n'est prévu dans ce dossier."
+            : "Vérifier les conditions de financement et de rétractation dans le cahier des charges.",
       },
       {
         title: "Préparer la consignation",
@@ -402,6 +445,28 @@ function participationSteps(procedure: SaleProcedurePresentation) {
       {
         title: "S’enregistrer et enchérir",
         detail: `${participationModeLabel(procedure.participationMode)} selon les instructions du notaire.`,
+      },
+    ];
+  }
+  if (procedure.venueType === "state") {
+    return [
+      {
+        title: "Consulter l'annonce officielle",
+        detail: `Identifier le service vendeur et le mode de cession : ${stateSaleMethodLabel(procedure).toLowerCase()}.`,
+      },
+      {
+        title: "Vérifier les conditions de candidature",
+        detail:
+          "Lire les pièces demandées, les critères de recevabilité, les frais et les visites annoncées.",
+      },
+      {
+        title: "Préparer le dossier et le financement",
+        detail:
+          "Confirmer auprès du service vendeur le dépôt éventuel, son bénéficiaire et les délais.",
+      },
+      {
+        title: "Suivre la procédure publiée",
+        detail: "Respecter la date limite et le canal de dépôt indiqués par la source officielle.",
       },
     ];
   }

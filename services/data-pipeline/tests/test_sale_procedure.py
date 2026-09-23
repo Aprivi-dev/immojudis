@@ -222,3 +222,65 @@ def test_notarial_payment_deadline_requires_case_evidence():
     other = make_sale(source_name="notaires", description="Vente notariale.", raw_payload={})
     classify_sale_procedure(other)
     assert other.sale_procedure["rules"]["payment_deadline_days"] is None
+
+
+def test_state_source_does_not_infer_adjudication_from_origin_alone():
+    sale = make_sale(
+        source_name="cessions_etat",
+        description="Immeuble domanial à vendre.",
+        tribunal=None,
+        tribunal_code=None,
+        raw_payload={},
+    )
+
+    classify_sale_procedure(sale, verified_at=VERIFIED_AT)
+
+    assert sale.sale_venue_type == "state"
+    assert sale.sale_procedure["state_sale_method"] == "unknown"
+    assert not any(fact["key"] == "state_sale_method" for fact in sale.sale_procedure["verification"]["facts"])
+
+
+def test_state_source_extracts_explicit_sale_methods():
+    cases = (
+        ("Vente domaniale par adjudication.", "adjudication"),
+        ("Vente domaniale par appel d'offres.", "appel_offres"),
+        ("Cession amiable d'un bien immobilier de l'État.", "cession_amiable"),
+        (
+            "La date limite de réception des offres est fixée au 6 octobre 2026. "
+            "La vente se déroule sous pli cacheté.",
+            "appel_offres",
+        ),
+    )
+
+    for description, expected_method in cases:
+        sale = make_sale(
+            source_name="cessions_etat",
+            description=description,
+            tribunal=None,
+            tribunal_code=None,
+            raw_payload={},
+        )
+
+        classify_sale_procedure(sale, verified_at=VERIFIED_AT)
+
+        assert sale.sale_procedure["state_sale_method"] == expected_method
+        method_fact = next(
+            fact for fact in sale.sale_procedure["verification"]["facts"] if fact["key"] == "state_sale_method"
+        )
+        assert method_fact["status"] == "verified"
+        assert method_fact["evidence"]
+
+
+def test_conflicting_state_sale_methods_fall_back_to_unknown():
+    sale = make_sale(
+        source_name="cessions_etat",
+        description="Vente domaniale par adjudication ou appel d'offres selon le lot.",
+        tribunal=None,
+        tribunal_code=None,
+        raw_payload={},
+    )
+
+    classify_sale_procedure(sale, verified_at=VERIFIED_AT)
+
+    assert sale.sale_procedure["state_sale_method"] == "unknown"
+    assert any("mentions contradictoires" in issue for issue in sale.sale_procedure["verification"]["issues"])
