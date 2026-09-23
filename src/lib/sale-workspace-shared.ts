@@ -1,3 +1,5 @@
+import type { PilotDraft } from "@/lib/professional-pilots";
+
 export const SALE_WORKSPACE_STATUSES = [
   "watching",
   "reviewing",
@@ -26,7 +28,9 @@ export const DEFAULT_WORKSPACE_NOTES = {
   privateMode: true,
 };
 
-export type SaleWorkspacePrivateNotes = typeof DEFAULT_WORKSPACE_NOTES;
+export type SaleWorkspacePrivateNotes = typeof DEFAULT_WORKSPACE_NOTES & {
+  professionalDossier?: PilotDraft;
+};
 
 export type SaleWorkspaceChecklist = Record<string, boolean>;
 

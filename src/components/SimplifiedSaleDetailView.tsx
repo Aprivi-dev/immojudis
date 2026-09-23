@@ -34,6 +34,10 @@ import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { useOutcomeGraphForecast } from "@/hooks/use-outcome-graph-forecast";
 import { SaleVisual } from "@/components/SaleVisual";
 import { SaleProcedurePanel, SaleProcedureSummary } from "@/components/SaleProcedurePanel";
+import { ProfessionalPilotWorkspace } from "@/components/ProfessionalPilotWorkspace";
+import { buildTribunalPilot } from "@/lib/professional-pilot-tribunal";
+import { buildNotaryPilot } from "@/lib/professional-pilot-notary";
+import { buildStatePilot } from "@/lib/professional-pilot-state";
 import {
   ListingActions,
   ListingOverview,
@@ -359,6 +363,7 @@ function SimplifiedSaleDetailView({
             sale={sale}
             marketEstimate={marketEstimate}
             marketLoading={marketQuery.isLoading && marketEstimate == null}
+            publicDemo={publicDemo}
           />
         )
       ) : (
@@ -915,15 +920,18 @@ function NonJudicialAnalysisContent({
   sale,
   marketEstimate,
   marketLoading,
+  publicDemo,
 }: {
   sale: AuctionSale;
   marketEstimate: MarketEstimate | null;
   marketLoading: boolean;
+  publicDemo: boolean;
 }) {
   const venue = getSaleProcedure(sale).venueType;
   const state = venue === "state";
   const links = state
     ? [
+        ["#professional-pilot", "Candidature"],
         ["#risks", "Pièces et risques"],
         ["#participation", "Cession"],
         ["#rendez-vous", "Échéance"],
@@ -932,6 +940,7 @@ function NonJudicialAnalysisContent({
         ["#lawyer", "Service vendeur"],
       ]
     : [
+        ["#professional-pilot", "Offre"],
         ["#participation", "Conditions"],
         ["#risks", "Pièces et risques"],
         ["#rendez-vous", "Séance"],
@@ -969,6 +978,19 @@ function NonJudicialAnalysisContent({
           ))}
         </div>
       </nav>
+      {venue === "notary" ? (
+        <ProfessionalPilotWorkspace
+          sale={sale}
+          definition={buildNotaryPilot(sale)}
+          publicDemo={publicDemo}
+        />
+      ) : state ? (
+        <ProfessionalPilotWorkspace
+          sale={sale}
+          definition={buildStatePilot(sale)}
+          publicDemo={publicDemo}
+        />
+      ) : null}
       {state ? documentsBlock : procedureBlock}
       {state ? procedureBlock : documentsBlock}
       <div className={listingStyles.container}>
@@ -1043,6 +1065,7 @@ function AnalysisContent({
     forecastQuery.data?.forecast.status === "ready";
   const navigationItems = [
     ["#summary", "Synthèse"],
+    ["#professional-pilot", "Dossier d'audience"],
     ["#risks", "Risques & pièces"],
     ["#budget-analysis", "Budget"],
     ["#market", "Marché"],
@@ -1072,6 +1095,14 @@ function AnalysisContent({
           ))}
         </div>
       </nav>
+
+      {tribunalSale ? (
+        <ProfessionalPilotWorkspace
+          sale={sale}
+          definition={buildTribunalPilot(sale)}
+          publicDemo={publicDemo}
+        />
+      ) : null}
 
       <RisksAndDocuments sale={sale} />
       <section
