@@ -30,6 +30,11 @@ describe("information agent email content template", () => {
     expect(rendered.bodyText).toContain("Bonjour Maître Dupont");
     expect(rendered.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(rendered.bodyText).toContain("cahier des conditions de vente");
+    expect(rendered.bodyText).toContain("photos récentes");
+    expect(rendered.bodyText).toContain("JPG ou PNG");
+    expect(rendered.bodyText).toContain("moins de 10 Mo");
+    expect(rendered.bodyText).toContain("plusieurs emails de 20 Mo maximum");
+    expect(rendered.bodyText).toContain("vidéo");
     expect(rendered.bodyText).not.toContain("utilisateur intéressé");
     expect(rendered.bodyText).not.toContain("{{");
   });

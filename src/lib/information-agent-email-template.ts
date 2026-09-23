@@ -203,7 +203,7 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 2",
+  name: "Demande de précisions sur une vente — version 3",
   subjectTemplate: "{{sale_subject_title}} — précisions sur la vente",
   blocks: [
     {
@@ -230,7 +230,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Introduction de la demande",
       content:
-        "Pourriez-vous nous confirmer les points suivants ou nous transmettre les pièces disponibles ?",
+        "Pourriez-vous nous confirmer les points suivants ou nous transmettre les pièces disponibles ?\n\nPourriez-vous aussi nous envoyer des photos récentes du bien et de ses annexes, même si l’annonce contient déjà des photos ? Privilégiez les fichiers JPG ou PNG de moins de 10 Mo chacun. Pour un lot important, répondez en plusieurs emails de 20 Mo maximum chacun. Si vous disposez d’une vidéo, signalez-le sans la joindre ; nous vous indiquerons comment la transmettre.",
     },
     {
       id: "questions",

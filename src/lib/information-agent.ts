@@ -36,7 +36,7 @@ export const INFORMATION_AGENT_QUESTIONS = {
   photos: {
     label: "Photos complémentaires",
     question:
-      "Disposez-vous de photographies complémentaires ou plus récentes du bien et de ses annexes ?",
+      "Pouvez-vous préciser la date approximative des photos et nous signaler les annexes qu’elles montrent ?",
   },
   visit: {
     label: "Visites",
