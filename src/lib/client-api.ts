@@ -96,7 +96,11 @@ import type {
   WorkspaceAnnotationCreateInput,
   WorkspaceAnnotationUpdateInput,
 } from "@/lib/sale-workspace-collaboration";
-import type { SaleWorkspaceInput, SaleWorkspaceResponse } from "@/lib/sale-workspaces";
+import type {
+  ProfessionalPilotSaveInput,
+  SaleWorkspaceInput,
+  SaleWorkspaceResponse,
+} from "@/lib/sale-workspaces";
 import type {
   SaleAnalysisSetInput,
   SaleAnalysisSetListResponse,
@@ -589,6 +593,20 @@ export async function saveSaleWorkspace(args: {
     body: JSON.stringify(args.data),
   });
 
+  return readJson<SaleWorkspaceResponse>(response);
+}
+
+export async function saveProfessionalPilotDossier(
+  data: ProfessionalPilotSaveInput,
+): Promise<SaleWorkspaceResponse> {
+  const response = await fetch("/api/sale-workspace/professional-pilot", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify(data),
+  });
   return readJson<SaleWorkspaceResponse>(response);
 }
 
