@@ -6,6 +6,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 40 * 1024 * 1024;
+const MAX_LISTED_ATTACHMENTS = 500;
 const MAX_HTML_BODY_CHARS = 500_000;
 const MAX_EXTRACTED_BODY_CHARS = 20_000;
 const HTML_LINE_BREAK_TAGS = new Set([
@@ -111,6 +112,9 @@ async function ingestReceivedEmail({
     .maybeSingle();
   if (caseError) throw caseError;
   if (!sharedCase) return { accepted: true, ignored: true };
+  if (!["sending", "sent", "replied", "review"].includes(sharedCase.status)) {
+    return { accepted: true, ignored: true };
+  }
 
   const mission = await loadInitiatorMission(sharedCase);
   const { data: received, error: receiveError } = await resend.emails.receiving.get(
@@ -119,6 +123,10 @@ async function ingestReceivedEmail({
   );
   if (receiveError || !received) {
     throw new Error(receiveError?.message || "Email entrant Resend introuvable.");
+  }
+  const receivedTokens = collectInboundTokens(received.to, inboundDomain);
+  if (receivedTokens.length > 1 || (receivedTokens.length === 1 && receivedTokens[0] !== token)) {
+    return { accepted: true, ignored: true };
   }
 
   const bodyText = cleanInboundBody(received.text, received.html);
@@ -136,13 +144,50 @@ async function ingestReceivedEmail({
     senderMatches,
   });
 
-  const attachments = await fetchInboundAttachments(resend, event.data.email_id);
-  const storedAssets = await storeInboundAttachments({
+  // The case address is a routing key, not proof that the sender is the expected contact.
+  if (!senderMatches) {
+    const { error } = await supabaseAdmin
+      .from("information_agent_cases")
+      .update({
+        status: "review",
+        replied_at: receivedAt,
+        metadata: mergeJsonObject(sharedCase.metadata, {
+          last_inbound_email_id: event.data.email_id,
+          last_inbound_sender_matches_recipient: false,
+        }),
+      })
+      .eq("id", sharedCase.id);
+    if (error) throw error;
+    return { accepted: true, caseId: sharedCase.id, messageId, factCount: 0, attachmentCount: 0 };
+  }
+
+  const { attachments, truncated } = await fetchInboundAttachments(resend, event.data.email_id);
+  const { stored: storedAssets, rejected } = await storeInboundAttachments({
     attachments,
     sharedCase,
     messageId,
     fetchImpl,
   });
+  if (truncated)
+    rejected.push({
+      filename: "Lot de pièces jointes",
+      reason: "Plus de 500 pièces jointes : traitement partiel, contrôle manuel requis",
+    });
+  if (rejected.length) {
+    const { error } = await supabaseAdmin
+      .from("information_agent_messages")
+      .update({
+        metadata: {
+          imported_manually: false,
+          content_trust: "untrusted",
+          sender_matches_recipient: senderMatches,
+          rejected_attachment_count: rejected.length,
+          rejected_attachments: rejected.slice(0, 50),
+        },
+      })
+      .eq("id", messageId);
+    if (error) throw error;
+  }
   const extractedFacts = extractInformationAgentFacts(bodyText);
   await persistFactCandidates({
     sharedCase,
@@ -155,7 +200,8 @@ async function ingestReceivedEmail({
   const { error: updateCaseError } = await supabaseAdmin
     .from("information_agent_cases")
     .update({
-      status: extractedFacts.length || storedAssets.length ? "review" : "replied",
+      status:
+        extractedFacts.length || storedAssets.length || rejected.length ? "review" : "replied",
       replied_at: receivedAt,
       failure_reason: null,
       metadata: mergeJsonObject(sharedCase.metadata, {
@@ -239,17 +285,66 @@ async function insertOrLoadInboundMessage({
 
   const { data: existing, error: existingError } = await supabaseAdmin
     .from("information_agent_messages")
-    .select("id")
+    .select("id,case_id")
     .eq("provider_message_id", providerMessageId)
     .maybeSingle();
   if (existingError || !existing) throw error;
+  if (existing.case_id !== sharedCase.id) {
+    throw new Error("Message entrant déjà rattaché à un autre dossier.");
+  }
   return existing.id;
 }
 
-async function fetchInboundAttachments(resend: Resend, emailId: string) {
-  const { data, error } = await resend.emails.receiving.attachments.list({ emailId });
-  if (error) throw new Error(error.message || "Pièces jointes Resend indisponibles.");
-  return data?.data ?? [];
+export async function fetchInboundAttachments(resend: Resend, emailId: string) {
+  const attachments: AttachmentData[] = [];
+  let after: string | undefined;
+  while (attachments.length < MAX_LISTED_ATTACHMENTS) {
+    const { data, error } = await resend.emails.receiving.attachments.list({
+      emailId,
+      limit: 100,
+      after,
+    });
+    if (error) throw new Error(error.message || "Pièces jointes Resend indisponibles.");
+    const page = data?.data ?? [];
+    attachments.push(...page);
+    if (!data?.has_more) return { attachments, truncated: false };
+    const next = page.at(-1)?.id;
+    if (!next || next === after) throw new Error("Pagination des pièces jointes Resend invalide.");
+    after = next;
+  }
+  return { attachments: attachments.slice(0, MAX_LISTED_ATTACHMENTS), truncated: true };
+}
+
+export async function readBoundedAttachment(
+  response: Response,
+  limit: number,
+): Promise<Uint8Array | null> {
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (!size) return null;
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 async function storeInboundAttachments({
@@ -270,15 +365,26 @@ async function storeInboundAttachments({
     storagePath: string;
     size: number;
   }> = [];
+  const rejected: Array<{ filename: string; reason: string }> = [];
   let totalBytes = 0;
 
   for (const attachment of attachments) {
+    const filename = safeFilename(attachment.filename || `piece-${attachment.id}`);
+    const mimeType = attachment.content_type.split(";", 1)[0].trim().toLowerCase();
     if (
-      !ALLOWED_ATTACHMENT_MIME_TYPES.has(attachment.content_type) ||
+      !ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType) ||
       attachment.size <= 0 ||
       attachment.size > MAX_ATTACHMENT_BYTES ||
       totalBytes + attachment.size > MAX_TOTAL_ATTACHMENT_BYTES
     ) {
+      rejected.push({
+        filename,
+        reason: mimeType.startsWith("video/")
+          ? "Vidéo non traitée : demander un autre mode de transmission"
+          : !ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType)
+            ? "Format non pris en charge"
+            : "Taille hors limite",
+      });
       continue;
     }
 
@@ -302,20 +408,25 @@ async function storeInboundAttachments({
     }
 
     const response = await fetchImpl(attachment.download_url, {
-      headers: { accept: attachment.content_type },
+      headers: { accept: mimeType },
     });
     if (!response.ok)
       throw new Error(`Téléchargement de pièce joint impossible (${response.status}).`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > MAX_ATTACHMENT_BYTES) continue;
+    const bytes = await readBoundedAttachment(
+      response,
+      Math.min(MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES - totalBytes),
+    );
+    if (!bytes) {
+      rejected.push({ filename, reason: "Taille réelle hors limite ou fichier vide" });
+      continue;
+    }
 
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    const filename = safeFilename(attachment.filename || `piece-${attachment.id}`);
     const storagePath = `${sharedCase.id}/${messageId}/${sha256}-${filename}`;
     const { error: uploadError } = await supabaseAdmin.storage
       .from("information-agent-evidence")
       .upload(storagePath, bytes, {
-        contentType: attachment.content_type,
+        contentType: mimeType,
         upsert: false,
       });
     if (uploadError && !/already exists|duplicate/i.test(uploadError.message)) throw uploadError;
@@ -329,7 +440,7 @@ async function storeInboundAttachments({
         provider_attachment_id: attachment.id,
         storage_path: storagePath,
         original_filename: filename,
-        mime_type: attachment.content_type,
+        mime_type: mimeType,
         size_bytes: bytes.length,
         sha256,
         metadata: { content_disposition: attachment.content_disposition },
@@ -340,13 +451,13 @@ async function storeInboundAttachments({
     stored.push({
       id: asset.id,
       filename,
-      mimeType: attachment.content_type,
+      mimeType,
       storagePath,
       size: bytes.length,
     });
     totalBytes += bytes.length;
   }
-  return stored;
+  return { stored, rejected };
 }
 
 async function persistFactCandidates({
@@ -409,17 +520,23 @@ export function findInboundToken(
   addresses: readonly string[],
   inboundDomain: string,
 ): string | null {
+  const tokens = collectInboundTokens(addresses, inboundDomain);
+  return tokens.length === 1 ? tokens[0] : null;
+}
+
+function collectInboundTokens(addresses: readonly string[], inboundDomain: string): string[] {
   const expectedDomain = inboundDomain.trim().toLowerCase();
   const localPartPattern =
     /^enquete\+([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+  const tokens = new Set<string>();
   for (const address of addresses) {
     const email = normalizeEmail(address);
     const separatorIndex = email.lastIndexOf("@");
     if (separatorIndex <= 0 || email.slice(separatorIndex + 1) !== expectedDomain) continue;
     const match = localPartPattern.exec(email.slice(0, separatorIndex));
-    if (match?.[1]) return match[1].toLowerCase();
+    if (match?.[1]) tokens.add(match[1].toLowerCase());
   }
-  return null;
+  return [...tokens];
 }
 
 export function htmlToPlainText(value: string) {
