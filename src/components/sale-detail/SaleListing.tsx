@@ -39,7 +39,12 @@ import {
   listingVisits,
   positiveListingNumber,
 } from "@/lib/sale-listing";
-import { getSaleProcedure, saleIsTribunalVenue } from "@/lib/sale-procedure";
+import {
+  getSaleProcedure,
+  participationModeLabel,
+  saleIsTribunalVenue,
+  stateSaleMethodLabel,
+} from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { saleSession, saleWindow } from "@/lib/sale-window";
 import type { AuctionSale } from "@/lib/types";
@@ -103,6 +108,10 @@ export function ListingOverview({
   const surface = listingSurface(sale);
   const valuationConflict = listingValuationConflict(sale);
   const price = positiveListingNumber(sale.starting_price_eur);
+  const procedure = getSaleProcedure(sale);
+  const schedule = saleWindow(sale) ?? saleSession(sale);
+  const notary = procedure.venueType === "notary";
+  const state = procedure.venueType === "state";
   const rooms = positiveListingNumber(sale.rooms_count);
   const facts = [
     {
@@ -111,7 +120,7 @@ export function ListingOverview({
       icon: Ruler,
     },
     {
-      label: "Mise à prix au m²",
+      label: state ? "Prix publié au m²" : "Mise à prix au m²",
       value: surface.pricePerM2 == null ? "À confirmer" : formatPricePerM2(surface.pricePerM2),
       icon: Euro,
     },
@@ -144,9 +153,42 @@ export function ListingOverview({
       <p className={`${styles.muted} mt-2`}>
         {[sale.city, sale.postal_code].filter(Boolean).join(" · ") || "Localisation à confirmer"}
       </p>
-      <p className={styles.priceLabel}>Mise à prix</p>
-      <p className={styles.price}>{price == null ? "À confirmer" : formatPrice(price)}</p>
-      <p className={styles.muted}>Prix de départ, hors frais</p>
+      {notary || state ? (
+        <div className={styles.procedureLead}>
+          <p className={styles.procedureLeadEyebrow}>
+            {notary ? "Vente notariale" : "Cession domaniale"}
+          </p>
+          <strong>
+            {notary
+              ? (procedure.organizerName ?? "Étude à confirmer")
+              : stateSaleMethodLabel(procedure)}
+          </strong>
+          <span>
+            {notary
+              ? `${participationModeLabel(procedure.participationMode)} · ${schedule ? listingDate(schedule.opens_at) : listingDate(sale.sale_date)}`
+              : schedule
+                ? `Échéance annoncée : ${listingDate(schedule.closes_at)}`
+                : sale.sale_date
+                  ? `Date annoncée : ${listingDate(sale.sale_date)}`
+                  : "Échéance à confirmer dans l'annonce officielle"}
+          </span>
+        </div>
+      ) : null}
+      {price != null || !state ? (
+        <>
+          <p className={styles.priceLabel}>{state ? "Prix publié" : "Mise à prix"}</p>
+          <p className={styles.price}>{price == null ? "À confirmer" : formatPrice(price)}</p>
+          <p className={styles.muted}>
+            {state
+              ? "Conditions et frais à vérifier dans l'annonce officielle"
+              : "Prix de départ, hors frais"}
+          </p>
+        </>
+      ) : (
+        <p className={`${styles.muted} mt-5`}>
+          Prix non publié : consultez les conditions de cession.
+        </p>
+      )}
       <dl className={styles.facts}>
         {facts.map(({ label, value, icon: Icon }) => (
           <div key={label} className={styles.fact}>
@@ -159,8 +201,9 @@ export function ListingOverview({
         ))}
       </dl>
       {surface.estimated ? <p className={`${styles.muted} mt-3`}>{surface.helperText}</p> : null}
-      <a href="#rendez-vous" className={`${styles.textLink} mt-4`}>
-        Voir les rendez-vous et contacts <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
+      <a href={state ? "#participation" : "#rendez-vous"} className={`${styles.textLink} mt-4`}>
+        {state ? "Voir la procédure de cession" : "Voir les rendez-vous et contacts"}{" "}
+        <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
       </a>
     </div>
   );
@@ -175,6 +218,8 @@ export function ListingPracticalDetails({ sale }: { sale: AuctionSale }) {
   const timeConflict = saleTimeConflict(sale);
   const procedure = getSaleProcedure(sale);
   const tribunal = saleIsTribunalVenue(sale);
+  const notary = procedure.venueType === "notary";
+  const state = procedure.venueType === "state";
   const visits = listingVisits(sale);
   const contacts = listingContactLinks(procedure.organizerContact);
   const role = procedure.procedure?.organizer_type;
@@ -183,7 +228,13 @@ export function ListingPracticalDetails({ sale }: { sale: AuctionSale }) {
   return (
     <section id="rendez-vous" className={styles.section} aria-labelledby="listing-practical-title">
       <h2 id="listing-practical-title" className={styles.heading}>
-        {tribunal ? "L’audience et les visites" : "La vente et les visites"}
+        {tribunal
+          ? "L’audience et les visites"
+          : notary
+            ? "La séance notariale et les visites"
+            : state
+              ? "Échéance, visites et service vendeur"
+              : "La vente et les visites"}
       </h2>
       {status && (
         <div
@@ -204,7 +255,13 @@ export function ListingPracticalDetails({ sale }: { sale: AuctionSale }) {
           <div className={styles.row}>
             <dt>
               <CalendarDays aria-hidden />
-              {window ? "Ouverture" : session ? "Début de séance" : "Date"}
+              {window
+                ? "Ouverture"
+                : session && procedure.participationMode !== "unknown"
+                  ? "Début de séance"
+                  : state
+                    ? "Date ou échéance"
+                    : "Date annoncée"}
             </dt>
             <dd>
               {listingDate(schedule?.opens_at ?? sale.sale_date)}
@@ -219,7 +276,11 @@ export function ListingPracticalDetails({ sale }: { sale: AuctionSale }) {
             <div className={styles.row}>
               <dt>
                 <CalendarDays aria-hidden />
-                {window ? "Clôture" : "Fin de séance annoncée"}
+                {window
+                  ? "Clôture"
+                  : session && procedure.participationMode !== "unknown"
+                    ? "Fin de séance annoncée"
+                    : "Fin annoncée"}
               </dt>
               <dd>{listingDate(schedule.closes_at)}</dd>
             </div>
@@ -227,10 +288,17 @@ export function ListingPracticalDetails({ sale }: { sale: AuctionSale }) {
           <div className={styles.row}>
             <dt>
               <Landmark aria-hidden />
-              {tribunal ? "Tribunal" : "Lieu"}
+              {tribunal
+                ? "Tribunal"
+                : notary
+                  ? "Étude ou organisateur"
+                  : state
+                    ? "Service vendeur"
+                    : "Lieu"}
             </dt>
             <dd>
-              {procedure.venueName || "À confirmer"}
+              {(state ? (procedure.organizerName ?? procedure.venueName) : procedure.venueName) ||
+                "À confirmer"}
               {procedure.venueAddress ? (
                 <p className={`${styles.muted} mt-1 font-normal`}>{procedure.venueAddress}</p>
               ) : null}

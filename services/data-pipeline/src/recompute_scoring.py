@@ -470,7 +470,7 @@ def _validate_persisted_sale_procedure(
         if verification_status != expected_sale.sale_verification_status:
             issues.append("verification status differs from recompute")
         expected_procedure = expected_sale.sale_procedure
-        for key in ("ruleset_version", "participation_mode", "rules"):
+        for key in ("ruleset_version", "participation_mode", "state_sale_method", "rules"):
             if procedure.get(key) != expected_procedure.get(key):
                 issues.append(f"{key} differs from recompute")
     return issues

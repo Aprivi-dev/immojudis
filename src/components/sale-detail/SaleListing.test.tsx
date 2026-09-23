@@ -154,9 +154,29 @@ describe("readable listing sections", () => {
   });
   it("does not call a notarial event a court hearing", () => {
     const { container } = render(<ListingPracticalDetails sale={notary()} />);
-    expect(screen.getByRole("heading").textContent).toBe("La vente et les visites");
+    expect(screen.getByRole("heading").textContent).toBe("La séance notariale et les visites");
+    expect(screen.getByText("Étude ou organisateur")).toBeTruthy();
     expect(container.textContent).not.toContain("Stale court data");
     expect(container.textContent).not.toContain("Avocat poursuivant");
+  });
+  it("prioritizes the domanial procedure when no price is published", () => {
+    const { container } = render(
+      <ListingOverview
+        sale={item({
+          sale_venue_type: "state",
+          sale_procedure: null,
+          source_blocks: null,
+          starting_price_eur: null,
+          sale_date: null,
+        })}
+      />,
+    );
+    expect(screen.getByText("Cession domaniale")).toBeTruthy();
+    expect(screen.getByText(/Prix non publié/)).toBeTruthy();
+    expect(container.textContent).not.toContain("Prix de départ, hors frais");
+    expect(screen.getByRole("link", { name: /procédure de cession/ }).getAttribute("href")).toBe(
+      "#participation",
+    );
   });
   it("provides the source text in a native disclosure and escapes its content", () => {
     const { container } = render(
