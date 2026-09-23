@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { optimizeInformationAgentPhoto } from "@/lib/information-agent-image";
 import {
   createAdminInformationAgentDraft,
   informationAgentAdminActionSchema,
@@ -70,7 +71,24 @@ export async function listAdminInformationAgentReview(authToken: string) {
     .limit(100);
   if (factsError) throw factsError;
 
-  const caseIds = [...new Set((facts ?? []).map((fact) => fact.case_id))];
+  const { data: inboundMessages, error: messagesError } = await supabaseAdmin
+    .from("information_agent_messages")
+    .select("id,case_id,metadata,received_at")
+    .eq("direction", "inbound")
+    .filter("metadata->>rejected_attachment_count", "gt", "0")
+    .order("received_at", { ascending: false })
+    .limit(100);
+  if (messagesError) throw messagesError;
+  const rejectedMessages = (inboundMessages ?? []).filter(
+    (message): message is typeof message & { case_id: string } =>
+      !!message.case_id && Number(jsonObject(message.metadata).rejected_attachment_count) > 0,
+  );
+  const caseIds = [
+    ...new Set([
+      ...(facts ?? []).map((fact) => fact.case_id),
+      ...rejectedMessages.map((message) => message.case_id),
+    ]),
+  ];
   const { data: cases, error: casesError } = caseIds.length
     ? await supabaseAdmin
         .from("information_agent_cases")
@@ -108,6 +126,7 @@ export async function listAdminInformationAgentReview(authToken: string) {
     facts: facts ?? [],
     assets: assets ?? [],
     extractions: extractions ?? [],
+    rejectedMessages,
   };
 }
 
@@ -162,20 +181,48 @@ async function stageApprovedEvidencePublication(factId: string): Promise<void> {
   const stagedPath = stringValue(staged.approved_public_path);
   const stagedUrl = stringValue(staged.approved_public_url);
   const publicPath =
-    stagedPath ??
-    `${fact.sale_id}/${asset.id}/piece-jointe.${extensionForMimeType(asset.mime_type)}`;
+    fact.fact_key === "photo"
+      ? `${fact.sale_id}/${asset.id}/photo-v1.webp`
+      : (stagedPath ??
+        `${fact.sale_id}/${asset.id}/piece-jointe.${extensionForMimeType(asset.mime_type)}`);
+  const reusableStaging = stagedPath === publicPath && !!stagedUrl;
 
-  if (!stagedPath || !stagedUrl) {
-    const { error: copyError } = await supabaseAdmin.storage
-      .from(asset.storage_bucket)
-      .copy(asset.storage_path, publicPath, { destinationBucket: "information-agent-approved" });
-    if (copyError && !/already exists|duplicate/i.test(copyError.message)) throw copyError;
+  if (!reusableStaging) {
+    if (fact.fact_key === "photo") {
+      const { data: original, error: downloadError } = await supabaseAdmin.storage
+        .from(asset.storage_bucket)
+        .download(asset.storage_path);
+      if (downloadError || !original) throw downloadError ?? new Error("Photo source introuvable.");
+      const derivative = await optimizeInformationAgentPhoto(
+        new Uint8Array(await original.arrayBuffer()),
+      );
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from("information-agent-approved")
+        .upload(publicPath, derivative, { contentType: "image/webp", upsert: false });
+      if (uploadError && !/already exists|duplicate/i.test(uploadError.message)) throw uploadError;
+    } else {
+      const { error: copyError } = await supabaseAdmin.storage
+        .from(asset.storage_bucket)
+        .copy(asset.storage_path, publicPath, { destinationBucket: "information-agent-approved" });
+      if (copyError && !/already exists|duplicate/i.test(copyError.message)) throw copyError;
+    }
   }
 
-  const publicUrl =
-    stagedUrl ??
-    supabaseAdmin.storage.from("information-agent-approved").getPublicUrl(publicPath).data
-      .publicUrl;
+  const publicUrl = reusableStaging
+    ? stagedUrl
+    : supabaseAdmin.storage.from("information-agent-approved").getPublicUrl(publicPath).data
+        .publicUrl;
+  if (
+    fact.fact_key === "photo" &&
+    stagedPath &&
+    stagedPath !== publicPath &&
+    stagedPath.startsWith(`${fact.sale_id}/${asset.id}/`)
+  ) {
+    const { error: removeError } = await supabaseAdmin.storage
+      .from("information-agent-approved")
+      .remove([stagedPath]);
+    if (removeError) throw removeError;
+  }
   const { error: stageError } = await supabaseAdmin.rpc(
     "stage_information_agent_evidence_publication",
     {
