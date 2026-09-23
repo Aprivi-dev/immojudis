@@ -6,6 +6,7 @@ import {
   saleWorkspaceInputSchema,
 } from "@/lib/sale-workspaces";
 import { DEFAULT_DOCUMENT_REVIEW, DEFAULT_WORKSPACE_NOTES } from "@/lib/sale-workspace-shared";
+import { emptyPilotDraft } from "@/lib/professional-pilots";
 
 describe("sale workspace helpers", () => {
   it("normalizes invalid notes to the default shape", () => {
@@ -15,6 +16,22 @@ describe("sale workspace helpers", () => {
       general: "À appeler",
       privateMode: false,
     });
+  });
+
+  it("preserves a versioned professional dossier in private notes", () => {
+    const dossier = { ...emptyPilotDraft("notary"), priceEur: 210_000 };
+    expect(
+      normalizeNotes({ general: "Appeler l'étude", professionalDossier: dossier }),
+    ).toMatchObject({
+      general: "Appeler l'étude",
+      professionalDossier: dossier,
+    });
+    expect(
+      saleWorkspaceInputSchema.parse({
+        saleId: "7d335032-e935-4550-9347-ed22b0f63449",
+        privateNotes: { professionalDossier: dossier },
+      }).privateNotes?.professionalDossier,
+    ).toEqual(dossier);
   });
 
   it("keeps only boolean checklist values", () => {

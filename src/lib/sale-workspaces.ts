@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pilotDraftSchema } from "@/lib/professional-pilots";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/types";
 import {
@@ -23,6 +24,7 @@ export const workspaceNotesSchema = z
     works: z.string().max(5000).default(""),
     market: z.string().max(5000).default(""),
     privateMode: z.boolean().default(true),
+    professionalDossier: pilotDraftSchema.optional(),
   })
   .default(DEFAULT_WORKSPACE_NOTES);
 
@@ -76,6 +78,21 @@ export type SaleWorkspaceResponse = {
   workspace: SaleWorkspace | null;
 };
 
+export const professionalPilotSaveSchema = z.object({
+  saleId: z.string().uuid(),
+  expectedUpdatedAt: z.string().datetime({ offset: true }).nullable(),
+  draft: pilotDraftSchema,
+});
+
+export type ProfessionalPilotSaveInput = z.infer<typeof professionalPilotSaveSchema>;
+
+export class SaleWorkspaceConflictError extends Error {
+  constructor() {
+    super("Le dossier a changé sur votre compte. Rechargez la page avant de l'enregistrer.");
+    this.name = "SaleWorkspaceConflictError";
+  }
+}
+
 export async function getSaleWorkspace({
   auth,
   saleId,
@@ -126,6 +143,58 @@ export async function upsertSaleWorkspace({
     .select("*")
     .single();
 
+  if (error) throw error;
+  return { workspace: normalizeWorkspace(data) };
+}
+
+/** Atomically compare the workspace revision before replacing its private notes. */
+export async function saveProfessionalPilot({
+  auth,
+  input,
+}: {
+  auth: SupabaseAuthContext;
+  input: ProfessionalPilotSaveInput;
+}): Promise<SaleWorkspaceResponse> {
+  const { data: existing, error: readError } = await auth.supabase
+    .from("sale_workspaces")
+    .select("*")
+    .eq("user_id", auth.userId)
+    .eq("sale_id", input.saleId)
+    .maybeSingle();
+  if (readError) throw readError;
+  if ((existing?.updated_at ?? null) !== input.expectedUpdatedAt) {
+    throw new SaleWorkspaceConflictError();
+  }
+
+  if (existing) {
+    if (!input.expectedUpdatedAt) throw new SaleWorkspaceConflictError();
+    const notes = {
+      ...normalizeNotes(existing.private_notes),
+      professionalDossier: input.draft,
+    };
+    const { data, error } = await auth.supabase
+      .from("sale_workspaces")
+      .update({ private_notes: asJson(notes), last_synced_at: new Date().toISOString() })
+      .eq("user_id", auth.userId)
+      .eq("sale_id", input.saleId)
+      .eq("updated_at", input.expectedUpdatedAt)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new SaleWorkspaceConflictError();
+    return { workspace: normalizeWorkspace(data) };
+  }
+
+  const { data, error } = await auth.supabase
+    .from("sale_workspaces")
+    .insert({
+      user_id: auth.userId,
+      sale_id: input.saleId,
+      private_notes: asJson({ ...DEFAULT_WORKSPACE_NOTES, professionalDossier: input.draft }),
+    })
+    .select("*")
+    .single();
+  if (error?.code === "23505") throw new SaleWorkspaceConflictError();
   if (error) throw error;
   return { workspace: normalizeWorkspace(data) };
 }

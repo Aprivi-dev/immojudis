@@ -8,7 +8,9 @@ const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
 // Separate favorites and alerts routes add independently loaded client chunks.
 // The tribunal statistics explorer adds a dedicated, premium-only client view.
 // Keep its global allowance narrow; route-level initial-load budgets remain enforced.
-const MAX_TOTAL_CLIENT_JS_BYTES = 4_225_000;
+// The three procedure-specific pilot workspaces add client code to the sale detail view.
+// Keep the allowance narrow and continue enforcing the per-route initial-load budgets.
+const MAX_TOTAL_CLIENT_JS_BYTES = 4_250_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
