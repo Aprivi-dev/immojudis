@@ -50,10 +50,14 @@ describe("professional pilot workspace", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByText("Consignation").parentElement?.textContent).toContain("À confirmer");
+    expect(screen.getByText("1 information à confirmer")).toBeTruthy();
+    fireEvent.click(screen.getByText("1 information à confirmer"));
+    expect(screen.getByText("Consignation")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "2. Budget" }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "Offre envisagée" }), {
       target: { value: "210000" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "3. Vérifications" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Statut : Financement validé" }), {
       target: { value: "blocked" },
     });
@@ -64,7 +68,10 @@ describe("professional pilot workspace", () => {
       expect(saved.priceEur).toBe(210_000);
       expect(saved.checkStatuses["notary-financing"]).toBe("blocked");
     });
-    expect(screen.getByText("1 point(s) bloquant(s)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "2. Budget" }));
+    expect(
+      screen.getByRole<HTMLInputElement>("spinbutton", { name: "Offre envisagée" }).value,
+    ).toBe("210000");
   });
 
   it("clears the previous user's dossier when the account changes", async () => {
@@ -93,6 +100,7 @@ describe("professional pilot workspace", () => {
         <ProfessionalPilotWorkspace sale={sale} definition={definition} />
       </QueryClientProvider>,
     );
+    fireEvent.click(screen.getByRole("button", { name: "2. Budget" }));
     await waitFor(() => {
       expect(
         screen.getByRole<HTMLInputElement>("spinbutton", { name: "Offre envisagée" }).value,
@@ -133,6 +141,7 @@ describe("professional pilot workspace", () => {
         <ProfessionalPilotWorkspace sale={sale} definition={definition} />
       </QueryClientProvider>,
     );
+    fireEvent.click(screen.getByRole("button", { name: "2. Budget" }));
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Enregistrer le dossier" }).hasAttribute("disabled"),
