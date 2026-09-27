@@ -47,7 +47,7 @@ import {
 } from "@/components/sale-detail/SaleListing";
 import { ListingBudget } from "@/components/sale-detail/ListingBudget";
 import { ListingDataCoverage } from "@/components/sale-detail/ListingDataCoverage";
-import { ListingWorks, WorksSpotlight } from "@/components/sale-detail/ListingWorks";
+import { ListingWorks } from "@/components/sale-detail/ListingWorks";
 import { FinancingSimulator } from "@/components/sale-detail/FinancingSimulator";
 import { UrbanismeCadastrePanel } from "@/components/sale-detail/UrbanismeCadastrePanel";
 import { SaleDetailTabNav, type SaleDetailTab } from "@/components/sale-detail/SaleDetailTabNav";
@@ -311,8 +311,6 @@ function SimplifiedSaleDetailView({
             />
           </div>
         </div>
-        <ListingDataCoverage sale={sale} />
-        <WorksSpotlight sale={sale} />
       </div>
 
       <div id="annonce-sections" className={panelStyles.tabRegion}>
@@ -326,11 +324,7 @@ function SimplifiedSaleDetailView({
         >
           {activeTab === "apercu" ? (
             <>
-              <PanelIntro
-                eyebrow="01 / Le bien"
-                title="L’essentiel sur le bien"
-                description="Description, points à vérifier et situation de la parcelle."
-              />
+              <PanelIntro eyebrow="01 / Le bien" title="L’essentiel sur le bien" />
               <div className={panelStyles.twoColumns}>
                 <ListingDescription sale={sale} />
                 <ListingLocation sale={sale} />
@@ -351,7 +345,8 @@ function SimplifiedSaleDetailView({
                 }
               />
               <details className={panelStyles.disclosure}>
-                <summary>Vérifications de la source</summary>
+                <summary>Qualité des informations du dossier</summary>
+                <ListingDataCoverage sale={sale} />
                 <ListingQualityNotice sale={sale} />
               </details>
             </>
@@ -705,13 +700,13 @@ function PanelIntro({
 }: {
   eyebrow: string;
   title: string;
-  description: string;
+  description?: string;
 }) {
   return (
     <header className={panelStyles.intro}>
       <p>{eyebrow}</p>
       <h2>{title}</h2>
-      <span>{description}</span>
+      {description ? <span>{description}</span> : null}
     </header>
   );
 }

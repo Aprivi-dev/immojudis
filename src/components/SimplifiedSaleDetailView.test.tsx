@@ -380,7 +380,7 @@ describe("integrated listing", () => {
 
     const live = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
     expect(await screen.findByText("Section AB n° 123")).toBeTruthy();
-    expect(screen.getByText("Parcelle candidate")).toBeTruthy();
+    expect(screen.getByText("Référence cadastrale à recouper")).toBeTruthy();
     expect(screen.getByText("Point géocodé · à recouper")).toBeTruthy();
     expect(mocks.fetchUrbanism).toHaveBeenCalledWith(EXAMPLE_SALE_RECORDS.bordeaux.sale.id);
     live.unmount();

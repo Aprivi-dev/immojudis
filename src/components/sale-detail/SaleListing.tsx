@@ -11,17 +11,13 @@ import {
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import DoorOpen from "lucide-react/dist/esm/icons/door-open.js";
-import Euro from "lucide-react/dist/esm/icons/euro.js";
 import Globe from "lucide-react/dist/esm/icons/globe.js";
 import KeyRound from "lucide-react/dist/esm/icons/key-round.js";
 import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import Mail from "lucide-react/dist/esm/icons/mail.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Phone from "lucide-react/dist/esm/icons/phone.js";
-import Ruler from "lucide-react/dist/esm/icons/ruler.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import UserRound from "lucide-react/dist/esm/icons/user-round.js";
 import { toast } from "sonner";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { MapThumbnail } from "@/components/MapThumbnail";
@@ -29,7 +25,7 @@ import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedurePanel";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { saleSourceLinks } from "@/lib/sale-source-links";
-import { formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
+import { formatPrice, propertyTypeLabel } from "@/lib/format";
 import { buildStructuredDescription } from "@/lib/sale-description";
 import {
   listingContactLinks,
@@ -131,23 +127,17 @@ export function ListingOverview({
       : procedure.venueType === "tribunal"
         ? "Audience annoncée"
         : "Date annoncée";
+  const hasVisibleEvent = Boolean(!saleStatus && eventDate && !saleTimeConflict(sale));
   const rooms = positiveListingNumber(sale.rooms_count);
   const facts = [
     {
       label: valuationConflict ? "Surface enregistrée · à vérifier" : surface.label,
       value: surface.formatted,
-      icon: Ruler,
     },
-    {
-      label: state ? "Prix publié au m²" : "Mise à prix au m²",
-      value: surface.pricePerM2 == null ? "À confirmer" : formatPricePerM2(surface.pricePerM2),
-      icon: Euro,
-    },
-    { label: "Pièces", value: rooms == null ? "À confirmer" : String(rooms), icon: DoorOpen },
+    { label: "Pièces", value: rooms == null ? "À confirmer" : String(rooms) },
     {
       label: "Occupation",
       value: listingOccupation(sale),
-      icon: UserRound,
     },
   ];
   return (
@@ -184,12 +174,10 @@ export function ListingOverview({
           </strong>
           <span>
             {notary
-              ? `${participationModeLabel(procedure.participationMode)} · ${schedule ? listingDate(schedule.opens_at) : listingDate(sale.sale_date)}`
-              : schedule
-                ? `Échéance annoncée : ${listingDate(schedule.closes_at)}`
-                : sale.sale_date
-                  ? `Date annoncée : ${listingDate(sale.sale_date)}`
-                  : "Échéance à confirmer dans l'annonce officielle"}
+              ? participationModeLabel(procedure.participationMode)
+              : hasVisibleEvent
+                ? "Conditions à vérifier dans l’annonce officielle"
+                : "Échéance à confirmer dans l’annonce officielle"}
           </span>
         </div>
       ) : null}
@@ -227,39 +215,40 @@ export function ListingOverview({
           Prix non publié : consultez les conditions de cession.
         </p>
       )}
-      {!saleStatus && eventDate && !saleTimeConflict(sale) ? (
+      {hasVisibleEvent ? (
         <div className={styles.heroEvent}>
           <CalendarDays aria-hidden />
           <div>
             <span>{eventLabel}</span>
             <strong>{listingDate(eventDate)}</strong>
           </div>
-          <a href="#rendez-vous">Détails</a>
+          <a href="#rendez-vous">Rendez-vous</a>
         </div>
       ) : null}
-      <div className={styles.heroLinks}>
-        <a href={state ? "#participation" : "#rendez-vous"} className={styles.textLink}>
-          {state ? "Voir la procédure de cession" : "Voir les rendez-vous et contacts"}{" "}
-          <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
-        </a>
-        {sourceLink ? (
-          <a
-            href={sourceLink.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.sourceLink}
-          >
-            Source originale · {sourceLink.label} <span className="sr-only">(nouvel onglet)</span>
-          </a>
-        ) : null}
-      </div>
+      {sourceLink || !hasVisibleEvent ? (
+        <div className={styles.heroLinks}>
+          {!hasVisibleEvent ? (
+            <a href={state ? "#participation" : "#rendez-vous"} className={styles.textLink}>
+              {state ? "Voir la procédure de cession" : "Voir les rendez-vous et contacts"}{" "}
+              <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
+            </a>
+          ) : null}
+          {sourceLink ? (
+            <a
+              href={sourceLink.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.sourceLink}
+            >
+              Source originale · {sourceLink.label} <span className="sr-only">(nouvel onglet)</span>
+            </a>
+          ) : null}
+        </div>
+      ) : null}
       <dl className={styles.facts}>
-        {facts.map(({ label, value, icon: Icon }) => (
+        {facts.map(({ label, value }) => (
           <div key={label} className={styles.fact}>
-            <dt className={styles.factLabel}>
-              <Icon className={styles.factIcon} aria-hidden />
-              {label}
-            </dt>
+            <dt className={styles.factLabel}>{label}</dt>
             <dd className={styles.factValue}>{value}</dd>
           </div>
         ))}
@@ -451,21 +440,21 @@ export function ListingDescription({ sale }: { sale: AuctionSale }) {
     !!original && original.replace(/\s+/g, " ") !== description.replace(/\s+/g, " ");
   const sourceUrl = safeExternalHttpUrl(sale.source_url);
   return (
-    <section
-      id="description-ia"
-      className={styles.section}
-      aria-labelledby="listing-description-title"
-    >
+    <section className={styles.section} aria-labelledby="listing-description-title">
       <h2 id="listing-description-title" className={styles.heading}>
         Description
       </h2>
-      <div className={styles.card}>
-        <p className={`${styles.muted} mb-3`}>
-          Synthèse issue des données de la fiche. Elle reprend uniquement les champs connus et ne
-          remplace pas le texte source.
-        </p>
-        <p className={styles.body}>{description}</p>
-      </div>
+      <details id="description-ia" className={styles.descriptionDisclosure}>
+        <summary>
+          Lire la synthèse du dossier <ChevronDown className="h-4 w-4 shrink-0" aria-hidden />
+        </summary>
+        <div className={styles.card}>
+          <p className={`${styles.muted} mb-3`}>
+            Synthèse issue des données de la fiche. Elle ne remplace pas le texte source.
+          </p>
+          <p className={styles.body}>{description}</p>
+        </div>
+      </details>
       {originalDiffers ? (
         <details className={styles.original}>
           <summary>

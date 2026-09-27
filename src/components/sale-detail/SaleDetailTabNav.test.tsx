@@ -52,4 +52,41 @@ describe("SaleDetailTabNav", () => {
     expect(tabs[4].getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(tabs[4]);
   });
+
+  it("opens the compact section menu and returns focus to its trigger after selection", () => {
+    render(<Harness />);
+
+    const trigger = screen.getByRole("button", { name: "Explorer : Aperçu" });
+    fireEvent.click(trigger);
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("menu")).toBeTruthy();
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(5);
+    expect(document.activeElement).toBe(screen.getByRole("menuitemradio", { name: "Aperçu" }));
+
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Travaux" }));
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.getAttribute("aria-label")).toBe("Explorer : Travaux");
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.getByRole("tab", { name: "Travaux" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("closes the mobile menu with Escape or an outside pointer", () => {
+    render(<Harness />);
+
+    const trigger = screen.getByRole("button", { name: "Explorer : Aperçu" });
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole("menuitemradio", { name: "Aperçu" }), { key: "Escape" });
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.pointerDown(document.body);
+
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });
