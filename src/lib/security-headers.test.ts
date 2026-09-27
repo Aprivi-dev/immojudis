@@ -16,6 +16,7 @@ describe("browser security headers", () => {
     expect(values["Content-Security-Policy-Report-Only"]).toContain("frame-ancestors 'none'");
     expect(values["Content-Security-Policy-Report-Only"]).toContain("object-src 'none'");
     expect(values["Content-Security-Policy-Report-Only"]).toContain("https://project.supabase.co");
+    expect(values["Content-Security-Policy-Report-Only"]).toContain("https://data.geopf.fr");
     expect(values["Content-Security-Policy-Report-Only"]).not.toContain("'unsafe-eval'");
   });
 

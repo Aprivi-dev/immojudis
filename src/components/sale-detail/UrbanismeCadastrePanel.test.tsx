@@ -36,7 +36,8 @@ describe("UrbanismeCadastrePanel", () => {
     expect(screen.getByRole("heading", { name: "Urbanisme & cadastre" })).toBeTruthy();
     expect(screen.getByText(/parcelle à rattacher/i)).toBeTruthy();
     expect(screen.getByText(/L’adresse est un point de départ/)).toBeTruthy();
-    const details = container.querySelector("details");
+    expect(screen.getByText("Plan cadastral du quartier")).toBeTruthy();
+    const details = screen.getByText("Voir les références et contrôles").closest("details");
     expect(details).not.toBeNull();
     expect(details?.open).toBe(false);
     expect(details?.querySelectorAll("details")).toHaveLength(0);
@@ -121,7 +122,8 @@ describe("UrbanismeCadastrePanel", () => {
     );
 
     expect(screen.getByText("Référence cadastrale à recouper")).toBeTruthy();
-    const details = container.querySelector("details");
+    expect(screen.getByText("Plan cadastral du quartier")).toBeTruthy();
+    const details = screen.getByText("Voir les références et contrôles").closest("details");
     expect(details?.open).toBe(false);
     fireEvent.click(screen.getByText("Voir les références et contrôles"));
     expect(screen.getByText("Section AB n° 123")).toBeTruthy();

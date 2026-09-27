@@ -19,9 +19,15 @@ export type CadastralNeighborhoodMapProps = {
   lat: number;
   lng: number;
   address: string;
+  pointKind: "listing" | "address" | "street" | "parcel-centroid";
 };
 
-export function CadastralNeighborhoodMap({ lat, lng, address }: CadastralNeighborhoodMapProps) {
+export function CadastralNeighborhoodMap({
+  lat,
+  lng,
+  address,
+  pointKind,
+}: CadastralNeighborhoodMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
   const hasValidCoordinates = isValidCoordinates(lat, lng);
@@ -31,6 +37,12 @@ export function CadastralNeighborhoodMap({ lat, lng, address }: CadastralNeighbo
   );
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const addressLabel = address.trim() || "Adresse fournie";
+  const pointLabel =
+    pointKind === "parcel-centroid"
+      ? "Centre de parcelle indicatif"
+      : pointKind === "street"
+        ? "Repère de rue indicatif"
+        : "Point indicatif";
 
   useEffect(() => {
     const container = mapContainerRef.current;
@@ -122,8 +134,8 @@ export function CadastralNeighborhoodMap({ lat, lng, address }: CadastralNeighbo
           const markerElement = document.createElement("button");
           markerElement.type = "button";
           markerElement.className = styles.marker;
-          markerElement.setAttribute("aria-label", "Adresse fournie, point indicatif");
-          markerElement.title = "Point indicatif de l’adresse fournie";
+          markerElement.setAttribute("aria-label", pointLabel);
+          markerElement.title = pointLabel;
 
           const markerPulse = document.createElement("span");
           markerPulse.className = styles.markerPulse;
@@ -138,7 +150,7 @@ export function CadastralNeighborhoodMap({ lat, lng, address }: CadastralNeighbo
             .setLngLat([lng, lat])
             .setPopup(
               new mapboxgl.Popup({ closeButton: true, offset: 18 }).setText(
-                `Point indicatif de l’adresse fournie : ${addressLabel}`,
+                `${pointLabel} · ${addressLabel}`,
               ),
             )
             .addTo(mapInstance);
@@ -158,10 +170,23 @@ export function CadastralNeighborhoodMap({ lat, lng, address }: CadastralNeighbo
             if (mapInstance.isStyleLoaded()) activateWmsFallback();
           });
 
-          mapInstance.on("error", () => {
+          mapInstance.on("error", (event) => {
             if (cancelled) return;
 
-            if (fallbackActive) return;
+            if (fallbackActive) {
+              const message = event.error?.message ?? "";
+              if (
+                message.includes("/wms-r/wms") ||
+                message.includes("ign-base-wms") ||
+                message.includes("ign-cadastre-wms")
+              ) {
+                setStatus("error");
+                setErrorMessage(
+                  "Les services cartographiques IGN sont momentanément indisponibles.",
+                );
+              }
+              return;
+            }
             if (mapLoaded || mapInstance.isStyleLoaded()) {
               activateWmsFallback();
               return;
@@ -188,7 +213,7 @@ export function CadastralNeighborhoodMap({ lat, lng, address }: CadastralNeighbo
       marker?.remove();
       map?.remove();
     };
-  }, [addressLabel, hasValidCoordinates, lat, lng]);
+  }, [addressLabel, hasValidCoordinates, lat, lng, pointLabel]);
 
   return (
     <section className={styles.root} aria-labelledby={headingId}>
@@ -244,25 +269,12 @@ export function CadastralNeighborhoodMap({ lat, lng, address }: CadastralNeighbo
 
       <div className={styles.legend} aria-label="Légende du plan">
         <span>
-          <i className={styles.legendPoint} aria-hidden="true" /> Adresse fournie
+          <i className={styles.legendPoint} aria-hidden="true" /> {pointLabel}
         </span>
         <span>
           <i className={styles.legendParcel} aria-hidden="true" /> Limites cadastrales
         </span>
       </div>
-
-      <p className={styles.caveat}>
-        <strong>Repère indicatif.</strong> Le point correspond à l’adresse fournie. Il ne confirme
-        pas à lui seul la parcelle concernée et ne remplace pas un bornage ou un document officiel.
-      </p>
-
-      <p className={styles.source}>
-        Source :{" "}
-        <a href="https://cartes.gouv.fr/" target="_blank" rel="noreferrer">
-          IGN / Géoplateforme
-        </a>
-        , Parcellaire Express (PCI).
-      </p>
     </section>
   );
 }

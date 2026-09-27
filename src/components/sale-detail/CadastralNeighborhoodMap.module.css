@@ -219,34 +219,6 @@
   background: rgb(255 205 94 / 30%);
 }
 
-.caveat {
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid #e7d4ac;
-  border-radius: 11px;
-  background: var(--cadastre-accent-soft);
-  color: #6b5328;
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.caveat strong {
-  color: #805b1f;
-}
-
-.source {
-  margin: 0;
-  color: var(--cadastre-muted);
-  font-size: 10px;
-  line-height: 1.4;
-}
-
-.source a {
-  color: #345a78;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 .marker {
   position: relative;
   display: grid;
