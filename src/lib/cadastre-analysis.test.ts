@@ -130,8 +130,8 @@ describe("cadastral analysis", () => {
     expect(analysis).toMatchObject({
       available: true,
       status: "identified",
-      confidence: "high",
-      confidenceLabel: "Parcelle API Carto rattachée",
+      confidence: "medium",
+      confidenceLabel: "Référence détectée à confirmer",
       landSurfaceM2: 480,
       structuredParcels: [
         {
@@ -145,7 +145,7 @@ describe("cadastral analysis", () => {
         {
           section: "AB",
           number: "0123",
-          confidence: "structured",
+          confidence: "inferred",
         },
       ],
     });

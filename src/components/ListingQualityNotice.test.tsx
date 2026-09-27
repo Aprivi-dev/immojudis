@@ -90,3 +90,23 @@ it("does not show the source detail verification reservation without its flag", 
   );
   expect(screen.queryByText(/dernière fiche source n’a pas pu être vérifiée/)).toBeNull();
 });
+it("uses extracted documents when the raw document field is empty", () => {
+  render(
+    <ListingQualityNotice
+      sale={
+        {
+          documents: [],
+          documents_rich: [
+            {
+              url: "https://example.test/cahier.pdf",
+              label: "Cahier des conditions",
+              type: "pdf",
+              extraction_status: "complete",
+            },
+          ],
+        } as unknown as AuctionSale
+      }
+    />,
+  );
+  expect(screen.queryByText(/Documents non disponibles/)).toBeNull();
+});
