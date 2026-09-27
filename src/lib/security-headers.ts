@@ -10,6 +10,7 @@ export function buildSecurityHeaders(options: SecurityHeaderOptions): SecurityHe
   const connectSources = new Set([
     "'self'",
     "https://api-adresse.data.gouv.fr",
+    "https://data.geopf.fr",
     "https://api.mapbox.com",
     "https://events.mapbox.com",
     "https://*.tiles.mapbox.com",
