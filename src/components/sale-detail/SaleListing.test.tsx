@@ -54,9 +54,9 @@ describe("readable listing sections", () => {
     expect(section.textContent).not.toContain("Visites programmées le 3 août");
     expect(section.textContent).not.toContain("Libre de toute occupation");
     expect(section.textContent).toContain("Loué");
-    expect(section.querySelector("details")?.textContent).toContain(
-      "Le logement est loué avec bail en cours.",
-    );
+    expect(
+      screen.getByText("Afficher le texte de l’annonce source").closest("details")?.textContent,
+    ).toContain("Le logement est loué avec bail en cours.");
   });
 
   it.each(["cancelled", "canceled", "postponed"])(
@@ -114,14 +114,15 @@ describe("readable listing sections", () => {
     expect(details?.querySelector("p")?.textContent).toContain("CONDITIONS DE LA VENTE");
   });
 
-  it("leads with the starting price and four labeled facts", () => {
+  it("leads with the starting price and three essential facts", () => {
     render(<ListingOverview sale={item()} />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Bordeaux");
     expect(screen.getByText("42,6 m²")).toBeTruthy();
     expect(screen.getByText("Surface Carrez")).toBeTruthy();
-    expect(screen.getAllByRole("term")).toHaveLength(4);
+    expect(screen.getAllByRole("term")).toHaveLength(3);
+    expect(screen.queryByText("Mise à prix au m²")).toBeNull();
     expect(screen.getByText("Prix de départ, hors frais")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /rendez-vous/ }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: /rendez-vous/i }).getAttribute("href")).toBe(
       "#rendez-vous",
     );
   });
@@ -188,7 +189,7 @@ describe("readable listing sections", () => {
       />,
     );
     expect(screen.queryByText(/Synthèse rédigée par IA/)).toBeNull();
-    const disclosure = container.querySelector("details");
+    const disclosure = screen.getByText("Afficher le texte de l’annonce source").closest("details");
     expect(disclosure).toBeTruthy();
     expect(disclosure?.open).toBe(false);
     fireEvent.click(screen.getByText("Afficher le texte de l’annonce source"));
@@ -202,7 +203,7 @@ describe("readable listing sections", () => {
         sale={item({ source_description: buildStructuredDescription(item()) })}
       />,
     );
-    expect(container.querySelector("details")).toBeNull();
+    expect(container.querySelectorAll("details")).toHaveLength(1);
   });
   it("labels the generated description as a fiche synthesis", () => {
     render(
