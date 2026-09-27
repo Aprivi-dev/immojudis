@@ -103,8 +103,8 @@ export function UrbanismeCadastrePanel({
             {heading}
           </h2>
           <p className={styles.intro}>
-            L’essentiel sur l’adresse et la parcelle, avec les vérifications détaillées à la
-            demande.
+            Repérage indicatif de la parcelle et des règles applicables, à confirmer dans les
+            sources officielles.
           </p>
         </div>
         <div className={styles.headerMark} aria-hidden="true">
@@ -112,47 +112,20 @@ export function UrbanismeCadastrePanel({
         </div>
       </header>
 
-      <div className={styles.locationSummary}>
-        <MapPin size={18} aria-hidden="true" />
-        <div>
-          <span className={styles.locationLabel}>Localisation</span>
-          <p className={styles.locationValue}>{addressSummary ?? "Adresse non fournie"}</p>
-          <p className={styles.locationMeta}>{locationMeta(sale)}</p>
+      <div className={styles.compactSummary}>
+        <div className={styles.compactSummaryLead}>
+          <div className={styles.compactSummaryIcon} aria-hidden="true">
+            <SearchCheck size={17} />
+          </div>
+          <div>
+            <p className={styles.compactSummaryLabel}>{compactStatusLabel(sale, cadastral)}</p>
+            <p className={styles.compactSummaryText}>{primaryAction}</p>
+          </div>
         </div>
-      </div>
-
-      <div className={styles.summaryGrid} aria-label="État des vérifications">
-        <SummaryCard
-          tone={hasAddress(sale) ? "blue" : "neutral"}
-          icon={<MapPin size={16} aria-hidden="true" />}
-          label="Adresse"
-          value={addressStatusLabel(sale)}
-          detail={addressStatusDetail(sale)}
-        />
-        <SummaryCard
-          tone={cadastral.available ? "gold" : "neutral"}
-          icon={<Map size={16} aria-hidden="true" />}
-          label="Parcelle"
-          value={parcelStatusLabel(cadastral)}
-          detail={parcelStatusDetail(cadastral)}
-        />
-        <SummaryCard
-          tone={urbanPlanning.available ? "blue" : "neutral"}
-          icon={<LandPlot size={16} aria-hidden="true" />}
-          label="Urbanisme"
-          value={urbanStatusShortLabel(urbanPlanning.status)}
-          detail={urbanStatusShortDetail(urbanPlanning, relevantRisks)}
-        />
-      </div>
-
-      <div className={styles.nextAction}>
-        <div className={styles.nextActionIcon} aria-hidden="true">
-          <SearchCheck size={17} />
-        </div>
-        <div>
-          <p className={styles.nextActionLabel}>À faire en premier</p>
-          <p className={styles.nextActionText}>{primaryAction}</p>
-        </div>
+        <p className={styles.compactSummaryCaveat}>
+          L’adresse est un point de départ. Elle ne suffit pas à confirmer une parcelle ni les
+          règles d’urbanisme.
+        </p>
       </div>
 
       <details className={styles.details}>
@@ -160,14 +133,26 @@ export function UrbanismeCadastrePanel({
           <span className={styles.detailsSummaryText}>
             <Info size={16} aria-hidden="true" />
             <span>
-              <strong>Voir le détail</strong>
-              <small>Références, PLU, risques et sources</small>
+              <strong>Voir les références et contrôles</strong>
+              <small>Adresse · parcelle · PLU · risques · sources</small>
             </span>
           </span>
           <ChevronDown className={styles.detailsChevron} size={18} aria-hidden="true" />
         </summary>
 
         <div className={styles.detailsContent}>
+          <div className={styles.locationSummary}>
+            <MapPin size={18} aria-hidden="true" />
+            <div>
+              <span className={styles.locationLabel}>Adresse fournie</span>
+              <p className={styles.locationValue}>{addressSummary ?? "Adresse non fournie"}</p>
+              <p className={styles.locationMeta}>{locationMeta(sale)}</p>
+              <p className={styles.locationCaveat}>
+                Une adresse ou un point géocodé ne délimite pas à lui seul une parcelle.
+              </p>
+            </div>
+          </div>
+
           <section className={styles.section} aria-labelledby="urbanisme-cadastre-cadastre">
             <SectionHeading
               id="urbanisme-cadastre-cadastre"
@@ -361,41 +346,20 @@ function SectionHeading({
   );
 }
 
-function SummaryCard({
-  tone,
-  icon,
-  label,
-  value,
-  detail,
-}: {
-  tone: "blue" | "gold" | "red" | "neutral";
-  icon: ReactNode;
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  const toneClass =
-    tone === "blue"
-      ? styles.summaryCardBlue
-      : tone === "gold"
-        ? styles.summaryCardGold
-        : tone === "red"
-          ? styles.summaryCardRed
-          : "";
-  return (
-    <div className={[styles.summaryCard, toneClass].filter(Boolean).join(" ")}>
-      <div className={styles.summaryLabel}>
-        {icon}
-        {label}
-      </div>
-      <div className={styles.summaryValue}>{value}</div>
-      <p className={styles.summaryDetail}>{detail}</p>
-    </div>
-  );
-}
-
 function hasAddress(sale: AuctionSale): boolean {
   return Boolean(displayText(sale.address));
+}
+
+function compactStatusLabel(sale: AuctionSale, analysis: CadastralAnalysis): string {
+  if (!hasAddress(sale)) {
+    return displayText(sale.city)
+      ? "Commune connue · parcelle à rattacher"
+      : "Localisation à confirmer";
+  }
+  if (analysis.references.length > 0 || analysis.structuredParcels.length > 0) {
+    return "Référence cadastrale à recouper";
+  }
+  return "Adresse fournie · parcelle à rattacher";
 }
 
 function locationSummary(sale: AuctionSale): string | null {
@@ -414,67 +378,6 @@ function locationMeta(sale: AuctionSale): string {
   if (city) return city;
   if (department) return department;
   return "Localisation à confirmer";
-}
-
-function addressStatusLabel(sale: AuctionSale): string {
-  if (hasAddress(sale)) return "Adresse connue";
-  if (displayText(sale.city)) return "Commune connue";
-  return "Adresse à confirmer";
-}
-
-function addressStatusDetail(sale: AuctionSale): string {
-  if (hasAddress(sale)) return locationMeta(sale);
-  if (displayText(sale.city)) return "Voie et numéro non fournis";
-  return "Aucun point de départ fiable";
-}
-
-function parcelStatusLabel(analysis: CadastralAnalysis): string {
-  const inferredReference = analysis.references.some(
-    (reference) => reference.confidence === "inferred",
-  );
-  const explicitReference = analysis.references.some(
-    (reference) => reference.confidence === "structured" || reference.confidence === "direct",
-  );
-
-  if (inferredReference && !explicitReference) return "Parcelle candidate";
-  if (explicitReference) return "Référence repérée";
-  if (analysis.documents.length > 0) return "Pièce repérée";
-  if (analysis.landSurfaceM2 != null) return "À rattacher";
-  return "À rattacher";
-}
-
-function parcelStatusDetail(analysis: CadastralAnalysis): string {
-  const firstReference = analysis.references[0];
-  if (firstReference) {
-    const reference = formatCadastralReference(firstReference);
-    return firstReference.confidence === "inferred"
-      ? `${reference} · à recouper`
-      : `${reference} · à vérifier dans le plan officiel`;
-  }
-  if (analysis.landSurfaceM2 != null) {
-    return `${formatSurface(analysis.landSurfaceM2)} de terrain · sans section/numéro`;
-  }
-  if (analysis.documents.length > 0) return "Section et numéro à extraire de la pièce";
-  return "Aucune référence section / numéro";
-}
-
-function urbanStatusShortLabel(status: UrbanPlanningAnalysis["status"]): string {
-  if (status === "documented") return "Pièce repérée";
-  if (status === "source_signals") return "À confirmer";
-  return "À qualifier";
-}
-
-function urbanStatusShortDetail(
-  analysis: UrbanPlanningAnalysis,
-  relevantRisks: SaleRisk[],
-): string {
-  if (relevantRisks.length > 0) {
-    return `${relevantRisks.length} signal${relevantRisks.length > 1 ? "s" : ""} à qualifier`;
-  }
-  if (analysis.items.length > 0) {
-    return `${analysis.items.length} élément${analysis.items.length > 1 ? "s" : ""} à relire`;
-  }
-  return "PLU et usages non qualifiés";
 }
 
 function firstNextAction(

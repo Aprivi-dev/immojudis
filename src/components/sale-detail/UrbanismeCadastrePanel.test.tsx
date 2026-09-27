@@ -34,13 +34,13 @@ describe("UrbanismeCadastrePanel", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Urbanisme & cadastre" })).toBeTruthy();
-    expect(screen.getByText("À rattacher")).toBeTruthy();
-    expect(screen.getByText("À qualifier")).toBeTruthy();
+    expect(screen.getByText(/parcelle à rattacher/i)).toBeTruthy();
+    expect(screen.getByText(/L’adresse est un point de départ/)).toBeTruthy();
     const details = container.querySelector("details");
     expect(details).not.toBeNull();
     expect(details?.open).toBe(false);
     expect(details?.querySelectorAll("details")).toHaveLength(0);
-    fireEvent.click(screen.getByText("Voir le détail"));
+    fireEvent.click(screen.getByText("Voir les références et contrôles"));
     expect(screen.getByText(/Aucun risque urbanisme \/ foncier/)).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(container.querySelector("iframe")).toBeNull();
@@ -119,10 +119,10 @@ describe("UrbanismeCadastrePanel", () => {
       />,
     );
 
-    expect(screen.getByText("Parcelle candidate")).toBeTruthy();
+    expect(screen.getByText("Référence cadastrale à recouper")).toBeTruthy();
     const details = container.querySelector("details");
     expect(details?.open).toBe(false);
-    fireEvent.click(screen.getByText("Voir le détail"));
+    fireEvent.click(screen.getByText("Voir les références et contrôles"));
     expect(screen.getByText("Section AB n° 123")).toBeTruthy();
     expect(screen.getAllByText(/à recouper/i).length).toBeGreaterThan(0);
     expect(screen.getByText("Point géocodé · à recouper")).toBeTruthy();

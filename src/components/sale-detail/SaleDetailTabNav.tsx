@@ -2,6 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import type { KeyboardEvent } from "react";
+import { useState } from "react";
+import Check from "lucide-react/dist/esm/icons/check.js";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
+import ChevronUp from "lucide-react/dist/esm/icons/chevron-up.js";
 import styles from "./SaleDetailTabNav.module.css";
 
 export type SaleDetailTab = "apercu" | "estimation" | "travaux" | "financement" | "demarches";
@@ -30,8 +34,45 @@ export type SaleDetailTabNavProps = {
 };
 
 export function SaleDetailTabNav({ activeTab, onTabChange }: SaleDetailTabNavProps) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const tabListRef = useRef<HTMLDivElement>(null);
+  const activeTabLabel =
+    SALE_DETAIL_TABS.find((tab) => tab.id === activeTab)?.label ?? SALE_DETAIL_TABS[0].label;
+  const mobileMenuId = "sale-detail-mobile-menu";
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    const activeIndex = SALE_DETAIL_TABS.findIndex((tab) => tab.id === activeTab);
+    mobileOptionRefs.current[activeIndex >= 0 ? activeIndex : 0]?.focus();
+
+    function onPointerDown(event: PointerEvent) {
+      if (!navRef.current?.contains(event.target as Node)) setMobileMenuOpen(false);
+    }
+
+    function onFocusIn(event: FocusEvent) {
+      if (!navRef.current?.contains(event.target as Node)) setMobileMenuOpen(false);
+    }
+
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setMobileMenuOpen(false);
+      mobileTriggerRef.current?.focus();
+    }
+
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [activeTab, mobileMenuOpen]);
 
   useEffect(() => {
     const list = tabListRef.current;
@@ -69,8 +110,48 @@ export function SaleDetailTabNav({ activeTab, onTabChange }: SaleDetailTabNavPro
     focusTab(nextTab);
   };
 
+  const focusMobileOption = (index: number) => {
+    const nextIndex = (index + SALE_DETAIL_TABS.length) % SALE_DETAIL_TABS.length;
+    mobileOptionRefs.current[nextIndex]?.focus();
+  };
+
+  const handleMobileOptionKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentTab: SaleDetailTab,
+  ) => {
+    const currentIndex = SALE_DETAIL_TABS.findIndex((tab) => tab.id === currentTab);
+    if (currentIndex < 0) return;
+
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      nextIndex = currentIndex + 1;
+    } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      nextIndex = currentIndex - 1;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = SALE_DETAIL_TABS.length - 1;
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setMobileMenuOpen(false);
+      mobileTriggerRef.current?.focus();
+      return;
+    }
+
+    if (nextIndex == null) return;
+
+    event.preventDefault();
+    focusMobileOption(nextIndex);
+  };
+
+  const selectMobileTab = (tab: SaleDetailTab) => {
+    setMobileMenuOpen(false);
+    onTabChange(tab);
+    mobileTriggerRef.current?.focus();
+  };
+
   return (
-    <nav className={styles.nav} aria-label="Navigation de l'annonce">
+    <nav ref={navRef} className={styles.nav} aria-label="Navigation de l'annonce">
       <div className={styles.inner}>
         <span className={styles.eyebrow}>Explorer l'annonce</span>
         <div
@@ -102,6 +183,67 @@ export function SaleDetailTabNav({ activeTab, onTabChange }: SaleDetailTabNavPro
             );
           })}
         </div>
+      </div>
+
+      <div className={styles.mobileControl}>
+        {mobileMenuOpen ? (
+          <div
+            id={mobileMenuId}
+            className={styles.mobileMenu}
+            role="menu"
+            aria-label="Sections de l'annonce"
+            aria-orientation="vertical"
+          >
+            {SALE_DETAIL_TABS.map((tab, index) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  ref={(element) => {
+                    mobileOptionRefs.current[index] = element;
+                  }}
+                  className={`${styles.mobileOption} ${isActive ? styles.mobileOptionActive : ""}`}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={isActive}
+                  onClick={() => selectMobileTab(tab.id)}
+                  onKeyDown={(event) => handleMobileOptionKeyDown(event, tab.id)}
+                >
+                  <span>{tab.label}</span>
+                  <span className={styles.mobileOptionCheck} aria-hidden="true">
+                    {isActive ? <Check className={styles.mobileOptionIcon} /> : null}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <button
+          ref={mobileTriggerRef}
+          className={styles.mobileTrigger}
+          type="button"
+          aria-label={`Explorer : ${activeTabLabel}`}
+          aria-controls={mobileMenuId}
+          aria-expanded={mobileMenuOpen}
+          aria-haspopup="menu"
+          onClick={() => setMobileMenuOpen((open) => !open)}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            event.preventDefault();
+            setMobileMenuOpen(true);
+          }}
+        >
+          <span className={styles.mobileTriggerLabel}>Explorer :</span>
+          <span className={styles.mobileTriggerCurrent}>{activeTabLabel}</span>
+          <span className={styles.mobileTriggerChevron} aria-hidden="true">
+            {mobileMenuOpen ? (
+              <ChevronUp className={styles.mobileTriggerIcon} />
+            ) : (
+              <ChevronDown className={styles.mobileTriggerIcon} />
+            )}
+          </span>
+        </button>
       </div>
     </nav>
   );

@@ -203,33 +203,26 @@
 }
 .facts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 20px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
 }
 .fact {
-  position: relative;
   display: flex;
   flex-direction: column-reverse;
-  justify-content: center;
-  padding: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: #f8fafc;
+  justify-content: flex-end;
+  padding: 0 12px;
+  border-left: 1px solid #e2e8f0;
   min-width: 0;
 }
-.factIcon {
-  display: none;
-  position: absolute;
-  left: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
-  color: #7c8a9b;
+.fact:first-child {
+  padding-left: 0;
+  border-left: 0;
 }
 .factValue {
-  font-size: 19px;
+  font-size: 17px;
   line-height: 1.25;
   font-weight: 700;
   letter-spacing: -0.025em;
@@ -237,7 +230,7 @@
 }
 .factLabel {
   color: #64748b;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
   margin-top: 4px;
 }
@@ -291,6 +284,36 @@
   background: #fff;
   padding: 20px;
   min-width: 0;
+}
+.descriptionDisclosure {
+  overflow: hidden;
+  border: 1px solid #dbe1e9;
+  border-radius: 16px;
+  background: #fff;
+}
+.descriptionDisclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 15px 18px;
+  color: #132238;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 650;
+  list-style: none;
+}
+.descriptionDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.descriptionDisclosure[open] > summary svg {
+  transform: rotate(180deg);
+}
+.descriptionDisclosure > .card {
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0;
 }
 .rows {
   display: grid;
@@ -557,14 +580,8 @@
   .card {
     padding: 24px;
   }
-  .factIcon {
-    display: block;
-  }
-  .fact {
-    padding-left: 44px;
-  }
   .factValue {
-    font-size: 21px;
+    font-size: 19px;
   }
   .row {
     grid-template-columns: 110px minmax(0, 1fr);
