@@ -317,8 +317,11 @@ function summary({
     return "Urbanisme, permis, servitudes et copropriété à vérifier dans les pièces.";
   }
   const labels = [...new Set(items.map((item) => item.label))].slice(0, 4);
-  const suffix = missingChecks.length ? ` · ${missingChecks.length} contrôle(s) manquant(s)` : "";
-  return `${labels.length} famille(s) repérée(s) : ${labels.join(", ")}${suffix}.`;
+  const familyLabel = labels.length > 1 ? "familles repérées" : "famille repérée";
+  const suffix = missingChecks.length
+    ? ` · ${missingChecks.length} contrôle${missingChecks.length > 1 ? "s" : ""} manquant${missingChecks.length > 1 ? "s" : ""}`
+    : "";
+  return `${labels.length} ${familyLabel} : ${labels.join(", ")}${suffix}.`;
 }
 
 function decisionImpact(status: UrbanPlanningAnalysis["status"]): string {

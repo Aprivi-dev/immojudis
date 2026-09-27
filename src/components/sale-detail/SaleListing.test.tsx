@@ -204,6 +204,20 @@ describe("readable listing sections", () => {
     );
     expect(container.querySelector("details")).toBeNull();
   });
+  it("labels the generated description as a fiche synthesis", () => {
+    render(
+      <ListingDescription
+        sale={item({
+          llm_display_description: null,
+          about_description: null,
+          source_description: null,
+          description: null,
+        })}
+      />,
+    );
+    expect(screen.getByText(/Synthèse issue des données de la fiche/)).toBeTruthy();
+    expect(screen.getByText(/ne remplace pas le texte source/)).toBeTruthy();
+  });
   it("does not invent a location or offer a broken map interaction", () => {
     render(<ListingLocation sale={item({ latitude: NaN })} />);
     expect(screen.queryByText("Carte")).toBeNull();

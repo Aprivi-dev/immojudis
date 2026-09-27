@@ -28,6 +28,7 @@ import { MapThumbnail } from "@/components/MapThumbnail";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedurePanel";
 import { safeExternalHttpUrl } from "@/lib/external-url";
+import { saleSourceLinks } from "@/lib/sale-source-links";
 import { formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import { buildStructuredDescription } from "@/lib/sale-description";
 import {
@@ -83,7 +84,9 @@ export function ListingActions({
   }
   return (
     <div className={styles.actions}>
-      {!publicDemo && persistedSale ? <FavoriteButton saleId={sale.id} compact /> : null}
+      {!publicDemo && persistedSale ? (
+        <FavoriteButton saleId={sale.id} className="min-h-11 px-4 text-sm" />
+      ) : null}
       <button
         type="button"
         className={styles.share}
@@ -101,17 +104,33 @@ export function ListingActions({
 export function ListingOverview({
   sale,
   publicDemo = false,
+  premiumCeiling = null,
+  showPremiumTeaser = false,
 }: {
   sale: AuctionSale;
   publicDemo?: boolean;
+  premiumCeiling?: number | null;
+  showPremiumTeaser?: boolean;
 }) {
   const surface = listingSurface(sale);
   const valuationConflict = listingValuationConflict(sale);
   const price = positiveListingNumber(sale.starting_price_eur);
   const procedure = getSaleProcedure(sale);
   const schedule = saleWindow(sale) ?? saleSession(sale);
+  const saleStatus = listingSaleStatus(sale);
+  const sourceLink = saleSourceLinks(sale)[0];
   const notary = procedure.venueType === "notary";
   const state = procedure.venueType === "state";
+  const eventDate = state
+    ? (schedule?.closes_at ?? sale.sale_date)
+    : (schedule?.opens_at ?? sale.sale_date);
+  const eventLabel = state
+    ? "Échéance annoncée"
+    : notary
+      ? "Séance annoncée"
+      : procedure.venueType === "tribunal"
+        ? "Audience annoncée"
+        : "Date annoncée";
   const rooms = positiveListingNumber(sale.rooms_count);
   const facts = [
     {
@@ -134,12 +153,12 @@ export function ListingOverview({
   return (
     <div className={styles.overview}>
       <SaleProcedureBadge sale={sale} />
-      {listingSaleStatus(sale) ? (
+      {saleStatus ? (
         <p
           role="status"
           className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-950"
         >
-          {listingSaleStatus(sale)}
+          {saleStatus}
         </p>
       ) : null}
       {publicDemo ? (
@@ -175,20 +194,65 @@ export function ListingOverview({
         </div>
       ) : null}
       {price != null || !state ? (
-        <>
-          <p className={styles.priceLabel}>{state ? "Prix publié" : "Mise à prix"}</p>
-          <p className={styles.price}>{price == null ? "À confirmer" : formatPrice(price)}</p>
-          <p className={styles.muted}>
-            {state
-              ? "Conditions et frais à vérifier dans l'annonce officielle"
-              : "Prix de départ, hors frais"}
-          </p>
-        </>
+        <div className={styles.heroPrices}>
+          <div>
+            <p className={styles.priceLabel}>{state ? "Prix publié" : "Mise à prix"}</p>
+            <p className={styles.price}>{price == null ? "À confirmer" : formatPrice(price)}</p>
+            <p className={styles.muted}>
+              {state
+                ? "Conditions et frais à vérifier dans l'annonce officielle"
+                : "Prix de départ, hors frais"}
+            </p>
+          </div>
+          {premiumCeiling != null ? (
+            <div className={styles.premiumPrice}>
+              <p className={styles.priceLabel}>Mise plafond indicative</p>
+              <p className={styles.premiumPriceValue}>{formatPrice(premiumCeiling)}</p>
+              <a href="#why-this-ceiling" className={styles.priceExplanation}>
+                Comprendre le calcul
+              </a>
+            </div>
+          ) : showPremiumTeaser ? (
+            <div className={styles.premiumPrice}>
+              <p className={styles.priceLabel}>Mise plafond</p>
+              <p className={styles.premiumTeaser}>Disponible avec l’offre Analyse</p>
+              <a href="/accompagnement" className={styles.priceExplanation}>
+                Découvrir l’analyse
+              </a>
+            </div>
+          ) : null}
+        </div>
       ) : (
         <p className={`${styles.muted} mt-5`}>
           Prix non publié : consultez les conditions de cession.
         </p>
       )}
+      {!saleStatus && eventDate && !saleTimeConflict(sale) ? (
+        <div className={styles.heroEvent}>
+          <CalendarDays aria-hidden />
+          <div>
+            <span>{eventLabel}</span>
+            <strong>{listingDate(eventDate)}</strong>
+          </div>
+          <a href="#rendez-vous">Détails</a>
+        </div>
+      ) : null}
+      <div className={styles.heroLinks}>
+        <a href={state ? "#participation" : "#rendez-vous"} className={styles.textLink}>
+          {state ? "Voir la procédure de cession" : "Voir les rendez-vous et contacts"}{" "}
+          <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
+        </a>
+        {sourceLink ? (
+          <a
+            href={sourceLink.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.sourceLink}
+          >
+            Source originale · {sourceLink.label} <span className="sr-only">(nouvel onglet)</span>
+          </a>
+        ) : null}
+      </div>
       <dl className={styles.facts}>
         {facts.map(({ label, value, icon: Icon }) => (
           <div key={label} className={styles.fact}>
@@ -201,10 +265,6 @@ export function ListingOverview({
         ))}
       </dl>
       {surface.estimated ? <p className={`${styles.muted} mt-3`}>{surface.helperText}</p> : null}
-      <a href={state ? "#participation" : "#rendez-vous"} className={`${styles.textLink} mt-4`}>
-        {state ? "Voir la procédure de cession" : "Voir les rendez-vous et contacts"}{" "}
-        <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
-      </a>
     </div>
   );
 }
@@ -400,6 +460,10 @@ export function ListingDescription({ sale }: { sale: AuctionSale }) {
         Description
       </h2>
       <div className={styles.card}>
+        <p className={`${styles.muted} mb-3`}>
+          Synthèse issue des données de la fiche. Elle reprend uniquement les champs connus et ne
+          remplace pas le texte source.
+        </p>
         <p className={styles.body}>{description}</p>
       </div>
       {originalDiffers ? (

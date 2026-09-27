@@ -1,5 +1,5 @@
 import type { AuctionSale } from "@/lib/types";
-import { parseDocs } from "@/lib/documents";
+import { collectSaleDocuments } from "@/lib/sale-documents";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 const labels: Record<string, string> = {
   sale_date: "date de vente",
@@ -28,7 +28,7 @@ export function ListingQualityNotice({ sale }: { sale: AuctionSale }) {
   const unavailable = presence.some((item) =>
     ["unavailable", "access_denied"].includes(item.availability ?? ""),
   );
-  const missing = parseDocs(sale.documents).length === 0;
+  const missing = collectSaleDocuments(sale).length === 0;
   const flags = Array.isArray(sale.quality_flags) ? sale.quality_flags : [];
   return (
     <aside
@@ -48,7 +48,7 @@ export function ListingQualityNotice({ sale }: { sale: AuctionSale }) {
         </p>
       ) : null}
       {sale.status === "postponed" ? (
-        <p>Vente reportée. Confirmez la nouvelle date auprès de la source.</p>
+        <p>Vente reportée. Nouvelle date à confirmer dans la source.</p>
       ) : null}
       {flags.includes("source_detail_unverified") ? (
         <p>La dernière fiche source n’a pas pu être vérifiée. Les informations sont à confirmer.</p>
@@ -61,12 +61,12 @@ export function ListingQualityNotice({ sale }: { sale: AuctionSale }) {
         <p>Surface indiquée par la source ; sa nature habitable ou Carrez reste à confirmer.</p>
       ) : null}
       {Array.isArray(sale.quality_flags) && sale.quality_flags.includes("address_unverified") ? (
-        <p>Adresse précise non vérifiée. Confirmez la localisation auprès de la source.</p>
+        <p>Adresse précise non vérifiée. Localisation à confirmer dans la source.</p>
       ) : null}
       {Array.isArray(sale.quality_flags) && sale.quality_flags.includes("multi_lot_sale") ? (
         <p>
-          Plusieurs lots de vente sont décrits. Vérifiez le prix, les surfaces et l’occupation de
-          chaque lot.
+          Plusieurs lots de vente sont décrits. Prix, surfaces et occupation à préciser pour chaque
+          lot.
         </p>
       ) : null}
       {Array.isArray(sale.quality_flags) &&
@@ -96,9 +96,7 @@ export function ListingQualityNotice({ sale }: { sale: AuctionSale }) {
           Tribunal à confirmer auprès de la source : les références disponibles sont incohérentes.
         </p>
       ) : null}
-      {missing ? (
-        <p>Documents non disponibles à ce stade. Vérifiez les pièces auprès de la source.</p>
-      ) : null}
+      {missing ? <p>Documents non disponibles à ce stade dans les sources collectées.</p> : null}
       {conflicts.length ? (
         <div className="mt-2 text-amber-900">
           <p>Informations contradictoires à confirmer avant toute décision :</p>
