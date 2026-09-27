@@ -129,6 +129,7 @@ export function AnalysisSaleDetailView({
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
+      key={sale.id}
       sale={sale}
       marketEstimateOverride={marketEstimateOverride}
       returnTo={returnTo}
@@ -141,7 +142,9 @@ export function AnalysisSaleDetailView({
 }
 
 export function FreeSaleDetailView({ sale, returnTo = "/sales" }: SaleDetailProps) {
-  return <SimplifiedSaleDetailView sale={sale} returnTo={returnTo} access="discovery" />;
+  return (
+    <SimplifiedSaleDetailView key={sale.id} sale={sale} returnTo={returnTo} access="discovery" />
+  );
 }
 
 function SimplifiedSaleDetailView({
@@ -165,6 +168,12 @@ function SimplifiedSaleDetailView({
       ? simulation
       : null;
   const isTribunalSale = saleIsTribunalVenue(sale);
+  const budgetTarget =
+    access === "analysis"
+      ? isTribunalSale && !valuationConflict
+        ? "calculation"
+        : "budget"
+      : "summary";
   const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
   const venueType = getSaleProcedure(sale).venueType;
   const marketSurfaces = getMarketValuationSurfaces(sale);
@@ -225,24 +234,27 @@ function SimplifiedSaleDetailView({
     const syncTabWithHash = () => {
       const anchor = window.location.hash.slice(1);
       setActiveTab(tabForAnchor(anchor));
-      if (["calculation", "budget", "budget-analysis"].includes(anchor) && isTribunalSale) {
+      if (
+        ["calculation", "budget", "budget-analysis"].includes(anchor) &&
+        budgetTarget === "calculation"
+      ) {
         setCalculationOpen(true);
       }
       if (anchor === "why-this-ceiling") setCeilingExplanationOpen(true);
-      const detail = legacyDetailForAnchor(anchor, isTribunalSale);
+      const detail = legacyDetailForAnchor(anchor, budgetTarget);
       if (detail) setDetailOpen(detail, true);
       setAnchorVisit((current) => current + 1);
     };
     syncTabWithHash();
     window.addEventListener("hashchange", syncTabWithHash);
     return () => window.removeEventListener("hashchange", syncTabWithHash);
-  }, [isTribunalSale]);
+  }, [budgetTarget]);
 
   useEffect(() => {
     const anchor = window.location.hash.slice(1);
     if (!anchor || isTabAnchor(anchor) || tabForAnchor(anchor) !== activeTab) return;
-    revealAnchor(anchor, isTribunalSale);
-  }, [activeTab, anchorVisit, isTribunalSale]);
+    revealAnchor(anchor, budgetTarget);
+  }, [activeTab, anchorVisit, budgetTarget]);
 
   const changeTab = (tab: SaleDetailTab) => {
     setActiveTab(tab);
@@ -258,11 +270,14 @@ function SimplifiedSaleDetailView({
     if (!anchor) return;
     const tab = knownTabForAnchor(anchor);
     if (!tab) return;
-    if (["calculation", "budget", "budget-analysis"].includes(anchor) && isTribunalSale) {
+    if (
+      ["calculation", "budget", "budget-analysis"].includes(anchor) &&
+      budgetTarget === "calculation"
+    ) {
       setCalculationOpen(true);
     }
     if (anchor === "why-this-ceiling") setCeilingExplanationOpen(true);
-    const detail = legacyDetailForAnchor(anchor, isTribunalSale);
+    const detail = legacyDetailForAnchor(anchor, budgetTarget);
     if (detail) setDetailOpen(detail, true);
     const target = document.getElementById(anchor);
     if (tab === activeTab && target && !target.closest("details:not([open])")) return;
@@ -449,22 +464,28 @@ function SimplifiedSaleDetailView({
                   </details>
                 </>
               ) : access === "analysis" ? (
-                <details
-                  className={panelStyles.disclosure}
-                  open={Boolean(expandedDetails.budget)}
-                  onToggle={(event) => setDetailOpen("budget", event.currentTarget.open)}
-                >
-                  <summary>Frais et hypothèses</summary>
+                <details className={panelStyles.disclosure} open={Boolean(expandedDetails.budget)}>
+                  <summary
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setDetailOpen("budget", !expandedDetails.budget);
+                    }}
+                  >
+                    Frais et hypothèses
+                  </summary>
                   <ListingBudget sale={sale} />
                 </details>
               ) : null}
               {access === "analysis" ? (
-                <details
-                  className={panelStyles.disclosure}
-                  open={Boolean(expandedDetails.market)}
-                  onToggle={(event) => setDetailOpen("market", event.currentTarget.open)}
-                >
-                  <summary>Voir les références de marché</summary>
+                <details className={panelStyles.disclosure} open={Boolean(expandedDetails.market)}>
+                  <summary
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setDetailOpen("market", !expandedDetails.market);
+                    }}
+                  >
+                    Voir les références de marché
+                  </summary>
                   {marketEstimate?.actionable === true || isTribunalSale ? (
                     <MarketEvidence
                       marketEstimate={marketEstimate}
@@ -533,14 +554,24 @@ function SimplifiedSaleDetailView({
                   </li>
                 </ol>
               </div>
-              <SaleDocumentsSection sale={sale} />
+              <SaleDocumentsSection
+                sale={sale}
+                open={Boolean(expandedDetails.documents)}
+                onOpenChange={(open) => setDetailOpen("documents", open)}
+              />
               <LawyerSection sale={sale} />
               <details
                 className={panelStyles.disclosure}
                 open={Boolean(expandedDetails.participation)}
-                onToggle={(event) => setDetailOpen("participation", event.currentTarget.open)}
               >
-                <summary>Voir toutes les conditions de la vente</summary>
+                <summary
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setDetailOpen("participation", !expandedDetails.participation);
+                  }}
+                >
+                  Voir toutes les conditions de la vente
+                </summary>
                 <SaleProcedurePanel sale={sale} />
               </details>
               {access === "analysis" && !publicDemo && isTribunalSale && !valuationConflict ? (
@@ -564,11 +595,15 @@ function SimplifiedSaleDetailView({
                 <details
                   className={panelStyles.disclosure}
                   open={Boolean(expandedDetails["professional-pilot"])}
-                  onToggle={(event) =>
-                    setDetailOpen("professional-pilot", event.currentTarget.open)
-                  }
                 >
-                  <summary>Préparer le dossier de travail</summary>
+                  <summary
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setDetailOpen("professional-pilot", !expandedDetails["professional-pilot"]);
+                    }}
+                  >
+                    Préparer le dossier de travail
+                  </summary>
                   <ProfessionalPilotLauncher
                     sale={sale}
                     definition={
@@ -596,14 +631,19 @@ type LegacyDetail =
   | "market"
   | "budget"
   | "participation"
+  | "documents"
   | "professional-pilot"
   | "tribunal-history";
 
-function legacyDetailForAnchor(anchor: string, isTribunalSale: boolean): LegacyDetail | null {
-  if (anchor === "budget" || anchor === "budget-analysis") {
-    return isTribunalSale ? null : "budget";
+function legacyDetailForAnchor(anchor: string, budgetTarget: string): LegacyDetail | null {
+  if (["budget", "budget-analysis", "calculation"].includes(anchor)) {
+    return budgetTarget === "budget" ? "budget" : null;
   }
-  if (["market", "participation", "professional-pilot", "tribunal-history"].includes(anchor)) {
+  if (
+    ["market", "participation", "documents", "professional-pilot", "tribunal-history"].includes(
+      anchor,
+    )
+  ) {
     return anchor as LegacyDetail;
   }
   return null;
@@ -640,17 +680,14 @@ function knownTabForAnchor(anchor: string): SaleDetailTab | null {
   return null;
 }
 
-function revealAnchor(anchor: string, isTribunalSale: boolean) {
-  const fallback =
-    anchor === "budget" || anchor === "budget-analysis"
-      ? isTribunalSale
-        ? "calculation"
-        : "budget"
-      : ["market", "tribunal-history", "why-this-ceiling"].includes(anchor)
-        ? "summary"
-        : tabForAnchor(anchor) === "demarches"
-          ? "sale-detail-panel-demarches"
-          : null;
+function revealAnchor(anchor: string, budgetTarget: string) {
+  const fallback = ["budget", "budget-analysis", "calculation"].includes(anchor)
+    ? budgetTarget
+    : ["market", "tribunal-history", "why-this-ceiling"].includes(anchor)
+      ? "summary"
+      : tabForAnchor(anchor) === "demarches"
+        ? "sale-detail-panel-demarches"
+        : null;
   const target = document.getElementById(anchor) ?? (fallback && document.getElementById(fallback));
   if (!target) return;
   let parent = target.closest("details");
@@ -695,12 +732,15 @@ function TribunalEstimationEvidence({
   const forecastQuery = useOutcomeGraphForecast(sale.id, !valuationConflict);
   const forecastReady = !valuationConflict && forecastQuery.data?.forecast.status === "ready";
   return (
-    <details
-      className={panelStyles.disclosure}
-      open={open}
-      onToggle={(event) => onOpenChange(event.currentTarget.open)}
-    >
-      <summary>Historique et perspective d’adjudication</summary>
+    <details className={panelStyles.disclosure} open={open}>
+      <summary
+        onClick={(event) => {
+          event.preventDefault();
+          onOpenChange(!open);
+        }}
+      >
+        Historique et perspective d’adjudication
+      </summary>
       {forecastReady ? <OutcomeForecast forecastQuery={forecastQuery} /> : null}
       <SaleTribunalHistory
         sale={sale}
@@ -1109,7 +1149,15 @@ function comparisonMarkerPositions({
 
 type Recommendations = ReturnType<typeof computeRecommendedCeilings>;
 
-function SaleDocumentsSection({ sale }: { sale: AuctionSale }) {
+function SaleDocumentsSection({
+  sale,
+  open,
+  onOpenChange,
+}: {
+  sale: AuctionSale;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const documents = collectSaleDocuments(sale);
   return (
     <section
@@ -1117,8 +1165,17 @@ function SaleDocumentsSection({ sale }: { sale: AuctionSale }) {
       aria-label="Pièces du dossier"
       className="mx-auto max-w-[1260px] scroll-mt-36 px-4 pb-8 sm:px-6 lg:px-8"
     >
-      <details className="group mt-4 rounded-lg border border-brand-navy/12 bg-white shadow-sm">
-        <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-5 sm:px-7">
+      <details
+        className="group mt-4 rounded-lg border border-brand-navy/12 bg-white shadow-sm"
+        open={open}
+      >
+        <summary
+          className="flex cursor-pointer list-none items-center gap-4 px-5 py-5 sm:px-7"
+          onClick={(event) => {
+            event.preventDefault();
+            onOpenChange(!open);
+          }}
+        >
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-soft">
             <FileText className="h-5 w-5" aria-hidden />
           </span>

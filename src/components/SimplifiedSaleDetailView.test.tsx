@@ -283,6 +283,78 @@ describe("integrated listing", () => {
     expect(calculation?.open).toBe(true);
   });
 
+  it("opens the documents disclosure when #documents targets Démarches", () => {
+    window.history.replaceState(null, "", "#documents");
+    const { container } = renderDetail("analysis");
+
+    expect(screen.getByRole("tab", { name: "Démarches" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expectActivePanel(container, "demarches");
+
+    const documents = container.querySelector<HTMLElement>("#documents");
+    expect(documents).not.toBeNull();
+    const details = documents?.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(true);
+  });
+
+  it("opens the budget detail for #budget-analysis when a tribunal valuation conflicts", () => {
+    const conflictingSale: AuctionSale = {
+      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      property_type: "land",
+      source_blocks: {
+        ...(EXAMPLE_SALE_RECORDS.bordeaux.sale.source_blocks ?? {}),
+        titre_detail: "Appartement T5 avec terrasse et garage",
+      },
+    };
+    window.history.replaceState(null, "", "#budget-analysis");
+    const { container } = renderDetail("analysis", conflictingSale, false);
+
+    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expectActivePanel(container, "estimation");
+
+    const budget = container.querySelector<HTMLElement>("#budget");
+    expect(budget).not.toBeNull();
+    const details = budget?.closest("details");
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(true);
+    expect(screen.queryByText("Ajuster les hypothèses")).toBeNull();
+    expect(screen.queryByText("Simulateur de mise plafond chargé")).toBeNull();
+  });
+
+  it("resets to Aperçu when navigating to another same-type sale without a hash", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <AnalysisSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
+          marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+          publicDemo
+        />
+      </QueryClientProvider>,
+    );
+
+    selectTab("Estimation");
+    expectActivePanel(view.container, "estimation");
+    window.history.replaceState(null, "", "/");
+
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <AnalysisSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.nantes.sale}
+          marketEstimateOverride={EXAMPLE_SALE_RECORDS.nantes.marketEstimate}
+          publicDemo
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
+    expectActivePanel(view.container, "apercu");
+  });
+
   it("loads a cadastral candidate only for an authenticated analysis", async () => {
     mocks.authUser = { id: "user-1" };
     mocks.fetchUrbanism.mockResolvedValue({
