@@ -11,7 +11,6 @@ import {
   emptyPilotDraft,
   pilotDraftSchema,
   pilotEconomics,
-  pilotReadiness,
   type PilotDefinition,
   type PilotDraft,
 } from "@/lib/professional-pilots";
@@ -53,6 +52,7 @@ export function ProfessionalPilotWorkspace({
   const [draft, setDraft] = useState<PilotDraft>(() => emptyPilotDraft(definition.kind));
   const [hydratedKey, setHydratedKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [activeStep, setActiveStep] = useState<"sources" | "budget" | "checks">("sources");
   const [conflict, setConflict] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const storageKey = `immojudis:professional-pilot:v1:${user?.id ?? "guest"}:${sale.id}`;
@@ -66,11 +66,14 @@ export function ProfessionalPilotWorkspace({
     staleTime: 30_000,
   });
   const documents = useMemo(() => collectSaleDocuments(sale), [sale]);
+  const knownFacts = definition.facts.filter((fact) => Boolean(fact.value?.trim()));
+  const missingFacts = definition.facts.filter((fact) => !fact.value?.trim());
+  const datedMilestones = definition.milestones.filter((milestone) => Boolean(milestone.date));
+  const undatedMilestones = definition.milestones.filter((milestone) => !milestone.date);
   const workspace = workspaceQuery.data?.workspace;
   const remoteDraft = workspace?.private_notes.professionalDossier;
   const editable = hydrated && !saving && (!canSync || !workspaceQuery.isPending);
   const economics = pilotEconomics(draft);
-  const readiness = pilotReadiness(definition, draft);
   const sourceChanged = Boolean(
     sale.updated_at && draft.updatedAt && Date.parse(sale.updated_at) > Date.parse(draft.updatedAt),
   );
@@ -248,80 +251,81 @@ export function ProfessionalPilotWorkspace({
   };
 
   return (
-    <section
-      id="professional-pilot"
-      aria-label={definition.title}
-      className="mx-auto max-w-[1260px] scroll-mt-36 px-4 py-8 sm:px-6 lg:px-8"
-    >
-      <div className="overflow-hidden rounded-2xl border border-[#b9d0df] bg-white shadow-sm">
-        <div className="border-b border-[#d9e7ef] bg-[#eef7ff] px-5 py-6 sm:px-7">
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#946724]">
-            Pilote professionnel
-          </p>
-          <h2 className="mt-1 font-display text-3xl font-semibold text-brand-navy">
-            {definition.title}
-          </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/75">
-            {definition.description}
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
-            <span className="rounded-full bg-white px-3 py-1.5 text-brand-navy">
-              {readiness.verified}/{definition.checks.length} vérifications faites
-            </span>
-            <span className="rounded-full bg-white px-3 py-1.5 text-brand-navy">
-              {readiness.missingFacts.length} faits à confirmer
-            </span>
-            <span className="rounded-full bg-white px-3 py-1.5 text-brand-navy">
-              {
-                documents.filter((document) => draft.documentStatuses[document.url] === "reviewed")
-                  .length
-              }
-              /{documents.length} pièces relues
-            </span>
-            {readiness.blocked.length > 0 ? (
-              <span className="rounded-full bg-rose-100 px-3 py-1.5 text-rose-800">
-                {readiness.blocked.length} point(s) bloquant(s)
-              </span>
+    <section aria-label={definition.title} className="w-full">
+      <div className="bg-white">
+        {sourceChanged || conflict ? (
+          <div className="border-b border-slate-200 px-5 py-4 sm:px-7">
+            {sourceChanged ? (
+              <p
+                role="alert"
+                className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
+              >
+                L'annonce a été mise à jour depuis votre dernière saisie. Recontrôlez les pièces et
+                vos hypothèses.
+              </p>
+            ) : null}
+            {conflict ? (
+              <div
+                role="alert"
+                className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
+              >
+                <p>
+                  Une autre version du dossier existe sur votre compte. Exportez votre brouillon si
+                  vous souhaitez le conserver, puis chargez la version du compte.
+                </p>
+                <button
+                  type="button"
+                  onClick={loadAccountVersion}
+                  className="mt-2 min-h-10 rounded-md border border-amber-700 px-3 font-semibold"
+                >
+                  Charger la version du compte
+                </button>
+              </div>
             ) : null}
           </div>
-          {sourceChanged ? (
-            <p
-              role="alert"
-              className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
-            >
-              L'annonce a été mise à jour depuis votre dernière saisie. Recontrôlez les pièces et
-              vos hypothèses.
-            </p>
-          ) : null}
-          {conflict ? (
-            <div
-              role="alert"
-              className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
-            >
-              <p>
-                Une autre version du dossier existe sur votre compte. Exportez votre brouillon si
-                vous souhaitez le conserver, puis chargez la version du compte.
-              </p>
-              <button
-                type="button"
-                onClick={loadAccountVersion}
-                className="mt-2 min-h-10 rounded-md border border-amber-700 px-3 font-semibold"
-              >
-                Charger la version du compte
-              </button>
-            </div>
-          ) : null}
-        </div>
+        ) : null}
 
-        <fieldset disabled={!editable} className="grid gap-8 p-5 sm:p-7 lg:grid-cols-2">
-          <div>
+        <nav
+          aria-label="Étapes du dossier"
+          className="flex gap-2 overflow-x-auto border-b border-slate-200 px-5 py-3 sm:px-7"
+        >
+          {(
+            [
+              ["sources", "1. Pièces"],
+              ["budget", "2. Budget"],
+              ["checks", "3. Vérifications"],
+            ] as const
+          ).map(([step, label]) => (
+            <button
+              key={step}
+              type="button"
+              onClick={() => setActiveStep(step)}
+              aria-current={activeStep === step ? "step" : undefined}
+              className={`min-h-10 shrink-0 rounded-md px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+                activeStep === step
+                  ? "bg-brand-navy text-white"
+                  : "text-brand-navy/70 hover:bg-slate-100"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <fieldset disabled={!editable} className="p-5 sm:p-7">
+          <div className={activeStep === "sources" ? "" : "hidden"}>
             <h3 className="text-xl font-semibold text-brand-navy">Faits et échéances du dossier</h3>
             <p className="mt-1 text-xs text-slate-600">
               Les valeurs publiées sont à contrôler dans la source officielle. Une absence de donnée
               ne vaut pas confirmation.
             </p>
+            {knownFacts.length === 0 ? (
+              <p className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                Aucune information du dossier n’est encore confirmée ici.
+              </p>
+            ) : null}
             <dl className="mt-4 space-y-3">
-              {definition.facts.map((fact) => (
+              {knownFacts.map((fact) => (
                 <div
                   key={fact.label}
                   className="rounded-lg border border-slate-200 bg-[#fafcfd] p-3"
@@ -329,9 +333,7 @@ export function ProfessionalPilotWorkspace({
                   <dt className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                     {fact.label}
                   </dt>
-                  <dd className="mt-1 font-semibold text-brand-navy">
-                    {fact.value ?? "À confirmer"}
-                  </dd>
+                  <dd className="mt-1 font-semibold text-brand-navy">{fact.value}</dd>
                   {fact.detail ? (
                     <p className="mt-1 text-xs text-slate-600">{fact.detail}</p>
                   ) : null}
@@ -348,18 +350,46 @@ export function ProfessionalPilotWorkspace({
                 </div>
               ))}
             </dl>
+            {missingFacts.length > 0 ? (
+              <details className="mt-4 rounded-lg border border-slate-200 px-4 py-3 text-sm">
+                <summary className="cursor-pointer font-semibold text-brand-navy">
+                  {missingFacts.length} information{missingFacts.length > 1 ? "s" : ""} à confirmer
+                </summary>
+                <ul className="mt-3 grid list-disc gap-1 pl-5 text-slate-700 sm:grid-cols-2">
+                  {missingFacts.map((fact) => (
+                    <li key={fact.label}>{fact.label}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
             <h4 className="mt-6 text-base font-semibold text-brand-navy">Calendrier</h4>
+            {datedMilestones.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-600">Aucune échéance confirmée.</p>
+            ) : null}
             <ul className="mt-2 space-y-2 text-sm">
-              {definition.milestones.map((milestone, index) => (
+              {datedMilestones.map((milestone, index) => (
                 <li
                   key={`${milestone.label}-${index}`}
                   className="flex flex-wrap justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2"
                 >
                   <span>{milestone.label}</span>
-                  <strong>{milestone.date ?? "À confirmer"}</strong>
+                  <strong>{milestone.date}</strong>
                 </li>
               ))}
             </ul>
+            {undatedMilestones.length > 0 ? (
+              <details className="mt-3 rounded-lg border border-slate-200 px-4 py-3 text-sm">
+                <summary className="cursor-pointer font-semibold text-brand-navy">
+                  {undatedMilestones.length} échéance{undatedMilestones.length > 1 ? "s" : ""} à
+                  confirmer
+                </summary>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-slate-700">
+                  {undatedMilestones.map((milestone, index) => (
+                    <li key={`${milestone.label}-${index}`}>{milestone.label}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
             <p className="mt-5 text-sm font-semibold text-brand-navy">
               {definition.counterpartyLabel} : {definition.counterparty ?? "À confirmer"}
             </p>
@@ -425,7 +455,7 @@ export function ProfessionalPilotWorkspace({
             ) : null}
           </div>
 
-          <div>
+          <div className={activeStep === "budget" ? "" : "hidden"}>
             <h3 className="text-xl font-semibold text-brand-navy">Hypothèses et décision</h3>
             <p className="mt-1 text-xs text-slate-600">
               Saisissez vos propres montants. La marge est brute, avant fiscalité et aléas non
@@ -498,9 +528,11 @@ export function ProfessionalPilotWorkspace({
                 </div>
               ) : null}
             </dl>
-            <h4 className="mt-6 text-base font-semibold text-brand-navy">
+          </div>
+          <div className={activeStep === "checks" ? "" : "hidden"}>
+            <h3 className="text-xl font-semibold text-brand-navy">
               Vérifications propres à cette vente
-            </h4>
+            </h3>
             <div className="mt-2 space-y-2">
               {definition.checks.map((check) => (
                 <label

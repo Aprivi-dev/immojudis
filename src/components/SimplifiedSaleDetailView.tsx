@@ -34,7 +34,7 @@ import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { useOutcomeGraphForecast } from "@/hooks/use-outcome-graph-forecast";
 import { SaleVisual } from "@/components/SaleVisual";
 import { SaleProcedurePanel, SaleProcedureSummary } from "@/components/SaleProcedurePanel";
-import { ProfessionalPilotWorkspace } from "@/components/ProfessionalPilotWorkspace";
+import { ProfessionalPilotLauncher } from "@/components/ProfessionalPilotLauncher";
 import { buildTribunalPilot } from "@/lib/professional-pilot-tribunal";
 import { buildNotaryPilot } from "@/lib/professional-pilot-notary";
 import { buildStatePilot } from "@/lib/professional-pilot-state";
@@ -1044,22 +1044,26 @@ function NonJudicialAnalysisContent({
   const state = venue === "state";
   const links = state
     ? [
-        ["#professional-pilot", "Candidature"],
         ["#risks", "Pièces et risques"],
         ["#participation", "Cession"],
-        ["#urbanism", "Urbanisme"],
         ["#budget", "Budget"],
+        ["#professional-pilot", "Dossier de travail"],
         ["#market", "Marché"],
+        ["#urbanism", "Urbanisme"],
+        ["#works", "Travaux"],
         ["#financing", "Financement"],
+        ["#lawyer", "Contacts"],
       ]
     : [
-        ["#professional-pilot", "Offre"],
         ["#participation", "Conditions"],
         ["#risks", "Pièces et risques"],
-        ["#urbanism", "Urbanisme"],
         ["#budget", "Budget"],
+        ["#professional-pilot", "Dossier de travail"],
         ["#market", "Marché"],
+        ["#urbanism", "Urbanisme"],
+        ["#works", "Travaux"],
         ["#financing", "Financement"],
+        ["#lawyer", "Contacts"],
       ];
   const procedureBlock = (
     <div className={listingStyles.container}>
@@ -1091,19 +1095,6 @@ function NonJudicialAnalysisContent({
           ))}
         </div>
       </nav>
-      {venue === "notary" ? (
-        <ProfessionalPilotWorkspace
-          sale={sale}
-          definition={buildNotaryPilot(sale)}
-          publicDemo={publicDemo}
-        />
-      ) : state ? (
-        <ProfessionalPilotWorkspace
-          sale={sale}
-          definition={buildStatePilot(sale)}
-          publicDemo={publicDemo}
-        />
-      ) : null}
       {state ? documentsBlock : procedureBlock}
       {state ? procedureBlock : documentsBlock}
       <div className={listingStyles.container}>
@@ -1115,6 +1106,19 @@ function NonJudicialAnalysisContent({
           <ListingBudget sale={sale} />
         </div>
       </div>
+      {venue === "notary" ? (
+        <ProfessionalPilotLauncher
+          sale={sale}
+          definition={buildNotaryPilot(sale)}
+          publicDemo={publicDemo}
+        />
+      ) : state ? (
+        <ProfessionalPilotLauncher
+          sale={sale}
+          definition={buildStatePilot(sale)}
+          publicDemo={publicDemo}
+        />
+      ) : null}
       <section aria-label="Marché local" className="border-y border-brand-navy/10 bg-[#f4f6f9]">
         <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8">
           {marketEstimate?.actionable === true ? (
@@ -1188,13 +1192,16 @@ function AnalysisContent({
     forecastQuery.data?.forecast.status === "ready";
   const navigationItems = [
     ["#summary", "Synthèse"],
-    ["#professional-pilot", "Dossier d'audience"],
     ["#risks", "Risques & pièces"],
     ["#urbanism", "Urbanisme"],
     ["#budget-analysis", "Budget"],
     ["#market", "Marché"],
+    ["#works", "Travaux"],
     ["#financing", "Financement"],
+    ...(showTribunalHistory ? [["#tribunal-history", "Historique"]] : []),
     ["#participation", "Démarches"],
+    ["#professional-pilot", "Dossier de travail"],
+    ["#lawyer", "Contacts"],
   ];
 
   return (
@@ -1218,14 +1225,6 @@ function AnalysisContent({
           ))}
         </div>
       </nav>
-
-      {tribunalSale ? (
-        <ProfessionalPilotWorkspace
-          sale={sale}
-          definition={buildTribunalPilot(sale)}
-          publicDemo={publicDemo}
-        />
-      ) : null}
 
       <RisksAndDocuments sale={sale} />
       <section
@@ -1355,6 +1354,13 @@ function AnalysisContent({
       <div className={listingStyles.container}>
         <SaleProcedurePanel sale={sale} />
       </div>
+      {tribunalSale ? (
+        <ProfessionalPilotLauncher
+          sale={sale}
+          definition={buildTribunalPilot(sale)}
+          publicDemo={publicDemo}
+        />
+      ) : null}
       <InformationAvailabilityNotice />
       <LawyerSection sale={sale} />
     </>
