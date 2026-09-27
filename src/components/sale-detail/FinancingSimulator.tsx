@@ -241,27 +241,17 @@ export function FinancingSimulator({
             Simulateur de financement
           </h2>
           <p className={styles.subtitle}>
-            Ajustez vos hypothèses pour estimer une mensualité avant de solliciter une banque.
+            Quatre repères suffisent pour obtenir une première mensualité.
           </p>
         </div>
         <div className={styles.illustrativeBadge}>Hypothèses illustratives</div>
-      </div>
-
-      <div className={styles.disclaimer} role="note">
-        <span className={styles.disclaimerIcon} aria-hidden="true">
-          i
-        </span>
-        <p>
-          Cette simulation est indicative. Elle ne constitue ni une offre de prêt ni un conseil
-          financier ; le taux, l’assurance, les frais et l’accord dépendent de votre dossier.
-        </p>
       </div>
 
       <div className={styles.layout}>
         <form className={styles.inputPanel} onSubmit={(event) => event.preventDefault()} noValidate>
           <fieldset className={styles.fieldset}>
             <legend className={styles.panelTitle}>Vos paramètres</legend>
-            <p className={styles.panelIntro}>Les valeurs restent dans votre navigateur.</p>
+            <p className={styles.panelIntro}>Modifiez les valeurs pour ajuster votre scénario.</p>
 
             <div className={styles.fieldGroup}>
               <label className={styles.label} htmlFor={ids.projectPrice}>
@@ -283,7 +273,7 @@ export function FinancingSimulator({
               <p id={ids.projectPriceHelp} className={styles.help}>
                 {listingPrice == null
                   ? "Renseignez un montant pour activer la simulation."
-                  : `Prérempli avec la mise à prix de l’annonce (${formatPrice(listingPrice)}). Il s’agit d’un point de départ : le prix d’adjudication peut être différent. Ajustez-le à votre scénario.`}
+                  : `Mise à prix de l’annonce : ${formatPrice(listingPrice)}.`}
               </p>
               {errors.projectPrice ? (
                 <p className={styles.error} role="alert">
@@ -332,7 +322,7 @@ export function FinancingSimulator({
                 <span>100 %</span>
               </div>
               <p id={ids.downPaymentHelp} className={styles.help}>
-                Valeur initiale illustrative : 20 % du prix du projet.
+                Ajustez l’apport avec le curseur.
               </p>
               {errors.downPayment ? (
                 <p className={styles.error} role="alert">
@@ -363,7 +353,7 @@ export function FinancingSimulator({
                   <span aria-hidden="true">%</span>
                 </div>
                 <p id={ids.annualRateHelp} className={styles.help}>
-                  Valeur initiale illustrative : 3,5 % / an.
+                  Hypothèse de départ : 3,5 %.
                 </p>
                 {errors.annualRate ? (
                   <p className={styles.error} role="alert">
@@ -388,52 +378,11 @@ export function FinancingSimulator({
                     </option>
                   ))}
                 </select>
-                <p className={styles.help}>Valeur initiale illustrative : 20 ans.</p>
+                <p className={styles.help}>Choisissez une durée.</p>
               </div>
             </div>
 
-            <div className={styles.insuranceBlock}>
-              <label className={styles.checkboxLabel} htmlFor={ids.insuranceEnabled}>
-                <input
-                  id={ids.insuranceEnabled}
-                  type="checkbox"
-                  checked={insuranceEnabled}
-                  onChange={(event) => setInsuranceEnabled(event.currentTarget.checked)}
-                />
-                <span>Ajouter une assurance emprunteur indicative</span>
-              </label>
-              {insuranceEnabled ? (
-                <div className={styles.insuranceField}>
-                  <label className={styles.label} htmlFor={ids.insuranceRate}>
-                    Taux d’assurance annuel <span className={styles.unit}>(%)</span>
-                  </label>
-                  <div className={styles.inputSuffix}>
-                    <input
-                      id={ids.insuranceRate}
-                      className={styles.input}
-                      type="number"
-                      min="0"
-                      max={MAX_INSURANCE_RATE}
-                      step="0.01"
-                      inputMode="decimal"
-                      value={insuranceRateInput}
-                      onChange={(event) => setInsuranceRateInput(event.currentTarget.value)}
-                      aria-invalid={errors.insurance || undefined}
-                      aria-describedby={ids.insuranceHelp}
-                    />
-                    <span aria-hidden="true">%</span>
-                  </div>
-                  <p id={ids.insuranceHelp} className={styles.help}>
-                    Hypothèse initiale : 0,30 % / an sur le capital emprunté.
-                  </p>
-                  {errors.insurance ? (
-                    <p className={styles.error} role="alert">
-                      Choisissez un taux d’assurance entre 0 % et 5 %.
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+            <p className={styles.privateNote}>Les valeurs restent dans votre navigateur.</p>
           </fieldset>
         </form>
 
@@ -442,7 +391,7 @@ export function FinancingSimulator({
           <h3 id={`${componentId}-results-title`} className={styles.resultTitle}>
             Votre mensualité
           </h3>
-          <p className={styles.panelIntro}>Calculée en temps réel selon vos paramètres.</p>
+          <p className={styles.panelIntro}>Mise à jour dès que vous modifiez un paramètre.</p>
 
           <div className={styles.resultStatus} role="status" aria-live="polite" aria-atomic="true">
             {result ? (
@@ -463,46 +412,103 @@ export function FinancingSimulator({
           </div>
 
           {result ? (
-            <dl className={styles.resultRows}>
-              <div>
-                <dt>Montant emprunté</dt>
-                <dd>{formatPrice(Math.round(result.loanAmount))}</dd>
-              </div>
-              <div>
-                <dt>Mensualité du crédit</dt>
-                <dd>{formatPrice(Math.round(result.monthlyPrincipalAndInterest))}</dd>
-              </div>
-              {insuranceEnabled ? (
-                <div>
-                  <dt>Assurance emprunteur estimée</dt>
-                  <dd>{formatPrice(Math.round(result.monthlyInsurance))}</dd>
-                </div>
-              ) : null}
-              <div>
-                <dt>Intérêts estimés sur la durée</dt>
-                <dd>{formatPrice(Math.round(result.totalInterest))}</dd>
-              </div>
-              {insuranceEnabled ? (
-                <div>
-                  <dt>Assurance estimée sur la durée</dt>
-                  <dd>{formatPrice(Math.round(result.totalInsurance))}</dd>
-                </div>
-              ) : null}
-              <div className={styles.totalRow}>
-                <dt>Total estimé remboursé</dt>
-                <dd>{formatPrice(Math.round(result.totalRepaid))}</dd>
-              </div>
-            </dl>
+            <p className={styles.resultSummary}>
+              {formatPrice(Math.round(result.loanAmount))} empruntés sur {termYears} ans
+            </p>
           ) : (
             <p className={styles.emptyResult}>
-              Le résultat s’affichera dès que le prix, l’apport et le taux seront renseignés.
+              Le résultat s’affichera avec des hypothèses valides.
             </p>
           )}
 
-          <p className={styles.resultNote}>
-            Estimation hors frais d’acquisition, garantie, fiscalité, travaux et conditions propres
-            à votre banque. L’assurance utilise une hypothèse constante sur le capital initial.
-          </p>
+          <details className={styles.details}>
+            <summary>Voir le détail de l’estimation</summary>
+            <div className={styles.detailContent}>
+              <p className={styles.detailIntro}>
+                Ces chiffres servent de repère et ne constituent pas une offre de prêt.
+              </p>
+              {result ? (
+                <dl className={styles.resultRows}>
+                  <div>
+                    <dt>Montant emprunté</dt>
+                    <dd>{formatPrice(Math.round(result.loanAmount))}</dd>
+                  </div>
+                  <div>
+                    <dt>Mensualité du crédit</dt>
+                    <dd>{formatPrice(Math.round(result.monthlyPrincipalAndInterest))}</dd>
+                  </div>
+                  <div>
+                    <dt>Intérêts estimés</dt>
+                    <dd>{formatPrice(Math.round(result.totalInterest))}</dd>
+                  </div>
+                  {insuranceEnabled ? (
+                    <>
+                      <div>
+                        <dt>Assurance par mois</dt>
+                        <dd>{formatPrice(Math.round(result.monthlyInsurance))}</dd>
+                      </div>
+                      <div>
+                        <dt>Assurance sur la durée</dt>
+                        <dd>{formatPrice(Math.round(result.totalInsurance))}</dd>
+                      </div>
+                    </>
+                  ) : null}
+                  <div className={styles.totalRow}>
+                    <dt>Total estimé remboursé</dt>
+                    <dd>{formatPrice(Math.round(result.totalRepaid))}</dd>
+                  </div>
+                </dl>
+              ) : null}
+
+              <div className={styles.insuranceBlock}>
+                <label className={styles.checkboxLabel} htmlFor={ids.insuranceEnabled}>
+                  <input
+                    id={ids.insuranceEnabled}
+                    type="checkbox"
+                    checked={insuranceEnabled}
+                    onChange={(event) => setInsuranceEnabled(event.currentTarget.checked)}
+                  />
+                  <span>Ajouter une assurance indicative</span>
+                </label>
+                {insuranceEnabled ? (
+                  <div className={styles.insuranceField}>
+                    <label className={styles.label} htmlFor={ids.insuranceRate}>
+                      Taux d’assurance annuel <span className={styles.unit}>(%)</span>
+                    </label>
+                    <div className={styles.inputSuffix}>
+                      <input
+                        id={ids.insuranceRate}
+                        className={styles.input}
+                        type="number"
+                        min="0"
+                        max={MAX_INSURANCE_RATE}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={insuranceRateInput}
+                        onChange={(event) => setInsuranceRateInput(event.currentTarget.value)}
+                        aria-invalid={errors.insurance || undefined}
+                        aria-describedby={ids.insuranceHelp}
+                      />
+                      <span aria-hidden="true">%</span>
+                    </div>
+                    <p id={ids.insuranceHelp} className={styles.help}>
+                      Hypothèse sur le capital emprunté : 0,30 % / an.
+                    </p>
+                    {errors.insurance ? (
+                      <p className={styles.error} role="alert">
+                        Choisissez un taux d’assurance entre 0 % et 5 %.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              <p className={styles.resultNote}>
+                Hors frais d’acquisition, garantie, fiscalité, travaux et conditions propres à votre
+                banque. L’assurance utilise une hypothèse constante sur le capital initial.
+              </p>
+            </div>
+          </details>
         </aside>
       </div>
     </section>

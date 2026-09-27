@@ -1,0 +1,121 @@
+.nav {
+  position: sticky;
+  top: 64px;
+  z-index: 20;
+  margin: 28px 0 24px;
+  padding: 10px;
+  border: 1px solid rgb(219 225 233 / 88%);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 12px 30px rgb(19 34 56 / 8%);
+  backdrop-filter: blur(18px);
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.eyebrow {
+  flex: 0 0 auto;
+  color: #607086;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.tabList {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: #c3ccd8 transparent;
+}
+
+.tab {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 9px 15px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: #405168;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.25;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.tab:hover {
+  border-color: #dbe1e9;
+  background: #f4f6f9;
+  color: #132238;
+}
+
+.tab:focus-visible {
+  outline: 3px solid rgb(67 127 171 / 30%);
+  outline-offset: 2px;
+}
+
+.active {
+  border-color: #132238;
+  background: #132238;
+  color: #fff;
+  box-shadow: 0 5px 12px rgb(19 34 56 / 16%);
+}
+
+.active:hover {
+  border-color: #132238;
+  background: #1e3654;
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  .nav {
+    top: 64px;
+    margin: 20px -4px 20px;
+    padding: 8px;
+    border-radius: 16px;
+  }
+
+  .inner {
+    display: block;
+  }
+
+  .eyebrow {
+    display: block;
+    margin: 1px 4px 7px;
+    font-size: 10px;
+  }
+
+  .tabList {
+    width: 100%;
+  }
+
+  .tab {
+    min-height: 40px;
+    padding-inline: 13px;
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab {
+    transition: none;
+  }
+}

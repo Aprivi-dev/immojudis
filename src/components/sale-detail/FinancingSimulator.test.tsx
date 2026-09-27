@@ -70,14 +70,25 @@ describe("FinancingSimulator", () => {
     fireEvent.change(screen.getByLabelText(/Apport personnel/), { target: { value: "100000" } });
     fireEvent.change(screen.getByLabelText(/Taux annuel/), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("Durée du prêt"), { target: { value: "10" } });
-    fireEvent.click(screen.getByLabelText("Ajouter une assurance emprunteur indicative"));
+    fireEvent.click(screen.getByText("Voir le détail de l’estimation"));
+    fireEvent.click(screen.getByLabelText("Ajouter une assurance indicative"));
 
     expect((screen.getByLabelText(/Taux d’assurance annuel/) as HTMLInputElement).value).toBe(
       "0.3",
     );
     expect(screen.getByRole("status").textContent).toMatch(/1.?288/);
-    expect(screen.getByText("Assurance emprunteur estimée")).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("Assurance par mois")).toBeTruthy();
+    expect(screen.getByText("Voir le détail de l’estimation")).toBeTruthy();
+  });
+
+  it("keeps secondary assumptions behind one collapsed disclosure", () => {
+    render(<FinancingSimulator sale={sale} />);
+
+    const details = screen.getByText("Voir le détail de l’estimation").closest("details");
+
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+    expect(screen.getByLabelText("Ajouter une assurance indicative")).toBeTruthy();
   });
 
   it("shows an accessible validation message when the down payment exceeds the price", () => {
