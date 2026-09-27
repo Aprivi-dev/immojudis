@@ -41,6 +41,7 @@ export function CadastralNeighborhoodMap({ lat, lng, address }: CadastralNeighbo
     let marker: MapboxGL.Marker | null = null;
     let fallbackTimer: number | null = null;
     let fallbackActive = false;
+    let fallbackRequested = false;
     let mapLoaded = false;
 
     setFallbackNotice(null);
@@ -145,7 +146,16 @@ export function CadastralNeighborhoodMap({ lat, lng, address }: CadastralNeighbo
           mapInstance.on("load", () => {
             if (cancelled) return;
             mapLoaded = true;
-            setStatus("ready");
+            if (fallbackRequested) {
+              activateWmsFallback();
+            } else {
+              setStatus("ready");
+            }
+          });
+
+          mapInstance.on("styledata", () => {
+            if (cancelled || !fallbackRequested || fallbackActive) return;
+            if (mapInstance.isStyleLoaded()) activateWmsFallback();
           });
 
           mapInstance.on("error", () => {
@@ -157,8 +167,9 @@ export function CadastralNeighborhoodMap({ lat, lng, address }: CadastralNeighbo
               return;
             }
 
-            setStatus("error");
-            setErrorMessage("Le plan cadastral n’a pas pu être chargé pour le moment.");
+            fallbackRequested = true;
+            setStatus("loading");
+            setErrorMessage(null);
           });
         } catch {
           setStatus("error");
