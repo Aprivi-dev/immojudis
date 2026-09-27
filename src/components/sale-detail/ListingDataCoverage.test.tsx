@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { axe } from "vitest-axe";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
@@ -93,11 +93,16 @@ describe("getListingDataCoverage", () => {
     ]);
   });
 
-  it("renders both lists and exposes a progressbar without visitor actions", async () => {
+  it("keeps the summary compact and reveals both lists on demand", async () => {
     const { container } = render(<ListingDataCoverage sale={sale()} />);
 
     expect(screen.getByRole("heading", { name: "Couverture des informations" })).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100");
+    const details = container.querySelector("details");
+    expect(details?.open).toBe(false);
+    expect(screen.getByText("Voir les détails")).toBeTruthy();
+    fireEvent.click(screen.getByText("Voir les détails"));
+    expect(details?.open).toBe(true);
     expect(screen.getByText("Informations présentes (11)")).toBeTruthy();
     expect(screen.getByText("Informations manquantes (0)")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();

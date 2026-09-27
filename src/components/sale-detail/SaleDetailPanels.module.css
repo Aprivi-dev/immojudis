@@ -1,0 +1,478 @@
+.tabRegion {
+  max-width: 1260px;
+  margin: 0 auto;
+  padding: 0 16px 76px;
+  scroll-margin-top: 96px;
+}
+
+.panel {
+  min-height: 420px;
+  outline: none;
+}
+
+.panel:focus-visible {
+  outline: 3px solid rgb(156 100 43 / 40%);
+  outline-offset: 5px;
+  border-radius: 18px;
+}
+
+.intro {
+  margin: 0 0 28px;
+  max-width: 700px;
+}
+
+.intro > p {
+  color: #946724;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.intro > h2 {
+  margin-top: 8px;
+  color: #132238;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: clamp(30px, 3.7vw, 46px);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+}
+
+.intro > span {
+  display: block;
+  margin-top: 9px;
+  color: #607086;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.twoColumns {
+  display: grid;
+  align-items: start;
+  gap: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.disclosure {
+  margin-top: 24px;
+  padding: 20px 24px;
+  border: 1px solid #dbe1e9;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 7px 24px rgb(19 34 56 / 4%);
+  scroll-margin-top: 110px;
+}
+
+.disclosure > summary {
+  color: #132238;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  list-style: none;
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure > summary::after {
+  content: "+";
+  float: right;
+  margin-left: 12px;
+  color: #9c642b;
+  font-size: 23px;
+  line-height: 0.8;
+}
+
+.disclosure[open] > summary::after {
+  content: "−";
+}
+
+.disclosure > summary:focus-visible {
+  border-radius: 5px;
+  outline: 3px solid rgb(156 100 43 / 35%);
+  outline-offset: 5px;
+}
+
+.disclosure > :not(summary) {
+  margin-top: 20px;
+}
+
+.disclosure > p {
+  color: #607086;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 17px 20px;
+  border: 1px solid #f0cb7a;
+  border-radius: 14px;
+  background: #fff8e8;
+  color: #573b0b;
+  font-size: 14px;
+}
+
+.warning strong,
+.warning h2 {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.warning p {
+  margin-top: 4px;
+}
+
+.warning button {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  border: 1px solid #c99c43;
+  border-radius: 8px;
+  background: #fff;
+  font-weight: 650;
+}
+
+.warning a {
+  text-decoration: underline;
+}
+
+.practical {
+  max-width: 920px;
+}
+
+.steps {
+  margin-top: 28px;
+  padding: 24px 28px;
+  border: 1px solid #dbe1e9;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.steps h2,
+.reportActions h2 {
+  color: #132238;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.steps ol {
+  display: grid;
+  gap: 13px;
+  margin-top: 18px;
+  padding-left: 22px;
+  color: #405168;
+  font-size: 14px;
+  line-height: 1.5;
+  list-style: decimal;
+}
+
+.steps li::marker {
+  color: #9c642b;
+  font-weight: 700;
+}
+
+.reportActions {
+  margin-top: 26px;
+  padding: 24px;
+  border: 1px solid #dbe1e9;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.reportActions p {
+  margin: 6px 0 15px;
+  color: #607086;
+  font-size: 14px;
+}
+
+@media (max-width: 800px) {
+  .twoColumns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .tabRegion {
+    padding: 0 16px 56px;
+  }
+
+  .intro {
+    margin-bottom: 21px;
+  }
+
+  .disclosure {
+    padding: 17px 18px;
+  }
+
+  .warning {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .steps {
+    padding: 20px;
+  }
+}
+
+.estimationCard {
+  overflow: hidden;
+  border: 1px solid #dbe1e9;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgb(19 34 56 / 5%);
+}
+
+.priceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  padding: 29px 30px;
+}
+
+.priceGrid > div {
+  min-width: 0;
+  padding: 0 24px;
+  border-left: 1px solid #e2e8f0;
+}
+
+.priceGrid > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.priceGrid dt {
+  color: #607086;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.priceGrid dd {
+  margin-top: 11px;
+  color: #132238;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: clamp(24px, 2.4vw, 36px);
+  font-weight: 650;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.priceGrid > div:nth-child(2) dd {
+  color: #9c642b;
+}
+
+.priceGrid .textValue {
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.estimationFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 19px 30px;
+  border-top: 1px solid #e2e8f0;
+  background: #fbfcfd;
+  color: #405168;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.estimationFoot strong,
+.estimationFoot span {
+  display: block;
+}
+
+.estimationFoot strong {
+  color: #132238;
+  font-size: 14px;
+}
+
+.estimationFoot > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.estimationFoot a {
+  flex: 0 0 auto;
+  color: #9c642b;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.surfaceCaution {
+  padding: 11px 30px;
+  border-top: 1px solid #efd59c;
+  background: #fff8e8;
+  color: #66430c;
+  font-size: 13px;
+}
+
+.riskCard {
+  margin-top: 24px;
+  padding: 24px 27px;
+  border: 1px solid #dbe1e9;
+  border-radius: 18px;
+  background: #fff;
+  color: #405168;
+}
+
+.riskCard h2 {
+  color: #132238;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 25px;
+  font-weight: 600;
+}
+
+.riskCard > p {
+  margin-top: 7px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.riskCard > a {
+  display: inline-block;
+  margin-top: 15px;
+  color: #9c642b;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+@media (max-width: 720px) {
+  .priceGrid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 22px;
+  }
+
+  .priceGrid > div,
+  .priceGrid > div:first-child {
+    padding: 0 0 16px;
+    border-left: 0;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .priceGrid > div:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .priceGrid dd {
+    margin-top: 4px;
+  }
+
+  .estimationFoot {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 11px;
+    padding: 20px 22px;
+  }
+
+  .surfaceCaution {
+    padding-inline: 22px;
+  }
+}
+
+.riskPreview {
+  display: grid;
+  gap: 0;
+  margin-top: 16px;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.riskPreview li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  color: #132238;
+  font-size: 14px;
+}
+
+.riskPreview li + li {
+  border-top: 1px solid #e2e8f0;
+}
+
+.riskPreview svg {
+  color: #9c642b;
+}
+
+.riskPreview span {
+  flex: 1 1 auto;
+}
+
+.riskPreview strong {
+  flex: 0 0 auto;
+  color: #946724;
+  font-size: 12px;
+}
+
+.riskCard > p a {
+  color: #9c642b;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.riskEvidence {
+  margin-top: 15px;
+  padding-top: 13px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 13px;
+}
+
+.riskEvidence summary {
+  color: #9c642b;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.riskEvidence article {
+  margin-top: 18px;
+}
+
+.riskEvidence h3 {
+  color: #132238;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.riskEvidence article > p {
+  margin: 4px 0 10px;
+  color: #405168;
+}
+
+.riskEvidence article > div {
+  margin-top: 5px;
+  line-height: 1.5;
+}
+
+.riskEvidence a {
+  color: #9c642b;
+  text-decoration: underline;
+}
+
+.riskEvidence blockquote {
+  margin: 6px 0 0;
+  padding-left: 11px;
+  border-left: 2px solid #cbd5e1;
+  color: #607086;
+}

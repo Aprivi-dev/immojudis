@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
@@ -36,6 +36,11 @@ describe("UrbanismeCadastrePanel", () => {
     expect(screen.getByRole("heading", { name: "Urbanisme & cadastre" })).toBeTruthy();
     expect(screen.getByText("À rattacher")).toBeTruthy();
     expect(screen.getByText("À qualifier")).toBeTruthy();
+    const details = container.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+    expect(details?.querySelectorAll("details")).toHaveLength(0);
+    fireEvent.click(screen.getByText("Voir le détail"));
     expect(screen.getByText(/Aucun risque urbanisme \/ foncier/)).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(container.querySelector("iframe")).toBeNull();
@@ -114,8 +119,12 @@ describe("UrbanismeCadastrePanel", () => {
       />,
     );
 
+    expect(screen.getByText("Parcelle candidate")).toBeTruthy();
+    const details = container.querySelector("details");
+    expect(details?.open).toBe(false);
+    fireEvent.click(screen.getByText("Voir le détail"));
     expect(screen.getByText("Section AB n° 123")).toBeTruthy();
-    expect(screen.getByText("À recouper")).toBeTruthy();
+    expect(screen.getAllByText(/à recouper/i).length).toBeGreaterThan(0);
     expect(screen.getByText("Point géocodé · à recouper")).toBeTruthy();
     expect(screen.getByText("Zonage PLU à confirmer")).toBeTruthy();
     expect(screen.getAllByText("Zone inondable à vérifier").length).toBeGreaterThan(0);

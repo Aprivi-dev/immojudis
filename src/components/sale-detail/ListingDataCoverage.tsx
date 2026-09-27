@@ -1,6 +1,7 @@
 import { useId } from "react";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import CircleAlert from "lucide-react/dist/esm/icons/circle-alert.js";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import { collectSaleDocuments } from "@/lib/sale-documents";
 import { getDisplaySurface } from "@/lib/surface";
 import { listingVisits } from "@/lib/sale-listing";
@@ -210,24 +211,21 @@ export function ListingDataCoverage({ sale, className }: ListingDataCoverageProp
 
   return (
     <section className={classNames} aria-labelledby={headingId}>
-      <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Données disponibles
+            Complétude du dossier
           </p>
           <h2 id={headingId} className="mt-1 text-lg font-semibold tracking-tight text-slate-950">
             Couverture des informations
           </h2>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Présence des principaux champs reçus pour cette annonce.
-          </p>
         </div>
         <div className="shrink-0 text-left sm:text-right">
           <p className="text-3xl font-semibold tracking-tight text-slate-950">
             {coverage.percentage}%
           </p>
           <p className="text-xs font-medium text-slate-500">
-            {coverage.presentCount} sur {coverage.total} informations clés
+            {coverage.presentCount}/{coverage.total} champs clés
           </p>
         </div>
       </div>
@@ -248,47 +246,69 @@ export function ListingDataCoverage({ sale, className }: ListingDataCoverageProp
           />
         </div>
         <p className="mt-2 text-xs leading-relaxed text-slate-500">
-          Le taux mesure la présence des champs reçus, pas leur niveau de vérification.
+          {coverage.missingCount > 0
+            ? `${coverage.missingCount} champ${coverage.missingCount > 1 ? "s" : ""} à compléter ou à vérifier.`
+            : "Tous les champs clés sont présents dans les données reçues."}
         </p>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/45 p-3.5">
-          <h3 id={presentHeadingId} className="text-sm font-semibold text-emerald-950">
-            Informations présentes ({coverage.presentCount})
-          </h3>
-          {coverage.present.length > 0 ? (
-            <ul aria-labelledby={presentHeadingId} className="mt-3 space-y-2">
-              {coverage.present.map((item) => (
-                <li key={item.key} className="flex items-start gap-2 text-sm text-slate-700">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" aria-hidden />
-                  <span>{item.label}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-3 text-sm text-slate-600">Aucune information clé reçue.</p>
-          )}
-        </div>
+      <details className="group mt-4 rounded-xl border border-slate-200 bg-slate-50/55">
+        <summary className="flex cursor-pointer list-none items-center gap-3 px-3.5 py-3 text-sm font-semibold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-500 sm:px-4">
+          <span>Voir les détails</span>
+          <span className="font-normal text-slate-500">
+            {coverage.presentCount} présents · {coverage.missingCount} manquants
+          </span>
+          <ChevronDown
+            className="ml-auto h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180"
+            aria-hidden
+          />
+        </summary>
 
-        <div className="rounded-xl border border-amber-200/80 bg-amber-50/55 p-3.5">
-          <h3 id={missingHeadingId} className="text-sm font-semibold text-amber-950">
-            Informations manquantes ({coverage.missingCount})
-          </h3>
-          {coverage.missing.length > 0 ? (
-            <ul aria-labelledby={missingHeadingId} className="mt-3 space-y-2">
-              {coverage.missing.map((item) => (
-                <li key={item.key} className="flex items-start gap-2 text-sm text-slate-700">
-                  <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
-                  <span>{item.label}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-3 text-sm text-slate-600">Aucune information clé manquante.</p>
-          )}
+        <div className="grid gap-3 border-t border-slate-200 p-3.5 sm:p-4 md:grid-cols-2">
+          <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/45 p-3.5">
+            <h3 id={presentHeadingId} className="text-sm font-semibold text-emerald-950">
+              Informations présentes ({coverage.presentCount})
+            </h3>
+            {coverage.present.length > 0 ? (
+              <ul aria-labelledby={presentHeadingId} className="mt-3 space-y-2">
+                {coverage.present.map((item) => (
+                  <li key={item.key} className="flex items-start gap-2 text-sm text-slate-700">
+                    <CheckCircle2
+                      className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700"
+                      aria-hidden
+                    />
+                    <span>{item.label}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-slate-600">Aucune information clé reçue.</p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-amber-200/80 bg-amber-50/55 p-3.5">
+            <h3 id={missingHeadingId} className="text-sm font-semibold text-amber-950">
+              Informations manquantes ({coverage.missingCount})
+            </h3>
+            {coverage.missing.length > 0 ? (
+              <ul aria-labelledby={missingHeadingId} className="mt-3 space-y-2">
+                {coverage.missing.map((item) => (
+                  <li key={item.key} className="flex items-start gap-2 text-sm text-slate-700">
+                    <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+                    <span>{item.label}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-slate-600">Aucune information clé manquante.</p>
+            )}
+          </div>
+
+          <p className="text-xs leading-relaxed text-slate-500 md:col-span-2">
+            Le taux mesure la présence des champs reçus, pas leur niveau de vérification.
+          </p>
         </div>
-      </div>
+      </details>
     </section>
   );
 }
