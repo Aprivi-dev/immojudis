@@ -46,8 +46,12 @@ import {
   ListingLocation,
 } from "@/components/sale-detail/SaleListing";
 import { ListingBudget } from "@/components/sale-detail/ListingBudget";
+import { ListingDataCoverage } from "@/components/sale-detail/ListingDataCoverage";
+import { ListingWorks, WorksSpotlight } from "@/components/sale-detail/ListingWorks";
+import { FinancingSimulator } from "@/components/sale-detail/FinancingSimulator";
+import { UrbanismeCadastrePanel } from "@/components/sale-detail/UrbanismeCadastrePanel";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
-import { fetchPrecomputedMarketEstimate } from "@/lib/client-api";
+import { fetchPrecomputedMarketEstimate, fetchSaleUrbanismeCadastre } from "@/lib/client-api";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.functions";
 import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
@@ -197,6 +201,11 @@ function SimplifiedSaleDetailView({
     [isTribunalSale, marketEstimate, sale.starting_price_eur, surface],
   );
   const worksBudget = estimateWorksBudget(surface, "rafraichissement");
+  const heroCeilingResult = activeSimulation?.result ?? recommendations.withRefreshWorks;
+  const heroCeiling =
+    access === "analysis" && isTribunalSale && !valuationConflict && heroCeilingResult.available
+      ? heroCeilingResult.maxBid
+      : null;
 
   return (
     <main className={listingStyles.page}>
@@ -214,12 +223,19 @@ function SimplifiedSaleDetailView({
 
         <div className={listingStyles.upper}>
           <PropertyIdentity key={sale.id} sale={sale} publicDemo={publicDemo} />
-          <div className={listingStyles.stack}>
-            <ListingPracticalDetails sale={sale} />
-            <SaleProcedureSummary sale={sale} showBadge={false} />
+          <div className={listingStyles.heroSummary}>
+            <ListingOverview
+              sale={sale}
+              publicDemo={publicDemo}
+              premiumCeiling={heroCeiling}
+              showPremiumTeaser={access === "discovery" && isTribunalSale}
+            />
           </div>
         </div>
 
+        <ListingDataCoverage sale={sale} />
+
+        <WorksSpotlight sale={sale} />
         <ListingQualityNotice sale={sale} />
 
         <div className={listingStyles.analysisHeading}>
@@ -341,6 +357,11 @@ function SimplifiedSaleDetailView({
             />
           </section>
         ) : null}
+
+        <div className={listingStyles.heroDetails}>
+          <ListingPracticalDetails sale={sale} />
+          <SaleProcedureSummary sale={sale} showBadge={false} />
+        </div>
       </div>
 
       {access === "analysis" ? (
@@ -356,6 +377,7 @@ function SimplifiedSaleDetailView({
             calculationOpen={calculationOpen}
             onCalculationOpenChange={setCalculationOpen}
             publicDemo={publicDemo}
+            loadStructuredUrbanism={!publicDemo && !authLoading && Boolean(user)}
             adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
           />
         ) : (
@@ -364,10 +386,33 @@ function SimplifiedSaleDetailView({
             marketEstimate={marketEstimate}
             marketLoading={marketQuery.isLoading && marketEstimate == null}
             publicDemo={publicDemo}
+            loadStructuredUrbanism={!publicDemo && !authLoading && Boolean(user)}
           />
         )
       ) : (
         <>
+          <nav
+            aria-label="Sections de l’annonce"
+            className="sticky top-16 z-30 border-y border-brand-navy/10 bg-white/95 shadow-sm backdrop-blur"
+          >
+            <div className="mx-auto flex max-w-5xl justify-between overflow-x-auto px-4 sm:px-6">
+              {[
+                ["#description-ia", "Le bien"],
+                ["#urbanism", "Urbanisme"],
+                ["#works", "Travaux"],
+                ["#financing", "Financement"],
+                ["#participation", "Démarches"],
+              ].map(([href, label]) => (
+                <a
+                  key={href}
+                  href={href}
+                  className="whitespace-nowrap border-b-2 border-transparent px-3 py-4 text-sm font-semibold text-brand-navy/68 transition-colors hover:border-gold hover:text-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold sm:px-4"
+                >
+                  {label}
+                </a>
+              ))}
+            </div>
+          </nav>
           <div className={listingStyles.container}>
             {!isTribunalSale ? <SaleProcedurePanel sale={sale} /> : null}
             <div className={listingStyles.lower}>
@@ -380,11 +425,69 @@ function SimplifiedSaleDetailView({
 
             {isTribunalSale ? <SaleProcedurePanel sale={sale} /> : null}
           </div>
+          <UrbanismeSection sale={sale} />
+          <ListingWorks sale={sale} estimatedBudget={surface == null ? null : worksBudget} />
+          <div
+            id="financing"
+            className="mx-auto max-w-[1260px] scroll-mt-36 px-4 py-12 sm:px-6 lg:px-8"
+          >
+            <FinancingSimulator sale={sale} />
+          </div>
           {hasVerifiedTribunal ? <SaleTribunalHistory sale={sale} /> : null}
-          <DiscoveryContinuation />
+          <DiscoveryContinuation sale={sale} />
         </>
       )}
     </main>
+  );
+}
+
+function UrbanismeSection({
+  sale,
+  loadStructuredUrbanism = false,
+}: {
+  sale: AuctionSale;
+  loadStructuredUrbanism?: boolean;
+}) {
+  const urbanismQuery = useQuery({
+    queryKey: ["sale-urbanisme-cadastre", sale.id, sale.source_url],
+    queryFn: () => fetchSaleUrbanismeCadastre(sale.id),
+    enabled: loadStructuredUrbanism && Boolean(sale.source_url),
+    staleTime: 10 * 60_000,
+  });
+
+  return (
+    <div id="urbanism" className="scroll-mt-36 border-y border-brand-navy/10 bg-[#f4f6f9]">
+      <div className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+        {urbanismQuery.isPending && urbanismQuery.isFetching ? (
+          <p role="status" className="mb-4 text-sm text-brand-navy/70">
+            Chargement des données cadastrales et d’urbanisme collectées pour cette annonce…
+          </p>
+        ) : null}
+        {urbanismQuery.isError ? (
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+          >
+            <p>
+              Les données cadastrales complémentaires sont momentanément indisponibles. Le bloc
+              ci-dessous repose sur les pièces de l’annonce.
+            </p>
+            <button
+              type="button"
+              className="mt-2 font-semibold underline underline-offset-2"
+              onClick={() => void urbanismQuery.refetch()}
+            >
+              Réessayer
+            </button>
+          </div>
+        ) : null}
+        <UrbanismeCadastrePanel
+          sale={sale}
+          cadastralParcels={urbanismQuery.data?.cadastralParcels}
+          urbanPlanningSignals={urbanismQuery.data?.urbanPlanningSignals}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -481,7 +584,7 @@ function PropertyIdentity({
             <button
               type="button"
               onClick={() => setGalleryIndex(0)}
-              className="group relative hidden h-[360px] w-full overflow-hidden bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gold md:block"
+              className="group relative hidden h-[440px] w-full overflow-hidden bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gold md:block"
               aria-label="Ouvrir la galerie photos"
             >
               <ListingPhoto
@@ -526,7 +629,7 @@ function PropertyIdentity({
           <SaleVisual
             sale={sale}
             title={title}
-            className="h-[250px] md:h-[360px] [&>span]:bottom-8 md:[&>span]:bottom-2"
+            className="h-[250px] md:h-[440px] [&>span]:bottom-8 md:[&>span]:bottom-2"
             eager
           />
         )}
@@ -554,8 +657,6 @@ function PropertyIdentity({
           ))}
         </div>
       ) : null}
-
-      <ListingOverview sale={sale} publicDemo={publicDemo} />
 
       {galleryIndex != null ? (
         <PhotoCarouselDialog
@@ -851,14 +952,24 @@ function comparisonMarkerPositions({
   ];
 }
 
-function DiscoveryContinuation() {
+function DiscoveryContinuation({ sale }: { sale: AuctionSale }) {
+  const photoCount = propertyImages(sale.media).length;
+
   return (
     <section className="mx-auto max-w-[1460px] px-4 pb-16 sm:px-6 lg:px-8">
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="flex min-h-16 items-center gap-3 rounded-lg border border-brand-navy/12 bg-white px-5 py-4 shadow-sm">
           <Camera className="h-5 w-5 text-gold-soft" aria-hidden />
-          <span className="font-display text-xl font-semibold text-brand-navy">Photos du bien</span>
-          <CheckCircle2 className="ml-auto h-5 w-5 text-[#2f855a]" aria-hidden />
+          <span className="font-display text-xl font-semibold text-brand-navy">
+            {photoCount > 0
+              ? `Photos du bien · ${photoCount} disponible${photoCount > 1 ? "s" : ""}`
+              : "Photos du bien · indisponibles"}
+          </span>
+          {photoCount > 0 ? (
+            <CheckCircle2 className="ml-auto h-5 w-5 text-[#2f855a]" aria-hidden />
+          ) : (
+            <CircleAlert className="ml-auto h-5 w-5 text-amber-700" aria-hidden />
+          )}
         </div>
         <Link
           to="/accompagnement"
@@ -921,11 +1032,13 @@ function NonJudicialAnalysisContent({
   marketEstimate,
   marketLoading,
   publicDemo,
+  loadStructuredUrbanism,
 }: {
   sale: AuctionSale;
   marketEstimate: MarketEstimate | null;
   marketLoading: boolean;
   publicDemo: boolean;
+  loadStructuredUrbanism: boolean;
 }) {
   const venue = getSaleProcedure(sale).venueType;
   const state = venue === "state";
@@ -933,20 +1046,24 @@ function NonJudicialAnalysisContent({
     ? [
         ["#risks", "Pièces et risques"],
         ["#participation", "Cession"],
-        ["#rendez-vous", "Échéance"],
         ["#budget", "Budget"],
         ["#professional-pilot", "Dossier de travail"],
         ["#market", "Marché"],
-        ["#lawyer", "Service vendeur"],
+        ["#urbanism", "Urbanisme"],
+        ["#works", "Travaux"],
+        ["#financing", "Financement"],
+        ["#lawyer", "Contacts"],
       ]
     : [
         ["#participation", "Conditions"],
         ["#risks", "Pièces et risques"],
-        ["#rendez-vous", "Séance"],
         ["#budget", "Budget"],
         ["#professional-pilot", "Dossier de travail"],
         ["#market", "Marché"],
-        ["#lawyer", "Étude / contact"],
+        ["#urbanism", "Urbanisme"],
+        ["#works", "Travaux"],
+        ["#financing", "Financement"],
+        ["#lawyer", "Contacts"],
       ];
   const procedureBlock = (
     <div className={listingStyles.container}>
@@ -1019,6 +1136,14 @@ function NonJudicialAnalysisContent({
           )}
         </div>
       </section>
+      <UrbanismeSection sale={sale} loadStructuredUrbanism={loadStructuredUrbanism} />
+      <ListingWorks sale={sale} estimatedBudget={null} />
+      <div
+        id="financing"
+        className="mx-auto max-w-[1260px] scroll-mt-36 px-4 py-12 sm:px-6 lg:px-8"
+      >
+        <FinancingSimulator sale={sale} />
+      </div>
       <InformationAvailabilityNotice />
       <LawyerSection sale={sale} />
     </>
@@ -1034,6 +1159,7 @@ function AnalysisContent({
   calculationOpen,
   onCalculationOpenChange,
   publicDemo,
+  loadStructuredUrbanism,
   adjudicationStatisticsEnabled,
   simulation,
   onSimulationChange,
@@ -1046,6 +1172,7 @@ function AnalysisContent({
   calculationOpen: boolean;
   onCalculationOpenChange: (open: boolean) => void;
   publicDemo: boolean;
+  loadStructuredUrbanism: boolean;
   adjudicationStatisticsEnabled: boolean;
   simulation: BidSimulationSnapshot | null;
   onSimulationChange: (snapshot: BidSimulationSnapshot) => void;
@@ -1066,8 +1193,11 @@ function AnalysisContent({
   const navigationItems = [
     ["#summary", "Synthèse"],
     ["#risks", "Risques & pièces"],
+    ["#urbanism", "Urbanisme"],
     ["#budget-analysis", "Budget"],
     ["#market", "Marché"],
+    ["#works", "Travaux"],
+    ["#financing", "Financement"],
     ...(showTribunalHistory ? [["#tribunal-history", "Historique"]] : []),
     ["#participation", "Démarches"],
     ["#professional-pilot", "Dossier de travail"],
@@ -1131,6 +1261,15 @@ function AnalysisContent({
         </details>
       </section>
 
+      <div className={listingStyles.container}>
+        <div className={listingStyles.lower}>
+          <ListingDescription sale={sale} />
+          <ListingLocation sale={sale} />
+        </div>
+      </div>
+
+      <UrbanismeSection sale={sale} loadStructuredUrbanism={loadStructuredUrbanism} />
+
       <section
         id="budget-analysis"
         aria-label="Budget et hypothèses"
@@ -1189,6 +1328,21 @@ function AnalysisContent({
           <MarketEvidence marketEstimate={marketEstimate} marketLoading={marketLoading} />
         </div>
       </section>
+      <ListingWorks
+        sale={sale}
+        estimatedBudget={
+          simulation?.worksKnown === false
+            ? null
+            : (simulation?.works ??
+              (surface == null ? null : estimateWorksBudget(surface, "rafraichissement")))
+        }
+      />
+      <div
+        id="financing"
+        className="mx-auto max-w-[1260px] scroll-mt-36 px-4 py-12 sm:px-6 lg:px-8"
+      >
+        <FinancingSimulator sale={sale} />
+      </div>
       {hasVerifiedForecast ? <OutcomeForecast forecastQuery={forecastQuery} /> : null}
       {showTribunalHistory ? (
         <SaleTribunalHistory
@@ -1198,10 +1352,6 @@ function AnalysisContent({
         />
       ) : null}
       <div className={listingStyles.container}>
-        <div className={listingStyles.lower}>
-          <ListingDescription sale={sale} />
-          <ListingLocation sale={sale} />
-        </div>
         <SaleProcedurePanel sale={sale} />
       </div>
       {tribunalSale ? (
@@ -1302,12 +1452,12 @@ function MarketEvidence({
 }) {
   const usesAddressHistory = marketEstimate?.comparableMode === "address_history";
   const comparables = usesAddressHistory
-    ? (marketEstimate?.addressHistory ?? []).slice(0, 4).map((sale) => ({
+    ? (marketEstimate?.addressHistory ?? []).map((sale) => ({
         ...sale,
         distanceM: null,
         unitCount: null,
       }))
-    : (marketEstimate?.recentTransactions?.slice(0, 4) ?? []);
+    : (marketEstimate?.recentTransactions ?? []);
   const usesAggregateStatistics = marketEstimate?.comparableMode === "geographic_aggregate";
   const usesParkingSales = marketEstimate?.comparableMode === "unit_sales";
   const sampleCount = usesAddressHistory
@@ -1324,10 +1474,7 @@ function MarketEvidence({
           : `${sampleCount} vente${sampleCount > 1 ? "s" : ""} comparable${sampleCount > 1 ? "s" : ""}`;
 
   return (
-    <div
-      id="market"
-      className="min-w-0 scroll-mt-36 border-t border-brand-navy/18 pt-8 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0"
-    >
+    <div id="market" className="min-w-0 scroll-mt-36">
       <h2 className="font-display text-4xl font-medium text-brand-navy sm:text-5xl">
         Marché local
       </h2>
@@ -1394,23 +1541,28 @@ function MarketEvidence({
       )}
 
       {comparables.length ? (
-        <div className="mt-7 rounded-2xl border border-slate-200 bg-white p-5">
-          <h3 className="text-lg font-semibold">
+        <div className="mt-7 rounded-lg border border-slate-200 bg-white p-5 sm:p-6">
+          <h3 className="font-display text-2xl font-semibold text-brand-navy sm:text-3xl">
             {usesAddressHistory
               ? "Historique des ventes à cette adresse"
               : "Ventes de référence à proximité"}
           </h3>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          <p className="mt-1 text-sm leading-relaxed text-slate-600">
+            {sampleCount} référence{sampleCount > 1 ? "s" : ""} retenue
+            {sampleCount > 1 ? "s" : ""} · {comparables.length} détaillée
+            {comparables.length > 1 ? "s" : ""} ci-dessous.
+          </p>
+          <p className="mt-1 text-sm leading-relaxed text-slate-600">
             Transactions DVF · ces prix ne constituent pas des résultats d’adjudication.
           </p>
           <ul
-            className="mt-4 divide-y divide-slate-200"
+            className="mt-4 divide-y divide-slate-200 border-t border-slate-200"
             aria-label={usesAddressHistory ? "Historique d’adresse" : "Comparables de marché"}
           >
             {comparables.map((item, index) => (
               <li
                 key={`${item.date}-${item.totalPrice}-${index}`}
-                className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-4"
+                className="grid gap-2 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto] sm:items-center sm:gap-4"
               >
                 <div>
                   <p className="text-sm font-semibold">
@@ -1423,9 +1575,17 @@ function MarketEvidence({
                       <span className="font-normal text-slate-500"> · à {item.distanceM} m</span>
                     ) : null}
                   </p>
-                  <p className="mt-1 text-xs text-slate-500">{formatDate(item.date)}</p>
+                  <p className="mt-1 text-xs text-slate-500">{item.type}</p>
                 </div>
-                <p className="text-lg font-bold">{formatPrice(item.totalPrice)}</p>
+                <p className="text-sm text-slate-600">{formatDate(item.date)}</p>
+                <div className="sm:text-right">
+                  <p className="text-lg font-bold text-brand-navy">
+                    {formatPrice(item.totalPrice)}
+                  </p>
+                  {item.pricePerM2 != null && item.pricePerM2 > 0 ? (
+                    <p className="text-xs text-slate-500">{formatPricePerM2(item.pricePerM2)}</p>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>

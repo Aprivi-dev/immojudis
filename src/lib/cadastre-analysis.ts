@@ -136,12 +136,15 @@ function referencesFromStructuredParcels(
       const number = normalizeParcelNumber(parcel.parcelNumber);
       const raw = [parcel.codeInsee, section, number].filter(Boolean).join(" ");
       if (!section && !number && !parcel.parcelId && !parcel.parcelKey) return null;
+      const pointIntersection = isPointIntersection(parcel.matchKind);
       return {
         section,
         number,
         raw: raw || parcel.parcelId || parcel.parcelKey || "Parcelle API Carto",
-        source: parcel.sourceApi || "API Carto Cadastre",
-        confidence: "structured",
+        source: pointIntersection
+          ? `${parcel.sourceApi || "API Carto Cadastre"} · intersection du point géocodé`
+          : parcel.sourceApi || "API Carto Cadastre",
+        confidence: pointIntersection ? "inferred" : "structured",
       };
     })
     .filter((reference): reference is CadastralReference => Boolean(reference));
@@ -353,8 +356,17 @@ function cadastralSummary({
 }): string {
   const formattedReferences = references.slice(0, 3).map(formatCadastralReference);
   const surface = landSurfaceM2 != null ? ` · surface terrain ${Math.round(landSurfaceM2)} m²` : "";
+  const hasPointIntersection = references.some((reference) =>
+    reference.source.toLowerCase().includes("intersection du point géocodé"),
+  );
+  const hasExplicitReference = references.some(
+    (reference) => reference.confidence === "structured" || reference.confidence === "direct",
+  );
 
   if (status === "identified") {
+    if (hasPointIntersection && !hasExplicitReference) {
+      return `Parcelle candidate repérée par intersection du point géocodé : ${formattedReferences.join(", ")}${surface}. À recouper avec le plan officiel.`;
+    }
     return `Parcelle repérée : ${formattedReferences.join(", ")}${surface}.`;
   }
   if (status === "partial") {
@@ -471,6 +483,10 @@ function normalizeStructuredParcels(
         (parcel.codeInsee && parcel.section && parcel.parcelNumber),
     )
     .slice(0, 8);
+}
+
+function isPointIntersection(matchKind: string | null): boolean {
+  return (matchKind ?? "").trim().toLowerCase() === "point_intersection";
 }
 
 function dedupeReferences(references: CadastralReference[]): CadastralReference[] {

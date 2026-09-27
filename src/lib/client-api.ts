@@ -37,6 +37,7 @@ import type {
 } from "@/lib/admin-information-agent";
 import type { AlertEvaluationResponse, AlertMatchSummary } from "@/lib/alert-matches";
 import type { BidCeilingAnalysisResponse, BidCeilingRequestInput } from "@/lib/bid-ceiling";
+import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import type { EnvironmentalContextResponse } from "@/lib/environment.functions";
 import type { FeaturedReferencedLawyerResponse } from "@/lib/featured-lawyers";
 import type { LawyerDirectoryResponse } from "@/lib/lawyer-directory";
@@ -80,6 +81,7 @@ import type { DataQualityReport } from "@/lib/data-quality-monitor";
 import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import type { SaleHistoryResponse } from "@/lib/sale-history";
+import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
 import type { ValuationBacktestResponse } from "@/lib/valuation-backtest";
 import type { ValuationAdminResponse } from "@/lib/valuation-admin";
 import type {
@@ -190,6 +192,21 @@ export async function fetchOutcomeGraphForecast(args: {
   });
 
   return readJson<{ forecast: OutcomeGraphForecast }>(response);
+}
+
+export async function fetchSaleUrbanismeCadastre(saleId: string): Promise<{
+  cadastralParcels: StructuredCadastralParcel[];
+  urbanPlanningSignals: StructuredUrbanPlanningSignal[];
+}> {
+  const response = await fetch(`/api/v1/sales/${encodeURIComponent(saleId)}/urbanisme-cadastre`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+
+  return readJson<{
+    cadastralParcels: StructuredCadastralParcel[];
+    urbanPlanningSignals: StructuredUrbanPlanningSignal[];
+  }>(response);
 }
 
 export async function fetchValuationAdminOverview(): Promise<ValuationAdminResponse> {

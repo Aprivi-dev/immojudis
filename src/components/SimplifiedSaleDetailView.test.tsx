@@ -9,9 +9,19 @@ import type { AuctionSale } from "@/lib/types";
 import type { MarketEstimate } from "@/lib/market.functions";
 import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDetailView";
 
-const mocks = vi.hoisted(() => ({ fetchMarket: vi.fn(), forecast: vi.fn() }));
-vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: null, loading: false }) }));
-vi.mock("@/lib/client-api", () => ({ fetchPrecomputedMarketEstimate: mocks.fetchMarket }));
+const mocks = vi.hoisted(() => ({
+  fetchMarket: vi.fn(),
+  fetchUrbanism: vi.fn(),
+  forecast: vi.fn(),
+  authUser: null as { id: string } | null,
+}));
+vi.mock("@/hooks/use-auth", () => ({
+  useAuth: () => ({ user: mocks.authUser, loading: false }),
+}));
+vi.mock("@/lib/client-api", () => ({
+  fetchPrecomputedMarketEstimate: mocks.fetchMarket,
+  fetchSaleUrbanismeCadastre: mocks.fetchUrbanism,
+}));
 vi.mock("@/lib/router-compat", () => ({
   Link: ({ to, href, children, ...props }: { to?: string; href?: string; children: ReactNode }) => (
     <a href={href ?? to} {...props}>
@@ -89,6 +99,7 @@ vi.mock("next/dynamic", () => ({
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  mocks.authUser = null;
 });
 function renderDetail(
   access: "analysis" | "discovery",
@@ -115,6 +126,42 @@ function renderDetail(
 }
 
 describe("integrated listing", () => {
+  it("shows stored cadastral candidates only in an authenticated analysis", async () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.fetchUrbanism.mockResolvedValue({
+      cadastralParcels: [
+        {
+          parcelKey: "33063-AB-123",
+          parcelId: "33063000AB0123",
+          codeInsee: "33063",
+          department: "33",
+          city: "Bordeaux",
+          section: "AB",
+          parcelNumber: "123",
+          surfaceM2: 480,
+          centroidLat: 44.8378,
+          centroidLng: -0.5792,
+          matchKind: "point_intersection",
+          confidence: 0.88,
+          sourceApi: "API Carto Cadastre",
+        },
+      ],
+      urbanPlanningSignals: [],
+    });
+    const live = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+
+    expect(await screen.findByText("Section AB n° 123")).toBeTruthy();
+    expect(
+      screen.getAllByText(/Parcelle candidate repérée par intersection du point géocodé/),
+    ).toHaveLength(2);
+    expect(mocks.fetchUrbanism).toHaveBeenCalledWith(EXAMPLE_SALE_RECORDS.bordeaux.sale.id);
+    live.unmount();
+
+    mocks.fetchUrbanism.mockClear();
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, true);
+    expect(mocks.fetchUrbanism).not.toHaveBeenCalled();
+  });
+
   it("distingue l’historique d’adresse des comparables proches", () => {
     const { container } = renderDetail("analysis", undefined, true, false, {
       ...EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
@@ -352,19 +399,28 @@ describe("integrated listing", () => {
     renderDetail("discovery", sale);
     expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
   });
-  it("puts practical information before the analysis and keeps the gallery functional", () => {
+  it("puts the decision near the overview and keeps the gallery functional", () => {
     const { container } = renderDetail("analysis");
     const text = container.textContent ?? "";
-    expect(text.indexOf("L’audience et les visites")).toBeLessThan(
+    expect(text.indexOf("Couverture des informations")).toBeLessThan(
+      text.indexOf("Travaux signalés dans le dossier"),
+    );
+    expect(text.indexOf("Travaux signalés dans le dossier")).toBeLessThan(
       text.indexOf("Votre analyse d'adjudication"),
+    );
+    expect(text.indexOf("Votre analyse d'adjudication")).toBeLessThan(
+      text.indexOf("L’audience et les visites"),
     );
     const sections = [
       "summary",
       "risks",
       "documents",
+      "description-ia",
+      "urbanism",
       "budget-analysis",
       "market",
-      "description-ia",
+      "works",
+      "financing",
       "participation",
     ];
     const nodes = sections.map((id) => {
@@ -471,6 +527,7 @@ describe("integrated listing", () => {
       longitude: null,
     });
     expect(screen.getByText("Visuel indisponible")).toBeTruthy();
+    expect(screen.getByText("Photos du bien · indisponibles")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Ouvrir la galerie photos" })).toBeNull();
     expect(screen.getByText(/lorsque les coordonnées/)).toBeTruthy();
   });

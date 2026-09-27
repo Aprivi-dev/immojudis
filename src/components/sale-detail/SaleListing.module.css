@@ -41,6 +41,20 @@
   gap: 32px;
   align-items: start;
 }
+.heroSummary {
+  min-width: 0;
+  border: 1px solid #dbe1e9;
+  border-radius: 20px;
+  background: #fff;
+  padding: 24px;
+  box-shadow: 0 12px 32px rgb(19 34 56 / 5%);
+}
+.heroDetails {
+  display: grid;
+  align-items: start;
+  gap: 24px;
+  margin-top: 28px;
+}
 .lower {
   margin-top: 32px;
 }
@@ -57,14 +71,15 @@
 }
 .overview {
   position: relative;
-  padding: 22px 0 0;
+  padding: 0;
 }
 .title {
-  font-size: 26px;
-  line-height: 1.2;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  margin-top: 14px;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: clamp(30px, 3vw, 44px);
+  line-height: 1.08;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-top: 12px;
   overflow-wrap: anywhere;
 }
 .muted {
@@ -73,9 +88,49 @@
   line-height: 1.6;
 }
 .priceLabel {
-  margin-top: 24px;
+  margin-top: 0;
   color: #475569;
-  font-size: 16px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.heroPrices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 18px;
+  align-items: start;
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid #e2e8f0;
+}
+.premiumPrice {
+  min-width: 0;
+  padding-left: 18px;
+  border-left: 1px solid #dbe1e9;
+}
+.premiumPriceValue {
+  margin: 4px 0 2px;
+  color: #9c642b;
+  font-size: clamp(25px, 3vw, 36px);
+  font-weight: 700;
+  line-height: 1.16;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.premiumTeaser {
+  margin-top: 7px;
+  color: #132238;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.priceExplanation {
+  display: inline-block;
+  margin-top: 7px;
+  color: #9c642b;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .procedureLead {
   display: grid;
@@ -105,29 +160,62 @@
   line-height: 1.5;
 }
 .price {
-  font-size: clamp(34px, 12vw, 48px);
+  font-size: clamp(32px, 5vw, 44px);
   line-height: 1.15;
   font-weight: 700;
   letter-spacing: -0.04em;
-  margin: 2px 0;
+  margin: 2px 0 4px;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+.heroEvent {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 22px;
+  padding: 16px 0;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+.heroEvent > svg {
+  width: 20px;
+  height: 20px;
+  color: #9c642b;
+}
+.heroEvent span {
+  display: block;
+  color: #607086;
+  font-size: 12px;
+}
+.heroEvent strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.heroEvent a {
+  color: #9c642b;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 22px;
+  gap: 8px;
+  margin-top: 20px;
 }
 .fact {
   position: relative;
   display: flex;
   flex-direction: column-reverse;
   justify-content: center;
-  padding: 16px;
+  padding: 12px;
   border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  background: #fff;
+  border-radius: 10px;
+  background: #f8fafc;
   min-width: 0;
 }
 .factIcon {
@@ -141,7 +229,7 @@
   color: #7c8a9b;
 }
 .factValue {
-  font-size: 21px;
+  font-size: 19px;
   line-height: 1.25;
   font-weight: 700;
   letter-spacing: -0.025em;
@@ -149,9 +237,29 @@
 }
 .factLabel {
   color: #64748b;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.4;
   margin-top: 4px;
+}
+.heroLinks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 14px;
+}
+.sourceLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #132238;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.sourceLink:hover {
+  color: #9c642b;
 }
 .textLink {
   display: inline-flex;
@@ -419,6 +527,17 @@
   outline-offset: 4px;
 }
 @media (max-width: 767px) {
+  .heroSummary {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .premiumPrice {
+    padding-top: 16px;
+    padding-left: 0;
+    border-top: 1px solid #dbe1e9;
+    border-left: 0;
+  }
   .photo {
     border-radius: 0;
     margin-left: -16px;
@@ -442,10 +561,10 @@
     display: block;
   }
   .fact {
-    padding-left: 52px;
+    padding-left: 44px;
   }
   .factValue {
-    font-size: 24px;
+    font-size: 21px;
   }
   .row {
     grid-template-columns: 110px minmax(0, 1fr);
@@ -461,8 +580,12 @@
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr);
     gap: 40px;
   }
+  .heroDetails {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr);
+    gap: 40px;
+  }
   .title {
-    font-size: 30px;
+    font-size: clamp(32px, 3vw, 42px);
   }
   .heading {
     font-size: 24px;
