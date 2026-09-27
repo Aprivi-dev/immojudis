@@ -3,6 +3,7 @@
 import { useMemo, type ReactNode } from "react";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import CircleAlert from "lucide-react/dist/esm/icons/circle-alert.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
@@ -91,17 +92,19 @@ export function UrbanismeCadastrePanel({
   );
 
   const rootClassName = [styles.panel, className].filter(Boolean).join(" ");
+  const addressSummary = locationSummary(sale);
+  const primaryAction = firstNextAction(cadastral, urbanPlanning);
 
   return (
     <section className={rootClassName} aria-labelledby="urbanisme-cadastre-heading">
       <header className={styles.header}>
         <div className={styles.headingGroup}>
-          <p className={styles.eyebrow}>Vérifications réglementaires</p>
           <h2 id="urbanisme-cadastre-heading" className={styles.title}>
             {heading}
           </h2>
           <p className={styles.intro}>
-            Parcelle, PLU et risques rattachés aux informations collectées pour cette annonce.
+            L’essentiel sur l’adresse et la parcelle, avec les vérifications détaillées à la
+            demande.
           </p>
         </div>
         <div className={styles.headerMark} aria-hidden="true">
@@ -109,185 +112,224 @@ export function UrbanismeCadastrePanel({
         </div>
       </header>
 
+      <div className={styles.locationSummary}>
+        <MapPin size={18} aria-hidden="true" />
+        <div>
+          <span className={styles.locationLabel}>Localisation</span>
+          <p className={styles.locationValue}>{addressSummary ?? "Adresse non fournie"}</p>
+          <p className={styles.locationMeta}>{locationMeta(sale)}</p>
+        </div>
+      </div>
+
       <div className={styles.summaryGrid} aria-label="État des vérifications">
         <SummaryCard
+          tone={hasAddress(sale) ? "blue" : "neutral"}
+          icon={<MapPin size={16} aria-hidden="true" />}
+          label="Adresse"
+          value={addressStatusLabel(sale)}
+          detail={addressStatusDetail(sale)}
+        />
+        <SummaryCard
           tone={cadastral.available ? "gold" : "neutral"}
-          icon={<Map size={17} aria-hidden="true" />}
-          label="Cadastre"
-          value={cadastralStatusLabel(cadastral)}
-          detail={cadastral.summary}
+          icon={<Map size={16} aria-hidden="true" />}
+          label="Parcelle"
+          value={parcelStatusLabel(cadastral)}
+          detail={parcelStatusDetail(cadastral)}
         />
         <SummaryCard
           tone={urbanPlanning.available ? "blue" : "neutral"}
-          icon={<LandPlot size={17} aria-hidden="true" />}
-          label="PLU & usages"
-          value={urbanStatusLabel(urbanPlanning.status)}
-          detail={urbanPlanning.summary}
-        />
-        <SummaryCard
-          tone={relevantRisks.length > 0 ? "red" : "neutral"}
-          icon={<ShieldAlert size={17} aria-hidden="true" />}
-          label="Risques fonciers"
-          value={relevantRisks.length > 0 ? `${relevantRisks.length} à qualifier` : "Non qualifiés"}
-          detail={
-            relevantRisks.length > 0
-              ? "Signaux liés à l’urbanisme, au foncier ou à l’environnement."
-              : "Aucun signal explicite dans les informations disponibles ici."
-          }
+          icon={<LandPlot size={16} aria-hidden="true" />}
+          label="Urbanisme"
+          value={urbanStatusShortLabel(urbanPlanning.status)}
+          detail={urbanStatusShortDetail(urbanPlanning, relevantRisks)}
         />
       </div>
 
-      <section className={styles.section} aria-labelledby="urbanisme-cadastre-cadastre">
-        <SectionHeading
-          id="urbanisme-cadastre-cadastre"
-          icon={<Map size={19} aria-hidden="true" />}
-          title="Cadastre"
-          intro={cadastral.summary}
-          badge={
-            <StatusBadge tone={statusTone(cadastral.status, cadastral.confidenceLabel)}>
-              {cadastral.confidenceLabel}
-            </StatusBadge>
-          }
-        />
-        <div className={styles.detailGrid}>
-          <div>
-            {cadastral.references.length > 0 ? (
-              <ul className={styles.referenceList} aria-label="Références cadastrales">
-                {cadastral.references.map((reference) => (
-                  <li key={`${reference.raw}-${reference.source}`} className={styles.reference}>
-                    <div className={styles.referenceTop}>
-                      <p className={styles.referenceTitle}>{formatCadastralReference(reference)}</p>
-                      <StatusBadge tone={reference.confidence === "structured" ? "good" : "watch"}>
-                        {referenceConfidenceLabel(reference.confidence, reference.source)}
-                      </StatusBadge>
-                    </div>
-                    <p className={styles.referenceSource}>Source : {reference.source}</p>
-                  </li>
+      <div className={styles.nextAction}>
+        <div className={styles.nextActionIcon} aria-hidden="true">
+          <SearchCheck size={17} />
+        </div>
+        <div>
+          <p className={styles.nextActionLabel}>À faire en premier</p>
+          <p className={styles.nextActionText}>{primaryAction}</p>
+        </div>
+      </div>
+
+      <details className={styles.details}>
+        <summary className={styles.detailsSummary}>
+          <span className={styles.detailsSummaryText}>
+            <Info size={16} aria-hidden="true" />
+            <span>
+              <strong>Voir le détail</strong>
+              <small>Références, PLU, risques et sources</small>
+            </span>
+          </span>
+          <ChevronDown className={styles.detailsChevron} size={18} aria-hidden="true" />
+        </summary>
+
+        <div className={styles.detailsContent}>
+          <section className={styles.section} aria-labelledby="urbanisme-cadastre-cadastre">
+            <SectionHeading
+              id="urbanisme-cadastre-cadastre"
+              icon={<Map size={19} aria-hidden="true" />}
+              title="Cadastre"
+              intro={cadastral.summary}
+              badge={
+                <StatusBadge tone={statusTone(cadastral.status, cadastral.confidenceLabel)}>
+                  {cadastral.confidenceLabel}
+                </StatusBadge>
+              }
+            />
+            <div className={styles.detailGrid}>
+              <div>
+                {cadastral.references.length > 0 ? (
+                  <ul className={styles.referenceList} aria-label="Références cadastrales">
+                    {cadastral.references.map((reference) => (
+                      <li key={`${reference.raw}-${reference.source}`} className={styles.reference}>
+                        <div className={styles.referenceTop}>
+                          <p className={styles.referenceTitle}>
+                            {formatCadastralReference(reference)}
+                          </p>
+                          <StatusBadge
+                            tone={reference.confidence === "structured" ? "good" : "watch"}
+                          >
+                            {referenceConfidenceLabel(reference.confidence, reference.source)}
+                          </StatusBadge>
+                        </div>
+                        <p className={styles.referenceSource}>Source : {reference.source}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <EmptyState>
+                    Aucune référence section / numéro n’est disponible. La surface terrain seule ne
+                    permet pas d’identifier une parcelle.
+                  </EmptyState>
+                )}
+                {cadastral.structuredParcels.length > 0 ? (
+                  <div className={styles.subsection}>
+                    <h4 className={styles.subheading}>Résultats API Carto</h4>
+                    <ul className={styles.referenceList} aria-label="Parcelles API Carto">
+                      {cadastral.structuredParcels.map((parcel, index) => (
+                        <li
+                          key={`${parcel.parcelKey ?? parcel.parcelId ?? "parcel"}-${index}`}
+                          className={styles.reference}
+                        >
+                          <div className={styles.referenceTop}>
+                            <p className={styles.referenceTitle}>{parcelTitle(parcel)}</p>
+                            {isPointIntersectionMatch(parcel.matchKind) ? (
+                              <StatusBadge tone="watch">Point géocodé · à recouper</StatusBadge>
+                            ) : parcel.confidence != null ? (
+                              <StatusBadge tone={parcel.confidence >= 0.8 ? "good" : "watch"}>
+                                Confiance {Math.round(parcel.confidence * 100)} %
+                              </StatusBadge>
+                            ) : null}
+                          </div>
+                          <p className={styles.referenceSource}>
+                            {[
+                              parcel.city,
+                              parcel.codeInsee,
+                              parcel.surfaceM2 != null ? formatSurface(parcel.surfaceM2) : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || "Surface et commune non précisées"}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+              <div className={styles.sideStack}>
+                <LocationNote coordinates={coordinates} />
+                <DocumentsBlock documents={cadastral.documents} />
+              </div>
+            </div>
+            <ActionList heading="À vérifier" actions={cadastral.nextActions} />
+          </section>
+
+          <section className={styles.section} aria-labelledby="urbanisme-cadastre-plu">
+            <SectionHeading
+              id="urbanisme-cadastre-plu"
+              icon={<LandPlot size={19} aria-hidden="true" />}
+              title="PLU, permis et usages"
+              intro="Les éléments sont classés selon leur présence dans une pièce ou leur détection dans les sources collectées."
+              badge={
+                <StatusBadge tone={statusTone(urbanPlanning.status)}>
+                  {urbanPlanning.confidenceLabel}
+                </StatusBadge>
+              }
+            />
+            {urbanPlanning.items.length > 0 ? (
+              <ul className={styles.itemList} aria-label="Signaux urbanisme">
+                {urbanPlanning.items.map((item) => (
+                  <UrbanItemCard key={item.key} item={item} />
                 ))}
               </ul>
             ) : (
               <EmptyState>
-                Aucune référence section / numéro n’est disponible. La surface terrain seule ne
-                permet pas d’identifier une parcelle.
+                Aucun signal PLU, permis, servitude, copropriété ou usage n’est rattaché aux sources
+                collectées. Consultez le document d’urbanisme opposable de la commune et le cahier
+                des conditions.
               </EmptyState>
             )}
-            {cadastral.structuredParcels.length > 0 ? (
-              <div className={styles.subsection}>
-                <h4 className={styles.subheading}>Résultats API Carto</h4>
-                <ul className={styles.referenceList} aria-label="Parcelles API Carto">
-                  {cadastral.structuredParcels.map((parcel, index) => (
-                    <li
-                      key={`${parcel.parcelKey ?? parcel.parcelId ?? "parcel"}-${index}`}
-                      className={styles.reference}
-                    >
-                      <div className={styles.referenceTop}>
-                        <p className={styles.referenceTitle}>{parcelTitle(parcel)}</p>
-                        {isPointIntersectionMatch(parcel.matchKind) ? (
-                          <StatusBadge tone="watch">Point géocodé · à recouper</StatusBadge>
-                        ) : parcel.confidence != null ? (
-                          <StatusBadge tone={parcel.confidence >= 0.8 ? "good" : "watch"}>
-                            Confiance {Math.round(parcel.confidence * 100)} %
-                          </StatusBadge>
-                        ) : null}
-                      </div>
-                      <p className={styles.referenceSource}>
-                        {[
-                          parcel.city,
-                          parcel.codeInsee,
-                          parcel.surfaceM2 != null ? formatSurface(parcel.surfaceM2) : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ") || "Surface et commune non précisées"}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            {urbanPlanning.missingChecks.length > 0 ? (
+              <ActionList heading="Contrôles manquants" actions={urbanPlanning.missingChecks} />
             ) : null}
-          </div>
-          <div className={styles.sideStack}>
-            <LocationNote coordinates={coordinates} />
-            <DocumentsBlock documents={cadastral.documents} />
-          </div>
+          </section>
+
+          <section className={styles.section} aria-labelledby="urbanisme-cadastre-risques">
+            <SectionHeading
+              id="urbanisme-cadastre-risques"
+              icon={<ShieldAlert size={19} aria-hidden="true" />}
+              title="Risques et signaux fonciers"
+              intro="Les points ci-dessous viennent des risques déjà rattachés au dossier et restent à qualifier dans les pièces officielles."
+            />
+            {relevantRisks.length > 0 ? (
+              <ul className={styles.riskList} aria-label="Risques fonciers">
+                {relevantRisks.map((risk, index) => (
+                  <RiskCard key={`${risk.risk_type}-${risk.risk_label}-${index}`} risk={risk} />
+                ))}
+              </ul>
+            ) : (
+              <EmptyState>
+                {(sale.risks ?? []).length > 0
+                  ? "Les risques présents dans le dossier ne portent pas explicitement sur l’urbanisme, le cadastre ou l’environnement dans les informations disponibles ici."
+                  : "Aucun risque urbanisme / foncier n’est rattaché aux sources collectées. Cela ne vaut pas absence de risque."}
+              </EmptyState>
+            )}
+          </section>
+
+          <section className={styles.section} aria-labelledby="urbanisme-cadastre-sources">
+            <SectionHeading
+              id="urbanisme-cadastre-sources"
+              icon={<ExternalLink size={18} aria-hidden="true" />}
+              title="Sources officielles"
+              intro="À consulter pour confirmer le zonage, la parcelle et les risques autour du bien."
+            />
+            <ul className={styles.sourceList}>
+              {OFFICIAL_SOURCES.map((source) => (
+                <li key={source.href}>
+                  <a
+                    className={styles.sourceLink}
+                    href={source.href}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {source.label} <ExternalLink size={13} aria-hidden="true" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <p className={styles.footnote}>
+            Une mention, un rattachement géographique ou une pièce repérée ne vaut pas validation
+            juridique. Confirmez le zonage, les limites, les servitudes et les autorisations dans
+            les sources officielles et le cahier des conditions de vente.
+          </p>
         </div>
-        <ActionList heading="À vérifier" actions={cadastral.nextActions} />
-      </section>
-
-      <section className={styles.section} aria-labelledby="urbanisme-cadastre-plu">
-        <SectionHeading
-          id="urbanisme-cadastre-plu"
-          icon={<LandPlot size={19} aria-hidden="true" />}
-          title="PLU, permis et usages"
-          intro="Les éléments sont classés selon leur présence dans une pièce ou leur détection dans les sources collectées."
-          badge={
-            <StatusBadge tone={statusTone(urbanPlanning.status)}>
-              {urbanPlanning.confidenceLabel}
-            </StatusBadge>
-          }
-        />
-        {urbanPlanning.items.length > 0 ? (
-          <ul className={styles.itemList} aria-label="Signaux urbanisme">
-            {urbanPlanning.items.map((item) => (
-              <UrbanItemCard key={item.key} item={item} />
-            ))}
-          </ul>
-        ) : (
-          <EmptyState>
-            Aucun signal PLU, permis, servitude, copropriété ou usage n’est rattaché aux sources
-            collectées. Consultez le document d’urbanisme opposable de la commune et le cahier des
-            conditions.
-          </EmptyState>
-        )}
-        {urbanPlanning.missingChecks.length > 0 ? (
-          <ActionList heading="Contrôles manquants" actions={urbanPlanning.missingChecks} />
-        ) : null}
-      </section>
-
-      <section className={styles.section} aria-labelledby="urbanisme-cadastre-risques">
-        <SectionHeading
-          id="urbanisme-cadastre-risques"
-          icon={<ShieldAlert size={19} aria-hidden="true" />}
-          title="Risques et signaux fonciers"
-          intro="Les points ci-dessous viennent des risques déjà rattachés au dossier et restent à qualifier dans les pièces officielles."
-        />
-        {relevantRisks.length > 0 ? (
-          <ul className={styles.riskList} aria-label="Risques fonciers">
-            {relevantRisks.map((risk, index) => (
-              <RiskCard key={`${risk.risk_type}-${risk.risk_label}-${index}`} risk={risk} />
-            ))}
-          </ul>
-        ) : (
-          <EmptyState>
-            {(sale.risks ?? []).length > 0
-              ? "Les risques présents dans le dossier ne portent pas explicitement sur l’urbanisme, le cadastre ou l’environnement dans les informations disponibles ici."
-              : "Aucun risque urbanisme / foncier n’est rattaché aux sources collectées. Cela ne vaut pas absence de risque."}
-          </EmptyState>
-        )}
-      </section>
-
-      <section className={styles.section} aria-labelledby="urbanisme-cadastre-sources">
-        <SectionHeading
-          id="urbanisme-cadastre-sources"
-          icon={<ExternalLink size={18} aria-hidden="true" />}
-          title="Sources officielles"
-          intro="À consulter pour confirmer le zonage, la parcelle et les risques autour du bien."
-        />
-        <ul className={styles.sourceList}>
-          {OFFICIAL_SOURCES.map((source) => (
-            <li key={source.href}>
-              <a className={styles.sourceLink} href={source.href} target="_blank" rel="noreferrer">
-                {source.label} <ExternalLink size={13} aria-hidden="true" />
-              </a>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <p className={styles.footnote}>
-        Une mention, un rattachement géographique ou une pièce repérée ne vaut pas validation
-        juridique. Confirmez le zonage, les limites, les servitudes et les autorisations dans les
-        sources officielles et le cahier des conditions de vente.
-      </p>
+      </details>
     </section>
   );
 }
@@ -350,6 +392,114 @@ function SummaryCard({
       <p className={styles.summaryDetail}>{detail}</p>
     </div>
   );
+}
+
+function hasAddress(sale: AuctionSale): boolean {
+  return Boolean(displayText(sale.address));
+}
+
+function locationSummary(sale: AuctionSale): string | null {
+  const address = displayText(sale.address);
+  const locality = [displayText(sale.postal_code), displayText(sale.city)]
+    .filter(Boolean)
+    .join(" ");
+  if (address && locality) return `${address}, ${locality}`;
+  return address ?? locality ?? null;
+}
+
+function locationMeta(sale: AuctionSale): string {
+  const city = displayText(sale.city);
+  const department = displayText(sale.department);
+  if (city && department) return `${city} · ${department}`;
+  if (city) return city;
+  if (department) return department;
+  return "Localisation à confirmer";
+}
+
+function addressStatusLabel(sale: AuctionSale): string {
+  if (hasAddress(sale)) return "Adresse connue";
+  if (displayText(sale.city)) return "Commune connue";
+  return "Adresse à confirmer";
+}
+
+function addressStatusDetail(sale: AuctionSale): string {
+  if (hasAddress(sale)) return locationMeta(sale);
+  if (displayText(sale.city)) return "Voie et numéro non fournis";
+  return "Aucun point de départ fiable";
+}
+
+function parcelStatusLabel(analysis: CadastralAnalysis): string {
+  const inferredReference = analysis.references.some(
+    (reference) => reference.confidence === "inferred",
+  );
+  const explicitReference = analysis.references.some(
+    (reference) => reference.confidence === "structured" || reference.confidence === "direct",
+  );
+
+  if (inferredReference && !explicitReference) return "Parcelle candidate";
+  if (explicitReference) return "Référence repérée";
+  if (analysis.documents.length > 0) return "Pièce repérée";
+  if (analysis.landSurfaceM2 != null) return "À rattacher";
+  return "À rattacher";
+}
+
+function parcelStatusDetail(analysis: CadastralAnalysis): string {
+  const firstReference = analysis.references[0];
+  if (firstReference) {
+    const reference = formatCadastralReference(firstReference);
+    return firstReference.confidence === "inferred"
+      ? `${reference} · à recouper`
+      : `${reference} · à vérifier dans le plan officiel`;
+  }
+  if (analysis.landSurfaceM2 != null) {
+    return `${formatSurface(analysis.landSurfaceM2)} de terrain · sans section/numéro`;
+  }
+  if (analysis.documents.length > 0) return "Section et numéro à extraire de la pièce";
+  return "Aucune référence section / numéro";
+}
+
+function urbanStatusShortLabel(status: UrbanPlanningAnalysis["status"]): string {
+  if (status === "documented") return "Pièce repérée";
+  if (status === "source_signals") return "À confirmer";
+  return "À qualifier";
+}
+
+function urbanStatusShortDetail(
+  analysis: UrbanPlanningAnalysis,
+  relevantRisks: SaleRisk[],
+): string {
+  if (relevantRisks.length > 0) {
+    return `${relevantRisks.length} signal${relevantRisks.length > 1 ? "s" : ""} à qualifier`;
+  }
+  if (analysis.items.length > 0) {
+    return `${analysis.items.length} élément${analysis.items.length > 1 ? "s" : ""} à relire`;
+  }
+  return "PLU et usages non qualifiés";
+}
+
+function firstNextAction(
+  cadastral: CadastralAnalysis,
+  urbanPlanning: UrbanPlanningAnalysis,
+): string {
+  if (cadastral.references.length > 0) {
+    return "Confirmer la section et le numéro dans le plan cadastral officiel.";
+  }
+  if (cadastral.documents.length > 0) {
+    return "Extraire la section et le numéro depuis la pièce cadastrale.";
+  }
+  if (cadastral.landSurfaceM2 != null) {
+    return "Rattacher la surface terrain à une parcelle officielle.";
+  }
+  return urbanPlanning.nextActions[0] ?? "Rattacher l’adresse à une parcelle, puis la recouper.";
+}
+
+function displayText(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text || /^(?:n\.? ?c\.?|non renseign[ée]e?|inconnu|à confirmer)$/i.test(text)) {
+    return null;
+  }
+  return text;
 }
 
 function UrbanItemCard({ item }: { item: UrbanPlanningItem }) {
@@ -602,39 +752,6 @@ function parcelTitle(parcel: StructuredCadastralParcel): string {
 
 function formatSurface(value: number): string {
   return `${Math.round(value).toLocaleString("fr-FR")} m²`;
-}
-
-function cadastralStatusLabel(analysis: CadastralAnalysis): string {
-  if (
-    analysis.status === "identified" &&
-    analysis.references.length > 0 &&
-    analysis.references.every((reference) => reference.confidence === "inferred")
-  ) {
-    return "À recouper";
-  }
-  switch (analysis.status) {
-    case "identified":
-      return "Référence repérée";
-    case "partial":
-      return "Référence partielle";
-    case "document_referenced":
-      return "Pièce repérée";
-    case "surface_only":
-      return "Surface connue";
-    default:
-      return "À rattacher";
-  }
-}
-
-function urbanStatusLabel(status: UrbanPlanningAnalysis["status"]): string {
-  switch (status) {
-    case "documented":
-      return "Pièce repérée";
-    case "source_signals":
-      return "Signaux à confirmer";
-    default:
-      return "À qualifier";
-  }
 }
 
 function statusTone(status: string, confidenceLabel = ""): "good" | "watch" | "missing" {

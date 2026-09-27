@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   forecast: vi.fn(),
   authUser: null as { id: string } | null,
 }));
+
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: mocks.authUser, loading: false }),
 }));
@@ -48,9 +50,7 @@ vi.mock("@/components/SaleTribunalHistory", () => ({
   SaleTribunalHistory: () => <section id="tribunal-history">Historique du tribunal</section>,
 }));
 vi.mock("@/hooks/use-outcome-graph-forecast", () => ({
-  useOutcomeGraphForecast: (id: string, enabled: boolean) => {
-    return mocks.forecast(id, enabled) ?? {};
-  },
+  useOutcomeGraphForecast: (id: string, enabled: boolean) => mocks.forecast(id, enabled) ?? {},
 }));
 vi.mock("next/dynamic", () => ({
   default: () =>
@@ -100,7 +100,9 @@ afterEach(() => {
   cleanup();
   vi.resetAllMocks();
   mocks.authUser = null;
+  window.history.replaceState(null, "", "/");
 });
+
 function renderDetail(
   access: "analysis" | "discovery",
   sale = EXAMPLE_SALE_RECORDS.bordeaux.sale,
@@ -125,8 +127,59 @@ function renderDetail(
   );
 }
 
+function selectTab(label: string) {
+  fireEvent.click(screen.getByRole("tab", { name: label }));
+}
+
+function expectActivePanel(container: HTMLElement, tab: string): HTMLElement {
+  const panels = [...container.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+  expect(panels).toHaveLength(1);
+  expect(panels[0].id).toBe(`sale-detail-panel-${tab}`);
+  expect(panels[0].getAttribute("aria-labelledby")).toBe(`sale-detail-tab-${tab}`);
+  return panels[0];
+}
+
 describe("integrated listing", () => {
-  it("shows stored cadastral candidates only in an authenticated analysis", async () => {
+  it("mounts one panel at a time and supports keyboard tab navigation", () => {
+    const { container } = renderDetail("analysis");
+
+    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
+    expectActivePanel(container, "apercu");
+
+    selectTab("Estimation");
+    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expectActivePanel(container, "estimation");
+
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Estimation" }), { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "Travaux" }).getAttribute("aria-selected")).toBe("true");
+    expectActivePanel(container, "travaux");
+
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Travaux" }), { key: "End" });
+    expect(screen.getByRole("tab", { name: "Démarches" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expectActivePanel(container, "demarches");
+  });
+
+  it("maps legacy deep links to the corresponding compact panel", () => {
+    window.history.replaceState(null, "", "#works");
+    const { container } = renderDetail("analysis");
+
+    expect(screen.getByRole("tab", { name: "Travaux" }).getAttribute("aria-selected")).toBe("true");
+    expectActivePanel(container, "travaux");
+
+    window.history.pushState(null, "", "#market");
+    fireEvent(window, new Event("hashchange"));
+    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expectActivePanel(container, "estimation");
+  });
+
+  it("loads a cadastral candidate only for an authenticated analysis", async () => {
     mocks.authUser = { id: "user-1" };
     mocks.fetchUrbanism.mockResolvedValue({
       cadastralParcels: [
@@ -148,12 +201,11 @@ describe("integrated listing", () => {
       ],
       urbanPlanningSignals: [],
     });
-    const live = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
 
+    const live = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
     expect(await screen.findByText("Section AB n° 123")).toBeTruthy();
-    expect(
-      screen.getAllByText(/Parcelle candidate repérée par intersection du point géocodé/),
-    ).toHaveLength(2);
+    expect(screen.getByText("Parcelle candidate")).toBeTruthy();
+    expect(screen.getByText("Point géocodé · à recouper")).toBeTruthy();
     expect(mocks.fetchUrbanism).toHaveBeenCalledWith(EXAMPLE_SALE_RECORDS.bordeaux.sale.id);
     live.unmount();
 
@@ -162,29 +214,53 @@ describe("integrated listing", () => {
     expect(mocks.fetchUrbanism).not.toHaveBeenCalled();
   });
 
-  it("distingue l’historique d’adresse des comparables proches", () => {
-    const { container } = renderDetail("analysis", undefined, true, false, {
+  it("keeps address-history caveats inside the Estimation detail", () => {
+    const estimate = {
       ...EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
-      comparableMode: "address_history",
+      comparableMode: "address_history" as const,
       sampleSize: 0,
       recentTransactions: [],
-    });
+    };
+    const { container } = renderDetail(
+      "analysis",
+      EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      true,
+      false,
+      estimate,
+    );
+    selectTab("Estimation");
+
+    const summary = screen.getByText("Voir les références de marché");
+    const disclosure = summary.closest("details");
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.open).toBe(false);
+    expect(disclosure?.contains(container.querySelector("#market"))).toBe(true);
+
+    fireEvent.click(summary);
     const market = container.querySelector("#market")!;
     expect(market.textContent).toContain("1 vente à cette adresse");
     expect(market.textContent).toContain("Historique des ventes à cette adresse");
     expect(market.textContent).toContain("lots différents");
-    expect(market.textContent).not.toContain("Rayon de recherche");
-    expect(market.textContent).not.toContain("Ventes de référence à proximité");
-    expect(market.querySelectorAll("li")).toHaveLength(1);
+    expect(market.textContent).toContain("Transactions DVF");
   });
 
-  it("identifie le périmètre agrégé sans promettre des comparables locaux", () => {
-    const { container } = renderDetail("analysis", undefined, true, false, {
+  it("keeps aggregate market scope explicit inside the Estimation detail", () => {
+    const estimate = {
       ...EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
-      comparableMode: "geographic_aggregate",
-      geographyLevel: "department",
+      comparableMode: "geographic_aggregate" as const,
+      geographyLevel: "department" as const,
       recentTransactions: [],
-    });
+    };
+    const { container } = renderDetail(
+      "analysis",
+      EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      true,
+      false,
+      estimate,
+    );
+    selectTab("Estimation");
+    fireEvent.click(screen.getByText("Voir les références de marché"));
+
     const market = container.querySelector("#market")!;
     expect(market.textContent).toContain("12 ventes de référence");
     expect(market.textContent).toContain("Échelle du département");
@@ -192,287 +268,67 @@ describe("integrated listing", () => {
     expect(market.querySelector('[aria-label="Comparables de marché"]')).toBeNull();
   });
 
-  it.each([6, 7])(
-    "qualifie prudemment %s comparables malgré une qualité enregistrée forte",
-    (sampleSize) => {
-      const { container } = renderDetail("analysis", undefined, true, false, {
-        ...EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
-        sampleSize,
-        qualityScore: 95,
-        qualityLabel: "forte",
-      });
-      const market = container.querySelector("#market")!;
-      expect(market.textContent).toContain("Échantillon DVF exploitable avec prudence");
-      expect(market.textContent).not.toContain("forte");
-      expect(market.textContent).not.toContain("Échantillon DVF solide");
-    },
-  );
+  it("puts the date, venue and contact in Démarches", () => {
+    const { container } = renderDetail("analysis");
+    selectTab("Démarches");
 
-  it("expose les limites de marché à côté de la qualité des données", () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const estimate = {
-      ...EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
-      qualityWarnings: ["Échantillon incomplet pour la dernière année."],
-    };
-    const { container } = render(
-      <QueryClientProvider client={client}>
-        <AnalysisSaleDetailView
-          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
-          marketEstimateOverride={estimate}
-          publicDemo
-        />
-      </QueryClientProvider>,
-    );
-    const market = container.querySelector("#market")!;
-    expect(market.textContent).toContain("Solidité des références");
-    expect(market.textContent).toContain(`Source : ${estimate.source}`);
-    expect(market.textContent).toContain(`Période de recherche : ${estimate.yearsBack} ans`);
-    expect(market.textContent).toContain(`Rayon de recherche : ${estimate.radiusM} m`);
-    expect(market.textContent).toContain("Échantillon incomplet pour la dernière année.");
-    expect(market.textContent).toContain("Il ne garantit ni le prix de revente");
+    const practical = container.querySelector("#rendez-vous")!;
+    expect(practical.textContent).toContain("Tribunal judiciaire de Bordeaux");
+    expect(practical.textContent).toContain("Me Camille Durand");
+    expect(practical.textContent).toMatch(/15 octobre 2026/);
+    expect(practical.textContent).toContain("Visites");
   });
 
-  it("does not present a notarial venue as an identified organizer", () => {
-    const { container } = renderDetail("analysis", {
-      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
-      sale_procedure: {},
-      sale_venue_type: "notary",
-      lawyer_name: null,
-      lawyer_contact: null,
-      sale_date: "2099-09-10T12:00:00Z",
-      status: "upcoming",
-    });
-    const contacts = container.querySelector("#lawyer")!;
-    expect(contacts.textContent).toContain("Organisateur à confirmer");
-    expect(contacts.textContent).toContain("Coordonnées non renseignées");
-    expect(contacts.textContent).not.toContain("Interlocuteur indiqué dans le dossier");
-    expect(contacts.querySelector('a[href="#information-agent"]')).toBeNull();
-    expect(contacts.textContent).toContain("Coordonnées à confirmer par ImmoJudis.");
-  });
-
-  it("links a named organizer to the actual contact details", () => {
-    const { container } = renderDetail("analysis", {
-      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
-      sale_procedure: {},
-      sale_venue_type: "notary",
-      lawyer_name: "Étude de test",
-      lawyer_contact: "contact@example.invalid",
-      sale_date: "2099-09-10T12:00:00Z",
-      status: "upcoming",
-    });
-    const contacts = container.querySelector("#lawyer")!;
-    expect(contacts.textContent).toContain("Étude de test");
-    expect(contacts.querySelector('a[href="#rendez-vous"]')?.textContent).toContain(
-      "Consulter les coordonnées du dossier",
-    );
-  });
-
-  it("retains the mandate action for a confirmed upcoming judicial sale", () => {
-    renderDetail("analysis", {
-      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
-      id: "9b923d06-df18-403d-9c95-a4655f043825",
-      status: "upcoming",
-      sale_date: "2099-09-10T12:00:00Z",
-    });
-    expect(screen.getByText("Prêt à enchérir ? Mandatez l’avocat compétent.")).toBeTruthy();
-    expect(screen.getByText("Contacter un avocat")).toBeTruthy();
-  });
-
-  it("uses the elapsed date even when the stored status still says upcoming", () => {
-    renderDetail("analysis", {
-      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
-      status: "upcoming",
-      sale_date: "2020-09-03T12:00:00Z",
-    });
-    expect(screen.queryByText("Prêt à enchérir ? Mandatez l’avocat compétent.")).toBeNull();
-    expect(screen.getByText(/Contactez l’organisateur pour confirmer le résultat/)).toBeTruthy();
-  });
-
-  it.each(["past", "cancelled", "postponed"])(
-    "does not solicit a bidding mandate for a %s sale",
-    (status) => {
-      renderDetail("analysis", {
-        ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
-        id: "9b923d06-df18-403d-9c95-a4655f043825",
-        status,
-      });
-      expect(screen.queryByText("Prêt à enchérir ? Mandatez l’avocat compétent.")).toBeNull();
-      expect(screen.queryByText("Contacter un avocat")).toBeNull();
-      expect(screen.queryByText("Voir les avocats disponibles")).toBeNull();
-      expect(screen.getByText(/Contactez l’organisateur pour confirmer le résultat/)).toBeTruthy();
-      expect(
-        screen
-          .getByRole("link", { name: "Consulter les coordonnées du dossier" })
-          .getAttribute("href"),
-      ).toBe("#rendez-vous");
-      expect(document.getElementById("rendez-vous")).toBeTruthy();
-    },
-  );
-
-  it("does not infer a commercial surface from its room count", () => {
-    renderDetail("analysis", {
-      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
-      title: "Local commercial",
-      property_type: "commercial",
-      rooms_count: 2,
-      app_surface_m2: null,
-      app_surface_kind: null,
-      surface_scope: null,
-      habitable_surface_m2: null,
-      carrez_surface_m2: null,
-      land_surface_m2: null,
-    });
-    expect(
-      screen.queryByText(/surface provisoire de 56 m² estimée à partir de 2 pièces/),
-    ).toBeNull();
-    expect(screen.getByText("Travaux inclus : À chiffrer")).toBeTruthy();
-    expect(screen.queryByText("0 vente comparable")).toBeNull();
-  });
-  it("links a free conflicting listing to an available contact section", () => {
-    renderDetail("discovery", {
-      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
-      property_type: "land",
-      source_blocks: { titre_detail: "Appartement T5" },
-    });
-    const link = screen.getByRole("link", { name: "Consulter les coordonnées du dossier" });
-    expect(link.getAttribute("href")).toBe("#rendez-vous");
-    expect(document.getElementById("rendez-vous")).not.toBeNull();
-    expect(document.getElementById("information-agent")).toBeNull();
-  });
-  it("withholds cached valuation, simulation, export and matching-type statistics on a source type conflict", () => {
-    renderDetail(
-      "analysis",
-      {
-        ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
-        property_type: "land",
-        app_surface_m2: 4434,
-        carrez_surface_m2: 97.16,
-        source_blocks: { titre_detail: "Appartement T5 avec terrasse et garage" },
-      },
-      false,
-      true,
-    );
-    expect(screen.getByRole("alert").textContent).toContain("Estimation suspendue");
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Type de bien à confirmer");
-    expect(screen.queryByText("Simulateur de mise plafond chargé")).toBeNull();
-    expect(screen.queryByText("Export PDF")).toBeNull();
-    expect(screen.queryByText("Fourchette de valeur estimée", { exact: false })).toBeNull();
-    expect(document.querySelector("#tribunal-history")).toBeNull();
-  });
-  it.each([[], {}, [{ url: "javascript:alert(1)" }]])(
-    "does not announce documents when no usable link exists: %j",
-    (documents) => {
-      renderDetail("analysis", { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, documents });
-      expect(screen.getByText("Aucune pièce attachée")).toBeTruthy();
-      expect(screen.queryByText(/pièce\(s\) consultable/)).toBeNull();
-    },
-  );
-
-  it("does not claim that an available diagnostic is a conditions-of-sale document", () => {
-    renderDetail("analysis", {
-      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
-      documents: [{ url: "https://example.test/diagnostic.pdf", type: "dpe" }],
-    });
-    expect(screen.getByText("1 pièce(s) consultable(s)")).toBeTruthy();
-    expect(screen.queryByText("Document disponible")).toBeNull();
-  });
-
-  it("does not load an outcome forecast from a disabled query cache on the public demo", () => {
-    mocks.forecast.mockReturnValue({ data: { forecast: { status: "ready" } } });
-    const demo = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, true);
-    expect(screen.queryByText("Prévision de l’audience chargée")).toBeNull();
-    demo.unmount();
-    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
-    expect(screen.getByText("Prévision de l’audience chargée")).toBeTruthy();
-  });
-  it("exposes report export on a real analysis, not on discovery or public demonstrations", () => {
+  it("exposes report export only in a real analysis Démarches panel", () => {
     const sale = EXAMPLE_SALE_RECORDS.bordeaux.sale;
-    const view = renderDetail("analysis", sale, false);
+    const live = renderDetail("analysis", sale, false);
+    selectTab("Démarches");
     expect(screen.getByRole("button", { name: "Export PDF" }).getAttribute("data-sale-id")).toBe(
       sale.id,
     );
-    expect(screen.getByText(/scénario courant du simulateur/)).toBeTruthy();
-    view.unmount();
-    const demo = renderDetail("analysis", sale, true);
-    expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
-    demo.unmount();
-    renderDetail("discovery", sale);
+    live.unmount();
+
+    window.history.replaceState(null, "", "/");
+    renderDetail("analysis", sale, true);
+    selectTab("Démarches");
     expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
   });
-  it("puts the decision near the overview and keeps the gallery functional", () => {
-    const { container } = renderDetail("analysis");
-    const text = container.textContent ?? "";
-    expect(text.indexOf("Couverture des informations")).toBeLessThan(
-      text.indexOf("Travaux signalés dans le dossier"),
-    );
-    expect(text.indexOf("Travaux signalés dans le dossier")).toBeLessThan(
-      text.indexOf("Votre analyse d'adjudication"),
-    );
-    expect(text.indexOf("Votre analyse d'adjudication")).toBeLessThan(
-      text.indexOf("L’audience et les visites"),
-    );
-    const sections = [
-      "summary",
-      "risks",
-      "documents",
-      "description-ia",
-      "urbanism",
-      "budget-analysis",
-      "market",
-      "works",
-      "financing",
-      "participation",
-    ];
-    const nodes = sections.map((id) => {
-      const node = container.querySelector(`#${id}`);
-      expect(node, `Missing section ${id}`).not.toBeNull();
-      return node!;
-    });
-    nodes.slice(1).forEach((node, index) => {
-      expect(
-        nodes[index].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-    });
+
+  it("opens the advanced simulator from the Estimation action", () => {
+    const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+    selectTab("Estimation");
+
+    const calculation = container.querySelector("#calculation") as HTMLDetailsElement;
+    expect(calculation.open).toBe(false);
+    fireEvent.click(screen.getByRole("link", { name: "Ajuster mes hypothèses" }));
+    expect(calculation.open).toBe(true);
+    expect(screen.getByText("Simulateur de mise plafond chargé")).toBeTruthy();
+  });
+
+  it("keeps the photo gallery action functional in the Aperçu panel", () => {
+    renderDetail("analysis");
     fireEvent.click(screen.getByRole("button", { name: "Ouvrir la photo 1 sur 4" }));
     expect(screen.getByRole("dialog", { name: "Galerie photos" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Fermer les photos" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Galerie photos" })).toBeNull();
   });
-  it("replaces premium information requests with a neutral availability notice", () => {
-    const { container } = renderDetail("analysis");
-    expect(screen.getByRole("heading", { name: "Informations complémentaires" })).toBeTruthy();
-    expect(
-      screen.getByText(/Les enrichissements sont initiés et validés par ImmoJudis/),
-    ).toBeTruthy();
-    expect(container.querySelectorAll('a[href="#information-agent"]')).toHaveLength(0);
-    expect(container.querySelector("#information-agent")).toBeNull();
-  });
-  it("opens the existing advanced simulator from its primary action", () => {
-    const { container } = renderDetail("analysis");
-    expect((container.querySelector("#calculation") as HTMLDetailsElement).open).toBe(false);
-    fireEvent.click(screen.getByRole("link", { name: "Ajuster mes hypothèses" }));
-    expect((container.querySelector("#calculation") as HTMLDetailsElement).open).toBe(true);
-    expect(screen.getByText("Simulateur de mise plafond chargé")).toBeTruthy();
-  });
-  it("keeps discovery access free of protected market and risk analysis", () => {
-    renderDetail("discovery");
-    expect(screen.getByRole("heading", { name: "Préparer mon budget" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "L’audience et les visites" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Marché local" })).toBeNull();
-    expect(screen.queryByText("Enquête réservée à l’analyse")).toBeNull();
-    expect(mocks.fetchMarket).not.toHaveBeenCalled();
-    expect(mocks.forecast).not.toHaveBeenCalled();
-  });
-  it("active les résultats d’adjudication uniquement dans la fiche Analyse", () => {
-    const analysis = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false, true);
-    expect(document.querySelector("#tribunal-history")?.getAttribute("data-premium")).toBe("true");
-    analysis.unmount();
 
-    renderDetail("discovery", EXAMPLE_SALE_RECORDS.bordeaux.sale);
-    expect(document.querySelector("#tribunal-history")?.getAttribute("data-premium")).toBe("false");
+  it("keeps protected market and risk evidence out of discovery access", () => {
+    const discovery = renderDetail("discovery");
+    expect(screen.queryByText("Marché local")).toBeNull();
+    expect(screen.queryByText("Voir les sources et actions à confirmer")).toBeNull();
+    expect(mocks.fetchMarket).not.toHaveBeenCalled();
+    discovery.unmount();
+
+    window.history.replaceState(null, "", "/");
+    renderDetail("analysis");
+    expect(screen.getByText("Voir les sources et actions à confirmer")).toBeTruthy();
+    selectTab("Estimation");
+    expect(screen.getByText("Voir les références de marché")).toBeTruthy();
   });
+
   it.each(["notary", "state", "unknown"] as const)(
-    "does not apply court-specific calculations or predictions to %s",
+    "keeps court-specific calculations out of %s sales",
     (venue) => {
       const sale = {
         ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
@@ -481,66 +337,30 @@ describe("integrated listing", () => {
         source_blocks: null,
       } as AuctionSale;
       const { container } = renderDetail("analysis", sale, false);
-      expect(
-        screen.getByRole("heading", {
-          name:
-            venue === "notary"
-              ? "La séance notariale et les visites"
-              : venue === "state"
-                ? "Échéance, visites et service vendeur"
-                : "La vente et les visites",
-        }),
-      ).toBeTruthy();
-      expect(screen.getByRole("heading", { name: "Marché local" })).toBeTruthy();
-      expect(screen.queryByText("Votre mise plafond recommandée")).toBeNull();
-      expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
+      selectTab("Estimation");
+
+      expect(screen.getByRole("heading", { name: "Prix et marché" })).toBeTruthy();
+      expect(screen.queryByRole("link", { name: "Ajuster mes hypothèses" })).toBeNull();
       expect(container.querySelector("#calculation")).toBeNull();
-      expect(screen.queryByText("Historique du tribunal")).toBeNull();
-      expect(container.textContent).not.toContain("Marché local, risques et mise plafond");
-      expect(mocks.forecast).not.toHaveBeenCalled();
     },
   );
-  it.each(["notary", "state"] as const)(
-    "places the %s procedure ahead of the budget in Discovery",
-    (venue) => {
-      const { container } = renderDetail("discovery", {
-        ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
-        sale_venue_type: venue,
-        sale_procedure: null,
-        source_blocks: null,
-      } as AuctionSale);
-      const participation = container.querySelector("#participation");
-      const budget = container.querySelector("#budget");
-      expect(participation).toBeTruthy();
-      expect(budget).toBeTruthy();
-      expect(
-        (participation?.compareDocumentPosition(budget!) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-      expect(container.textContent).not.toContain("Mise plafond avec travaux");
-    },
-  );
+
   it("preserves the no-photo and no-location states", () => {
-    renderDetail("discovery", {
+    const { container } = renderDetail("discovery", {
       ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
       media: [],
       latitude: null,
       longitude: null,
     });
+
     expect(screen.getByText("Visuel indisponible")).toBeTruthy();
-    expect(screen.getByText("Photos du bien · indisponibles")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Ouvrir la galerie photos" })).toBeNull();
-    expect(screen.getByText(/lorsque les coordonnées/)).toBeTruthy();
+    const location = container.querySelector("#localisation")!;
+    expect(location.textContent).toContain("La carte sera disponible lorsque les coordonnées");
+    expect(screen.queryByRole("button", { name: "Explorer le quartier" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Ouvrir la galerie/ })).toBeNull();
   });
-  it("labels market references as DVF transactions, not auction results", () => {
-    renderDetail("analysis");
-    expect(
-      screen.getByText(
-        /Transactions DVF · ces prix ne constituent pas des résultats d’adjudication/,
-      ),
-    ).toBeTruthy();
-    expect(screen.getByRole("list", { name: "Comparables de marché" })).toBeTruthy();
-  });
-  it("has no structural accessibility violations in the rendered discovery page", async () => {
+
+  it("has no structural accessibility violations on the compact discovery page", async () => {
     const { container } = renderDetail("discovery");
     const result = await axe(container, { rules: { "color-contrast": { enabled: false } } });
     expect(

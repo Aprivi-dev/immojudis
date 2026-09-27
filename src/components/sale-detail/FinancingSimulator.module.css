@@ -1,8 +1,8 @@
 .section {
   min-width: 0;
-  margin-top: 28px;
+  margin-top: 24px;
   border: 1px solid rgb(19 34 56 / 12%);
-  border-radius: 20px;
+  border-radius: 18px;
   background: var(--surface, #fffaf2);
   color: var(--brand-navy, #132238);
   box-shadow: 0 12px 34px rgb(19 34 56 / 6%);
@@ -14,7 +14,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  padding: 24px 24px 18px;
+  padding: 22px 22px 16px;
 }
 
 .eyebrow,
@@ -29,7 +29,7 @@
 
 .title {
   margin: 5px 0 0;
-  font-size: clamp(26px, 4vw, 34px);
+  font-size: clamp(24px, 4vw, 32px);
   line-height: 1.1;
   letter-spacing: -0.025em;
 }
@@ -46,7 +46,7 @@
 
 .subtitle {
   max-width: 58ch;
-  margin: 8px 0 0;
+  margin: 6px 0 0;
 }
 
 .illustrativeBadge {
@@ -61,43 +61,11 @@
   white-space: nowrap;
 }
 
-.disclaimer {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 0 24px 18px;
-  border: 1px solid rgb(156 100 43 / 24%);
-  border-radius: 12px;
-  background: rgb(255 247 235 / 82%);
-  padding: 12px 14px;
-  color: var(--brand-navy, #132238);
-}
-
-.disclaimer p {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.disclaimerIcon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 19px;
-  height: 19px;
-  border-radius: 50%;
-  background: var(--gold-soft, #9c642b);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
   gap: 18px;
-  padding: 0 24px 24px;
+  padding: 0 22px 22px;
 }
 
 .inputPanel,
@@ -106,7 +74,7 @@
   border: 1px solid rgb(19 34 56 / 10%);
   border-radius: 16px;
   background: #fff;
-  padding: 20px;
+  padding: 18px;
 }
 
 .fieldset {
@@ -125,14 +93,14 @@
 }
 
 .panelIntro {
-  margin: 4px 0 20px;
+  margin: 4px 0 16px;
 }
 
 .fieldGroup {
   display: grid;
   gap: 6px;
   min-width: 0;
-  margin-top: 16px;
+  margin-top: 13px;
 }
 
 .fieldGroup:first-of-type {
@@ -186,7 +154,15 @@
 
 .help {
   margin: 0;
+  max-width: 48ch;
   font-size: 12px;
+}
+
+.privateNote {
+  margin: 14px 0 0;
+  color: rgb(19 34 56 / 52%);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .error {
@@ -248,7 +224,7 @@
 }
 
 .insuranceBlock {
-  margin-top: 20px;
+  margin-top: 16px;
   border-top: 1px solid rgb(19 34 56 / 10%);
   padding-top: 16px;
 }
@@ -284,12 +260,12 @@
 }
 
 .resultTitle {
-  margin-top: 5px;
-  font-size: 26px;
+  margin-top: 4px;
+  font-size: 25px;
 }
 
 .resultPanel .panelIntro {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .resultStatus {
@@ -300,7 +276,7 @@
   border: 1px solid rgb(156 100 43 / 20%);
   border-radius: 12px;
   background: rgb(201 141 69 / 12%);
-  padding: 14px;
+  padding: 16px;
 }
 
 .resultLabel {
@@ -315,7 +291,7 @@
 .resultStatus strong {
   min-width: 0;
   color: var(--brand-navy, #132238);
-  font-size: clamp(28px, 4vw, 38px);
+  font-size: clamp(30px, 4vw, 42px);
   line-height: 1.05;
   letter-spacing: -0.045em;
   overflow-wrap: anywhere;
@@ -329,9 +305,54 @@
   text-align: right;
 }
 
+.resultSummary {
+  margin: 12px 0 0;
+  color: rgb(19 34 56 / 66%);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.details {
+  margin-top: 16px;
+  border-top: 1px solid rgb(19 34 56 / 10%);
+  padding-top: 12px;
+}
+
+.details summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--brand-navy, #132238);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.details summary::marker {
+  color: var(--gold-soft, #9c642b);
+}
+
+.details summary:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid var(--gold-soft, #9c642b);
+  outline-offset: 3px;
+}
+
+.detailContent {
+  padding-top: 4px;
+}
+
+.detailIntro {
+  margin: 0 0 8px;
+  color: rgb(19 34 56 / 62%);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .resultRows {
   display: grid;
-  margin: 16px 0 0;
+  margin: 4px 0 0;
 }
 
 .resultRows > div {
@@ -379,7 +400,7 @@
 }
 
 .resultNote {
-  margin: 16px 0 0;
+  margin: 14px 0 0;
   font-size: 11px;
 }
 
@@ -387,10 +408,6 @@
   .header {
     flex-direction: column;
     padding: 20px 16px 16px;
-  }
-
-  .disclaimer {
-    margin-inline: 16px;
   }
 
   .layout {

@@ -3,8 +3,8 @@
 import { ListingQualityNotice } from "@/components/ListingQualityNotice";
 import { ListingPhoto } from "@/components/ListingPhoto";
 
-import { useMemo, useRef, useState } from "react";
-import type { ReactNode, UIEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode, UIEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
@@ -50,6 +50,8 @@ import { ListingDataCoverage } from "@/components/sale-detail/ListingDataCoverag
 import { ListingWorks, WorksSpotlight } from "@/components/sale-detail/ListingWorks";
 import { FinancingSimulator } from "@/components/sale-detail/FinancingSimulator";
 import { UrbanismeCadastrePanel } from "@/components/sale-detail/UrbanismeCadastrePanel";
+import { SaleDetailTabNav, type SaleDetailTab } from "@/components/sale-detail/SaleDetailTabNav";
+import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
 import { fetchPrecomputedMarketEstimate, fetchSaleUrbanismeCadastre } from "@/lib/client-api";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
@@ -151,7 +153,9 @@ function SimplifiedSaleDetailView({
   adjudicationStatisticsEnabled = false,
   access,
 }: SaleDetailProps & { access: "discovery" | "analysis" }) {
-  const [calculationOpen, setCalculationOpen] = useState(false);
+  const [calculationOpen, setCalculationOpen] = useState(
+    () => typeof window !== "undefined" && window.location.hash === "#calculation",
+  );
   const [simulation, setSimulation] = useState<BidSimulationSnapshot | null>(null);
   const { user, loading: authLoading } = useAuth();
   const valuationConflict = listingValuationConflict(sale);
@@ -207,8 +211,55 @@ function SimplifiedSaleDetailView({
       ? heroCeilingResult.maxBid
       : null;
 
+  const [activeTab, setActiveTab] = useState<SaleDetailTab>(() =>
+    typeof window === "undefined" ? "apercu" : tabForAnchor(window.location.hash.slice(1)),
+  );
+  const [ceilingExplanationOpen, setCeilingExplanationOpen] = useState(
+    () => typeof window !== "undefined" && window.location.hash === "#why-this-ceiling",
+  );
+
+  useEffect(() => {
+    const syncTabWithHash = () => {
+      const anchor = window.location.hash.slice(1);
+      setActiveTab(tabForAnchor(anchor));
+      if (anchor === "calculation") setCalculationOpen(true);
+      if (anchor === "why-this-ceiling") setCeilingExplanationOpen(true);
+    };
+    window.addEventListener("hashchange", syncTabWithHash);
+    return () => window.removeEventListener("hashchange", syncTabWithHash);
+  }, []);
+
+  useEffect(() => {
+    const anchor = window.location.hash.slice(1);
+    if (!anchor || isTabAnchor(anchor) || tabForAnchor(anchor) !== activeTab) return;
+    const target = document.getElementById(anchor);
+    target?.scrollIntoView?.({ block: "start" });
+  }, [activeTab, calculationOpen, ceilingExplanationOpen]);
+
+  const changeTab = (tab: SaleDetailTab) => {
+    setActiveTab(tab);
+    window.history.replaceState(null, "", `#${tab}`);
+    document.getElementById("annonce-sections")?.scrollIntoView?.({ block: "start" });
+  };
+
+  const handleSectionLink = (event: ReactMouseEvent<HTMLElement>) => {
+    const origin = event.target;
+    if (!(origin instanceof Element)) return;
+    const link = origin.closest<HTMLAnchorElement>('a[href^="#"]');
+    const anchor = link?.getAttribute("href")?.slice(1);
+    if (!anchor) return;
+    const tab = knownTabForAnchor(anchor);
+    if (!tab) return;
+    if (anchor === "calculation") setCalculationOpen(true);
+    if (anchor === "why-this-ceiling") setCeilingExplanationOpen(true);
+    if (tab === activeTab && document.getElementById(anchor)) return;
+    event.preventDefault();
+    window.history.pushState(null, "", `#${anchor}`);
+    setActiveTab(tab);
+  };
+
   return (
-    <main className={listingStyles.page}>
+    <main className={listingStyles.page} onClickCapture={handleSectionLink}>
       <div className={listingStyles.container}>
         <div className={listingStyles.topbar}>
           <Link
@@ -220,7 +271,6 @@ function SimplifiedSaleDetailView({
           </Link>
           <ListingActions sale={sale} publicDemo={publicDemo} />
         </div>
-
         <div className={listingStyles.upper}>
           <PropertyIdentity key={sale.id} sale={sale} publicDemo={publicDemo} />
           <div className={listingStyles.heroSummary}>
@@ -232,212 +282,359 @@ function SimplifiedSaleDetailView({
             />
           </div>
         </div>
-
         <ListingDataCoverage sale={sale} />
-
         <WorksSpotlight sale={sale} />
-        <ListingQualityNotice sale={sale} />
-
-        <div className={listingStyles.analysisHeading}>
-          <ChartNoAxesCombined className="h-6 w-6 shrink-0 text-slate-500" aria-hidden />
-          <div>
-            <h2 className={listingStyles.heading}>
-              {isTribunalSale
-                ? "Votre analyse d'adjudication"
-                : venueType === "notary"
-                  ? "Votre dossier de vente notariale"
-                  : venueType === "state"
-                    ? "Votre dossier de cession domaniale"
-                    : "Votre dossier de vente"}
-            </h2>
-            <p className={listingStyles.muted}>
-              {isTribunalSale
-                ? "Audience, risques, marché et mise plafond"
-                : venueType === "notary"
-                  ? "Étude, conditions de participation, frais et pièces"
-                  : venueType === "state"
-                    ? "Mode de cession, dossier officiel et échéance"
-                    : "Conditions, risques et informations vérifiées"}
-            </p>
-          </div>
-        </div>
-
-        {access === "analysis" &&
-        marketEstimateOverride == null &&
-        !marketEstimate &&
-        (marketQuery.data?.error || marketQuery.error) ? (
-          <div
-            className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between"
-            role="status"
-            aria-live="polite"
-          >
-            <div className="flex items-start gap-2">
-              <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              <div>
-                <p className="font-semibold">Estimation de marché à compléter</p>
-                <p className="mt-0.5">
-                  {marketQuery.data?.error ??
-                    (marketQuery.error instanceof Error
-                      ? marketQuery.error.message
-                      : "L’estimation est momentanément indisponible.")}
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => void marketQuery.refetch()}
-              disabled={marketQuery.isFetching}
-              className="min-h-10 shrink-0 rounded-lg border border-amber-400 bg-white px-3 font-semibold transition-colors hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
-            >
-              {marketQuery.isFetching ? "Calcul en cours…" : "Relancer l’estimation"}
-            </button>
-          </div>
-        ) : null}
-
-        <section id="summary" className="mt-4 scroll-mt-36">
-          {valuationConflict ? (
-            <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-6">
-              <h2 className="text-xl font-semibold">
-                Estimation suspendue : données contradictoires
-              </h2>
-              <p className="mt-3 text-sm">{valuationConflict}</p>
-              {access === "analysis" ? (
-                <p className="mt-3 text-sm text-amber-950">
-                  Les caractéristiques seront vérifiées par ImmoJudis avant toute mise à jour de
-                  cette analyse.
-                </p>
-              ) : (
-                <a href="#rendez-vous" className="mt-3 inline-block underline">
-                  Consulter les coordonnées du dossier
-                </a>
-              )}
-            </div>
-          ) : access === "analysis" && isTribunalSale ? (
-            <AnalysisDecisionPanel
-              sale={sale}
-              marketEstimate={marketEstimate}
-              marketLoading={marketQuery.isLoading && marketEstimate == null}
-              worksBudget={
-                activeSimulation?.worksKnown === false
-                  ? null
-                  : (activeSimulation?.works ?? (surface == null ? null : worksBudget))
-              }
-              recommendedCeiling={
-                (activeSimulation?.result ?? recommendations.withRefreshWorks).maxBid
-              }
-              ceilingAvailable={
-                (activeSimulation?.result ?? recommendations.withRefreshWorks).available
-              }
-              onAdjust={() => setCalculationOpen(true)}
-            />
-          ) : !isTribunalSale ? (
-            <NonJudicialDecisionPanel sale={sale} access={access} />
-          ) : (
-            <DiscoveryDecisionPanel worksBudget={surface == null ? null : worksBudget} />
-          )}
-        </section>
-
-        {access === "analysis" && isTribunalSale && !publicDemo && !valuationConflict ? (
-          <section
-            aria-label="Sauvegarde et export du rapport"
-            className="mt-4 rounded-lg border border-slate-200 bg-white p-4"
-          >
-            <h2 className="text-base font-semibold text-brand-navy">Conserver votre analyse</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Sauvegardez le rapport du dossier ou exportez-le en PDF avec le scénario courant du
-              simulateur.
-            </p>
-            <PropertyReportActions
-              saleId={sale.id}
-              compact
-              simulation={
-                activeSimulation?.result.available ? activeSimulation.reportInput : undefined
-              }
-              requireSimulation
-            />
-          </section>
-        ) : null}
-
-        <div className={listingStyles.heroDetails}>
-          <ListingPracticalDetails sale={sale} />
-          <SaleProcedureSummary sale={sale} showBadge={false} />
-        </div>
       </div>
 
-      {access === "analysis" ? (
-        isTribunalSale ? (
-          <AnalysisContent
-            sale={sale}
-            marketEstimate={marketEstimate}
-            marketLoading={marketQuery.isLoading && marketEstimate == null}
-            recommendations={recommendations}
-            simulation={activeSimulation}
-            onSimulationChange={setSimulation}
-            surface={surface}
-            calculationOpen={calculationOpen}
-            onCalculationOpenChange={setCalculationOpen}
-            publicDemo={publicDemo}
-            loadStructuredUrbanism={!publicDemo && !authLoading && Boolean(user)}
-            adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
-          />
-        ) : (
-          <NonJudicialAnalysisContent
-            sale={sale}
-            marketEstimate={marketEstimate}
-            marketLoading={marketQuery.isLoading && marketEstimate == null}
-            publicDemo={publicDemo}
-            loadStructuredUrbanism={!publicDemo && !authLoading && Boolean(user)}
-          />
-        )
-      ) : (
-        <>
-          <nav
-            aria-label="Sections de l’annonce"
-            className="sticky top-16 z-30 border-y border-brand-navy/10 bg-white/95 shadow-sm backdrop-blur"
-          >
-            <div className="mx-auto flex max-w-5xl justify-between overflow-x-auto px-4 sm:px-6">
-              {[
-                ["#description-ia", "Le bien"],
-                ["#urbanism", "Urbanisme"],
-                ["#works", "Travaux"],
-                ["#financing", "Financement"],
-                ["#participation", "Démarches"],
-              ].map(([href, label]) => (
-                <a
-                  key={href}
-                  href={href}
-                  className="whitespace-nowrap border-b-2 border-transparent px-3 py-4 text-sm font-semibold text-brand-navy/68 transition-colors hover:border-gold hover:text-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold sm:px-4"
-                >
-                  {label}
-                </a>
-              ))}
-            </div>
-          </nav>
-          <div className={listingStyles.container}>
-            {!isTribunalSale ? <SaleProcedurePanel sale={sale} /> : null}
-            <div className={listingStyles.lower}>
-              <div className={listingStyles.stack}>
+      <div id="annonce-sections" className={panelStyles.tabRegion}>
+        <SaleDetailTabNav activeTab={activeTab} onTabChange={changeTab} />
+        <div
+          id={`sale-detail-panel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={`sale-detail-tab-${activeTab}`}
+          tabIndex={0}
+          className={panelStyles.panel}
+        >
+          {activeTab === "apercu" ? (
+            <>
+              <PanelIntro
+                eyebrow="01 / Le bien"
+                title="L’essentiel sur le bien"
+                description="Description, points à vérifier et situation de la parcelle."
+              />
+              <div className={panelStyles.twoColumns}>
                 <ListingDescription sale={sale} />
                 <ListingLocation sale={sale} />
               </div>
-              <ListingBudget sale={sale} />
-            </div>
+              {access === "analysis" ? (
+                <RisksAndDocuments sale={sale} />
+              ) : (
+                <div className={panelStyles.riskCard}>
+                  <h2>Points à vérifier</h2>
+                  <p>Consultez les pièces et faites confirmer l’état du bien avant de décider.</p>
+                  <a href="#documents">Voir les pièces disponibles</a>
+                </div>
+              )}
+              <UrbanismeSection
+                sale={sale}
+                loadStructuredUrbanism={
+                  access === "analysis" && !publicDemo && !authLoading && Boolean(user)
+                }
+              />
+              <details className={panelStyles.disclosure}>
+                <summary>Vérifications de la source</summary>
+                <ListingQualityNotice sale={sale} />
+              </details>
+            </>
+          ) : null}
 
-            {isTribunalSale ? <SaleProcedurePanel sale={sale} /> : null}
-          </div>
-          <UrbanismeSection sale={sale} />
-          <ListingWorks sale={sale} estimatedBudget={surface == null ? null : worksBudget} />
-          <div
-            id="financing"
-            className="mx-auto max-w-[1260px] scroll-mt-36 px-4 py-12 sm:px-6 lg:px-8"
-          >
-            <FinancingSimulator sale={sale} />
-          </div>
-          {hasVerifiedTribunal ? <SaleTribunalHistory sale={sale} /> : null}
-          <DiscoveryContinuation sale={sale} />
-        </>
-      )}
+          {activeTab === "estimation" ? (
+            <>
+              <PanelIntro
+                eyebrow="02 / Prix"
+                title={isTribunalSale ? "Prix et mise plafond" : "Prix et marché"}
+                description={
+                  isTribunalSale
+                    ? "Les trois montants à comparer avant de définir votre scénario."
+                    : "Le prix publié et les références de marché disponibles."
+                }
+              />
+              {access === "analysis" &&
+              marketEstimateOverride == null &&
+              !marketEstimate &&
+              (marketQuery.data?.error || marketQuery.error) ? (
+                <div className={panelStyles.warning} role="status" aria-live="polite">
+                  <div>
+                    <strong>Estimation de marché à compléter</strong>
+                    <p>
+                      {marketQuery.data?.error ??
+                        (marketQuery.error instanceof Error
+                          ? marketQuery.error.message
+                          : "L’estimation est momentanément indisponible.")}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void marketQuery.refetch()}
+                    disabled={marketQuery.isFetching}
+                  >
+                    {marketQuery.isFetching ? "Calcul en cours…" : "Relancer l’estimation"}
+                  </button>
+                </div>
+              ) : null}
+              <section id="summary" className="scroll-mt-36">
+                {valuationConflict ? (
+                  <div role="alert" className={panelStyles.warning}>
+                    <div>
+                      <h2>Estimation suspendue : données contradictoires</h2>
+                      <p>{valuationConflict}</p>
+                      {access === "analysis" ? (
+                        <p>
+                          Les caractéristiques seront vérifiées par ImmoJudis avant toute mise à
+                          jour.
+                        </p>
+                      ) : (
+                        <a href="#rendez-vous">Consulter les coordonnées du dossier</a>
+                      )}
+                    </div>
+                  </div>
+                ) : access === "analysis" && isTribunalSale ? (
+                  <AnalysisDecisionPanel
+                    sale={sale}
+                    marketEstimate={marketEstimate}
+                    marketLoading={marketQuery.isLoading && marketEstimate == null}
+                    worksBudget={
+                      activeSimulation?.worksKnown === false
+                        ? null
+                        : (activeSimulation?.works ?? (surface == null ? null : worksBudget))
+                    }
+                    recommendedCeiling={heroCeilingResult.maxBid}
+                    ceilingAvailable={heroCeilingResult.available}
+                    onAdjust={() => setCalculationOpen(true)}
+                  />
+                ) : access === "analysis" ? (
+                  <NonJudicialDecisionPanel
+                    sale={sale}
+                    marketEstimate={marketEstimate}
+                    marketLoading={marketQuery.isLoading && marketEstimate == null}
+                  />
+                ) : (
+                  <DiscoveryDecisionPanel sale={sale} />
+                )}
+              </section>
+              {access === "analysis" && isTribunalSale && !valuationConflict ? (
+                <>
+                  <details
+                    id="why-this-ceiling-details"
+                    className={panelStyles.disclosure}
+                    open={ceilingExplanationOpen}
+                    onToggle={(event) => setCeilingExplanationOpen(event.currentTarget.open)}
+                  >
+                    <summary>Comprendre le calcul du plafond</summary>
+                    <CeilingExplanation
+                      recommendations={recommendations}
+                      surface={surface}
+                      resultOverride={activeSimulation?.result}
+                      worksOverride={activeSimulation?.works}
+                    />
+                  </details>
+                  <details
+                    id="calculation"
+                    className={panelStyles.disclosure}
+                    open={calculationOpen}
+                    onToggle={(event) => setCalculationOpen(event.currentTarget.open)}
+                  >
+                    <summary>Ajuster les hypothèses</summary>
+                    {calculationOpen ? (
+                      <BidCeilingAssistant
+                        sale={sale}
+                        marketEstimateOverride={marketEstimate}
+                        onSimulationChange={setSimulation}
+                      />
+                    ) : null}
+                  </details>
+                </>
+              ) : access === "analysis" ? (
+                <details className={panelStyles.disclosure}>
+                  <summary>Frais et hypothèses</summary>
+                  <ListingBudget sale={sale} />
+                </details>
+              ) : null}
+              {access === "analysis" ? (
+                <details className={panelStyles.disclosure}>
+                  <summary>Voir les références de marché</summary>
+                  {marketEstimate?.actionable === true || isTribunalSale ? (
+                    <MarketEvidence
+                      marketEstimate={marketEstimate}
+                      marketLoading={marketQuery.isLoading && marketEstimate == null}
+                    />
+                  ) : (
+                    <p>
+                      Références insuffisantes pour afficher une estimation exploitable sur cette
+                      vente.
+                    </p>
+                  )}
+                </details>
+              ) : null}
+              {access === "analysis" && !publicDemo && hasVerifiedTribunal ? (
+                <TribunalEstimationEvidence
+                  sale={sale}
+                  valuationConflict={Boolean(valuationConflict)}
+                  adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+                />
+              ) : null}
+            </>
+          ) : null}
+
+          {activeTab === "travaux" ? (
+            <>
+              <ListingWorks
+                sale={sale}
+                estimatedBudget={
+                  access === "analysis" && isTribunalSale && activeSimulation?.worksKnown === false
+                    ? null
+                    : (activeSimulation?.works ?? (surface == null ? null : worksBudget))
+                }
+              />
+            </>
+          ) : null}
+
+          {activeTab === "financement" ? (
+            <>
+              <div id="financing" className="scroll-mt-36">
+                <FinancingSimulator sale={sale} />
+              </div>
+            </>
+          ) : null}
+
+          {activeTab === "demarches" ? (
+            <>
+              <PanelIntro
+                eyebrow="05 / Participation"
+                title="Préparer la vente"
+                description="Date, interlocuteur, pièces et étapes à suivre."
+              />
+              <div className={panelStyles.practical}>
+                <ListingPracticalDetails sale={sale} />
+              </div>
+              <div className={panelStyles.steps}>
+                <h2>Vos prochaines étapes</h2>
+                <ol>
+                  <li>Consulter les conditions et les pièces officielles.</li>
+                  <li>Confirmer les visites et les modalités de participation.</li>
+                  <li>
+                    {isTribunalSale
+                      ? "Choisir un avocat compétent avant de préparer une enchère."
+                      : "Contacter l’organisateur pour préparer votre dossier."}
+                  </li>
+                </ol>
+              </div>
+              <SaleDocumentsSection sale={sale} />
+              <LawyerSection sale={sale} />
+              <details className={panelStyles.disclosure}>
+                <summary>Voir toutes les conditions de la vente</summary>
+                <SaleProcedurePanel sale={sale} />
+              </details>
+              {access === "analysis" && !publicDemo && isTribunalSale && !valuationConflict ? (
+                <section
+                  aria-label="Sauvegarde et export du rapport"
+                  className={panelStyles.reportActions}
+                >
+                  <h2>Conserver votre analyse</h2>
+                  <p>Sauvegardez le dossier ou exportez le rapport avec le scénario courant.</p>
+                  <PropertyReportActions
+                    saleId={sale.id}
+                    compact
+                    simulation={
+                      activeSimulation?.result.available ? activeSimulation.reportInput : undefined
+                    }
+                    requireSimulation
+                  />
+                </section>
+              ) : null}
+              {access === "analysis" && !publicDemo ? (
+                <details className={panelStyles.disclosure}>
+                  <summary>Préparer le dossier de travail</summary>
+                  <ProfessionalPilotLauncher
+                    sale={sale}
+                    definition={
+                      isTribunalSale
+                        ? buildTribunalPilot(sale)
+                        : venueType === "notary"
+                          ? buildNotaryPilot(sale)
+                          : buildStatePilot(sale)
+                    }
+                    publicDemo={publicDemo}
+                  />
+                </details>
+              ) : null}
+              {access === "analysis" ? <InformationAvailabilityNotice /> : null}
+            </>
+          ) : null}
+        </div>
+      </div>
     </main>
+  );
+}
+
+const SALE_DETAIL_TABS = ["apercu", "estimation", "travaux", "financement", "demarches"] as const;
+
+function isTabAnchor(anchor: string): anchor is SaleDetailTab {
+  return SALE_DETAIL_TABS.includes(anchor as SaleDetailTab);
+}
+
+function tabForAnchor(anchor: string): SaleDetailTab {
+  return knownTabForAnchor(anchor) ?? "apercu";
+}
+
+function knownTabForAnchor(anchor: string): SaleDetailTab | null {
+  if (isTabAnchor(anchor)) return anchor;
+  if (
+    ["market", "budget", "budget-analysis", "summary", "calculation", "why-this-ceiling"].includes(
+      anchor,
+    )
+  ) {
+    return "estimation";
+  }
+  if (anchor === "works") return "travaux";
+  if (anchor === "financing") return "financement";
+  if (
+    [
+      "rendez-vous",
+      "participation",
+      "documents",
+      "lawyer",
+      "professional-pilot",
+      "tribunal-history",
+    ].includes(anchor)
+  ) {
+    return "demarches";
+  }
+  if (["description-ia", "localisation", "urbanism", "risks"].includes(anchor)) {
+    return "apercu";
+  }
+  return null;
+}
+
+function PanelIntro({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <header className={panelStyles.intro}>
+      <p>{eyebrow}</p>
+      <h2>{title}</h2>
+      <span>{description}</span>
+    </header>
+  );
+}
+
+function TribunalEstimationEvidence({
+  sale,
+  valuationConflict,
+  adjudicationStatisticsEnabled,
+}: {
+  sale: AuctionSale;
+  valuationConflict: boolean;
+  adjudicationStatisticsEnabled: boolean;
+}) {
+  const forecastQuery = useOutcomeGraphForecast(sale.id, !valuationConflict);
+  const forecastReady = !valuationConflict && forecastQuery.data?.forecast.status === "ready";
+  return (
+    <details className={panelStyles.disclosure}>
+      <summary>Historique et perspective d’adjudication</summary>
+      {forecastReady ? <OutcomeForecast forecastQuery={forecastQuery} /> : null}
+      <SaleTribunalHistory
+        sale={sale}
+        premium={adjudicationStatisticsEnabled}
+        propertyTypeVerified={!valuationConflict}
+      />
+    </details>
   );
 }
 
@@ -456,8 +653,8 @@ function UrbanismeSection({
   });
 
   return (
-    <div id="urbanism" className="scroll-mt-36 border-y border-brand-navy/10 bg-[#f4f6f9]">
-      <div className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+    <div id="urbanism" className="mt-6 scroll-mt-36">
+      <div>
         {urbanismQuery.isPending && urbanismQuery.isFetching ? (
           <p role="status" className="mb-4 text-sm text-brand-navy/70">
             Chargement des données cadastrales et d’urbanisme collectées pour cette annonce…
@@ -693,7 +890,8 @@ function AnalysisDecisionPanel({
   onAdjust: () => void;
 }) {
   const ceiling = ceilingAvailable ? recommendedCeiling : null;
-  const marketValue = marketEstimate?.estimatedValueEur ?? null;
+  const marketValue =
+    marketEstimate?.actionable === true ? (marketEstimate.estimatedValueEur ?? null) : null;
   const markers = comparisonMarkerPositions({
     start: sale.starting_price_eur,
     ceiling,
@@ -701,229 +899,113 @@ function AnalysisDecisionPanel({
   });
 
   return (
-    <aside className="rounded-[20px] border border-slate-200 bg-white p-5 sm:p-7 lg:p-8">
-      <h2 className="text-center text-2xl font-semibold text-brand-navy sm:text-3xl">
-        Votre mise plafond recommandée
-      </h2>
-      <div className="mt-5 text-center text-[clamp(2rem,7vw,3.5rem)] font-bold leading-tight text-brand-navy">
-        {ceiling != null ? formatPrice(ceiling) : "À compléter"}
-      </div>
-
-      <div className="mt-6 rounded-lg border border-gold/45 bg-[#fff8ef] p-4 sm:p-5">
-        <div className="flex items-start gap-4">
-          <Wrench className="mt-1 h-8 w-8 shrink-0 text-gold-soft" aria-hidden />
-          <div>
-            <p className="font-display text-2xl font-semibold leading-tight text-gold-soft sm:text-3xl">
-              Travaux inclus : {worksBudget == null ? "À chiffrer" : formatPrice(worksBudget)}
-            </p>
-            <p className="mt-1 text-sm text-brand-navy/68 sm:text-base">
-              Budget retenu dans votre scénario ; ajustable dans le simulateur.
-            </p>
+    <aside className={panelStyles.estimationCard} aria-label="Votre analyse de prix">
+      <dl className={panelStyles.priceGrid}>
+        {markers.map((marker) => (
+          <div key={marker.label}>
+            <dt>{marker.label}</dt>
+            <dd>
+              {marker.value == null
+                ? marker.label === "Valeur estimée" && marketLoading
+                  ? "Calcul…"
+                  : "À compléter"
+                : formatPrice(marker.value)}
+            </dd>
           </div>
+        ))}
+      </dl>
+      <div className={panelStyles.estimationFoot}>
+        <p>
+          <strong>
+            Travaux inclus : {worksBudget == null ? "À chiffrer" : formatPrice(worksBudget)}
+          </strong>
+          <span>Plafond indicatif selon vos hypothèses de marché, de frais et de travaux.</span>
+        </p>
+        <div>
+          <a href="#calculation" onClick={onAdjust}>
+            Ajuster mes hypothèses
+          </a>
+          <a href="#why-this-ceiling">Voir le calcul</a>
         </div>
       </div>
-
-      <p className="mt-5 text-center text-sm leading-relaxed text-brand-navy/76 sm:text-base">
-        Plafond indicatif selon les hypothèses de marché, de frais et de travaux. Il ne garantit pas
-        votre marge.
-      </p>
-      {getMarketValuationSurfaces(sale).builtSurfaceEstimated && (
-        <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
-          Calcul provisoire : {getMarketValuationSurfaces(sale).builtSurfaceAssumption}. Faites
-          confirmer la surface avant de retenir ce plafond.
+      {getMarketValuationSurfaces(sale).builtSurfaceEstimated ? (
+        <p className={panelStyles.surfaceCaution}>
+          Surface provisoire : {getMarketValuationSurfaces(sale).builtSurfaceAssumption}. À
+          confirmer avant de retenir ce plafond.
         </p>
-      )}
+      ) : null}
       {ceiling != null && sale.starting_price_eur != null && ceiling < sale.starting_price_eur ? (
-        <p
-          role="status"
-          className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950"
-        >
+        <p role="status" className={panelStyles.surfaceCaution}>
           Ce scénario donne un plafond inférieur à la mise à prix de{" "}
-          {formatPrice(sale.starting_price_eur)}. Vos hypothèses ne permettent pas d’enchérir au
-          prix de départ.
+          {formatPrice(sale.starting_price_eur)}.
         </p>
       ) : null}
-      {marketEstimate?.estimatedValueLowEur != null &&
-      marketEstimate?.estimatedValueHighEur != null ? (
-        <p className="mt-3 text-center text-sm text-slate-600">
-          Fourchette de valeur estimée : {formatPrice(marketEstimate.estimatedValueLowEur)} –{" "}
-          {formatPrice(marketEstimate.estimatedValueHighEur)}. Elle décrit l’incertitude de
-          l’estimation, pas le prix d’adjudication attendu.
-        </p>
-      ) : null}
-
-      <div className="mt-7">
-        <dl className="grid grid-cols-3 gap-2 text-center">
-          {markers.map((marker) => (
-            <div key={marker.label}>
-              <dt className="text-[11px] font-semibold text-brand-navy/70 sm:text-xs">
-                {marker.label}
-              </dt>
-              <dd
-                className={`mt-1 font-display text-lg font-medium sm:text-2xl ${
-                  marker.label === "Mise plafond" ? "text-gold-soft" : "text-brand-navy"
-                }`}
-              >
-                {marker.value == null
-                  ? marker.label === "Valeur estimée" && marketLoading
-                    ? "Calcul…"
-                    : "À compléter"
-                  : formatPrice(marker.value)}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-
-      <div className="mt-8 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <a
-          href="#calculation"
-          onClick={onAdjust}
-          className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-gold-soft px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
-        >
-          <Target className="h-4 w-4" aria-hidden />
-          Ajuster mes hypothèses
-        </a>
-        <a
-          href="#why-this-ceiling"
-          className="inline-flex min-h-12 items-center justify-center px-4 py-3 text-sm font-semibold text-gold-soft underline decoration-gold/45 underline-offset-8 hover:text-gold"
-        >
-          Voir le calcul
-        </a>
-      </div>
     </aside>
   );
 }
 
 function NonJudicialDecisionPanel({
   sale,
-  access,
+  marketEstimate,
+  marketLoading,
 }: {
   sale: AuctionSale;
-  access: "analysis" | "discovery";
+  marketEstimate: MarketEstimate | null;
+  marketLoading: boolean;
 }) {
-  const procedure = getSaleProcedure(sale);
-  const notary = procedure.venueType === "notary";
-  const state = procedure.venueType === "state";
-  const schedule = saleWindow(sale) ?? saleSession(sale);
-  const deadline = schedule?.closes_at ?? sale.sale_date;
-  const documentsCount = collectSaleDocuments(sale).length;
-  const facts = state
-    ? [
-        ["Mode de cession", stateSaleMethodLabel(procedure)],
-        ["Échéance annoncée", listingDate(deadline)],
-        ["Pièces jointes", documentsCount ? `${documentsCount} à consulter` : "À confirmer"],
-      ]
-    : notary
-      ? [
-          ["Étude ou organisateur", procedure.organizerName ?? "À confirmer"],
-          ["Participation", participationModeLabel(procedure.participationMode)],
-          ["Date ou période", listingDate(schedule?.opens_at ?? sale.sale_date)],
-        ]
-      : [
-          ["Organisateur", procedure.organizerName ?? "À confirmer"],
-          ["Participation", participationModeLabel(procedure.participationMode)],
-          ["Date", listingDate(sale.sale_date)],
-        ];
+  const venue = getSaleProcedure(sale).venueType;
+  const value =
+    marketEstimate?.actionable === true ? (marketEstimate.estimatedValueEur ?? null) : null;
   return (
-    <section
-      className="overflow-hidden rounded-[20px] border border-[#b9d0df] bg-white shadow-sm"
-      aria-label="Priorités de cette vente"
-    >
-      <div className="border-b border-[#d9e7ef] bg-[#eef7ff] px-5 py-5 sm:px-7">
-        <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#946724]">
-          {state ? "Cession domaniale" : notary ? "Vente notariale" : "Vente à qualifier"}
-        </p>
-        <h3 className="mt-1 font-display text-2xl font-semibold text-brand-navy sm:text-3xl">
-          {state
-            ? "Commencez par les conditions du service vendeur"
-            : notary
-              ? "Commencez par le dossier de l'étude"
-              : "Vérifiez d'abord l'organisateur et la procédure"}
-        </h3>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/75">
-          {state
-            ? "Les ventes domaniales suivent plusieurs modes de cession. Le prix, les délais et les pièces à remettre dépendent de l'annonce officielle."
-            : notary
-              ? "La séance, l'inscription, la garantie et les frais sont définis par l'étude pour cette vente."
-              : "Les modalités de participation restent à confirmer dans les sources du dossier."}
-        </p>
+    <aside className={panelStyles.estimationCard} aria-label="Repères de prix">
+      <dl className={panelStyles.priceGrid}>
+        <div>
+          <dt>{venue === "state" ? "Prix publié" : "Mise à prix"}</dt>
+          <dd>
+            {sale.starting_price_eur == null ? "À confirmer" : formatPrice(sale.starting_price_eur)}
+          </dd>
+        </div>
+        <div>
+          <dt>Valeur estimée</dt>
+          <dd>
+            {value == null ? (marketLoading ? "Calcul…" : "À compléter") : formatPrice(value)}
+          </dd>
+        </div>
+        <div>
+          <dt>Conditions de vente</dt>
+          <dd className={panelStyles.textValue}>À vérifier dans le dossier officiel</dd>
+        </div>
+      </dl>
+      <div className={panelStyles.estimationFoot}>
+        <p>Les frais et les modalités dépendent des conditions publiées par l’organisateur.</p>
+        <a href="#participation">Voir les démarches</a>
       </div>
-      <div className="grid gap-3 p-5 sm:grid-cols-3 sm:p-7">
-        {facts.map(([label, value]) => (
-          <dl key={label} className="rounded-lg border border-slate-200 bg-[#fafcfd] p-4">
-            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-              {label}
-            </dt>
-            <dd className="mt-2 text-base font-semibold text-brand-navy">{value}</dd>
-          </dl>
-        ))}
-      </div>
-      <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 px-5 py-4 sm:px-7">
-        <a href="#participation" className={listingStyles.textLink}>
-          {state ? "Lire les conditions de cession" : "Voir les démarches de la vente"}
-          <ArrowRight className="h-4 w-4" aria-hidden />
-        </a>
-        {access === "discovery" ? (
-          <span className="text-xs text-slate-600">
-            L'offre Analyse détaille le marché et les risques lorsque les données le permettent.
-          </span>
-        ) : null}
-      </div>
-    </section>
+    </aside>
   );
 }
 
-function DiscoveryDecisionPanel({ worksBudget }: { worksBudget: number | null }) {
+function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
   return (
-    <aside className="rounded-lg border border-brand-navy/12 bg-white p-5 shadow-[0_22px_60px_rgba(72,104,132,0.14)] sm:p-7 lg:p-8">
-      <h2 className="font-display text-3xl font-medium text-brand-navy sm:text-4xl">
-        L'essentiel, gratuitement
-      </h2>
-      <p className="mt-6 font-display text-2xl font-medium text-brand-navy">Travaux estimés :</p>
-      <div className="mt-1 font-display text-6xl font-medium leading-none text-gold-soft sm:text-7xl">
-        {worksBudget == null ? "À chiffrer" : formatPrice(worksBudget)}
-      </div>
-      <p className="mt-4 text-sm leading-relaxed text-brand-navy/72 sm:text-base">
-        Enveloppe globale de rafraîchissement. Le détail des postes est réservé à l'offre Analyse.
-      </p>
-
-      <div className="my-6 h-px bg-brand-navy/12" />
-
-      <div className="rounded-lg border border-gold/35 bg-[#fffaf4] p-4 sm:p-5">
-        <div className="flex items-start gap-3">
-          <LockKeyhole className="mt-1 h-6 w-6 shrink-0 text-brand-navy" aria-hidden />
-          <div>
-            <h3 className="font-display text-2xl font-semibold leading-tight text-brand-navy sm:text-3xl">
-              Ne confondez pas mise à prix et bon prix
-            </h3>
-            <p className="mt-3 text-sm leading-relaxed text-brand-navy/76 sm:text-base">
-              Le prix de départ peut être supérieur au niveau du marché. Immojudis calcule la mise
-              plafond indicative selon les hypothèses retenues pour la vente.
-            </p>
-          </div>
+    <aside className={panelStyles.estimationCard} aria-label="Aperçu des repères de prix">
+      <dl className={panelStyles.priceGrid}>
+        <div>
+          <dt>Mise à prix</dt>
+          <dd>
+            {sale.starting_price_eur == null ? "À confirmer" : formatPrice(sale.starting_price_eur)}
+          </dd>
         </div>
-
-        <div className="mt-5 flex items-center gap-3 rounded-md border border-gold/55 bg-white px-4 py-3">
-          <LockKeyhole className="h-5 w-5 shrink-0 text-brand-navy/65" aria-hidden />
-          <div>
-            <p className="text-sm font-medium text-brand-navy">Mise plafond avec travaux</p>
-            <p className="font-display text-2xl font-semibold text-gold-soft">
-              Réservée à l'offre Analyse
-            </p>
-          </div>
+        <div>
+          <dt>Valeur estimée</dt>
+          <dd className={panelStyles.textValue}>Avec l’offre Analyse</dd>
         </div>
-
-        <p className="mt-4 text-sm leading-relaxed text-brand-navy/66">
-          Estimation du bien · ventes comparables · détail du calcul · annuaire d'avocats
-        </p>
-        <BillingActions
-          hideHelper
-          className={`mt-5 [&>button]:w-full ${listingStyles.discoveryBilling}`}
-        />
-        <p className="mt-3 text-center text-xs font-medium text-brand-navy/75">
-          30 jours · paiement unique · sans abonnement
-        </p>
+        <div>
+          <dt>Mise plafond</dt>
+          <dd className={panelStyles.textValue}>Avec l’offre Analyse</dd>
+        </div>
+      </dl>
+      <div className={panelStyles.estimationFoot}>
+        <p>Comparez le prix de départ au marché avant de fixer votre budget.</p>
+        <BillingActions hideHelper className={listingStyles.discoveryBilling} />
       </div>
     </aside>
   );
@@ -950,40 +1032,6 @@ function comparisonMarkerPositions({
     { label: "Mise plafond", value: ceiling, position: position(ceiling, 50) },
     { label: "Valeur estimée", value: market, position: position(market, 92) },
   ];
-}
-
-function DiscoveryContinuation({ sale }: { sale: AuctionSale }) {
-  const photoCount = propertyImages(sale.media).length;
-
-  return (
-    <section className="mx-auto max-w-[1460px] px-4 pb-16 sm:px-6 lg:px-8">
-      <div className="grid gap-3 lg:grid-cols-2">
-        <div className="flex min-h-16 items-center gap-3 rounded-lg border border-brand-navy/12 bg-white px-5 py-4 shadow-sm">
-          <Camera className="h-5 w-5 text-gold-soft" aria-hidden />
-          <span className="font-display text-xl font-semibold text-brand-navy">
-            {photoCount > 0
-              ? `Photos du bien · ${photoCount} disponible${photoCount > 1 ? "s" : ""}`
-              : "Photos du bien · indisponibles"}
-          </span>
-          {photoCount > 0 ? (
-            <CheckCircle2 className="ml-auto h-5 w-5 text-[#2f855a]" aria-hidden />
-          ) : (
-            <CircleAlert className="ml-auto h-5 w-5 text-amber-700" aria-hidden />
-          )}
-        </div>
-        <Link
-          to="/accompagnement"
-          className="flex min-h-16 items-center gap-3 rounded-lg border border-gold/35 bg-[#fff9f1] px-5 py-4 text-brand-navy/65 shadow-sm transition-colors hover:border-gold hover:text-brand-navy"
-        >
-          <LockKeyhole className="h-5 w-5" aria-hidden />
-          <span className="font-display text-xl font-semibold">
-            Analyse complète réservée à l'offre Analyse
-          </span>
-          <ArrowRight className="ml-auto h-5 w-5" aria-hidden />
-        </Link>
-      </div>
-    </section>
-  );
 }
 
 type Recommendations = ReturnType<typeof computeRecommendedCeilings>;
@@ -1024,346 +1072,6 @@ function SaleDocumentsSection({ sale }: { sale: AuctionSale }) {
         </div>
       </details>
     </section>
-  );
-}
-
-function NonJudicialAnalysisContent({
-  sale,
-  marketEstimate,
-  marketLoading,
-  publicDemo,
-  loadStructuredUrbanism,
-}: {
-  sale: AuctionSale;
-  marketEstimate: MarketEstimate | null;
-  marketLoading: boolean;
-  publicDemo: boolean;
-  loadStructuredUrbanism: boolean;
-}) {
-  const venue = getSaleProcedure(sale).venueType;
-  const state = venue === "state";
-  const links = state
-    ? [
-        ["#risks", "Pièces et risques"],
-        ["#participation", "Cession"],
-        ["#budget", "Budget"],
-        ["#professional-pilot", "Dossier de travail"],
-        ["#market", "Marché"],
-        ["#urbanism", "Urbanisme"],
-        ["#works", "Travaux"],
-        ["#financing", "Financement"],
-        ["#lawyer", "Contacts"],
-      ]
-    : [
-        ["#participation", "Conditions"],
-        ["#risks", "Pièces et risques"],
-        ["#budget", "Budget"],
-        ["#professional-pilot", "Dossier de travail"],
-        ["#market", "Marché"],
-        ["#urbanism", "Urbanisme"],
-        ["#works", "Travaux"],
-        ["#financing", "Financement"],
-        ["#lawyer", "Contacts"],
-      ];
-  const procedureBlock = (
-    <div className={listingStyles.container}>
-      <SaleProcedurePanel sale={sale} />
-    </div>
-  );
-  const documentsBlock = (
-    <>
-      <RisksAndDocuments sale={sale} />
-      <SaleDocumentsSection sale={sale} />
-    </>
-  );
-
-  return (
-    <>
-      <nav
-        aria-label="Sections de l’annonce"
-        className="sticky top-16 z-30 border-y border-brand-navy/10 bg-white/95 shadow-sm backdrop-blur"
-      >
-        <div className="mx-auto flex max-w-5xl justify-between overflow-x-auto px-4 sm:px-6">
-          {links.map(([href, label]) => (
-            <a
-              key={href}
-              href={href}
-              className="whitespace-nowrap border-b-2 border-transparent px-3 py-4 text-sm font-semibold text-brand-navy/68 hover:border-gold hover:text-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
-            >
-              {label}
-            </a>
-          ))}
-        </div>
-      </nav>
-      {state ? documentsBlock : procedureBlock}
-      {state ? procedureBlock : documentsBlock}
-      <div className={listingStyles.container}>
-        <div className={listingStyles.lower}>
-          <div className={listingStyles.stack}>
-            <ListingDescription sale={sale} />
-            <ListingLocation sale={sale} />
-          </div>
-          <ListingBudget sale={sale} />
-        </div>
-      </div>
-      {venue === "notary" ? (
-        <ProfessionalPilotLauncher
-          sale={sale}
-          definition={buildNotaryPilot(sale)}
-          publicDemo={publicDemo}
-        />
-      ) : state ? (
-        <ProfessionalPilotLauncher
-          sale={sale}
-          definition={buildStatePilot(sale)}
-          publicDemo={publicDemo}
-        />
-      ) : null}
-      <section aria-label="Marché local" className="border-y border-brand-navy/10 bg-[#f4f6f9]">
-        <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8">
-          {marketEstimate?.actionable === true ? (
-            <MarketEvidence marketEstimate={marketEstimate} marketLoading={marketLoading} />
-          ) : (
-            <div
-              id="market"
-              className="scroll-mt-36 rounded-lg border border-slate-200 bg-white p-6"
-            >
-              <h2 className="font-display text-3xl font-semibold text-brand-navy">Marché local</h2>
-              <p className="mt-2 text-sm text-slate-700">
-                Références insuffisantes pour afficher une estimation exploitable sur cette vente.
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-      <UrbanismeSection sale={sale} loadStructuredUrbanism={loadStructuredUrbanism} />
-      <ListingWorks sale={sale} estimatedBudget={null} />
-      <div
-        id="financing"
-        className="mx-auto max-w-[1260px] scroll-mt-36 px-4 py-12 sm:px-6 lg:px-8"
-      >
-        <FinancingSimulator sale={sale} />
-      </div>
-      <InformationAvailabilityNotice />
-      <LawyerSection sale={sale} />
-    </>
-  );
-}
-
-function AnalysisContent({
-  sale,
-  marketEstimate,
-  marketLoading,
-  recommendations,
-  surface,
-  calculationOpen,
-  onCalculationOpenChange,
-  publicDemo,
-  loadStructuredUrbanism,
-  adjudicationStatisticsEnabled,
-  simulation,
-  onSimulationChange,
-}: {
-  sale: AuctionSale;
-  marketEstimate: MarketEstimate | null;
-  marketLoading: boolean;
-  recommendations: Recommendations;
-  surface: number | null;
-  calculationOpen: boolean;
-  onCalculationOpenChange: (open: boolean) => void;
-  publicDemo: boolean;
-  loadStructuredUrbanism: boolean;
-  adjudicationStatisticsEnabled: boolean;
-  simulation: BidSimulationSnapshot | null;
-  onSimulationChange: (snapshot: BidSimulationSnapshot) => void;
-}) {
-  const valuationConflict = listingValuationConflict(sale);
-  const tribunalSale = saleIsTribunalVenue(sale);
-  const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
-  const forecastQuery = useOutcomeGraphForecast(
-    sale.id,
-    !publicDemo && hasVerifiedTribunal && !valuationConflict,
-  );
-  const showTribunalHistory = !publicDemo && hasVerifiedTribunal;
-  const hasVerifiedForecast =
-    !publicDemo &&
-    hasVerifiedTribunal &&
-    !valuationConflict &&
-    forecastQuery.data?.forecast.status === "ready";
-  const navigationItems = [
-    ["#summary", "Synthèse"],
-    ["#risks", "Risques & pièces"],
-    ["#urbanism", "Urbanisme"],
-    ["#budget-analysis", "Budget"],
-    ["#market", "Marché"],
-    ["#works", "Travaux"],
-    ["#financing", "Financement"],
-    ...(showTribunalHistory ? [["#tribunal-history", "Historique"]] : []),
-    ["#participation", "Démarches"],
-    ["#professional-pilot", "Dossier de travail"],
-    ["#lawyer", "Contacts"],
-  ];
-
-  return (
-    <>
-      <nav
-        aria-label="Sections de l’annonce"
-        className="sticky top-16 z-30 border-y border-brand-navy/10 bg-white/95 shadow-sm backdrop-blur"
-      >
-        <div className="mx-auto flex max-w-5xl justify-between overflow-x-auto px-4 sm:px-6">
-          {navigationItems.map(([href, label]) => (
-            <a
-              key={href}
-              href={href}
-              onFocus={(event) =>
-                event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })
-              }
-              className="whitespace-nowrap border-b-2 border-transparent px-3 py-4 text-sm font-semibold text-brand-navy/68 transition-colors hover:border-gold hover:text-brand-navy sm:px-4"
-            >
-              {label}
-            </a>
-          ))}
-        </div>
-      </nav>
-
-      <RisksAndDocuments sale={sale} />
-      <section
-        id="documents"
-        aria-label="Pièces du dossier"
-        className="mx-auto max-w-[1260px] scroll-mt-36 px-4 pb-8 sm:px-6 lg:px-8"
-      >
-        <details className="group mt-4 rounded-lg border border-brand-navy/12 bg-white shadow-sm">
-          <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-5 sm:px-7">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-soft">
-              <FileText className="h-5 w-5" aria-hidden />
-            </span>
-            <span>
-              <span className="block font-display text-2xl font-semibold text-brand-navy">
-                Consulter les pièces du dossier
-              </span>
-              <span className="mt-1 block text-sm text-brand-navy/62">
-                {collectSaleDocuments(sale).length > 0
-                  ? "Consultez les pièces jointes ; vérifiez leur nature et leur date."
-                  : "Aucune pièce attachée à cette annonce pour le moment."}
-              </span>
-            </span>
-            <ChevronDown className="ml-auto h-5 w-5 transition-transform group-open:rotate-180" />
-          </summary>
-          <div className="border-t border-brand-navy/10 px-5 py-3 sm:px-7">
-            {collectSaleDocuments(sale).length > 0 ? (
-              <DocumentsList documents={collectSaleDocuments(sale)} />
-            ) : (
-              <p role="status" className="text-sm text-brand-navy/70">
-                Les pièces vérifiées apparaîtront ici lorsqu’elles seront disponibles.
-              </p>
-            )}
-          </div>
-        </details>
-      </section>
-
-      <div className={listingStyles.container}>
-        <div className={listingStyles.lower}>
-          <ListingDescription sale={sale} />
-          <ListingLocation sale={sale} />
-        </div>
-      </div>
-
-      <UrbanismeSection sale={sale} loadStructuredUrbanism={loadStructuredUrbanism} />
-
-      <section
-        id="budget-analysis"
-        aria-label="Budget et hypothèses"
-        className="mx-auto max-w-[1260px] scroll-mt-36 px-4 py-8 sm:px-6 lg:px-8"
-      >
-        {tribunalSale && !valuationConflict ? (
-          <details
-            id="calculation"
-            open={calculationOpen}
-            className="group scroll-mt-36 rounded-lg border border-brand-navy/12 bg-white shadow-sm"
-            onToggle={(event) => onCalculationOpenChange(event.currentTarget.open)}
-          >
-            <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-5 sm:px-7">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-soft">
-                <Target className="h-5 w-5" aria-hidden />
-              </span>
-              <span>
-                <span className="block font-display text-2xl font-semibold text-brand-navy">
-                  Ajuster les hypothèses
-                </span>
-                <span className="mt-1 block text-sm text-brand-navy/62">
-                  Travaux, profil de marge, frais et prix de marché au m².
-                </span>
-              </span>
-              <ChevronDown className="ml-auto h-5 w-5 transition-transform group-open:rotate-180" />
-            </summary>
-            <div hidden={!calculationOpen}>
-              <div className="border-t border-brand-navy/10 p-4 sm:p-7">
-                <BidCeilingAssistant
-                  sale={sale}
-                  marketEstimateOverride={marketEstimate}
-                  onSimulationChange={onSimulationChange}
-                />
-              </div>
-            </div>
-          </details>
-        ) : null}
-        <div className="mt-8">
-          {tribunalSale && !valuationConflict ? (
-            <CeilingExplanation
-              recommendations={recommendations}
-              surface={surface}
-              resultOverride={simulation?.result}
-              worksOverride={simulation?.works}
-            />
-          ) : (
-            <ListingBudget sale={sale} />
-          )}
-        </div>
-      </section>
-      <section
-        aria-label="Comparables de marché"
-        className="border-y border-brand-navy/10 bg-[#f4f6f9]"
-      >
-        <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8">
-          <MarketEvidence marketEstimate={marketEstimate} marketLoading={marketLoading} />
-        </div>
-      </section>
-      <ListingWorks
-        sale={sale}
-        estimatedBudget={
-          simulation?.worksKnown === false
-            ? null
-            : (simulation?.works ??
-              (surface == null ? null : estimateWorksBudget(surface, "rafraichissement")))
-        }
-      />
-      <div
-        id="financing"
-        className="mx-auto max-w-[1260px] scroll-mt-36 px-4 py-12 sm:px-6 lg:px-8"
-      >
-        <FinancingSimulator sale={sale} />
-      </div>
-      {hasVerifiedForecast ? <OutcomeForecast forecastQuery={forecastQuery} /> : null}
-      {showTribunalHistory ? (
-        <SaleTribunalHistory
-          sale={sale}
-          premium={adjudicationStatisticsEnabled}
-          propertyTypeVerified={!valuationConflict}
-        />
-      ) : null}
-      <div className={listingStyles.container}>
-        <SaleProcedurePanel sale={sale} />
-      </div>
-      {tribunalSale ? (
-        <ProfessionalPilotLauncher
-          sale={sale}
-          definition={buildTribunalPilot(sale)}
-          publicDemo={publicDemo}
-        />
-      ) : null}
-      <InformationAvailabilityNotice />
-      <LawyerSection sale={sale} />
-    </>
   );
 }
 
@@ -1621,139 +1329,72 @@ function MarketFact({ icon, label, value }: { icon: ReactNode; label: string; va
 
 function RisksAndDocuments({ sale }: { sale: AuctionSale }) {
   const risks = sale.risks ?? [];
-  const documents = collectSaleDocuments(sale);
-  const venueType = getSaleProcedure(sale).venueType;
-  const rows = [
-    ...risks.map((risk) => riskRow(risk)),
-    {
-      key: "documents",
-      icon: <FileText className="h-5 w-5" />,
-      label: "Pièces du dossier à consulter",
-      source:
-        venueType === "tribunal"
-          ? "Vérifiez notamment le cahier des conditions de vente"
-          : venueType === "notary"
-            ? "Vérifiez le cahier des charges ou les conditions établies par l'étude"
-            : venueType === "state"
-              ? "Vérifiez l'annonce officielle et les conditions du service vendeur"
-              : "Vérifiez les conditions publiées par l'organisateur",
-      status:
-        documents.length > 0
-          ? `${documents.length} pièce(s) consultable(s)`
-          : "Aucune pièce attachée",
-      complete: documents.length > 0,
-      href: documents.length > 0 ? "#documents" : null,
-      action:
-        documents.length > 0
-          ? "Consulter les pièces"
-          : "Pièces complémentaires à confirmer par ImmoJudis.",
-    },
-  ];
+  const documentCount = collectSaleDocuments(sale).length;
+  const preview = risks.slice(0, 2);
 
   return (
-    <section id="risks" className="scroll-mt-36 border-b border-brand-navy/10 bg-white">
-      <div className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-        <h2 className="font-display text-4xl font-medium text-brand-navy sm:text-5xl">
-          Les points à sécuriser avant la vente
-        </h2>
-        <div className="mt-7 divide-y divide-brand-navy/12 border-y border-brand-navy/14">
-          {rows.map((row) => (
-            <div
-              key={row.key}
-              className="grid gap-2 py-4 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_13rem] sm:items-center sm:gap-5"
-            >
-              <div className="flex items-center gap-3 font-semibold text-brand-navy">
-                <span className="text-gold-soft" aria-hidden>
-                  {row.icon}
-                </span>
-                {row.label}
-              </div>
-              <div className="space-y-2 pl-8 text-sm text-brand-navy/75 sm:pl-0">
-                <div>{row.source}</div>
-                {row.href ? (
-                  <a
-                    href={row.href}
-                    className="inline-block font-medium text-brand-navy underline underline-offset-4"
-                  >
-                    {row.action}
-                  </a>
-                ) : (
-                  <span className="inline-block text-sm text-brand-navy/70">{row.action}</span>
-                )}
-              </div>
-              <div
-                className={`flex items-center gap-2 pl-8 text-sm font-medium sm:pl-0 ${
-                  row.complete ? "text-[#237a4b]" : "text-[#9a5d15]"
-                }`}
-              >
-                {row.complete ? (
-                  <CheckCircle2 className="h-4 w-4" aria-hidden />
-                ) : (
-                  <CircleAlert className="h-4 w-4" aria-hidden />
-                )}
-                {row.status}
-              </div>
-            </div>
+    <section id="risks" className={panelStyles.riskCard} aria-labelledby="risk-summary-title">
+      <h2 id="risk-summary-title">Points à vérifier</h2>
+      {preview.length ? (
+        <ul className={panelStyles.riskPreview}>
+          {preview.map((risk) => (
+            <li key={`${risk.risk_type}-${risk.risk_label}`}>
+              <CircleAlert className="h-4 w-4 shrink-0" aria-hidden />
+              <span>{risk.risk_label}</span>
+              <strong>
+                {risk.severity != null && risk.severity >= 4 ? "Prioritaire" : "À vérifier"}
+              </strong>
+            </li>
           ))}
-        </div>
-      </div>
+        </ul>
+      ) : (
+        <p>
+          Aucun point particulier n’est décrit dans les éléments disponibles. Vérifiez le dossier
+          officiel.
+        </p>
+      )}
+      {risks.length > 2 ? (
+        <p>
+          {risks.length - 2} autre{risks.length > 3 ? "s" : ""} point{risks.length > 3 ? "s" : ""}{" "}
+          dans le dossier.
+        </p>
+      ) : null}
+      <p>
+        {documentCount > 0 ? `${documentCount} pièce(s) consultable(s)` : "Aucune pièce attachée"}
+        {" · "}
+        <a href="#documents">Consulter les pièces du dossier</a>
+      </p>
+      {risks.length ? (
+        <details className={panelStyles.riskEvidence}>
+          <summary>Voir les sources et actions à confirmer</summary>
+          <div>
+            {risks.map((risk) => {
+              const evidence = riskEvidence(risk);
+              return (
+                <article key={`${risk.risk_type}-${risk.risk_label}`}>
+                  <h3>{risk.risk_label}</h3>
+                  <p>{evidence.action}</p>
+                  {evidence.proofs.map((proof, index) => (
+                    <div key={`${index}-${proof.label}`}>
+                      {proof.url ? (
+                        <a href={proof.url} target="_blank" rel="noopener noreferrer">
+                          {proof.label} (nouvel onglet)
+                        </a>
+                      ) : (
+                        <span>{proof.label}</span>
+                      )}
+                      {proof.page != null ? <span> · page {proof.page}</span> : null}
+                      {proof.excerpt ? <blockquote>{proof.excerpt}</blockquote> : null}
+                    </div>
+                  ))}
+                </article>
+              );
+            })}
+          </div>
+        </details>
+      ) : null}
     </section>
   );
-}
-
-function riskRow(risk: SaleRisk) {
-  const evidence = riskEvidence(risk);
-  const renderProof = (proof: (typeof evidence.proofs)[number], index: number) => (
-    <div key={index}>
-      {proof.url ? (
-        <a
-          href={proof.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline underline-offset-4"
-        >
-          {proof.label} (nouvel onglet)
-        </a>
-      ) : (
-        <span>{proof.label}</span>
-      )}
-      {proof.page != null && <span> · page {proof.page}</span>}
-      {proof.excerpt && (
-        <blockquote className="mt-1 border-l-2 border-brand-navy/20 pl-3">
-          {proof.excerpt}
-        </blockquote>
-      )}
-    </div>
-  );
-  const source = (
-    <div className="space-y-3">
-      {renderProof(evidence.proofs[0], 0)}
-      {evidence.proofs.length > 1 && (
-        <details>
-          <summary className="cursor-pointer font-medium underline underline-offset-4">
-            Voir les {evidence.proofs.length - 1} autres extraits
-          </summary>
-          <div className="mt-3 space-y-3">{evidence.proofs.slice(1).map(renderProof)}</div>
-        </details>
-      )}
-      <p>{evidence.action}</p>
-    </div>
-  );
-
-  return {
-    key: `${risk.risk_type}-${risk.risk_label}`,
-    icon: risk.risk_type.toLowerCase().includes("work") ? (
-      <Wrench className="h-5 w-5" />
-    ) : (
-      <CircleAlert className="h-5 w-5" />
-    ),
-    label: risk.risk_label,
-    source,
-    status: risk.severity != null && risk.severity >= 4 ? "Prioritaire" : "À vérifier",
-    complete: false,
-    href: null,
-    action: "Confirmation nécessaire avant de poursuivre.",
-  };
 }
 
 function LawyerSection({ sale }: { sale: AuctionSale }) {
