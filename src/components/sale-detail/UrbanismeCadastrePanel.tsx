@@ -14,6 +14,7 @@ import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import SearchCheck from "lucide-react/dist/esm/icons/search-check.js";
 import ShieldAlert from "lucide-react/dist/esm/icons/shield-alert.js";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
+import type { CadastralNeighborhoodPoint } from "@/lib/cadastre-neighborhood";
 import {
   buildCadastralAnalysis,
   formatCadastralReference,
@@ -25,6 +26,7 @@ import {
   type UrbanPlanningItem,
 } from "@/lib/urban-planning-analysis";
 import { safeExternalHttpUrl } from "@/lib/external-url";
+import { CadastralPlanDisclosure } from "./CadastralPlanDisclosure";
 import styles from "./UrbanismeCadastrePanel.module.css";
 
 export type UrbanismeCadastrePanelProps = {
@@ -37,11 +39,7 @@ export type UrbanismeCadastrePanelProps = {
   heading?: string;
 };
 
-type Coordinates = {
-  lat: number;
-  lng: number;
-  source: string;
-};
+type Coordinates = CadastralNeighborhoodPoint;
 
 const OFFICIAL_SOURCES = [
   {
@@ -127,6 +125,14 @@ export function UrbanismeCadastrePanel({
           règles d’urbanisme.
         </p>
       </div>
+
+      <CadastralPlanDisclosure
+        point={coordinates}
+        streetAddress={displayText(sale.address)}
+        displayAddress={addressSummary}
+        postalCode={displayText(sale.postal_code)}
+        city={displayText(sale.city)}
+      />
 
       <details className={styles.details}>
         <summary className={styles.detailsSummary}>
@@ -574,7 +580,7 @@ function resolveCoordinates(
   const saleLat = sale.latitude;
   const saleLng = sale.longitude;
   if (isCoordinatePair(saleLat, saleLng) && typeof saleLng === "number") {
-    return { lat: saleLat, lng: saleLng, source: "Coordonnées de l’annonce" };
+    return { lat: saleLat, lng: saleLng, source: "Coordonnées de l’annonce", kind: "listing" };
   }
   const parcel = parcels.find((item) => isCoordinatePair(item.centroidLat, item.centroidLng));
   const parcelLat = parcel?.centroidLat;
@@ -583,6 +589,7 @@ function resolveCoordinates(
     return {
       lat: parcelLat,
       lng: parcelLng,
+      kind: "parcel-centroid",
       source: isPointIntersectionMatch(parcel.matchKind)
         ? "Point géocodé intersectant une parcelle"
         : "Centre de parcelle rattaché",
