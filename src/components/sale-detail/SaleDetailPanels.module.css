@@ -356,6 +356,10 @@
 }
 
 @media (max-width: 720px) {
+  .tabRegion {
+    padding-bottom: 118px;
+  }
+
   .priceGrid {
     grid-template-columns: 1fr;
     gap: 16px;

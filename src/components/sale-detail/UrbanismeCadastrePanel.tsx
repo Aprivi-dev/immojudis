@@ -351,13 +351,13 @@ function hasAddress(sale: AuctionSale): boolean {
 }
 
 function compactStatusLabel(sale: AuctionSale, analysis: CadastralAnalysis): string {
+  if (analysis.references.length > 0 || analysis.structuredParcels.length > 0) {
+    return "Référence cadastrale à recouper";
+  }
   if (!hasAddress(sale)) {
     return displayText(sale.city)
       ? "Commune connue · parcelle à rattacher"
       : "Localisation à confirmer";
-  }
-  if (analysis.references.length > 0 || analysis.structuredParcels.length > 0) {
-    return "Référence cadastrale à recouper";
   }
   return "Adresse fournie · parcelle à rattacher";
 }

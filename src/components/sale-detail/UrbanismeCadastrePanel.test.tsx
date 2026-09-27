@@ -52,6 +52,7 @@ describe("UrbanismeCadastrePanel", () => {
     const { container } = render(
       <UrbanismeCadastrePanel
         sale={sale({
+          address: null,
           source_blocks: null,
           documents_rich: [
             {
