@@ -179,6 +179,110 @@ describe("integrated listing", () => {
     expectActivePanel(container, "estimation");
   });
 
+  it.each([
+    {
+      anchor: "market",
+      tab: "estimation",
+      target: "market",
+      summary: "Voir les références de marché",
+    },
+    {
+      anchor: "budget",
+      tab: "estimation",
+      target: "budget",
+      summary: "Frais et hypothèses",
+      sale: {
+        ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+        sale_venue_type: "notary",
+        sale_procedure: null,
+        source_blocks: null,
+      } as AuctionSale,
+    },
+    { anchor: "budget-analysis", tab: "estimation" },
+    {
+      anchor: "participation",
+      tab: "demarches",
+      target: "participation",
+      summary: "Voir toutes les conditions de la vente",
+    },
+    {
+      anchor: "professional-pilot",
+      tab: "demarches",
+      target: "professional-pilot",
+      summary: "Préparer le dossier de travail",
+      publicDemo: false,
+    },
+    {
+      anchor: "tribunal-history",
+      tab: "estimation",
+      target: "tribunal-history",
+      summary: "Historique et perspective d’adjudication",
+      publicDemo: false,
+    },
+    {
+      anchor: "calculation",
+      tab: "estimation",
+      target: "calculation",
+      summary: "Ajuster les hypothèses",
+      publicDemo: false,
+    },
+    {
+      anchor: "why-this-ceiling",
+      tab: "estimation",
+      target: "why-this-ceiling",
+      summary: "Comprendre le calcul du plafond",
+      publicDemo: false,
+    },
+  ] as const)(
+    "routes #%s to the expected panel and opens its detail when the target exists",
+    (expectation) => {
+      window.history.replaceState(null, "", `#${expectation.anchor}`);
+      const { container } = renderDetail(
+        "analysis",
+        expectation.sale,
+        expectation.publicDemo ?? false,
+      );
+
+      expect(
+        screen
+          .getByRole("tab", {
+            name:
+              expectation.tab === "estimation"
+                ? "Estimation"
+                : expectation.tab === "demarches"
+                  ? "Démarches"
+                  : "Aperçu",
+          })
+          .getAttribute("aria-selected"),
+      ).toBe("true");
+      expectActivePanel(container, expectation.tab);
+
+      const target = expectation.target ? container.querySelector(`#${expectation.target}`) : null;
+      if (!expectation.target) {
+        expect(target).toBeNull();
+        return;
+      }
+
+      expect(target).not.toBeNull();
+      const details = screen.getByText(expectation.summary).closest("details");
+      expect(details).not.toBeNull();
+      expect(details?.contains(target)).toBe(true);
+      expect(details?.open).toBe(true);
+    },
+  );
+
+  it("uses a client-side initial hash to open the requested estimation detail", () => {
+    window.history.replaceState(null, "", "#calculation");
+    const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+
+    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    const calculation = container.querySelector("#calculation") as HTMLDetailsElement | null;
+    expect(calculation).not.toBeNull();
+    expect(calculation?.open).toBe(true);
+  });
+
   it("loads a cadastral candidate only for an authenticated analysis", async () => {
     mocks.authUser = { id: "user-1" };
     mocks.fetchUrbanism.mockResolvedValue({

@@ -153,9 +153,7 @@ function SimplifiedSaleDetailView({
   adjudicationStatisticsEnabled = false,
   access,
 }: SaleDetailProps & { access: "discovery" | "analysis" }) {
-  const [calculationOpen, setCalculationOpen] = useState(
-    () => typeof window !== "undefined" && window.location.hash === "#calculation",
-  );
+  const [calculationOpen, setCalculationOpen] = useState(false);
   const [simulation, setSimulation] = useState<BidSimulationSnapshot | null>(null);
   const { user, loading: authLoading } = useAuth();
   const valuationConflict = listingValuationConflict(sale);
@@ -211,30 +209,40 @@ function SimplifiedSaleDetailView({
       ? heroCeilingResult.maxBid
       : null;
 
-  const [activeTab, setActiveTab] = useState<SaleDetailTab>(() =>
-    typeof window === "undefined" ? "apercu" : tabForAnchor(window.location.hash.slice(1)),
+  const [activeTab, setActiveTab] = useState<SaleDetailTab>("apercu");
+  const [ceilingExplanationOpen, setCeilingExplanationOpen] = useState(false);
+  const [anchorVisit, setAnchorVisit] = useState(0);
+  const [expandedDetails, setExpandedDetails] = useState<Partial<Record<LegacyDetail, boolean>>>(
+    {},
   );
-  const [ceilingExplanationOpen, setCeilingExplanationOpen] = useState(
-    () => typeof window !== "undefined" && window.location.hash === "#why-this-ceiling",
-  );
+  const setDetailOpen = (detail: LegacyDetail, open: boolean) => {
+    setExpandedDetails((current) =>
+      current[detail] === open ? current : { ...current, [detail]: open },
+    );
+  };
 
   useEffect(() => {
     const syncTabWithHash = () => {
       const anchor = window.location.hash.slice(1);
       setActiveTab(tabForAnchor(anchor));
-      if (anchor === "calculation") setCalculationOpen(true);
+      if (["calculation", "budget", "budget-analysis"].includes(anchor) && isTribunalSale) {
+        setCalculationOpen(true);
+      }
       if (anchor === "why-this-ceiling") setCeilingExplanationOpen(true);
+      const detail = legacyDetailForAnchor(anchor, isTribunalSale);
+      if (detail) setDetailOpen(detail, true);
+      setAnchorVisit((current) => current + 1);
     };
+    syncTabWithHash();
     window.addEventListener("hashchange", syncTabWithHash);
     return () => window.removeEventListener("hashchange", syncTabWithHash);
-  }, []);
+  }, [isTribunalSale]);
 
   useEffect(() => {
     const anchor = window.location.hash.slice(1);
     if (!anchor || isTabAnchor(anchor) || tabForAnchor(anchor) !== activeTab) return;
-    const target = document.getElementById(anchor);
-    target?.scrollIntoView?.({ block: "start" });
-  }, [activeTab, calculationOpen, ceilingExplanationOpen]);
+    revealAnchor(anchor, isTribunalSale);
+  }, [activeTab, anchorVisit, isTribunalSale]);
 
   const changeTab = (tab: SaleDetailTab) => {
     setActiveTab(tab);
@@ -250,12 +258,18 @@ function SimplifiedSaleDetailView({
     if (!anchor) return;
     const tab = knownTabForAnchor(anchor);
     if (!tab) return;
-    if (anchor === "calculation") setCalculationOpen(true);
+    if (["calculation", "budget", "budget-analysis"].includes(anchor) && isTribunalSale) {
+      setCalculationOpen(true);
+    }
     if (anchor === "why-this-ceiling") setCeilingExplanationOpen(true);
-    if (tab === activeTab && document.getElementById(anchor)) return;
+    const detail = legacyDetailForAnchor(anchor, isTribunalSale);
+    if (detail) setDetailOpen(detail, true);
+    const target = document.getElementById(anchor);
+    if (tab === activeTab && target && !target.closest("details:not([open])")) return;
     event.preventDefault();
     window.history.pushState(null, "", `#${anchor}`);
     setActiveTab(tab);
+    setAnchorVisit((current) => current + 1);
   };
 
   return (
@@ -309,7 +323,7 @@ function SimplifiedSaleDetailView({
               {access === "analysis" ? (
                 <RisksAndDocuments sale={sale} />
               ) : (
-                <div className={panelStyles.riskCard}>
+                <div id="risks" className={panelStyles.riskCard}>
                   <h2>Points à vérifier</h2>
                   <p>Consultez les pièces et faites confirmer l’état du bien avant de décider.</p>
                   <a href="#documents">Voir les pièces disponibles</a>
@@ -435,13 +449,21 @@ function SimplifiedSaleDetailView({
                   </details>
                 </>
               ) : access === "analysis" ? (
-                <details className={panelStyles.disclosure}>
+                <details
+                  className={panelStyles.disclosure}
+                  open={Boolean(expandedDetails.budget)}
+                  onToggle={(event) => setDetailOpen("budget", event.currentTarget.open)}
+                >
                   <summary>Frais et hypothèses</summary>
                   <ListingBudget sale={sale} />
                 </details>
               ) : null}
               {access === "analysis" ? (
-                <details className={panelStyles.disclosure}>
+                <details
+                  className={panelStyles.disclosure}
+                  open={Boolean(expandedDetails.market)}
+                  onToggle={(event) => setDetailOpen("market", event.currentTarget.open)}
+                >
                   <summary>Voir les références de marché</summary>
                   {marketEstimate?.actionable === true || isTribunalSale ? (
                     <MarketEvidence
@@ -461,6 +483,8 @@ function SimplifiedSaleDetailView({
                   sale={sale}
                   valuationConflict={Boolean(valuationConflict)}
                   adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+                  open={Boolean(expandedDetails["tribunal-history"])}
+                  onOpenChange={(open) => setDetailOpen("tribunal-history", open)}
                 />
               ) : null}
             </>
@@ -511,7 +535,11 @@ function SimplifiedSaleDetailView({
               </div>
               <SaleDocumentsSection sale={sale} />
               <LawyerSection sale={sale} />
-              <details className={panelStyles.disclosure}>
+              <details
+                className={panelStyles.disclosure}
+                open={Boolean(expandedDetails.participation)}
+                onToggle={(event) => setDetailOpen("participation", event.currentTarget.open)}
+              >
                 <summary>Voir toutes les conditions de la vente</summary>
                 <SaleProcedurePanel sale={sale} />
               </details>
@@ -533,7 +561,13 @@ function SimplifiedSaleDetailView({
                 </section>
               ) : null}
               {access === "analysis" && !publicDemo ? (
-                <details className={panelStyles.disclosure}>
+                <details
+                  className={panelStyles.disclosure}
+                  open={Boolean(expandedDetails["professional-pilot"])}
+                  onToggle={(event) =>
+                    setDetailOpen("professional-pilot", event.currentTarget.open)
+                  }
+                >
                   <summary>Préparer le dossier de travail</summary>
                   <ProfessionalPilotLauncher
                     sale={sale}
@@ -558,6 +592,22 @@ function SimplifiedSaleDetailView({
 }
 
 const SALE_DETAIL_TABS = ["apercu", "estimation", "travaux", "financement", "demarches"] as const;
+type LegacyDetail =
+  | "market"
+  | "budget"
+  | "participation"
+  | "professional-pilot"
+  | "tribunal-history";
+
+function legacyDetailForAnchor(anchor: string, isTribunalSale: boolean): LegacyDetail | null {
+  if (anchor === "budget" || anchor === "budget-analysis") {
+    return isTribunalSale ? null : "budget";
+  }
+  if (["market", "participation", "professional-pilot", "tribunal-history"].includes(anchor)) {
+    return anchor as LegacyDetail;
+  }
+  return null;
+}
 
 function isTabAnchor(anchor: string): anchor is SaleDetailTab {
   return SALE_DETAIL_TABS.includes(anchor as SaleDetailTab);
@@ -576,17 +626,11 @@ function knownTabForAnchor(anchor: string): SaleDetailTab | null {
   ) {
     return "estimation";
   }
+  if (anchor === "tribunal-history") return "estimation";
   if (anchor === "works") return "travaux";
   if (anchor === "financing") return "financement";
   if (
-    [
-      "rendez-vous",
-      "participation",
-      "documents",
-      "lawyer",
-      "professional-pilot",
-      "tribunal-history",
-    ].includes(anchor)
+    ["rendez-vous", "participation", "documents", "lawyer", "professional-pilot"].includes(anchor)
   ) {
     return "demarches";
   }
@@ -594,6 +638,27 @@ function knownTabForAnchor(anchor: string): SaleDetailTab | null {
     return "apercu";
   }
   return null;
+}
+
+function revealAnchor(anchor: string, isTribunalSale: boolean) {
+  const fallback =
+    anchor === "budget" || anchor === "budget-analysis"
+      ? isTribunalSale
+        ? "calculation"
+        : "budget"
+      : ["market", "tribunal-history", "why-this-ceiling"].includes(anchor)
+        ? "summary"
+        : tabForAnchor(anchor) === "demarches"
+          ? "sale-detail-panel-demarches"
+          : null;
+  const target = document.getElementById(anchor) ?? (fallback && document.getElementById(fallback));
+  if (!target) return;
+  let parent = target.closest("details");
+  while (parent) {
+    parent.open = true;
+    parent = parent.parentElement?.closest("details") ?? null;
+  }
+  target.scrollIntoView?.({ block: "start" });
 }
 
 function PanelIntro({
@@ -618,15 +683,23 @@ function TribunalEstimationEvidence({
   sale,
   valuationConflict,
   adjudicationStatisticsEnabled,
+  open,
+  onOpenChange,
 }: {
   sale: AuctionSale;
   valuationConflict: boolean;
   adjudicationStatisticsEnabled: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const forecastQuery = useOutcomeGraphForecast(sale.id, !valuationConflict);
   const forecastReady = !valuationConflict && forecastQuery.data?.forecast.status === "ready";
   return (
-    <details className={panelStyles.disclosure}>
+    <details
+      className={panelStyles.disclosure}
+      open={open}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+    >
       <summary>Historique et perspective d’adjudication</summary>
       {forecastReady ? <OutcomeForecast forecastQuery={forecastQuery} /> : null}
       <SaleTribunalHistory
