@@ -1218,8 +1218,19 @@ export async function runAdminInformationAgentMissionAction(
   return readJson<InformationAgentAdminListResponse>(response);
 }
 
-export async function fetchAdminInformationAgentReview(): Promise<AdminInformationAgentReviewResponse> {
-  const response = await fetch("/api/admin/information-agent", {
+export type AdminInformationAgentReviewPageParam = {
+  factCursor?: string;
+  messageCursor?: string;
+};
+
+export async function fetchAdminInformationAgentReview(
+  pageParam: AdminInformationAgentReviewPageParam = {},
+): Promise<AdminInformationAgentReviewResponse> {
+  const search = new URLSearchParams();
+  if (pageParam.factCursor) search.set("factCursor", pageParam.factCursor);
+  if (pageParam.messageCursor) search.set("messageCursor", pageParam.messageCursor);
+  const suffix = search.size ? `?${search.toString()}` : "";
+  const response = await fetch(`/api/admin/information-agent${suffix}`, {
     signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
     cache: "no-store",
