@@ -1573,6 +1573,12 @@ def _merge_pdf_stats(total: PdfEnrichmentStats, item: PdfEnrichmentStats) -> Non
     total.document_cache_hits += item.document_cache_hits
     total.document_cache_misses += item.document_cache_misses
     total.documents_processed += item.documents_processed
+    blocked_urls = set(total.blocked_document_urls)
+    for url in item.blocked_document_urls:
+        if url in blocked_urls:
+            continue
+        total.blocked_document_urls.append(url)
+        blocked_urls.add(url)
 
 
 def _add_llm_stats(total: LLMEnrichmentStats, item: LLMEnrichmentStats) -> None:

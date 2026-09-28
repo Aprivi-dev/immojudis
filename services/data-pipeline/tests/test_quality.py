@@ -1,11 +1,14 @@
 from decimal import Decimal
 
+from src.models import AuctionSale
 from src.normalize import normalize_sale
+from src.pdf_enrichment import PdfEnrichmentStats
 from src.quality import (
     build_extraction_gap_report,
     build_quality_report,
     build_source_quality_report,
     format_extraction_gap_report,
+    format_quality_report,
     sale_extraction_gaps,
 )
 
@@ -40,6 +43,81 @@ def test_build_quality_report_computes_percentages() -> None:
     assert report["with_raw_text_enriched_pct"] == 0.0
     assert report["with_documents_pct"] == 100.0
     assert report["with_visit_dates_pct"] == 100.0
+    assert report["pdf_blocked_document_urls"] == 0
+    assert report["pdf_coverage_status"] == "unknown"
+
+
+def test_build_quality_report_surfaces_policy_blocked_document_coverage() -> None:
+    blocked_url = "https://www.licitor.com/data/pub/media/pv.pdf"
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://www.licitor.com/annonce/policy-blocked",
+    )
+    sale.raw_payload["document_analysis"] = {
+        "coverage_status": "partial",
+        "blocked_documents": 1,
+        "blocked_document_urls": [None, "", 123, blocked_url],
+    }
+    stats = PdfEnrichmentStats(blocked_document_urls=[blocked_url])
+
+    report = build_quality_report([sale], pdf_stats=stats)
+
+    assert report["pdf_blocked_document_urls"] == 1
+    assert report["pdf_coverage_status"] == "partial"
+    formatted = format_quality_report(report)
+    assert "- quality_pdf_blocked_document_urls: 1" in formatted
+    assert "- quality_pdf_coverage_status: partial" in formatted
+
+    skipped_run_report = build_quality_report([sale])
+    assert skipped_run_report["pdf_blocked_document_urls"] == 1
+    assert skipped_run_report["pdf_coverage_status"] == "partial"
+
+    incomplete_sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://avoventes.fr/enchere/documents-not-extracted",
+    )
+    incomplete_sale.raw_payload["document_analysis"] = {
+        "coverage_status": "documents_not_extracted",
+        "documents_listed": 1,
+        "documents_extracted": 0,
+    }
+    incomplete_report = build_quality_report([incomplete_sale])
+    assert incomplete_report["pdf_blocked_document_urls"] == 0
+    assert incomplete_report["pdf_coverage_status"] == "partial"
+
+
+def test_build_quality_report_marks_sales_without_documents_as_source_only() -> None:
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://www.licitor.com/annonce/source-only",
+    )
+
+    report = build_quality_report([sale])
+
+    assert report["pdf_coverage_status"] == "source_only"
+
+
+def test_build_quality_report_keeps_mixed_document_analysis_unknown() -> None:
+    rich_sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://www.licitor.com/annonce/rich",
+        documents=[{"url": "https://example.test/rich.pdf"}],
+        raw_payload={
+            "document_analysis": {
+                "coverage_status": "rich",
+                "documents_extracted": 1,
+            }
+        },
+    )
+    unknown_sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://www.licitor.com/annonce/unknown",
+        documents=[{"url": "https://example.test/unknown.pdf"}],
+    )
+
+    report = build_quality_report([rich_sale, unknown_sale])
+
+    assert report["pdf_coverage_status"] == "unknown"
 
 
 def test_build_source_quality_report_groups_coverage_by_source() -> None:

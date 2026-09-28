@@ -45,7 +45,7 @@ from src.fact_claims import (
     build_fact_claim_candidates,
     materialize_fact_claim_rows,
 )
-from src.freshness import document_fingerprint, documents_are_current
+from src.freshness import document_fingerprint, documents_are_current, timestamp_is_fresh
 from src.models import AuctionSale
 from src.normalize import make_sale_signature
 from src.pdf_enrichment import classify_document_type, sale_storage_id
@@ -1938,10 +1938,28 @@ def _has_current_document_analysis(raw_payload: object) -> bool:
     try:
         listed = int(analysis.get("documents_listed") or 0)
         extracted = int(analysis.get("documents_extracted") or 0)
+        blocked = int(analysis.get("blocked_documents") or 0)
+        failed = int(analysis.get("failed_documents") or 0)
     except (TypeError, ValueError):
         return False
     if listed > 0:
-        return extracted > 0
+        if extracted > 0:
+            return True
+        # A robots-policy-only result is intentionally partial, but it is a
+        # completed bounded check. Keep it out of the next incremental heavy
+        # pass while its persisted evidence is fresh. The downstream
+        # heavy-current check still compares that fingerprint with the current
+        # sale documents before skipping enrichment. Missing the explicit
+        # fields keeps legacy/ambiguous zero-extraction rows eligible.
+        return (
+            blocked > 0
+            and failed == 0
+            and analysis.get("coverage_status") == "partial"
+            and bool(analysis.get("input_fingerprint"))
+            and bool(analysis.get("blocked_document_urls"))
+            and bool(analysis.get("blocked_document_reasons"))
+            and timestamp_is_fresh(analysis.get("checked_at"))
+        )
     return analysis.get("coverage_status") == "source_only"
 
 
