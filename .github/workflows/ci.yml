@@ -106,7 +106,11 @@ jobs:
               exit 1
             fi
             if [ "$attempt" -eq 3 ]; then
-              exit 1
+              # OSV is a supported independent advisory source. Keep the
+              # security gate active if PyPI's JSON vulnerability API is down.
+              echo "::warning::PyPI returned 503 three times; auditing with OSV instead."
+              python -m pip_audit -r requirements.txt --vulnerability-service osv
+              exit 0
             fi
             sleep "$((attempt * 10))"
           done
