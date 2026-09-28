@@ -35,6 +35,7 @@ import { getSale } from "@/lib/property-report/repository";
 import { propertyImages } from "@/lib/sale-media";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
+import { resolveSiteOrigin } from "@/lib/site-url";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
@@ -1049,7 +1050,18 @@ function resolveInformationAgentEmailConfig(env: NodeJS.ProcessEnv = process.env
   if (!apiKey || !from || !inboundDomain) {
     throw new Error("Configuration d'envoi et de réception de l'agent incomplète.");
   }
-  return { apiKey, from, inboundDomain, appUrl: "https://immojudis.com" };
+  return { apiKey, from, inboundDomain, appUrl: informationAgentAppOrigin(env) };
+}
+
+/**
+ * Keep links in supervised emails on the environment that initiated the send.
+ * The production origin remains the safe fallback for legacy deployments that
+ * have not declared SITE_URL yet.
+ */
+export function informationAgentAppOrigin(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  return resolveSiteOrigin(env, "https://immojudis.com") ?? "https://immojudis.com";
 }
 
 export function informationAgentCaseReference(caseId: string): string {

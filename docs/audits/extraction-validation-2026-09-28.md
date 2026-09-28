@@ -89,3 +89,23 @@ comme dénominateur. Un rapport vide ou partiel ne mesure pas la précision glob
 Les compteurs d'identité contrôlent l'URL et l'identifiant externe de l'annonce ; ils ne
 prouvent pas l'affectation des valeurs aux lots d'une vente multilot, qui doit être revue
 séparément.
+
+Le rapport inclut aussi `readiness`, avec le nombre de captures, de premières relectures,
+de doubles relectures et d'arbitrages, ainsi que le nombre de champs annotés par source.
+Le pilote de capture du 28 septembre 2026 a traité 82 des 100 cas : 73 captures
+réussies sur huit sources, 7 échecs de capture, 2 accès refusés et 18 cas laissés
+non tentés après arrêt de leur source. Les sources avec arrêts ont été Enchères
+Immobilières (robots indisponible), Enchères Publiques (HTTP 403) et Notaires
+(trois erreurs bornées). Il y a encore 0 double relecture et 0 arbitrage : aucune
+précision réelle n'est donc calculée. Les compteurs décrivent la couverture du pilote,
+pas la qualité des sources.
+
+Les 73 captures ont ensuite été rejouées sur le code corrigé : 73 prédictions
+recalculées, aucune erreur de rejeu. Par rapport aux prédictions figées, les
+champs nouvellement renseignés comprennent l'identifiant AGRASC (5 cas), la
+ville et la date Avoventes (9 cas chacune), l'adresse Avoventes (5 cas) et les
+classes DPE/GES de Notaires (7 cas chacune). Quatre nombres de pièces Avoventes
+ont été retirés car l'annonce décrit plusieurs lots ou un bien ambigu. Ce
+comparatif est un signal de changement, pas une mesure de justesse. Les
+prédictions initiales ne contenaient pas `surface_m2`, `app_surface_m2` ni
+`surface_evidence` ; le rejeu ne permet donc pas de quantifier leurs changements.

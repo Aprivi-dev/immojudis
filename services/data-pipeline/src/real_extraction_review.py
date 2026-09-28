@@ -247,6 +247,11 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
     source_coverage: dict[str, Counter[str]] = defaultdict(Counter)
     ready: list[dict[str, Any]] = []
     source_identity_annotated = 0
+    field_coverage: Counter[str] = Counter()
+    source_field_coverage: dict[str, Counter[str]] = defaultdict(Counter)
+    captured_cases = 0
+    reviewed_cases = 0
+    double_reviewed_cases = 0
 
     for case in cases:
         if not isinstance(case, Mapping):
@@ -276,6 +281,7 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
         else:
             _timestamp(access.get("checked_at"), "captured access checked_at")
             values, capture_sha256, extracted_at = _captured_case(case)
+            captured_cases += 1
             reviews = case.get("reviews")
             if not isinstance(reviews, list) or len(reviews) > 2:
                 raise ValueError("captured case accepts up to two independent reviews")
@@ -290,6 +296,10 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
                 raise ValueError("independent review cannot precede the frozen prediction")
             if len(reviews) == 2 and reviews[0]["reviewer"] == reviews[1]["reviewer"]:
                 raise ValueError("independent reviewers must be distinct")
+            if reviews:
+                reviewed_cases += 1
+            if len(reviews) == 2:
+                double_reviewed_cases += 1
             adjudication = case.get("adjudication")
             if len(reviews) < 2 and adjudication is not None:
                 raise ValueError("adjudication requires two independent reviews")
@@ -309,6 +319,9 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
                     raise ValueError("both reviewers and adjudication must cover identical fields")
                 if {"source_url", "external_id"} <= set(final_labels):
                     source_identity_annotated += 1
+                for field in final_labels:
+                    field_coverage[field] += 1
+                    source_field_coverage[source][field] += 1
                 ready.append(
                     {
                         "id": case_id,
@@ -359,6 +372,23 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
             source: {
                 "frame_cases": sum(source_coverage[source].values()),
                 "coverage": {state: source_coverage[source][state] for state in REPORT_STATES},
+                "readiness": {
+                    "captured_cases": sum(
+                        source_coverage[source][state] for state in
+                        ("awaiting_review", "awaiting_second_review", "awaiting_adjudication", "evaluated")
+                    ),
+                    "reviewed_cases": source_coverage[source]["awaiting_second_review"]
+                    + source_coverage[source]["awaiting_adjudication"]
+                    + source_coverage[source]["evaluated"],
+                    "double_reviewed_cases": source_coverage[source]["awaiting_adjudication"]
+                    + source_coverage[source]["evaluated"],
+                    "adjudicated_cases": source_coverage[source]["evaluated"],
+                    "field_annotations": sum(source_field_coverage[source].values()),
+                    "fields": {
+                        field: source_field_coverage[source][field]
+                        for field in sorted(source_field_coverage[source])
+                    },
+                },
                 "quality": _compact_stats((evaluated or {}).get("by_source", {}).get(source, empty_stats)),
             }
             for source in sorted(source_coverage)
@@ -366,6 +396,14 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
         "quality": _compact_stats(evaluated["summary"] if evaluated else empty_stats),
         "by_field": {
             field: _compact_stats(stats) for field, stats in (evaluated or {}).get("by_field", {}).items()
+        },
+        "readiness": {
+            "captured_cases": captured_cases,
+            "reviewed_cases": reviewed_cases,
+            "double_reviewed_cases": double_reviewed_cases,
+            "adjudicated_cases": len(ready),
+            "field_annotations": sum(field_coverage.values()),
+            "fields": {field: field_coverage[field] for field in sorted(field_coverage)},
         },
         "source_identity_cases_annotated": source_identity_annotated,
         "source_identity_cases_verified": sum(

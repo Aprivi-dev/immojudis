@@ -28,6 +28,127 @@ def test_parse_surface_preserves_decimal_point() -> None:
     assert parse_surface("Surface terrain : 2.464 m²") == Decimal("2464")
 
 
+def test_normalize_sale_keeps_decimal_before_superficie_suffix() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-decimal-surface",
+            "property_type": "Appartement",
+            "raw_text": "30,60 m² superficie",
+        }
+    )
+
+    assert sale.surface_m2 == Decimal("30.60")
+    assert sale.app_surface_m2 == Decimal("30.60")
+
+
+def test_normalize_sale_rejects_first_mixed_lot_surface_without_total() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-mixed-lots",
+            "property_type": "Ensemble immobilier",
+            "surface_m2": "34",
+            "app_surface_m2": "34",
+            "app_surface_kind": "built",
+            "surface_source": "source_text",
+            "surface_confidence": "0.9",
+            "carrez_surface_m2": "19.05",
+            "surface_evidence": "Lot 1 : 34 m²",
+            "raw_text": (
+                "Ensemble immobilier vendu en 2 lots : "
+                "lot 1 appartement de 34 m², lot 2 local de 22 m²."
+            ),
+        }
+    )
+
+    assert sale.surface_m2 is None
+    assert sale.app_surface_m2 is None
+    assert sale.app_surface_kind is None
+    assert sale.surface_scope == "unknown"
+    assert sale.surface_evidence is None
+    assert sale.surface_source is None
+    assert sale.surface_confidence is None
+    assert sale.carrez_surface_m2 == Decimal("19.05")
+    assert "ambiguous_surface" in sale.quality_flags
+
+
+def test_normalize_sale_prefers_explicit_mixed_total_over_lot_value() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-mixed-total",
+            "property_type": "Ensemble immobilier",
+            "surface_m2": "34",
+            "app_surface_m2": "34",
+            "app_surface_kind": "built",
+            "raw_text": (
+                "Ensemble immobilier vendu en 2 lots : lot 1 appartement de 34 m², "
+                "lot 2 local de 22 m². Surface totale bâtie : 56 m²."
+            ),
+        }
+    )
+
+    assert sale.surface_m2 == Decimal("56")
+    assert sale.app_surface_m2 == Decimal("56")
+    assert sale.app_surface_kind == "built"
+    assert sale.surface_scope == "total"
+    assert "Surface totale bâtie : 56 m²" in (sale.surface_evidence or "")
+
+
+def test_mixed_surface_label_without_numeric_total_stays_ambiguous() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-mixed-total-missing",
+            "property_type": "Ensemble immobilier",
+            "raw_text": (
+                "Ensemble immobilier vendu en 2 lots. Surface totale à confirmer. "
+                "Lot 1 : appartement de 34 m². Lot 2 : local de 22 m²."
+            ),
+        }
+    )
+
+    assert sale.surface_m2 is None
+    assert sale.app_surface_m2 is None
+    assert sale.surface_scope == "unknown"
+
+
+def test_mixed_without_lot_marker_keeps_distinct_built_and_land_categories() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-mixed-categories",
+            "property_type": "Ensemble immobilier",
+            "raw_text": "Ensemble immobilier comprenant un bâtiment de 34 m² sur terrain de 332 m².",
+        }
+    )
+
+    assert sale.surface_m2 == Decimal("34")
+    assert sale.land_surface_m2 == Decimal("332")
+    assert sale.app_surface_m2 == Decimal("34")
+    assert sale.app_surface_kind == "built"
+
+
+def test_normalize_sale_surface_evidence_follows_carrez_value() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-carrez-evidence",
+            "property_type": "Appartement",
+            "surface_m2": "46",
+            "surface_evidence": "Marketing : appartement rénové de 46 m²",
+            "raw_text": "Marketing : appartement rénové de 46 m². Surface loi Carrez : 19,05 m².",
+        }
+    )
+
+    assert sale.surface_m2 == Decimal("46")
+    assert sale.carrez_surface_m2 == Decimal("19.05")
+    assert sale.app_surface_m2 == Decimal("19.05")
+    assert "19,05 m²" in (sale.surface_evidence or "")
+    assert "46 m²" not in (sale.surface_evidence or "")
+
+
 def test_parse_confidence_normalizes_percent_and_ratio() -> None:
     assert parse_confidence("0.75") == Decimal("0.75")
     assert parse_confidence("75") == Decimal("0.75")
@@ -167,6 +288,23 @@ def test_normalize_sale_promotes_source_energy_diagnostics_from_source_blocks() 
     assert diagnostics["diagnostic_date"] == "2026-04-27"
     assert diagnostics["evidence"] == "DPE G, GES D, diagnostic du 2026-04-27"
     assert sale.risk_notes == "Travaux à prévoir | DPE G"
+
+
+def test_normalize_sale_promotes_french_source_energy_aliases() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "agrasc",
+            "source_url": "https://example.test/synthetic-energy",
+            "source_blocks": {
+                "dpe_classe": "G",
+                "ges_classe": "C",
+            },
+        }
+    )
+
+    diagnostics = sale.raw_payload["source_energy_diagnostics"]
+    assert diagnostics["dpe_class"] == "G"
+    assert diagnostics["ges_class"] == "C"
 
 
 def test_normalize_source_urls_handles_mapping_and_dedupes_primary_first() -> None:

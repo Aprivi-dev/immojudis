@@ -6,6 +6,7 @@ import {
   detectInformationGaps,
   discoverInformationAgentContacts,
   informationAgentAdminActionSchema,
+  informationAgentAppOrigin,
   informationAgentCreateSchema,
   runAdminInformationAgentAction,
   selectInformationAgentContact,
@@ -27,6 +28,13 @@ vi.mock("@/lib/email-alerts", () => ({
 }));
 
 describe("supervised information agent", () => {
+  it("uses the configured site origin in staging email links", () => {
+    expect(informationAgentAppOrigin({ SITE_URL: "https://immojudis-staging.example" })).toBe(
+      "https://immojudis-staging.example",
+    );
+    expect(informationAgentAppOrigin({})).toBe("https://immojudis.com");
+  });
+
   it("keeps outbound email disabled until it is explicitly enabled", () => {
     expect(() => assertInformationAgentOutboundEnabled({ NODE_ENV: "test" })).toThrow("désactivé");
     expect(() =>

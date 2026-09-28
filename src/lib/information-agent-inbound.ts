@@ -40,6 +40,28 @@ const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
 type SharedCase = Database["public"]["Tables"]["information_agent_cases"]["Row"];
 type Mission = Database["public"]["Tables"]["information_agent_missions"]["Row"];
 
+const RESEND_AUTHENTICATION_RESULTS = [
+  "pass",
+  "fail",
+  "gray",
+  "processing_failed",
+  "unknown",
+] as const;
+type ResendAuthenticationResult = (typeof RESEND_AUTHENTICATION_RESULTS)[number];
+type NormalizedInboundAuthenticationResult = ResendAuthenticationResult | "missing";
+
+type InboundSenderAuthentication = {
+  status: "pass" | "fail" | "unverified";
+  spf: NormalizedInboundAuthenticationResult;
+  dkim: NormalizedInboundAuthenticationResult;
+  dmarc: NormalizedInboundAuthenticationResult;
+};
+
+type InboundReviewReason =
+  | "sender_mismatch"
+  | "sender_authentication_failed"
+  | "sender_authentication_unverified";
+
 export type ExtractedInformationAgentFact = {
   factKey: "surface_m2" | "rooms_count" | "occupancy_status" | "sale_date" | "starting_price_eur";
   proposedValue: { value: number | string; unit?: string };
@@ -136,6 +158,7 @@ export async function processInformationAgentInboundWebhook({
     resend,
     inboundDomain,
     fetchImpl,
+    requireEmailAuthentication: env.INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION === "true",
     deferProcessing,
   });
 }
@@ -145,12 +168,14 @@ async function ingestReceivedEmail({
   resend,
   inboundDomain,
   fetchImpl,
+  requireEmailAuthentication,
   deferProcessing = false,
 }: {
   event: EmailReceivedEvent;
   resend: Resend;
   inboundDomain: string;
   fetchImpl: typeof fetch;
+  requireEmailAuthentication: boolean;
   deferProcessing?: boolean;
 }): Promise<InformationAgentInboundResult> {
   const token = findInboundToken([...event.data.to, ...event.data.received_for], inboundDomain);
@@ -187,6 +212,9 @@ async function ingestReceivedEmail({
   const senderMatches = Boolean(
     senderEmail && expectedRecipientEmail && senderEmail === expectedRecipientEmail,
   );
+  const senderAuthentication = normalizeInboundSenderAuthentication(
+    (received as unknown as { authentication?: unknown }).authentication,
+  );
   const inboundMessage = await insertOrLoadInboundMessage({
     sharedCase,
     mission,
@@ -197,9 +225,18 @@ async function ingestReceivedEmail({
     bodyText,
     receivedAt,
     senderMatches,
+    senderAuthentication,
   });
   const messageId = inboundMessage.id;
-  let inboundMetadata = inboundMessage.metadata;
+  // A worker may fetch a more complete provider result than the initial
+  // receipt. Carry it into the next processing-state write without issuing a
+  // separate stale-snapshot update for a duplicate delivery.
+  let inboundMetadata = inboundMessage.duplicate
+    ? mergeJsonObject(inboundMessage.metadata, {
+        sender_matches_recipient: senderMatches,
+        sender_authentication: senderAuthentication,
+      })
+    : inboundMessage.metadata;
   const existingProcessing = inboundProcessingState(inboundMetadata);
   const terminalStatus =
     existingProcessing?.status === "completed" ||
@@ -216,6 +253,12 @@ async function ingestReceivedEmail({
       processingStatus: terminalStatus,
     };
   }
+
+  const reviewReason = inboundReviewReason({
+    senderMatches,
+    senderAuthentication,
+    requireEmailAuthentication,
+  });
 
   if (deferProcessing) {
     const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId);
@@ -240,14 +283,16 @@ async function ingestReceivedEmail({
       };
     }
 
-    // The case address is a routing key, not proof that the sender is the expected contact.
-    if (!senderMatches) {
+    // The case address is a routing key, not proof that the sender or the
+    // provider's authentication result is safe for automatic extraction.
+    if (reviewReason) {
       const caseUpdated = await updateOpenInformationAgentCase(sharedCase.id, {
         status: "review",
         replied_at: receivedAt,
         metadata: mergeJsonObject(sharedCase.metadata, {
           last_inbound_email_id: event.data.email_id,
-          last_inbound_sender_matches_recipient: false,
+          last_inbound_sender_matches_recipient: senderMatches,
+          last_inbound_sender_authentication_status: senderAuthentication.status,
         }),
       });
       await updateInboundProcessingState(messageId, inboundMetadata, {
@@ -255,7 +300,7 @@ async function ingestReceivedEmail({
         attempts: existingProcessing?.attempts ?? 0,
         providerEmailId: event.data.email_id,
         queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-        reason: caseUpdated ? "sender_mismatch" : "case_closed_during_processing",
+        reason: caseUpdated ? reviewReason : "case_closed_during_processing",
       });
       return {
         accepted: true,
@@ -326,14 +371,16 @@ async function ingestReceivedEmail({
     };
   }
 
-  // The case address is a routing key, not proof that the sender is the expected contact.
-  if (!senderMatches) {
+  // The case address is a routing key, not proof that the sender or the
+  // provider's authentication result is safe for automatic extraction.
+  if (reviewReason) {
     const caseUpdated = await updateOpenInformationAgentCase(sharedCase.id, {
       status: "review",
       replied_at: receivedAt,
       metadata: mergeJsonObject(sharedCase.metadata, {
         last_inbound_email_id: event.data.email_id,
-        last_inbound_sender_matches_recipient: false,
+        last_inbound_sender_matches_recipient: senderMatches,
+        last_inbound_sender_authentication_status: senderAuthentication.status,
       }),
     });
     if (!caseUpdated) {
@@ -358,7 +405,7 @@ async function ingestReceivedEmail({
       attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
       providerEmailId: event.data.email_id,
       queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-      reason: "sender_mismatch",
+      reason: reviewReason,
     });
     return {
       accepted: true,
@@ -438,6 +485,7 @@ async function ingestReceivedEmail({
       metadata: mergeJsonObject(sharedCase.metadata, {
         last_inbound_email_id: event.data.email_id,
         last_inbound_sender_matches_recipient: senderMatches,
+        last_inbound_sender_authentication_status: senderAuthentication.status,
       }),
     });
     if (!caseUpdated) {
@@ -576,6 +624,7 @@ export async function runInformationAgentInboundQueue({
         resend,
         inboundDomain,
         fetchImpl,
+        requireEmailAuthentication: env.INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION === "true",
       });
       const status: "completed" | "review" | "ignored" =
         result.processingStatus === "completed" || result.processingStatus === "review"
@@ -828,6 +877,7 @@ async function insertOrLoadInboundMessage({
   bodyText,
   receivedAt,
   senderMatches,
+  senderAuthentication,
 }: {
   sharedCase: SharedCase;
   mission: Mission;
@@ -838,6 +888,7 @@ async function insertOrLoadInboundMessage({
   bodyText: string;
   receivedAt: string;
   senderMatches: boolean;
+  senderAuthentication: InboundSenderAuthentication;
 }): Promise<InboundMessageRef> {
   const id = randomUUID();
   const queuedAt = new Date().toISOString();
@@ -845,6 +896,7 @@ async function insertOrLoadInboundMessage({
     imported_manually: false,
     content_trust: "untrusted",
     sender_matches_recipient: senderMatches,
+    sender_authentication: senderAuthentication,
     inbound_processing: {
       version: INBOUND_PROCESSING_VERSION,
       status: "queued",
@@ -883,6 +935,9 @@ async function insertOrLoadInboundMessage({
   if (existing.case_id !== sharedCase.id) {
     throw new Error("Message entrant déjà rattaché à un autre dossier.");
   }
+  // A replay must not write a stale metadata snapshot over a worker's newer
+  // processing checkpoint. Authentication was recorded on the first receipt;
+  // the current provider result is checked during every active replay.
   return { id: existing.id, duplicate: true, metadata: existing.metadata ?? {} };
 }
 
@@ -962,6 +1017,63 @@ async function updateInboundProcessingState(
     .eq("id", messageId);
   if (error) throw error;
   return nextMetadata;
+}
+
+function normalizeInboundSenderAuthentication(value: unknown): InboundSenderAuthentication {
+  const authentication =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const spf = normalizeInboundAuthenticationResult(authentication.spf);
+  const dkim = normalizeInboundAuthenticationResult(authentication.dkim);
+  const dmarc = normalizeInboundAuthenticationResult(authentication.dmarc);
+
+  // DMARC passes when at least one aligned mechanism (SPF or DKIM) passes.
+  // Do not require both mechanisms: legitimate forwarded or relayed mail can
+  // fail one while still carrying a valid aligned result through the other.
+  const hasAlignedAuthentication = dmarc === "pass" && (spf === "pass" || dkim === "pass");
+  // A failed DMARC check, or failures from both alignment mechanisms, is an
+  // explicit authentication failure. A single SPF/DKIM failure is compatible
+  // with a passing DMARC result through the other aligned mechanism.
+  const hasAuthenticationFailure = dmarc === "fail" || (spf === "fail" && dkim === "fail");
+
+  return {
+    status: hasAlignedAuthentication ? "pass" : hasAuthenticationFailure ? "fail" : "unverified",
+    spf,
+    dkim,
+    dmarc,
+  };
+}
+
+function normalizeInboundAuthenticationResult(
+  value: unknown,
+): NormalizedInboundAuthenticationResult {
+  if (value === undefined || value === null) return "missing";
+  return isResendAuthenticationResult(value) ? value : "unknown";
+}
+
+function isResendAuthenticationResult(value: unknown): value is ResendAuthenticationResult {
+  return (
+    typeof value === "string" &&
+    (RESEND_AUTHENTICATION_RESULTS as readonly string[]).includes(value)
+  );
+}
+
+function inboundReviewReason({
+  senderMatches,
+  senderAuthentication,
+  requireEmailAuthentication,
+}: {
+  senderMatches: boolean;
+  senderAuthentication: InboundSenderAuthentication;
+  requireEmailAuthentication: boolean;
+}): InboundReviewReason | null {
+  if (!senderMatches) return "sender_mismatch";
+  if (senderAuthentication.status === "fail") return "sender_authentication_failed";
+  if (requireEmailAuthentication && senderAuthentication.status !== "pass") {
+    return "sender_authentication_unverified";
+  }
+  return null;
 }
 
 function inboundProcessingState(metadata: Json): InboundProcessingState | null {

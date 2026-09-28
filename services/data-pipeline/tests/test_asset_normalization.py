@@ -102,6 +102,38 @@ def test_normalize_asset_features_reads_thousands_surfaces_directly() -> None:
     assert "2 464,70 m²" in (sale.surface_evidence or "")
 
 
+def test_normalize_asset_features_reads_decimal_before_superficie_suffix() -> None:
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://avoventes.fr/enchere/synthetic-decimal-surface",
+        property_type="apartment",
+        raw_text="30,60 m² superficie",
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("30.60")
+    assert sale.app_surface_m2 == Decimal("30.60")
+
+
+def test_normalize_asset_features_replaces_stale_generic_surface_evidence() -> None:
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://avoventes.fr/enchere/synthetic-carrez-evidence",
+        property_type="apartment",
+        surface_m2=Decimal("46"),
+        carrez_surface_m2=Decimal("19.05"),
+        surface_evidence="Marketing : appartement rénové de 46 m²",
+        raw_text="Marketing : appartement rénové de 46 m². Surface loi Carrez : 19,05 m².",
+    )
+
+    normalize_asset_features(sale)
+
+    assert sale.app_surface_m2 == Decimal("19.05")
+    assert "19,05 m²" in (sale.surface_evidence or "")
+    assert "46 m²" not in (sale.surface_evidence or "")
+
+
 def test_asset_normalization_resolves_structured_surface_outlier_from_corroborated_text() -> None:
     sale = normalize_sale(
         {
