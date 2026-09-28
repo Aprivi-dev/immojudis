@@ -24,6 +24,7 @@ except ModuleNotFoundError as exc:
 @pytest.fixture(autouse=True)
 def no_active_running_run(monkeypatch) -> None:
     monkeypatch.setattr(queued_runner, "has_active_running_run_in_supabase", lambda: False)
+    monkeypatch.setattr(queued_runner, "_read_due_enrichment_family_counts", lambda: {})
 
 
 def test_queued_runner_skips_when_another_run_is_active(monkeypatch, capsys) -> None:
@@ -577,6 +578,72 @@ def test_enrichment_worker_groups_detail_claims_without_exceeding_job_budget(mon
         (2, queued_runner.SOURCE_DETAIL_FAMILY),
         (1, queued_runner.SOURCE_DETAIL_FAMILY),
         (1, queued_runner.ENRICHMENT_FAMILY),
+    ]
+
+
+def test_enrichment_worker_reliefs_larger_general_backlog_without_starving_details(monkeypatch) -> None:
+    calls: list[tuple[int, str]] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {
+            queued_runner.SOURCE_DETAIL_FAMILY: 2_586,
+            queued_runner.ENRICHMENT_FAMILY: 3_386,
+        },
+    )
+
+    def fake_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
+        calls.append((limit, family))
+        return limit
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
+
+    assert queued_runner.run_enrichment_queue_worker(max_jobs=8, budget_seconds=1200) == 8
+    assert [family for _, family in calls] == [
+        queued_runner.SOURCE_DETAIL_FAMILY,
+        queued_runner.ENRICHMENT_FAMILY,
+    ] * 4
+    assert all(limit == 1 for limit, _ in calls)
+    assert sum(family == queued_runner.SOURCE_DETAIL_FAMILY for _, family in calls) == 4
+    assert sum(family == queued_runner.ENRICHMENT_FAMILY for _, family in calls) == 4
+    assert len(calls) == 8
+
+
+def test_enrichment_family_cycle_keeps_historical_ratio_when_details_are_larger() -> None:
+    cycle = queued_runner._enrichment_family_cycle(
+        {
+            queued_runner.SOURCE_DETAIL_FAMILY: 3_386,
+            queued_runner.ENRICHMENT_FAMILY: 2_586,
+        }
+    )
+
+    assert cycle == queued_runner.ENRICHMENT_FAMILY_CYCLE
+    assert cycle.count(queued_runner.SOURCE_DETAIL_FAMILY) == 5
+    assert cycle.count(queued_runner.ENRICHMENT_FAMILY) == 1
+
+
+def test_enrichment_worker_can_fallback_to_detail_when_relief_general_slot_is_empty(monkeypatch) -> None:
+    calls: list[tuple[int, str]] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {
+            queued_runner.SOURCE_DETAIL_FAMILY: 10,
+            queued_runner.ENRICHMENT_FAMILY: 20,
+        },
+    )
+
+    def fake_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
+        calls.append((limit, family))
+        return 0 if family == queued_runner.ENRICHMENT_FAMILY else limit
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
+
+    assert queued_runner.run_enrichment_queue_worker(max_jobs=2, budget_seconds=1200) == 2
+    assert calls == [
+        (1, queued_runner.SOURCE_DETAIL_FAMILY),
+        (1, queued_runner.ENRICHMENT_FAMILY),
+        (1, queued_runner.SOURCE_DETAIL_FAMILY),
     ]
 
 

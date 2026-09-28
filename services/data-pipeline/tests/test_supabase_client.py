@@ -1546,6 +1546,24 @@ def test_postgres_connect_retries_transient_pool_checkout(monkeypatch) -> None:
     assert calls == 3
 
 
+def test_postgres_connect_can_skip_retries_for_optional_telemetry(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    class Psycopg:
+        def connect(self, *_args, **kwargs):
+            calls.append(kwargs)
+            raise RuntimeError("connection timeout")
+
+    monkeypatch.setattr(supabase_client, "psycopg", Psycopg())
+
+    with pytest.raises(RuntimeError, match="connection timeout"):
+        supabase_client._postgres_connect(
+            "postgresql://example", connect_timeout=3, retry_delays=()
+        )
+
+    assert calls == [{"connect_timeout": 3, "prepare_threshold": None}]
+
+
 def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
     sales = [
         normalize_sale(

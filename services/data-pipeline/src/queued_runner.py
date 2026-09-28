@@ -36,6 +36,7 @@ from src.pipeline_usage import PipelineBudgetExhausted, QueueJobDeferred, defer_
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
 from src.storage.supabase_client import (
+    _postgres_connect,
     claim_auction_enrichment_jobs_family_from_supabase,
     claim_auction_enrichment_jobs_from_supabase,
     fail_stale_running_runs_in_supabase,
@@ -65,6 +66,10 @@ ENRICHMENT_MAX_JOBS = 90
 ENRICHMENT_BUDGET_SECONDS = 1200
 ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE = 2
 ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_MAX = 5
+GENERAL_BACKLOG_RELIEF_CYCLE = (
+    SOURCE_DETAIL_FAMILY,
+    ENRICHMENT_FAMILY,
+)
 
 
 def main() -> int:
@@ -520,13 +525,15 @@ def run_enrichment_queue_worker(
 ) -> int:
     """Run one fair, bounded queue worker.
 
-    Five source-detail jobs are followed by one general enrichment job. Detail
-    claims are grouped into small bounded RPC batches, but the jobs remain
-    sequential inside ``run_source_detail_jobs`` so provider politeness and
-    sale revision ordering are unchanged. An empty preferred lane immediately
-    gives its slot to the other lane. A deferred general job counts as handled
-    so an exhausted AI budget cannot terminate the remaining source-detail
-    work.
+    The historical cycle is five source-detail jobs followed by one general
+    enrichment job. When the queue snapshot shows a larger general backlog, the
+    worker temporarily alternates the two lanes while retaining at least one
+    source-detail slot every other position. Detail claims are grouped into
+    small bounded RPC batches, but the jobs remain sequential inside
+    ``run_source_detail_jobs`` so provider politeness and sale revision
+    ordering are unchanged. An empty preferred lane immediately gives its slot
+    to the other lane. A deferred general job counts as handled so an
+    exhausted AI budget cannot terminate the remaining source-detail work.
 
     The claim batch size is deliberately independent from the job budget. It
     reduces claim overhead without increasing the worker's maximum work or
@@ -558,17 +565,26 @@ def run_enrichment_queue_worker(
     claim_batches = 0
     stop_reason = "max_jobs"
     provider_clients: dict[str, object] = {}
+    due_counts = _read_due_enrichment_family_counts()
+    family_cycle = _enrichment_family_cycle(due_counts)
+    LOGGER.info(
+        "Enrichment worker lane cycle: source_detail=%s enrichment=%s due_estimate=%s",
+        family_cycle.count(SOURCE_DETAIL_FAMILY),
+        family_cycle.count(ENRICHMENT_FAMILY),
+        due_counts,
+    )
     slot = 0
     while processed < max_jobs:
         if time.monotonic() >= deadline:
             stop_reason = "budget"
             break
-        preferred = ENRICHMENT_FAMILY_CYCLE[slot % len(ENRICHMENT_FAMILY_CYCLE)]
+        preferred = family_cycle[slot % len(family_cycle)]
         alternate = ENRICHMENT_FAMILY if preferred == SOURCE_DETAIL_FAMILY else SOURCE_DETAIL_FAMILY
         preferred_limit = _enrichment_claim_limit(
             preferred,
             slot=slot,
             remaining=max_jobs - processed,
+            family_cycle=family_cycle,
         )
         claim_batches += 1
         batch_started_at = time.monotonic()
@@ -589,6 +605,7 @@ def run_enrichment_queue_worker(
                 alternate,
                 slot=slot,
                 remaining=max_jobs - processed,
+                family_cycle=family_cycle,
             )
             claim_batches += 1
             batch_started_at = time.monotonic()
@@ -644,6 +661,71 @@ def run_enrichment_queue_worker(
     return processed
 
 
+def _read_due_enrichment_family_counts() -> dict[str, int]:
+    """Read a cheap due-backlog estimate without changing queue state.
+
+    The worker is already required to have a transactional database connection
+    for autonomous execution.  Keeping this small read-only query here avoids
+    adding another RPC or making the SQL claim function decide the worker's
+    lane ratio.  This estimate intentionally does not duplicate every claim
+    eligibility join (retention, source state, and superseded revisions).  It
+    is only a lane-ratio hint: every claim still applies the authoritative SQL
+    eligibility checks, and an empty preferred lane immediately falls back to
+    the other family.  An unavailable read falls back to the conservative
+    historical source-detail-first cycle.
+    """
+    settings = load_settings()
+    db_url = str(settings.get("supabase_db_url") or "")
+    if not db_url:
+        return {}
+    try:
+        # This count only changes the lane ratio. Never spend the worker budget
+        # on the regular write-connection retry sequence for optional telemetry.
+        with _postgres_connect(db_url, connect_timeout=3, retry_delays=()) as connection:
+            connection.execute("set transaction read only")
+            rows = connection.execute(
+                """
+                select case when job_type = 'source_detail'
+                            then 'source_detail' else 'enrichment' end as family,
+                       count(*)
+                  from public.auction_enrichment_jobs
+                 where (
+                         status in ('queued', 'failed')
+                         or (
+                              status = 'running'
+                              and coalesce(locked_at, updated_at)
+                                  < statement_timestamp() - interval '30 minutes'
+                            )
+                       )
+                   and next_attempt_at <= statement_timestamp()
+                   and attempt_count < max_attempts
+                 group by 1
+                """
+            ).fetchall()
+    except Exception as exc:
+        LOGGER.warning("Could not read enrichment queue lane counts: %s", exc)
+        return {}
+    return {str(family): int(count or 0) for family, count in rows}
+
+
+def _enrichment_family_cycle(due_counts: dict[str, int]) -> tuple[str, ...]:
+    """Choose a bounded lane ratio from one due-backlog estimate.
+
+    The two lanes alternate only when the estimated due general backlog is
+    larger.  The estimate is advisory and cannot make a family unclaimable:
+    every preferred-lane miss immediately tries the alternate family.
+    Source-detail therefore remains guaranteed at least every other slot, while
+    a large general backlog cannot be drained at the historical one-in-six rate.
+    The SQL claim still applies its per-source round-robin ordering inside the
+    detail lane.
+    """
+    source_detail = max(0, int(due_counts.get(SOURCE_DETAIL_FAMILY, 0)))
+    enrichment = max(0, int(due_counts.get(ENRICHMENT_FAMILY, 0)))
+    if enrichment > source_detail:
+        return GENERAL_BACKLOG_RELIEF_CYCLE
+    return ENRICHMENT_FAMILY_CYCLE
+
+
 def _enrichment_claim_batch_size(family: str) -> int:
     """Return a bounded claim size for one queue family.
 
@@ -664,12 +746,29 @@ def _enrichment_claim_batch_size(family: str) -> int:
     return max(1, min(ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_MAX, value))
 
 
-def _enrichment_claim_limit(family: str, *, slot: int, remaining: int) -> int:
+def _enrichment_claim_limit(
+    family: str,
+    *,
+    slot: int,
+    remaining: int,
+    family_cycle: tuple[str, ...] = ENRICHMENT_FAMILY_CYCLE,
+) -> int:
     """Bound one claim by both its batch size and its fair-cycle positions."""
     if family != SOURCE_DETAIL_FAMILY:
         return min(1, remaining)
-    cycle_position = slot % len(ENRICHMENT_FAMILY_CYCLE)
-    detail_positions = 1 if cycle_position >= 5 else 5 - cycle_position
+    cycle_position = slot % len(family_cycle)
+    detail_positions = 0
+    while (
+        detail_positions < len(family_cycle)
+        and family_cycle[(cycle_position + detail_positions) % len(family_cycle)]
+        == SOURCE_DETAIL_FAMILY
+    ):
+        detail_positions += 1
+    # A preferred general claim can be empty.  The alternate detail lane still
+    # needs one legal claim position even when the schedule points at general
+    # enrichment for this slot.
+    if detail_positions == 0:
+        detail_positions = 1
     return min(_enrichment_claim_batch_size(family), detail_positions, remaining)
 
 
