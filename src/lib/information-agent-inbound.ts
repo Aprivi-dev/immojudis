@@ -427,9 +427,12 @@ async function ingestReceivedEmail({
     });
 
     const now = new Date().toISOString();
-    const caseUpdated = await updateOpenInformationAgentCase(sharedCase.id, {
-      status:
-        extractedFacts.length || storedAssets.length || rejected.length ? "review" : "replied",
+    const hasReviewableEvidence = Boolean(
+      extractedFacts.length || storedAssets.length || rejected.length,
+    );
+    const caseUpdated = await updateInboundReplyCase({
+      sharedCase,
+      hasReviewableEvidence,
       replied_at: receivedAt,
       failure_reason: null,
       metadata: mergeJsonObject(sharedCase.metadata, {
@@ -710,6 +713,57 @@ async function failInformationAgentInboundJob(
     .eq("id", job.id)
     .eq("lease_id", job.lease_id);
   if (error) throw error;
+}
+
+async function updateInboundReplyCase({
+  sharedCase,
+  hasReviewableEvidence,
+  ...values
+}: {
+  sharedCase: SharedCase;
+  hasReviewableEvidence: boolean;
+  replied_at: string;
+  failure_reason: null;
+  metadata: Json;
+}): Promise<boolean> {
+  const keepReview = hasReviewableEvidence || sharedCase.status === "review";
+  if (keepReview) {
+    return updateOpenInformationAgentCase(sharedCase.id, {
+      ...values,
+      status: "review",
+    });
+  }
+
+  const { data: repliedCase, error: repliedError } = await supabaseAdmin
+    .from("information_agent_cases")
+    .update({ ...values, status: "replied" })
+    .eq("id", sharedCase.id)
+    .in("status", ["sending", "sent", "replied"])
+    .select("id")
+    .maybeSingle();
+  if (repliedError) throw repliedError;
+  if (repliedCase) return true;
+
+  // A concurrent response may have moved the case to review after the
+  // snapshot above. Preserve that stronger state and update only its timing
+  // metadata; never let this reply downgrade it back to replied.
+  const { data: currentCase, error: currentError } = await supabaseAdmin
+    .from("information_agent_cases")
+    .select("status")
+    .eq("id", sharedCase.id)
+    .maybeSingle();
+  if (currentError) throw currentError;
+  if (currentCase?.status !== "review") return false;
+
+  const { data: preservedCase, error: preserveError } = await supabaseAdmin
+    .from("information_agent_cases")
+    .update({ replied_at: values.replied_at })
+    .eq("id", sharedCase.id)
+    .eq("status", "review")
+    .select("id")
+    .maybeSingle();
+  if (preserveError) throw preserveError;
+  return Boolean(preservedCase);
 }
 
 async function updateOpenInformationAgentCase(

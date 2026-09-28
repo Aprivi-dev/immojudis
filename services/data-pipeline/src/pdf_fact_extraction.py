@@ -1192,7 +1192,7 @@ def _extract_occupancy_status(text: str) -> str | None:
         r"\bloyer\s+mensuel\b",
         lowered,
     ) and not re.search(
-        r"\blibre\s+de\s+toute\s+occupation\b|"
+        r"\blibre(?:s)?\s+de\s+toute\s+occupation\b|"
         r"\ba\s+quitte\s+les\s+lieux\b|"
         r"\bdepart\s+effectif\b|"
         r"\bconstate(?:e?s?|s)?\s+libre\b",
@@ -1201,7 +1201,19 @@ def _extract_occupancy_status(text: str) -> str | None:
         if no_lease_status:
             return no_lease_status
         return "rented" if has_rented_occupancy_signal(lowered) else "occupied"
-    if re.search(r"\b(libre|inoccupe(?:e?s?|s)?)\b", lowered):
+    if re.search(
+        r"\blibre(?:s)?\s+(?:de\s+toute\s+occupation|d['’]occupation)\b|"
+        r"\b(?:bien|biens|appartement|appartements|maison|maisons|immeuble|immeubles|local|locaux|"
+        r"logement|logements|terrain|terrains|studio|studios|propriete|proprietes|lieux)\b\s+(?:"
+        r"libre(?:s)?|"
+        r"(?:est|sont|sera|seront)\s+(?:actuellement\s+)?libre(?:s)?|"
+        r"(?:a|ont)\s+ete\s+(?:constate(?:e|es)?\s+)?libre(?:s)?|"
+        r"constate(?:e|es)?\s+libre(?:s)?)\b(?!\s+de\s+droit)|"
+        r"\binoccupe(?:e?s?|s?)\b|"
+        r"\bvacant(?:e?s?)?\b",
+        lowered,
+    ):
+        # A free viewing slot or a rights-free photo says nothing about the property's occupancy.
         return "vacant"
     if no_lease_status:
         return no_lease_status

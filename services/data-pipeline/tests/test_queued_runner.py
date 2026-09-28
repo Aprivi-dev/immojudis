@@ -366,6 +366,134 @@ def test_enrichment_queue_does_not_pay_twice_for_scan_description(monkeypatch) -
     assert finished == [("job-display", True, None)]
 
 
+def test_enrichment_queue_replays_fact_claims_without_llm_or_catalogue_write(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/fact-claims-retry",
+            "source_blocks": {"occupation": "Libre de toute occupation"},
+        }
+    )
+    replayed: list[str] = []
+    finished: list[tuple[str, bool, str | None]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [
+            {
+                "id": "job-fact-claims",
+                "source_url": sale.source_url,
+                "job_type": "fact_claims",
+            }
+        ],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    # A sale can pass the retention boundary after its job was leased. Its
+    # source observation still needs to be persisted before the lease ends.
+    monkeypatch.setattr(queued_runner, "is_expired", lambda current: True)
+    monkeypatch.setattr(
+        queued_runner,
+        "retry_fact_claims_to_supabase",
+        lambda current: replayed.append(current.source_url) or 1,
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "create_llm_client",
+        lambda: (_ for _ in ()).throw(AssertionError("fact claim replay must not invoke the LLM")),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "upsert_sales_to_supabase",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("fact claim replay must not rewrite catalogue")),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, succeeded, error_message=None: finished.append((job_id, succeeded, error_message)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1) == 1
+    assert replayed == [sale.source_url]
+    assert finished == [("job-fact-claims", True, None)]
+
+
+def test_enrichment_queue_does_not_complete_mixed_claim_job_when_replay_fails(monkeypatch) -> None:
+    prompt_version = "fact-claims-mixed-test"
+    fact_claim_snapshot = [
+        {
+            "field_key": "property.occupancy_status",
+            "value_jsonb": "vacant",
+            "source_url": "https://example.test/fact-claims-mixed-retry",
+            "evidence_locator": {"field": "occupation"},
+            "evidence_kind": "source_listing",
+        }
+    ]
+    sale = AuctionSale(
+        source_name="info_encheres",
+        source_url="https://example.test/fact-claims-mixed-retry",
+        description="Maison libre de toute occupation.",
+        latitude=44.84,
+        longitude=-0.57,
+        raw_payload={
+            "llm_display_description": "Description finale vérifiée. " * 5,
+            "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
+            "llm_display_status": "accepted",
+            "llm_prompt_version": prompt_version,
+            "llm_display_prompt_version": "auction_display_v9_public_summary",
+        },
+    )
+    finished: list[tuple[str, bool, str | None]] = []
+    replay_kwargs: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [
+            {
+                "id": "job-fact-claims",
+                "source_url": sale.source_url,
+                "job_type": "fact_claims",
+                "fact_claims_snapshot": fact_claim_snapshot,
+            },
+            {
+                "id": "job-display",
+                "source_url": sale.source_url,
+                "job_type": "display_description",
+            },
+        ],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": prompt_version})
+    monkeypatch.setattr(
+        queued_runner,
+        "retry_fact_claims_to_supabase",
+        lambda current, **kwargs: replay_kwargs.append(kwargs)
+        or (_ for _ in ()).throw(RuntimeError("claim replay unavailable")),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_with_llm",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("display is already current")),
+    )
+    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda current: None)
+    monkeypatch.setattr(queued_runner, "classify_sale_procedure", lambda current: None)
+    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
+    monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, succeeded, error_message=None: finished.append((job_id, succeeded, error_message)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=2) == 2
+    assert finished == [
+        ("job-fact-claims", False, "claim replay unavailable"),
+        ("job-display", True, None),
+    ]
+    assert replay_kwargs == [{"snapshot": fact_claim_snapshot}]
+
+
 def test_enrichment_worker_uses_five_to_one_lane_cycle(monkeypatch) -> None:
     calls: list[tuple[int, str]] = []
 
@@ -525,6 +653,73 @@ def test_general_budget_deferral_is_a_handled_lane_outcome(monkeypatch) -> None:
     assert len(deferred) == 1
     assert deferred[0][0] == [job]
     assert isinstance(deferred[0][1], PipelineBudgetExhausted)
+
+
+def test_general_budget_does_not_defer_completed_fact_claim_job(monkeypatch) -> None:
+    from src.pipeline_usage import PipelineBudgetExhausted
+
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/mixed-budget",
+            "description": "Maison",
+            "source_blocks": {"occupation": "Libre de toute occupation"},
+        }
+    )
+    fact_job = {
+        "id": "job-fact-claims",
+        "source_url": sale.source_url,
+        "job_type": "fact_claims",
+        "attempt_count": 2,
+        "locked_at": "2026-09-13T08:00:00+00:00",
+    }
+    display_job = {
+        "id": "job-display",
+        "source_url": sale.source_url,
+        "job_type": "display_description",
+        "attempt_count": 1,
+        "locked_at": "2026-09-13T08:00:00+00:00",
+    }
+    deferred: list[tuple[list[dict[str, object]], PipelineBudgetExhausted]] = []
+    finished: list[tuple[str, bool, str | None]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: [fact_job, display_job],
+    )
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "retry_fact_claims_to_supabase", lambda _: 1)
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_with_llm",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            PipelineBudgetExhausted("Daily AI budget exhausted")
+        ),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "defer_budget_jobs",
+        lambda jobs, error: deferred.append((jobs, error)),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, succeeded, error_message=None, **kwargs: finished.append(
+            (job_id, succeeded, error_message)
+        ),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(
+        limit=2, family=queued_runner.ENRICHMENT_FAMILY
+    ) == 2
+    assert len(deferred) == 1
+    assert deferred[0][0] == [display_job]
+    assert isinstance(deferred[0][1], PipelineBudgetExhausted)
+    assert finished == [("job-fact-claims", True, None)]
 
 
 @pytest.mark.parametrize('progress_made,should_defer', [(True, True), (False, False)])

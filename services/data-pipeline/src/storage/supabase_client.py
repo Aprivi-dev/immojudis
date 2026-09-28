@@ -12,7 +12,7 @@ from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import httpx
 from supabase import Client, create_client
@@ -39,7 +39,12 @@ from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
 from src.court_competence import tribunal_reference_rows
 from src.dedupe import merge_duplicate_sales
 from src.enrichment.display_quality import has_current_display
-from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
+from src.fact_claims import (
+    FACT_CLAIMS_NAMESPACE,
+    FACT_CLAIMS_VERSION,
+    build_fact_claim_candidates,
+    materialize_fact_claim_rows,
+)
 from src.freshness import document_fingerprint, documents_are_current
 from src.models import AuctionSale
 from src.normalize import make_sale_signature
@@ -501,6 +506,12 @@ FACT_CLAIMS_COLUMNS = (
     "extractor_name",
     "extractor_version",
 )
+FACT_CLAIMS_RETRY_JOB_TYPE = "fact_claims"
+FACT_CLAIMS_RETRY_VERSION = "fact_claims_rest_v2"
+
+
+class _FactClaimRetryQueueUnavailable(RuntimeError):
+    """The one allowed queue insertion did not create durable retry work."""
 
 
 def _write_fact_claims_postgres(sales: list[AuctionSale], connection: Any) -> int:
@@ -531,44 +542,320 @@ def _write_fact_claims_postgres(sales: list[AuctionSale], connection: Any) -> in
     return len(rows)
 
 
-def _write_fact_claims_rest(supabase_url: str, api_key: str, sales: list[AuctionSale]) -> int:
-    """Persist candidates through PostgREST when direct Postgres is unavailable."""
+def _write_fact_claims_rest(
+    supabase_url: str,
+    api_key: str,
+    sales: list[AuctionSale],
+    *,
+    queue_on_failure: bool = True,
+) -> int:
+    """Persist candidates through PostgREST when direct Postgres is unavailable.
+
+    The catalogue write happens before this additive evidence write on the REST
+    path, so a transient PostgREST failure must not make the caller republish
+    the catalogue.  Keep the direct attempt bounded, then leave one durable
+    job in the existing enrichment queue.  The queue worker retries this
+    narrow write without invoking the LLM or rewriting the sale.
+    """
     eligible_sales = [sale for sale in sales if build_fact_claim_candidates(sale)]
     if not eligible_sales:
         return 0
+    rows: list[dict[str, object]] = []
     try:
         sale_ids = _sale_ids_for_rest(supabase_url, api_key, eligible_sales)
+        missing_sales = [sale for sale in eligible_sales if not sale_ids.get(sale.source_url)]
         rows = [
             row
             for sale in eligible_sales
             for row in materialize_fact_claim_rows(sale, sale_ids.get(sale.source_url, ""))
         ]
         if not rows:
-            return 0
-        endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_fact_claims"
-        for batch in _postgrest_batches(rows, _postgrest_batch_size("auction_fact_claims")):
-            response = _postgrest_request_with_retries(
-                "POST",
-                endpoint,
-                table="auction_fact_claims",
-                params={"on_conflict": "id"},
-                headers=_rest_headers(api_key, prefer="resolution=ignore-duplicates,return=minimal"),
-                json=_sanitize_postgrest_payload(batch),
-                timeout=POSTGREST_TIMEOUT,
+            raise RuntimeError("Canonical auction sale id unavailable for fact claims")
+        _write_fact_claim_rows_rest(supabase_url, api_key, rows)
+        if missing_sales:
+            if not queue_on_failure:
+                raise RuntimeError("Canonical auction sale id unavailable for fact claims replay")
+            missing_queued = _queue_fact_claim_retry_rest(
+                supabase_url,
+                api_key,
+                missing_sales,
+                [],
+                failure=RuntimeError("Incomplete canonical auction sale id lookup"),
             )
-            if response.is_error:
-                raise httpx.HTTPStatusError(
-                    f"{response.status_code} response from Supabase auction_fact_claims: {response.text}",
-                    request=response.request,
-                    response=response,
+            if not missing_queued:
+                raise _FactClaimRetryQueueUnavailable(
+                    "Fact claims retry queue unavailable for incomplete canonical sale lookup"
                 )
+            LOGGER.warning(
+                "Fact claims publication deferred for sales with incomplete target lookup queued=%s rows=%s missing_sales=%s",
+                missing_queued,
+                len(rows),
+                len(missing_sales),
+            )
         LOGGER.info("Fact claims candidates persisted source=rest rows=%s sales=%s", len(rows), len(eligible_sales))
         return len(rows)
+    except _FactClaimRetryQueueUnavailable:
+        raise
     except (httpx.HTTPError, RuntimeError, ValueError, TypeError) as exc:
-        # Fact claims are additive telemetry.  A transient claims endpoint must
-        # not turn a successfully published catalogue row into a retry storm.
-        LOGGER.warning("Fact claims publication skipped after catalogue write: %s", exc)
+        if not queue_on_failure:
+            raise
+        queued = _queue_fact_claim_retry_rest(
+            supabase_url,
+            api_key,
+            eligible_sales,
+            rows,
+            failure=exc,
+        )
+        # Fact claims are additive telemetry. A transient claims endpoint must
+        # not turn a successfully published catalogue row into a retry storm,
+        # but it must remain visible and replayable when the queue is available.
+        LOGGER.warning(
+            "Fact claims publication deferred after catalogue write: error=%s queued=%s rows=%s sales=%s",
+            type(exc).__name__,
+            queued,
+            len(rows),
+            len(eligible_sales),
+        )
+        if not queued:
+            raise _FactClaimRetryQueueUnavailable(
+                "Fact claims publication failed and retry queue insertion was unavailable"
+            ) from exc
         return 0
+
+
+def retry_fact_claims_to_supabase(
+    sale: AuctionSale,
+    *,
+    snapshot: object | None = None,
+) -> int:
+    """Replay one queued REST claim write without creating another queue row.
+
+    New jobs carry the exact candidate rows that failed to publish. Resolve the
+    current canonical sale id before re-keying those rows, so a deleted and
+    recreated sale cannot receive claims under a stale UUID. Legacy jobs with
+    no snapshot fall back to the current sale payload, but an empty candidate
+    set is an explicit failure rather than a silently successful replay.
+    """
+    settings = load_settings()
+    url = settings.get("supabase_url")
+    key = settings.get("supabase_service_role_key")
+    if not url or not key:
+        raise RuntimeError("Supabase variables are missing; fact claims cannot be replayed")
+    if snapshot is None:
+        if not build_fact_claim_candidates(sale):
+            raise RuntimeError("Fact claims replay snapshot is unavailable and current candidates are empty")
+        written = _write_fact_claims_rest(str(url), str(key), [sale], queue_on_failure=False)
+    else:
+        sale_ids = _sale_ids_for_rest(str(url), str(key), [sale])
+        canonical_sale_id = sale_ids.get(sale.source_url)
+        if not canonical_sale_id:
+            raise RuntimeError("Canonical auction sale id unavailable for fact claims replay")
+        rows = _materialize_fact_claim_snapshot(snapshot, canonical_sale_id)
+        if not rows:
+            raise RuntimeError("Fact claims replay snapshot is malformed or empty")
+        written = _write_fact_claim_rows_rest(str(url), str(key), rows)
+    if written <= 0:
+        raise RuntimeError("Fact claims replay produced no persisted rows")
+    return written
+
+
+def _write_fact_claim_rows_rest(
+    supabase_url: str,
+    api_key: str,
+    rows: list[dict[str, object]],
+) -> int:
+    """Write materialized candidate rows with no queue side effects."""
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_fact_claims"
+    for batch in _postgrest_batches(rows, _postgrest_batch_size("auction_fact_claims")):
+        response = _postgrest_request_with_retries(
+            "POST",
+            endpoint,
+            table="auction_fact_claims",
+            params={"on_conflict": "id"},
+            headers=_rest_headers(api_key, prefer="resolution=ignore-duplicates,return=minimal"),
+            json=_sanitize_postgrest_payload(batch),
+            timeout=POSTGREST_TIMEOUT,
+        )
+        if response.is_error:
+            raise httpx.HTTPStatusError(
+                f"{response.status_code} response from Supabase auction_fact_claims: {response.text}",
+                request=response.request,
+                response=response,
+            )
+    return len(rows)
+
+
+def _materialize_fact_claim_snapshot(
+    snapshot: object,
+    canonical_sale_id: str,
+) -> list[dict[str, object]]:
+    """Re-key a queued candidate snapshot for the current canonical sale id."""
+    try:
+        normalized_sale_id = str(UUID(str(canonical_sale_id)))
+    except (TypeError, ValueError, AttributeError):
+        raise RuntimeError("Fact claims replay received an invalid canonical sale id") from None
+    if not isinstance(snapshot, list):
+        raise RuntimeError("Fact claims replay snapshot must be a JSON array")
+
+    rows: list[dict[str, object]] = []
+    for candidate in snapshot:
+        if not isinstance(candidate, dict):
+            raise RuntimeError("Fact claims replay snapshot contains a non-object candidate")
+        required = (
+            "field_key",
+            "value_jsonb",
+            "evidence_kind",
+            "source_url",
+            "evidence_locator",
+            "confidence_score",
+            "extractor_name",
+            "extractor_version",
+        )
+        missing = [key for key in required if key not in candidate]
+        if missing:
+            raise RuntimeError(
+                "Fact claims replay snapshot candidate is missing " + ", ".join(missing)
+            )
+        identity = json.dumps(
+            {
+                "version": FACT_CLAIMS_VERSION,
+                "auction_sale_id": normalized_sale_id,
+                "field_key": candidate["field_key"],
+                "value_jsonb": candidate["value_jsonb"],
+                "source_url": candidate["source_url"],
+                "evidence_locator": candidate["evidence_locator"],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        rows.append(
+            {
+                "id": str(uuid5(FACT_CLAIMS_NAMESPACE, identity)),
+                "auction_sale_id": normalized_sale_id,
+                "field_key": candidate["field_key"],
+                "value_jsonb": candidate["value_jsonb"],
+                "claim_status": "candidate",
+                "evidence_kind": candidate["evidence_kind"],
+                "source_url": candidate["source_url"],
+                "evidence_locator": candidate["evidence_locator"],
+                "confidence_score": candidate["confidence_score"],
+                "extractor_name": candidate["extractor_name"],
+                "extractor_version": candidate["extractor_version"],
+            }
+        )
+    return rows
+
+
+def _queue_fact_claim_retry_rest(
+    supabase_url: str,
+    api_key: str,
+    sales: list[AuctionSale],
+    rows: list[dict[str, object]],
+    *,
+    failure: Exception,
+) -> bool:
+    """Queue one deterministic retry per sale with a single best-effort request.
+
+    The normal claim writer already spent its bounded retry budget. Retrying the
+    queue insert with the same policy would double the load during an outage,
+    so this fallback makes exactly one request. The candidate snapshot is kept
+    on the service-role-only job row; replay rekeys it to the canonical sale id
+    and does not depend on the sale's mutable raw payload. The unique queue key
+    and claim UUIDs make repeated publication idempotent.
+    """
+    jobs: list[dict[str, object]] = []
+    for sale in sales:
+        # Rebuild this sale's candidate set independently of materialized rows.
+        # Two sales can share an observed source URL; filtering one batch's
+        # rows by URL would otherwise assign one sale's evidence to the other.
+        # Candidate rows deliberately omit the canonical id; replay resolves
+        # that id at the moment of publication.
+        sale_rows = build_fact_claim_candidates(sale)
+        if not sale_rows:
+            continue
+        jobs.append(
+            {
+                "source_url": sale.source_url,
+                "job_type": FACT_CLAIMS_RETRY_JOB_TYPE,
+                "priority": 35,
+                "input_hash": _fact_claim_retry_input_hash(sale_rows),
+                "fact_claims_snapshot": sale_rows,
+            }
+        )
+    if not jobs:
+        LOGGER.error(
+            "Fact claims retry queue skipped because no candidates were available error=%s",
+            type(failure).__name__,
+        )
+        return False
+
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_enrichment_jobs"
+    try:
+        response = httpx.post(
+            endpoint,
+            params={"on_conflict": "source_url,job_type,input_hash"},
+            headers=_rest_headers(api_key, prefer="resolution=ignore-duplicates,return=minimal"),
+            json=_sanitize_postgrest_payload(jobs),
+            timeout=30,
+        )
+    except httpx.HTTPError as exc:
+        LOGGER.error(
+            "Fact claims retry queue request failed error=%s original=%s",
+            type(exc).__name__,
+            type(failure).__name__,
+        )
+        return False
+    if response.is_error:
+        LOGGER.error(
+            "Fact claims retry queue rejected request status=%s original=%s",
+            response.status_code,
+            type(failure).__name__,
+        )
+        return False
+    LOGGER.info(
+        "Fact claims retry queued jobs=%s rows=%s original=%s",
+        len(jobs),
+        len(rows),
+        type(failure).__name__,
+    )
+    return True
+
+
+def _fact_claim_retry_input_hash(rows: list[dict[str, object]]) -> str:
+    identity = [
+        {
+            key: row.get(key)
+            for key in (
+                "id",
+                "auction_sale_id",
+                "field_key",
+                "value_jsonb",
+                "source_url",
+                "evidence_locator",
+            )
+        }
+        for row in rows
+    ]
+    identity.sort(
+        key=lambda item: json.dumps(
+            item,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+    )
+    serialized = json.dumps(
+        identity,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return f"{FACT_CLAIMS_RETRY_VERSION}:{digest}"
 
 
 def _sale_ids_for_connection(connection: Any, sales: list[AuctionSale]) -> dict[str, str]:

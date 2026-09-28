@@ -514,6 +514,30 @@ def test_normalize_sale_maps_french_occupancy_to_enum() -> None:
     assert sale.occupancy_status == "vacant"
 
 
+def test_normalize_sale_extracts_plural_free_occupancy_from_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/occupancy-plural",
+            "raw_text": "Les lieux sont libres de toute occupation.",
+        }
+    )
+
+    assert sale.occupancy_status == "vacant"
+
+
+def test_normalize_sale_does_not_infer_occupancy_from_free_visit() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/free-visit",
+            "raw_text": "Visite libre sur rendez-vous.",
+        }
+    )
+
+    assert sale.occupancy_status is None
+
+
 def test_normalize_sale_maps_uncertain_occupancy_to_unknown() -> None:
     values = (
         "occupation à vérifier",

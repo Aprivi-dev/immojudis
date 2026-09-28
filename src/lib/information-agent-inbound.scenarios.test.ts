@@ -41,7 +41,12 @@ type Row = Record<string, unknown>;
 function fixture({
   concurrentAssetLookup = false,
   closeCaseBeforeFinalUpdate = false,
-}: { concurrentAssetLookup?: boolean; closeCaseBeforeFinalUpdate?: boolean } = {}) {
+  moveCaseToReviewBeforeFinalUpdate = false,
+}: {
+  concurrentAssetLookup?: boolean;
+  closeCaseBeforeFinalUpdate?: boolean;
+  moveCaseToReviewBeforeFinalUpdate?: boolean;
+} = {}) {
   const cases: Row[] = [
     {
       id: CASE_A,
@@ -75,6 +80,7 @@ function fixture({
   const uploads: Array<{ path: string; bytes: Uint8Array }> = [];
   let assetLookupCount = 0;
   let closeCaseBeforeNextUpdate = closeCaseBeforeFinalUpdate;
+  let moveCaseToReviewBeforeNextUpdate = moveCaseToReviewBeforeFinalUpdate;
   let releaseAssetLookups: () => void = () => {};
   const assetLookupsReady = new Promise<void>((resolve) => {
     releaseAssetLookups = resolve;
@@ -221,6 +227,15 @@ function fixture({
         closeCaseBeforeNextUpdate = false;
         const target = cases.find((row) => row.id === CASE_A);
         if (target) target.status = "completed";
+      }
+      if (
+        moveCaseToReviewBeforeNextUpdate &&
+        this.table === "information_agent_cases" &&
+        this.operation === "update"
+      ) {
+        moveCaseToReviewBeforeNextUpdate = false;
+        const target = cases.find((row) => row.id === CASE_A);
+        if (target) target.status = "review";
       }
       const selected = rows.filter((row) => this.conditions.every((condition) => condition(row)));
       if (this.operation === "update") selected.forEach((row) => Object.assign(row, this.values));
@@ -435,6 +450,25 @@ describe("information-agent offline inbound scenarios", () => {
     });
     expect(mocks.list).toHaveBeenCalledTimes(1);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("keeps a case in review when a later inbound reply has no new fact", async () => {
+    const state = fixture();
+    state.cases[0]!.status = "review";
+    receivedEmail({ text: "Merci pour votre retour, nous vérifions le dossier." });
+    mocks.list.mockResolvedValue({ data: { data: [] }, error: null });
+
+    expect(await webhook()).toMatchObject({ processingStatus: "completed", factCount: 0 });
+    expect(state.cases[0]?.status).toBe("review");
+  });
+
+  it("preserves review when a concurrent reply changes the case after the snapshot", async () => {
+    const state = fixture({ moveCaseToReviewBeforeFinalUpdate: true });
+    receivedEmail({ text: "Merci pour votre retour, nous vérifions le dossier." });
+
+    expect(await webhook()).toMatchObject({ processingStatus: "completed", factCount: 0 });
+    expect(state.cases[0]?.status).toBe("review");
+    expect(state.missions[0]?.status).toBe("replied");
   });
 
   it("keeps a failed checkpoint retryable and advances the attempt on the next delivery", async () => {
