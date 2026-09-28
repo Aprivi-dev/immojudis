@@ -19,13 +19,12 @@ const allowedVercelCronPaths = new Set([
   "/api/cron/data-retention",
   "/api/cron/sale-retention",
   "/api/cron/operational-health",
-  // Processes replies to existing cases; it does not collect auction listings.
-  "/api/cron/information-agent-inbound",
 ]);
 const allowedDatabaseCronJobs = new Set([
   "immojudis-operational-health",
   "immojudis-operational-history-retention",
   "immojudis-sale-retention",
+  "immojudis-information-agent-inbound",
 ]);
 // Keep immutable migration history, but forbid reintroducing these schedules.
 // The terminal migration disables both; pgTAP checks the resulting database state.

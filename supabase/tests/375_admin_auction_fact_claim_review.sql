@@ -34,10 +34,21 @@ insert into auth.users(id) values
   ('37400000-4000-4000-8000-000000000001'),
   ('37400000-4000-4000-8000-000000000002');
 
-insert into public.user_profiles(user_id, email, user_role)
-values
-  ('37400000-4000-4000-8000-000000000001', 'fact-review-admin@example.test', 'admin'),
-  ('37400000-4000-4000-8000-000000000002', 'fact-review-user@example.test', 'user');
+-- auth.users has the production after-insert profile trigger, so update the
+-- rows it created instead of inserting a duplicate primary key.
+update public.user_profiles
+set email = case user_id
+  when '37400000-4000-4000-8000-000000000001'::uuid then 'fact-review-admin@example.test'
+  when '37400000-4000-4000-8000-000000000002'::uuid then 'fact-review-user@example.test'
+end,
+user_role = case user_id
+  when '37400000-4000-4000-8000-000000000001'::uuid then 'admin'
+  when '37400000-4000-4000-8000-000000000002'::uuid then 'user'
+end
+where user_id in (
+  '37400000-4000-4000-8000-000000000001'::uuid,
+  '37400000-4000-4000-8000-000000000002'::uuid
+);
 
 insert into public.auction_sales(
   id, source_name, source_url, title, city, sale_date,
