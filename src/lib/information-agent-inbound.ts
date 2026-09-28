@@ -54,6 +54,13 @@ export type InformationAgentInboundResult = {
   attachmentCount?: number;
 };
 
+export class InvalidInformationAgentWebhookSignatureError extends Error {
+  constructor() {
+    super("Signature webhook invalide.");
+    this.name = "InvalidInformationAgentWebhookSignatureError";
+  }
+}
+
 export async function processInformationAgentInboundWebhook({
   request,
   env = process.env,
@@ -72,15 +79,20 @@ export async function processInformationAgentInboundWebhook({
 
   const rawPayload = await request.text();
   const resend = new Resend(apiKey);
-  const event = resend.webhooks.verify({
-    payload: rawPayload,
-    headers: {
-      id: requiredHeader(request, "svix-id"),
-      timestamp: requiredHeader(request, "svix-timestamp"),
-      signature: requiredHeader(request, "svix-signature"),
-    },
-    webhookSecret,
-  });
+  let event: ReturnType<typeof resend.webhooks.verify>;
+  try {
+    event = resend.webhooks.verify({
+      payload: rawPayload,
+      headers: {
+        id: requiredHeader(request, "svix-id"),
+        timestamp: requiredHeader(request, "svix-timestamp"),
+        signature: requiredHeader(request, "svix-signature"),
+      },
+      webhookSecret,
+    });
+  } catch {
+    throw new InvalidInformationAgentWebhookSignatureError();
+  }
   if (event.type !== "email.received") return { accepted: true, ignored: true };
 
   return ingestReceivedEmail({
@@ -143,6 +155,9 @@ async function ingestReceivedEmail({
     receivedAt,
     senderMatches,
   });
+  if (await ignoreIfCaseClosed(sharedCase.id, messageId)) {
+    return { accepted: true, caseId: sharedCase.id, messageId, factCount: 0, attachmentCount: 0 };
+  }
 
   // The case address is a routing key, not proof that the sender is the expected contact.
   if (!senderMatches) {
@@ -156,7 +171,8 @@ async function ingestReceivedEmail({
           last_inbound_sender_matches_recipient: false,
         }),
       })
-      .eq("id", sharedCase.id);
+      .eq("id", sharedCase.id)
+      .in("status", ["sending", "sent", "replied", "review"]);
     if (error) throw error;
     return { accepted: true, caseId: sharedCase.id, messageId, factCount: 0, attachmentCount: 0 };
   }
@@ -188,7 +204,10 @@ async function ingestReceivedEmail({
       .eq("id", messageId);
     if (error) throw error;
   }
-  const extractedFacts = extractInformationAgentFacts(bodyText);
+  if (await ignoreIfCaseClosed(sharedCase.id, messageId)) {
+    return { accepted: true, caseId: sharedCase.id, messageId, factCount: 0, attachmentCount: 0 };
+  }
+  const extractedFacts = extractInformationAgentFacts(replyTextForExtraction(bodyText));
   await persistFactCandidates({
     sharedCase,
     messageId,
@@ -209,7 +228,8 @@ async function ingestReceivedEmail({
         last_inbound_sender_matches_recipient: senderMatches,
       }),
     })
-    .eq("id", sharedCase.id);
+    .eq("id", sharedCase.id)
+    .in("status", ["sending", "sent", "replied", "review"]);
   if (updateCaseError) throw updateCaseError;
 
   const { error: updateMissionsError } = await supabaseAdmin
@@ -226,6 +246,33 @@ async function ingestReceivedEmail({
     factCount: extractedFacts.length + storedAssets.length,
     attachmentCount: storedAssets.length,
   };
+}
+
+async function ignoreIfCaseClosed(caseId: string, messageId: string): Promise<boolean> {
+  const { data: currentCase, error: caseError } = await supabaseAdmin
+    .from("information_agent_cases")
+    .select("status")
+    .eq("id", caseId)
+    .single();
+  if (caseError) throw caseError;
+  if (["sending", "sent", "replied", "review"].includes(currentCase.status)) return false;
+
+  const { data: message, error: messageError } = await supabaseAdmin
+    .from("information_agent_messages")
+    .select("metadata")
+    .eq("id", messageId)
+    .single();
+  if (messageError) throw messageError;
+  const { error: updateError } = await supabaseAdmin
+    .from("information_agent_messages")
+    .update({
+      metadata: mergeJsonObject(message.metadata, {
+        processing_ignored_case_status: currentCase.status,
+      }),
+    })
+    .eq("id", messageId);
+  if (updateError) throw updateError;
+  return true;
 }
 
 async function loadInitiatorMission(sharedCase: SharedCase): Promise<Mission> {
@@ -407,22 +454,40 @@ async function storeInboundAttachments({
       continue;
     }
 
-    const response = await fetchImpl(attachment.download_url, {
-      headers: { accept: mimeType },
-    });
-    if (!response.ok)
-      throw new Error(`Téléchargement de pièce joint impossible (${response.status}).`);
-    const bytes = await readBoundedAttachment(
-      response,
-      Math.min(MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES - totalBytes),
-    );
+    let response: Response;
+    try {
+      response = await fetchImpl(attachment.download_url, {
+        headers: { accept: mimeType },
+      });
+    } catch {
+      rejected.push({ filename, reason: "Téléchargement indisponible ; contrôle manuel requis" });
+      continue;
+    }
+    if (!response.ok) {
+      rejected.push({
+        filename,
+        reason: `Téléchargement impossible (HTTP ${response.status}) ; contrôle manuel requis`,
+      });
+      continue;
+    }
+    let bytes: Uint8Array | null;
+    try {
+      bytes = await readBoundedAttachment(
+        response,
+        Math.min(MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES - totalBytes),
+      );
+    } catch {
+      rejected.push({ filename, reason: "Lecture du fichier impossible ; contrôle manuel requis" });
+      continue;
+    }
     if (!bytes) {
       rejected.push({ filename, reason: "Taille réelle hors limite ou fichier vide" });
       continue;
     }
 
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    const storagePath = `${sharedCase.id}/${messageId}/${sha256}-${filename}`;
+    const attachmentKey = createHash("sha256").update(attachment.id).digest("hex");
+    const storagePath = `${sharedCase.id}/${messageId}/${attachmentKey}/${sha256}-${filename}`;
     const { error: uploadError } = await supabaseAdmin.storage
       .from("information-agent-evidence")
       .upload(storagePath, bytes, {
@@ -447,7 +512,28 @@ async function storeInboundAttachments({
       })
       .select("id")
       .single();
-    if (assetError) throw assetError;
+    if (assetError) {
+      // A concurrent replay can win the same insert after this request's lookup.
+      // Only reuse a row tied to the exact provider attachment and content.
+      const { data: concurrentAsset, error: concurrentError } = await supabaseAdmin
+        .from("information_agent_evidence_assets")
+        .select("id,original_filename,mime_type,storage_path,size_bytes,sha256")
+        .eq("message_id", messageId)
+        .eq("provider_attachment_id", attachment.id)
+        .maybeSingle();
+      if (concurrentError || !concurrentAsset || concurrentAsset.sha256 !== sha256) {
+        throw assetError;
+      }
+      stored.push({
+        id: concurrentAsset.id,
+        filename: concurrentAsset.original_filename,
+        mimeType: concurrentAsset.mime_type,
+        storagePath: concurrentAsset.storage_path,
+        size: Number(concurrentAsset.size_bytes),
+      });
+      totalBytes += Number(concurrentAsset.size_bytes);
+      continue;
+    }
     stored.push({
       id: asset.id,
       filename,
@@ -510,9 +596,10 @@ async function persistFactCandidates({
     })),
   ];
   if (!rows.length) return;
-  const { error } = await supabaseAdmin
-    .from("information_agent_fact_candidates")
-    .upsert(rows, { onConflict: "message_id,fact_key,display_value", ignoreDuplicates: true });
+  const { error } = await supabaseAdmin.from("information_agent_fact_candidates").upsert(rows, {
+    onConflict: "message_id,fact_key,evidence_asset_id,source_page,display_value",
+    ignoreDuplicates: true,
+  });
   if (error) throw error;
 }
 
@@ -522,6 +609,17 @@ export function findInboundToken(
 ): string | null {
   const tokens = collectInboundTokens(addresses, inboundDomain);
   return tokens.length === 1 ? tokens[0] : null;
+}
+
+export function replyTextForExtraction(bodyText: string): string {
+  const quotedStart =
+    /^(?:-{2,}\s*(?:message d.origine|original message)\s*-{2,}|le .+ a écrit\s*:|on .+ wrote\s*:|de\s*:\s*.+@.+)$/im;
+  const match = quotedStart.exec(bodyText);
+  return (match ? bodyText.slice(0, match.index) : bodyText)
+    .split("\n")
+    .filter((line) => !/^\s*>/.test(line))
+    .join("\n")
+    .trim();
 }
 
 function collectInboundTokens(addresses: readonly string[], inboundDomain: string): string[] {
@@ -542,6 +640,7 @@ function collectInboundTokens(addresses: readonly string[], inboundDomain: strin
 export function htmlToPlainText(value: string) {
   let output = "";
   let suppressedDepth = 0;
+  let quotedDepth = 0;
   const append = (text: string) => {
     if (output.length >= MAX_EXTRACTED_BODY_CHARS) return;
     output += text.slice(0, MAX_EXTRACTED_BODY_CHARS - output.length);
@@ -552,18 +651,22 @@ export function htmlToPlainText(value: string) {
         const tag = name.toLowerCase();
         if (tag === "script" || tag === "style") {
           suppressedDepth += 1;
-        } else if (suppressedDepth === 0 && HTML_LINE_BREAK_TAGS.has(tag)) {
+        } else if (tag === "blockquote") {
+          quotedDepth += 1;
+        } else if (suppressedDepth === 0 && quotedDepth === 0 && HTML_LINE_BREAK_TAGS.has(tag)) {
           append("\n");
         }
       },
       ontext(text) {
-        if (suppressedDepth === 0) append(text);
+        if (suppressedDepth === 0 && quotedDepth === 0) append(text);
       },
       onclosetag(name) {
         const tag = name.toLowerCase();
         if (tag === "script" || tag === "style") {
           suppressedDepth = Math.max(0, suppressedDepth - 1);
-        } else if (suppressedDepth === 0 && HTML_LINE_BREAK_TAGS.has(tag)) {
+        } else if (tag === "blockquote") {
+          quotedDepth = Math.max(0, quotedDepth - 1);
+        } else if (suppressedDepth === 0 && quotedDepth === 0 && HTML_LINE_BREAK_TAGS.has(tag)) {
           append("\n");
         }
       },
@@ -582,9 +685,13 @@ export function htmlToPlainText(value: string) {
 export function extractInformationAgentFacts(bodyText: string): ExtractedInformationAgentFact[] {
   const normalized = bodyText.replace(/\u00a0/g, " ");
   const facts: ExtractedInformationAgentFact[] = [];
-  const surfaceMatch = normalized.match(
-    /(?:surface(?:\s+(?:habitable|carrez|totale))?[^\d]{0,30})?(?<!\d)(\d{1,4}(?:[.,]\d{1,2})?)(?![\d.,])\s*m(?:²|2)(?![a-z0-9])/i,
-  );
+  const surfaceMatches = [
+    ...normalized.matchAll(
+      /(?:surface(?:\s+(?:habitable|carrez|totale))?[^\d]{0,30})?(?<!\d)(\d{1,4}(?:[.,]\d{1,2})?)(?![\d.,])\s*m(?:²|2)(?![a-z0-9])/gi,
+    ),
+  ];
+  const surfaceValues = new Set(surfaceMatches.map((match) => Number(match[1].replace(",", "."))));
+  const surfaceMatch = surfaceValues.size === 1 ? surfaceMatches[0] : undefined;
   if (surfaceMatch) {
     const value = Number(surfaceMatch[1].replace(",", "."));
     if (value > 0 && value <= 1000000) {
@@ -598,7 +705,9 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     }
   }
 
-  const roomsMatch = normalized.match(/(?<!\d)(\d{1,2})(?!\d)\s+pi[eè]ces?\b/i);
+  const roomsMatches = [...normalized.matchAll(/(?<!\d)(\d{1,2})(?!\d)\s+pi[eè]ces?\b/gi)];
+  const roomValues = new Set(roomsMatches.map((match) => Number(match[1])));
+  const roomsMatch = roomValues.size === 1 ? roomsMatches[0] : undefined;
   if (roomsMatch) {
     const value = Number(roomsMatch[1]);
     if (value >= 1 && value <= 100) {
@@ -613,22 +722,39 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
   }
 
   const occupancyPatterns: Array<[RegExp, string, string]> = [
-    [/\b(?:bien|logement|maison|appartement)\s+(?:est\s+)?libre\b/i, "vacant", "Bien libre"],
-    [/\b(?:bien|logement|maison|appartement)\s+(?:est\s+)?lou[ée]\b/i, "rented", "Bien loué"],
-    [/\b(?:bien|logement|maison|appartement)\s+(?:est\s+)?occup[ée]\b/i, "occupied", "Bien occupé"],
-    [/\bsquatt[ée]\b/i, "squatted", "Bien squatté"],
+    [
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?libres?(?![\p{L}\p{N}])/iu,
+      "vacant",
+      "Bien libre",
+    ],
+    [
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?lou[ée]e?s?(?![\p{L}\p{N}])/iu,
+      "rented",
+      "Bien loué",
+    ],
+    [
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?occup[ée]e?s?(?![\p{L}\p{N}])/iu,
+      "occupied",
+      "Bien occupé",
+    ],
+    [/\bsquatt[ée]e?s?(?![\p{L}\p{N}])/iu, "squatted", "Bien squatté"],
   ];
-  for (const [pattern, value, label] of occupancyPatterns) {
-    const match = normalized.match(pattern);
-    if (!match) continue;
-    facts.push({
-      factKey: "occupancy_status",
-      proposedValue: { value },
-      displayValue: label,
-      evidenceExcerpt: excerptAround(normalized, match.index ?? 0),
-      confidence: 0.82,
-    });
-    break;
+  const occupancyMatches = occupancyPatterns.flatMap(([pattern, value, label]) =>
+    pattern.test(normalized) ? [{ pattern, value, label }] : [],
+  );
+  if (new Set(occupancyMatches.map((match) => match.value)).size === 1) {
+    for (const { pattern, value, label } of occupancyMatches) {
+      const match = normalized.match(pattern);
+      if (!match) continue;
+      facts.push({
+        factKey: "occupancy_status",
+        proposedValue: { value },
+        displayValue: label,
+        evidenceExcerpt: excerptAround(normalized, match.index ?? 0),
+        confidence: 0.82,
+      });
+      break;
+    }
   }
   return facts;
 }
