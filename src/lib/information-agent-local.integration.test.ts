@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
+import postgres from "postgres";
 import { POST as prepareUploadRoute } from "@/app/api/information-agent/contributions/[missionId]/upload/route";
 import { POST as submitContributionRoute } from "@/app/api/information-agent/contributions/[missionId]/submit/route";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
@@ -34,14 +35,19 @@ const localEnv = () => {
   const url = process.env.SUPABASE_URL?.trim();
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
-  if (!url || !serviceKey || !publishableKey) {
-    throw new Error("The local integration needs the Supabase URL and local keys.");
+  const databaseUrl = process.env.SUPABASE_DB_URL?.trim();
+  if (!url || !serviceKey || !publishableKey || !databaseUrl) {
+    throw new Error("The local integration needs the Supabase URL, database URL, and local keys.");
   }
-  const hostname = new URL(url).hostname;
-  if (!["127.0.0.1", "localhost"].includes(hostname)) {
-    throw new Error("The information-agent integration refuses a non-local Supabase URL.");
+  if (
+    !["127.0.0.1", "localhost"].includes(new URL(url).hostname) ||
+    !["127.0.0.1", "localhost"].includes(new URL(databaseUrl).hostname)
+  ) {
+    throw new Error(
+      "The information-agent integration refuses a non-local Supabase or database URL.",
+    );
   }
-  return { url, serviceKey, publishableKey };
+  return { url, serviceKey, publishableKey, databaseUrl };
 };
 
 describeLocal("information-agent local integration", () => {
@@ -97,7 +103,7 @@ describeLocal("information-agent local integration", () => {
       throw new Error("Local Resend server did not start.");
     resendBaseUrl = `http://127.0.0.1:${address.port}`;
 
-    const { url, serviceKey, publishableKey } = localEnv();
+    const { url, serviceKey, publishableKey, databaseUrl } = localEnv();
     Object.assign(process.env, {
       SUPABASE_URL: url,
       NEXT_PUBLIC_SUPABASE_URL: url,
@@ -124,11 +130,18 @@ describeLocal("information-agent local integration", () => {
     if (userError || !createdUser.user) throw userError ?? new Error("Local user was not created.");
     userId = createdUser.user.id;
 
-    const { error: profileError } = await admin
-      .from("user_profiles")
-      .update({ user_role: "admin" })
-      .eq("user_id", userId);
-    if (profileError) throw profileError;
+    // Role assignment is deliberately unavailable through the service-role
+    // Data API. The isolated local test fixture uses its local DB owner.
+    const localDatabase = postgres(databaseUrl, { max: 1 });
+    try {
+      await localDatabase`
+        insert into public.user_profiles (user_id, email, user_role)
+        values (${userId}, ${userEmail}, 'admin')
+        on conflict (user_id) do update set user_role = 'admin'
+      `;
+    } finally {
+      await localDatabase.end();
+    }
 
     saleId = randomUUID();
     const sourceUrl = `https://example.test/local-information-agent/${saleId}`;
