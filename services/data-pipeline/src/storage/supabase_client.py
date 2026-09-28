@@ -1190,6 +1190,34 @@ def claim_auction_enrichment_jobs_from_supabase(
     )
 
 
+def has_eligible_pdf_job_for_sale(source_url: str) -> bool:
+    """Check whether a PDF prerequisite can still advance for this sale."""
+
+    settings = load_settings()
+    url = settings["supabase_url"]
+    key = settings["supabase_service_role_key"]
+    if not url or not key:
+        raise RuntimeError("Supabase credentials are required to inspect PDF prerequisites")
+    response = httpx.get(
+        f"{str(url).rstrip('/')}/rest/v1/auction_enrichment_jobs",
+        params={
+            "select": "status,attempt_count,max_attempts",
+            "source_url": f"eq.{source_url}",
+            "job_type": "eq.pdf",
+            "status": "in.(queued,running,failed)",
+            "order": "created_at.desc",
+            "limit": "100",
+        },
+        headers=_rest_headers(str(key), prefer="return=representation"),
+        timeout=30,
+    )
+    response.raise_for_status()
+    return any(
+        row["status"] == "running" or int(row["attempt_count"]) < int(row["max_attempts"])
+        for row in response.json()
+    )
+
+
 def claim_auction_enrichment_jobs_family_from_supabase(
     family: str,
     limit: int = 1,

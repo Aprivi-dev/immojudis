@@ -732,6 +732,7 @@ def test_fact_job_waits_for_pdf_cache_without_consuming_attempt(monkeypatch) -> 
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
     monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: True)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: (_ for _ in ()).throw(AssertionError()))
     monkeypatch.setattr(
         queued_runner,
@@ -751,6 +752,48 @@ def test_fact_job_waits_for_pdf_cache_without_consuming_attempt(monkeypatch) -> 
     assert isinstance(deferred[0][1], QueueJobDeferred)
     assert "PDF text cache" in str(deferred[0][1])
     assert finished == []
+
+
+def test_fact_job_stops_waiting_when_pdf_prerequisite_is_terminal(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/pdf-terminal",
+            "description": "Maison",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    job = {
+        "id": "job-fact-terminal-pdf",
+        "source_url": sale.source_url,
+        "job_type": "fact_extraction",
+        "attempt_count": 2,
+        "locked_at": "2026-09-13T08:00:00+00:00",
+    }
+    finished = []
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: [job],
+    )
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: False)
+    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(
+        limit=1, family=queued_runner.ENRICHMENT_FAMILY
+    ) == 1
+    assert len(finished) == 1
+    assert finished[0][0] == job["id"]
+    assert finished[0][1]["cancelled"] is True
+    assert finished[0][1]["error_message"].startswith("review_required:")
 
 
 def test_general_budget_does_not_defer_completed_fact_claim_job(monkeypatch) -> None:
