@@ -193,6 +193,9 @@ def evaluate_corpus(
 def project_field(sale: Any, field: str) -> Any:
     """Project normal model fields and the small derived fields used by fixtures."""
 
+    # A frozen prediction snapshot already contains projected field values.
+    if isinstance(sale, Mapping) and field in sale:
+        return sale[field]
     if field == "documents_count":
         return len(getattr(sale, "documents", ()) or ())
     if field == "document_types":

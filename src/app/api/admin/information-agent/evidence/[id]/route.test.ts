@@ -71,7 +71,7 @@ function setupGet() {
   assetQuery.select.mockReturnValue(assetQuery);
   assetQuery.eq.mockReturnValue(assetQuery);
   assetQuery.single.mockResolvedValue({
-    data: { storage_bucket: "information-agent-private", storage_path: "case/private.pdf" },
+    data: { storage_bucket: "information-agent-evidence", storage_path: "case/private.pdf" },
     error: null,
   });
   mocks.from.mockReturnValue(assetQuery);
@@ -102,7 +102,7 @@ describe("information-agent evidence rights review", () => {
     expect(await response.json()).toEqual({
       signedUrl: "https://storage.example.test/private-document?token=secret",
     });
-    expect(mocks.storageFrom).toHaveBeenCalledWith("information-agent-private");
+    expect(mocks.storageFrom).toHaveBeenCalledWith("information-agent-evidence");
     expect(createSignedUrl).toHaveBeenCalledWith("case/private.pdf", 600);
   });
 
@@ -120,6 +120,32 @@ describe("information-agent evidence rights review", () => {
     );
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("does not sign an object from a non-private bucket", async () => {
+    const assetQuery = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      single: vi.fn(),
+    };
+    assetQuery.select.mockReturnValue(assetQuery);
+    assetQuery.eq.mockReturnValue(assetQuery);
+    assetQuery.single.mockResolvedValue({
+      data: { storage_bucket: "information-agent-approved", storage_path: "sale/photo.webp" },
+      error: null,
+    });
+    mocks.from.mockReturnValue(assetQuery);
+
+    const response = await GET(
+      new Request(
+        `https://example.test/api/admin/information-agent/evidence/${assetId}?format=json`,
+      ),
+      { params: Promise.resolve({ id: assetId }) },
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Pièce indisponible." });
+    expect(mocks.storageFrom).not.toHaveBeenCalled();
   });
 
   it("rejects a restriction after acceptance before issuing an update", async () => {

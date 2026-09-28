@@ -24,6 +24,8 @@ const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"
 export function AdminInformationAgentReviewPanel() {
   const queryClient = useQueryClient();
   const [openingAssetId, setOpeningAssetId] = useState<string | null>(null);
+  const [previewingAssetId, setPreviewingAssetId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ assetId: string; signedUrl: string } | null>(null);
   const [rightsNotes, setRightsNotes] = useState<Record<string, string>>({});
   const query = useInfiniteQuery({
     queryKey: QUERY_KEY,
@@ -85,6 +87,20 @@ export function AdminInformationAgentReviewPanel() {
       toast.error(error instanceof Error ? error.message : "Impossible d’ouvrir cette pièce.");
     } finally {
       setOpeningAssetId(null);
+    }
+  };
+
+  const previewEvidenceAsset = async (assetId: string) => {
+    setPreviewingAssetId(assetId);
+    try {
+      const signedUrl = await fetchAdminInformationAgentEvidenceUrlClient(assetId);
+      setPreview({ assetId, signedUrl });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Impossible de prévisualiser cette pièce.",
+      );
+    } finally {
+      setPreviewingAssetId(null);
     }
   };
 
@@ -301,6 +317,19 @@ export function AdminInformationAgentReviewPanel() {
                         {asset ? (
                           <>
                             <div className="mt-3 flex flex-wrap gap-2">
+                              {previewKindForAsset(asset) ? (
+                                <button
+                                  type="button"
+                                  className="admin-button-secondary inline-flex items-center gap-2"
+                                  disabled={previewingAssetId === asset.id}
+                                  onClick={() => void previewEvidenceAsset(asset.id)}
+                                >
+                                  <ExternalLink className="size-4" />
+                                  {previewingAssetId === asset.id
+                                    ? "Prévisualisation…"
+                                    : "Prévisualiser la pièce"}
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 className="admin-button-secondary inline-flex items-center gap-2"
@@ -333,6 +362,33 @@ export function AdminInformationAgentReviewPanel() {
                                 Restreindre la diffusion
                               </button>
                             </div>
+                            {preview?.assetId === asset.id ? (
+                              <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
+                                <div className="flex items-center justify-between gap-2 px-1 pb-2">
+                                  <p className="text-xs font-medium text-[#132238]/75">
+                                    Aperçu privé · {asset.original_filename}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    className="text-xs font-medium text-[#7c5222] underline"
+                                    onClick={() => setPreview(null)}
+                                  >
+                                    Fermer l’aperçu
+                                  </button>
+                                </div>
+                                <iframe
+                                  title={`Aperçu privé de ${asset.original_filename}`}
+                                  src={preview.signedUrl}
+                                  sandbox=""
+                                  referrerPolicy="no-referrer"
+                                  className="h-[28rem] w-full rounded border bg-slate-50"
+                                />
+                                <p className="px-1 pt-2 text-[11px] text-[#132238]/55">
+                                  Ce lien expire rapidement et l’original reste dans le stockage
+                                  privé.
+                                </p>
+                              </div>
+                            ) : null}
                             <label className="mt-3 block text-xs text-[#132238]/70">
                               <span className="font-medium">Note de revue (facultative)</span>
                               <input
@@ -471,4 +527,23 @@ function rightsStatusLabel(value: string | undefined): string {
     default:
       return "à confirmer";
   }
+}
+
+function previewKindForAsset(asset: {
+  mime_type?: unknown;
+  original_filename?: unknown;
+}): "pdf" | "image" | "text" | null {
+  const mimeType = typeof asset.mime_type === "string" ? asset.mime_type.toLowerCase() : "";
+  if (mimeType === "application/pdf") return "pdf";
+  if (["image/jpeg", "image/png", "image/webp"].includes(mimeType)) return "image";
+  if (mimeType === "text/plain") return "text";
+
+  const filename =
+    typeof asset.original_filename === "string" ? asset.original_filename.toLowerCase() : "";
+  if (filename.endsWith(".pdf")) return "pdf";
+  if ([".jpg", ".jpeg", ".png", ".webp"].some((extension) => filename.endsWith(extension))) {
+    return "image";
+  }
+  if (filename.endsWith(".txt")) return "text";
+  return null;
 }

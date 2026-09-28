@@ -41,7 +41,7 @@ type SharedCase = Database["public"]["Tables"]["information_agent_cases"]["Row"]
 type Mission = Database["public"]["Tables"]["information_agent_missions"]["Row"];
 
 export type ExtractedInformationAgentFact = {
-  factKey: "surface_m2" | "rooms_count" | "occupancy_status";
+  factKey: "surface_m2" | "rooms_count" | "occupancy_status" | "sale_date" | "starting_price_eur";
   proposedValue: { value: number | string; unit?: string };
   displayValue: string;
   evidenceExcerpt: string;
@@ -1258,7 +1258,7 @@ export async function persistFactCandidates({
 }) {
   const { data: sale, error: saleError } = await supabaseAdmin
     .from("auction_sales")
-    .select("surface_m2,app_surface_m2,rooms_count,occupancy_status")
+    .select("surface_m2,app_surface_m2,rooms_count,occupancy_status,sale_date,starting_price_eur")
     .eq("id", sharedCase.sale_id)
     .single();
   if (saleError) throw saleError;
@@ -1376,7 +1376,7 @@ export function htmlToPlainText(value: string) {
 }
 
 export function extractInformationAgentFacts(bodyText: string): ExtractedInformationAgentFact[] {
-  const normalized = bodyText.replace(/\u00a0/g, " ");
+  const normalized = replyTextForExtraction(bodyText).replace(/\u00a0/g, " ");
   const facts: ExtractedInformationAgentFact[] = [];
   const surfaceMatches = [
     ...normalized.matchAll(
@@ -1449,6 +1449,40 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
       break;
     }
   }
+
+  const saleDateObservations = extractLabeledSaleDates(normalized);
+  if (saleDateObservations.length) {
+    const values = new Set(saleDateObservations.map((observation) => observation.value));
+    if (values.size === 1) {
+      const observation = saleDateObservations[0];
+      if (observation) {
+        facts.push({
+          factKey: "sale_date",
+          proposedValue: { value: observation.value },
+          displayValue: formatFrenchDate(observation.value),
+          evidenceExcerpt: excerptAround(normalized, observation.index),
+          confidence: 0.94,
+        });
+      }
+    }
+  }
+
+  const startingPriceObservations = extractLabeledStartingPrices(normalized);
+  if (startingPriceObservations.length) {
+    const values = new Set(startingPriceObservations.map((observation) => observation.value));
+    if (values.size === 1) {
+      const observation = startingPriceObservations[0];
+      if (observation) {
+        facts.push({
+          factKey: "starting_price_eur",
+          proposedValue: { value: observation.value, unit: "EUR" },
+          displayValue: `${observation.value.toLocaleString("fr-FR")} €`,
+          evidenceExcerpt: excerptAround(normalized, observation.index),
+          confidence: 0.95,
+        });
+      }
+    }
+  }
   return facts;
 }
 
@@ -1459,6 +1493,8 @@ function conflictsWithSale(
     app_surface_m2: number | null;
     rooms_count: number | null;
     occupancy_status: string | null;
+    sale_date: string | null;
+    starting_price_eur: number | null;
   },
 ) {
   const value = fact.proposedValue.value;
@@ -1469,7 +1505,215 @@ function conflictsWithSale(
   if (fact.factKey === "rooms_count") {
     return sale.rooms_count != null && sale.rooms_count !== Number(value);
   }
-  return sale.occupancy_status != null && sale.occupancy_status !== value;
+  if (fact.factKey === "occupancy_status") {
+    return sale.occupancy_status != null && sale.occupancy_status !== value;
+  }
+  if (fact.factKey === "sale_date") {
+    return sale.sale_date != null && String(sale.sale_date).slice(0, 10) !== String(value);
+  }
+  return (
+    sale.starting_price_eur != null && Math.abs(sale.starting_price_eur - Number(value)) > 0.01
+  );
+}
+
+type LabeledSaleDateObservation = { value: string; index: number };
+type LabeledStartingPriceObservation = { value: number; index: number };
+
+const SALE_DATE_LABEL_PATTERN =
+  /(?:date\s+(?:de\s+la\s+|de\s+)?vente|date\s+(?:d['’]|de\s+l['’]\s*)adjudication|date\s+(?:d['’]|de\s+l['’]\s*)audience|audience\s+d['’]adjudication|adjudication\s+(?:prévue|prevue)|vente\s+(?:prévue|prevue))\b/giu;
+const FRENCH_MONTH_PATTERN =
+  "(?:janv(?:ier)?|févr(?:ier)?|fevr(?:ier)?|mars|avr(?:il)?|mai|juin|juil(?:let)?|ao[uû]t|sept?(?:embre)?|oct(?:obre)?|nov(?:embre)?|déc(?:embre)?|dec(?:embre)?)";
+const DATE_TOKEN_PATTERN = new RegExp(
+  `(?<!\\d)(?:\\d{1,2}[/.\\-]\\d{1,2}[/.\\-]\\d{4}|\\d{4}[/.\\-]\\d{1,2}[/.\\-]\\d{1,2}|\\d{1,2}\\s+${FRENCH_MONTH_PATTERN}\\s+\\d{4})(?!\\d)`,
+  "iu",
+);
+const DATE_TOKEN_GLOBAL_PATTERN = new RegExp(DATE_TOKEN_PATTERN.source, "giu");
+const STARTING_PRICE_LABEL_PATTERN =
+  /(?:mise\s+[àa]\s+prix|prix\s+(?:de\s+)?(?:départ|depart|initial|d['’]ouverture|ouverture))\b/giu;
+const NEXT_INFORMATION_LABEL_PATTERN = new RegExp(
+  `(?:${SALE_DATE_LABEL_PATTERN.source}|${STARTING_PRICE_LABEL_PATTERN.source})`,
+  "iu",
+);
+const MONEY_TOKEN_PATTERN = new RegExp(
+  "(?<![\\d.,])((?:\\d{1,3}(?:[ .\\u00a0]\\d{3})+(?:[.,]\\d{1,2})?|\\d{4,10}|\\d{1,3}(?:[.,]\\d{1,2})?))(?:\\s*(k|m))?\\s*(?:€|euros?|eur)(?![\\p{L}\\p{N}])",
+  "giu",
+);
+
+function extractLabeledSaleDates(text: string): LabeledSaleDateObservation[] {
+  const observations: LabeledSaleDateObservation[] = [];
+  for (const labelMatch of text.matchAll(SALE_DATE_LABEL_PATTERN)) {
+    const labelIndex = labelMatch.index ?? 0;
+    const clause = labeledClauseAfterLabel(text, labelIndex + labelMatch[0].length);
+    const dateMatches = [...clause.text.matchAll(DATE_TOKEN_GLOBAL_PATTERN)];
+    if (!dateMatches.length) continue;
+    if (dateMatches.length !== 1) return [];
+    const dateMatch = dateMatches[0];
+    if (!dateMatch?.[0]) return [];
+    if (containsUncertainQualifier(clause.text)) return [];
+    const value = parseFrenchDate(dateMatch[0]);
+    if (!value) return [];
+    observations.push({
+      value,
+      index: clause.start + (dateMatch.index ?? 0),
+    });
+  }
+  return observations;
+}
+
+function extractLabeledStartingPrices(text: string): LabeledStartingPriceObservation[] {
+  const observations: LabeledStartingPriceObservation[] = [];
+  for (const labelMatch of text.matchAll(STARTING_PRICE_LABEL_PATTERN)) {
+    const labelIndex = labelMatch.index ?? 0;
+    const clause = labeledClauseAfterLabel(text, labelIndex + labelMatch[0].length);
+    const moneyMatches = [...clause.text.matchAll(MONEY_TOKEN_PATTERN)];
+    if (moneyMatches.length !== 1) continue;
+    const moneyMatch = moneyMatches[0];
+    if (!moneyMatch?.[1]) continue;
+    if (containsUncertainQualifier(clause.text)) return [];
+    const value = parseFrenchMoney(moneyMatch[1], moneyMatch[2]);
+    if (value == null || value <= 0 || value > 1_000_000_000) return [];
+    observations.push({
+      value,
+      index: clause.start + (moneyMatch.index ?? 0),
+    });
+  }
+  return observations;
+}
+
+function labeledClauseAfterLabel(text: string, start: number): { text: string; start: number } {
+  const source = text.slice(start, Math.min(text.length, start + 100));
+  const nextLabel = NEXT_INFORMATION_LABEL_PATTERN.exec(source);
+  let end = nextLabel?.index ?? source.length;
+  for (let index = 0; index < end; index++) {
+    const character = source[index];
+    if (
+      character === "\n" ||
+      character === "\r" ||
+      character === ";" ||
+      character === "!" ||
+      character === "?"
+    ) {
+      end = index;
+      break;
+    }
+    if (character === "." && !(isDigit(source[index - 1]) && isDigit(source[index + 1]))) {
+      end = index;
+      break;
+    }
+  }
+  return { text: source.slice(0, end), start };
+}
+
+function isDigit(value: string | undefined): boolean {
+  return value != null && value >= "0" && value <= "9";
+}
+
+function containsUncertainQualifier(value: string): boolean {
+  return /(?<![\p{L}\p{N}])(?:pas|aucun[e]?|inconnu[e]?|non\s+communiqu[ée]e?|à\s+confirmer|a\s+confirmer|à\s+d[ée]finir|a\s+definir|sous\s+r[ée]serve|report[ée]e?|en\s+attente)(?![\p{L}\p{N}])/iu.test(
+    value,
+  );
+}
+
+function parseFrenchDate(value: string): string | null {
+  const normalized = value
+    .toLocaleLowerCase("fr-FR")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  let day: number;
+  let month: number;
+  let year: number;
+  const numeric = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(normalized);
+  const iso = /^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$/.exec(normalized);
+  const words = new RegExp(`^(\\d{1,2})\\s+(${FRENCH_MONTH_PATTERN})\\s+(\\d{4})$`, "iu").exec(
+    normalized,
+  );
+  if (numeric?.[1] && numeric[2] && numeric[3]) {
+    day = Number(numeric[1]);
+    month = Number(numeric[2]);
+    year = Number(numeric[3]);
+  } else if (iso?.[1] && iso[2] && iso[3]) {
+    year = Number(iso[1]);
+    month = Number(iso[2]);
+    day = Number(iso[3]);
+  } else if (words?.[1] && words[2] && words[3]) {
+    day = Number(words[1]);
+    month = frenchMonthNumber(words[2]);
+    year = Number(words[3]);
+  } else {
+    return null;
+  }
+  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return null;
+  if (year < 1900 || year > 2200 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    candidate.getUTCFullYear() !== year ||
+    candidate.getUTCMonth() !== month - 1 ||
+    candidate.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day
+    .toString()
+    .padStart(2, "0")}`;
+}
+
+function frenchMonthNumber(value: string): number {
+  const normalized = value.toLocaleLowerCase("fr-FR").replace(/[.]/g, "");
+  const months: Record<string, number> = {
+    janvier: 1,
+    janv: 1,
+    février: 2,
+    fevrier: 2,
+    févr: 2,
+    fevr: 2,
+    mars: 3,
+    avril: 4,
+    avr: 4,
+    mai: 5,
+    juin: 6,
+    juillet: 7,
+    juil: 7,
+    août: 8,
+    aout: 8,
+    septembre: 9,
+    sept: 9,
+    octobre: 10,
+    oct: 10,
+    novembre: 11,
+    nov: 11,
+    décembre: 12,
+    decembre: 12,
+    déc: 12,
+    dec: 12,
+  };
+  return months[normalized] ?? 0;
+}
+
+function parseFrenchMoney(value: string, multiplier: string | undefined): number | null {
+  const compact = value.replace(/[ \u00a0]/g, "");
+  let parsed: number;
+  const separatorCount = (compact.match(/[.,]/g) ?? []).length;
+  if (separatorCount > 1) {
+    parsed = Number(compact.replace(/[.,]/g, ""));
+  } else if (/[.,]/.test(compact)) {
+    const separator = compact.includes(",") ? "," : ".";
+    const [whole = "", fraction = ""] = compact.split(separator);
+    parsed =
+      fraction.length === 3 ? Number(`${whole}${fraction}`) : Number(compact.replace(",", "."));
+  } else {
+    parsed = Number(compact);
+  }
+  if (!Number.isFinite(parsed)) return null;
+  const normalizedMultiplier = multiplier?.toLocaleLowerCase("fr-FR");
+  if (normalizedMultiplier === "k") parsed *= 1_000;
+  if (normalizedMultiplier === "m") parsed *= 1_000_000;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatFrenchDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
 }
 
 function cleanInboundBody(text: string | null, html: string | null) {

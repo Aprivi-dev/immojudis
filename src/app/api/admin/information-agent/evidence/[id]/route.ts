@@ -10,6 +10,8 @@ const evidenceRightsReviewSchema = z.object({
   rightsStatus: z.enum(["authorized", "restricted"]),
   notes: z.string().trim().max(1000).nullable().optional(),
 });
+const evidenceAssetIdSchema = z.string().uuid();
+const privateEvidenceBucket = "information-agent-evidence";
 
 const publicationRevocationConflict =
   "Conflict: cette pièce est déjà publiée ou a déjà été préparée pour publication. " +
@@ -20,13 +22,17 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-    const { id } = await context.params;
+    const { id: rawId } = await context.params;
+    const id = evidenceAssetIdSchema.parse(rawId);
     const { data: asset, error: assetError } = await supabaseAdmin
       .from("information_agent_evidence_assets")
       .select("storage_bucket,storage_path")
       .eq("id", id)
       .single();
     if (assetError) throw assetError;
+    if (asset.storage_bucket !== privateEvidenceBucket) {
+      throw new Error("Pièce indisponible.");
+    }
 
     const { data, error } = await supabaseAdmin.storage
       .from(asset.storage_bucket)
@@ -57,7 +63,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-    const { id } = await context.params;
+    const { id: rawId } = await context.params;
+    const id = evidenceAssetIdSchema.parse(rawId);
     const input = evidenceRightsReviewSchema.parse(await request.json());
     const { data: current, error: currentError } = await supabaseAdmin
       .from("information_agent_evidence_assets")
