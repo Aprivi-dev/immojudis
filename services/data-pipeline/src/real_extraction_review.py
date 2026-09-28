@@ -9,9 +9,11 @@ separate lanes. An AI consensus is never a human accuracy claim.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
 import re
+import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Mapping
 from datetime import datetime
@@ -266,7 +268,7 @@ def _validate_ai_review(review: Any, capture_sha256: str, description: str) -> d
     }
 
 
-def _captured_case(case: Mapping[str, Any]) -> tuple[dict[str, Any], str, datetime]:
+def _captured_case(case: Mapping[str, Any]) -> tuple[dict[str, Any], str, datetime, Path]:
     capture = case.get("capture")
     prediction = case.get("prediction")
     if not isinstance(capture, Mapping) or not isinstance(prediction, Mapping):
@@ -291,7 +293,13 @@ def _captured_case(case: Mapping[str, Any]) -> tuple[dict[str, Any], str, dateti
     values = prediction.get("values")
     if not isinstance(values, Mapping):
         raise ValueError("prediction values must be an object")
-    return dict(values), capture_sha256, extracted_at
+    return dict(values), capture_sha256, extracted_at, capture_path
+
+
+def _evidence_text(value: str) -> str:
+    text = html.unescape(value)
+    text = re.sub(r"<[^>]*>", " ", text)
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", text)).strip().casefold()
 
 
 def _compact_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
@@ -327,6 +335,8 @@ def _new_ai_stats() -> dict[str, Any]:
         "fields_disagree": 0,
         "locator_annotations": 0,
         "excerpt_annotations": 0,
+        "verbatim_excerpts_required": 0,
+        "verbatim_excerpts_found": 0,
         "pipeline_fields_compared": 0,
         "pipeline_fields_match": 0,
         "pipeline_fields_disagree": 0,
@@ -337,6 +347,7 @@ def _new_ai_stats() -> dict[str, Any]:
             "missing_second_pass": 0,
             "pass_disagreement": 0,
             "pipeline_disagreement": 0,
+            "unverified_excerpt": 0,
         },
     }
 
@@ -371,6 +382,8 @@ def _merge_ai_stats(target: dict[str, Any], source: Mapping[str, Any]) -> None:
         "fields_disagree",
         "locator_annotations",
         "excerpt_annotations",
+        "verbatim_excerpts_required",
+        "verbatim_excerpts_found",
         "pipeline_fields_compared",
         "pipeline_fields_match",
         "pipeline_fields_disagree",
@@ -418,6 +431,11 @@ def _compact_ai_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
             "with_excerpt": excerpt_annotations,
             "locator_rate": round(locator_annotations / annotations, 6) if annotations else None,
             "excerpt_rate": round(excerpt_annotations / annotations, 6) if annotations else None,
+            "verbatim_required": int(stats["verbatim_excerpts_required"]),
+            "verbatim_found": int(stats["verbatim_excerpts_found"]),
+            "verbatim_rate": round(
+                stats["verbatim_excerpts_found"] / stats["verbatim_excerpts_required"], 6
+            ) if stats["verbatim_excerpts_required"] else None,
         },
         "pipeline_comparison": {
             "fields_compared": pipeline_fields_compared,
@@ -434,12 +452,16 @@ def _compact_ai_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _ai_case_stats(ai_reviews: list[dict[str, Any]], values: Mapping[str, Any]) -> dict[str, Any]:
+def _ai_case_stats(
+    ai_reviews: list[dict[str, Any]], values: Mapping[str, Any], capture_path: Path
+) -> dict[str, Any]:
     """Compare AI passes privately and return counters without case-level data."""
 
     stats = _new_ai_stats()
     stats["reviewed_cases"] = int(bool(ai_reviews))
     stats["double_reviewed_cases"] = int(len(ai_reviews) == 2)
+    capture_text = _evidence_text(capture_path.read_text(encoding="utf-8", errors="replace")) if ai_reviews else ""
+    unverified_excerpt = False
     for review in ai_reviews:
         labels = review["labels"]
         stats["field_annotations"] += len(labels)
@@ -454,6 +476,15 @@ def _ai_case_stats(ai_reviews: list[dict[str, Any]], values: Mapping[str, Any]) 
             isinstance(label.get("evidence"), Mapping) and bool(label["evidence"].get("excerpt"))
             for label in labels.values()
         )
+        for label in labels.values():
+            if label["state"] not in {"present", "unknown"}:
+                continue
+            stats["verbatim_excerpts_required"] += 1
+            excerpt = _evidence_text(str(label["evidence"]["excerpt"]))
+            if len(excerpt) >= 4 and excerpt in capture_text:
+                stats["verbatim_excerpts_found"] += 1
+            else:
+                unverified_excerpt = True
 
     reasons: set[str] = set()
     if not ai_reviews:
@@ -462,6 +493,8 @@ def _ai_case_stats(ai_reviews: list[dict[str, Any]], values: Mapping[str, Any]) 
         reasons.add("missing_second_pass")
     if stats["fields_omitted"]:
         reasons.add("incomplete_field_coverage")
+    if unverified_excerpt:
+        reasons.add("unverified_excerpt")
 
     if len(ai_reviews) == 2:
         first_labels = ai_reviews[0]["labels"]
@@ -583,7 +616,7 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
             report_state = state
         else:
             _timestamp(access.get("checked_at"), "captured access checked_at")
-            values, capture_sha256, extracted_at = _captured_case(case)
+            values, capture_sha256, extracted_at, capture_path = _captured_case(case)
             captured_cases += 1
             reviews = case.get("reviews")
             if not isinstance(reviews, list) or len(reviews) > 2:
@@ -660,7 +693,7 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
                 raise ValueError("AI review cannot precede the frozen capture")
             if len(ai_reviews) == 2 and ai_reviews[0]["reviewer"] == ai_reviews[1]["reviewer"]:
                 raise ValueError("independent AI reviewers must be distinct")
-            case_ai_stats = _ai_case_stats(ai_reviews, values)
+            case_ai_stats = _ai_case_stats(ai_reviews, values, capture_path)
             _merge_ai_stats(ai_stats, case_ai_stats)
             _merge_ai_stats(source_ai_stats[source], case_ai_stats)
         coverage[report_state] += 1
