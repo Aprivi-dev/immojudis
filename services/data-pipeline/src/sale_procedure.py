@@ -151,7 +151,12 @@ def classify_sale_procedure(
             start = datetime.fromisoformat(schedule["opens_at"])
             end = datetime.fromisoformat(schedule["closes_at"])
             if start.tzinfo is not None and end.tzinfo is not None and end > start:
-                schedule_key = "sale_window" if venue_type == "notary" and participation_mode == "online" else "sale_session"
+                schedule_key = (
+                    "sale_window"
+                    if schedule.get("schedule_type") == "sale_window"
+                    or (venue_type == "notary" and participation_mode == "online")
+                    else "sale_session"
+                )
                 procedure[schedule_key] = {
                     "opens_at": start.isoformat(),
                     "closes_at": end.isoformat(),

@@ -10,6 +10,7 @@ import pytest
 from src.real_extraction_review import (
     ai_review_output_sha256,
     evaluate_real_review,
+    prepare_blind_ai_packet,
     prepare_manifest,
     write_private_json,
 )
@@ -28,6 +29,41 @@ def _sample(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def _agrasc_sample(tmp_path: Path) -> Path:
+    path = tmp_path / "agrasc-sample.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "agrasc-one",
+                    "source_name": "agrasc",
+                    "source_url": "https://www.agorastore-immo.fr/vente/lot-123.aspx",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _agrasc_react_capture(*, product_id: object = "123", name: str = "Paris") -> bytes:
+    props = {
+        "pageTitle": name,
+        "ficheProduitModel": {
+            "productPageWrapper": {
+                "productPageModel": {
+                    "product": {"id": product_id, "name": name},
+                }
+            }
+        },
+    }
+    return (
+        "<html><script>React.createElement(FicheProduitApp, "
+        + json.dumps(props, ensure_ascii=False)
+        + ");</script></html>"
+    ).encode()
 
 
 def _label(state: str, capture_sha256: str, value: object = None) -> dict:
@@ -96,6 +132,27 @@ def _ai_review(
     }
 
 
+def _ai_adjudication(labels: dict, capture_sha256: str) -> dict:
+    return {
+        "reviewer_type": "ai",
+        "reviewer": "codex-arbiter",
+        "provider": "codex",
+        "model": "test-model",
+        "prompt_version": "ai-conflict-arbitration-v1",
+        "prompt_sha256": "b" * 64,
+        "reviewed_at": "2026-09-28T13:00:00Z",
+        "capture_sha256": capture_sha256,
+        "output_sha256": ai_review_output_sha256(labels),
+        "blind_to_prediction": True,
+        "labels": labels,
+    }
+
+
+def test_blind_packet_rejects_non_object_manifest(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="JSON object"):
+        prepare_blind_ai_packet([], _sample(tmp_path))
+
+
 def _human_review(reviewer: str, reviewed_at: str, labels: dict) -> dict:
     return {
         "reviewer_type": "human",
@@ -103,6 +160,26 @@ def _human_review(reviewer: str, reviewed_at: str, labels: dict) -> dict:
         "reviewed_at": reviewed_at,
         "labels": labels,
     }
+
+
+def test_blind_packet_contains_only_capture_references_and_field_names(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    _capture(manifest["cases"][0], tmp_path, b"private-name capture")
+
+    packet = prepare_blind_ai_packet(manifest, sample)
+
+    assert len(packet["cases"]) == 1
+    assert packet["cases"][0]["capture_path"] == manifest["cases"][0]["capture"]["private_ref"]
+    assert len(packet["expected_fields"]) == 12
+    serialized = json.dumps(packet)
+    assert "prediction" not in serialized
+    assert "source_url" not in serialized
+    assert "private-name" not in serialized
+
+    manifest["cases"][0]["capture"]["sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="frozen capture file"):
+        prepare_blind_ai_packet(manifest, sample)
 
 
 def test_real_review_separates_coverage_from_accuracy_and_returns_aggregates_only(tmp_path: Path) -> None:
@@ -318,6 +395,7 @@ def test_ai_reviews_are_separate_from_human_accuracy_and_return_private_aggregat
         "external_id": _label("present", digest, "lot-1"),
         "rooms_count": _label("present", digest, 3),
     }
+    manifest["ai_review_expected_fields"] = list(pass_a)
     first["ai_reviews"] = [
         _ai_review(pass_a, digest),
         _ai_review(pass_b, digest, reviewer="codex-pass-b", reviewed_at="2026-09-28T12:00:00Z"),
@@ -352,11 +430,114 @@ def test_ai_reviews_are_separate_from_human_accuracy_and_return_private_aggregat
     }
     assert ai["needs_review_cases"] == 1
     assert ai["needs_review_reasons"] == {"pass_disagreement": 1}
+    assert report["ai_review"]["arbitration"]["aggregate"]["pending_fields"] == 1
     encoded = json.dumps(report)
     assert "private-name" not in encoded
     assert "lot-1" not in encoded
     assert "extrait de contrôle" not in encoded
     assert "cases" not in report["ai_review"]
+
+
+def test_ai_review_reports_private_by_field_aggregates(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"AI by-field review capture")
+    fields = ["source_url", "rooms_count", "occupancy_status", "parking_count", "starting_price_eur"]
+    manifest["ai_review_expected_fields"] = fields
+    pass_a = {
+        "source_url": _label("present", digest, first["source_url"]),
+        "rooms_count": _label("present", digest, 2),
+        "occupancy_status": _label("unknown", digest),
+        "parking_count": _label("absent", digest),
+        "starting_price_eur": _label("present", digest, 100000),
+    }
+    pass_b = {
+        "source_url": _label("present", digest, first["source_url"]),
+        "rooms_count": _label("present", digest, 2),
+        "occupancy_status": _label("unknown", digest),
+        "parking_count": _label("absent", digest),
+        "starting_price_eur": _label("present", digest, 110000),
+    }
+    first["ai_reviews"] = [
+        _ai_review(pass_a, digest, expected_fields=fields),
+        _ai_review(pass_b, digest, reviewer="codex-pass-b", expected_fields=fields),
+    ]
+
+    by_field = evaluate_real_review(manifest, sample)["ai_review"]["by_field"]
+
+    assert set(by_field) == set(fields)
+    assert by_field["source_url"] == {
+        "annotations": {"present": 2, "unknown": 0, "absent": 0},
+        "two_pass": {"compared": 1, "agreement": 1, "disagreement": 0, "agreement_rate": 1.0},
+        "consensus_vs_pipeline": {"compared": 1, "match": 1, "disagreement": 0, "agreement_rate": 1.0},
+    }
+    assert by_field["occupancy_status"]["annotations"] == {"present": 0, "unknown": 2, "absent": 0}
+    assert by_field["parking_count"]["annotations"] == {"present": 0, "unknown": 0, "absent": 2}
+    assert by_field["starting_price_eur"]["two_pass"] == {
+        "compared": 1,
+        "agreement": 0,
+        "disagreement": 1,
+        "agreement_rate": 0.0,
+    }
+    assert by_field["starting_price_eur"]["consensus_vs_pipeline"] == {
+        "compared": 0,
+        "match": 0,
+        "disagreement": 0,
+        "agreement_rate": None,
+    }
+    encoded = json.dumps(by_field)
+    assert first["source_url"] not in encoded
+    assert "lot-1" not in encoded
+    assert "extrait de contrôle" not in encoded
+
+
+def test_ai_arbitration_resolves_only_blind_pass_disagreements(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"Two-room listing")
+    manifest["ai_review_expected_fields"] = ["rooms_count", "starting_price_eur"]
+    pass_a = {
+        "rooms_count": _label("present", digest, 2),
+        "starting_price_eur": _label("present", digest, 100000),
+    }
+    pass_b = {
+        "rooms_count": _label("present", digest, 3),
+        "starting_price_eur": _label("present", digest, 100000),
+    }
+    first["ai_reviews"] = [_ai_review(pass_a, digest), _ai_review(pass_b, digest, reviewer="codex-pass-b")]
+    first["ai_adjudication"] = _ai_adjudication({"rooms_count": _label("present", digest, 2)}, digest)
+
+    arbitration = evaluate_real_review(manifest, sample)["ai_review"]["arbitration"]["aggregate"]
+    assert arbitration["disputed_fields"] == 1
+    assert arbitration["resolved_fields"] == 1
+    assert arbitration["fully_resolved_cases"] == 1
+    assert arbitration["pipeline_fields_match"] == 1
+
+    first["ai_adjudication"]["labels"]["starting_price_eur"] = _label("present", digest, 100000)
+    first["ai_adjudication"]["output_sha256"] = ai_review_output_sha256(first["ai_adjudication"]["labels"])
+    with pytest.raises(ValueError, match="exactly the disputed fields"):
+        evaluate_real_review(manifest, sample)
+
+
+def test_ai_arbitration_can_leave_ambiguous_field_unresolved(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"The sale date is not clear")
+    manifest["ai_review_expected_fields"] = ["sale_date_date"]
+    pass_a = {"sale_date_date": _label("present", digest, "2026-11-05")}
+    pass_b = {"sale_date_date": {"state": "absent"}}
+    first["ai_reviews"] = [_ai_review(pass_a, digest), _ai_review(pass_b, digest, reviewer="codex-pass-b")]
+    first["ai_adjudication"] = _ai_adjudication(
+        {"sale_date_date": {"state": "unresolved", "reason": "Two sale dates are possible"}}, digest
+    )
+
+    arbitration = evaluate_real_review(manifest, sample)["ai_review"]["arbitration"]["aggregate"]
+    assert arbitration["unresolved_fields"] == 1
+    assert arbitration["fully_resolved_cases"] == 0
+    assert arbitration["pipeline_fields_compared"] == 0
 
 
 def test_ai_review_compares_french_source_labels_with_catalogue_enums(tmp_path: Path) -> None:
@@ -377,6 +558,7 @@ def test_ai_review_compares_french_source_labels_with_catalogue_enums(tmp_path: 
         "occupancy_status": _label("present", digest, "rented"),
         "city": _label("present", digest, "Évry"),
     }
+    manifest["ai_review_expected_fields"] = list(pass_a)
     first["ai_reviews"] = [
         _ai_review(pass_a, digest),
         _ai_review(pass_b, digest, reviewer="codex-pass-b"),
@@ -395,6 +577,7 @@ def test_blind_ai_review_may_precede_replay_prediction_on_same_capture(tmp_path:
     digest = _capture(first, tmp_path, b"frozen source before parser replay")
     first["prediction"]["extracted_at"] = "2026-09-28T13:00:00Z"
     labels = {"starting_price_eur": _label("present", digest, 100000)}
+    manifest["ai_review_expected_fields"] = list(labels)
     first["ai_reviews"] = [_ai_review(labels, digest, reviewed_at="2026-09-28T11:00:00Z")]
 
     report = evaluate_real_review(manifest, sample)
@@ -411,6 +594,7 @@ def test_ai_review_flags_a_paraphrase_as_unverified_evidence(tmp_path: Path) -> 
     first = manifest["cases"][0]
     digest = _capture(first, tmp_path, b"mise a prix 100000 euros")
     labels = {"starting_price_eur": _label("present", digest, 100000)}
+    manifest["ai_review_expected_fields"] = list(labels)
     labels["starting_price_eur"]["evidence"]["excerpt"] = "prix de départ 100000 euros"
     first["ai_reviews"] = [
         _ai_review(labels, digest),
@@ -430,6 +614,7 @@ def test_ai_review_accepts_a_literal_html_span_with_a_one_character_value(tmp_pa
     excerpt = '<span class="rooms">1</span>'
     digest = _capture(first, tmp_path, excerpt.encode())
     labels = {"rooms_count": _label("present", digest, 1)}
+    manifest["ai_review_expected_fields"] = list(labels)
     labels["rooms_count"]["evidence"]["excerpt"] = excerpt
     first["ai_reviews"] = [
         _ai_review(labels, digest),
@@ -441,12 +626,153 @@ def test_ai_review_accepts_a_literal_html_span_with_a_one_character_value(tmp_pa
     assert ai["needs_review_reasons"] == {"pipeline_disagreement": 1}
 
 
+def test_ai_review_rejects_empty_html_as_verbatim_evidence(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"<b></b>")
+    labels = {"rooms_count": _label("present", digest, 1)}
+    labels["rooms_count"]["evidence"]["excerpt"] = "<b>"
+    manifest["ai_review_expected_fields"] = list(labels)
+    first["ai_reviews"] = [
+        _ai_review(labels, digest),
+        _ai_review(labels, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["evidence_coverage"]["verbatim_found"] == 0
+    assert ai["needs_review_reasons"]["unverified_excerpt"] == 1
+
+
+@pytest.mark.parametrize("tag", ["script", "style", "template", "noscript"])
+def test_ai_review_rejects_hidden_html_text_as_evidence(tmp_path: Path, tag: str) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, f"<{tag}>secret proof</{tag}>".encode())
+    labels = {"rooms_count": _label("present", digest, 2)}
+    labels["rooms_count"]["evidence"]["excerpt"] = "secret proof"
+    manifest["ai_review_expected_fields"] = list(labels)
+    first["ai_reviews"] = [
+        _ai_review(labels, digest),
+        _ai_review(labels, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["evidence_coverage"]["verbatim_found"] == 0
+    assert ai["needs_review_reasons"]["unverified_excerpt"] == 1
+
+
+def test_agrasc_ai_review_accepts_matching_fiche_produit_props(tmp_path: Path) -> None:
+    sample = _agrasc_sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, _agrasc_react_capture())
+    labels = {"city": _label("present", digest, "Paris")}
+    labels["city"]["evidence"]["excerpt"] = "Paris"
+    manifest["ai_review_expected_fields"] = list(labels)
+    first["ai_reviews"] = [
+        _ai_review(labels, digest),
+        _ai_review(labels, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["evidence_coverage"]["verbatim_required"] == 2
+    assert ai["evidence_coverage"]["verbatim_found"] == 2
+
+
+@pytest.mark.parametrize(
+    "capture",
+    [
+        lambda: _agrasc_react_capture(product_id="999"),
+        lambda: b'<script>window.__DATA__ = {"ficheProduitModel":{"product":{"id":"123","name":"Paris"}}}</script>',
+        lambda: b'<script>React.createElement(FicheProduitApp, {"ficheProduitModel":</script>',
+        lambda: b'<script>React.createElement(FicheProduitApp, {"pageTitle":"Paris"});</script>',
+    ],
+    ids=["identity-mismatch", "generic-script", "malformed-json", "seo-only"],
+)
+def test_agrasc_ai_review_fails_closed_for_untrusted_props(
+    tmp_path: Path, capture: object
+) -> None:
+    sample = _agrasc_sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    content = capture() if callable(capture) else capture
+    digest = _capture(first, tmp_path, content)
+    labels = {"city": _label("present", digest, "Paris")}
+    labels["city"]["evidence"]["excerpt"] = "Paris"
+    manifest["ai_review_expected_fields"] = list(labels)
+    first["ai_reviews"] = [
+        _ai_review(labels, digest),
+        _ai_review(labels, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["evidence_coverage"]["verbatim_required"] == 2
+    assert ai["evidence_coverage"]["verbatim_found"] == 0
+    assert ai["needs_review_reasons"] == {
+        "pipeline_disagreement": 1,
+        "unverified_excerpt": 1,
+    }
+
+
+def test_ai_adjudication_requires_prompt_provenance(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"Une piece, prix de vente 100000 euros")
+    manifest["ai_review_expected_fields"] = ["rooms_count"]
+    first["ai_reviews"] = [
+        _ai_review({"rooms_count": _label("present", digest, 2)}, digest),
+        _ai_review({"rooms_count": _label("present", digest, 3)}, digest, reviewer="codex-pass-b"),
+    ]
+    first["ai_adjudication"] = _ai_adjudication({"rooms_count": _label("present", digest, 2)}, digest)
+    first["ai_adjudication"].pop("prompt_sha256")
+
+    with pytest.raises(ValueError, match="prompt_sha256"):
+        evaluate_real_review(manifest, sample)
+
+    first["ai_adjudication"]["prompt_record_status"] = "not_retained"
+    arbitration = evaluate_real_review(manifest, sample)["ai_review"]["arbitration"]["aggregate"]
+    assert arbitration["prompt_hashes_missing"] == 1
+
+
+def test_ai_review_keeps_absent_distinct_from_unknown_prediction(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"No occupation information")
+    labels = {"occupancy_status": {"state": "absent"}}
+    manifest["ai_review_expected_fields"] = list(labels)
+    first["ai_reviews"] = [
+        _ai_review(labels, digest),
+        _ai_review(labels, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["pipeline_comparison"]["fields_disagree"] == 1
+    assert ai["needs_review_reasons"] == {"pipeline_disagreement": 1}
+
+
+def test_ai_review_cannot_shrink_manifest_field_scope(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"Partial source")
+    labels = {"starting_price_eur": _label("present", digest, 100000)}
+    first["ai_reviews"] = [_ai_review(labels, digest)]
+
+    with pytest.raises(ValueError, match="frozen manifest scope"):
+        evaluate_real_review(manifest, sample)
+
+
 def test_ai_review_requires_capture_bound_metadata_and_valid_output_digest(tmp_path: Path) -> None:
     sample = _sample(tmp_path)
     manifest = prepare_manifest(sample)
     first = manifest["cases"][0]
     digest = _capture(first, tmp_path, b"metadata capture")
     labels = {"starting_price_eur": _label("present", digest, 100000)}
+    manifest["ai_review_expected_fields"] = list(labels)
     review = _ai_review(labels, digest)
     review["capture_sha256"] = "e" * 64
     first["ai_reviews"] = [review]
@@ -489,6 +815,7 @@ def test_ai_absence_without_excerpt_is_recorded_without_invented_locator(tmp_pat
     first = manifest["cases"][0]
     digest = _capture(first, tmp_path, b"absence evidence is not a text span")
     labels = {"parking_count": {"state": "absent"}}
+    manifest["ai_review_expected_fields"] = list(labels)
     first["ai_reviews"] = [_ai_review(labels, digest)]
 
     ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
@@ -565,6 +892,7 @@ def test_ai_review_reports_omitted_expected_fields_as_incomplete_coverage(tmp_pa
     first = manifest["cases"][0]
     digest = _capture(first, tmp_path, b"partial AI review")
     labels = {"starting_price_eur": _label("present", digest, 100000)}
+    manifest["ai_review_expected_fields"] = ["starting_price_eur", "rooms_count"]
     first["ai_reviews"] = [
         _ai_review(
             labels,

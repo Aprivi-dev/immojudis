@@ -6,7 +6,10 @@ import postgres from "postgres";
 import { POST as prepareUploadRoute } from "@/app/api/information-agent/contributions/[missionId]/upload/route";
 import { POST as submitContributionRoute } from "@/app/api/information-agent/contributions/[missionId]/submit/route";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
-import { processInformationAgentInboundWebhook } from "@/lib/information-agent-inbound";
+import {
+  processInformationAgentInboundWebhook,
+  runInformationAgentInboundQueue,
+} from "@/lib/information-agent-inbound";
 import type { Database } from "@/integrations/supabase/types";
 
 const enabled = process.env.IMMOJUDIS_LOCAL_INTEGRATION === "true";
@@ -20,6 +23,25 @@ const RESEND_ATTACHMENT_ID = "resend-local-attachment-1";
 
 type LocalClient = ReturnType<typeof createClient<Database>>;
 
+type LocalResendAttachmentFixture = {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  downloadPath: string;
+  bytes: Uint8Array;
+};
+
+type LocalResendFixture = {
+  emailId: string;
+  to: string[];
+  from: string;
+  subject: string;
+  text: string;
+  createdAt: string;
+  attachments: LocalResendAttachmentFixture[];
+};
+
 let admin: LocalClient;
 let userId: string;
 let saleId: string;
@@ -30,6 +52,8 @@ let portalStoragePath: string;
 let resendStoragePath: string;
 let resendServer: Server | undefined;
 let resendBaseUrl: string;
+const resendFixtures = new Map<string, LocalResendFixture>();
+const additionalSaleIds: string[] = [];
 
 const localEnv = () => {
   const url = process.env.SUPABASE_URL?.trim();
@@ -61,36 +85,47 @@ describeLocal("information-agent local integration", () => {
         return;
       }
       const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
-      if (requestUrl.pathname === `/emails/receiving/${RESEND_EMAIL_ID}`) {
+      const receivingMatch = /^\/emails\/receiving\/([^/]+)(\/attachments)?$/.exec(
+        requestUrl.pathname,
+      );
+      if (receivingMatch) {
+        const fixture = resendFixtures.get(decodeURIComponent(receivingMatch[1] ?? ""));
+        if (!fixture) {
+          response.writeHead(404).end();
+          return;
+        }
+        if (receivingMatch[2]) {
+          respondJson(response, {
+            data: fixture.attachments.map((attachment) => ({
+              id: attachment.id,
+              filename: attachment.filename,
+              content_type: attachment.contentType,
+              size: attachment.size,
+              download_url: `${resendBaseUrl}${attachment.downloadPath}`,
+              content_disposition: "attachment",
+            })),
+            has_more: false,
+          });
+          return;
+        }
         respondJson(response, {
-          from: `Contact de test <${recipientEmail}>`,
-          to: [`enquete+${inboundToken}@${INBOUND_DOMAIN}`],
-          subject: "Re: Informations sur la vente",
-          text: "La surface habitable est de 84 m².",
+          from: fixture.from,
+          to: fixture.to,
+          subject: fixture.subject,
+          text: fixture.text,
           html: null,
-          created_at: "2026-09-28T12:00:00.000Z",
+          created_at: fixture.createdAt,
           authentication: { spf: "pass", dkim: "pass", dmarc: "pass" },
         });
         return;
       }
-      if (requestUrl.pathname === `/emails/receiving/${RESEND_EMAIL_ID}/attachments`) {
-        respondJson(response, {
-          data: [
-            {
-              id: RESEND_ATTACHMENT_ID,
-              filename: "reponse.pdf",
-              content_type: "application/pdf",
-              size: pdfBytes.byteLength,
-              download_url: `${resendBaseUrl}/attachments/local.pdf`,
-              content_disposition: "attachment",
-            },
-          ],
-          has_more: false,
-        });
-        return;
-      }
-      if (requestUrl.pathname === "/attachments/local.pdf") {
-        response.writeHead(200, { "content-type": "application/pdf" }).end(Buffer.from(pdfBytes));
+      const attachment = [...resendFixtures.values()]
+        .flatMap((fixture) => fixture.attachments)
+        .find((candidate) => candidate.downloadPath === requestUrl.pathname);
+      if (attachment) {
+        response
+          .writeHead(200, { "content-type": attachment.contentType })
+          .end(Buffer.from(attachment.bytes));
         return;
       }
       response.writeHead(404).end();
@@ -210,9 +245,18 @@ describeLocal("information-agent local integration", () => {
 
   afterAll(async () => {
     if (admin) {
-      const paths = [portalStoragePath, resendStoragePath].filter(Boolean);
+      const saleIds = [saleId, ...additionalSaleIds].filter(Boolean);
+      const { data: evidenceAssets } = await admin
+        .from("information_agent_evidence_assets")
+        .select("storage_path")
+        .in("sale_id", saleIds);
+      const paths = [
+        portalStoragePath,
+        resendStoragePath,
+        ...(evidenceAssets ?? []).map((asset) => asset.storage_path),
+      ].filter(Boolean);
       if (paths.length) await admin.storage.from(BUCKET).remove(paths);
-      if (saleId) await admin.from("auction_sales").delete().eq("id", saleId);
+      for (const id of saleIds) await admin.from("auction_sales").delete().eq("id", id);
       if (userId) await admin.auth.admin.deleteUser(userId);
     }
     if (resendServer) {
@@ -220,6 +264,7 @@ describeLocal("information-agent local integration", () => {
         resendServer?.close((error) => (error ? reject(error) : resolve())),
       );
     }
+    resendFixtures.clear();
   }, 30_000);
 
   it("runs signed portal upload, local Resend receipt, Storage persistence, and review", async () => {
@@ -336,6 +381,24 @@ describeLocal("information-agent local integration", () => {
     if (rejected.error) throw rejected.error;
 
     const address = `enquete+${inboundToken}@${INBOUND_DOMAIN}`;
+    registerResendFixture({
+      emailId: RESEND_EMAIL_ID,
+      to: [address],
+      from: `Contact de test <${recipientEmail}>`,
+      subject: "Re: Informations sur la vente",
+      text: "La surface habitable est de 84 m².",
+      createdAt: "2026-09-28T12:00:00.000Z",
+      attachments: [
+        {
+          id: RESEND_ATTACHMENT_ID,
+          filename: "reponse.pdf",
+          contentType: "application/pdf",
+          size: pdfBytes.byteLength,
+          downloadPath: "/attachments/local.pdf",
+          bytes: pdfBytes,
+        },
+      ],
+    });
     const webhookPayload = JSON.stringify({
       type: "email.received",
       created_at: "2026-09-28T12:00:00.000Z",
@@ -428,6 +491,177 @@ describeLocal("information-agent local integration", () => {
     if (duplicateAssetCountError) throw duplicateAssetCountError;
     expect(duplicateAssetCount).toBe(1);
   }, 30_000);
+
+  it("retries after a post-candidate failure without crossing into another sale", async () => {
+    const retryFixture = await createAdditionalConversation("retry");
+    const retryEmailId = "resend-local-retry-email";
+    const retryAttachmentId = "resend-local-retry-attachment";
+    const retryBytes = new TextEncoder().encode(
+      "%PDF-1.7\nlocal retry fixture stored before the failure\n",
+    );
+    const address = `enquete+${retryFixture.inboundToken}@${INBOUND_DOMAIN}`;
+    registerResendFixture({
+      emailId: retryEmailId,
+      to: [address],
+      from: `Contact de test <${recipientEmail}>`,
+      subject: "Re: Informations sur la vente retry",
+      text: "La surface habitable est de 91 m² et le bien comprend 3 pièces.",
+      createdAt: "2026-09-28T12:05:00.000Z",
+      attachments: [
+        {
+          id: retryAttachmentId,
+          filename: "reponse-retry.pdf",
+          contentType: "application/pdf",
+          size: retryBytes.byteLength,
+          downloadPath: "/attachments/retry.pdf",
+          bytes: retryBytes,
+        },
+      ],
+    });
+    const webhookPayload = JSON.stringify({
+      type: "email.received",
+      created_at: "2026-09-28T12:05:00.000Z",
+      data: { email_id: retryEmailId, to: [address], received_for: [address] },
+    });
+    const { databaseUrl } = localEnv();
+    const firstWorkerNow = new Date(Date.now() + 1_000);
+
+    await withTransientMissionReplyFailure(databaseUrl, async () => {
+      const queued = await processInformationAgentInboundWebhook({
+        request: webhookRequest(webhookPayload, "local-svix-id-retry-first"),
+        deferProcessing: true,
+      });
+      expect(queued).toMatchObject({
+        accepted: true,
+        caseId: retryFixture.caseId,
+        attachmentCount: 0,
+        processingStatus: "queued",
+      });
+
+      const firstWorker = await runInformationAgentInboundQueue({
+        env: process.env,
+        now: firstWorkerNow,
+        limit: 1,
+      });
+      expect(firstWorker).toMatchObject({ claimed: 1, reviewed: 0, failed: 1 });
+    });
+
+    const { data: failedMessage, error: failedMessageError } = await admin
+      .from("information_agent_messages")
+      .select("id,metadata")
+      .eq("provider_message_id", retryEmailId)
+      .single();
+    if (failedMessageError || !failedMessage) {
+      throw failedMessageError ?? new Error("Failed retry message missing.");
+    }
+    expect(failedMessage.metadata).toMatchObject({
+      inbound_processing: {
+        status: "failed",
+        attempts: 1,
+        last_error: expect.stringContaining("local candidate checkpoint failure"),
+      },
+    });
+
+    const { data: failedJob, error: failedJobError } = await admin
+      .from("information_agent_inbound_jobs")
+      .select("status,attempts,last_error")
+      .eq("provider_email_id", retryEmailId)
+      .single();
+    if (failedJobError || !failedJob) {
+      throw failedJobError ?? new Error("Failed retry job missing.");
+    }
+    expect(failedJob).toMatchObject({
+      status: "failed",
+      attempts: 1,
+      last_error: expect.stringContaining("local candidate checkpoint failure"),
+    });
+
+    const { data: storedAsset, error: storedAssetError } = await admin
+      .from("information_agent_evidence_assets")
+      .select("id,case_id,sale_id,storage_path,provider_attachment_id")
+      .eq("provider_attachment_id", retryAttachmentId)
+      .single();
+    if (storedAssetError || !storedAsset) {
+      throw storedAssetError ?? new Error("Stored retry attachment missing.");
+    }
+    expect(storedAsset).toMatchObject({
+      case_id: retryFixture.caseId,
+      sale_id: retryFixture.saleId,
+      provider_attachment_id: retryAttachmentId,
+    });
+    const { data: storedBytes, error: storedBytesError } = await admin.storage
+      .from(BUCKET)
+      .download(storedAsset.storage_path);
+    if (storedBytesError || !storedBytes) {
+      throw storedBytesError ?? new Error("Stored retry attachment cannot be downloaded.");
+    }
+    expect(new Uint8Array(await storedBytes.arrayBuffer())).toEqual(retryBytes);
+
+    const { data: failedFacts, error: failedFactsError } = await admin
+      .from("information_agent_fact_candidates")
+      .select("id,case_id,sale_id,fact_key")
+      .eq("message_id", failedMessage.id);
+    if (failedFactsError) throw failedFactsError;
+    expect(failedFacts).toHaveLength(3);
+    expect(failedFacts?.every((fact) => fact.case_id === retryFixture.caseId)).toBe(true);
+    expect(failedFacts?.every((fact) => fact.sale_id === retryFixture.saleId)).toBe(true);
+
+    const { count: crossSaleAssetCount, error: crossSaleAssetError } = await admin
+      .from("information_agent_evidence_assets")
+      .select("id", { count: "exact", head: true })
+      .eq("sale_id", saleId)
+      .eq("provider_attachment_id", retryAttachmentId);
+    if (crossSaleAssetError) throw crossSaleAssetError;
+    expect(crossSaleAssetCount).toBe(0);
+
+    const retry = await runInformationAgentInboundQueue({
+      env: process.env,
+      now: new Date(firstWorkerNow.getTime() + 31_000),
+      limit: 1,
+    });
+    expect(retry).toMatchObject({ claimed: 1, completed: 0, reviewed: 1, failed: 0 });
+
+    const { count: assetCount, error: assetCountError } = await admin
+      .from("information_agent_evidence_assets")
+      .select("id", { count: "exact", head: true })
+      .eq("provider_attachment_id", retryAttachmentId);
+    if (assetCountError) throw assetCountError;
+    expect(assetCount).toBe(1);
+
+    const { count: factCount, error: factCountError } = await admin
+      .from("information_agent_fact_candidates")
+      .select("id", { count: "exact", head: true })
+      .eq("message_id", failedMessage.id);
+    if (factCountError) throw factCountError;
+    expect(factCount).toBe(3);
+
+    const { data: completedMessage, error: completedMessageError } = await admin
+      .from("information_agent_messages")
+      .select("metadata")
+      .eq("id", failedMessage.id)
+      .single();
+    if (completedMessageError || !completedMessage) {
+      throw completedMessageError ?? new Error("Retried message missing.");
+    }
+    expect(completedMessage.metadata).toMatchObject({
+      inbound_processing: { status: "review", attempts: 2 },
+    });
+
+    const { data: retriedJob, error: retriedJobError } = await admin
+      .from("information_agent_inbound_jobs")
+      .select("status,attempts,lease_id,last_error")
+      .eq("provider_email_id", retryEmailId)
+      .single();
+    if (retriedJobError || !retriedJob) {
+      throw retriedJobError ?? new Error("Retried inbound job missing.");
+    }
+    expect(retriedJob).toMatchObject({
+      status: "review",
+      attempts: 2,
+      lease_id: null,
+      last_error: null,
+    });
+  }, 30_000);
 });
 
 async function missionRow() {
@@ -442,6 +676,138 @@ async function missionRow() {
 
 function respondJson(response: import("node:http").ServerResponse, body: unknown) {
   response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+}
+
+function registerResendFixture(fixture: LocalResendFixture) {
+  resendFixtures.set(fixture.emailId, fixture);
+}
+
+async function createAdditionalConversation(prefix: string) {
+  const newSaleId = randomUUID();
+  const newMissionId = randomUUID();
+  const newCaseId = randomUUID();
+  const newInboundToken = randomUUID();
+  const sourceUrl = `https://example.test/local-information-agent/${prefix}/${newSaleId}`;
+  const bodyText = "Merci de transmettre les informations du bien demandé.";
+
+  const { error: saleError } = await admin.from("auction_sales").insert({
+    id: newSaleId,
+    source_name: "local-information-agent-integration",
+    source_url: sourceUrl,
+    title: `Local information-agent ${prefix} fixture`,
+    city: "Bordeaux",
+    status: "upcoming",
+    raw_payload: { integration: true, prefix },
+  });
+  if (saleError) throw saleError;
+  additionalSaleIds.push(newSaleId);
+
+  const { data: mission, error: missionError } = await admin
+    .from("information_agent_missions")
+    .insert({
+      id: newMissionId,
+      user_id: userId,
+      sale_id: newSaleId,
+      status: "sent",
+      recipient_kind: "manual_professional",
+      recipient_name: "Contact de test",
+      recipient_email: "contact@example.test",
+      subject: `Informations sur la vente ${prefix}`,
+      body_text: bodyText,
+      question_keys: ["surface_m2"],
+      missing_information: ["surface_m2"],
+      sale_snapshot: { source_url: sourceUrl },
+      privacy_version: "local-integration",
+      metadata: { integration: true, prefix },
+    })
+    .select("id")
+    .single();
+  if (missionError || !mission) {
+    throw missionError ?? new Error("Retry mission was not created.");
+  }
+
+  const { error: caseError } = await admin.from("information_agent_cases").insert({
+    id: newCaseId,
+    sale_id: newSaleId,
+    created_by: userId,
+    status: "sent",
+    recipient_kind: "manual_professional",
+    recipient_name: "Contact de test",
+    recipient_email: "contact@example.test",
+    normalized_recipient_email: "contact@example.test",
+    subject: `Informations sur la vente ${prefix}`,
+    body_text: bodyText,
+    question_keys: ["surface_m2"],
+    missing_information: ["surface_m2"],
+    inbound_token: newInboundToken,
+    initiator_mission_id: mission.id,
+    metadata: { integration: true, prefix },
+  });
+  if (caseError) throw caseError;
+
+  const { error: missionLinkError } = await admin
+    .from("information_agent_missions")
+    .update({ case_id: newCaseId })
+    .eq("id", newMissionId);
+  if (missionLinkError) throw missionLinkError;
+
+  return {
+    saleId: newSaleId,
+    missionId: newMissionId,
+    caseId: newCaseId,
+    inboundToken: newInboundToken,
+  };
+}
+
+async function withTransientMissionReplyFailure<T>(
+  databaseUrl: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const setupDatabase = postgres(databaseUrl, { max: 1 });
+  try {
+    await setupDatabase.unsafe(`
+      drop trigger if exists information_agent_local_fail_once_trigger
+        on public.information_agent_missions;
+      drop function if exists public.information_agent_local_fail_once();
+      drop sequence if exists public.information_agent_local_fail_once_seq;
+      create sequence public.information_agent_local_fail_once_seq;
+      create function public.information_agent_local_fail_once()
+      returns trigger
+      language plpgsql
+      security definer
+      set search_path = public
+      as $function$
+      begin
+        if new.status = 'replied'
+           and nextval('public.information_agent_local_fail_once_seq') = 1 then
+          raise exception 'local candidate checkpoint failure';
+        end if;
+        return new;
+      end;
+      $function$;
+      create trigger information_agent_local_fail_once_trigger
+      before update of status on public.information_agent_missions
+      for each row execute function public.information_agent_local_fail_once();
+    `);
+  } finally {
+    await setupDatabase.end();
+  }
+
+  try {
+    return await action();
+  } finally {
+    const cleanupDatabase = postgres(databaseUrl, { max: 1 });
+    try {
+      await cleanupDatabase.unsafe(`
+        drop trigger if exists information_agent_local_fail_once_trigger
+          on public.information_agent_missions;
+        drop function if exists public.information_agent_local_fail_once();
+        drop sequence if exists public.information_agent_local_fail_once_seq;
+      `);
+    } finally {
+      await cleanupDatabase.end();
+    }
+  }
 }
 
 function webhookRequest(payload: string, id: string): Request {

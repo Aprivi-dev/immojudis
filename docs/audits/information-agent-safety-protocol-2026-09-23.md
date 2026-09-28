@@ -87,34 +87,78 @@ Les tests TypeScript remplacent Resend, Supabase et `fetch`. Le worker Python ut
 
 ## Scénarios de sortie
 
-| Scénario                                        | Résultat exigé                                                                                           | État à la mise à jour                                                                                                                                                                       |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Deux annonces, même expéditeur ou double token  | Un seul dossier reçoit le message, les pièces et les candidats.                                          | Routage et tests locaux livrés ; trigger d’association appliqué en production.                                                                                                              |
-| Rejeu du webhook                                | Un seul message et une seule pièce, sans candidat en double.                                             | Déduplication livrée ; les doubles livraisons et une reprise après erreur sont testées en mémoire ; concurrence réelle, panne à chaque étape et objets privés orphelins restent à éprouver. |
-| Pièce liée à une autre vente                    | L’extraction est refusée et aucune donnée ne traverse vers l’autre annonce.                              | Contrôle worker + SQL ; test SQL jetable et rejeu du schéma complet passés.                                                                                                                 |
-| Expéditeur différent                            | Message visible en revue, aucun fait ni pièce publiable.                                                 | Livré par PR 170 ; le signal Resend est conservé séparément de `From` ; règles d’admission au point 8.                                                                                      |
-| Citation du message initial ou HTML atypique    | Aucun fait tiré d’une citation ; le corps utile est conservé.                                            | Texte brut et `blockquote` couverts ; transferts et variantes mobiles à compléter.                                                                                                          |
-| PDF texte, scanné, chiffré ou MIME trompeur     | Pages sourcées si lisibles ; état explicite sinon ; aucune acceptation prématurée.                       | Extraction locale couverte ; OCR de production à qualifier.                                                                                                                                 |
-| Pièce hors format, trop grande ou vidéo         | Motif visible, aucun téléchargement non borné, aucune publication.                                       | Limites PR 170 livrées ; cas 500+ et flux interrompu à compléter en intégration.                                                                                                            |
-| Revue admin d’une pièce en cours d’analyse      | Bouton inactif, refus serveur et refus en base.                                                          | Tests ciblés et migration sur schéma complet passés ; l’aperçu privé à URL signée est livré dans la PR 179. Le test avec de vrais objets Storage de staging reste à faire.                  |
-| Deux tentatives de publication concurrentes     | Chaque tentative possède son propre chemin ; une revue ne peut pas accepter le chemin d’une autre.       | Contrôles par chemin et CAS inclus dans la PR 176 ; rejeu du schéma complet passé, essai avec stockage de test à faire.                                                                     |
-| Fermeture d’un dossier pendant la revue         | Les candidats `pending`/`conflict` sont rejetés ; aucun nouvel upload public ne démarre.                 | Trigger de migration appliqué ; garde serveur et tests inclus dans la PR 176.                                                                                                               |
-| Révocation des droits après staging/acceptation | Réponse `409` fail-closed ; aucune suppression automatique ambiguë ; dépublication manuelle obligatoire. | Route et CAS localement testés ; procédure opérationnelle de dépublication à formaliser et exécuter sur environnement de test.                                                              |
-| Signature invalide ou panne                     | HTTP 400 pour signature invalide ; HTTP 500 pour permettre la reprise.                                   | Tests de route locaux passés ; le rejeu fournisseur et la vérification de reprise sur staging restent à faire.                                                                              |
+| Scénario                                        | Résultat exigé                                                                                           | État à la mise à jour                                                                                                                                                                                                  |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deux annonces, même expéditeur ou double token  | Un seul dossier reçoit le message, les pièces et les candidats.                                          | Routage et tests locaux livrés ; l’intégration de la PR 179 crée deux ventes et vérifie qu’une réponse ne crée aucun asset dans l’autre vente ; trigger d’association appliqué en production.                          |
+| Rejeu du webhook                                | Un seul message et une seule pièce, sans candidat en double.                                             | Déduplication livrée ; la livraison dupliquée et la reprise après un échec après insertion des candidats sont maintenant couvertes sur Supabase local ; fournisseur réel et concurrence restent à éprouver.            |
+| Pièce liée à une autre vente                    | L’extraction est refusée et aucune donnée ne traverse vers l’autre annonce.                              | Contrôle worker + SQL ; l’intégration locale vérifie les `case_id`/`sale_id` de l’asset et des candidats, puis l’absence de l’asset dans l’autre vente.                                                                |
+| Expéditeur différent                            | Message visible en revue, aucun fait ni pièce publiable.                                                 | Livré par PR 170 ; le signal Resend est conservé séparément de `From` ; règles d’admission au point 8.                                                                                                                 |
+| Citation du message initial ou HTML atypique    | Aucun fait tiré d’une citation ; le corps utile est conservé.                                            | Texte brut et `blockquote` couverts ; transferts et variantes mobiles à compléter.                                                                                                                                     |
+| PDF texte, scanné, chiffré ou MIME trompeur     | Pages sourcées si lisibles ; état explicite sinon ; aucune acceptation prématurée.                       | Extraction locale couverte ; OCR de production à qualifier.                                                                                                                                                            |
+| Pièce hors format, trop grande ou vidéo         | Motif visible, aucun téléchargement non borné, aucune publication.                                       | Limites PR 170 livrées ; cas 500+ et flux interrompu à compléter en intégration.                                                                                                                                       |
+| Revue admin d’une pièce en cours d’analyse      | Bouton inactif, refus serveur et refus en base.                                                          | Tests ciblés et migration sur schéma complet passés ; l’intégration de la PR 179 utilise un véritable objet Storage local et vérifie le refus avant extraction. Le rendu visuel de l’aperçu reste à vérifier.          |
+| Deux tentatives de publication concurrentes     | Chaque tentative possède son propre chemin ; une revue ne peut pas accepter le chemin d’une autre.       | Contrôles par chemin et CAS inclus dans la PR 176 ; rejeu du schéma complet passé, essai avec stockage de test à faire.                                                                                                |
+| Fermeture d’un dossier pendant la revue         | Les candidats `pending`/`conflict` sont rejetés ; aucun nouvel upload public ne démarre.                 | Trigger de migration appliqué ; garde serveur et tests inclus dans la PR 176.                                                                                                                                          |
+| Révocation des droits après staging/acceptation | Réponse `409` fail-closed ; aucune suppression automatique ambiguë ; dépublication manuelle obligatoire. | Route et CAS localement testés ; procédure opérationnelle de dépublication à formaliser et exécuter sur environnement de test.                                                                                         |
+| Signature invalide ou panne                     | HTTP 400 pour signature invalide ; HTTP 500 pour permettre la reprise.                                   | Tests de route locaux passés ; l’intégration de la PR 179 vérifie un webhook signé, une panne après candidats et sa reprise sur Supabase local. Les pannes et la livraison par le fournisseur réel restent à vérifier. |
 
 ## Travail restant avant tout essai réel
 
 1. Le rejeu des migrations et pgTAP sur le schéma Supabase complet sont passés en CI ; la migration est appliquée en production et le contrôle de dérive est vert. Vérifier le déploiement du web et du worker après fusion de la PR 176.
-2. Les doubles livraisons concurrentes et une reprise après erreur sont couvertes par des fixtures en mémoire. Les rejouer avec une base Supabase de test et des appels fournisseur contrôlés, puis tester les pannes après téléchargement, après stockage et après insertion d’un candidat ; vérifier les objets privés orphelins et la reprise.
+2. Les doubles livraisons concurrentes et une reprise après erreur sont couvertes par des fixtures en mémoire. L’intégration Supabase locale de la PR 179 rejoue une livraison dupliquée et une panne injectée après téléchargement, stockage et insertion des candidats ; elle vérifie le checkpoint `failed`, la reprise, les identifiants `case_id`/`sale_id`, l’absence de doublon et le téléchargement de l’objet privé. Les pannes du fournisseur réel, les erreurs indépendantes de téléchargement/stockage et les objets orphelins sur cette voie restent à éprouver.
 3. Constituer un corpus synthétique de réponses Gmail/Outlook, texte et HTML, transferts, alias, négations, corrections de valeurs, documents multipages, photos, HEIC/HEIF, DOCX/ZIP et tailles limites.
 4. Le workflow `.github/workflows/information-agent-evidence.yml` configure `PDF_OCR_ENABLED=true` et installe Tesseract français/anglais. Vérifier encore dans l’exécution de déploiement que l’OCR fonctionne, que les erreurs sont observables et que les limites de pages et de durée sont respectées ; hors workflow, la valeur par défaut reste désactivée.
-5. Vérifier que le panneau admin permet d’écarter les logos/signatures, d’autoriser les droits et de contrôler le dérivé avant acceptation. L’aperçu privé à URL signée est présent dans la PR 179 ; son comportement avec le Storage de staging reste à vérifier.
+5. Vérifier que le panneau admin permet d’écarter les logos/signatures, d’autoriser les droits et de contrôler le dérivé avant acceptation. L’aperçu privé à URL signée est présent dans la PR 179 ; un objet Storage privé local est exercé en CI, mais le rendu du panneau reste à contrôler visuellement.
 6. Vérifier les réponses arrivant après un envoi marqué `failed`, les réponses sans fait et la conservation des messages anciens sans doublon ni omission lorsque de nouveaux messages arrivent avec les curseurs `(created_at,id)`.
 7. Tester les deux tentatives concurrentes, le CAS d’abandon après erreur, le nettoyage d’un chemin unique et la conservation volontaire d’un objet lorsque l’acceptation a gagné la course. Formaliser et tester la dépublication manuelle avant toute révocation réelle des droits.
-8. Resend expose, lors de la récupération d’un email reçu, un objet `authentication` contenant les résultats SPF/DKIM/DMARC calculés par son serveur de réception ([documentation Resend](https://resend.com/docs/api-reference/emails/retrieve-received-email)). Le code persiste maintenant ces trois résultats après normalisation dans `sender_authentication`. En mode `INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION=true`, l’admission exige `dmarc=pass` et au moins un de `spf`/`dkim=pass` ; `gray`, `processing_failed`, `unknown`, un résultat manquant, un échec DMARC ou deux échecs SPF/DKIM conduisent à la revue sans extraction ni pièce. Un échec SPF ou DKIM isolé reste admissible si l’autre mécanisme fait passer DMARC. Les scénarios locaux couvrent le webhook synchrone, la réception différée et le worker ; la validation du payload fournisseur sur staging reste à faire, sans email réel.
+8. Resend expose, lors de la récupération d’un email reçu, un objet `authentication` contenant les résultats SPF/DKIM/DMARC calculés par son serveur de réception ([documentation Resend](https://resend.com/docs/api-reference/emails/retrieve-received-email)). Le code persiste maintenant ces trois résultats après normalisation dans `sender_authentication`. En mode `INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION=true`, l’admission exige `dmarc=pass` et au moins un de `spf`/`dkim=pass` ; `gray`, `processing_failed`, `unknown`, un résultat manquant, un échec DMARC ou deux échecs SPF/DKIM conduisent à la revue sans extraction ni pièce. Un échec SPF ou DKIM isolé reste admissible si l’autre mécanisme fait passer DMARC. Les scénarios locaux couvrent le webhook synchrone, la réception différée et le worker ; le faux endpoint reproduit le contrat utilisé, mais ne valide pas le payload livré par Resend en conditions réelles.
 
 ## Critères de sortie
 
-La phase locale est acceptée seulement si : **zéro email externe**, **zéro association inter-annonces**, **zéro publication sans revue admin et extraction terminée**, **aucune pièce silencieusement perdue**, et **reprise idempotente** après doublon ou panne. Les pièces non exploitables ont un état et un motif visibles. Chaque scénario produit un relevé d’erreur exploitable. Avant tout email réel, `INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION=true` doit être vérifié en staging puis en production ; la valeur `false` de `.env.example` sert uniquement à préserver la compatibilité pendant les tests.
+La phase locale est acceptée seulement si : **zéro email externe**, **zéro association inter-annonces**, **zéro publication sans revue admin et extraction terminée**, **aucune pièce silencieusement perdue**, et **reprise idempotente** après doublon ou panne. Les pièces non exploitables ont un état et un motif visibles. Chaque scénario produit un relevé d’erreur exploitable. Sans staging séparé, `INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION=true` est testé sur Supabase local et devra être contrôlé lors d'un essai interne supervisé en production avant tout contact réel ; la valeur `false` de `.env.example` sert uniquement à préserver la compatibilité pendant les tests.
+
+Un essai fournisseur ultérieur peut éviter une boîte et un domaine de staging distincts :
+Resend fournit [l'adresse de test `delivered@resend.dev`](https://resend.com/changelog/sending-test-emails)
+pour vérifier la voie d'envoi et [une adresse entrante `@<id>.resend.app`](https://resend.com/features/inbound)
+pour recevoir un message synthétique avec pièce et observer le webhook. Cet essai doit
+rester isolé des vraies annonces et des vrais contacts, et contrôler la configuration
+réelle de l'application. Il n'a pas encore été exécuté ; la simulation locale ne
+démontre pas la livraison ni la réception par Resend.
+Pour la voie sortante, `INFORMATION_AGENT_OUTBOUND_CANARY_ONLY` vaut `true` par
+défaut dans le code et dans `.env.example` : même avec
+`INFORMATION_AGENT_OUTBOUND_ENABLED=true`, seul `delivered@resend.dev` est admis.
+Le contrôle intervient avant toute modification de mission et de nouveau juste
+avant l'appel fournisseur. Un envoi à un véritable interlocuteur exige donc une
+activation explicite de l'envoi **et** la valeur `false` du mode canari, après
+validation de l'essai fournisseur.
 
 **Décision actuelle : ne pas autoriser l’envoi réel.** La migration et la CI sont validées ; les essais fournisseur et les limites restantes ci-dessus doivent encore être qualifiés avant toute adresse réelle. L’interrupteur d’envoi reste fermé jusqu’à autorisation explicite.
+Le dépôt contient le harnais isolé
+[`scripts/send-information-agent-provider-canary.mjs`](../../scripts/send-information-agent-provider-canary.mjs).
+Il n'importe ni l'application ni Supabase, n'accepte aucun destinataire en
+paramètre et refuse de démarrer si une configuration Supabase est présente dans
+l'environnement. Il exige deux indicateurs explicites, une clé Resend, un
+expéditeur vérifié et la confirmation littérale de l'adresse de test. Il envoie
+un seul message texte/HTML fixe vers `delivered@resend.dev`, sans annonce, mission
+ni pièce jointe.
+
+La commande à exécuter ultérieurement, depuis la racine du dépôt, est la suivante.
+Charger au préalable `RESEND_API_KEY` dans le shell depuis le coffre de secrets,
+sans coller sa valeur dans la commande ou dans l'historique :
+
+```sh
+env -i PATH="$PATH" \
+  INFORMATION_AGENT_PROVIDER_CANARY=true \
+  INFORMATION_AGENT_OUTBOUND_ENABLED=true \
+  INFORMATION_AGENT_OUTBOUND_CANARY_ONLY=true \
+  INFORMATION_AGENT_CANARY_CONFIRM=delivered@resend.dev \
+  INFORMATION_AGENT_CANARY_FROM='Expéditeur vérifié <adresse@domaine-verifie.example>' \
+  RESEND_API_KEY="$RESEND_API_KEY" \
+  node scripts/send-information-agent-provider-canary.mjs
+```
+
+Le résultat attendu est un JSON `{"ok":true,"provider":"resend","recipient":"delivered@resend.dev","messageId":"..."}`.
+En l'absence de clé, d'expéditeur vérifié, d'un des deux indicateurs ou avec une
+variable Supabase présente, la commande doit s'arrêter avant tout appel réseau.
+L'essai n'a pas été exécuté dans cette validation car aucune clé Resend n'est
+disponible dans l'environnement local.

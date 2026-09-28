@@ -526,6 +526,38 @@ def parse_rooms_count(value: object) -> int | None:
     return int(match.group(0)) if match else None
 
 
+def parse_parking_count(value: object | None) -> int | None:
+    """Parse a non-negative parking count while preserving an explicit zero."""
+
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            numeric = Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+        if not numeric.is_finite() or numeric != numeric.to_integral_value():
+            return None
+        count = int(numeric)
+        return count if count >= 0 else None
+    text = clean_text(value)
+    if not text:
+        return None
+    decimal_match = re.search(r"(?<!\d)([0-9]+[.,][0-9]+)(?!\d)", text)
+    if decimal_match:
+        try:
+            numeric = Decimal(decimal_match.group(1).replace(",", "."))
+        except InvalidOperation:
+            return None
+        if not numeric.is_finite() or numeric != numeric.to_integral_value():
+            return None
+        return int(numeric) if numeric >= 0 else None
+    if re.fullmatch(r"0+", text):
+        return 0
+    match = re.search(r"\b([1-9][0-9]?)\b", text)
+    return int(match.group(1)) if match else None
+
+
 def parse_bedrooms_count(value: object) -> int | None:
     return parse_rooms_count(value)
 
@@ -717,7 +749,13 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "critere_nombre_de_pieces",
         )
     )
-    if rooms_count is None and not _suppress_avoventes_room_inference(raw_sale, property_type):
+    suppress_info_encheres_text_inference = _suppress_info_encheres_mixed_text_inference(
+        raw_sale, property_type
+    )
+    if rooms_count is None and not (
+        _suppress_avoventes_room_inference(raw_sale, property_type)
+        or suppress_info_encheres_text_inference
+    ):
         rooms_count = extract_rooms_count_from_text(
             title,
             description,
@@ -758,7 +796,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "habitable_surface_m2",
             "critere_surface_habitable",
         )
-    ) or _extract_habitable_surface_from_text(source_text)
+    )
+    if habitable_surface_m2 is None and not suppress_info_encheres_text_inference:
+        habitable_surface_m2 = _extract_habitable_surface_from_text(source_text)
     carrez_surface_m2 = parse_surface(
         _field_or_source_block(raw_sale, "carrez_surface_m2", "surface_carrez", "carrez_surface_m2")
     ) or _extract_carrez_surface_from_text(source_text)
@@ -796,7 +836,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "critere_nombre_de_salles_de_bain",
         )
     ) or _extract_bathrooms_count_from_text(source_text)
-    parking_count = parse_rooms_count(
+    parking_count = parse_parking_count(
         _field_or_source_block(
             raw_sale,
             "parking_count",
@@ -804,7 +844,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "nombre_de_parkings",
             "critere_nombre_de_parkings",
         )
-    ) or _extract_parking_count_from_text(source_text)
+    )
+    if parking_count is None:
+        parking_count = _extract_parking_count_from_text(source_text)
     occupancy_status = normalize_occupancy_status(
         _field_or_source_block(
             raw_sale,
@@ -814,7 +856,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "situation_locative",
             "situationLocative",
         )
-    ) or _extract_occupancy_status_from_text(source_text)
+    )
+    if occupancy_status is None and not _suppress_avoventes_occupancy_inference(raw_sale):
+        occupancy_status = _extract_occupancy_status_from_text(source_text)
     source_energy_diagnostics = _source_energy_diagnostics(raw_sale)
     if source_energy_diagnostics:
         raw_sale["source_energy_diagnostics"] = source_energy_diagnostics
@@ -1093,6 +1137,40 @@ def _suppress_avoventes_room_inference(raw_sale: dict[str, object], property_typ
         return True
     quality_flags = raw_sale.get("quality_flags")
     return isinstance(quality_flags, list) and "multi_lot_sale" in quality_flags
+
+
+def _suppress_avoventes_occupancy_inference(raw_sale: dict[str, object]) -> bool:
+    """Do not collapse component-level occupancy into a sale-level status."""
+
+    source_name = clean_text(raw_sale.get("source_name"))
+    source_url = clean_text(raw_sale.get("source_url")) or ""
+    is_avoventes = source_name == "avoventes" or urlparse(source_url).netloc.lower() in {
+        "avoventes.fr",
+        "www.avoventes.fr",
+    }
+    if not is_avoventes:
+        return False
+    quality_flags = raw_sale.get("quality_flags")
+    return isinstance(quality_flags, list) and "ambiguous_occupancy" in quality_flags
+
+
+def _suppress_info_encheres_mixed_text_inference(
+    raw_sale: dict[str, object], property_type: str
+) -> bool:
+    """Do not assign a lot's area or room count to a compound Info Enchères sale."""
+
+    source_name = clean_text(raw_sale.get("source_name"))
+    source_url = clean_text(raw_sale.get("source_url")) or ""
+    is_info_encheres = source_name == "info_encheres" or urlparse(source_url).netloc.lower() in {
+        "info-encheres.com",
+        "www.info-encheres.com",
+    }
+    if not is_info_encheres:
+        return False
+    quality_flags = raw_sale.get("quality_flags")
+    return property_type == "mixed" or (
+        isinstance(quality_flags, list) and "multi_lot_sale" in quality_flags
+    )
 
 
 def _field_or_source_block(raw_sale: dict[str, object], field: str, *source_block_keys: str) -> object | None:
@@ -1442,15 +1520,14 @@ def _extract_bathrooms_count_from_text(*values: object) -> int | None:
 def _extract_parking_count_from_text(*values: object) -> int | None:
     text = _joined_text(*values)
     patterns = (
-        r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq)\s+(?:places?\s+de\s+)?(?:parking|stationnement)\b",
+        r"\b([1-9][0-9]?|deux|trois|quatre|cinq)\s+(?:places?\s+de\s+)?(?:parking|stationnement)\b",
+        r"\b(une?|deux|trois|quatre|cinq)\s+places?\s+de\s+(?:parking|stationnement)\b",
         r"\b(?:parking|stationnement)\s*:?\s*([1-9][0-9]?|une?|deux|trois|quatre|cinq)\b",
     )
     for pattern in patterns:
         match = re.search(pattern, text, re.I)
         if match:
             return _parse_count_token(match.group(1))
-    if re.search(r"\b(?:place\s+de\s+parking|stationnement)\b", text, re.I):
-        return 1
     return None
 
 

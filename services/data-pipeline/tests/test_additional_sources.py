@@ -113,6 +113,128 @@ def test_parse_petites_affiches_detail_extracts_status_and_parking_from_scoped_b
     assert normalize_sale(detail).occupancy_status == "vacant"
 
 
+def test_parse_petites_affiches_detail_accepts_direct_scoped_parking_count() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un appartement à Bordeaux vendu au tribunal judiciaire le 14/10/2099" />
+    <div class="row detail default">
+      <p>Deux places de parking.</p>
+    </div>
+    <footer><a>Parking visiteurs libre</a></footer>
+    """
+
+    assert petites_affiches._detail_parking_count("2 parkings") == 2
+    assert petites_affiches._detail_parking_count("2 parkings visiteurs") is None
+    assert petites_affiches._detail_parking_count("2 parkings publics") is None
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["parking_count"] == 2
+
+
+def test_parse_petites_affiches_detail_prefers_sale_date_over_visit_date() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères, visite le 17/06/2026, vendu au tribunal judiciaire le 18/06/2026" />
+    <div class="row detail default"><p>Appartement.</p></div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["sale_date"] == "18/06/2026"
+
+
+def test_parse_petites_affiches_detail_extracts_city_from_title_and_spaced_postal() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un appartement vendu au tribunal judiciaire le 18/06/2026" />
+    <h1>STUDIO à LETHUIN</h1>
+    <div class="row detail default">
+      <div class="lot-adresse"><h4>Adresse : 6 rue du Château d'Eau, 28 700 LETHUIN</h4></div>
+    </div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["city"] == "LETHUIN"
+    assert detail["postal_code"] == "28700"
+
+
+def test_parse_petites_affiches_detail_extracts_city_from_title_only() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un lot : UNE CAVE à Cannes vendu au tribunal judiciaire de GRASSE le 08/10/2026" />
+    <h1>UNE CAVE à Cannes</h1>
+    <div class="row detail default">
+      <div class="lot-adresse"><h4>Adresse : Cannes</h4></div>
+    </div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["city"] == "Cannes"
+
+
+def test_petites_affiches_detail_identity_mismatch_does_not_overwrite_listing() -> None:
+    source_url = (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/"
+        "judiciaire/un-appartement-a-villefranche-sur-saone-59195.html"
+    )
+
+    class Client:
+        def get(self, url: str) -> str:
+            assert url == source_url
+            return """
+            <h1>MAISON D'HABITATION à Pineuilh</h1>
+            <meta name="description" content="Vente aux enchères d'un lot : MAISON à Pineuilh vendu le 05/06/2026" />
+            <div class="lot-adresse"><h4>Adresse : 4 rue du Test, 33220 Pineuilh</h4></div>
+            <div class="row detail default"><p>Maison de la page servie par erreur.</p></div>
+            """
+
+    sale = {
+        "source_url": source_url,
+        "city": "Villefranche-sur-Saône",
+        "description": "Description de la carte",
+        "source_blocks": {"titre": "Appartement de la carte"},
+    }
+    errors: list[str] = []
+
+    petites_affiches._enrich_sale_from_detail(Client(), sale, errors)
+
+    assert errors == []
+    assert sale["city"] == "Villefranche-sur-Saône"
+    assert sale["description"] == "Description de la carte"
+    assert sale["source_detail_status"] == "failed"
+    assert sale["source_detail_failure_reason"] == "identity_mismatch"
+    assert sale["source_identity_mismatch"]["detail_city"] == "Pineuilh"
+    assert sale["quality_flags"] == ["source_identity_mismatch"]
+
+
+def test_petites_affiches_detail_identity_accepts_slug_without_city_accents() -> None:
+    source_url = (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/"
+        "judiciaire/un-appartement-a-villefranche-sur-saone-59195.html"
+    )
+
+    assert petites_affiches._detail_identity_mismatch(
+        source_url,
+        {"city": "Villefranche-sur-Saône"},
+    ) is None
+
+
+def test_parse_petites_affiches_detail_ignores_visit_labels_and_visitor_parking() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un appartement vendu au tribunal judiciaire le 18/06/2026" />
+    <div class="row detail default">
+      <div class="lo-box-content">
+        <p><label>Visite libre</label></p>
+        <p><label>Photos libres de droits</label></p>
+        <p>Deux places de parking visiteurs sont disponibles.</p>
+      </div>
+    </div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["occupancy_status"] is None
+    assert detail["parking_count"] is None
+
+
 def test_parse_petites_affiches_detail_ignores_epoch_sale_date_placeholder() -> None:
     html = """
     <meta name="description" content="Vente aux enchères d'un appartement vendu au tribunal judiciaire le 01/01/1970" />
@@ -1048,6 +1170,37 @@ def test_parse_notaires_public_api_payload() -> None:
     assert validate_raw_sales("notaires", sales, []) == sales
 
 
+def test_notaires_imm_alias_selects_immeuble_block_and_preserves_zero_parking() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VNI",
+            "bien": {
+                "typeBien": "IMM",
+                "immeuble": {
+                    "typeBien": "IMM",
+                    "codePostal": "33000",
+                    "communeNom": "TESTVILLE",
+                    "nbStationnements": 0,
+                },
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+    sale = normalize_sale(
+        {
+            **detail,
+            "source_name": "notaires",
+            "source_url": "https://www.immobilier.notaires.fr/fr/annonce-immo/synthetic-imm",
+        }
+    )
+
+    assert detail["property_type"] == "immeuble"
+    assert detail["parking_count"] == 0
+    assert sale.property_type == "building"
+    assert sale.parking_count == 0
+
+
 def test_notaires_uses_national_api_when_all_departments_are_targeted(monkeypatch) -> None:
     monkeypatch.setattr(notaires, "TARGET_DEPARTMENTS", notaires.FRANCE_DEPARTMENTS)
 
@@ -1554,6 +1707,66 @@ def test_parse_notaires_detail_keeps_thousands_cadastral_surface_as_land() -> No
     assert detail["land_surface_m2"] == 2464.7
     assert detail["surface_source"] == "notaires.description.cadastre"
     assert "2 464,70 m²" in detail["surface_evidence"]
+
+
+def test_parse_notaires_detail_extracts_one_global_descriptive_park_surface() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VAE",
+            "vae": {
+                "descriptions": [
+                    {
+                        "langue": "fr",
+                        "descLongue": (
+                            "Domaine familial avec parc arboré de 4 800 m². "
+                        ),
+                    }
+                ]
+            },
+            "bien": {
+                "typeBien": "MAI",
+                "maison": {"typeBien": "MAI"},
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["land_surface_m2"] == 4800
+    assert detail["surface_source"] == "notaires.description.land_surface"
+    assert "parc arboré de 4 800 m²" in detail["surface_evidence"]
+    assert "ambiguous_land_surface" not in detail["quality_flags"]
+
+
+def test_parse_notaires_detail_quarantines_competing_descriptive_land_surfaces() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VNI",
+            "vni": {
+                "descriptions": [
+                    {
+                        "langue": "fr",
+                        "descLongue": (
+                            "Terrain à bâtir formant le lot B. Superficie constructible : environ 537 m² "
+                            "de terrain à bâtir. Parcelle complémentaire : environ 71 m² en zone naturelle."
+                        ),
+                    }
+                ]
+            },
+            "bien": {
+                "typeBien": "TER",
+                "terrain": {"typeBien": "TER"},
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["land_surface_m2"] is None
+    assert "ambiguous_land_surface" in detail["quality_flags"]
+    assert detail["source_blocks"]["land_surface_quarantine_reason"] == (
+        "multiple_explicit_land_measurements"
+    )
 
 
 def test_notarial_generic_area_is_not_promoted_to_habitable():

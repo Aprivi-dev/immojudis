@@ -29,6 +29,30 @@ def test_preserves_online_notarial_window_but_not_judicial_audience_slot() -> No
     assert judicial_procedure["sale_session"]["closes_at"] == schedule["closes_at"]
 
 
+def test_preserves_explicit_state_sale_window_as_window() -> None:
+    schedule = {
+        "opens_at": "2026-09-28T12:00:00+00:00",
+        "closes_at": "2026-09-30T13:30:00+00:00",
+        "schedule_type": "sale_window",
+    }
+    sale = make_sale(
+        source_name="cessions_etat",
+        tribunal=None,
+        tribunal_code=None,
+        description="Vente en ligne d'un bien domanial.",
+        raw_payload={"source_sale_schedule": schedule},
+    )
+
+    procedure = classify_sale_procedure(sale, verified_at=VERIFIED_AT).sale_procedure
+
+    assert procedure["sale_window"] == {
+        "opens_at": schedule["opens_at"],
+        "closes_at": schedule["closes_at"],
+        "source_url": sale.source_url,
+    }
+    assert "sale_session" not in procedure
+
+
 def test_rejects_unzoned_source_window() -> None:
     sale = make_sale(
         source_name="notaires", tribunal=None, tribunal_code=None,

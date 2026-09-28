@@ -1418,9 +1418,14 @@ export function findInboundToken(
 
 export function replyTextForExtraction(bodyText: string): string {
   const quotedStart =
-    /^(?:-{2,}\s*(?:message d.origine|original message)\s*-{2,}|le .+ a écrit\s*:|on .+ wrote\s*:|de\s*:\s*.+@.+)$/im;
-  const match = quotedStart.exec(bodyText);
-  return (match ? bodyText.slice(0, match.index) : bodyText)
+    /^(?:-{2,}\s*(?:message d.origine|original message|forwarded message|message transféré)\s*-{2,}|le .+ a écrit\s*:|on .+ wrote\s*:|de\s*:\s*.+@.+)$/imu;
+  const quotedMatch = quotedStart.exec(bodyText);
+  const withoutQuotedHistory = quotedMatch ? bodyText.slice(0, quotedMatch.index) : bodyText;
+  const mobileSignatureMatch = MOBILE_SIGNATURE_LINE_PATTERN.exec(withoutQuotedHistory);
+  const withoutMobileSignature = mobileSignatureMatch
+    ? withoutQuotedHistory.slice(0, mobileSignatureMatch.index)
+    : withoutQuotedHistory;
+  return withoutMobileSignature
     .split("\n")
     .filter((line) => !/^\s*>/.test(line))
     .join("\n")
@@ -1446,16 +1451,25 @@ export function htmlToPlainText(value: string) {
   let output = "";
   let suppressedDepth = 0;
   let quotedDepth = 0;
+  const outlookDivStack: boolean[] = [];
   const append = (text: string) => {
     if (output.length >= MAX_EXTRACTED_BODY_CHARS) return;
     output += text.slice(0, MAX_EXTRACTED_BODY_CHARS - output.length);
   };
   const parser = new Parser(
     {
-      onopentag(name) {
+      onopentag(name, attributes) {
         const tag = name.toLowerCase();
         if (tag === "script" || tag === "style") {
           suppressedDepth += 1;
+        } else if (tag === "div") {
+          const isOutlookQuote = attributes.id?.toLowerCase() === "divrplyfwdmsg";
+          outlookDivStack.push(isOutlookQuote);
+          if (isOutlookQuote) {
+            quotedDepth += 1;
+          } else if (suppressedDepth === 0 && quotedDepth === 0) {
+            append("\n");
+          }
         } else if (tag === "blockquote") {
           quotedDepth += 1;
         } else if (suppressedDepth === 0 && quotedDepth === 0 && HTML_LINE_BREAK_TAGS.has(tag)) {
@@ -1469,6 +1483,13 @@ export function htmlToPlainText(value: string) {
         const tag = name.toLowerCase();
         if (tag === "script" || tag === "style") {
           suppressedDepth = Math.max(0, suppressedDepth - 1);
+        } else if (tag === "div") {
+          const wasOutlookQuote = outlookDivStack.pop() ?? false;
+          if (wasOutlookQuote) {
+            quotedDepth = Math.max(0, quotedDepth - 1);
+          } else if (suppressedDepth === 0 && quotedDepth === 0) {
+            append("\n");
+          }
         } else if (tag === "blockquote") {
           quotedDepth = Math.max(0, quotedDepth - 1);
         } else if (suppressedDepth === 0 && quotedDepth === 0 && HTML_LINE_BREAK_TAGS.has(tag)) {
@@ -1499,7 +1520,11 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
   const surfaceMatch = surfaceValues.size === 1 ? surfaceMatches[0] : undefined;
   if (surfaceMatch) {
     const value = Number(surfaceMatch[1].replace(",", "."));
-    if (value > 0 && value <= 1000000) {
+    if (
+      value > 0 &&
+      value <= 1000000 &&
+      !hasAmbiguousCorrectionNear(normalized, surfaceMatch.index ?? 0)
+    ) {
       facts.push({
         factKey: "surface_m2",
         proposedValue: { value, unit: "m2" },
@@ -1515,7 +1540,11 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
   const roomsMatch = roomValues.size === 1 ? roomsMatches[0] : undefined;
   if (roomsMatch) {
     const value = Number(roomsMatch[1]);
-    if (value >= 1 && value <= 100) {
+    if (
+      value >= 1 &&
+      value <= 100 &&
+      !hasAmbiguousCorrectionNear(normalized, roomsMatch.index ?? 0)
+    ) {
       facts.push({
         factKey: "rooms_count",
         proposedValue: { value },
@@ -1551,13 +1580,15 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     for (const { pattern, value, label } of occupancyMatches) {
       const match = normalized.match(pattern);
       if (!match) continue;
-      facts.push({
-        factKey: "occupancy_status",
-        proposedValue: { value },
-        displayValue: label,
-        evidenceExcerpt: excerptAround(normalized, match.index ?? 0),
-        confidence: 0.82,
-      });
+      if (!hasAmbiguousCorrectionNear(normalized, match.index ?? 0)) {
+        facts.push({
+          factKey: "occupancy_status",
+          proposedValue: { value },
+          displayValue: label,
+          evidenceExcerpt: excerptAround(normalized, match.index ?? 0),
+          confidence: 0.82,
+        });
+      }
       break;
     }
   }
@@ -1567,7 +1598,7 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     const values = new Set(saleDateObservations.map((observation) => observation.value));
     if (values.size === 1) {
       const observation = saleDateObservations[0];
-      if (observation) {
+      if (observation && !hasAmbiguousCorrectionNear(normalized, observation.index)) {
         facts.push({
           factKey: "sale_date",
           proposedValue: { value: observation.value },
@@ -1584,7 +1615,7 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     const values = new Set(startingPriceObservations.map((observation) => observation.value));
     if (values.size === 1) {
       const observation = startingPriceObservations[0];
-      if (observation) {
+      if (observation && !hasAmbiguousCorrectionNear(normalized, observation.index)) {
         facts.push({
           factKey: "starting_price_eur",
           proposedValue: { value: observation.value, unit: "EUR" },
@@ -1724,6 +1755,15 @@ function containsUncertainQualifier(value: string): boolean {
   return /(?<![\p{L}\p{N}])(?:pas|aucun[e]?|inconnu[e]?|non\s+communiqu[ée]e?|à\s+confirmer|a\s+confirmer|à\s+d[ée]finir|a\s+definir|sous\s+r[ée]serve|report[ée]e?|en\s+attente)(?![\p{L}\p{N}])/iu.test(
     value,
   );
+}
+
+const AMBIGUOUS_CORRECTION_PATTERN =
+  /(?<![\p{L}\p{N}])(?:correction|corrig(?:é|ée|és|ées)|rectification|rectifi(?:é|ée|és|ées)|erratum|erreur|au\s+lieu\s+de|et\s+non)(?![\p{L}\p{N}])/iu;
+
+function hasAmbiguousCorrectionNear(text: string, index: number): boolean {
+  const start = Math.max(0, index - 120);
+  const end = Math.min(text.length, index + 120);
+  return AMBIGUOUS_CORRECTION_PATTERN.test(text.slice(start, end));
 }
 
 function parseFrenchDate(value: string): string | null {
@@ -1911,6 +1951,9 @@ export function normalizeEmail(value: string) {
 
 const SIMPLE_EMAIL_PATTERN =
   /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)*$/i;
+
+const MOBILE_SIGNATURE_LINE_PATTERN =
+  /^[ \t]*(?:sent from my (?:iphone|ipad|android(?: phone)?|(?:mobile )?phone|mobile device|galaxy)|envoy[ée] (?:de|depuis) mon (?:iphone|ipad|smartphone|t[ée]l[ée]phone(?: mobile)?|appareil(?: mobile)?(?: [^\r\n]+)*))[ \t]*$/imu;
 
 function requiredHeader(request: Request, name: string) {
   const value = request.headers.get(name)?.trim();

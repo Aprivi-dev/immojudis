@@ -6,6 +6,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from urllib.parse import unquote, urlparse
 
+import httpx
 import pytest
 
 from src.asset_normalization import normalize_asset_features
@@ -16,6 +17,7 @@ from src.pdf_enrichment import (
     PublicDocumentTarget,
     _adaptive_docling_timeout,
     _bounded_document_content,
+    _document_candidate_rejection_reason,
     _download_document_response,
     _PinnedNetworkBackend,
     _read_document_text_cache,
@@ -925,6 +927,38 @@ def test_select_documents_for_extraction_prioritizes_non_pdf_download_labels(mon
     ]
 
 
+def test_document_candidate_filter_excludes_social_and_media_urls_but_keeps_signed_downloads() -> None:
+    assert _document_candidate_rejection_reason(
+        {"label": "Dossier", "url": "https://www.facebook.com/auction/123", "type": "pdf"}
+    ) == "social_url"
+    assert _document_candidate_rejection_reason(
+        {"label": "Photo", "url": "https://source.example/images/preview.jpg", "type": "pdf"}
+    ) == "non_document_asset"
+    assert _document_candidate_rejection_reason(
+        {"label": "Logo", "url": "https://source.example/pix/facebook.png", "type": "document"}
+    ) == "non_document_asset"
+    assert _document_candidate_rejection_reason(
+        {
+            "label": "Procès verbal de description",
+            "url": "https://source.example/download.php?id=123&token=signed",
+            "type": "document",
+        }
+    ) is None
+
+
+def test_select_documents_for_extraction_does_not_spend_budget_on_social_or_media_candidates(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "1")
+    selected = _select_documents_for_extraction(
+        [
+            {"label": "Facebook", "url": "https://www.facebook.com/auction/123", "type": "pdf"},
+            {"label": "Photo", "url": "https://source.example/images/preview.jpg", "type": "pdf"},
+            {"label": "PV descriptif", "url": "https://source.example/download?id=pv", "type": "document"},
+        ]
+    )
+
+    assert [item["url"] for item in selected] == ["https://source.example/download?id=pv"]
+
+
 def test_select_documents_for_extraction_classifies_avoventes_generic_pdf_labels(monkeypatch) -> None:
     monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
     sale = normalize_sale(
@@ -1576,6 +1610,142 @@ def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, 
     assert "robots.txt" in analysis["warning"]
 
 
+def test_download_documents_skips_social_candidates_without_network_or_retry_error(tmp_path, monkeypatch) -> None:
+    def fail_get(*args, **kwargs):
+        raise AssertionError("social URLs must be filtered before document download")
+
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fail_get)
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-social-link.html",
+            "documents": [
+                {
+                    "label": "Dossier Facebook",
+                    "url": "https://www.facebook.com/auction/123",
+                    "type": "pdf",
+                },
+                {
+                    "label": "Logo",
+                    "url": "https://www.info-encheres.com/pix/facebook.png",
+                    "type": "document",
+                },
+            ],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 0
+    assert stats.permanent_document_failures == []
+
+    _store_document_analysis_status(sale, [], [], permanent_document_failures=[])
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["failed_documents"] == 0
+    assert analysis["skipped_documents"] == 2
+    assert {item["reason"] for item in analysis["skipped_document_reasons"]} == {
+        "social_url",
+        "non_document_asset",
+    }
+
+
+def test_download_documents_marks_http_404_and_html_as_permanent_without_retry_error(tmp_path, monkeypatch) -> None:
+    class NotFoundResponse:
+        status_code = 404
+        headers = {"content-type": "text/html"}
+        content = b"not found"
+
+        def raise_for_status(self) -> None:
+            raise AssertionError("the permanent status should be classified before raise_for_status")
+
+    class HtmlResponse:
+        status_code = 200
+        headers = {"content-type": "text/html; charset=utf-8"}
+        content = b"<html><body>Partner landing page</body></html>"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    responses = iter([NotFoundResponse(), HtmlResponse()])
+    monkeypatch.setattr(
+        "src.pdf_enrichment._send_pinned_document_request",
+        lambda *args, **kwargs: next(responses),
+    )
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-unavailable-documents.html",
+            "documents": [
+                {"label": "PV disparu", "url": "https://source.example/pv.pdf", "type": "pdf"},
+                {"label": "Cahier HTML", "url": "https://source.example/cahier.pdf", "type": "pdf"},
+            ],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 0
+    assert stats.permanent_document_failures == [
+        {"url": "https://source.example/pv.pdf", "reason": "not_found"},
+        {"url": "https://source.example/cahier.pdf", "reason": "unsupported_response"},
+    ]
+
+
+def test_download_documents_reuses_fresh_permanent_failure_without_network(tmp_path, monkeypatch) -> None:
+    class NotFoundResponse:
+        status_code = 404
+        headers = {"content-type": "text/html"}
+        content = b"not found"
+
+        def raise_for_status(self) -> None:
+            raise AssertionError("the permanent status should be classified before raise_for_status")
+
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-cached-permanent.html",
+            "documents": [{"label": "PV", "url": "https://source.example/pv.pdf", "type": "pdf"}],
+        }
+    )
+    monkeypatch.setattr(
+        "src.pdf_enrichment._send_pinned_document_request",
+        lambda *args, **kwargs: NotFoundResponse(),
+    )
+    first_stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=first_stats) == []
+    assert first_stats.permanent_document_failures == [
+        {"url": "https://source.example/pv.pdf", "reason": "not_found"}
+    ]
+
+    def fail_get(*args, **kwargs):
+        raise AssertionError("fresh permanent failures must not be retried")
+
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fail_get)
+    second_stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=second_stats) == []
+    assert second_stats.errors == 0
+    assert second_stats.permanent_document_failures == [
+        {"url": "https://source.example/pv.pdf", "reason": "not_found"}
+    ]
+
+
+def test_download_documents_keeps_server_errors_retryable(tmp_path, monkeypatch) -> None:
+    response = httpx.Response(503, headers={"content-type": "text/html"})
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", lambda *args, **kwargs: response)
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-temporary-document-error.html",
+            "documents": [{"label": "PV", "url": "https://source.example/pv.pdf", "type": "pdf"}],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 1
+    assert stats.permanent_document_failures == []
+
+
 def test_document_analysis_keeps_retryable_failure_separate_from_robots_block(tmp_path) -> None:
     blocked_url = "https://www.licitor.com/data/pub/media/annonce/pv.pdf"
     failed_url = "https://documents.example/pv.pdf"
@@ -1603,6 +1773,35 @@ def test_document_analysis_keeps_retryable_failure_separate_from_robots_block(tm
     assert analysis["failed_document_urls"] == [failed_url]
     assert analysis["blocked_documents"] == 1
     assert analysis["blocked_document_urls"] == [blocked_url]
+
+
+def test_document_analysis_keeps_permanent_failure_separate_from_retryable_failure() -> None:
+    permanent_url = "https://documents.example/missing.pdf"
+    retryable_url = "https://documents.example/temporary.pdf"
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/mixed-document-status-2",
+            "documents": [
+                {"label": "PV absent", "url": permanent_url, "type": "pdf"},
+                {"label": "CCV temporaire", "url": retryable_url, "type": "pdf"},
+            ],
+        }
+    )
+
+    _store_document_analysis_status(
+        sale,
+        [],
+        [],
+        permanent_document_failures=[{"url": permanent_url, "reason": "not_found"}],
+    )
+
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["failed_documents"] == 1
+    assert analysis["failed_document_urls"] == [retryable_url]
+    assert analysis["permanent_document_failures"] == [
+        {"url": permanent_url, "reason": "not_found"}
+    ]
 
 
 def test_download_documents_uses_legacy_type_when_label_and_url_are_vague(tmp_path, monkeypatch) -> None:
@@ -1727,7 +1926,13 @@ def test_download_documents_rejects_html_response_and_uses_source_referer(tmp_pa
     stats = PdfEnrichmentStats()
 
     assert download_documents(sale, output_root=tmp_path, stats=stats) == []
-    assert stats.errors == 1
+    assert stats.errors == 0
+    assert stats.permanent_document_failures == [
+        {
+            "url": "https://example.test/download.php?id=5980&type=pvd",
+            "reason": "unsupported_response",
+        }
+    ]
     assert captured["headers"]["Referer"] == sale.source_url
     assert captured["timeout_seconds"] > 0
     assert list(tmp_path.rglob("*.pdf")) == []

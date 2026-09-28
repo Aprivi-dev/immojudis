@@ -62,6 +62,82 @@ def test_needs_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
     assert main._needs_heavy_enrichment(sale, use_llm=True) is False
 
 
+def test_run_scraper_uses_killable_source_worker_when_enabled(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+    expected = ScrapeResult([], [], {"coverage_complete": True})
+
+    def fake_isolated(source, **kwargs):
+        calls["source"] = source
+        calls.update(kwargs)
+        return expected, 0.2
+
+    monkeypatch.setattr(main, "run_source_in_subprocess", fake_isolated)
+    settings = {
+        **_settings(),
+        "source_process_isolation": True,
+        "source_scrape_timeout_seconds": 17,
+    }
+    def progressive_publisher(rows):
+        del rows
+
+    result = main._run_scraper(
+        "vench",
+        lambda: (_ for _ in ()).throw(AssertionError("thread fallback must not run")),
+        settings,
+        {"https://example.test/vente": "sig"},
+        {"https://example.test/vente": {"title": "Known"}},
+        progressive_publisher,
+    )
+
+    assert result == (expected, 0.2)
+    assert calls == {
+        "source": "vench",
+        "known": {"https://example.test/vente": "sig"},
+        "known_details": {"https://example.test/vente": {"title": "Known"}},
+        "max_pages": 1,
+        "fetch_detail_heavy": True,
+        "timeout_seconds": 17.0,
+        "on_batch": progressive_publisher,
+    }
+
+
+def test_run_scraper_keeps_thread_callable_when_isolation_disabled() -> None:
+    expected = ScrapeResult([], [], {"coverage_complete": True})
+
+    result = main._run_scraper(
+        "vench",
+        lambda: expected,
+        {**_settings(), "source_process_isolation": False},
+        {},
+        {},
+    )
+
+    assert result[0] == expected
+    assert result[1] >= 0
+
+
+def test_run_scraper_keeps_non_vench_source_on_original_thread_path(monkeypatch) -> None:
+    expected = ScrapeResult([], [], {"coverage_complete": True})
+    isolated_calls: list[str] = []
+
+    monkeypatch.setattr(
+        main,
+        "run_source_in_subprocess",
+        lambda source, **kwargs: isolated_calls.append(source) or (expected, 0.1),
+    )
+
+    result = main._run_scraper(
+        "avoventes",
+        lambda: expected,
+        {**_settings(), "source_process_isolation": True},
+        {},
+        {},
+    )
+
+    assert result[0] == expected
+    assert isolated_calls == []
+
+
 def test_document_facts_version_forces_one_time_pdf_reanalysis() -> None:
     sale = AuctionSale(
         source_name="info_encheres",
@@ -172,6 +248,27 @@ def test_merge_pdf_stats_deduplicates_policy_blocked_urls() -> None:
     assert total.blocked_document_urls == [
         "https://www.licitor.com/data/pub/media/pv.pdf",
         "https://www.licitor.com/data/pub/media/conditions.pdf",
+    ]
+
+
+def test_merge_pdf_stats_deduplicates_permanent_document_failures() -> None:
+    total = main.PdfEnrichmentStats(
+        permanent_document_failures=[
+            {"url": "https://documents.example/missing.pdf", "reason": "not_found"}
+        ]
+    )
+    item = main.PdfEnrichmentStats(
+        permanent_document_failures=[
+            {"url": "https://documents.example/missing.pdf", "reason": "not_found"},
+            {"url": "https://documents.example/html.pdf", "reason": "unsupported_response"},
+        ]
+    )
+
+    main._merge_pdf_stats(total, item)
+
+    assert total.permanent_document_failures == [
+        {"url": "https://documents.example/missing.pdf", "reason": "not_found"},
+        {"url": "https://documents.example/html.pdf", "reason": "unsupported_response"},
     ]
 
 
