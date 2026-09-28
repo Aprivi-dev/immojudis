@@ -19,6 +19,8 @@ const allowedVercelCronPaths = new Set([
   "/api/cron/data-retention",
   "/api/cron/sale-retention",
   "/api/cron/operational-health",
+  // Processes replies to existing cases; it does not collect auction listings.
+  "/api/cron/information-agent-inbound",
 ]);
 const allowedDatabaseCronJobs = new Set([
   "immojudis-operational-health",
