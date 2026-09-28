@@ -683,6 +683,8 @@ def _read_due_enrichment_family_counts() -> dict[str, int]:
         # on the regular write-connection retry sequence for optional telemetry.
         with _postgres_connect(db_url, connect_timeout=3, retry_delays=()) as connection:
             connection.execute("set transaction read only")
+            connection.execute("set local lock_timeout = '1000ms'")
+            connection.execute("set local statement_timeout = '3000ms'")
             rows = connection.execute(
                 """
                 select case when job_type = 'source_detail'

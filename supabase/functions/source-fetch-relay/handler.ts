@@ -41,6 +41,10 @@ function safeRedirectPath(host: string, path: string): string | null {
   return null;
 }
 
+function safeRedirectHost(host: string): string | null {
+  return hosts.has(host) ? host : null;
+}
+
 export function redirectDiagnostic(
   status: number,
   location: string | null,
@@ -59,18 +63,22 @@ export function redirectDiagnostic(
     ) {
       return { status, destinationHost: null, destinationPath: null };
     }
+    const destinationHost = safeRedirectHost(destination.hostname);
+    if (!destinationHost) {
+      return { status, destinationHost: null, destinationPath: null };
+    }
     const path = destination.pathname || "/";
     if (path.length > MAX_REDIRECT_LOG_PATH) {
       return {
         status,
-        destinationHost: destination.hostname,
+        destinationHost,
         destinationPath: null,
       };
     }
     return {
       status,
-      destinationHost: destination.hostname,
-      destinationPath: safeRedirectPath(destination.hostname, path),
+      destinationHost,
+      destinationPath: safeRedirectPath(destinationHost, path),
     };
   } catch {
     return { status, destinationHost: null, destinationPath: null };

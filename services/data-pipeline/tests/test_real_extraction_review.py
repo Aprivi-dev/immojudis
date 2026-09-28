@@ -626,6 +626,24 @@ def test_ai_review_accepts_a_literal_html_span_with_a_one_character_value(tmp_pa
     assert ai["needs_review_reasons"] == {"pipeline_disagreement": 1}
 
 
+def test_ai_review_rejects_html_attribute_text_as_evidence(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b'<span data-secret="secret proof">1</span>')
+    labels = {"rooms_count": _label("present", digest, 2)}
+    labels["rooms_count"]["evidence"]["excerpt"] = "secret proof"
+    manifest["ai_review_expected_fields"] = list(labels)
+    first["ai_reviews"] = [
+        _ai_review(labels, digest),
+        _ai_review(labels, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["evidence_coverage"]["verbatim_found"] == 0
+    assert ai["needs_review_reasons"] == {"unverified_excerpt": 1}
+
+
 def test_ai_review_rejects_empty_html_as_verbatim_evidence(tmp_path: Path) -> None:
     sample = _sample(tmp_path)
     manifest = prepare_manifest(sample)
@@ -663,11 +681,53 @@ def test_ai_review_rejects_hidden_html_text_as_evidence(tmp_path: Path, tag: str
     assert ai["needs_review_reasons"]["unverified_excerpt"] == 1
 
 
+@pytest.mark.parametrize("tag", ["script", "style", "template", "noscript"])
+def test_ai_review_rejects_hidden_text_with_malformed_end_tag_as_evidence(
+    tmp_path: Path, tag: str
+) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, f"<{tag}>secret proof</{tag}\t\n bar>".encode())
+    labels = {"rooms_count": _label("present", digest, 2)}
+    labels["rooms_count"]["evidence"]["excerpt"] = "secret proof"
+    manifest["ai_review_expected_fields"] = list(labels)
+    first["ai_reviews"] = [
+        _ai_review(labels, digest),
+        _ai_review(labels, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["evidence_coverage"]["verbatim_found"] == 0
+    assert ai["needs_review_reasons"]["unverified_excerpt"] == 1
+
+
 def test_agrasc_ai_review_accepts_matching_fiche_produit_props(tmp_path: Path) -> None:
     sample = _agrasc_sample(tmp_path)
     manifest = prepare_manifest(sample)
     first = manifest["cases"][0]
     digest = _capture(first, tmp_path, _agrasc_react_capture())
+    labels = {"city": _label("present", digest, "Paris")}
+    labels["city"]["evidence"]["excerpt"] = "Paris"
+    manifest["ai_review_expected_fields"] = list(labels)
+    first["ai_reviews"] = [
+        _ai_review(labels, digest),
+        _ai_review(labels, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["evidence_coverage"]["verbatim_required"] == 2
+    assert ai["evidence_coverage"]["verbatim_found"] == 2
+
+
+def test_agrasc_ai_review_accepts_matching_props_with_malformed_script_end_tag(
+    tmp_path: Path,
+) -> None:
+    sample = _agrasc_sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    capture = _agrasc_react_capture().replace(b"</script>", b"</script\t\n bar>")
+    digest = _capture(first, tmp_path, capture)
     labels = {"city": _label("present", digest, "Paris")}
     labels["city"]["evidence"]["excerpt"] = "Paris"
     manifest["ai_review_expected_fields"] = list(labels)

@@ -263,7 +263,10 @@ de détail et 40 en diffèrent. Sur les 109 champs arbitrés, 88 correspondent
 valeurs de la carte de liste, absentes de ce rejeu.
 Au total, 65 annonces portent au moins un motif de revue automatique :
 53 ont un désaccord entre les deux premières IA et 34 une divergence entre
-leur consensus et le rejeu du détail ; ces ensembles se recoupent.
+leur consensus et le rejeu du détail ; ces ensembles se recoupent. Onze
+citations supplémentaires sont refusées par le contrôle de visibilité décrit
+ci-dessous, dans des annonces déjà signalées. Elles ne deviennent pas des
+preuves validées par simple accord entre IA.
 
 | Champ              | Accord des deux IA, sur 73 | Concordance du consensus avec le détail |
 | ------------------ | -------------------------: | --------------------------------------: |
@@ -280,10 +283,12 @@ leur consensus et le rejeu du détail ; ces ensembles se recoupent.
 | Classe DPE         |                         59 |                                   59/59 |
 | Classe GES         |                         58 |                                   58/58 |
 
-Les 1 230 citations exigées par les états `present` et `unknown` ont été
-retrouvées dans la capture par le vérificateur, après normalisation des espaces
-et des entités HTML, comme fragment HTML brut visible ou, pour AGRASC, dans
-l'objet JSON du produit à identité vérifiée. Ce contrôle
+Sur les 1 230 citations exigées par les états `present` et `unknown`, 1 219
+ont été retrouvées par le vérificateur dans le texte de la capture hors
+`script`, `style`, `template`, `noscript` et attributs HTML ou, pour AGRASC,
+dans l'objet JSON du produit à identité vérifiée. Les 11 autres sont signalées
+`unverified_excerpt` : leur texte ne doit pas être présenté comme preuve
+visible. Ce contrôle
 ne démontre ni la pertinence de la citation pour le champ, ni l'exactitude de
 l'interprétation. Le texte exact des 146 prompts initiaux et des 53 prompts
 d'arbitrage n'ayant pas été conservé, le rapport indique séparément 146 et 53

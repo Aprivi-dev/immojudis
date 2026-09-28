@@ -35,8 +35,19 @@ préempter une source due pendant une heure au maximum ; une source plus en
 retard reprend la priorité. Le worker alterne les tâches de détail et les
 autres enrichissements lorsque l'arriéré dû de ces derniers est plus grand.
 Une lecture PostgreSQL facultative, bornée à une tentative de connexion de
-trois secondes, guide ce ratio ; les claims SQL restent l'autorité et le
+trois secondes, à une seconde d'attente de verrou et à trois secondes
+d'exécution SQL, guide ce ratio ; les claims SQL restent l'autorité et le
 worker revient au cycle historique si la lecture échoue.
+
+Le collecteur Vench est lancé dans un sous-processus terminable avec une
+limite de 30 minutes ; ses lots déjà vérifiés sont transmis au parent pour
+conserver la publication progressive. Les neuf autres sources conservent leur
+chemin d'exécution actuel. Les URL sociales et les médias sont écartés avant
+la file PDF ; les réponses documentaires 401/403, 404/410 et non exploitables
+sont signalées puis revérifiées après leur fenêtre de cache de 24 heures.
+Le relais ne réécrit vers HTTPS que la redirection canonique Petites Affiches
+observée sur le même hôte et le chemin public exact. Ces correctifs sont dans
+la branche, pas encore déployés ni mesurés en production.
 
 La migration `20260928230000_optimize_pipeline_health_and_retention.sql`
 réduit le coût du contrôle de fraîcheur. Toutes les nouvelles migrations
@@ -48,6 +59,9 @@ ces corrections ne crée à elle seule de capacité CPU, réseau, OCR ou LLM.
 
 La branche reste en brouillon tant que les migrations et l'intégration ne
 sont pas vérifiées par CI, que le contrôle de santé n'est pas rétabli et
-qu'une période de mesure ne montre pas une file éligible qui diminue sans
-dégrader la fraîcheur des sources. L'envoi de courriels réels reste désactivé
-et suit son propre essai fournisseur contrôlé.
+qu'une mesure sur au moins un cycle complet de collecte montre une file
+éligible et un stock de tâches de plus de 48 heures en diminution, sans
+dégrader la fraîcheur des sources. Les échecs Vench, PDF et relais doivent
+être absents ou explicitement quarantainés avec motif dans les nouveaux runs.
+L'envoi de courriels réels reste désactivé et suit son propre essai fournisseur
+contrôlé.

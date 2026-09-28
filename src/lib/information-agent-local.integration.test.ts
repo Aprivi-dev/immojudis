@@ -558,7 +558,7 @@ describeLocal("information-agent local integration", () => {
       inbound_processing: {
         status: "failed",
         attempts: 1,
-        last_error: expect.stringContaining("local candidate checkpoint failure"),
+        last_error: "Traitement entrant impossible.",
       },
     });
 
@@ -573,7 +573,7 @@ describeLocal("information-agent local integration", () => {
     expect(failedJob).toMatchObject({
       status: "failed",
       attempts: 1,
-      last_error: expect.stringContaining("local candidate checkpoint failure"),
+      last_error: "Traitement entrant impossible.",
     });
 
     const { data: storedAsset, error: storedAssetError } = await admin
@@ -660,6 +660,43 @@ describeLocal("information-agent local integration", () => {
       attempts: 2,
       lease_id: null,
       last_error: null,
+    });
+
+    // Simulate a worker dying after its tenth claim: the next scheduler pass
+    // must release the stale lease and make the message visible for review.
+    const terminalClaimNow = new Date(firstWorkerNow.getTime() + 11 * 60_000);
+    const { error: staleLeaseError } = await admin
+      .from("information_agent_inbound_jobs")
+      .update({
+        status: "processing",
+        attempts: 10,
+        locked_at: firstWorkerNow.toISOString(),
+        lease_id: randomUUID(),
+        last_error: null,
+      })
+      .eq("provider_email_id", retryEmailId);
+    if (staleLeaseError) throw staleLeaseError;
+
+    const { error: terminalClaimError } = await admin.rpc("claim_information_agent_inbound_jobs", {
+      p_limit: 1,
+      p_now: terminalClaimNow.toISOString(),
+    });
+    if (terminalClaimError) throw terminalClaimError;
+
+    const { data: recoveredJob, error: recoveredJobError } = await admin
+      .from("information_agent_inbound_jobs")
+      .select("status,attempts,lease_id,locked_at,last_error")
+      .eq("provider_email_id", retryEmailId)
+      .single();
+    if (recoveredJobError || !recoveredJob) {
+      throw recoveredJobError ?? new Error("Expired final-attempt lease was not found.");
+    }
+    expect(recoveredJob).toMatchObject({
+      status: "review",
+      attempts: 10,
+      lease_id: null,
+      locked_at: null,
+      last_error: "Inbound worker lease expired after retry budget was exhausted.",
     });
   }, 30_000);
 });
