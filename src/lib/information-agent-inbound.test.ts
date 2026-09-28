@@ -3,6 +3,7 @@ import {
   extractInformationAgentFacts,
   findInboundToken,
   htmlToPlainText,
+  normalizeEmail,
   replyTextForExtraction,
 } from "@/lib/information-agent-inbound";
 
@@ -34,6 +35,16 @@ describe("information agent inbound parsing", () => {
         "reponses.immojudis.com",
       ),
     ).toBeNull();
+  });
+
+  it("uses only the addr-spec in a From header", () => {
+    expect(normalizeEmail("Contact <contact@example.test>")).toBe("contact@example.test");
+    expect(normalizeEmail("contact@example.test <attacker@example.test>")).toBe(
+      "attacker@example.test",
+    );
+    expect(normalizeEmail("Contact contact@example.test")).toBe("");
+    expect(normalizeEmail("contact@example.test, attacker@example.test")).toBe("");
+    expect(normalizeEmail("contact@example.test, Attacker <attacker@example.test>")).toBe("");
   });
 
   it("does not extract claims from quoted older messages", () => {

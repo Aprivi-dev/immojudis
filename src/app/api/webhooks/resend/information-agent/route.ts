@@ -8,11 +8,19 @@ export async function POST(request: Request) {
     const result = await processInformationAgentInboundWebhook({ request });
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
+    const payloadTooLarge =
+      error instanceof Error && error.name === "InformationAgentWebhookPayloadTooLargeError";
     const invalidSignature =
       error instanceof Error && error.name === "InvalidInformationAgentWebhookSignatureError";
     return NextResponse.json(
-      { error: invalidSignature ? "Signature webhook invalide." : "Réception email impossible." },
-      { status: invalidSignature ? 400 : 500 },
+      {
+        error: payloadTooLarge
+          ? "Webhook trop volumineux."
+          : invalidSignature
+            ? "Signature webhook invalide."
+            : "Réception email impossible.",
+      },
+      { status: payloadTooLarge ? 413 : invalidSignature ? 400 : 500 },
     );
   }
 }

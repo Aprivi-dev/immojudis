@@ -1,18 +1,22 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminInformationAgentReviewPanel } from "./AdminInformationAgentReviewPanel";
 
 const mocks = vi.hoisted(() => ({
+  fetchEvidenceUrl: vi.fn(),
   fetchReview: vi.fn(),
   reviewFact: vi.fn(),
+  updateRights: vi.fn(),
 }));
 
 vi.mock("@/lib/client-api", () => ({
+  fetchAdminInformationAgentEvidenceUrlClient: mocks.fetchEvidenceUrl,
   fetchAdminInformationAgentReview: mocks.fetchReview,
   reviewAdminInformationAgentFactClient: mocks.reviewFact,
+  updateAdminInformationAgentEvidenceRightsClient: mocks.updateRights,
 }));
 
 vi.mock("@/lib/router-compat", () => ({
@@ -35,6 +39,7 @@ vi.mock("@/lib/router-compat", () => ({
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("AdminInformationAgentReviewPanel", () => {
@@ -160,6 +165,104 @@ describe("AdminInformationAgentReviewPanel", () => {
     expect(screen.getByText(/Analyse : needs_password/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Accepter" }) as HTMLButtonElement).disabled).toBe(
       true,
+    );
+  });
+
+  it("opens a private attachment and records the administrator rights decision", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "fact-rights",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          fact_key: "document",
+          display_value: "Procès-verbal reçu",
+          confidence: 0.94,
+          evidence_asset_id: "asset-rights",
+          evidence_excerpt: "Le document précise la surface habitable.",
+        },
+      ],
+      cases: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          status: "review",
+          recipient_email: "cabinet@example.test",
+        },
+      ],
+      assets: [
+        {
+          id: "asset-rights",
+          rights_status: "unverified",
+          original_filename: "pv.pdf",
+        },
+      ],
+      extractions: [{ asset_id: "asset-rights", status: "completed" }],
+      messages: [],
+    });
+    mocks.fetchEvidenceUrl.mockResolvedValue("https://storage.example.test/signed-pv");
+    mocks.updateRights.mockResolvedValue({
+      ok: true,
+      asset: { id: "asset-rights", rights_status: "authorized", review_status: "pending" },
+    });
+    const location = { assign: vi.fn() };
+    const openedWindow = { close: vi.fn(), location, opener: null } as unknown as Window;
+    vi.spyOn(window, "open").mockReturnValue(openedWindow);
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Pièce jointe : pv.pdf")).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("Ex. autorisation reçue dans le message"), {
+      target: { value: "Autorisation reçue par retour de mail" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Consulter la pièce" }));
+    fireEvent.click(screen.getByRole("button", { name: "Autoriser la diffusion" }));
+
+    await waitFor(() => {
+      expect(mocks.fetchEvidenceUrl).toHaveBeenCalledWith("asset-rights");
+      expect(location.assign).toHaveBeenCalledWith("https://storage.example.test/signed-pv");
+      expect(mocks.updateRights.mock.calls[0]?.[0]).toEqual({
+        assetId: "asset-rights",
+        rightsStatus: "authorized",
+        notes: "Autorisation reçue par retour de mail",
+      });
+    });
+  });
+
+  it("allows acceptance only when a document is authorized and analyzed", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "fact-ready",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          fact_key: "document",
+          display_value: "Surface extraite : 70 m²",
+          confidence: 1,
+          evidence_asset_id: "asset-ready",
+          evidence_excerpt: null,
+        },
+      ],
+      cases: [{ id: "33333333-3333-4333-8333-333333333333", status: "review" }],
+      assets: [{ id: "asset-ready", rights_status: "authorized", original_filename: "pv.pdf" }],
+      extractions: [{ asset_id: "asset-ready", status: "completed" }],
+      messages: [],
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText(/Droits de diffusion : autorisés/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Accepter" }) as HTMLButtonElement).disabled).toBe(
+      false,
     );
   });
 

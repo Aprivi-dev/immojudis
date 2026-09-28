@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
@@ -8,8 +9,11 @@ import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { toast } from "sonner";
 import { Link } from "@/lib/router-compat";
 import {
+  fetchAdminInformationAgentEvidenceUrlClient,
   fetchAdminInformationAgentReview,
   reviewAdminInformationAgentFactClient,
+  updateAdminInformationAgentEvidenceRightsClient,
+  type AdminInformationAgentEvidenceRightsStatus,
   type AdminInformationAgentReviewPageParam,
 } from "@/lib/client-api";
 
@@ -19,6 +23,8 @@ const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"
 
 export function AdminInformationAgentReviewPanel() {
   const queryClient = useQueryClient();
+  const [openingAssetId, setOpeningAssetId] = useState<string | null>(null);
+  const [rightsNotes, setRightsNotes] = useState<Record<string, string>>({});
   const query = useInfiniteQuery({
     queryKey: QUERY_KEY,
     queryFn: ({ pageParam }) => fetchAdminInformationAgentReview(pageParam),
@@ -46,6 +52,52 @@ export function AdminInformationAgentReviewPanel() {
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Revue impossible"),
   });
+  const rightsReview = useMutation({
+    mutationFn: updateAdminInformationAgentEvidenceRightsClient,
+    onSuccess: ({ asset }) => {
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      setRightsNotes((previous) => ({ ...previous, [asset.id]: "" }));
+      toast.success(
+        asset.rights_status === "authorized"
+          ? "Droits autorisés. La pièce pourra être acceptée si son analyse est terminée."
+          : "Droits restreints. La pièce ne pourra pas être publiée.",
+      );
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Décision sur les droits impossible"),
+  });
+
+  const openEvidenceAsset = async (assetId: string) => {
+    // Reserve the tab during the click so the browser does not treat the
+    // signed-URL navigation as an unsolicited popup after the fetch resolves.
+    const openedWindow = window.open("about:blank", "_blank");
+    if (!openedWindow) {
+      toast.error("Le navigateur a bloqué l’ouverture de la pièce.");
+      return;
+    }
+    openedWindow.opener = null;
+    setOpeningAssetId(assetId);
+    try {
+      const signedUrl = await fetchAdminInformationAgentEvidenceUrlClient(assetId);
+      openedWindow.location.assign(signedUrl);
+    } catch (error) {
+      openedWindow.close();
+      toast.error(error instanceof Error ? error.message : "Impossible d’ouvrir cette pièce.");
+    } finally {
+      setOpeningAssetId(null);
+    }
+  };
+
+  const reviewEvidenceRights = (
+    assetId: string,
+    rightsStatus: AdminInformationAgentEvidenceRightsStatus,
+  ) => {
+    rightsReview.mutate({
+      assetId,
+      rightsStatus,
+      notes: rightsNotes[assetId]?.trim() || null,
+    });
+  };
 
   const pages = query.data?.pages ?? [];
   const facts = pages.flatMap((page) => page.facts ?? []);
@@ -225,12 +277,87 @@ export function AdminInformationAgentReviewPanel() {
                       </p>
                     ) : null}
                     {requiresRights ? (
-                      <p
-                        className={`mt-2 text-xs ${canAccept ? "text-emerald-700" : "text-amber-800"}`}
-                      >
-                        Droits de diffusion : {asset?.rights_status ?? "à confirmer"} · Analyse :{" "}
-                        {extraction?.status ?? "en attente"}
-                      </p>
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                          <span
+                            className={
+                              canAccept ? "font-medium text-emerald-700" : "text-amber-800"
+                            }
+                          >
+                            Droits de diffusion : {rightsStatusLabel(asset?.rights_status)}
+                          </span>
+                          <span className="text-[#132238]/65">
+                            Analyse : {extraction?.status ?? "en attente"}
+                          </span>
+                        </div>
+                        {asset ? (
+                          <>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                className="admin-button-secondary inline-flex items-center gap-2"
+                                disabled={openingAssetId === asset.id}
+                                onClick={() => void openEvidenceAsset(asset.id)}
+                              >
+                                <ExternalLink className="size-4" />
+                                {openingAssetId === asset.id ? "Ouverture…" : "Consulter la pièce"}
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-button-secondary"
+                                aria-pressed={asset.rights_status === "authorized"}
+                                disabled={
+                                  rightsReview.isPending || asset.rights_status === "authorized"
+                                }
+                                onClick={() => reviewEvidenceRights(asset.id, "authorized")}
+                              >
+                                Autoriser la diffusion
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-button-secondary"
+                                aria-pressed={asset.rights_status === "restricted"}
+                                disabled={
+                                  rightsReview.isPending || asset.rights_status === "restricted"
+                                }
+                                onClick={() => reviewEvidenceRights(asset.id, "restricted")}
+                              >
+                                Restreindre la diffusion
+                              </button>
+                            </div>
+                            <label className="mt-3 block text-xs text-[#132238]/70">
+                              <span className="font-medium">Note de revue (facultative)</span>
+                              <input
+                                type="text"
+                                value={rightsNotes[asset.id] ?? ""}
+                                onChange={(event) =>
+                                  setRightsNotes((previous) => ({
+                                    ...previous,
+                                    [asset.id]: event.target.value,
+                                  }))
+                                }
+                                placeholder="Ex. autorisation reçue dans le message"
+                                maxLength={1000}
+                                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-[#132238] outline-none focus:border-[#a36f2c] focus:ring-1 focus:ring-[#a36f2c]"
+                              />
+                            </label>
+                            <p className="mt-2 text-xs text-[#132238]/60">
+                              La décision enregistre l’administrateur, la date et cette note dans
+                              l’historique de la pièce.
+                            </p>
+                          </>
+                        ) : (
+                          <p className="mt-2 text-xs text-amber-800">
+                            Pièce jointe introuvable : impossible de contrôler ses droits.
+                          </p>
+                        )}
+                        {!canAccept ? (
+                          <p className="mt-2 text-xs text-amber-800">
+                            L’acceptation restera désactivée tant que les droits ne sont pas
+                            autorisés et que l’analyse n’est pas terminée.
+                          </p>
+                        ) : null}
+                      </div>
                     ) : null}
                     {!caseCanAccept ? (
                       <p className="mt-2 text-xs text-amber-800">
@@ -313,11 +440,27 @@ function factLabel(key: string): string {
       land_surface_m2: "Terrain",
       rooms_count: "Pièces",
       occupancy_status: "Occupation",
+      visit_information: "Visite",
       starting_price_eur: "Mise à prix",
       sale_date: "Date de vente",
+      energy_diagnostics: "Diagnostics énergétiques",
       property_type: "Type de bien",
+      address: "Adresse",
       document: "Document",
       photo: "Photo",
     }[key] ?? key
   );
+}
+
+function rightsStatusLabel(value: string | undefined): string {
+  switch (value) {
+    case "authorized":
+      return "autorisés";
+    case "restricted":
+      return "restreints";
+    case "unverified":
+      return "à vérifier";
+    default:
+      return "à confirmer";
+  }
 }

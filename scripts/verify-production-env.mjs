@@ -90,13 +90,19 @@ const configuredSiteUrl = firstValue([
   "APP_URL",
   "VERCEL_URL",
 ]);
-const invalidSiteUrl = configuredSiteUrl && !isValidHttpOrigin(configuredSiteUrl);
+const invalidSiteUrl = configuredSiteUrl && !isValidHttpsOrigin(configuredSiteUrl);
 const configuredMapboxToken = firstValue([
   "NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN",
   "VITE_MAPBOX_ACCESS_TOKEN",
 ]);
 const invalidMapboxToken =
   configuredMapboxToken && !isValidMapboxPublicToken(configuredMapboxToken);
+const outboundInformationAgentEnabled = process.env.INFORMATION_AGENT_OUTBOUND_ENABLED === "true";
+const portalSecret = firstValue(["INFORMATION_AGENT_PORTAL_SECRET"]);
+const invalidPortalSecret =
+  outboundInformationAgentEnabled &&
+  !declaredProductionNames.has("INFORMATION_AGENT_PORTAL_SECRET") &&
+  Buffer.byteLength(portalSecret?.trim() || "", "utf8") < 32;
 const stripeEnabled = Boolean(firstPresent(["STRIPE_SECRET_KEY"]));
 const legalNames = [
   "NEXT_PUBLIC_LEGAL_ENTITY_NAME",
@@ -137,6 +143,12 @@ if (invalidMapboxToken) {
   console.error("[env:prod] Invalid Mapbox token: expected a public token beginning with pk.");
 }
 
+if (invalidPortalSecret) {
+  console.error(
+    "[env:prod] Enabled information-agent outbound requires a portal secret of at least 32 bytes.",
+  );
+}
+
 if (missingLegal.length) {
   console.error("[env:prod] Paid checkout requires complete legal identity and mediation:");
   for (const name of missingLegal) console.error(`  - ${name}`);
@@ -151,6 +163,7 @@ if (
   missing.length ||
   invalidSiteUrl ||
   invalidMapboxToken ||
+  invalidPortalSecret ||
   missingLegal.length ||
   missingTransactionalEmail.length
 )
@@ -189,12 +202,12 @@ function isMissing(value) {
   );
 }
 
-function isValidHttpOrigin(value) {
+function isValidHttpsOrigin(value) {
   try {
     const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`;
     const url = new URL(candidate);
     return (
-      ["http:", "https:"].includes(url.protocol) &&
+      url.protocol === "https:" &&
       !url.username &&
       !url.password &&
       url.pathname === "/" &&

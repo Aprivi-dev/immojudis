@@ -22,6 +22,7 @@ import { propertyImages } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
+import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
 
 type MissionRow = Database["public"]["Tables"]["information_agent_missions"]["Row"];
 type CaseRow = Database["public"]["Tables"]["information_agent_cases"]["Row"];
@@ -31,41 +32,42 @@ export const INFORMATION_AGENT_QUESTIONS = {
   documents: {
     label: "Pièces du dossier",
     question:
-      "Pourriez-vous transmettre le cahier des conditions de vente et les pièces consultables du dossier ?",
+      "Pourriez-vous transmettre le cahier des conditions de vente et les pièces consultables du dossier, en indiquant leur date ou leur version si elle est connue ?",
   },
   photos: {
     label: "Photos complémentaires",
     question:
-      "Pouvez-vous préciser la date approximative des photos et nous signaler les annexes qu’elles montrent ?",
+      "Pouvez-vous préciser la date approximative des photos et nous signaler, pour chaque série, les pièces ou annexes qu’elles montrent ?",
   },
   visit: {
     label: "Visites",
-    question: "Quelles sont les prochaines dates de visite et les modalités d'inscription ?",
+    question:
+      "Quelles sont les prochaines dates de visite, les modalités d'inscription et le contact à utiliser pour confirmer sa venue ?",
   },
   occupancy: {
     label: "Occupation",
     question:
-      "Le bien est-il actuellement libre, occupé ou loué, et cette situation a-t-elle évolué récemment ?",
+      "Le bien est-il actuellement libre, occupé ou loué ? Si le bien est loué, pouvez-vous préciser le loyer connu et signaler toute évolution récente ?",
   },
   surface: {
     label: "Surface",
     question:
-      "Pouvez-vous confirmer les surfaces habitables, Carrez et, le cas échéant, celles du terrain ?",
+      "Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?",
   },
   diagnostics: {
     label: "Diagnostics",
     question:
-      "Les diagnostics techniques, notamment le DPE, sont-ils disponibles dans une version à jour ?",
+      "Les diagnostics techniques, notamment le DPE, sont-ils disponibles dans une version à jour ? Merci d'indiquer leur date et les classes connues.",
   },
   composition: {
     label: "Composition",
     question:
-      "Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes ?",
+      "Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?",
   },
   sale_terms: {
     label: "Modalités de vente",
     question:
-      "Pouvez-vous confirmer les modalités d'enchère, de consignation et les frais annoncés pour cette vente ?",
+      "Pouvez-vous confirmer les modalités d'enchère, le montant et la forme de la consignation, les frais annoncés et les délais applicables ?",
   },
 } as const;
 
@@ -127,25 +129,62 @@ export type InformationAgentGap = {
   key: InformationAgentQuestionKey;
   label: string;
   reason: string;
+  /** Higher values are asked first when the admin did not choose questions manually. */
+  priority: number;
+  /** A gap that can change the safety or feasibility of a bid. */
+  blocking: boolean;
 };
 
-const INITIAL_QUESTION_PRIORITY: readonly InformationAgentQuestionKey[] = [
-  "documents",
-  "visit",
-  "occupancy",
-  "diagnostics",
-  "surface",
-  "photos",
-  "sale_terms",
-  "composition",
-];
+export type InformationAgentContactRole = "lawyer" | "notary" | "organizer" | "source_contact";
+
+export type InformationAgentContactProvenance = {
+  kind: "sale_field" | "source_block" | "source_text";
+  field: string;
+  sourceName: string | null;
+  sourceUrl: string | null;
+};
+
+export type InformationAgentContactCandidate = {
+  email: string;
+  name: string | null;
+  role: InformationAgentContactRole;
+  recipientKind: Extract<MissionRow["recipient_kind"], "source_lawyer" | "source_contact">;
+  confidence: "high" | "medium" | "low";
+  score: number;
+  provenance: InformationAgentContactProvenance[];
+};
+
+type InformationAgentContactRegistryRow =
+  Database["public"]["Tables"]["information_agent_contacts"]["Row"];
+
+export type InformationAgentContactRegistryBlock = Pick<
+  InformationAgentContactRegistryRow,
+  "scope_sale_id" | "opposition_status" | "bounce_status"
+>;
+
+const QUESTION_PRIORITY: Record<InformationAgentQuestionKey, { score: number; blocking: boolean }> =
+  {
+    documents: { score: 100, blocking: true },
+    sale_terms: { score: 94, blocking: true },
+    visit: { score: 88, blocking: true },
+    occupancy: { score: 82, blocking: true },
+    surface: { score: 72, blocking: false },
+    diagnostics: { score: 70, blocking: false },
+    composition: { score: 64, blocking: false },
+    photos: { score: 48, blocking: false },
+  };
+
+const MAX_DEFAULT_QUESTION_KEYS = 4;
 
 export function selectDefaultInformationAgentQuestionKeys(
   gaps: readonly InformationAgentGap[],
 ): InformationAgentQuestionKey[] {
-  if (!gaps.length) return ["documents", "visit", "occupancy"];
-  const missingKeys = new Set(gaps.map((gap) => gap.key));
-  return INITIAL_QUESTION_PRIORITY.filter((key) => missingKeys.has(key)).slice(0, 3);
+  if (!gaps.length) return [];
+  return [...gaps]
+    .sort((left, right) => right.priority - left.priority)
+    .map((gap) => gap.key)
+    .filter((key, index, keys) => keys.indexOf(key) === index)
+    .slice(0, MAX_DEFAULT_QUESTION_KEYS);
 }
 
 export type InformationAgentMission = {
@@ -185,6 +224,7 @@ export type InformationAgentAdminResponse = {
   mission: InformationAgentMission;
   gaps: InformationAgentGap[];
   facts: InformationAgentFact[];
+  contactCandidates?: InformationAgentContactCandidate[];
 };
 
 export type InformationAgentAdminListResponse = {
@@ -200,7 +240,9 @@ export function detectInformationGaps(sale: AuctionSale): InformationAgentGap[] 
   const visitDates = meaningfulList(sale.visit_dates);
   const occupancy = sale.occupancy_status?.trim().toLowerCase();
   const surface = getSaleSurface(sale);
-  const documentText = JSON.stringify(sale.documents_rich ?? sale.documents ?? "").toLowerCase();
+  const sourceText = informationAgentSourceText(sale);
+  const documentText =
+    `${JSON.stringify(sale.documents_rich ?? sale.documents ?? "")} ${sourceText}`.toLowerCase();
 
   if (!documents)
     addGap(gaps, "documents", "Aucune pièce consultable n'est rattachée à l'annonce.");
@@ -220,10 +262,18 @@ export function detectInformationGaps(sale: AuctionSale): InformationAgentGap[] 
   if (!/(diagnostic|\bdpe\b|performance.nerg)/i.test(documentText)) {
     addGap(gaps, "diagnostics", "Aucun diagnostic technique n'est clairement identifié.");
   }
-  if (sale.rooms_count == null) {
+  if (
+    sale.rooms_count == null &&
+    !/(?:\b\d+\s*(?:pi[eè]ces?|chambres?)\b|composition|annexe)/i.test(sourceText)
+  ) {
     addGap(gaps, "composition", "Le nombre de pièces n'est pas confirmé.");
   }
-  if (!sale.sale_procedure || !Object.keys(sale.sale_procedure).length) {
+  if (
+    (!sale.sale_procedure || !Object.keys(sale.sale_procedure).length) &&
+    !/(?:consignation|surench[eè]re|frais|modalit[eé].*(?:vente|paiement)|conditions de vente|ench[eè]re)/i.test(
+      sourceText,
+    )
+  ) {
     addGap(gaps, "sale_terms", "Les modalités détaillées de la vente ne sont pas structurées.");
   }
 
@@ -291,12 +341,29 @@ export async function createAdminInformationAgentDraft({
   const gaps = detectInformationGaps(sale);
   const defaultQuestions = selectDefaultInformationAgentQuestionKeys(gaps);
   const questionKeys = uniqueQuestionKeys(input.questionKeys ?? defaultQuestions);
-  const extractedEmail = extractEmail(sale.lawyer_contact);
-  const recipientEmail = input.recipientEmail ?? extractedEmail;
-  if (!recipientEmail) {
-    throw new Error("Requête invalide : renseignez l'adresse email du professionnel à contacter.");
+  if (!questionKeys.length) {
+    throw new Error(
+      "Aucune lacune n'est identifiée pour cette annonce. Choisissez explicitement une question si une vérification reste nécessaire.",
+    );
   }
-  const recipientName = input.recipientName ?? sale.lawyer_name;
+  const contactCandidates = discoverInformationAgentContacts(sale);
+  await persistInformationAgentContactObservations({
+    saleId: sale.id,
+    candidates: contactCandidates,
+  });
+  const selectedContact = selectInformationAgentContact(contactCandidates);
+  const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
+  const recipientEmail = explicitRecipientEmail ?? selectedContact?.email;
+  if (!recipientEmail) {
+    throw new Error(
+      contactCandidates.length > 1
+        ? "Requête invalide : plusieurs contacts sont possibles. Choisissez explicitement l'adresse email du professionnel à contacter."
+        : "Requête invalide : renseignez l'adresse email du professionnel à contacter.",
+    );
+  }
+  await assertInformationAgentContactAllowed({ saleId: sale.id, email: recipientEmail });
+  const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);
+  const recipientName = input.recipientName ?? selectedByEmail?.name ?? sale.lawyer_name;
   const draft = buildInformationRequestDraft({
     sale,
     recipientName,
@@ -309,7 +376,9 @@ export async function createAdminInformationAgentDraft({
     .insert({
       user_id: auth.userId,
       sale_id: sale.id,
-      recipient_kind: sale.lawyer_name || extractedEmail ? "source_lawyer" : "manual_professional",
+      recipient_kind:
+        selectedByEmail?.recipientKind ??
+        (explicitRecipientEmail ? "manual_professional" : "source_contact"),
       recipient_name: recipientName || null,
       recipient_email: recipientEmail,
       share_requester_email: false,
@@ -320,7 +389,16 @@ export async function createAdminInformationAgentDraft({
       sale_snapshot: saleSnapshot(sale),
       privacy_version: LEGAL_DOCUMENTS.privacy.version,
       metadata: {
-        draft_source: "admin_deterministic_gap_analysis",
+        draft_source: "admin_source_first_gap_analysis",
+        contact_discovery: {
+          method: explicitRecipientEmail
+            ? "admin_override"
+            : selectedByEmail
+              ? "source_data"
+              : "manual_required",
+          selected_email: selectedByEmail?.email ?? explicitRecipientEmail ?? null,
+          candidates: contactCandidates.slice(0, 8).map(contactCandidateSnapshot),
+        },
         initiated_by_admin: auth.userId,
         email_content_template_id: emailTemplate.id,
         email_content_template_revision: emailTemplate.revision,
@@ -341,6 +419,7 @@ export async function createAdminInformationAgentDraft({
     mission: missionFromRow(subscribedMission),
     gaps,
     facts: await listFactsForCases(subscribedMission.case_id ? [subscribedMission.case_id] : []),
+    contactCandidates,
   };
 }
 
@@ -412,6 +491,10 @@ async function approveAndSendMission({
   if (mission.status !== "draft" && mission.status !== "failed") {
     throw new Error("Requête invalide : cette enquête ne peut plus être modifiée.");
   }
+  await assertInformationAgentContactAllowed({
+    saleId: mission.sale_id,
+    email: input.recipientEmail,
+  });
   assertInformationAgentOutboundEnabled();
 
   const { data: edited, error: editError } = await supabaseAdmin
@@ -438,6 +521,7 @@ async function approveAndSendMission({
   });
   if (subscribeError) throw subscribeError;
   const subscribedMission = await loadOwnedMission(adminId, mission.id);
+  const contributionUrl = informationAgentContributionUrl(subscribedMission);
   const messageHash = approvalFingerprint(subscribedMission);
   const approval = await approveInformationAgentMissionForAdmin(subscribedMission, messageHash);
   if (!approval) throw new Error("Approbation de l'enquête impossible.");
@@ -448,12 +532,21 @@ async function approveAndSendMission({
   const sendingAt = new Date().toISOString();
 
   try {
+    await assertInformationAgentContactAllowed({
+      saleId: subscribedMission.sale_id,
+      email: edited.recipient_email,
+    });
     const renderedEmail = await renderInformationRequestEmail({
       subject: edited.subject,
       bodyText: edited.body_text,
       replyTo,
       caseReference: informationAgentCaseReference(approval.case_id),
       appUrl: config.appUrl,
+      contributionUrl,
+    });
+    await assertInformationAgentContactAllowed({
+      saleId: subscribedMission.sale_id,
+      email: edited.recipient_email,
     });
     const delivery = await sendResendEmail({
       apiKey: config.apiKey,
@@ -723,7 +816,13 @@ async function listFactsForCases(caseIds: string[]): Promise<InformationAgentFac
 }
 
 function addGap(gaps: InformationAgentGap[], key: InformationAgentQuestionKey, reason: string) {
-  gaps.push({ key, label: INFORMATION_AGENT_QUESTIONS[key].label, reason });
+  gaps.push({
+    key,
+    label: INFORMATION_AGENT_QUESTIONS[key].label,
+    reason,
+    priority: QUESTION_PRIORITY[key].score,
+    blocking: QUESTION_PRIORITY[key].blocking,
+  });
 }
 
 function uniqueQuestionKeys(keys: readonly InformationAgentQuestionKey[]) {
@@ -745,15 +844,430 @@ function meaningfulList(value: unknown): unknown[] {
   return [];
 }
 
-function extractEmail(value: string | null | undefined): string | undefined {
-  const match = value?.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
-  return normalizedEmail(match) ?? undefined;
+/**
+ * Finds contacts already present in the collected listing payload.
+ *
+ * This is deliberately source-data-only: it never performs a network lookup
+ * and it keeps enough provenance for an admin to understand why a contact was
+ * suggested before approving a request.
+ */
+export function discoverInformationAgentContacts(
+  sale: AuctionSale,
+): InformationAgentContactCandidate[] {
+  const sourceName = cleanContactValue(sale.source_name ?? sale.primary_source);
+  const sourceUrl = firstSourceUrl(sale);
+  const observations: ContactObservation[] = [];
+
+  addContactObservation(observations, {
+    value: sale.lawyer_contact,
+    kind: "sale_field",
+    field: "lawyer_contact",
+    sourceName,
+    sourceUrl,
+    name: cleanContactValue(sale.lawyer_name),
+    score: 100,
+  });
+
+  collectSourceBlockContacts(
+    observations,
+    sale.source_blocks,
+    "source_blocks",
+    sourceName,
+    sourceUrl,
+  );
+  collectSourceBlockContacts(
+    observations,
+    sale.source_blocks_by_source,
+    "source_blocks_by_source",
+    sourceName,
+    sourceUrl,
+  );
+
+  addContactObservation(observations, {
+    value: sale.source_description,
+    kind: "source_text",
+    field: "source_description",
+    sourceName,
+    sourceUrl,
+    score: 42,
+  });
+  if (sale.description !== sale.source_description) {
+    addContactObservation(observations, {
+      value: sale.description,
+      kind: "source_text",
+      field: "description",
+      sourceName,
+      sourceUrl,
+      score: 35,
+    });
+  }
+
+  const byEmail = new Map<string, InformationAgentContactCandidate>();
+  for (const observation of observations) {
+    for (const email of extractEmails(observation.value)) {
+      const role = inferContactRole(`${observation.field} ${observation.value}`);
+      const score = observation.score + (role === "source_contact" ? 0 : 4);
+      const provenance: InformationAgentContactProvenance = {
+        kind: observation.kind,
+        field: observation.field,
+        sourceName: observation.sourceName,
+        sourceUrl: observation.sourceUrl,
+      };
+      const current = byEmail.get(email);
+      if (!current) {
+        byEmail.set(email, {
+          email,
+          name: observation.name ?? null,
+          role,
+          recipientKind: role === "lawyer" ? "source_lawyer" : "source_contact",
+          confidence: confidenceForContactScore(score),
+          score,
+          provenance: [provenance],
+        });
+        continue;
+      }
+      if (!current.provenance.some((item) => sameContactProvenance(item, provenance))) {
+        current.provenance.push(provenance);
+      }
+      if (score > current.score) {
+        current.score = score;
+        current.confidence = confidenceForContactScore(score);
+        current.role = role;
+        current.recipientKind = role === "lawyer" ? "source_lawyer" : "source_contact";
+      }
+      if (!current.name && observation.name) current.name = observation.name;
+    }
+  }
+
+  return [...byEmail.values()].sort(
+    (left, right) => right.score - left.score || left.email.localeCompare(right.email),
+  );
+}
+
+/**
+ * Auto-selection is intentionally conservative. A tie between equally
+ * plausible contacts must be resolved by an admin in the draft form.
+ */
+export function selectInformationAgentContact(
+  candidates: readonly InformationAgentContactCandidate[],
+): InformationAgentContactCandidate | null {
+  const [first, second] = [...candidates].sort(
+    (left, right) => right.score - left.score || left.email.localeCompare(right.email),
+  );
+  if (!first || first.confidence === "low") return null;
+  if (second && first.score - second.score < 12) return null;
+  return first;
+}
+
+/**
+ * Returns whether a registry row blocks contact for the requested sale.
+ * Global rows (scope_sale_id null) apply to every sale; sale-scoped rows keep
+ * their original scope even after sale_id is nulled by retention. Unknown or
+ * merely unverified rows remain contactable so the supervised workflow can
+ * ask an admin to decide.
+ */
+export function isInformationAgentContactBlocked(
+  row: InformationAgentContactRegistryBlock,
+  saleId?: string | null,
+): boolean {
+  const appliesToSale = row.scope_sale_id === null || row.scope_sale_id === (saleId ?? null);
+  return (
+    appliesToSale && (row.opposition_status === "opposed" || row.bounce_status === "permanent")
+  );
+}
+
+/**
+ * Reads only the two registry scopes that can apply to this sale. Keeping the
+ * scope predicates in PostgREST means a large number of unrelated sales can
+ * never consume the response limit before a global opposition is returned.
+ * A database error is intentionally propagated so an unavailable control
+ * plane cannot turn into an implicit permission to contact someone.
+ */
+export async function loadInformationAgentContactRegistry(
+  email: string,
+  saleId?: string | null,
+): Promise<InformationAgentContactRegistryBlock[]> {
+  const normalized = normalizedEmail(email);
+  if (!normalized) throw new Error("Adresse email du contact invalide.");
+
+  const selectRegistryRows = () =>
+    supabaseAdmin
+      .from("information_agent_contacts")
+      .select("scope_sale_id, opposition_status, bounce_status")
+      .eq("normalized_email", normalized);
+
+  const queries = [selectRegistryRows().is("scope_sale_id", null)];
+  if (saleId !== null && saleId !== undefined) {
+    queries.push(selectRegistryRows().eq("scope_sale_id", saleId));
+  }
+
+  const results = await Promise.all(queries);
+  const rows: InformationAgentContactRegistryBlock[] = [];
+  for (const { data, error } of results) {
+    if (error) throw error;
+    if (!data) throw new Error("Registre des contacts indisponible.");
+    rows.push(...data);
+  }
+  return rows;
+}
+
+/**
+ * Stores source observations without changing a row that is already in the
+ * registry. In particular, a later scrape must never clear an opposition,
+ * bounce, or verification decision made by an operator.
+ */
+export async function persistInformationAgentContactObservations({
+  saleId,
+  candidates,
+}: {
+  saleId: string;
+  candidates: readonly InformationAgentContactCandidate[];
+}): Promise<void> {
+  const byEmail = new Map<string, InformationAgentContactCandidate>();
+  for (const candidate of candidates) {
+    const email = normalizedEmail(candidate.email);
+    if (email && !byEmail.has(email)) byEmail.set(email, { ...candidate, email });
+  }
+  const observedAt = new Date().toISOString();
+  const rows = [...byEmail.values()].map((candidate) => ({
+    sale_id: saleId,
+    scope_sale_id: saleId,
+    email: candidate.email,
+    display_name: candidate.name,
+    role: candidate.role,
+    provenance: candidate.provenance.map((item) => ({
+      kind: item.kind,
+      field: item.field,
+      source_name: item.sourceName,
+      source_url: item.sourceUrl,
+    })),
+    verification_status: "source_observed" as const,
+    opposition_status: "unknown" as const,
+    bounce_status: "none" as const,
+    source_name: candidate.provenance.find((item) => item.sourceName)?.sourceName ?? null,
+    source_url: candidate.provenance.find((item) => item.sourceUrl)?.sourceUrl ?? null,
+    metadata: {
+      observation_channel: "information_agent_draft",
+      confidence: candidate.confidence,
+      score: candidate.score,
+    },
+    last_seen_at: observedAt,
+  }));
+  if (!rows.length) return;
+  const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(rows, {
+    onConflict: "scope_sale_id,normalized_email",
+    ignoreDuplicates: true,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Guard used both when a draft chooses a recipient and immediately before
+ * approval. It covers the race where a contact opts out or permanently
+ * bounces after a draft was created.
+ */
+export async function assertInformationAgentContactAllowed({
+  email,
+  saleId,
+}: {
+  email: string;
+  saleId?: string | null;
+}): Promise<void> {
+  const rows = await loadInformationAgentContactRegistry(email, saleId);
+  if (rows.some((row) => isInformationAgentContactBlocked(row, saleId))) {
+    throw new Error(
+      "Le contact est explicitement opposé ou en rebond permanent ; aucune sollicitation n'est autorisée.",
+    );
+  }
+}
+
+type ContactObservation = {
+  value: unknown;
+  kind: InformationAgentContactProvenance["kind"];
+  field: string;
+  sourceName: string | null;
+  sourceUrl: string | null;
+  name?: string | null;
+  score: number;
+};
+
+function collectSourceBlockContacts(
+  observations: ContactObservation[],
+  value: unknown,
+  rootField: string,
+  sourceName: string | null,
+  sourceUrl: string | null,
+) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) =>
+      collectSourceBlockContacts(
+        observations,
+        item,
+        `${rootField}[${index}]`,
+        sourceName,
+        sourceUrl,
+      ),
+    );
+    return;
+  }
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const field = `${rootField}.${key}`;
+    const childSourceName = rootField === "source_blocks_by_source" ? key : sourceName;
+    if (typeof child === "string") {
+      addContactObservation(observations, {
+        value: child,
+        kind: "source_block",
+        field,
+        sourceName: childSourceName,
+        sourceUrl,
+        name: inferNameFromSourceBlock(child, field),
+        score: contactScoreForField(field),
+      });
+      continue;
+    }
+    collectSourceBlockContacts(observations, child, field, childSourceName, sourceUrl);
+  }
+}
+
+function addContactObservation(
+  observations: ContactObservation[],
+  observation: ContactObservation,
+) {
+  if (typeof observation.value !== "string" || !observation.value.trim()) return;
+  if (!extractEmails(observation.value).length) return;
+  observations.push(observation);
+}
+
+function extractEmails(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  return [
+    ...new Set(
+      (value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [])
+        .map(normalizedEmail)
+        .filter((email): email is string => Boolean(email)),
+    ),
+  ];
+}
+
+function inferContactRole(value: string): InformationAgentContactRole {
+  const normalized = stripDiacritics(value).toLowerCase();
+  if (/avocat|lawyer|cabinet/.test(normalized)) return "lawyer";
+  if (/notair|notary|etude/.test(normalized)) return "notary";
+  if (/organisat|organizer|commissaire|vendeur/.test(normalized)) return "organizer";
+  return "source_contact";
+}
+
+function inferNameFromSourceBlock(value: string, field: string): string | null {
+  if (!/(?:nom|name|avocat|notaire|notary|organisateur|organizer)/i.test(field)) return null;
+  const withoutEmail = value.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, " ");
+  const candidate = withoutEmail
+    .replace(/[|,:;()[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return candidate.length >= 2 && candidate.length <= 180 ? candidate : null;
+}
+
+function contactScoreForField(field: string): number {
+  const normalized = stripDiacritics(field).toLowerCase();
+  if (/contact_avocat|lawyer_contact/.test(normalized)) return 96;
+  if (/notair|notary/.test(normalized)) return 92;
+  if (/organisat|organizer|commissaire/.test(normalized)) return 88;
+  if (/(?:contact|email|mail)/.test(normalized)) return 76;
+  return 52;
+}
+
+function confidenceForContactScore(score: number): InformationAgentContactCandidate["confidence"] {
+  return score >= 90 ? "high" : score >= 70 ? "medium" : "low";
+}
+
+function sameContactProvenance(
+  left: InformationAgentContactProvenance,
+  right: InformationAgentContactProvenance,
+): boolean {
+  return (
+    left.kind === right.kind &&
+    left.field === right.field &&
+    left.sourceName === right.sourceName &&
+    left.sourceUrl === right.sourceUrl
+  );
+}
+
+function contactCandidateSnapshot(candidate: InformationAgentContactCandidate): Json {
+  return {
+    email: candidate.email,
+    name: candidate.name,
+    role: candidate.role,
+    recipient_kind: candidate.recipientKind,
+    confidence: candidate.confidence,
+    score: candidate.score,
+    provenance: candidate.provenance.map((item) => ({
+      kind: item.kind,
+      field: item.field,
+      source_name: item.sourceName,
+      source_url: item.sourceUrl,
+    })),
+  };
+}
+
+function informationAgentSourceText(sale: AuctionSale): string {
+  const values = [sale.title, sale.source_description, sale.description];
+  values.push(JSON.stringify(sale.source_blocks ?? {}));
+  values.push(JSON.stringify(sale.source_blocks_by_source ?? {}));
+  return values.filter((value): value is string => typeof value === "string").join("\n");
+}
+
+function firstSourceUrl(sale: AuctionSale): string | null {
+  const values: unknown[] = [sale.source_url, sale.source_urls];
+  for (const value of values) {
+    const candidate = firstUrl(value);
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
+function firstUrl(value: unknown): string | null {
+  if (typeof value === "string") return safeSourceUrl(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const candidate = firstUrl(item);
+      if (candidate) return candidate;
+    }
+    return null;
+  }
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value)) {
+      const candidate = firstUrl(child);
+      if (candidate) return candidate;
+    }
+  }
+  return null;
+}
+
+function safeSourceUrl(value: string): string | null {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    url.username = "";
+    url.password = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function stripDiacritics(value: string): string {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "");
 }
 
 function normalizedEmail(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toLowerCase();
   return z.string().email().safeParse(normalized).success ? normalized : null;
+}
+
+function cleanContactValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function isQuestionKey(value: string): value is InformationAgentQuestionKey {

@@ -3131,6 +3131,83 @@ export type Database = {
         };
         Relationships: [];
       };
+      information_agent_contacts: {
+        Row: {
+          bounce_status: "none" | "temporary" | "permanent";
+          bounced_at: string | null;
+          created_at: string;
+          display_name: string | null;
+          email: string;
+          id: string;
+          last_seen_at: string | null;
+          last_verified_at: string | null;
+          metadata: Json;
+          normalized_email: string;
+          opposition_status: "unknown" | "none" | "opposed";
+          opposed_at: string | null;
+          provenance: Json;
+          role: "lawyer" | "notary" | "organizer" | "source_contact" | "manual_professional";
+          sale_id: string | null;
+          scope_sale_id: string | null;
+          source_name: string | null;
+          source_url: string | null;
+          updated_at: string;
+          verification_status: "unverified" | "source_observed" | "verified" | "rejected";
+        };
+        Insert: {
+          bounce_status?: "none" | "temporary" | "permanent";
+          bounced_at?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          email: string;
+          id?: string;
+          last_seen_at?: string | null;
+          last_verified_at?: string | null;
+          metadata?: Json;
+          normalized_email?: never;
+          opposition_status?: "unknown" | "none" | "opposed";
+          opposed_at?: string | null;
+          provenance?: Json;
+          role?: "lawyer" | "notary" | "organizer" | "source_contact" | "manual_professional";
+          sale_id?: string | null;
+          scope_sale_id?: string | null;
+          source_name?: string | null;
+          source_url?: string | null;
+          updated_at?: string;
+          verification_status?: "unverified" | "source_observed" | "verified" | "rejected";
+        };
+        Update: {
+          bounce_status?: "none" | "temporary" | "permanent";
+          bounced_at?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          email?: string;
+          id?: string;
+          last_seen_at?: string | null;
+          last_verified_at?: string | null;
+          metadata?: Json;
+          normalized_email?: never;
+          opposition_status?: "unknown" | "none" | "opposed";
+          opposed_at?: string | null;
+          provenance?: Json;
+          role?: "lawyer" | "notary" | "organizer" | "source_contact" | "manual_professional";
+          sale_id?: string | null;
+          scope_sale_id?: string | null;
+          source_name?: string | null;
+          source_url?: string | null;
+          updated_at?: string;
+          verification_status?: "unverified" | "source_observed" | "verified" | "rejected";
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_contacts_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       information_agent_case_subscribers: {
         Row: {
           case_id: string;
