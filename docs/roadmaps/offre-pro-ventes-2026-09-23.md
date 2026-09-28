@@ -6,7 +6,7 @@ _Proposition initiale du 23 septembre 2026. Mise à jour : 28 septembre 2026. Do
 
 Cette feuille de route est conservée comme **chantier produit séparé** du nettoyage et du durcissement de l’agent d’enrichissement par email. Le choix actuel est de classer et préciser ce chantier ; l’abonnement Pro payant, Stripe, les droits et le parcours commercial ne sont pas construits dans cette passe.
 
-Le socle de pilotes professionnels existe déjà en production via les PR 168 et 171 : espaces tribunal, notarial et domanial, entrée depuis les pages de vente et suivi manuel. La production est maintenant au commit de la PR 175 (`3206125c`). Ces pilotes ne constituent pas un abonnement Pro commercialisé.
+Le socle de pilotes professionnels existe déjà en production via les PR 168 et 171 : espaces tribunal, notarial et domanial, entrée depuis les pages de vente et suivi manuel. La base étudiée au début de cette consolidation était le commit de la PR 175 (`3206125c`). Ces pilotes ne constituent pas un abonnement Pro commercialisé.
 
 ## État actuel et périmètre manquant
 

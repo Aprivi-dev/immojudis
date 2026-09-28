@@ -1,6 +1,6 @@
 # Protocole de validation des réponses avec pièces jointes
 
-Mise à jour : 28 septembre 2026. Ce protocole complète [l’audit de sécurité global](information-agent-safety-protocol-2026-09-23.md). La pagination, les limites de téléchargement, le stockage privé et le dérivé photo sont livrés en production par la PR 170. Le contrôle d’association, l’exigence d’extraction terminée et la publication fail-closed décrits comme « patch local » restent à publier avec la migration SQL.
+Mise à jour : 28 septembre 2026. Ce protocole complète [l’audit de sécurité global](information-agent-safety-protocol-2026-09-23.md). La pagination, les limites de téléchargement, le stockage privé et le dérivé photo ont été livrés par la PR 170. La PR 176 ajoute le contrôle d’association, l’exigence d’extraction terminée et la publication fail-closed. Sa migration est appliquée en production après validation sur le schéma Supabase complet.
 
 ## Périmètre et règle d'exploitation
 
@@ -12,7 +12,7 @@ L'envoi reste réservé au back-office administrateur. Aucun essai ne doit envoy
 - Le contact répond à l'adresse liée au dossier. Les pièces de chaque réponse sont rattachées au bon `case_id`, `message_id` et `sale_id` ; un expéditeur différent ne produit pas de données publiables.
 - Les pièces sont paginées jusqu’à 500 éléments, le téléchargement est borné à 20 Mo par fichier et 40 Mo par réponse. Au-delà de 500 pièces ou si un format/taille est refusé, la réponse passe en revue manuelle avec un motif visible.
 - Les vidéos ne sont pas ingérées et leur disponibilité est seulement demandée dans le mail. Aucun lien externe n'est ouvert automatiquement.
-- Les originaux autorisés restent dans le stockage privé. À l'acceptation admin, la photo publiée est un WebP sans EXIF, de 1 920 px maximum et de 2 Mo maximum. Une conversion impossible bloque la publication de cette photo. Le patch local ajoute une exigence d'extraction `completed` côté serveur et en base avant cette acceptation ; cette migration n'est pas encore appliquée en production.
+- Les originaux autorisés restent dans le stockage privé. À l'acceptation admin, la photo publiée est un WebP sans EXIF, de 1 920 px maximum et de 2 Mo maximum. Une conversion impossible bloque la publication de cette photo. La PR 176 exige l'extraction `completed` côté serveur et en base avant cette acceptation ; la migration correspondante est appliquée en production.
 - Chaque tentative de publication utilise un chemin public UUID propre à la vente et à la pièce. Le serveur inscrit ce chemin en staging avant l'upload, puis la revue SQL est liée à ce chemin exact. En cas d'erreur, un CAS décide si le chemin peut être abandonné ; seul ce chemin unique peut alors être supprimé.
 - Quand un dossier passe à `completed` ou `failed`, ses candidats encore `pending` ou `conflict` sont automatiquement rejetés. Une pièce d’un dossier fermé ne peut pas commencer une nouvelle publication.
 - Si les droits sont révoqués sur une pièce déjà acceptée ou encore préparée pour publication, l’API répond `409` et laisse la pièce inchangée. La suppression de l’objet public et de ses références doit être réalisée par une procédure manuelle ciblée avant de marquer la pièce comme restreinte.
@@ -48,4 +48,4 @@ L'envoi reste réservé au back-office administrateur. Aucun essai ne doit envoy
 
 ## Vérifications automatisées de ce changement
 
-`information-agent-attachments.test.ts` couvre la pagination au-delà de 100 pièces, l'arrêt d'un flux trop grand, la conversion JPEG/PNG/WebP, la taille/dimension du dérivé et le refus d'une image corrompue. `information-agent-email-template.test.ts` vérifie les consignes photo et vidéo. Les scénarios de bout en bout ci-dessus restent à exécuter dans un environnement de test isolé ; ils ne sont pas déduits des seuls tests unitaires. Le test SQL du garde-fou et les fixtures de concurrence appartiennent au patch local décrit dans l'audit global.
+`information-agent-attachments.test.ts` couvre la pagination au-delà de 100 pièces, l'arrêt d'un flux trop grand, la conversion JPEG/PNG/WebP, la taille/dimension du dérivé et le refus d'une image corrompue. `information-agent-email-template.test.ts` vérifie les consignes photo et vidéo. Les scénarios de bout en bout ci-dessus restent à exécuter dans un environnement de test isolé ; ils ne sont pas déduits des seuls tests unitaires. Le test SQL du garde-fou et les fixtures de concurrence appartiennent à la PR 176 décrite dans l'audit global.
