@@ -54,6 +54,7 @@ from src.quality import (
 )
 from src.run_finalizer import register_run
 from src.sale_procedure import classify_sale_procedure
+from src.source_process import run_source_in_subprocess
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.cessions_etat import scrape_cessions_etat_aquitaine_result
@@ -253,8 +254,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
     # ── Scraping des sources en parallèle ────────────────────────────────────
     # Chaque source est indépendante (domaine + client HTTP + délai propres), donc
-    # on les lance en threads : le temps total ≈ la source la plus lente au lieu
-    # de la somme. Indispensable avant de passer à toute la France.
+    # on lance un slot parallèle par source. Les slots démarrent chacun un
+    # collecteur isolé afin qu'un parseur bloqué puisse être tué sans attendre
+    # la fin d'un thread Python.
     scrapers = _enabled_scrapers(
         options.source,
         settings,
@@ -263,13 +265,26 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         fetch_detail_heavy=True,
     )
     from src.source_checkpoint import configure_publisher, flush_publications
-    configure_publisher(
+    progressive_publisher = (
         (lambda rows: publish_factual_batch(run_id, rows, known_details, errors))
-        if os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") and options.upsert else None
+        if os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") and options.upsert
+        else None
     )
+    configure_publisher(progressive_publisher)
     scrape_overall_started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, len(scrapers))) as executor:
-        futures = {executor.submit(_timed_scrape, name, fn): name for name, fn in scrapers.items()}
+        futures = {
+            executor.submit(
+                _run_scraper,
+                name,
+                fn,
+                settings,
+                known_signatures,
+                known_details,
+                progressive_publisher,
+            ): name
+            for name, fn in scrapers.items()
+        }
         for future in as_completed(futures):
             name = futures[future]
             try:
@@ -1293,6 +1308,45 @@ def _timed_scrape(name: str, fn: Callable[[], ScrapeResult]) -> tuple[ScrapeResu
     return result, round(time.perf_counter() - started, 2)
 
 
+def _run_scraper(
+    name: str,
+    fn: Callable[[], ScrapeResult],
+    settings: dict[str, object],
+    known: dict[str, str],
+    known_details: dict[str, dict[str, object]],
+    progressive_publisher: Callable[[list[dict[str, object]]], None] | None = None,
+) -> tuple[ScrapeResult, float]:
+    """Run one source with a hard wall-clock boundary when configured.
+
+    The regular executor remains useful for scheduling independent sources, but
+    the source body itself runs in a child process.  A future timeout alone
+    cannot interrupt a worker thread and would make the executor wait forever
+    during malformed HTML parsing.  The fallback is kept for tests and for
+    explicitly disabled or non-allowlisted isolation; production settings
+    enable the process boundary for Vench by default.
+    """
+
+    isolated_sources = settings.get("source_process_isolation_sources", ("vench",))
+    if isinstance(isolated_sources, str):
+        isolated_sources = tuple(
+            source.strip().lower() for source in isolated_sources.split(",") if source.strip()
+        )
+    if not settings.get("source_process_isolation", False) or name.lower() not in isolated_sources:
+        return _timed_scrape(name, fn)
+    timeout_seconds = settings.get("source_scrape_timeout_seconds")
+    if timeout_seconds is None:
+        return _timed_scrape(name, fn)
+    return run_source_in_subprocess(
+        name,
+        known=known,
+        known_details=known_details if name == "vench" else None,
+        max_pages=_configured_page_limit(name, settings),
+        fetch_detail_heavy=True,
+        timeout_seconds=float(timeout_seconds),
+        on_batch=progressive_publisher,
+    )
+
+
 def _report_collection_progress(run_id, phase, counts, coverage, timings, errors, **progress):
     try:
         update_run_progress_in_supabase(run_id, {
@@ -1579,6 +1633,19 @@ def _merge_pdf_stats(total: PdfEnrichmentStats, item: PdfEnrichmentStats) -> Non
             continue
         total.blocked_document_urls.append(url)
         blocked_urls.add(url)
+    permanent_failures = {
+        (entry.get("url"), entry.get("reason"))
+        for entry in total.permanent_document_failures
+        if isinstance(entry, dict)
+    }
+    for entry in item.permanent_document_failures:
+        if not isinstance(entry, dict):
+            continue
+        key = (entry.get("url"), entry.get("reason"))
+        if key in permanent_failures:
+            continue
+        total.permanent_document_failures.append(entry)
+        permanent_failures.add(key)
 
 
 def _add_llm_stats(total: LLMEnrichmentStats, item: LLMEnrichmentStats) -> None:

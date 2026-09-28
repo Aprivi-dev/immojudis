@@ -217,6 +217,104 @@ def test_parse_vench_detail_html_keeps_thousands_surface() -> None:
     assert sale.surface_m2 == Decimal("2464.70")
 
 
+def test_parse_vench_detail_extracts_qualified_surface_rooms_and_parking() -> None:
+    html = """
+    <div id="page-heading"><h1>APPARTEMENT T4 &bull; Testville</h1></div>
+    <p>Adresse</p><p>33000 <a>Testville</a></p>
+    <p>DATE DE L'AUDIENCE</p><strong>11/06/2026 à 10:00</strong>
+    <div class="descriptionContener">
+      <p>Un appartement T4 d'une surface habitable totale de 91,02 m².
+         Huit emplacements de stationnement extérieurs.</p>
+    </div>
+    """
+
+    raw = parse_vench_detail_html(
+        html,
+        "https://www.vench.fr/vente-100001-appartement-testville.html",
+    )
+
+    assert raw["property_type"].lower() == "appartement"
+    assert raw["habitable_surface_m2"] == "91.02"
+    assert raw["rooms_count"] == 4
+    assert raw["parking_count"] == 8
+
+
+def test_parse_vench_detail_extracts_cadastral_surface_and_mixed_type() -> None:
+    html = """
+    <div id="page-heading"><h1>BATIMENT MITOYEN &bull; Testville</h1></div>
+    <p>Adresse</p><p>33000 <a>Testville</a></p>
+    <div class="descriptionContener">
+      <p>Bâtiment à usage mixte de commerce et habitation, cadastré section AB n°1
+         pour une surface de 1 ha 2 a 3 ca. La partie commerciale est louée et la
+         partie habitation est occupée.</p>
+    </div>
+    """
+
+    raw = parse_vench_detail_html(
+        html,
+        "https://www.vench.fr/vente-100002-batiment-testville.html",
+    )
+
+    assert raw["property_type"] == "mixed"
+    assert raw["land_surface_m2"] == "10203"
+    assert raw["occupancy_status"] == "unknown"
+
+
+def test_parse_vench_detail_counts_a_piece_principale_without_inventing_multi_lot_rooms() -> None:
+    single_html = """
+    <div id="page-heading"><h1>APPARTEMENT &bull; Testville</h1></div>
+    <div class="descriptionContener"><p>Une pièce principale avec cuisine et salle d'eau.</p></div>
+    """
+    multi_lot_html = """
+    <div id="page-heading"><h1>IMMEUBLE &bull; Testville</h1></div>
+    <div class="descriptionContener"><p>Lot 1 : trois pièces. Lot 2 : une pièce.</p></div>
+    """
+
+    single = parse_vench_detail_html(single_html, "https://www.vench.fr/vente-100003-appartement-testville.html")
+    multi_lot = parse_vench_detail_html(multi_lot_html, "https://www.vench.fr/vente-100004-immeuble-testville.html")
+
+    assert single["rooms_count"] == 1
+    assert multi_lot["rooms_count"] is None
+
+
+def test_parse_vench_detail_does_not_promote_unqualified_cadastre_or_parking_labels() -> None:
+    html = """
+    <div id="page-heading"><h1>UNE MAISON &bull; Testville</h1></div>
+    <div class="descriptionContener">
+      <p>Maison cadastrée section AB n°1. Parking et garage.</p>
+    </div>
+    """
+
+    raw = parse_vench_detail_html(html, "https://www.vench.fr/vente-100005-maison-testville.html")
+
+    assert raw["land_surface_m2"] is None
+    assert raw["parking_count"] is None
+
+
+def test_parse_vench_detail_preserves_multiple_cadastral_areas_without_a_total() -> None:
+    html = """
+    <div id="page-heading"><h1>UN TERRAIN &bull; Testville</h1></div>
+    <div class="descriptionContener">
+      <p>Parcelle section AB n°1 pour 5a 71ca, section AB n°2 pour 10a 5ca.</p>
+    </div>
+    """
+
+    raw = parse_vench_detail_html(html, "https://www.vench.fr/vente-100006-terrain-testville.html")
+
+    assert raw["land_surface_m2"] is None
+
+
+def test_parse_vench_detail_ignores_generic_page_labels_without_a_description() -> None:
+    html = """
+    <nav>Parking et garage</nav>
+    <div id="page-heading"><h1>UNE MAISON &bull; Testville</h1></div>
+    """
+
+    raw = parse_vench_detail_html(html, "https://www.vench.fr/vente-100007-maison-testville.html")
+
+    assert raw["parking_count"] is None
+
+
 def test_parse_vench_detail_html_ignores_lawyer_postal_code_when_address_is_missing() -> None:
     html = """
     <div id="page-heading"><h1>APPARTEMENT 49 m² &bull; Paris</h1></div>

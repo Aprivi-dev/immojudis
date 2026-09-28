@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup, Tag
 
 from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import TARGET_DEPARTMENTS, load_settings
-from src.normalize import clean_text, extract_department
+from src.normalize import clean_text, extract_department, parse_surface, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.common import PoliteHttpClient, ScrapeResult, is_allowed_origin_url, parse_html
@@ -285,6 +285,11 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
         "lawyer_contact",
         "surface_m2",
         "carrez_surface_m2",
+        "land_surface_m2",
+        "occupancy_status",
+        "parking_count",
+        "source_energy_diagnostics",
+        "quality_flags",
         "adjudication_price_eur",
         "status",
         "postal_code",
@@ -296,7 +301,10 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
         "visit_dates",
         "rooms_count",
     ):
-        if details.get(key) and (key == "description" or not sale.get(key)):
+        if key == "quality_flags" and details.get(key):
+            existing_flags = sale.get(key) if isinstance(sale.get(key), list) else []
+            sale[key] = list(dict.fromkeys([*existing_flags, *details[key]]))
+        elif details.get(key) and (key == "description" or not sale.get(key)):
             sale[key] = details[key]
 
 
@@ -319,6 +327,11 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
     property_type = _extract_detail_property_type(title, description, raw_text)
     rooms_count = _extract_detail_rooms_count(raw_text, property_type, title)
     carrez_surface = _extract_carrez_surface(description, raw_text)
+    land_surface = _extract_detail_land_surface(description, raw_text)
+    occupancy_status = _extract_detail_occupancy_status(description)
+    parking_count = _extract_detail_parking_count(raw_text)
+    source_energy_diagnostics = _extract_detail_energy_diagnostics(raw_text)
+    quality_flags = ["ambiguous_occupancy"] if _detail_occupancy_is_ambiguous(description) else []
     own_header = re.split(r"[ÀA] propos du bien|Autres biens", raw_text, maxsplit=1, flags=re.I)[0]
     event = None
     for pattern, value in ((r"vente\s+report[ée]e?", "postponed"),
@@ -347,6 +360,11 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
         "visit_dates": visit_dates,
         "rooms_count": rooms_count,
         "carrez_surface_m2": carrez_surface,
+        "land_surface_m2": land_surface,
+        "occupancy_status": occupancy_status,
+        "parking_count": parking_count,
+        "source_energy_diagnostics": source_energy_diagnostics,
+        "quality_flags": quality_flags,
         "status": event or ("adjudicated" if adjudication_price else None),
         "surface_m2": surface,
         "source_blocks": {
@@ -364,7 +382,13 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
                 "visites": " | ".join(visit_dates) if visit_dates else None,
                 "surface": surface,
                 "surface_carrez": carrez_surface,
+                "surface_terrain": land_surface,
                 "pieces": rooms_count,
+                "occupation": occupancy_status,
+                "parking_count": parking_count,
+                "occupancy_scope": "ambiguous" if quality_flags else None,
+                "dpe_class": source_energy_diagnostics.get("dpe_class") if source_energy_diagnostics else None,
+                "ges_class": source_energy_diagnostics.get("ges_class") if source_energy_diagnostics else None,
                 "documents": "; ".join(document["label"] for document in documents if document.get("label")) or None,
                 "page_text": raw_text,
             }.items()
@@ -958,6 +982,148 @@ def _extract_carrez_surface(*values: object | None) -> str | None:
             if match:
                 return clean_text(match.group(1))
     return None
+
+
+_DETAIL_COUNT_TOKENS = {
+    "un": 1,
+    "une": 1,
+    "deux": 2,
+    "trois": 3,
+    "quatre": 4,
+    "cinq": 5,
+    "six": 6,
+    "sept": 7,
+    "huit": 8,
+    "neuf": 9,
+    "dix": 10,
+}
+
+
+def _detail_count(value: str) -> int | None:
+    token = clean_text(value)
+    if not token:
+        return None
+    if token.isdigit():
+        count = int(token)
+        return count if count > 0 else None
+    return _DETAIL_COUNT_TOKENS.get(strip_accents(token).lower())
+
+
+def _extract_detail_land_surface(*values: object | None) -> str | None:
+    """Extract one explicitly scoped parcel/terrain area from the detail page.
+
+    Generic ``m² superficie`` counters and component areas are deliberately not
+    accepted.  If the page exposes more than one distinct terrain measurement,
+    the scalar field stays unresolved until a lot-level model can retain scope.
+    """
+
+    text = clean_text("\n".join(str(value) for value in values if value)) or ""
+    if not text:
+        return None
+    candidates: list[object] = []
+    surface_pattern = r"([0-9][0-9\s.,]*)\s*m(?:2|²)\b"
+    direct_patterns = (
+        rf"\bterrain\s*:\s*{surface_pattern}",
+        rf"\b(?:surface|superficie)\s+(?:du|de\s+la)\s+terrain\s*:?\s*{surface_pattern}",
+        rf"\bterrain\b[^.\n]{{0,80}}?\b(?:de|d['’]une\s+(?:surface|superficie)\s+de)\s+{surface_pattern}",
+        rf"\bparcelle\b[^.\n]{{0,80}}?\b(?:de|d['’]une\s+(?:surface|superficie)\s+de)\s+{surface_pattern}",
+    )
+    for pattern in direct_patterns:
+        candidates.extend(match.group(1) for match in re.finditer(pattern, text, re.I))
+
+    parsed = [parse_surface(value) for value in candidates]
+    unique = {value for value in parsed if value is not None}
+    if len(unique) != 1:
+        return None
+    value = next(iter(unique))
+    return format(value, "f").rstrip("0").rstrip(".")
+
+
+def _extract_detail_occupancy_status(description: str | None) -> str | None:
+    """Use only the target description and keep mixed lot statuses unknown."""
+
+    text = strip_accents(clean_text(description) or "").lower()
+    if not text:
+        return None
+    vacant, rented, occupied = _detail_occupancy_signals(text)
+    if vacant and (rented or occupied):
+        return None
+    if rented:
+        return "rented"
+    if vacant:
+        return "vacant"
+    if occupied:
+        return "occupied"
+    return None
+
+
+def _detail_occupancy_is_ambiguous(description: str | None) -> bool:
+    text = strip_accents(clean_text(description) or "").lower()
+    if not text:
+        return False
+    vacant, rented, occupied = _detail_occupancy_signals(text)
+    return vacant and (rented or occupied)
+
+
+_DETAIL_NEGATED_OCCUPIED_PATTERN = (
+    r"\b(?:ne\s+|n['’])?(?:est|sont)\s+pas\s+occupe(?:e|es|s)?\b"
+)
+
+
+def _detail_occupancy_signals(text: str) -> tuple[bool, bool, bool]:
+    vacant = bool(
+        re.search(
+            rf"\binoccupe(?:e|es|s)?\b|{_DETAIL_NEGATED_OCCUPIED_PATTERN}|"
+            r"\bvide(?:s)?\s+de\s+toute\s+occupation\b|\bbien\s+libre\b",
+            text,
+        )
+    )
+    rented = bool(re.search(r"\blou(?:e|es|ee|ees)?\b|\bbail\b|\blocataire\b", text))
+    # Remove only the negated occurrences before looking for a positive
+    # ``occupé`` signal.  This keeps "n'est pas occupé" vacant while still
+    # flagging a description that also contains another occupied component.
+    positive_occupancy_text = re.sub(_DETAIL_NEGATED_OCCUPIED_PATTERN, "", text)
+    occupied = bool(re.search(r"\boccupe(?:e|es|s)?\b", positive_occupancy_text))
+    return vacant, rented, occupied
+
+
+def _extract_detail_parking_count(raw_text: str) -> int | None:
+    """Extract an explicit count; a generic parking label remains unknown."""
+
+    text = clean_text(raw_text) or ""
+    patterns = (
+        r"\b([0-9]+|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)"
+        r"\s+(?:emplacements?|places?)\s+(?:de\s+)?(?:parking|stationnement)\b",
+        r"\b([0-9]+|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)"
+        r"\s+(?:parking|stationnement)\b",
+        r"\b(?:parking|stationnement)\s*:?\s*"
+        r"([0-9]+|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\b",
+    )
+    counts = {_detail_count(match.group(1)) for pattern in patterns for match in re.finditer(pattern, text, re.I)}
+    counts.discard(None)
+    return next(iter(counts)) if len(counts) == 1 else None
+
+
+def _extract_detail_energy_diagnostics(raw_text: str) -> dict[str, object] | None:
+    """Read DPE/GES classes from the page's own diagnostic block."""
+
+    text = clean_text(raw_text) or ""
+    marker = re.search(r"\bdiagnostic\s+[ée]nerg[ée]tique\b", text, re.I)
+    if not marker:
+        return None
+    section = text[marker.end() :]
+    section = re.split(r"\b(?:informations\s+compl[ée]mentaires|documents?)\b", section, maxsplit=1, flags=re.I)[0]
+    values: dict[str, str | None] = {}
+    for label, key in (("DPE", "dpe_class"), ("GES", "ges_class")):
+        match = re.search(rf"\b{label}\b\s*[:\-]?\s*([A-G])\b", section, re.I)
+        values[key] = match.group(1).upper() if match else None
+    if not any(values.values()):
+        return None
+    return {
+        "source": "avoventes.detail",
+        **values,
+        "diagnostic_date": None,
+    }
 
 
 def _extract_after_label(text: str, pattern: str) -> str | None:

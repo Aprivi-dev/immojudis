@@ -119,6 +119,23 @@ def load_settings() -> dict[str, str | float | None]:
         ),
         "request_delay_seconds": float(os.getenv("REQUEST_DELAY_SECONDS", "1.5")),
         "request_timeout_seconds": float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
+        # A source collector is isolated from the parent pipeline so a parser
+        # stuck in BeautifulSoup can be terminated.  The budget is deliberately
+        # longer than a normal Licitor/Vench inventory pass; HTTP requests keep
+        # their own shorter timeout inside the child.  The default stays below
+        # the 35-minute autonomous source budget so its parent can finish
+        # publication and terminate the child cleanly.
+        "source_process_isolation": os.getenv("SOURCE_PROCESS_ISOLATION", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "source_process_isolation_sources": tuple(
+            source.strip().lower()
+            for source in os.getenv("SOURCE_PROCESS_ISOLATION_SOURCES", "vench").split(",")
+            if source.strip()
+        ),
+        "source_scrape_timeout_seconds": max(
+            1.0,
+            float(os.getenv("SOURCE_SCRAPE_TIMEOUT_SECONDS", "1800")),
+        ),
         "geocode_enabled": os.getenv("GEOCODE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
         "geocode_api_url": os.getenv("GEOCODE_API_URL", "https://data.geopf.fr/geocodage/search/"),
         "geocode_min_score": float(os.getenv("GEOCODE_MIN_SCORE", "0.45")),

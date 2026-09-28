@@ -29,13 +29,17 @@ BASE_URL = "https://cessions.immobilier-etat.gouv.fr"
 LIST_URL = f"{BASE_URL}/"
 LOGGER = logging.getLogger(__name__)
 DETAIL_FIELDS = {
+    "property_type",
     "description",
     "starting_price_eur",
     "sale_date",
+    "sale_date_kind",
+    "source_sale_schedule",
     "visit_dates",
     "documents",
     "raw_text",
     "surface_m2",
+    "carrez_surface_m2",
     "land_surface_m2",
     "city",
     "postal_code",
@@ -154,6 +158,7 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
     description = _description(soup)
     dpe_class, ges_class = _detail_energy_classes(soup)
     surface = _extract_surface(raw_text)
+    carrez_surface = _extract_carrez_surface(raw_text)
     land_surface = _extract_land_surface(raw_text)
     postal_code = _extract_postal(raw_text)
     starting_price = _extract_after(
@@ -161,7 +166,19 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
         r"(?:Prix\s*:?\s*|Prix\s+de\s+vente\s*:\s*|Mise a prix\s*:?\s*|Mise à prix\s*:?\s*)"
         r"([0-9][0-9\s.,]+)\s*(?:€|euros?)",
     )
-    sale_date = _extract_sale_date(raw_text)
+    property_panel = soup.select_one("#panel-bien")
+    date_scope = property_panel.get_text("\n", strip=True) if property_panel else None
+    sale_date = _extract_sale_date(date_scope) if date_scope else None
+    if not sale_date:
+        # A sale date can be outside the property panel. Exclude site chrome so
+        # footer dates cannot silently become the date of this sale.
+        fallback_scope = parse_html(str(soup.select_one("main") or soup), "html.parser")
+        for chrome in fallback_scope.select("header, footer, nav, aside"):
+            chrome.decompose()
+        date_scope = fallback_scope.get_text("\n", strip=True)
+        sale_date = _extract_sale_date(date_scope)
+    source_sale_schedule = _extract_sale_schedule(date_scope or raw_text)
+    sale_date_kind = _sale_date_kind(date_scope or raw_text, source_sale_schedule)
     visit_dates = _visit_dates(raw_text)
     documents = _documents(soup, source_url)
     source_images = _extract_images(soup, source_url)
@@ -173,12 +190,15 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
         **({"city": city} if city else {}),
         "description": description,
         "surface_m2": surface,
+        "carrez_surface_m2": carrez_surface,
         "land_surface_m2": land_surface,
         "postal_code": postal_code,
         "dpe_class": dpe_class,
         "ges_class": ges_class,
         "starting_price_eur": starting_price,
         "sale_date": sale_date,
+        "sale_date_kind": sale_date_kind,
+        "source_sale_schedule": source_sale_schedule,
         "visit_dates": visit_dates,
         "documents": documents,
         "raw_image_url": source_images[0] if source_images else None,
@@ -192,12 +212,15 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
                 "type_bien_detail": property_type,
                 "ville": city,
                 "surface": surface,
+                "surface_carrez": carrez_surface,
                 "surface_terrain": land_surface,
                 "code_postal": postal_code,
                 "dpe_classe": dpe_class,
                 "ges_classe": ges_class,
                 "mise_a_prix": starting_price,
                 "date_vente": sale_date,
+                "date_vente_type": sale_date_kind,
+                "source_sale_schedule": source_sale_schedule,
                 "visites": " | ".join(visit_dates) if visit_dates else None,
                 "documents": "; ".join(document["label"] for document in documents if document.get("label")) or None,
                 "page_text": raw_text,
@@ -339,7 +362,15 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
                 sale["raw_image_url"] = sale["source_images"][0]
         elif key == "raw_image_url" and not sale.get("raw_image_url"):
             sale[key] = value
-        elif key in {"documents", "description", "sale_date", "visit_dates"} or not sale.get(key):
+        elif key in {
+            "documents",
+            "description",
+            "property_type",
+            "sale_date",
+            "sale_date_kind",
+            "source_sale_schedule",
+            "visit_dates",
+        } or not sale.get(key):
             sale[key] = value
 
 
@@ -456,11 +487,27 @@ def _extract_surface(text: str) -> str | None:
     return None
 
 
+def _extract_carrez_surface(text: str) -> str | None:
+    """Extract an explicitly labelled Carrez measurement.
+
+    The general surface tag on a Cessions page may be rounded or describe a
+    different scope.  Keep the separately labelled Carrez figure when the
+    description publishes one.
+    """
+    for pattern in (
+        rf"\b(?:surface\s+)?(?:loi\s+)?carrez\b[^\n0-9]{{0,40}}{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
+        rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\s*(?:\(?\s*)?(?:loi\s+)?carrez\b",
+    ):
+        match = re.search(pattern, text, flags=re.I)
+        if match:
+            return _normalize_surface_number(match.group(1))
+    return None
+
+
 def _extract_land_surface(text: str) -> str | None:
     for pattern in (
         rf"\bterrain\s+d['’]une\s+superficie\s+(?:totale\s+)?de\s+{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
         rf"\bterrain\s+d['’]une\s+surface\s+(?:totale\s+)?de\s+{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
-        rf"\bsuperficie\s+totale\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
         rf"\bsuperficie\s+du\s+terrain\s*:?\s*{SURFACE_VALUE_PATTERN}(?:\s*m(?:²|2))?\b",
         rf"\bterrain\s+clos\s+et\s+arbor[ée]\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
         rf"\bparcelle[^.\n]{{0,60}}d['’]une\s+superficie\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
@@ -488,6 +535,7 @@ def _extract_sale_date(text: str) -> str | None:
         return date_text
     for pattern in (
         r"\bdate\s+limite\s+de\s+r[ée]ception\s+des\s+offres\s+est\s+fix[ée]e?\s+au\s+([^\n.]+)",
+        r"\bdate\s+limite\s+d['’]envoi[^:\n]*:\s*([^\n.]+)",
         r"\b(?:Date limite|Fin de candidature|Cl[oô]ture)\s*:\s*([^\n]+)",
     ):
         match = re.search(pattern, text, flags=re.I)
@@ -502,6 +550,46 @@ def _extract_sale_date(text: str) -> str | None:
     )
     if closing_date:
         return clean_text(closing_date.group(1))
+    return None
+
+
+def _extract_sale_schedule(text: str) -> dict[str, str] | None:
+    """Keep an explicit online sale window as source evidence.
+
+    Cessions also publishes offer windows using the labels "Début de vente"
+    and "Date de fin de vente".  They are distinct from an adjudication
+    audience; the generic ``sale_date`` remains the closing boundary for
+    backwards-compatible filtering while this payload preserves the window.
+    """
+    from src.normalize import parse_french_datetime
+
+    opening = re.search(r"\bd[ée]but\s+de\s+vente\s*:\s*([^\n]+)", text, flags=re.I)
+    closing = re.search(r"\bdate\s+de\s+fin\s+de\s+vente\s*:\s*([^\n]+)", text, flags=re.I)
+    if not opening or not closing:
+        return None
+    start = parse_french_datetime(opening.group(1))
+    end = parse_french_datetime(closing.group(1))
+    if start is None or end is None or end <= start:
+        return None
+    return {
+        "opens_at": start.isoformat(),
+        "closes_at": end.isoformat(),
+        "schedule_type": "sale_window",
+    }
+
+
+def _sale_date_kind(text: str, schedule: dict[str, str] | None) -> str | None:
+    if schedule:
+        return "sale_window_close"
+    if re.search(r"\bdate\s+d[’']adjudication\b", text, flags=re.I):
+        return "adjudication"
+    if re.search(
+        r"\b(?:date\s+limite|fin\s+de\s+l['’]appel\s+d['’]offres?|"
+        r"fin\s+de\s+vente|fin\s+de\s+candidature|prend\s+fin\s+au|cl[oô]ture)\b",
+        text,
+        flags=re.I,
+    ):
+        return "offer_deadline"
     return None
 
 

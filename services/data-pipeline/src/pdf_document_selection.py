@@ -4,13 +4,12 @@ import re
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 from src.config import load_settings
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
-from src.normalize import (
-    clean_text,
-)
+from src.normalize import clean_text
 from src.pdf_enrichment import (
     DEFAULT_DOCUMENT_GROUPS,
     DOCUMENT_FACTS_VERSION,
@@ -24,12 +23,76 @@ from src.pdf_enrichment import (
     _profile_pdf_for_docling,
 )
 
+# These hosts are useful when a person is sharing an auction listing, but they
+# never contain an official sale attachment. Keeping them out of the PDF
+# candidate set prevents a social preview or redirect page from becoming a
+# document retry.
+SOCIAL_DOCUMENT_HOSTS = frozenset(
+    {
+        "facebook.com",
+        "fb.com",
+        "instagram.com",
+        "linkedin.com",
+        "pinterest.com",
+        "snapchat.com",
+        "tiktok.com",
+        "twitter.com",
+        "x.com",
+        "youtube.com",
+        "youtu.be",
+    }
+)
+
+DOCUMENT_SUFFIXES = frozenset({".pdf", ".doc", ".docx"})
+NON_DOCUMENT_SUFFIXES = frozenset(
+    {
+        ".avif",
+        ".bmp",
+        ".css",
+        ".gif",
+        ".ico",
+        ".jpeg",
+        ".jpg",
+        ".js",
+        ".m4a",
+        ".mp3",
+        ".mp4",
+        ".mpeg",
+        ".png",
+        ".svg",
+        ".webm",
+        ".webp",
+        ".woff",
+        ".woff2",
+        ".zip",
+    }
+)
+NON_DOCUMENT_PATH_MARKERS = (
+    "/avatars/",
+    "/favicon",
+    "/gallery/",
+    "/media/icons/",
+    "/pix/",
+    "/squelettes/",
+    "/themes/",
+)
+NON_DOCUMENT_LABEL_RE = re.compile(
+    r"\b(?:avatar|facebook|favicon|galerie|gallery|image|instagram|linkedin|logo|photo|"
+    r"pinterest|snapchat|tiktok|twitter|youtube)\b",
+    re.I,
+)
+
 
 def _select_documents_for_extraction(
     documents: list[dict[str, str]],
     *,
     sale: AuctionSale | None = None,
 ) -> list[dict[str, str]]:
+    documents = [
+        document
+        for document in documents
+        if _document_candidate_rejection_reason(document) is None
+    ]
     settings = load_settings()
     configured_max_documents = max(1, int(settings["pdf_max_documents_per_sale"]))
     required_groups = _required_document_groups_for_sale(sale)
@@ -93,6 +156,66 @@ def _select_documents_for_extraction(
         if len(selected) >= max_documents:
             break
     return selected
+
+
+def _document_candidate_rejection_reason(document: dict[str, str]) -> str | None:
+    """Return a deterministic reason for excluding a known non-document URL.
+
+    This is intentionally a conservative, URL-only prefilter. A signed or
+    extensionless download endpoint is retained for the network/content
+    checks in ``pdf_enrichment``; only evidence that the candidate is a media
+    asset, social page, or unsupported file is rejected here.
+    """
+
+    raw_url = clean_text(document.get("url"))
+    label = clean_text(document.get("label")) or ""
+    if not raw_url:
+        # Keep legacy in-memory candidates without a URL in the selector. The
+        # download layer already ignores them, and this avoids changing the
+        # ordering contract for callers that add the URL later.
+        return None
+    try:
+        parsed = urlsplit(raw_url)
+        hostname = parsed.hostname
+    except ValueError:
+        return "invalid_url"
+    if parsed.scheme not in {"http", "https"} or not hostname:
+        return "invalid_url"
+
+    hostname = hostname.rstrip(".").lower()
+    if any(hostname == host or hostname.endswith(f".{host}") for host in SOCIAL_DOCUMENT_HOSTS):
+        return "social_url"
+
+    path = unquote(parsed.path or "").lower()
+    suffix = Path(path).suffix
+    # Official attachments frequently use signed or PHP download URLs. Keep
+    # recognized document suffixes even when their path includes an asset-like
+    # directory name.
+    if suffix in DOCUMENT_SUFFIXES:
+        return None
+    if suffix in NON_DOCUMENT_SUFFIXES:
+        return "non_document_asset"
+    if any(marker in path for marker in NON_DOCUMENT_PATH_MARKERS):
+        return "non_document_asset"
+    if NON_DOCUMENT_LABEL_RE.search(label):
+        return "non_document_label"
+    return None
+
+
+def _document_candidate_rejections(documents: list[dict[str, str]]) -> list[dict[str, str]]:
+    rejections: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for document in documents:
+        reason = _document_candidate_rejection_reason(document)
+        if reason is None:
+            continue
+        url = clean_text(document.get("url")) or ""
+        identity = url or str(document.get("label") or "")
+        if identity in seen:
+            continue
+        seen.add(identity)
+        rejections.append({"url": url, "reason": reason})
+    return rejections
 
 
 def _required_document_groups_for_sale(sale: AuctionSale | None) -> tuple[frozenset[str], ...]:
@@ -173,6 +296,7 @@ def _store_document_analysis_status(
     pdf_texts: list[dict[str, object]],
     *,
     blocked_document_urls: list[str] | None = None,
+    permanent_document_failures: list[dict[str, str]] | None = None,
 ) -> None:
     typed_documents = [_document_profile(document) for document in documents]
     extracted_profiles = [_extracted_document_profile(payload) for payload in pdf_texts]
@@ -191,6 +315,7 @@ def _store_document_analysis_status(
         group for group, aliases in required_groups.items() if not (aliases & extracted_types)
     ]
 
+    candidate_rejections = _document_candidate_rejections(sale.documents)
     selected_documents = _select_documents_for_extraction(sale.documents, sale=sale)
     selected_urls = {
         str(document.get("url"))
@@ -203,11 +328,28 @@ def _store_document_analysis_status(
         if str(url) in selected_urls
     ))
     blocked_url_set = set(blocked_urls)
+    permanent_failures = [
+        {
+            "url": str(item.get("url")),
+            "reason": str(item.get("reason") or "permanent_document_failure"),
+        }
+        for item in (permanent_document_failures or [])
+        if isinstance(item, dict)
+        and item.get("url")
+        and str(item.get("url")) in selected_urls
+    ]
+    permanent_failures = list({item["url"]: item for item in permanent_failures}.values())
+    permanent_url_set = {item["url"] for item in permanent_failures}
 
     if blocked_urls:
         coverage_status = "partial"
         warning = (
             "Certaines pièces sont bloquées par la politique robots.txt et restent indisponibles pour l'analyse."
+        )
+    elif permanent_failures:
+        coverage_status = "partial"
+        warning = (
+            "Certaines URL de pièces sont durablement indisponibles ou ne renvoient pas un document exploitable."
         )
     elif not documents and not sale.documents:
         coverage_status = "source_only"
@@ -215,6 +357,8 @@ def _store_document_analysis_status(
     elif not text_profiles:
         coverage_status = "documents_not_extracted"
         warning = "Des documents sont listés, mais aucun texte PDF n'a encore été extrait."
+        if candidate_rejections:
+            warning += " Certaines URL sociales ou de médias ont été écartées automatiquement."
     elif missing_core_documents:
         coverage_status = "partial"
         warning = "Certaines pièces clés manquent ou n'ont pas été extraites."
@@ -228,6 +372,7 @@ def _store_document_analysis_status(
         if document.get("url")
         and str(document["url"]) not in extracted_urls
         and str(document["url"]) not in blocked_url_set
+        and str(document["url"]) not in permanent_url_set
     ))
     failed_documents = len(failed_document_urls)
     checked_at = datetime.now(UTC).isoformat()
@@ -248,6 +393,10 @@ def _store_document_analysis_status(
             }
             for url in blocked_urls
         ],
+        "permanent_document_failures": permanent_failures,
+        "skipped_documents": len(candidate_rejections),
+        "skipped_document_urls": [item["url"] for item in candidate_rejections if item["url"]],
+        "skipped_document_reasons": candidate_rejections,
         "coverage_status": coverage_status,
         "warning": warning,
         "documents_listed": len(sale.documents or []),

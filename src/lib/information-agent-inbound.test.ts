@@ -39,6 +39,12 @@ describe("information agent inbound parsing", () => {
 
   it("uses only the addr-spec in a From header", () => {
     expect(normalizeEmail("Contact <contact@example.test>")).toBe("contact@example.test");
+    expect(normalizeEmail('"Cabinet immobilier" <contact@example.test>')).toBe(
+      "contact@example.test",
+    );
+    expect(normalizeEmail("Cabinet immobilier via accueil <contact@example.test>")).toBe(
+      "contact@example.test",
+    );
     expect(normalizeEmail("contact@example.test <attacker@example.test>")).toBe(
       "attacker@example.test",
     );
@@ -55,6 +61,69 @@ describe("information agent inbound parsing", () => {
     ).toBe("Bonjour, je vérifie.");
   });
 
+  it("keeps the fresh Gmail reply separate from its quoted history and mobile signature", () => {
+    const body = [
+      "Bonjour,",
+      "La surface habitable est de 84 m².",
+      "",
+      "Envoyé depuis mon iPhone",
+      "",
+      "On Mon, Sep 28, 2026 at 09:01, ImmoJudis <enquete@example.test> wrote:",
+      "> La surface habitable est de 18 m².",
+      "> Le bien est loué.",
+    ].join("\n");
+
+    const reply = replyTextForExtraction(body);
+    expect(reply).toContain("84 m²");
+    expect(reply).not.toContain("Envoyé depuis mon iPhone");
+    expect(reply).not.toContain("18 m²");
+    expect(reply).not.toContain("Le bien est loué");
+    expect(extractInformationAgentFacts(body)).toMatchObject([
+      { factKey: "surface_m2", proposedValue: { value: 84, unit: "m2" } },
+    ]);
+    expect(replyTextForExtraction("Merci.\n\nSent from my Android phone\nJean")).toBe("Merci.");
+    expect(replyTextForExtraction("Merci.\n\nEnvoyé depuis mon appareil Samsung\nJean")).toBe(
+      "Merci.",
+    );
+    expect(
+      extractInformationAgentFacts(
+        "Merci.\n\nSent from my Android phone\nSurface habitable : 999 m²",
+      ),
+    ).toEqual([]);
+  });
+
+  it("cuts an Outlook original-message separator before extracting facts", () => {
+    const body = [
+      "Bonjour, je reviens vers vous.",
+      "",
+      "-----Original Message-----",
+      "From: ImmoJudis <enquete@example.test>",
+      "Subject: Vente A",
+      "Surface habitable : 18 m²",
+      "4 pièces",
+    ].join("\n");
+
+    expect(replyTextForExtraction(body)).toBe("Bonjour, je reviens vers vous.");
+    expect(extractInformationAgentFacts(body)).toEqual([]);
+  });
+
+  it("cuts a Gmail forwarded-message separator before extracting facts", () => {
+    const body = [
+      "Bonjour, je regarde le dossier et je vous réponds rapidement.",
+      "",
+      "---------- Forwarded message ---------",
+      "From: ImmoJudis <enquete@example.test>",
+      "Subject: Vente A",
+      "Surface habitable : 18 m²",
+      "Le bien est loué.",
+    ].join("\n");
+
+    expect(replyTextForExtraction(body)).toBe(
+      "Bonjour, je regarde le dossier et je vous réponds rapidement.",
+    );
+    expect(extractInformationAgentFacts(body)).toEqual([]);
+  });
+
   it("extracts text with a parser and ignores active HTML content", () => {
     const text = htmlToPlainText(
       "<style>body{display:none}</style><script >alert('&amp;')</script ><p>Surface &amp; état</p><p>84 m²</p>",
@@ -64,6 +133,50 @@ describe("information agent inbound parsing", () => {
     expect(htmlToPlainText("<p>Je vérifie.</p><blockquote>Surface 84 m²</blockquote>")).toBe(
       "Je vérifie.",
     );
+  });
+
+  it("keeps Gmail HTML multipart replies out of nested quoted blocks", () => {
+    const html = [
+      "<div>Bonjour,</div>",
+      "<div>La surface habitable est de 84&nbsp;m².</div>",
+      "<div>Envoyé depuis mon iPhone</div>",
+      '<div class="gmail_quote">',
+      "<div>On Mon, Sep 28, 2026 at 09:01, ImmoJudis wrote:</div>",
+      '<blockquote type="cite">',
+      "<div>La surface habitable est de 18 m².</div>",
+      "<div>Le bien est loué.</div>",
+      "</blockquote>",
+      "</div>",
+    ].join("");
+
+    const plainText = htmlToPlainText(html);
+    expect(plainText).toContain("84 m²");
+    expect(plainText).not.toContain("18 m²");
+    expect(plainText).not.toContain("Le bien est loué");
+    expect(extractInformationAgentFacts(plainText)).toMatchObject([
+      { factKey: "surface_m2", proposedValue: { value: 84, unit: "m2" } },
+    ]);
+  });
+
+  it("keeps Outlook divRplyFwdMsg history out of HTML multipart replies", () => {
+    const html = [
+      "<div>Bonjour,</div>",
+      "<div>La surface habitable est de 84&nbsp;m².</div>",
+      '<div id="divRplyFwdMsg" dir="ltr">',
+      "<div>From: ImmoJudis &lt;enquete@example.test&gt;</div>",
+      "<div><div>Surface habitable : 18 m²</div><div>Le bien est loué.</div></div>",
+      "</div>",
+      "<div>Merci pour votre aide.</div>",
+    ].join("");
+
+    const plainText = htmlToPlainText(html);
+    expect(plainText).toContain("84 m²");
+    expect(plainText).toContain("Merci pour votre aide.");
+    expect(plainText).not.toContain("18 m²");
+    expect(plainText).not.toContain("Le bien est loué");
+    expect(extractInformationAgentFacts(plainText)).toMatchObject([
+      { factKey: "surface_m2", proposedValue: { value: 84, unit: "m2" } },
+    ]);
   });
 
   it("extracts bounded candidates without treating them as verified facts", () => {
@@ -92,6 +205,29 @@ describe("information agent inbound parsing", () => {
       "La surface était 80 m², finalement 84 m². L'ancien plan comptait 3 pièces, le nouveau 4 pièces. Le bien était libre mais le logement est loué.",
     );
     expect(facts).toEqual([]);
+  });
+
+  it("does not promote negated facts or values that were corrected in the same reply", () => {
+    const reply = [
+      "Le logement n'est pas loué : il est libre.",
+      "Correction : la surface était de 80 m², finalement 84 m².",
+      "Date de vente à confirmer : 14/09/2026.",
+      "Mise à prix non communiquée : 120 000 €.",
+    ].join(" ");
+
+    expect(extractInformationAgentFacts(reply)).toEqual([]);
+  });
+
+  it("fails closed on a correction marker without an old value to compare", () => {
+    expect(
+      extractInformationAgentFacts("Correction : la surface habitable est désormais de 84 m²."),
+    ).toEqual([]);
+    expect(extractInformationAgentFacts("Le nombre de pièces a été corrigé à 4 pièces.")).toEqual(
+      [],
+    );
+    expect(
+      extractInformationAgentFacts("Correction : la date de vente est fixée au 14/09/2026."),
+    ).toEqual([]);
   });
 
   it("recognizes accented French occupancy words", () => {

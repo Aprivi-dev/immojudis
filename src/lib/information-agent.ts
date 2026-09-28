@@ -567,6 +567,7 @@ async function approveAndSendMission({
     email: input.recipientEmail,
   });
   assertInformationAgentOutboundEnabled();
+  assertInformationAgentCanaryRecipient(input.recipientEmail);
 
   const { data: edited, error: editError } = await supabaseAdmin
     .from("information_agent_missions")
@@ -619,6 +620,7 @@ async function approveAndSendMission({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
     });
+    assertInformationAgentCanaryRecipient(edited.recipient_email);
     const delivery = await sendResendEmail({
       apiKey: config.apiKey,
       idempotencyKey: `immojudis-information-agent-case-${approval.case_id}`,
@@ -685,6 +687,17 @@ async function approveAndSendMission({
 export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = process.env): void {
   if (env.INFORMATION_AGENT_OUTBOUND_ENABLED !== "true") {
     throw new Error("Envoi de l’agent désactivé pendant la phase de validation.");
+  }
+}
+
+/** Keep the first provider canary restricted to Resend's own delivery test address. */
+export function assertInformationAgentCanaryRecipient(
+  email: string,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (env.INFORMATION_AGENT_OUTBOUND_CANARY_ONLY === "false") return;
+  if (email.trim().toLowerCase() !== "delivered@resend.dev") {
+    throw new Error("Envoi limité à l'adresse de test du fournisseur pendant l'essai canari.");
   }
 }
 

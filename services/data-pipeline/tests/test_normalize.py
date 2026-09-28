@@ -7,6 +7,7 @@ from src.normalize import (
     normalize_source_urls,
     parse_confidence,
     parse_french_datetime,
+    parse_parking_count,
     parse_price,
     parse_surface,
 )
@@ -604,6 +605,25 @@ def test_normalize_sale_does_not_infer_parking_count_from_garage() -> None:
 
     normalize_asset_features(sale)
     assert sale.parking_count is None
+
+
+def test_normalize_sale_keeps_unquantified_parking_unknown() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/parking-unknown",
+            "raw_text": "Le bien dispose d'un parking couvert et d'un parking extérieur.",
+        }
+    )
+
+    assert sale.parking_count is None
+
+
+def test_parse_parking_count_rejects_fractional_values_without_truncation() -> None:
+    assert parse_parking_count(0.5) is None
+    assert parse_parking_count(2.9) is None
+    assert parse_parking_count("2,9 places") is None
+    assert parse_parking_count("2.0 places") == 2
 
 
 def test_normalize_sale_reads_single_main_room_as_one_room() -> None:

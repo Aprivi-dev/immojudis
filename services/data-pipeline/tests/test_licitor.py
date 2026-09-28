@@ -269,6 +269,98 @@ def test_parse_licitor_detail_html_accepts_first_day_ordinal_sale_date() -> None
     assert sale.surface_m2 == Decimal("123.84")
 
 
+def test_licitor_detail_extracts_qualified_surfaces_rooms_and_parking() -> None:
+    html = """
+    <section class="AddressBlock">
+      <div class="Lot">
+        <div class="SousLot">
+          <h2>Un appartement</h2>
+          <p>de 74,20 m² loi Carrez et 8 m² de surface annexe, bâtiment T2,
+             au 1er étage, de quatre pièces principales, avec deux emplacements
+             de parking.</p>
+        </div>
+      </div>
+    </section>
+    <h3>Mise à prix : 100 000 €</h3>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/00/01/vente-aux-encheres/un-appartement/test/100001.html",
+    )
+
+    assert raw["carrez_surface_m2"] == "74,20"
+    assert raw["habitable_surface_m2"] is None
+    assert raw["rooms_count"] == 4
+    assert raw["parking_count"] == 2
+
+
+def test_licitor_detail_keeps_cadastral_total_and_partial_occupancy_unknown() -> None:
+    html = """
+    <section class="AddressBlock">
+      <div class="Lot">
+        <div class="SousLot">
+          <h2>Un ensemble immobilier à usage mixte</h2>
+          <p>Une maison et un local commercial. L'ensemble cadastré section AB n°1
+             pour 5a 71ca, section AB n°2 pour 10a 5ca, soit une contenance totale
+             de 1ha 2a 82ca. Un appartement est occupé et un second appartement
+             est libre.</p>
+        </div>
+      </div>
+    </section>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/00/02/vente-aux-encheres/ensemble/test/100002.html",
+    )
+
+    assert raw["property_type"] == "mixed"
+    assert raw["land_surface_m2"] == "10282"
+    assert raw["occupancy_status"] == "unknown"
+    assert raw["rooms_count"] is None
+
+
+def test_licitor_detail_preserves_multiple_cadastral_areas_without_a_total() -> None:
+    html = """
+    <section class="AddressBlock">
+      <div class="Lot">
+        <div class="SousLot">
+          <h2>Un terrain</h2>
+          <p>Parcelle section AB n°1 pour 5a 71ca, section AB n°2 pour 10a 5ca.</p>
+        </div>
+      </div>
+    </section>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/00/04/vente-aux-encheres/un-terrain/test/100004.html",
+    )
+
+    assert raw["land_surface_m2"] is None
+
+
+def test_licitor_detail_does_not_infer_rooms_from_a_building_label() -> None:
+    html = """
+    <section class="AddressBlock">
+      <div class="Lot">
+        <div class="SousLot">
+          <h2>Un bâtiment</h2>
+          <p>Le bâtiment T2 comprend un atelier et une réserve.</p>
+        </div>
+      </div>
+    </section>
+    """
+
+    raw = parse_licitor_detail_html(
+        html,
+        "https://www.licitor.com/annonce/10/00/03/vente-aux-encheres/un-batiment/test/100003.html",
+    )
+
+    assert raw["rooms_count"] is None
+
+
 def test_parse_licitor_detail_html_keeps_linked_pdf_documents() -> None:
     html = """
     <h1>Annonce n°108762 : divers biens à Montardon (Pyrénées-Atlantiques), mise à prix : 500 000 €</h1>

@@ -130,6 +130,95 @@ def test_parse_avoventes_detail_html_extracts_pdf_documents() -> None:
     assert details["source_blocks"]["documents"] == "Affiche greffe"
 
 
+def test_parse_avoventes_detail_extracts_explicit_scoped_fields() -> None:
+    html = """
+    <html><body>
+      <h1>Appartement à TESTVILLE</h1>
+      <div class="summary"><span>2</span><span>pièces</span><span>42</span><span>m² superficie</span></div>
+      <div><h2>À propos du bien</h2>
+        <div>TESTVILLE (33000), 4 rue du Test. Terrain : 207 m².
+          Le bien est vide de toute occupation.</div>
+      </div>
+      <li>Parking (Cinq emplacements de parking privatifs disponibles)</li>
+      <div>Diagnostic énergétique</div>
+      <div>DPE</div><div>E</div><div>GES</div><div>B</div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-fields")
+    sale = normalize_sale({**details, "source_name": "avoventes", "source_url": "https://avoventes.fr/enchere/synthetic-fields"})
+
+    assert details["land_surface_m2"] == "207"
+    assert details["occupancy_status"] == "vacant"
+    assert details["parking_count"] == 5
+    assert details["source_energy_diagnostics"] == {
+        "source": "avoventes.detail",
+        "dpe_class": "E",
+        "ges_class": "B",
+        "diagnostic_date": None,
+    }
+    assert sale.land_surface_m2 == Decimal("207")
+    assert sale.occupancy_status == "vacant"
+    assert sale.parking_count == 5
+    assert sale.raw_payload["source_energy_diagnostics"]["dpe_class"] == "E"
+    # The page's generic ``m² superficie`` counter is not evidence of a
+    # habitable area.
+    assert sale.habitable_surface_m2 is None
+
+
+def test_parse_avoventes_detail_keeps_unquantified_parking_unknown() -> None:
+    html = """
+    <html><body>
+      <h1>Appartement à TESTVILLE</h1>
+      <div><h2>À propos du bien</h2>
+        <div>TESTVILLE (33000), 4 rue du Test. Le bien dispose d'un parking couvert et d'un parking extérieur.</div>
+      </div>
+      <li>Parking (Parking couvert payant complété par un parking extérieur)</li>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-parking")
+    sale = normalize_sale({**details, "source_name": "avoventes", "source_url": "https://avoventes.fr/enchere/synthetic-parking"})
+
+    assert details["parking_count"] is None
+    assert sale.parking_count is None
+
+
+def test_parse_avoventes_detail_treats_negated_occupancy_as_vacant() -> None:
+    html = """
+    <html><body>
+      <h1>Appartement à TESTVILLE</h1>
+      <div><h2>À propos du bien</h2>
+        <div>TESTVILLE (33000), 4 rue du Test. Le bien n'est pas occupé.</div>
+      </div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-negated-occupancy")
+
+    assert details["occupancy_status"] == "vacant"
+    assert details["quality_flags"] == []
+
+
+def test_parse_avoventes_detail_quarantines_conflicting_lot_occupancy() -> None:
+    html = """
+    <html><body>
+      <h1>Ensemble immobilier à TESTVILLE</h1>
+      <div><h2>À propos du bien</h2>
+        <div>TESTVILLE (33000), vente en 2 lots. Le studio n'est pas occupé.
+          Le local est occupé et fait l'objet d'un bail commercial.</div>
+      </div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-occupancy")
+    sale = normalize_sale({**details, "source_name": "avoventes", "source_url": "https://avoventes.fr/enchere/synthetic-occupancy"})
+
+    assert details["occupancy_status"] is None
+    assert "ambiguous_occupancy" in details["quality_flags"]
+    assert sale.occupancy_status is None
+
+
 def test_catalogue_returned_for_removed_detail_is_not_parsed_as_property():
     import pytest
 

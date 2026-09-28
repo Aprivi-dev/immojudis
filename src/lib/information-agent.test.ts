@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  assertInformationAgentCanaryRecipient,
   assertInformationAgentOutboundEnabled,
   buildInformationRequestDraft,
   createAdminInformationAgentDraft,
@@ -51,47 +52,76 @@ describe("supervised information agent", () => {
     ).not.toThrow();
   });
 
-  it("blocks the admin send action before any mutation or network call", async () => {
-    const query = {
-      select: vi.fn(),
-      eq: vi.fn(),
-      is: vi.fn(),
-      single: vi.fn().mockResolvedValue({
-        data: { id: "22222222-2222-4222-8222-222222222222", status: "draft" },
-        error: null,
+  it("limits a provider canary to Resend's delivery test address", () => {
+    const canaryEnv = {
+      NODE_ENV: "test",
+      INFORMATION_AGENT_OUTBOUND_CANARY_ONLY: "true",
+    } as NodeJS.ProcessEnv;
+    expect(() =>
+      assertInformationAgentCanaryRecipient("DELIVERED@resend.dev", canaryEnv),
+    ).not.toThrow();
+    expect(() => assertInformationAgentCanaryRecipient("contact@example.test", canaryEnv)).toThrow(
+      "adresse de test",
+    );
+    expect(() =>
+      assertInformationAgentCanaryRecipient("contact@example.test", { NODE_ENV: "test" }),
+    ).toThrow("adresse de test");
+    expect(() =>
+      assertInformationAgentCanaryRecipient("contact@example.test", {
+        NODE_ENV: "test",
+        INFORMATION_AGENT_OUTBOUND_CANARY_ONLY: "false",
       }),
-      then: vi.fn((onFulfilled: (value: { data: never[]; error: null }) => unknown) =>
-        Promise.resolve({ data: [], error: null }).then(onFulfilled),
-      ),
-    };
-    query.select.mockReturnValue(query);
-    query.eq.mockReturnValue(query);
-    query.is.mockReturnValue(query);
-    vi.mocked(supabaseAdmin.from).mockReturnValue(query as never);
-    const fetchImpl = vi.fn();
-    vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", "false");
-    try {
-      await expect(
-        runAdminInformationAgentAction({
-          auth: { isAdmin: true, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } as never,
-          input: {
-            action: "approve_and_send",
-            missionId: "22222222-2222-4222-8222-222222222222",
-            approvalConfirmed: true,
-            recipientEmail: "contact@example.test",
-            subject: "Informations complémentaires",
-            bodyText: "Bonjour, merci de nous transmettre les informations du dossier.",
-          },
-          fetchImpl: fetchImpl as typeof fetch,
-        }),
-      ).rejects.toThrow("désactivé");
-      expect(fetchImpl).not.toHaveBeenCalled();
-      expect(supabaseAdmin.from).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.unstubAllEnvs();
-      vi.mocked(supabaseAdmin.from).mockReset();
-    }
+    ).not.toThrow();
   });
+
+  it.each([
+    ["outbound disabled", "false", "false", "désactivé"],
+    ["canary recipient restriction", "true", "true", "adresse de test"],
+  ])(
+    "blocks the admin send action before any mutation or network call: %s",
+    async (_case, enabled, canaryOnly, expectedError) => {
+      const query = {
+        select: vi.fn(),
+        eq: vi.fn(),
+        is: vi.fn(),
+        single: vi.fn().mockResolvedValue({
+          data: { id: "22222222-2222-4222-8222-222222222222", status: "draft" },
+          error: null,
+        }),
+        then: vi.fn((onFulfilled: (value: { data: never[]; error: null }) => unknown) =>
+          Promise.resolve({ data: [], error: null }).then(onFulfilled),
+        ),
+      };
+      query.select.mockReturnValue(query);
+      query.eq.mockReturnValue(query);
+      query.is.mockReturnValue(query);
+      vi.mocked(supabaseAdmin.from).mockReturnValue(query as never);
+      const fetchImpl = vi.fn();
+      vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", enabled);
+      vi.stubEnv("INFORMATION_AGENT_OUTBOUND_CANARY_ONLY", canaryOnly);
+      try {
+        await expect(
+          runAdminInformationAgentAction({
+            auth: { isAdmin: true, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } as never,
+            input: {
+              action: "approve_and_send",
+              missionId: "22222222-2222-4222-8222-222222222222",
+              approvalConfirmed: true,
+              recipientEmail: "contact@example.test",
+              subject: "Informations complémentaires",
+              bodyText: "Bonjour, merci de nous transmettre les informations du dossier.",
+            },
+            fetchImpl: fetchImpl as typeof fetch,
+          }),
+        ).rejects.toThrow(expectedError);
+        expect(fetchImpl).not.toHaveBeenCalled();
+        expect(supabaseAdmin.from).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.unstubAllEnvs();
+        vi.mocked(supabaseAdmin.from).mockReset();
+      }
+    },
+  );
 
   it("rechecks the registry after approval and immediately before provider delivery", async () => {
     const missionId = "22222222-2222-4222-8222-222222222222";
@@ -194,6 +224,7 @@ describe("supervised information agent", () => {
     }) as never);
     emailMocks.sendResendEmail.mockResolvedValue({ id: "provider-message-id" });
     vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", "true");
+    vi.stubEnv("INFORMATION_AGENT_OUTBOUND_CANARY_ONLY", "false");
     vi.stubEnv("RESEND_API_KEY", "test-resend-key");
     vi.stubEnv("INFORMATION_AGENT_EMAIL_FROM", "agent@example.test");
     vi.stubEnv("INFORMATION_AGENT_INBOUND_DOMAIN", "reply.example.test");

@@ -8,6 +8,8 @@ The endpoint uses a dedicated 384-bit random bearer token, not a Supabase databa
 
 `verify_jwt = false` delegates authentication to `handler`, which rejects missing or invalid tokens before fetching. This token does not grant database access. No authorization header or cookie from the collector is forwarded to the sources. Source redirects are returned to Python, where every destination is checked again before following it. POST is restricted to the Petites Affiches public listing filter (`historique=0`, optional department).
 
+The relay emits one bounded warning for an upstream redirect. It contains only the HTTP status and the destination host/path; query strings, fragments, credentials and bearer tokens are never logged. The source allowlist remains HTTPS-only, even when a public source response advertises an HTTP redirect. The one verified Petites Affiches redirect from `http://www.petitesaffiches.fr/encheres-immobilieres/` to the same path over HTTPS is rewritten in the response header before the collector follows it; redirects with a query, fragment, other host or other path remain unchanged and are rejected by the caller's redirect guard.
+
 Rotate the token by generating a new random value, replacing its SHA-256 digest, deploying the function, and replacing the GitHub secret together. Do not print or commit the plaintext. The user explicitly approved the persistent deployment and GitHub secret configuration; both are now configured.
 
 ## Limits

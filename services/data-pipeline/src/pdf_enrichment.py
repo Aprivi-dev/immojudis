@@ -71,6 +71,15 @@ class PdfEnrichmentStats:
     document_cache_misses: int = 0
     documents_processed: int = 0
     blocked_document_urls: list[str] = field(default_factory=list)
+    permanent_document_failures: list[dict[str, str]] = field(default_factory=list)
+
+
+class PermanentDocumentFailure(ValueError):
+    """A document URL is known not to be usable by the PDF extractor."""
+
+    def __init__(self, reason: str, message: str | None = None) -> None:
+        super().__init__(message or reason)
+        self.reason = reason
 
 
 class PdfExtractionDeferred(ValueError):
@@ -226,6 +235,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         downloaded_documents,
         pdf_texts,
         blocked_document_urls=stats.blocked_document_urls,
+        permanent_document_failures=stats.permanent_document_failures,
     )
 
     return stats
@@ -315,6 +325,15 @@ def download_documents(
             metadata = json.loads(metadata_path.read_text())
         except (OSError, ValueError):
             metadata = {}
+        if (
+            metadata.get("failure_class") == "permanent"
+            and timestamp_is_fresh(metadata.get("checked_at"))
+        ):
+            reason = str(metadata.get("failure_reason") or "permanent_document_failure")
+            LOGGER.info("Skipping cached permanently unusable document %s: %s", url, reason)
+            if stats is not None:
+                stats.permanent_document_failures.append({"url": url, "reason": reason})
+            continue
         request_headers = dict(headers)
         if file_path.exists():
             if metadata.get("etag"):
@@ -323,6 +342,7 @@ def download_documents(
                 request_headers["If-Modified-Since"] = metadata["last_modified"]
         if not file_path.exists() or not timestamp_is_fresh(metadata.get("checked_at")):
             download_error: Exception | None = None
+            permanent_failures: list[PermanentDocumentFailure] = []
             try:
                 for candidate_url in _document_url_variants(url):
                     try:
@@ -331,11 +351,22 @@ def download_documents(
                             headers=request_headers,
                             timeout_seconds=float(settings["request_timeout_seconds"]),
                         )
-                        if getattr(response, "status_code", 200) == 304 and file_path.exists():
+                        status_code = int(getattr(response, "status_code", 200))
+                        if status_code == 304 and file_path.exists():
                             metadata["checked_at"] = datetime.now(UTC).isoformat()
                             metadata_path.write_text(json.dumps(metadata))
                             download_error = None
                             break
+                        if status_code in {401, 403}:
+                            raise PermanentDocumentFailure(
+                                "access_denied",
+                                f"document endpoint returned HTTP {status_code}",
+                            )
+                        if status_code in {404, 410}:
+                            raise PermanentDocumentFailure(
+                                "not_found",
+                                f"document endpoint returned HTTP {status_code}",
+                            )
                         response.raise_for_status()
                         response_headers = getattr(response, "headers", {})
                         content_type = response_headers.get("content-type", "")
@@ -349,9 +380,15 @@ def download_documents(
                             content_type=content_type,
                         )
                         if file_format is None:
-                            raise ValueError(
-                                f"response is not a supported document (content-type={content_type or 'unknown'})"
+                            raise PermanentDocumentFailure(
+                                "unsupported_response",
+                                "response is not a supported document "
+                                f"(content-type={content_type or 'unknown'})",
                             )
+                    except PermanentDocumentFailure as exc:
+                        permanent_failures.append(exc)
+                        download_error = exc
+                        continue
                     except Exception as exc:
                         download_error = exc
                         continue
@@ -380,9 +417,25 @@ def download_documents(
             except Exception as exc:
                 download_error = exc
             if download_error is not None:
-                LOGGER.warning("PDF download failed for %s: %s", url, download_error)
-                if stats:
-                    stats.errors += 1
+                variants = _document_url_variants(url)
+                if permanent_failures and len(permanent_failures) == len(variants):
+                    reason = permanent_failures[-1].reason
+                    LOGGER.info("Skipping permanently unusable document %s: %s", url, reason)
+                    metadata_path.write_text(
+                        json.dumps(
+                            {
+                                "checked_at": datetime.now(UTC).isoformat(),
+                                "failure_class": "permanent",
+                                "failure_reason": reason,
+                            }
+                        )
+                    )
+                    if stats is not None:
+                        stats.permanent_document_failures.append({"url": url, "reason": reason})
+                else:
+                    LOGGER.warning("PDF download failed for %s: %s", url, download_error)
+                    if stats:
+                        stats.errors += 1
                 continue
 
         enriched_document = dict(document)
@@ -1372,6 +1425,7 @@ if __name__ == "__main__":
 from src.pdf_document_selection import (  # noqa: E402,F401
     _adaptive_docling_timeout,
     _available_document_group_count,
+    _document_candidate_rejection_reason,
     _document_family,
     _document_group_order,
     _document_identity,
