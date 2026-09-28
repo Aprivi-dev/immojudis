@@ -1,8 +1,9 @@
-"""Private, human-reviewed evaluation of the frozen real-listing sample.
+"""Private evaluation of the frozen real-listing sample.
 
 The review manifest can contain personal data and stays outside Git. Only
-counts and rates leave this module; neither evidence nor case-level values are
-included in the aggregate report.
+aggregate counts and rates leave this module; neither evidence nor case-level
+values are included in the aggregate report. Human reviews and AI passes use
+separate lanes. An AI consensus is never a human accuracy claim.
 """
 
 from __future__ import annotations
@@ -17,10 +18,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.extraction_corpus import CORPUS_SCHEMA_VERSION, evaluate_corpus
+from src.extraction_corpus import CORPUS_SCHEMA_VERSION, classify_outcome, evaluate_corpus, values_equal
 
 SAMPLE_PATH = Path(__file__).resolve().parents[1] / "config" / "qualification-sample-20260912.json"
-REVIEW_SCHEMA_VERSION = "immojudis.real-extraction-review.v1"
+LEGACY_REVIEW_SCHEMA_VERSION = "immojudis.real-extraction-review.v1"
+REVIEW_SCHEMA_VERSION = "immojudis.real-extraction-review.v2"
+SUPPORTED_REVIEW_SCHEMA_VERSIONS = frozenset({LEGACY_REVIEW_SCHEMA_VERSION, REVIEW_SCHEMA_VERSION})
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
 REVIEW_FIELDS = frozenset(
@@ -66,6 +69,20 @@ def _require_text(value: Any, description: str) -> str:
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def ai_review_output_sha256(labels: Mapping[str, Any]) -> str:
+    """Return the canonical digest required for a private AI review output.
+
+    The digest covers only the structured field labels. The raw model response,
+    if retained by an operator, must remain in the private review workspace.
+    """
+
+    try:
+        canonical = json.dumps(labels, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("AI review labels must be JSON serializable") from exc
+    return _sha256(canonical.encode("utf-8"))
 
 
 def _file_sha256(path: Path) -> str:
@@ -130,6 +147,7 @@ def prepare_manifest(sample_path: Path = SAMPLE_PATH) -> dict[str, Any]:
                 "prediction": None,
                 "reviews": [],
                 "adjudication": None,
+                "ai_reviews": [],
             }
             for row in rows
         ],
@@ -177,12 +195,74 @@ def _validate_labels(labels: Any, capture_sha256: str, description: str) -> dict
     return checked
 
 
-def _validate_reviewer(review: Any, capture_sha256: str, description: str) -> dict[str, dict[str, Any]]:
+def _validate_reviewer(
+    review: Any,
+    capture_sha256: str,
+    description: str,
+    *,
+    schema_version: str,
+) -> dict[str, dict[str, Any]]:
     if not isinstance(review, Mapping):
         raise ValueError(f"{description} must be an object")
+    reviewer_type = review.get("reviewer_type")
+    if schema_version == LEGACY_REVIEW_SCHEMA_VERSION:
+        reviewer_type = reviewer_type or "human"
+    if reviewer_type != "human":
+        raise ValueError(f"{description} must be a human review; AI passes belong in ai_reviews")
     _require_text(review.get("reviewer"), f"{description} reviewer")
     _timestamp(review.get("reviewed_at"), f"{description} reviewed_at")
     return _validate_labels(review.get("labels"), capture_sha256, description)
+
+
+def _validate_ai_review(review: Any, capture_sha256: str, description: str) -> dict[str, Any]:
+    """Validate one private, capture-bound AI pass without treating it as human review."""
+
+    if not isinstance(review, Mapping):
+        raise ValueError(f"{description} must be an object")
+    if review.get("reviewer_type") != "ai":
+        raise ValueError(f"{description} must declare reviewer_type=ai")
+    _require_text(review.get("reviewer"), f"{description} reviewer")
+    _require_text(review.get("provider"), f"{description} provider")
+    _require_text(review.get("model"), f"{description} model")
+    _require_text(review.get("prompt_version"), f"{description} prompt_version")
+    prompt_sha256 = review.get("prompt_sha256")
+    if not isinstance(prompt_sha256, str) or not SHA256_RE.fullmatch(prompt_sha256):
+        raise ValueError(f"{description} prompt_sha256 must be a lowercase SHA-256 digest")
+    reviewed_at = _timestamp(review.get("reviewed_at"), f"{description} reviewed_at")
+    if review.get("capture_sha256") != capture_sha256:
+        raise ValueError(f"{description} capture_sha256 must identify the frozen capture")
+    output_sha256 = review.get("output_sha256")
+    if not isinstance(output_sha256, str) or not SHA256_RE.fullmatch(output_sha256):
+        raise ValueError(f"{description} output_sha256 must be a lowercase SHA-256 digest")
+    if review.get("blind_to_prediction") is not True:
+        raise ValueError(f"{description} must be blind_to_prediction")
+    if review.get("blind_to_other_reviews") is not True:
+        raise ValueError(f"{description} must be blind_to_other_reviews")
+    expected_fields = review.get("expected_fields")
+    if not isinstance(expected_fields, list) or not expected_fields:
+        raise ValueError(f"{description} expected_fields must be a non-empty list")
+    if (
+        any(not isinstance(field, str) or field not in REVIEW_FIELDS for field in expected_fields)
+        or len(set(expected_fields)) != len(expected_fields)
+    ):
+        raise ValueError(f"{description} expected_fields contains an unsupported or duplicate field")
+    labels = _validate_labels(review.get("labels"), capture_sha256, description)
+    if not set(labels) <= set(expected_fields):
+        raise ValueError(f"{description} labels contain a field outside expected_fields")
+    if output_sha256 != ai_review_output_sha256(labels):
+        raise ValueError(f"{description} output_sha256 does not match canonical labels")
+    return {
+        "reviewer": str(review["reviewer"]),
+        "provider": str(review["provider"]),
+        "model": str(review["model"]),
+        "prompt_version": str(review["prompt_version"]),
+        "prompt_sha256": prompt_sha256,
+        "reviewed_at": reviewed_at,
+        "capture_sha256": capture_sha256,
+        "output_sha256": output_sha256,
+        "expected_fields": tuple(expected_fields),
+        "labels": labels,
+    }
 
 
 def _captured_case(case: Mapping[str, Any]) -> tuple[dict[str, Any], str, datetime]:
@@ -232,12 +312,200 @@ def _compact_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _new_ai_stats() -> dict[str, Any]:
+    return {
+        "reviewed_cases": 0,
+        "double_reviewed_cases": 0,
+        "cases_with_agreement": 0,
+        "cases_with_disagreement": 0,
+        "field_annotations": 0,
+        "fields_expected": 0,
+        "fields_omitted": 0,
+        "fields_compared": 0,
+        "fields_agree": 0,
+        "fields_disagree": 0,
+        "locator_annotations": 0,
+        "excerpt_annotations": 0,
+        "pipeline_fields_compared": 0,
+        "pipeline_fields_match": 0,
+        "pipeline_fields_disagree": 0,
+        "needs_review_cases": 0,
+        "needs_review_reasons": {
+            "incomplete_field_coverage": 0,
+            "missing_passes": 0,
+            "missing_second_pass": 0,
+            "pass_disagreement": 0,
+            "pipeline_disagreement": 0,
+        },
+    }
+
+
+def _merge_ai_stats(target: dict[str, Any], source: Mapping[str, Any]) -> None:
+    for key in (
+        "reviewed_cases",
+        "double_reviewed_cases",
+        "cases_with_agreement",
+        "cases_with_disagreement",
+        "field_annotations",
+        "fields_expected",
+        "fields_omitted",
+        "fields_compared",
+        "fields_agree",
+        "fields_disagree",
+        "locator_annotations",
+        "excerpt_annotations",
+        "pipeline_fields_compared",
+        "pipeline_fields_match",
+        "pipeline_fields_disagree",
+        "needs_review_cases",
+    ):
+        target[key] += int(source[key])
+    for key, value in source["needs_review_reasons"].items():
+        target["needs_review_reasons"][key] += int(value)
+
+
+def _compact_ai_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
+    compared_cases = int(stats["cases_with_agreement"]) + int(stats["cases_with_disagreement"])
+    fields_compared = int(stats["fields_compared"])
+    annotations = int(stats["field_annotations"])
+    fields_expected = int(stats["fields_expected"])
+    fields_omitted = int(stats["fields_omitted"])
+    locator_annotations = int(stats["locator_annotations"])
+    excerpt_annotations = int(stats["excerpt_annotations"])
+    pipeline_fields_compared = int(stats["pipeline_fields_compared"])
+    return {
+        "reviewed_cases": int(stats["reviewed_cases"]),
+        "double_reviewed_cases": int(stats["double_reviewed_cases"]),
+        "cases_with_agreement": int(stats["cases_with_agreement"]),
+        "cases_with_disagreement": int(stats["cases_with_disagreement"]),
+        "case_agreement_rate": round(stats["cases_with_agreement"] / compared_cases, 6)
+        if compared_cases
+        else None,
+        "field_annotations": annotations,
+        "field_coverage": {
+            "fields_expected": fields_expected,
+            "fields_annotated": annotations,
+            "fields_omitted": fields_omitted,
+            "complete": fields_omitted == 0,
+            "coverage_rate": round(annotations / fields_expected, 6) if fields_expected else None,
+        },
+        "fields_compared": fields_compared,
+        "fields_agree": int(stats["fields_agree"]),
+        "fields_disagree": int(stats["fields_disagree"]),
+        "field_agreement_rate": round(stats["fields_agree"] / fields_compared, 6)
+        if fields_compared
+        else None,
+        "evidence_coverage": {
+            "annotations": annotations,
+            "with_locator": locator_annotations,
+            "with_excerpt": excerpt_annotations,
+            "locator_rate": round(locator_annotations / annotations, 6) if annotations else None,
+            "excerpt_rate": round(excerpt_annotations / annotations, 6) if annotations else None,
+        },
+        "pipeline_comparison": {
+            "fields_compared": pipeline_fields_compared,
+            "fields_match": int(stats["pipeline_fields_match"]),
+            "fields_disagree": int(stats["pipeline_fields_disagree"]),
+            "agreement_rate": round(stats["pipeline_fields_match"] / pipeline_fields_compared, 6)
+            if pipeline_fields_compared
+            else None,
+        },
+        "needs_review_cases": int(stats["needs_review_cases"]),
+        "needs_review_reasons": {
+            key: int(value) for key, value in sorted(stats["needs_review_reasons"].items()) if value
+        },
+    }
+
+
+def _ai_case_stats(ai_reviews: list[dict[str, Any]], values: Mapping[str, Any]) -> dict[str, Any]:
+    """Compare AI passes privately and return counters without case-level data."""
+
+    stats = _new_ai_stats()
+    stats["reviewed_cases"] = int(bool(ai_reviews))
+    stats["double_reviewed_cases"] = int(len(ai_reviews) == 2)
+    for review in ai_reviews:
+        labels = review["labels"]
+        stats["field_annotations"] += len(labels)
+        expected_fields = set(review["expected_fields"])
+        stats["fields_expected"] += len(expected_fields)
+        stats["fields_omitted"] += len(expected_fields - set(labels))
+        stats["locator_annotations"] += sum(
+            isinstance(label.get("evidence"), Mapping) and bool(label["evidence"].get("locator"))
+            for label in labels.values()
+        )
+        stats["excerpt_annotations"] += sum(
+            isinstance(label.get("evidence"), Mapping) and bool(label["evidence"].get("excerpt"))
+            for label in labels.values()
+        )
+
+    reasons: set[str] = set()
+    if not ai_reviews:
+        reasons.add("missing_passes")
+    elif len(ai_reviews) == 1:
+        reasons.add("missing_second_pass")
+    if stats["fields_omitted"]:
+        reasons.add("incomplete_field_coverage")
+
+    if len(ai_reviews) == 2:
+        first_labels = ai_reviews[0]["labels"]
+        second_labels = ai_reviews[1]["labels"]
+        fields = set(first_labels) | set(second_labels)
+        stats["fields_compared"] = len(fields)
+        for field in fields:
+            first = first_labels.get(field)
+            second = second_labels.get(field)
+            equal = (
+                first is not None
+                and second is not None
+                and first.get("state") == second.get("state")
+                and (
+                    first.get("state") != "present"
+                    or values_equal(first.get("value"), second.get("value"))
+                )
+            )
+            stats["fields_agree" if equal else "fields_disagree"] += 1
+        if stats["fields_disagree"]:
+            stats["cases_with_disagreement"] = 1
+            reasons.add("pass_disagreement")
+        else:
+            stats["cases_with_agreement"] = 1
+
+        # Only fields on which both blind passes agree are compared with the
+        # pipeline prediction. This keeps a disagreement from becoming an
+        # implicit adjudication.
+        for field in set(first_labels) & set(second_labels):
+            first = first_labels[field]
+            second = second_labels[field]
+            if first.get("state") != second.get("state"):
+                continue
+            if first.get("state") == "present" and not values_equal(first.get("value"), second.get("value")):
+                continue
+            outcome = classify_outcome(first["state"], first.get("value"), values.get(field))
+            stats["pipeline_fields_compared"] += 1
+            if outcome in {"match", "preserved", "empty", "unknown_state", "unannotated"}:
+                stats["pipeline_fields_match"] += 1
+            else:
+                stats["pipeline_fields_disagree"] += 1
+        if stats["pipeline_fields_disagree"]:
+            reasons.add("pipeline_disagreement")
+
+    if reasons:
+        stats["needs_review_cases"] = 1
+        for reason in reasons:
+            stats["needs_review_reasons"][reason] += 1
+    return stats
+
+
 def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE_PATH) -> dict[str, Any]:
     """Validate the complete frame and return only aggregate, source-backed counts."""
 
     sample, sample_sha256 = load_sample(sample_path)
-    if manifest.get("schema_version") != REVIEW_SCHEMA_VERSION or manifest.get("sample_sha256") != sample_sha256:
+    if (
+        manifest.get("schema_version") not in SUPPORTED_REVIEW_SCHEMA_VERSIONS
+        or manifest.get("sample_sha256") != sample_sha256
+    ):
         raise ValueError("review manifest schema or frozen sample digest mismatch")
+    manifest_schema_version = str(manifest["schema_version"])
     cases = manifest.get("cases")
     if not isinstance(cases, list) or len(cases) != len(sample):
         raise ValueError("review manifest must contain every frozen sample case exactly once")
@@ -252,6 +520,10 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
     captured_cases = 0
     reviewed_cases = 0
     double_reviewed_cases = 0
+    ai_stats = _new_ai_stats()
+    source_ai_stats: dict[str, dict[str, Any]] = defaultdict(_new_ai_stats)
+    for row in sample:
+        source_ai_stats[row["source_name"]]
 
     for case in cases:
         if not isinstance(case, Mapping):
@@ -269,13 +541,25 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
             raise ValueError("review case has an unsupported access state")
         state = access["state"]
         if state == "not_attempted":
-            if case.get("capture") is not None or case.get("prediction") is not None or case.get("reviews") or case.get("adjudication"):
+            if (
+                case.get("capture") is not None
+                or case.get("prediction") is not None
+                or case.get("reviews")
+                or case.get("adjudication")
+                or case.get("ai_reviews")
+            ):
                 raise ValueError("not_attempted case contains review data")
             report_state = state
         elif state in {"inaccessible", "capture_failed"}:
             _timestamp(access.get("checked_at"), "failed access checked_at")
             _require_text(access.get("reason"), "failed access reason")
-            if case.get("capture") is not None or case.get("prediction") is not None or case.get("reviews") or case.get("adjudication"):
+            if (
+                case.get("capture") is not None
+                or case.get("prediction") is not None
+                or case.get("reviews")
+                or case.get("adjudication")
+                or case.get("ai_reviews")
+            ):
                 raise ValueError("failed access case contains review data")
             report_state = state
         else:
@@ -286,7 +570,13 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
             if not isinstance(reviews, list) or len(reviews) > 2:
                 raise ValueError("captured case accepts up to two independent reviews")
             review_labels = [
-                _validate_reviewer(review, capture_sha256, "independent review") for review in reviews
+                _validate_reviewer(
+                    review,
+                    capture_sha256,
+                    "independent review",
+                    schema_version=manifest_schema_version,
+                )
+                for review in reviews
             ]
             review_times = [
                 _timestamp(review["reviewed_at"], "independent review reviewed_at")
@@ -310,7 +600,12 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
             elif adjudication is None:
                 report_state = "awaiting_adjudication"
             else:
-                final_labels = _validate_reviewer(adjudication, capture_sha256, "adjudication")
+                final_labels = _validate_reviewer(
+                    adjudication,
+                    capture_sha256,
+                    "adjudication",
+                    schema_version=manifest_schema_version,
+                )
                 if adjudication["reviewer"] in {review["reviewer"] for review in reviews}:
                     raise ValueError("adjudicator must be distinct from both independent reviewers")
                 if _timestamp(adjudication["reviewed_at"], "adjudication reviewed_at") < max(review_times):
@@ -334,6 +629,20 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
                     }
                 )
                 report_state = "evaluated"
+            ai_reviews_payload = case.get("ai_reviews", [])
+            if not isinstance(ai_reviews_payload, list) or len(ai_reviews_payload) > 2:
+                raise ValueError("captured case accepts up to two independent AI reviews")
+            ai_reviews = [
+                _validate_ai_review(review, capture_sha256, "AI review") for review in ai_reviews_payload
+            ]
+            ai_review_times = [review["reviewed_at"] for review in ai_reviews]
+            if any(reviewed_at < extracted_at for reviewed_at in ai_review_times):
+                raise ValueError("AI review cannot precede the frozen prediction")
+            if len(ai_reviews) == 2 and ai_reviews[0]["reviewer"] == ai_reviews[1]["reviewer"]:
+                raise ValueError("independent AI reviewers must be distinct")
+            case_ai_stats = _ai_case_stats(ai_reviews, values)
+            _merge_ai_stats(ai_stats, case_ai_stats)
+            _merge_ai_stats(source_ai_stats[source], case_ai_stats)
         coverage[report_state] += 1
         source_coverage[source][report_state] += 1
 
@@ -343,11 +652,16 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
     if ready:
         corpus = {
             "schema_version": CORPUS_SCHEMA_VERSION,
-            "evidence_scope": "locally_verified_captures_with_declared_double_review",
+            "evidence_scope": "locally_verified_captures_with_declared_human_double_review",
             "critical_lot_fields": ["source_url", "external_id"],
             "cases": ready,
         }
         evaluated = evaluate_corpus(corpus, lambda case: case["prediction_values"])
+    human_evidence_scope = (
+        "locally_verified_captures_with_declared_human_double_review"
+        if ready
+        else "locally_verified_captures_without_human_adjudication"
+    )
     empty_stats = {
         "annotations": 0,
         "present": 0,
@@ -363,8 +677,9 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
         "absent_populated": 0,
     }
     return {
-        "schema_version": "immojudis.real-extraction-aggregate.v1",
-        "evidence_scope": "locally_verified_captures_with_declared_double_review",
+        "schema_version": "immojudis.real-extraction-aggregate.v2",
+        "evidence_scope": human_evidence_scope,
+        "human_accuracy_claim": None if not ready else "human_double_reviewed_fields_only",
         "sample_sha256": sample_sha256,
         "frame_cases": len(sample),
         "coverage": {state: coverage[state] for state in REPORT_STATES},
@@ -405,6 +720,14 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
             "field_annotations": sum(field_coverage.values()),
             "fields": {field: field_coverage[field] for field in sorted(field_coverage)},
         },
+        "ai_review": {
+            "policy": "ai_consensus_only",
+            "accuracy_claim": "not_estimated",
+            "aggregate": _compact_ai_stats(ai_stats),
+            "by_source": {
+                source: _compact_ai_stats(source_ai_stats[source]) for source in sorted(source_ai_stats)
+            },
+        },
         "source_identity_cases_annotated": source_identity_annotated,
         "source_identity_cases_verified": sum(
             all(case["fields"][field]["outcome"] == "match" for field in ("source_url", "external_id"))
@@ -415,4 +738,12 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
     }
 
 
-__all__ = ["REVIEW_FIELDS", "SAMPLE_PATH", "evaluate_real_review", "prepare_manifest", "write_private_json"]
+__all__ = [
+    "REVIEW_FIELDS",
+    "REVIEW_SCHEMA_VERSION",
+    "SAMPLE_PATH",
+    "ai_review_output_sha256",
+    "evaluate_real_review",
+    "prepare_manifest",
+    "write_private_json",
+]

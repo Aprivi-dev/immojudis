@@ -15,9 +15,9 @@ from unittest.mock import patch
 from urllib.parse import urljoin
 
 import httpx
-from bs4 import BeautifulSoup
 
 from src.catalogue_proof import canonical, certify_catalogue, public_page_proof, record_id
+from src.sources.common import parse_html
 
 SOURCES = ('avoventes', 'licitor', 'vench', 'info_encheres', 'encheres_publiques',
            'petites_affiches', 'cessions_etat', 'agrasc', 'encheres_immobilieres', 'notaires')
@@ -32,7 +32,7 @@ def page_evidence(body: str, url: str) -> dict:
         return {'kind': 'api', 'advertised_total': data.get('nbTotalAnnonces'),
                 'advertised_pages': data.get('nbPages'), 'page': data.get('page'),
                 'raw_rows': len(data.get('annonceResumeDto') or [])}
-    soup = BeautifulSoup(body, 'html.parser')
+    soup = parse_html(body, 'html.parser')
     pagination = []
     for a in soup.select('a[href]'):
         href = str(a['href'])
@@ -82,7 +82,7 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
             entry['response_headers'] = {key: response.headers[key] for key in
                                          ('server', 'cf-mitigated', 'content-type', 'retry-after', 'x-sb-edge-region') if key in response.headers}
             if response.status_code in {401, 403, 429} and not kwargs.get('stream'):
-                block = BeautifulSoup(response.text, 'html.parser')
+                block = parse_html(response.text, 'html.parser')
                 entry['refusal_title'] = block.title.get_text(' ', strip=True) if block.title else None
                 entry['refusal_text'] = block.get_text(' ', strip=True)[:350]
             if not kwargs.get('stream'):

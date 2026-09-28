@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a private human review manifest or evaluate its aggregate quality."""
+"""Prepare a private review manifest or evaluate human and AI aggregate quality."""
 
 from __future__ import annotations
 

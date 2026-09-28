@@ -19,7 +19,7 @@ from src.normalize import (
 )
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
@@ -110,7 +110,7 @@ def scrape_info_encheres_aquitaine_result(
 
 
 def parse_info_encheres_list_html(html: str, page_url: str = LIST_URL) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     sales: list[dict[str, Any]] = []
     for row in soup.select("tr"):
         cells = [_text(cell.get_text(" ", strip=True)) for cell in row.find_all("td")]
@@ -160,7 +160,7 @@ def parse_info_encheres_list_html(html: str, page_url: str = LIST_URL) -> list[d
 
 
 def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     page_text = "\n".join(
         line for line in (_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line
     )

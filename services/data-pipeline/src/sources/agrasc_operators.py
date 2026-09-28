@@ -7,9 +7,7 @@ from html import unescape
 from typing import Any
 from urllib.parse import urlsplit
 
-from bs4 import BeautifulSoup
-
-from src.sources.common import PoliteHttpClient, is_allowed_origin_url
+from src.sources.common import PoliteHttpClient, is_allowed_origin_url, parse_html
 from src.sources.notaires import API_URL, BASE_URL, parse_notaires_detail_json
 
 IMMO_ORIGIN = "https://www.immo-interactif.fr"
@@ -98,7 +96,7 @@ def parse_agora_operator_images(html: str, source_url: str) -> list[str]:
     marker = re.search(r"-(\d+)\.aspx$", urlsplit(source_url).path)
     if not marker:
         return []
-    for node in BeautifulSoup(html, "html.parser").find_all("script", type="application/ld+json"):
+    for node in parse_html(html, "html.parser").find_all("script", type="application/ld+json"):
         try:
             data = json.loads(node.get_text())
         except (ValueError, TypeError):
@@ -118,7 +116,7 @@ def parse_agora_operator_detail(html: str, source_url: str) -> dict[str, Any]:
     if not marker:
         return {}
     prefix = "React.createElement(FicheProduitApp,"
-    for script in BeautifulSoup(html, "html.parser").find_all("script"):
+    for script in parse_html(html, "html.parser").find_all("script"):
         text = script.get_text()
         if prefix not in text:
             continue
@@ -193,7 +191,7 @@ def parse_agora_operator_detail(html: str, source_url: str) -> dict[str, Any]:
 
 def _operator_field_text(value: Any) -> str:
     text = str(value or "")
-    return BeautifulSoup(text, "html.parser").get_text(" ", strip=True) if "<" in text else unescape(text).strip()
+    return parse_html(text, "html.parser").get_text(" ", strip=True) if "<" in text else unescape(text).strip()
 
 
 def _explicit_square_metres(text: str) -> list[float]:

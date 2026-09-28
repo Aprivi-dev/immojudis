@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import certifi
-from bs4 import BeautifulSoup, Tag
+from bs4 import Tag
 
 from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
@@ -16,7 +16,7 @@ from src.normalize import clean_text, extract_department, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.agrasc_operators import enrich_agrasc_operator
-from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, unique_dicts
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
@@ -114,7 +114,7 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
 
 
 def parse_agrasc_html(html: str, page_url: str = LIST_URL) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     sales: list[dict[str, Any]] = []
     inventory = soup.select_one(".view-liste-ventes-immobilieres") or soup
     for card in inventory.select(".card-vente-immo"):

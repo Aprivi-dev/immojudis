@@ -21,7 +21,7 @@ from src.normalize import (
 )
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
 
 BASE_URL = "https://www.encheres-publiques.com"
 CANONICAL_BASE_URL = "https://encheres-publiques.com"
@@ -108,7 +108,7 @@ def scrape_encheres_publiques_aquitaine_result(
 
 
 def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     state = _extract_apollo_state(soup)
     if not state:
         return []
@@ -160,7 +160,7 @@ def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, An
 
 
 def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     state = _extract_apollo_state(soup)
     if not state:
         return {}
@@ -591,7 +591,7 @@ def _plain_text(value: object | None) -> str | None:
         return None
     text = str(value)
     if "<" in text and ">" in text:
-        text = BeautifulSoup(text, "html.parser").get_text(" ", strip=True)
+        text = parse_html(text, "html.parser").get_text(" ", strip=True)
     return clean_text(text)
 
 

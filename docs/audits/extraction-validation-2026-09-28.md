@@ -109,3 +109,75 @@ ont été retirés car l'annonce décrit plusieurs lots ou un bien ambigu. Ce
 comparatif est un signal de changement, pas une mesure de justesse. Les
 prédictions initiales ne contenaient pas `surface_m2`, `app_surface_m2` ni
 `surface_evidence` ; le rejeu ne permet donc pas de quantifier leurs changements.
+
+## Voie de relecture IA sans mesure de précision humaine
+
+Le manifeste v2 accepte une voie `ai_reviews` séparée de `reviews` et
+`adjudication`. Elle permet deux passes IA aveugles sur la même capture gelée :
+chaque passe lit la capture sans voir la prédiction du pipeline ni l'autre passe.
+Le contrôle ne lance aucun modèle ; il valide uniquement un résultat privé déjà
+produit par l'opérateur ou par un agent local.
+
+Chaque objet `ai_reviews` doit contenir les métadonnées suivantes :
+
+```json
+{
+  "reviewer_type": "ai",
+  "reviewer": "codex-pass-a",
+  "provider": "codex",
+  "model": "modele-epingle",
+  "prompt_version": "real-source-ai-review-v1",
+  "prompt_sha256": "<empreinte du prompt>",
+  "reviewed_at": "2026-09-28T11:00:00Z",
+  "capture_sha256": "<empreinte de capture>",
+  "output_sha256": "<empreinte canonique des labels>",
+  "blind_to_prediction": true,
+  "blind_to_other_reviews": true,
+  "expected_fields": ["starting_price_eur"],
+  "labels": {
+    "starting_price_eur": {
+      "state": "unknown",
+      "evidence": {
+        "capture_sha256": "<empreinte de capture>",
+        "locator": "page 1",
+        "excerpt": "<extrait conservé uniquement dans le fichier privé>"
+      }
+    }
+  }
+}
+```
+
+`output_sha256` est le SHA-256 du JSON des `labels`, sérialisé en UTF-8 avec
+les clés triées et sans espaces. La fonction
+`src.real_extraction_review.ai_review_output_sha256` fournit cette convention
+aux producteurs. `expected_fields` déclare le périmètre demandé à la passe ;
+les champs attendus mais absents des `labels` sont comptés comme couverture
+incomplète. Les valeurs et citations restent dans le manifeste privé en mode
+`0600` ; le rapport agrégé ne conserve ni cas, ni URL, ni valeur, ni extrait.
+
+Le rapport ajoute `ai_review.aggregate` et `ai_review.by_source`, avec les
+compteurs de passes, l'accord entre passes, la couverture des champs et des
+preuves, la comparaison avec la prédiction et les cas `needs_review`. Les
+compteurs `fields_compared`, `fields_agree` et `pipeline_comparison` sont des
+compteurs de cohérence, jamais des taux de précision. Les raisons prévues sont
+`missing_passes`, `missing_second_pass`, `incomplete_field_coverage`,
+`pass_disagreement` et `pipeline_disagreement`. Une divergence entre les deux
+passes ne devient jamais une adjudication implicite.
+
+Cette voie produit un signal de consensus IA opérationnel. Elle fixe
+`ai_review.accuracy_claim` à `not_estimated` et `human_accuracy_claim` à `null`
+tant qu'aucune annotation humaine arbitrée n'est disponible. Les compteurs
+`readiness`, `quality`, `source_identity_cases_verified` et
+`source_identity_error_cases` restent exclusivement alimentés par les champs
+humains `reviews` et `adjudication`. En v2, ces deux champs humains doivent
+déclarer `reviewer_type: human` ; l'absence reste tolérée uniquement pour les
+anciens manifestes v1. Une sortie IA ne peut donc pas fabriquer un taux de
+précision humaine en étant insérée dans le manifeste.
+
+Les cas sans deux passes, les désaccords et les divergences avec le pipeline
+restent signalés. Les cas inaccessibles ou non capturés restent hors du
+dénominateur ; ils ne sont pas transformés en erreurs d'extraction. Cette
+voie ne prouve toujours ni l'exactitude de la source, ni la complétude d'une
+absence, ni une interprétation juridique. Une mise en production sous cette
+politique doit donc présenter le résultat comme un consensus IA avec risque
+résiduel accepté, jamais comme une précision mesurée.

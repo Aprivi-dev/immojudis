@@ -144,6 +144,7 @@ def test_404_failure_does_not_publish_or_change_source_state(monkeypatch):
     assert worker.process_source_detail_job(_job(), settings=_settings()) is False
     assert len(finished) == 1
     assert finished[0][1]["succeeded"] is False
+    assert finished[0][1]["cancelled"] is True
     assert refusals == []
 
 
@@ -184,7 +185,25 @@ def test_timeout_failure_does_not_publish_or_change_source_state(monkeypatch):
 
     assert worker.process_source_detail_job(_job(), settings=_settings()) is False
     assert finished[0]["succeeded"] is False
+    assert finished[0]["cancelled"] is False
     assert refusals == []
+
+
+def test_detail_failure_classification_marks_transient_network_errors_retryable() -> None:
+    assert worker._classify_detail_failure(httpx.ReadTimeout("timed out")) == "transient"
+    assert worker._classify_detail_failure(RuntimeError("source relay unavailable")) == "transient"
+    assert worker._classify_detail_failure(RuntimeError("catalogue/search page; identity unverified")) == "review_required"
+
+
+def test_transient_detail_retry_deadline_is_bounded_and_backed_off() -> None:
+    now = datetime.now(UTC)
+    deadline = datetime.fromisoformat(
+        worker._retry_not_before_for_failure(
+            _job(attempt_count=3), {}, "transient"
+        ).replace("Z", "+00:00")
+    )
+    assert timedelta(minutes=119) < deadline - now <= timedelta(hours=2, seconds=2)
+    assert worker._retry_not_before_for_failure(_job(), {}, "review_required") is None
 
 
 def test_paused_source_releases_claim_without_http_or_attempt_consumption(monkeypatch):
