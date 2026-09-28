@@ -3,8 +3,11 @@ from __future__ import annotations
 import logging
 import math
 import re
+import signal
 import ssl
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -12,12 +15,82 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from bs4 import BeautifulSoup
 
 from src.sources.cloud_transport import configured_transport
 
 LOGGER = logging.getLogger(__name__)
 REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 MAX_SAFE_REDIRECTS = 5
+MAX_SOURCE_HTML_CHARS = 4_000_000
+SOURCE_PARSE_TIMEOUT_SECONDS = 10.0
+
+
+class SourceParseTimeout(RuntimeError):
+    """Raised when a source page parser exceeds its CPU time budget."""
+
+
+class SourceParseLimitExceeded(RuntimeError):
+    """Raised when a source returns a page too large to parse safely."""
+
+
+@contextmanager
+def _source_parse_deadline(timeout_seconds: float):
+    """Bound BeautifulSoup CPU time when parsing on the process main thread.
+
+    ``SIGALRM`` cannot be installed by worker threads.  Those callers still
+    get the input-size bound below; the regular pipeline parses source pages
+    in its main thread, where the hard wall-clock guard applies.
+    """
+    if (
+        timeout_seconds <= 0
+        or threading.current_thread() is not threading.main_thread()
+        or not hasattr(signal, "SIGALRM")
+    ):
+        yield
+        return
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.setitimer(signal.ITIMER_REAL, 0)
+    started = time.monotonic()
+
+    def _raise_timeout(_signum: int, _frame: object) -> None:
+        raise SourceParseTimeout(
+            f"source HTML parsing exceeded {timeout_seconds:g}s CPU/wall-clock budget"
+        )
+
+    signal.signal(signal.SIGALRM, _raise_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer[0] > 0:
+            elapsed = time.monotonic() - started
+            remaining = max(0.001, previous_timer[0] - elapsed)
+            signal.setitimer(signal.ITIMER_REAL, remaining, previous_timer[1])
+
+
+def parse_html(
+    html: str | bytes,
+    parser: str = "html.parser",
+    *,
+    timeout_seconds: float = SOURCE_PARSE_TIMEOUT_SECONDS,
+) -> BeautifulSoup:
+    """Parse bounded source HTML without allowing malformed pages to hang.
+
+    Source adapters should call this wrapper instead of constructing
+    ``BeautifulSoup`` directly.  Rejecting an oversized body is intentional:
+    truncating a legal notice could silently produce incomplete facts.
+    """
+    size = len(html)
+    if size > MAX_SOURCE_HTML_CHARS:
+        raise SourceParseLimitExceeded(
+            f"source HTML body has {size} units; limit is {MAX_SOURCE_HTML_CHARS}"
+        )
+    with _source_parse_deadline(float(timeout_seconds)):
+        return BeautifulSoup(html, parser)
 
 
 def retry_after_seconds(value: str | None, *, now: datetime | None = None) -> float:

@@ -32,7 +32,7 @@ from src.main import (
     run_pipeline,
 )
 from src.pdf_enrichment import PdfExtractionDeferred, enrich_sale_from_pdfs
-from src.pipeline_usage import PipelineBudgetExhausted, defer_budget_jobs
+from src.pipeline_usage import PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
 from src.storage.supabase_client import (
@@ -371,6 +371,21 @@ def run_enrichment_queue_batch(
                 fact_extraction_planned = (
                     "fact_extraction" in job_types or needs_fact_extraction(sale)
                 )
+                # A fact pass cannot build a trustworthy context until the PDF
+                # worker has populated the document cache.  When the PDF job
+                # is in this claim it is handled above; otherwise return the
+                # fact/display claim to the queue without spending its retry.
+                # This avoids turning an ordinary worker ordering race into a
+                # growing retry-exhausted backlog.
+                if (
+                    fact_extraction_planned
+                    and sale.documents
+                    and "pdf" not in job_types
+                    and not documents_are_current(sale)
+                ):
+                    raise QueueJobDeferred(
+                        "Fact extraction deferred: PDF text cache is missing or incomplete"
+                    )
                 facts_current = (
                     has_current_fact_analysis(sale)
                     if fact_extraction_planned
@@ -433,6 +448,14 @@ def run_enrichment_queue_batch(
                 for job in sale_jobs:
                     _finish_job(job, succeeded=False, error_message=message)
                 mark_enrichment_jobs_terminal(sale_jobs)
+            continue
+        except QueueJobDeferred as exc:
+            # Prerequisite coordination is a queue state, not a failed
+            # extraction.  The helper releases the claim and restores the
+            # attempt count while preserving a bounded wake-up time.
+            defer_budget_jobs(sale_jobs, exc)
+            mark_enrichment_jobs_terminal(sale_jobs)
+            LOGGER.info("Enrichment prerequisite deferred for %s: %s", source_url, exc)
             continue
         except LLMEnrichmentDeferred as exc:
             defer_budget_jobs(sale_jobs, exc)

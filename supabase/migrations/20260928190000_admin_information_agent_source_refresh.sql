@@ -241,20 +241,26 @@ begin
       s.source_name,
       s.sale_date,
       case
-        when jsonb_typeof(s.observations) = 'array' then s.observations
-        else '[]'::jsonb
-      end as observations,
-      case
         when jsonb_typeof(s.raw_payload->'source_checks') = 'object'
           then s.raw_payload->'source_checks'
         else '{}'::jsonb
       end as checks,
-      app_private.sale_retention_deadline(
-        s.sale_date,
-        s.status,
-        s.sale_procedure,
-        s.raw_payload
-      ) as retention_deadline
+      -- A sale less than 24 hours old cannot have reached its retention
+      -- deadline unless an explicit sale window overrides the headline date.
+      -- Avoid the expensive JSON/date calculation for the common case.
+      case
+        when s.sale_date > p_now - interval '24 hours'
+          and not coalesce(s.sale_procedure ? 'sale_window', false)
+          and not coalesce(s.sale_procedure ? 'sale_session', false)
+          and not coalesce(s.raw_payload ? 'source_sale_schedule', false)
+          then true
+        else coalesce(
+          app_private.sale_retention_deadline(
+            s.sale_date, s.status, s.sale_procedure, s.raw_payload
+          ) > p_now,
+          true
+        )
+      end as retention_eligible
     from public.auction_sales s
     where s.status in ('active', 'upcoming', 'postponed', 'unknown')
   ),
@@ -275,9 +281,10 @@ begin
       union
 
       select
-        o.value->>'source_name' as source_name,
-        o.value->>'source_url' as source_url
-      from jsonb_array_elements(b.observations) o
+        o.source_name,
+        o.source_url
+      from public.auction_observations o
+      where o.canonical_source_url = b.canonical_url
 
       union
 
@@ -294,10 +301,7 @@ begin
         state.suspended_until is null
         or state.suspended_until <= p_now
       )
-      and (
-        b.retention_deadline is null
-        or b.retention_deadline > p_now
-      )
+      and b.retention_eligible
   ),
   checked as materialized (
     select

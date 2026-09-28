@@ -4,9 +4,7 @@ from __future__ import annotations
 import re
 from urllib.parse import parse_qs, urljoin, urlparse
 
-from bs4 import BeautifulSoup
-
-from src.sources.common import is_allowed_origin_url
+from src.sources.common import is_allowed_origin_url, parse_html
 
 
 class LinkedPages:
@@ -28,7 +26,7 @@ class LinkedPages:
 
     def observe(self, html: str, page_url: str) -> None:
         self.fetched += 1
-        for link in BeautifulSoup(html, "html.parser").select("a[href]"):
+        for link in parse_html(html, "html.parser").select("a[href]"):
             url = urljoin(page_url, str(link["href"]))
             parsed = urlparse(url)
             if not is_allowed_origin_url(url, (self.start,)):

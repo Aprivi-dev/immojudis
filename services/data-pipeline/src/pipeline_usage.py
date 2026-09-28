@@ -33,7 +33,22 @@ class PipelineBudgetExhausted(RuntimeError):
         self.next_attempt_at = (now+timedelta(days=1)).replace(hour=0,minute=0,second=0,microsecond=0) if 'Daily' in message else now+timedelta(minutes=30)
 
 
-def defer_budget_jobs(jobs: list, error: PipelineBudgetExhausted) -> None:
+class QueueJobDeferred(RuntimeError):
+    """A claimed job must wait for a prerequisite without spending an attempt.
+
+    Queue claims increment ``attempt_count`` before the worker starts.  Some
+    outcomes are expected coordination states rather than failures (for
+    example, a fact pass waiting for the PDF worker to finish).  Keeping this
+    state explicit prevents those jobs from being counted as failed while
+    retaining a finite wake-up deadline.
+    """
+
+    def __init__(self, message: str, *, retry_after: datetime | None = None) -> None:
+        super().__init__(message)
+        self.next_attempt_at = retry_after or (datetime.now(UTC) + timedelta(minutes=30))
+
+
+def defer_budget_jobs(jobs: list, error: PipelineBudgetExhausted | QueueJobDeferred) -> None:
     from src.storage.supabase_client import _postgres_connect
     with _postgres_connect(str(load_settings()['supabase_db_url'])) as db:
         for job in jobs:

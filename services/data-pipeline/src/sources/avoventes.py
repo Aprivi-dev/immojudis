@@ -12,7 +12,7 @@ from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, is_allowed_origin_url
+from src.sources.common import PoliteHttpClient, ScrapeResult, is_allowed_origin_url, parse_html
 from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://avoventes.fr"
@@ -115,7 +115,7 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
 def parse_avoventes_html(
     html: str, page_url: str = SEARCH_URL, fallback_department: str | None = None
 ) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     sale_nodes = _find_sale_nodes(soup)
     if not sale_nodes:
         # A catalogue/search page may mention "Mise à prix" in a filter,
@@ -301,7 +301,7 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
 
 
 def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     if len(soup.select('select option')) > 100 and not soup.select_one('#lightSliderDetails') and not _property_description(soup):
         raise ValueError('Requested detail returned the catalogue/search page; property identity unverified')
     _remove_non_listing_detail_sections(soup)

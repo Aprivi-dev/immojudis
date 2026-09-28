@@ -1,3 +1,7 @@
+import time
+
+import pytest
+
 from src.sources import common
 
 
@@ -97,3 +101,18 @@ def test_listing_signature_skips_known_unchanged_card_when_both_values_are_prese
 
     assert common.should_fetch_detail(sale, {url: "2027-01-10|100000"}) is False
     assert sale["_known_unchanged"] is True
+
+
+def test_parse_html_rejects_oversized_source_body() -> None:
+    with pytest.raises(common.SourceParseLimitExceeded):
+        common.parse_html("x" * (common.MAX_SOURCE_HTML_CHARS + 1))
+
+
+def test_parse_html_interrupts_a_slow_parser(monkeypatch) -> None:
+    def slow_parser(*_args, **_kwargs):
+        time.sleep(0.05)
+        return object()
+
+    monkeypatch.setattr(common, "BeautifulSoup", slow_parser)
+    with pytest.raises(common.SourceParseTimeout):
+        common.parse_html("<html></html>", timeout_seconds=0.01)

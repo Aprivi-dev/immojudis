@@ -16,7 +16,7 @@ from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DE
 from src.normalize import SURFACE_VALUE_PATTERN, clean_text
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
@@ -341,7 +341,7 @@ def parse_petites_affiches_html(
     page_url: str = LIST_URL,
     fallback_department: str | None = None,
 ) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     sales: list[dict[str, Any]] = []
     for card in soup.select("div[class*='annonce_lot_']"):
         sale = _parse_card(card, page_url, fallback_department)
@@ -390,7 +390,7 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
 
 
 def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     page_text = "\n".join(
         line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line
     )
@@ -462,7 +462,7 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
         sale["_detail_fetch_failed"] = True
         sale["source_detail_status"] = "failed"
         return
-    access_text = BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
+    access_text = parse_html(html, "html.parser").get_text(" ", strip=True)
     restricted = re.search(
         r"(?:r[ée]serv[ée]e?\s+aux\s+abonn[ée]s|vous\s+devez\s+[êe]tre\s+abonn[ée])", access_text, re.I,
     )

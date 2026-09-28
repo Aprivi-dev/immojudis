@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import parse_qs, urljoin, urlparse
 
-from bs4 import BeautifulSoup
+from src.sources.common import parse_html
 
 COUNTERS = {
     'avoventes': r'(?<!\d)(\d{1,3}(?:[ \u00a0\u202f]\d{3})*|\d+)\s+résultats',
@@ -38,7 +38,7 @@ def page_index(source: str, url: str) -> int:
 
 
 def public_page_proof(source: str, body: str, url: str, partition: str | None = None) -> dict:
-    soup = BeautifulSoup(body, 'html.parser')
+    soup = parse_html(body, 'html.parser')
     if source == 'agrasc':
         soup = soup.select_one('.view-liste-ventes-immobilieres') or soup
     text = soup.get_text(' ', strip=True)

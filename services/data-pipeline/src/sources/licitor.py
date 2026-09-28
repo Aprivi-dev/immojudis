@@ -19,7 +19,7 @@ from src.normalize import (
 )
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, is_allowed_origin_url
+from src.sources.common import PoliteHttpClient, ScrapeResult, is_allowed_origin_url, parse_html
 from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://www.licitor.com"
@@ -162,7 +162,7 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
 
 
 def parse_licitor_list_html(html: str, page_url: str = AQUITAINE_URL) -> tuple[list[str], list[str]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     detail_urls: list[str] = []
     next_urls: list[str] = []
     for link in soup.find_all("a", href=True):
@@ -178,7 +178,7 @@ def parse_licitor_list_html(html: str, page_url: str = AQUITAINE_URL) -> tuple[l
 
 
 def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     sales: list[dict[str, Any]] = []
     by_url: dict[str, dict[str, Any]] = {}
     for link in soup.find_all("a", href=True):
@@ -210,7 +210,7 @@ def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[d
 
 
 def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     lines = [line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line]
     raw_text = "\n".join(lines)
 

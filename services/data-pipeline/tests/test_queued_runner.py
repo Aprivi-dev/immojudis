@@ -703,6 +703,56 @@ def test_general_budget_deferral_is_a_handled_lane_outcome(monkeypatch) -> None:
     assert isinstance(deferred[0][1], PipelineBudgetExhausted)
 
 
+def test_fact_job_waits_for_pdf_cache_without_consuming_attempt(monkeypatch) -> None:
+    from src.pipeline_usage import QueueJobDeferred
+
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/pdf-prerequisite",
+            "description": "Maison",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    job = {
+        "id": "job-fact-before-pdf",
+        "source_url": sale.source_url,
+        "job_type": "fact_extraction",
+        "attempt_count": 2,
+        "locked_at": "2026-09-13T08:00:00+00:00",
+    }
+    deferred = []
+    finished = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: [job],
+    )
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr(
+        queued_runner,
+        "defer_budget_jobs",
+        lambda jobs, error: deferred.append((jobs, error)),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(
+        limit=1, family=queued_runner.ENRICHMENT_FAMILY
+    ) == 1
+    assert deferred and deferred[0][0] == [job]
+    assert isinstance(deferred[0][1], QueueJobDeferred)
+    assert "PDF text cache" in str(deferred[0][1])
+    assert finished == []
+
+
 def test_general_budget_does_not_defer_completed_fact_claim_job(monkeypatch) -> None:
     from src.pipeline_usage import PipelineBudgetExhausted
 

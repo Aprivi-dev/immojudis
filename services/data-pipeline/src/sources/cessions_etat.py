@@ -15,7 +15,14 @@ from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_sett
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PaginationCoverage, PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.common import (
+    PaginationCoverage,
+    PoliteHttpClient,
+    ScrapeResult,
+    parse_html,
+    should_fetch_detail,
+    unique_dicts,
+)
 from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://cessions.immobilier-etat.gouv.fr"
@@ -123,7 +130,7 @@ def scrape_cessions_etat_aquitaine_result(
 
 
 def parse_cessions_etat_html(html: str, page_url: str = LIST_URL) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     sales: list[dict[str, Any]] = []
     for card in soup.select("div[id^='bien-']"):
         sale = _parse_card(card, page_url)
@@ -133,7 +140,7 @@ def parse_cessions_etat_html(html: str, page_url: str = LIST_URL) -> list[dict[s
 
 
 def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     raw_text = "\n".join(
         line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line
     )

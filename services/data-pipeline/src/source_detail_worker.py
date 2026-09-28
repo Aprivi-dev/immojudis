@@ -10,8 +10,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
+import httpx
 from psycopg.types.json import Jsonb
 
 from src.config import load_settings
@@ -34,6 +35,26 @@ LOGGER = logging.getLogger(__name__)
 # client itself owns the bounded retry loop; the worker only classifies the
 # final exception and carries its retry deadline to the queue finish operation.
 _ACCESS_STATUS_CODES = {401, 403}
+_TRANSIENT_STATUS_CODES = {408, 425, 429, *range(500, 600)}
+_TRANSIENT_MARKERS = (
+    "timed out",
+    "timeout",
+    "connection reset",
+    "connection refused",
+    "network error",
+    "remote protocol",
+    "relay unavailable",
+    "temporarily unavailable",
+    "deferred until retry deadline",
+)
+_REVIEW_MARKERS = (
+    "authentication rejected",
+    "catalogue/search page",
+    "identity unverified",
+    "unsupported operator",
+    "not found",
+)
+_MAX_TRANSIENT_RETRY_DELAY = timedelta(hours=6)
 
 
 def run_source_detail_jobs(
@@ -145,8 +166,9 @@ def process_source_detail_job(
         raw.setdefault("source_name", source_name)
     except Exception as exc:
         metrics = _client_metrics(_client_for_job(source_name, detail_url, provider_clients))
-        retry_not_before = metrics.get("retry_not_before")
         status_code = _http_status_code(exc)
+        failure_kind = _classify_detail_failure(exc, status_code)
+        retry_not_before = _retry_not_before_for_failure(job, metrics, failure_kind)
         if _is_access_refusal(exc, status_code):
             report_source_detail_refusal(
                 source_name,
@@ -154,13 +176,18 @@ def process_source_detail_job(
                 coverage=metrics,
                 settings=active_settings,
             )
-        # 404s and timeouts deliberately use this same queue retry path.  They
-        # do not mutate source presence, source freshness, or source status.
+        error_message = f"{failure_kind}: {str(exc)}"
+        # A transient provider/network failure remains retryable, with an
+        # exponential deadline bounded at six hours and by the queue's own
+        # max_attempts.  A deterministic identity/access failure is a review
+        # item and is terminal for this claimed URL, so it cannot burn the
+        # backlog one identical attempt at a time.
         _finish_job(
             job,
             succeeded=False,
-            error_message=str(exc),
-            retry_not_before=retry_not_before,
+            cancelled=failure_kind == "review_required",
+            error_message=error_message,
+            retry_not_before=retry_not_before if failure_kind == "transient" else None,
         )
         return False
 
@@ -370,12 +397,14 @@ def _finish_job(
     job: dict[str, Any],
     *,
     succeeded: bool,
+    cancelled: bool = False,
     error_message: str | None = None,
     retry_not_before: str | None = None,
 ) -> None:
     """Finish only the claimed attempt, carrying Polite's retry deadline."""
     kwargs: dict[str, Any] = {
         "succeeded": succeeded,
+        "cancelled": cancelled,
         "error_message": error_message,
     }
     if job.get("attempt_count") is not None:
@@ -453,6 +482,54 @@ def _http_status_code(exc: BaseException) -> int | None:
     if isinstance(status_code, int):
         return status_code
     return None
+
+
+def _classify_detail_failure(
+    exc: BaseException,
+    status_code: int | None = None,
+) -> Literal["transient", "review_required"]:
+    """Classify the final adapter failure before it reaches the queue.
+
+    The adapter already retries individual requests.  This second boundary
+    only decides whether the claimed job should receive a bounded queue retry
+    or be surfaced as a deterministic review item.
+    """
+    status_code = status_code if status_code is not None else _http_status_code(exc)
+    if status_code in _TRANSIENT_STATUS_CODES:
+        return "transient"
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, TimeoutError, ConnectionError)):
+        return "transient"
+    message = str(exc).casefold()
+    if any(marker in message for marker in _TRANSIENT_MARKERS):
+        return "transient"
+    if status_code in _ACCESS_STATUS_CODES or any(marker in message for marker in _REVIEW_MARKERS):
+        return "review_required"
+    return "review_required"
+
+
+def _retry_not_before_for_failure(
+    job: dict[str, Any],
+    metrics: dict[str, Any],
+    failure_kind: Literal["transient", "review_required"],
+) -> str | None:
+    """Return a bounded retry deadline for transient detail failures."""
+    if failure_kind != "transient":
+        return None
+    now = datetime.now(UTC)
+    retry_deadline = _aware_timestamp(metrics.get("retry_not_before"))
+    # Preserve an already-recorded provider deadline when it is in the past;
+    # the queue finish function still applies its normal thirty-minute floor.
+    if retry_deadline is not None and retry_deadline <= now:
+        return retry_deadline.isoformat()
+    try:
+        attempt = max(1, int(job.get("attempt_count") or 1))
+    except (TypeError, ValueError, OverflowError):
+        attempt = 1
+    delay = min(_MAX_TRANSIENT_RETRY_DELAY, timedelta(minutes=30 * (2 ** min(attempt - 1, 4))))
+    candidate = now + delay
+    if retry_deadline is not None:
+        candidate = max(candidate, retry_deadline)
+    return candidate.isoformat()
 
 
 def _is_access_refusal(exc: BaseException, status_code: int | None) -> bool:
