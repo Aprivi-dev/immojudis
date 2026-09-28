@@ -417,6 +417,24 @@ def test_normalize_sale_extracts_rooms_before_parking_count() -> None:
     assert sale.rooms_count == 3
 
 
+def test_normalize_sale_does_not_infer_parking_count_from_garage() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "notaires",
+            "source_url": "https://www.immobilier.notaires.fr/fr/annonce-immo/garage-only",
+            "raw_text": "Maison avec dépendance à usage de garage. Libre de toute occupation.",
+        }
+    )
+
+    assert sale.parking_count is None
+    assert sale.has_garage is True
+
+    from src.asset_normalization import normalize_asset_features
+
+    normalize_asset_features(sale)
+    assert sale.parking_count is None
+
+
 def test_normalize_sale_reads_single_main_room_as_one_room() -> None:
     sale = normalize_sale(
         {

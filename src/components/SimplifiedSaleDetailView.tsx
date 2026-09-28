@@ -53,7 +53,11 @@ import { UrbanismeCadastrePanel } from "@/components/sale-detail/UrbanismeCadast
 import { SaleDetailTabNav, type SaleDetailTab } from "@/components/sale-detail/SaleDetailTabNav";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
-import { fetchPrecomputedMarketEstimate, fetchSaleUrbanismeCadastre } from "@/lib/client-api";
+import {
+  fetchPrecomputedMarketEstimate,
+  fetchSaleFactReliabilities,
+  fetchSaleUrbanismeCadastre,
+} from "@/lib/client-api";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.functions";
 import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
@@ -159,6 +163,14 @@ function SimplifiedSaleDetailView({
   const [calculationOpen, setCalculationOpen] = useState(false);
   const [simulation, setSimulation] = useState<BidSimulationSnapshot | null>(null);
   const { user, loading: authLoading } = useAuth();
+  const factReliabilityQuery = useQuery({
+    queryKey: ["sale-fact-reliability", sale.id, user?.id ?? "anonymous"],
+    queryFn: () => fetchSaleFactReliabilities(sale.id),
+    enabled: Boolean(user && !publicDemo && !authLoading),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const factReliabilities = factReliabilityQuery.data?.facts ?? null;
   const valuationConflict = listingValuationConflict(sale);
   const activeSimulation =
     !valuationConflict &&
@@ -308,6 +320,7 @@ function SimplifiedSaleDetailView({
               publicDemo={publicDemo}
               premiumCeiling={heroCeiling}
               showPremiumTeaser={access === "discovery" && isTribunalSale}
+              factReliabilities={factReliabilities}
             />
           </div>
         </div>

@@ -1,5 +1,5 @@
-import type { KeyFact } from "@/lib/fact-reliability";
-import { getFactReliability } from "@/lib/fact-reliability";
+import type { FactReliabilityMap, KeyFact } from "@/lib/fact-reliability";
+import { getFactReliabilityForDisplay } from "@/lib/fact-reliability";
 import type { AuctionSale } from "@/lib/types";
 
 const STATUS_CLASSES = {
@@ -13,12 +13,14 @@ export function FactReliabilityBadge({
   sale,
   field,
   displayedValue,
+  facts,
 }: {
   sale: AuctionSale;
   field: KeyFact;
   displayedValue?: string | null;
+  facts?: FactReliabilityMap | null;
 }) {
-  const fact = getFactReliability(sale, field, displayedValue);
+  const fact = getFactReliabilityForDisplay(sale, field, displayedValue, facts);
   return (
     <span
       role="note"

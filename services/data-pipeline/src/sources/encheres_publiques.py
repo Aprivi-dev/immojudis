@@ -559,7 +559,7 @@ def _parking_count(lot: dict[str, Any], description: object) -> int | None:
         return count
     parking_kind = _plain_text(lot.get("critere_type_de_parking"))
     text = " ".join(part for part in (parking_kind, _plain_text(description)) if part)
-    if re.search(r"\b(?:parking|stationnement|garage|place de parking)\b", text, re.I):
+    if re.search(r"\b(?:parking|stationnement|place de parking)\b", text, re.I):
         return 1
     return None
 

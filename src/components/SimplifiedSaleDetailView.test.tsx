@@ -12,6 +12,7 @@ import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDeta
 
 const mocks = vi.hoisted(() => ({
   fetchMarket: vi.fn(),
+  fetchFactReliabilities: vi.fn(),
   fetchUrbanism: vi.fn(),
   forecast: vi.fn(),
   authUser: null as { id: string } | null,
@@ -22,6 +23,7 @@ vi.mock("@/hooks/use-auth", () => ({
 }));
 vi.mock("@/lib/client-api", () => ({
   fetchPrecomputedMarketEstimate: mocks.fetchMarket,
+  fetchSaleFactReliabilities: mocks.fetchFactReliabilities,
   fetchSaleUrbanismeCadastre: mocks.fetchUrbanism,
 }));
 vi.mock("@/lib/router-compat", () => ({

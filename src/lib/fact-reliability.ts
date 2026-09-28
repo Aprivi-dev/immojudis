@@ -15,6 +15,25 @@ export type FactReliability = {
   checkedAt: string | null;
 };
 
+/**
+ * The claim data used by the server-side fiche adapter.
+ *
+ * The database read model contains source URLs, artifact ids and locators for
+ * internal review. The API adapter deliberately projects those columns and
+ * the observed value away before anything reaches a browser. Keeping this
+ * type limited to the comparison inputs makes that boundary explicit in the
+ * TypeScript contract as well.
+ */
+export type AuctionFactClaimSummary = {
+  field_key: string;
+  fact_status: "candidate" | "accepted" | "conflicted";
+  value_jsonb?: unknown;
+  confidence_score?: number | null;
+  captured_at: string | null;
+};
+
+export type FactReliabilityMap = Record<KeyFact, FactReliability>;
+
 const FACT_LABELS: Record<KeyFact, string> = {
   sale_date: "Date de vente",
   starting_price_eur: "Mise à prix",
@@ -30,17 +49,28 @@ const STATUS_LABELS: Record<FactReliabilityStatus, string> = {
 };
 
 const CONFLICT_FIELDS: Record<KeyFact, string[]> = {
-  sale_date: ["sale_date", "date", "event_date", "auction_date"],
-  starting_price_eur: ["starting_price_eur", "starting_price", "price", "mise_a_prix"],
+  sale_date: ["sale_date", "sale.sale_date", "date", "event_date", "auction_date"],
+  starting_price_eur: [
+    "starting_price_eur",
+    "sale.starting_price_eur",
+    "starting_price",
+    "price",
+    "mise_a_prix",
+  ],
   surface: [
     "surface",
     "surface_m2",
+    "property.surface_m2",
     "app_surface_m2",
+    "property.app_surface_m2",
     "habitable_surface_m2",
+    "property.habitable_surface_m2",
     "carrez_surface_m2",
+    "property.carrez_surface_m2",
     "land_surface_m2",
+    "property.land_surface_m2",
   ],
-  occupancy_status: ["occupancy_status", "occupancy", "occupation"],
+  occupancy_status: ["occupancy_status", "property.occupancy_status", "occupancy", "occupation"],
 };
 
 const CONFLICT_FLAGS: Record<KeyFact, string[]> = {
@@ -64,6 +94,56 @@ const CONFIRMATION_FLAGS: Record<KeyFact, string[]> = {
 };
 
 const SURFACE_INFERENCE_FLAGS = ["surface_calculated_from_rooms"];
+
+type SurfaceClaimKind = "built" | "land";
+
+const GENERIC_SURFACE_CLAIM_FIELDS = new Set(["surface", "surface_m2", "app_surface_m2"]);
+
+const EXPLICIT_BUILT_SURFACE_CLAIM_FIELDS = new Set(["habitable_surface_m2", "carrez_surface_m2"]);
+
+function surfaceClaimKind(sale: AuctionSale, fieldKey: string): SurfaceClaimKind | null {
+  const normalized = normalize(fieldKey).replace(/^(?:sale|property)\./, "");
+  if (normalized === "land_surface_m2") return "land";
+  if (GENERIC_SURFACE_CLAIM_FIELDS.has(normalized) && isLandTypedSurface(sale)) {
+    return "land";
+  }
+  return EXPLICIT_BUILT_SURFACE_CLAIM_FIELDS.has(normalized) ||
+    GENERIC_SURFACE_CLAIM_FIELDS.has(normalized)
+    ? "built"
+    : null;
+}
+
+function isLandTypedSurface(sale: AuctionSale): boolean {
+  const appKind = normalize(sale.app_surface_kind ?? "");
+  const scope = normalize(sale.surface_scope ?? "");
+  return appKind === "land" || scope === "land";
+}
+
+function displaySurfaceClaimKind(sale: AuctionSale): SurfaceClaimKind | null {
+  const kind = getDisplaySurface(sale).kind;
+  if (kind === "land") return "land";
+  if (kind === "recorded" || kind === "estimated") return "built";
+  return null;
+}
+
+function isRelevantSurfaceField(sale: AuctionSale, fieldKey: string): boolean {
+  const claimKind = surfaceClaimKind(sale, fieldKey);
+  return claimKind != null && claimKind === displaySurfaceClaimKind(sale);
+}
+
+function surfaceEvidenceKind(value: string): SurfaceClaimKind | null {
+  const normalized = normalize(value);
+  const land = /\b(?:terrain|parcelle|cadastr|hectare|foncier)\w*/.test(normalized);
+  const built = /\b(?:habitable|carrez|bati|batie|logement|appartement|maison)\w*/.test(normalized);
+  if (land && built) return null;
+  return land ? "land" : "built";
+}
+
+function hasRelevantSurfaceEvidence(sale: AuctionSale): boolean {
+  const evidence = sale.surface_evidence?.trim();
+  const displayKind = displaySurfaceClaimKind(sale);
+  return Boolean(evidence && displayKind && surfaceEvidenceKind(evidence) === displayKind);
+}
 
 export function getFactReliability(
   sale: AuctionSale,
@@ -120,7 +200,7 @@ export function getFactReliability(
     );
   }
 
-  if (checkedAt || (field === "surface" && Boolean(sale.surface_evidence?.trim()))) {
+  if (checkedAt || (field === "surface" && hasRelevantSurfaceEvidence(sale))) {
     return result(field, "observed", checkedAt, observedDetail(field, checkedAt, sale));
   }
 
@@ -141,6 +221,228 @@ export function getKeyFactReliabilities(sale: AuctionSale): Record<KeyFact, Fact
     surface: getFactReliability(sale, "surface"),
     occupancy_status: getFactReliability(sale, "occupancy_status"),
   };
+}
+
+/**
+ * Applies the trusted fact-claim read model to one fiche.
+ *
+ * Candidate claims are intentionally conservative: they never make a value
+ * observed. A candidate beside an accepted value also keeps the field at
+ * "À confirmer" until a reviewer resolves the new observation. Explicit
+ * conflicts take precedence over every other status.
+ *
+ * An empty claim set falls back to the legacy source_checks/quality_flags
+ * contract. This keeps old rows readable while the append-only claims table is
+ * populated progressively.
+ */
+export function getFactReliabilitiesFromClaims(
+  sale: AuctionSale,
+  claims: readonly AuctionFactClaimSummary[],
+): FactReliabilityMap {
+  const legacy = getKeyFactReliabilities(sale);
+  if (!claims.length) return legacy;
+
+  return {
+    sale_date: claimReliabilityForField(sale, "sale_date", claims, legacy.sale_date),
+    starting_price_eur: claimReliabilityForField(
+      sale,
+      "starting_price_eur",
+      claims,
+      legacy.starting_price_eur,
+    ),
+    surface: claimReliabilityForField(sale, "surface", claims, legacy.surface),
+    occupancy_status: claimReliabilityForField(
+      sale,
+      "occupancy_status",
+      claims,
+      legacy.occupancy_status,
+    ),
+  };
+}
+
+/**
+ * Preserves the existing date-window guard when a fiche displays a derived
+ * event time instead of the canonical sale_date.
+ */
+export function getFactReliabilityForDisplay(
+  sale: AuctionSale,
+  field: KeyFact,
+  displayedValue?: string | null,
+  claims?: FactReliabilityMap | null,
+): FactReliability {
+  const fact = claims?.[field] ?? getFactReliability(sale, field, displayedValue);
+  if (
+    field === "sale_date" &&
+    displayedValue &&
+    displayedValue !== sale.sale_date &&
+    fact.status === "observed"
+  ) {
+    return result(
+      field,
+      "to_confirm",
+      null,
+      "L'échéance affichée provient des modalités de vente et n'est pas reliée au contrôle de la date canonique.",
+    );
+  }
+  return fact;
+}
+
+const CLAIM_FIELD_ALIASES: Record<KeyFact, ReadonlySet<string>> = {
+  sale_date: new Set(CONFLICT_FIELDS.sale_date),
+  starting_price_eur: new Set(CONFLICT_FIELDS.starting_price_eur),
+  surface: new Set(CONFLICT_FIELDS.surface),
+  occupancy_status: new Set(CONFLICT_FIELDS.occupancy_status),
+};
+
+function claimReliabilityForField(
+  sale: AuctionSale,
+  field: KeyFact,
+  claims: readonly AuctionFactClaimSummary[],
+  legacy: FactReliability,
+): FactReliability {
+  // The additive claim view has no link to the legacy conflict it would
+  // resolve. An accepted claim can therefore corroborate a displayed value,
+  // but it cannot silently clear an unresolved conflict already recorded on
+  // the sale. The conflict must be cleared by the existing review workflow or
+  // represented by an explicit supersession in a future projection.
+  if (legacy.status === "conflict") return legacy;
+
+  const fieldClaims = claims.filter((claim) =>
+    field === "surface"
+      ? isRelevantSurfaceField(sale, claim.field_key)
+      : CLAIM_FIELD_ALIASES[field].has(normalize(claim.field_key)),
+  );
+  if (!fieldClaims.length) return legacy;
+
+  if (fieldClaims.some((claim) => claim.fact_status === "conflicted")) {
+    return result(
+      field,
+      "conflict",
+      null,
+      `${FACT_LABELS[field]} : plusieurs observations sourcées sont en conflit et nécessitent une revue.`,
+    );
+  }
+
+  if (fieldClaims.some((claim) => claim.fact_status === "candidate")) {
+    return result(
+      field,
+      "to_confirm",
+      null,
+      `${FACT_LABELS[field]} : une observation candidate est disponible, mais elle n'est pas encore vérifiée.`,
+    );
+  }
+
+  const acceptedClaims = fieldClaims.filter((claim) => claim.fact_status === "accepted");
+  if (acceptedClaims.some((claim) => scalarClaimValue(claim.value_jsonb) == null)) {
+    return result(
+      field,
+      "to_confirm",
+      null,
+      `${FACT_LABELS[field]} : l'observation validée ne contient pas une valeur comparable à la fiche.`,
+    );
+  }
+  if (acceptedClaims.some((claim) => !claimMatchesSale(sale, field, claim))) {
+    return result(
+      field,
+      "conflict",
+      null,
+      `${FACT_LABELS[field]} : une observation validée ne correspond pas à la valeur affichée et nécessite une revue.`,
+    );
+  }
+
+  if (acceptedClaims.length) {
+    return result(
+      field,
+      "observed",
+      latestAcceptedClaimDate(acceptedClaims),
+      `${FACT_LABELS[field]} est rattachée à une observation sourcée validée.`,
+    );
+  }
+
+  return legacy;
+}
+
+function claimMatchesSale(
+  sale: AuctionSale,
+  field: KeyFact,
+  claim: AuctionFactClaimSummary,
+): boolean {
+  const scalar = scalarClaimValue(claim.value_jsonb);
+  if (scalar == null) return false;
+
+  if (field === "sale_date") {
+    if (!hasMeaningfulText(sale.sale_date)) return false;
+    if (typeof scalar !== "string") return false;
+    const saleTime = Date.parse(sale.sale_date);
+    const claimTime = Date.parse(scalar);
+    return Number.isFinite(saleTime) && Number.isFinite(claimTime)
+      ? saleTime === claimTime
+      : normalize(sale.sale_date) === normalize(scalar);
+  }
+
+  if (field === "starting_price_eur") {
+    const price = Number(scalar);
+    return (
+      Number.isFinite(price) &&
+      typeof sale.starting_price_eur === "number" &&
+      Number.isFinite(sale.starting_price_eur) &&
+      price === sale.starting_price_eur
+    );
+  }
+
+  if (field === "surface") {
+    const value = Number(scalar);
+    const display = getDisplaySurface(sale);
+    const claimKind = surfaceClaimKind(sale, claim.field_key);
+    const displayKind = displaySurfaceClaimKind(sale);
+    return (
+      Number.isFinite(value) &&
+      claimKind != null &&
+      claimKind === displayKind &&
+      display.value != null &&
+      value === display.value
+    );
+  }
+
+  const occupancy = sale.occupancy_status;
+  if (typeof scalar !== "string" || occupancy == null || !hasKnownOccupancy(occupancy)) {
+    return false;
+  }
+  return equivalentOccupancy(occupancy, scalar);
+}
+
+function scalarClaimValue(value: unknown): string | number | boolean | null {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (value && typeof value === "object" && !Array.isArray(value) && "value" in value) {
+    return scalarClaimValue((value as { value?: unknown }).value);
+  }
+  return null;
+}
+
+function equivalentOccupancy(left: string, right: string): boolean {
+  const group = (value: string): string => {
+    const normalized = normalize(value);
+    if (["vacant", "free", "libre"].includes(normalized)) return "vacant";
+    if (["occupied", "occupe", "occupe", "occupee"].includes(normalized)) return "occupied";
+    if (["rented", "loue", "louee"].includes(normalized)) return "rented";
+    return normalized;
+  };
+  return group(left) === group(right);
+}
+
+function latestAcceptedClaimDate(claims: readonly AuctionFactClaimSummary[]): string | null {
+  const timestamps = claims
+    .filter((claim) => claim.fact_status === "accepted")
+    .map((claim) => claim.captured_at)
+    .filter(
+      (value): value is string => typeof value === "string" && Number.isFinite(Date.parse(value)),
+    );
+  if (!timestamps.length) return null;
+  return timestamps.reduce((latest, value) =>
+    Date.parse(value) > Date.parse(latest) ? value : latest,
+  );
 }
 
 function result(
@@ -181,7 +483,14 @@ function hasKnownOccupancy(value: string | null): boolean {
 function hasConflict(sale: AuctionSale, field: KeyFact, flags: string[]): boolean {
   const conflicts = Array.isArray(sale.source_conflicts) ? sale.source_conflicts : [];
   const fields = new Set(CONFLICT_FIELDS[field]);
-  if (conflicts.some((conflict) => fields.has(normalize(String(conflict.field ?? ""))))) {
+  if (
+    conflicts.some((conflict) => {
+      const conflictField = normalize(String(conflict.field ?? ""));
+      return field === "surface"
+        ? isRelevantSurfaceField(sale, conflictField)
+        : fields.has(conflictField);
+    })
+  ) {
     return true;
   }
   if (CONFLICT_FLAGS[field].some((flag) => flags.includes(flag))) return true;
@@ -189,7 +498,19 @@ function hasConflict(sale: AuctionSale, field: KeyFact, flags: string[]): boolea
 }
 
 function hasConfirmationReservation(sale: AuctionSale, field: KeyFact, flags: string[]): boolean {
-  if (CONFIRMATION_FLAGS[field].some((flag) => flags.includes(flag))) return true;
+  if (
+    CONFIRMATION_FLAGS[field].some(
+      (flag) =>
+        flags.includes(flag) &&
+        !(
+          field === "surface" &&
+          flag === "parcel_surface_scope_unverified" &&
+          displaySurfaceClaimKind(sale) !== "land"
+        ),
+    )
+  ) {
+    return true;
+  }
   if (field === "sale_date" && ["cancelled", "canceled", "postponed"].includes(sale.status ?? "")) {
     return true;
   }
@@ -237,7 +558,7 @@ function inferenceDetail(sale: AuctionSale, field: KeyFact, flags: string[]): st
 
 function hasLowConfidenceSurfaceEvidence(sale: AuctionSale): boolean {
   return Boolean(
-    sale.surface_evidence?.trim() &&
+    hasRelevantSurfaceEvidence(sale) &&
     sale.surface_confidence != null &&
     Number.isFinite(sale.surface_confidence) &&
     sale.surface_confidence < 0.7,
@@ -245,7 +566,7 @@ function hasLowConfidenceSurfaceEvidence(sale: AuctionSale): boolean {
 }
 
 function observedDetail(field: KeyFact, checkedAt: string | null, sale: AuctionSale): string {
-  if (field === "surface" && sale.surface_evidence?.trim() && !checkedAt) {
+  if (field === "surface" && hasRelevantSurfaceEvidence(sale) && !checkedAt) {
     return "Un extrait de preuve de surface est enregistré dans le dossier.";
   }
   return checkedAt
@@ -263,7 +584,11 @@ function sourceCheckForField(sale: AuctionSale, field: KeyFact): string | null {
       ...(Array.isArray(check.fields) ? check.fields : []),
     ].filter((value): value is string => typeof value === "string");
     const candidateKeys = [key, ...explicitFields].map(normalize);
-    if (!candidateKeys.some((candidate) => aliases.has(candidate))) continue;
+    const matches =
+      field === "surface"
+        ? candidateKeys.some((candidate) => isRelevantSurfaceField(sale, candidate))
+        : candidateKeys.some((candidate) => aliases.has(candidate));
+    if (!matches) continue;
     const checkedAt = check.checked_at;
     if (typeof checkedAt === "string" && Number.isFinite(Date.parse(checkedAt))) return checkedAt;
   }

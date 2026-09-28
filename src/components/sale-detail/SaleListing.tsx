@@ -47,7 +47,7 @@ import { saleSession, saleWindow } from "@/lib/sale-window";
 import type { AuctionSale } from "@/lib/types";
 import styles from "./SaleListing.module.css";
 import { FactReliabilityBadge } from "./FactReliabilityBadge";
-import { getFactReliability } from "@/lib/fact-reliability";
+import { getFactReliabilityForDisplay, type FactReliabilityMap } from "@/lib/fact-reliability";
 
 export function ListingActions({
   sale,
@@ -104,11 +104,13 @@ export function ListingOverview({
   publicDemo = false,
   premiumCeiling = null,
   showPremiumTeaser = false,
+  factReliabilities = null,
 }: {
   sale: AuctionSale;
   publicDemo?: boolean;
   premiumCeiling?: number | null;
   showPremiumTeaser?: boolean;
+  factReliabilities?: FactReliabilityMap | null;
 }) {
   const surface = listingSurface(sale);
   const valuationConflict = listingValuationConflict(sale);
@@ -130,7 +132,12 @@ export function ListingOverview({
         ? "Audience annoncée"
         : "Date annoncée";
   const hasVisibleEvent = Boolean(!saleStatus && eventDate && !saleTimeConflict(sale));
-  const dateReliability = getFactReliability(sale, "sale_date", eventDate);
+  const dateReliability = getFactReliabilityForDisplay(
+    sale,
+    "sale_date",
+    eventDate,
+    factReliabilities,
+  );
   const showDateFact = Boolean(eventDate || saleStatus || dateReliability.status !== "observed");
   const rooms = positiveListingNumber(sale.rooms_count);
   const facts = [
@@ -192,7 +199,11 @@ export function ListingOverview({
           <div>
             <p className={styles.priceLabel}>
               {state ? "Prix publié" : "Mise à prix"}
-              <FactReliabilityBadge sale={sale} field="starting_price_eur" />
+              <FactReliabilityBadge
+                sale={sale}
+                field="starting_price_eur"
+                facts={factReliabilities}
+              />
             </p>
             <p className={styles.price}>{price == null ? "À confirmer" : formatPrice(price)}</p>
             <p className={styles.muted}>
@@ -222,7 +233,7 @@ export function ListingOverview({
       ) : (
         <p className={`${styles.muted} mt-5`}>
           Prix non publié : consultez les conditions de cession.
-          <FactReliabilityBadge sale={sale} field="starting_price_eur" />
+          <FactReliabilityBadge sale={sale} field="starting_price_eur" facts={factReliabilities} />
         </p>
       )}
       {showDateFact ? (
@@ -232,7 +243,12 @@ export function ListingOverview({
             <span>{eventLabel}</span>
             <strong>
               {listingDate(eventDate)}
-              <FactReliabilityBadge sale={sale} field="sale_date" displayedValue={eventDate} />
+              <FactReliabilityBadge
+                sale={sale}
+                field="sale_date"
+                displayedValue={eventDate}
+                facts={factReliabilities}
+              />
             </strong>
           </div>
           {hasVisibleEvent ? <a href="#rendez-vous">Rendez-vous</a> : null}
@@ -264,7 +280,9 @@ export function ListingOverview({
             <dt className={styles.factLabel}>{label}</dt>
             <dd className={styles.factValue}>
               {value}
-              {field ? <FactReliabilityBadge sale={sale} field={field} /> : null}
+              {field ? (
+                <FactReliabilityBadge sale={sale} field={field} facts={factReliabilities} />
+              ) : null}
             </dd>
           </div>
         ))}

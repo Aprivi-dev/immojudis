@@ -12,6 +12,7 @@ from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import httpx
 from supabase import Client, create_client
@@ -38,6 +39,7 @@ from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
 from src.court_competence import tribunal_reference_rows
 from src.dedupe import merge_duplicate_sales
 from src.enrichment.display_quality import has_current_display
+from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.freshness import document_fingerprint, documents_are_current
 from src.models import AuctionSale
 from src.normalize import make_sale_signature
@@ -461,8 +463,10 @@ def _write_sale_revisions(
         )
     if _PUBLICATION_CONNECTION.get() is not None:
         _transaction_write("auction_sales", payload, "source_url")
+        _write_fact_claims_postgres(sales, _PUBLICATION_CONNECTION.get())
     else:
         _upsert_with_rest(str(url), str(key), payload)
+        _write_fact_claims_rest(str(url), str(key), sales)
     _sync_normalized_sale_tables_with_rest(
         str(url),
         str(key),
@@ -482,6 +486,160 @@ def _write_sale_revisions(
                 record_sale_decisions(str(run_id), [sale], decision="quarantined",
                                       reason=quarantine_reason(sale), connection=_PUBLICATION_CONNECTION.get())
     return sum(not quarantine_reason(sale) for sale in sales)
+
+
+FACT_CLAIMS_COLUMNS = (
+    "id",
+    "auction_sale_id",
+    "field_key",
+    "value_jsonb",
+    "claim_status",
+    "evidence_kind",
+    "source_url",
+    "evidence_locator",
+    "confidence_score",
+    "extractor_name",
+    "extractor_version",
+)
+
+
+def _write_fact_claims_postgres(sales: list[AuctionSale], connection: Any) -> int:
+    """Insert source-backed candidates in the publication transaction.
+
+    The claim table is introduced after the catalogue tables and is therefore
+    checked explicitly.  This keeps older disposable databases usable while a
+    migration is rolling out; once present, a failed insert aborts the same
+    transaction as the parent sale write.
+    """
+    eligible_sales = [sale for sale in sales if build_fact_claim_candidates(sale)]
+    if not eligible_sales or sql is None or Jsonb is None:
+        return 0
+    relation = connection.execute("select to_regclass('public.auction_fact_claims')")
+    relation_row = relation.fetchone() if relation is not None and hasattr(relation, "fetchone") else None
+    if not relation_row or not relation_row[0]:
+        return 0
+    sale_ids = _sale_ids_for_connection(connection, eligible_sales)
+    rows = [
+        row
+        for sale in eligible_sales
+        for row in materialize_fact_claim_rows(sale, sale_ids.get(sale.source_url, ""))
+    ]
+    if not rows:
+        return 0
+    _insert_fact_claim_rows(connection, rows)
+    LOGGER.info("Fact claims candidates persisted source=postgres rows=%s sales=%s", len(rows), len(eligible_sales))
+    return len(rows)
+
+
+def _write_fact_claims_rest(supabase_url: str, api_key: str, sales: list[AuctionSale]) -> int:
+    """Persist candidates through PostgREST when direct Postgres is unavailable."""
+    eligible_sales = [sale for sale in sales if build_fact_claim_candidates(sale)]
+    if not eligible_sales:
+        return 0
+    try:
+        sale_ids = _sale_ids_for_rest(supabase_url, api_key, eligible_sales)
+        rows = [
+            row
+            for sale in eligible_sales
+            for row in materialize_fact_claim_rows(sale, sale_ids.get(sale.source_url, ""))
+        ]
+        if not rows:
+            return 0
+        endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_fact_claims"
+        for batch in _postgrest_batches(rows, _postgrest_batch_size("auction_fact_claims")):
+            response = _postgrest_request_with_retries(
+                "POST",
+                endpoint,
+                table="auction_fact_claims",
+                params={"on_conflict": "id"},
+                headers=_rest_headers(api_key, prefer="resolution=ignore-duplicates,return=minimal"),
+                json=_sanitize_postgrest_payload(batch),
+                timeout=POSTGREST_TIMEOUT,
+            )
+            if response.is_error:
+                raise httpx.HTTPStatusError(
+                    f"{response.status_code} response from Supabase auction_fact_claims: {response.text}",
+                    request=response.request,
+                    response=response,
+                )
+        LOGGER.info("Fact claims candidates persisted source=rest rows=%s sales=%s", len(rows), len(eligible_sales))
+        return len(rows)
+    except (httpx.HTTPError, RuntimeError, ValueError, TypeError) as exc:
+        # Fact claims are additive telemetry.  A transient claims endpoint must
+        # not turn a successfully published catalogue row into a retry storm.
+        LOGGER.warning("Fact claims publication skipped after catalogue write: %s", exc)
+        return 0
+
+
+def _sale_ids_for_connection(connection: Any, sales: list[AuctionSale]) -> dict[str, str]:
+    # ``auction_sales`` upserts intentionally omit ``id`` so an incoming
+    # stale identifier can never overwrite the database identity. Resolve by
+    # the immutable publication key after the parent write instead of trusting
+    # the in-memory model's optional id.
+    resolved: dict[str, str] = {}
+    lookup_urls = [sale.source_url for sale in sales if sale.source_url]
+    if not lookup_urls:
+        return resolved
+    result = connection.execute(
+        "select id::text, source_url from public.auction_sales where source_url = any(%s)",
+        (sorted(set(lookup_urls)),),
+    )
+    rows = result.fetchall() if result is not None and hasattr(result, "fetchall") else []
+    for row in rows:
+        if len(row) >= 2 and _is_uuid(row[0]) and row[1]:
+            resolved[str(row[1])] = str(UUID(str(row[0])))
+    return resolved
+
+
+def _sale_ids_for_rest(supabase_url: str, api_key: str, sales: list[AuctionSale]) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+    # The REST upsert also omits ``id``. Always read the committed parent row
+    # by source_url so a stale in-memory UUID cannot misattach a claim.
+    lookup_urls = [sale.source_url for sale in sales if sale.source_url]
+    if not lookup_urls:
+        return resolved
+    response = _postgrest_request_with_retries(
+        "GET",
+        f"{supabase_url.rstrip('/')}/rest/v1/auction_sales",
+        table="auction_sales_fact_claim_targets",
+        params={"select": "id,source_url", "source_url": _postgrest_in_filter(sorted(set(lookup_urls)))},
+        headers=_rest_headers(api_key, prefer="count=none"),
+        timeout=POSTGREST_TIMEOUT,
+    )
+    if response.is_error:
+        raise httpx.HTTPStatusError(
+            f"{response.status_code} response from Supabase auction_sales", request=response.request, response=response
+        )
+    payload = response.json()
+    if not isinstance(payload, list):
+        raise ValueError("Malformed auction_sales fact-claim target response")
+    for row in payload:
+        if isinstance(row, dict) and _is_uuid(row.get("id")) and row.get("source_url"):
+            resolved[str(row["source_url"])] = str(UUID(str(row["id"])))
+    return resolved
+
+
+def _insert_fact_claim_rows(connection: Any, rows: list[dict[str, object]]) -> None:
+    columns = list(FACT_CLAIMS_COLUMNS)
+    names = sql.SQL(", ").join(sql.Identifier(column) for column in columns)
+    statement = sql.SQL(
+        "insert into {} ({}) select {} from jsonb_populate_recordset(null::{}, %s) "
+        "on conflict (id) do nothing"
+    ).format(
+        sql.Identifier("public", "auction_fact_claims"),
+        names,
+        names,
+        sql.Identifier("public", "auction_fact_claims"),
+    )
+    connection.execute(statement, (Jsonb(_sanitize_postgrest_payload(rows)),))
+
+
+def _is_uuid(value: object) -> bool:
+    try:
+        UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return False
+    return True
 
 
 def _guard_enrichment_revision(connection, sales: list[AuctionSale]) -> list[AuctionSale]:

@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Bot from "lucide-react/dist/esm/icons/bot.js";
 import MailCheck from "lucide-react/dist/esm/icons/mail-check.js";
+import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -10,11 +11,15 @@ import type { InformationRequestSelection } from "@/components/admin/AdminCatalo
 import {
   createAdminInformationAgentMission,
   fetchAdminInformationAgentMissions,
+  fetchAdminSourceRefreshStatus,
+  requestAdminSourceRefresh,
   runAdminInformationAgentMissionAction,
 } from "@/lib/client-api";
+import type { AdminSourceRefreshResponse } from "@/lib/admin-source-refresh";
 import type { InformationAgentMission } from "@/lib/information-agent";
 
 const QUERY_KEY = ["admin-information-agent-missions"] as const;
+const SOURCE_REFRESH_QUERY_KEY = ["admin-information-agent-source-refresh"] as const;
 
 export function AdminInformationAgentMissionsPanel({
   selection,
@@ -29,11 +34,22 @@ export function AdminInformationAgentMissionsPanel({
     queryFn: () => fetchAdminInformationAgentMissions(),
     staleTime: 30_000,
   });
+  const sourceRefreshQuery = useQuery({
+    queryKey: [...SOURCE_REFRESH_QUERY_KEY, selection?.saleId],
+    queryFn: () => fetchAdminSourceRefreshStatus(selection!.saleId),
+    enabled: Boolean(selection?.saleId),
+    staleTime: 3_000,
+    refetchInterval: (query) => {
+      const status = query.state.data?.request?.status;
+      return status === "queued" || status === "running" ? 5_000 : false;
+    },
+  });
   const [recipientName, setRecipientName] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [activeMission, setActiveMission] = useState<InformationAgentMission | null>(null);
   const [subject, setSubject] = useState("");
   const [bodyText, setBodyText] = useState("");
+  const [sourceRefreshCycleId, setSourceRefreshCycleId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!selection) return;
@@ -42,6 +58,7 @@ export function AdminInformationAgentMissionsPanel({
     setActiveMission(null);
     setSubject("");
     setBodyText("");
+    setSourceRefreshCycleId(null);
   }, [selection]);
 
   const createDraft = useMutation({
@@ -52,6 +69,22 @@ export function AdminInformationAgentMissionsPanel({
       setBodyText(response.mission.bodyText);
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       toast.success("Brouillon généré. Aucun email n’a encore été envoyé.");
+    },
+    onError: showError,
+  });
+  const sourceRefresh = useMutation({
+    mutationFn: requestAdminSourceRefresh,
+    onSuccess: (response, input) => {
+      setSourceRefreshCycleId(response.request?.id ?? null);
+      queryClient.setQueryData<AdminSourceRefreshResponse>(
+        [...SOURCE_REFRESH_QUERY_KEY, input.saleId],
+        response,
+      );
+      toast.success(
+        response.request?.reused
+          ? "Un refresh actif de cette source est déjà pris en compte."
+          : "Refresh source demandé. Le statut sera actualisé automatiquement.",
+      );
     },
     onError: showError,
   });
@@ -80,6 +113,17 @@ export function AdminInformationAgentMissionsPanel({
     onClose();
   };
 
+  const sourceRefreshCycle = sourceRefreshCycleId
+    ? (sourceRefreshQuery.data?.history.find((item) => item.id === sourceRefreshCycleId) ??
+      (sourceRefreshQuery.data?.request?.id === sourceRefreshCycleId
+        ? sourceRefreshQuery.data.request
+        : null))
+    : null;
+  const sourceRefreshStatus = sourceRefreshCycle?.status ?? null;
+  const sourceRefreshInProgress =
+    sourceRefreshStatus === "queued" || sourceRefreshStatus === "running";
+  const sourceRefreshReady = sourceRefreshStatus === "completed";
+
   return (
     <section className="overflow-hidden rounded-xl border bg-white">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4">
@@ -105,6 +149,40 @@ export function AdminInformationAgentMissionsPanel({
         <div className="border-b bg-amber-50/50 p-5">
           <h3 className="font-semibold">Préparer la demande · {selection.title}</h3>
           <p className="mt-1 text-xs text-[#132238]/55">Annonce {selection.saleId}</p>
+          <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50/70 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-sky-950">
+                  Actualiser la source avant rédaction
+                </p>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-sky-950/70">
+                  Le pipeline relira l’URL exacte de cette annonce et réconciliera les informations
+                  publiées avant de construire le brouillon.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="admin-button-secondary inline-flex items-center gap-2 bg-white"
+                disabled={sourceRefresh.isPending || sourceRefreshInProgress}
+                onClick={() => sourceRefresh.mutate({ saleId: selection.saleId, force: true })}
+              >
+                <RefreshCw
+                  className={`size-3.5 ${sourceRefresh.isPending ? "animate-spin" : ""}`}
+                />
+                {sourceRefreshInProgress
+                  ? "Refresh en cours…"
+                  : sourceRefresh.isPending
+                    ? "Mise en file…"
+                    : "Actualiser la source"}
+              </button>
+            </div>
+            <SourceRefreshStatus
+              response={sourceRefreshQuery.data}
+              requestId={sourceRefreshCycleId}
+              loading={sourceRefreshQuery.isPending}
+              error={sourceRefreshQuery.error}
+            />
+          </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <Field label="Nom du destinataire" value={recipientName} onChange={setRecipientName} />
             <Field
@@ -118,16 +196,26 @@ export function AdminInformationAgentMissionsPanel({
           <button
             type="button"
             className="admin-button-primary mt-4"
-            disabled={createDraft.isPending || !looksLikeEmail(recipientEmail)}
+            disabled={
+              createDraft.isPending ||
+              sourceRefreshInProgress ||
+              (recipientEmail.trim().length > 0 && !looksLikeEmail(recipientEmail))
+            }
             onClick={() =>
               createDraft.mutate({
                 saleId: selection.saleId,
-                recipientEmail: recipientEmail.trim(),
+                recipientEmail: recipientEmail.trim() || undefined,
                 recipientName: recipientName.trim() || undefined,
               })
             }
           >
-            {createDraft.isPending ? "Préparation…" : "Générer le brouillon"}
+            {createDraft.isPending
+              ? "Préparation…"
+              : sourceRefreshInProgress
+                ? "Attendre la fin du refresh"
+                : sourceRefreshReady
+                  ? "Générer le brouillon actualisé"
+                  : "Générer le brouillon"}
           </button>
         </div>
       ) : null}
@@ -161,9 +249,34 @@ export function AdminInformationAgentMissionsPanel({
               Le mail envoyé ajoutera une adresse de réponse propre au dossier et un lien privé
               permettant de déposer une réponse, des liens ou des pièces sans compte.
             </p>
+            {selection ? (
+              <SourceRefreshStatus
+                response={sourceRefreshQuery.data}
+                requestId={sourceRefreshCycleId}
+                loading={sourceRefreshQuery.isPending}
+                error={sourceRefreshQuery.error}
+              />
+            ) : null}
           </div>
           {activeMission.status === "draft" || activeMission.status === "failed" ? (
             <div className="mt-4 flex flex-wrap gap-2">
+              {selection && sourceRefreshReady ? (
+                <button
+                  type="button"
+                  className="admin-button-secondary inline-flex items-center gap-2"
+                  disabled={createDraft.isPending}
+                  onClick={() =>
+                    createDraft.mutate({
+                      saleId: selection.saleId,
+                      recipientEmail: recipientEmail.trim() || undefined,
+                      recipientName: recipientName.trim() || undefined,
+                    })
+                  }
+                >
+                  <RefreshCw className="size-3.5" />
+                  Régénérer depuis la source actualisée
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="admin-button-primary inline-flex items-center gap-2"
@@ -298,6 +411,57 @@ function missionStatusLabel(status: string): string {
       completed: "Terminée",
       failed: "Échec",
       cancelled: "Annulée",
+    }[status] ?? status
+  );
+}
+
+function SourceRefreshStatus({
+  response,
+  requestId,
+  loading,
+  error,
+}: {
+  response: AdminSourceRefreshResponse | undefined;
+  requestId: string | null;
+  loading: boolean;
+  error: unknown;
+}) {
+  if (loading) {
+    return <p className="mt-2 text-xs text-sky-950/65">Recherche du dernier statut…</p>;
+  }
+  if (error) {
+    return (
+      <p className="mt-2 text-xs text-amber-900">
+        Le statut du refresh n’est pas disponible pour le moment. La demande reste protégée par la
+        file serveur.
+      </p>
+    );
+  }
+  const request = requestId
+    ? (response?.history.find((item) => item.id === requestId) ??
+      (response?.request?.id === requestId ? response.request : null))
+    : response?.request;
+  if (!request) {
+    return <p className="mt-2 text-xs text-sky-950/65">Aucun refresh récent pour cette annonce.</p>;
+  }
+  const detail = request.errorMessage ? ` · ${request.errorMessage}` : "";
+  return (
+    <p className="mt-2 text-xs text-sky-950/75">
+      Dernier refresh : <strong>{sourceRefreshStatusLabel(request.status)}</strong>
+      {request.completedAt ? ` · terminé le ${formatDateTime(request.completedAt)}` : ""}
+      {detail}
+    </p>
+  );
+}
+
+function sourceRefreshStatusLabel(status: string): string {
+  return (
+    {
+      queued: "en file",
+      running: "en cours",
+      completed: "terminé, données disponibles",
+      failed: "en échec",
+      cancelled: "annulé",
     }[status] ?? status
   );
 }
