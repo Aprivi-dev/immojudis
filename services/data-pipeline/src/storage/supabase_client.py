@@ -2797,16 +2797,22 @@ def _postgres_upsert(
     return None
 
 
-def _postgres_connect(db_url: str) -> Any:
+def _postgres_connect(
+    db_url: str,
+    *,
+    connect_timeout: int = POSTGRES_CONNECT_TIMEOUT,
+    retry_delays: tuple[float, ...] | None = None,
+) -> Any:
     if psycopg is None:
         raise RuntimeError("psycopg is required for direct Postgres writes")
-    for attempt, delay in enumerate((0.0, *POSTGRES_CONNECT_RETRY_DELAYS), start=1):
+    delays = POSTGRES_CONNECT_RETRY_DELAYS if retry_delays is None else retry_delays
+    for attempt, delay in enumerate((0.0, *delays), start=1):
         if delay:
             time.sleep(delay)
         try:
             return psycopg.connect(
                 db_url,
-                connect_timeout=POSTGRES_CONNECT_TIMEOUT,
+                connect_timeout=connect_timeout,
                 prepare_threshold=None,
             )
         except Exception as exc:
@@ -2822,12 +2828,12 @@ def _postgres_connect(db_url: str) -> Any:
                     "closed unexpectedly",
                 )
             )
-            if not transient or attempt > len(POSTGRES_CONNECT_RETRY_DELAYS):
+            if not transient or attempt > len(delays):
                 raise
             LOGGER.warning(
                 "Transient PostgreSQL connection failure; retrying attempt=%s/%s: %s",
                 attempt,
-                len(POSTGRES_CONNECT_RETRY_DELAYS) + 1,
+                len(delays) + 1,
                 exc,
             )
     raise AssertionError("unreachable")
