@@ -355,6 +355,50 @@ def test_ai_reviews_are_separate_from_human_accuracy_and_return_private_aggregat
     assert "cases" not in report["ai_review"]
 
 
+def test_ai_review_compares_french_source_labels_with_catalogue_enums(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"French catalogue labels")
+    first["prediction"]["values"].update(
+        {"property_type": "apartment", "occupancy_status": "rented"}
+    )
+    pass_a = {
+        "property_type": _label("present", digest, "Appartement"),
+        "occupancy_status": _label("present", digest, "loué depuis septembre"),
+    }
+    pass_b = {
+        "property_type": _label("present", digest, "apartment"),
+        "occupancy_status": _label("present", digest, "rented"),
+    }
+    first["ai_reviews"] = [
+        _ai_review(pass_a, digest),
+        _ai_review(pass_b, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["fields_agree"] == 2
+    assert ai["fields_disagree"] == 0
+    assert ai["pipeline_comparison"]["fields_match"] == 2
+
+
+def test_blind_ai_review_may_precede_replay_prediction_on_same_capture(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"frozen source before parser replay")
+    first["prediction"]["extracted_at"] = "2026-09-28T13:00:00Z"
+    labels = {"starting_price_eur": _label("present", digest, 100000)}
+    first["ai_reviews"] = [_ai_review(labels, digest, reviewed_at="2026-09-28T11:00:00Z")]
+
+    report = evaluate_real_review(manifest, sample)
+    assert report["ai_review"]["aggregate"]["reviewed_cases"] == 1
+
+    first["ai_reviews"][0]["reviewed_at"] = "2026-09-28T09:00:00Z"
+    with pytest.raises(ValueError, match="cannot precede the frozen capture"):
+        evaluate_real_review(manifest, sample)
+
+
 def test_ai_review_requires_capture_bound_metadata_and_valid_output_digest(tmp_path: Path) -> None:
     sample = _sample(tmp_path)
     manifest = prepare_manifest(sample)

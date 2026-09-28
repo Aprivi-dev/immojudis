@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from src.extraction_corpus import CORPUS_SCHEMA_VERSION, classify_outcome, evaluate_corpus, values_equal
+from src.normalize import normalize_occupancy_status, normalize_property_type
 
 SAMPLE_PATH = Path(__file__).resolve().parents[1] / "config" / "qualification-sample-20260912.json"
 LEGACY_REVIEW_SCHEMA_VERSION = "immojudis.real-extraction-review.v1"
@@ -340,6 +341,22 @@ def _new_ai_stats() -> dict[str, Any]:
     }
 
 
+def _ai_values_equal(field: str, first: Any, second: Any) -> bool:
+    """Compare the two declared labels using the catalogue's bounded enums."""
+
+    if field == "property_type":
+        left = normalize_property_type(first)
+        right = normalize_property_type(second)
+        if left not in {"other", "unknown"} and right not in {"other", "unknown"}:
+            return left == right
+    elif field == "occupancy_status":
+        left = normalize_occupancy_status(first)
+        right = normalize_occupancy_status(second)
+        if left not in {None, "unknown"} and right not in {None, "unknown"}:
+            return left == right
+    return values_equal(first, second)
+
+
 def _merge_ai_stats(target: dict[str, Any], source: Mapping[str, Any]) -> None:
     for key in (
         "reviewed_cases",
@@ -460,7 +477,7 @@ def _ai_case_stats(ai_reviews: list[dict[str, Any]], values: Mapping[str, Any]) 
                 and first.get("state") == second.get("state")
                 and (
                     first.get("state") != "present"
-                    or values_equal(first.get("value"), second.get("value"))
+                    or _ai_values_equal(field, first.get("value"), second.get("value"))
                 )
             )
             stats["fields_agree" if equal else "fields_disagree"] += 1
@@ -478,9 +495,11 @@ def _ai_case_stats(ai_reviews: list[dict[str, Any]], values: Mapping[str, Any]) 
             second = second_labels[field]
             if first.get("state") != second.get("state"):
                 continue
-            if first.get("state") == "present" and not values_equal(first.get("value"), second.get("value")):
+            if first.get("state") == "present" and not _ai_values_equal(field, first.get("value"), second.get("value")):
                 continue
             outcome = classify_outcome(first["state"], first.get("value"), values.get(field))
+            if outcome == "wrong_value" and _ai_values_equal(field, first.get("value"), values.get(field)):
+                outcome = "match"
             stats["pipeline_fields_compared"] += 1
             if outcome in {"match", "preserved", "empty", "unknown_state", "unannotated"}:
                 stats["pipeline_fields_match"] += 1
@@ -636,8 +655,9 @@ def evaluate_real_review(manifest: Mapping[str, Any], sample_path: Path = SAMPLE
                 _validate_ai_review(review, capture_sha256, "AI review") for review in ai_reviews_payload
             ]
             ai_review_times = [review["reviewed_at"] for review in ai_reviews]
-            if any(reviewed_at < extracted_at for reviewed_at in ai_review_times):
-                raise ValueError("AI review cannot precede the frozen prediction")
+            captured_at = _timestamp(case["capture"]["captured_at"], "capture captured_at")
+            if any(reviewed_at < captured_at for reviewed_at in ai_review_times):
+                raise ValueError("AI review cannot precede the frozen capture")
             if len(ai_reviews) == 2 and ai_reviews[0]["reviewer"] == ai_reviews[1]["reviewer"]:
                 raise ValueError("independent AI reviewers must be distinct")
             case_ai_stats = _ai_case_stats(ai_reviews, values)
