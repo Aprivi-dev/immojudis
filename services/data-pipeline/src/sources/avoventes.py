@@ -279,7 +279,23 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
         sale["raw_image_url"] = details["raw_image_url"]
     if details.get("raw_text"):
         sale["raw_text"] = f"{sale.get('raw_text') or ''}\n{details['raw_text']}".strip()
-    for key in ("tribunal", "description", "lawyer_contact", "surface_m2", "adjudication_price_eur", "status", "postal_code", "department"):
+    for key in (
+        "tribunal",
+        "description",
+        "lawyer_contact",
+        "surface_m2",
+        "carrez_surface_m2",
+        "adjudication_price_eur",
+        "status",
+        "postal_code",
+        "department",
+        "address",
+        "city",
+        "property_type",
+        "sale_date",
+        "visit_dates",
+        "rooms_count",
+    ):
         if details.get(key) and (key == "description" or not sale.get(key)):
             sale[key] = details[key]
 
@@ -295,9 +311,14 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
     title = _extract_detail_title(soup, raw_text)
     tribunal = _extract_after_label(raw_text, r"(?:Tribunal\s+Judiciaire|TJ)\s+de?\s*([^\n]+)")
     description = _property_description(soup) or _extract_description(raw_text)
-    location = _property_location_codes(description)
+    location = _extract_property_location(description, title)
     lawyer_contact = _extract_after_label(raw_text, r"(?:Téléphone|Tél\.?|Tel\.?)\s*:?\s*([^\n]+)")
     adjudication_price = _extract_after_label(raw_text, r"Adjug[ée]\s*:?\s*([0-9][0-9\s,.]*\s*(?:€|euros?)?)")
+    sale_date = _extract_detail_sale_date(soup, raw_text)
+    visit_dates = _extract_detail_visit_dates(soup, raw_text)
+    property_type = _extract_detail_property_type(title, description, raw_text)
+    rooms_count = _extract_detail_rooms_count(raw_text, property_type, title)
+    carrez_surface = _extract_carrez_surface(description, raw_text)
     own_header = re.split(r"[ÀA] propos du bien|Autres biens", raw_text, maxsplit=1, flags=re.I)[0]
     event = None
     for pattern, value in ((r"vente\s+report[ée]e?", "postponed"),
@@ -317,10 +338,15 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
         "raw_image_url": images[0] if images else None,
         "raw_text": raw_text,
         "title": title,
+        "property_type": property_type,
         "tribunal": tribunal,
         "description": description,
         "lawyer_contact": lawyer_contact,
         "adjudication_price_eur": adjudication_price,
+        "sale_date": sale_date,
+        "visit_dates": visit_dates,
+        "rooms_count": rooms_count,
+        "carrez_surface_m2": carrez_surface,
         "status": event or ("adjudicated" if adjudication_price else None),
         "surface_m2": surface,
         "source_blocks": {
@@ -331,7 +357,14 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
                 "tribunal": tribunal,
                 "contact_avocat": lawyer_contact,
                 "prix_adjudication": adjudication_price,
+                "type_bien": property_type,
+                "adresse": location.get("address"),
+                "ville": location.get("city"),
+                "date_vente": sale_date,
+                "visites": " | ".join(visit_dates) if visit_dates else None,
                 "surface": surface,
+                "surface_carrez": carrez_surface,
+                "pieces": rooms_count,
                 "documents": "; ".join(document["label"] for document in documents if document.get("label")) or None,
                 "page_text": raw_text,
             }.items()
@@ -382,6 +415,151 @@ def _property_location_codes(description: str | None) -> dict[str, str | None]:
         return {}
     return {"department": next(iter(departments)),
             "postal_code": next(iter(postals)) if len(postals) == 1 and not explicit_departments else None}
+
+
+# Keep the first letter uppercase so that a prose sentence does not become a
+# city candidate, while allowing ordinary mixed-case commune names such as
+# ``Megève``. The candidate is filtered below when it is actually a street
+# address (for example ``97 RUE DE GENEVE``).
+_CITY_TOKEN = r"[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ'’\-]*(?:\s+[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ'’\-]*){0,5}"
+_STREET_KIND = (
+    r"rue|avenue|av\.?|boulevard|bd|chemin|route|allée|allee|impasse|place|quai|cours|"
+    r"montée|montee|passage"
+)
+
+
+def _extract_property_location(description: str | None, title: str | None) -> dict[str, str | None]:
+    """Extract the target property's location from its own description.
+
+    The page footer contains the lawyer's office address, so location parsing is
+    intentionally restricted to the property description and the detail title.
+    A street address is returned only when the source gives a numbered street;
+    a named area without a number remains unknown.
+    """
+
+    text = clean_text(description) or ""
+    cities: list[tuple[str, str | None]] = []
+    addresses: list[str] = []
+
+    for pattern in (
+        rf"(?P<city>{_CITY_TOKEN})\s*\((?P<postal>\d{{5}})\)",
+        rf"(?P<city>{_CITY_TOKEN})\s*\([^)]{{2,50}}\)\s*(?P<postal>\d{{5}})",
+    ):
+        for match in re.finditer(pattern, text):
+            raw_city = match.group("city")
+            # A numbered street followed by a postal code can satisfy the
+            # generic ``CITY (postal)`` shape once mixed-case matching is
+            # enabled. Keep that address for the address extractor, but do
+            # not expose its street name as the commune.
+            if re.search(rf"\b(?:{_STREET_KIND})\b", raw_city, re.I):
+                continue
+            if match.start("city") and text[match.start("city") - 1].isdigit():
+                continue
+            city = _clean_city_candidate(raw_city)
+            postal = clean_text(match.group("postal"))
+            if city:
+                cities.append((city, postal))
+
+    # A few Avoventes descriptions put the department name between the city
+    # and postal code, then put the street before the postal code.
+    for match in re.finditer(
+        rf"(?P<city>{_CITY_TOKEN})\s*\([^)]{{2,50}}\)\s+"
+        rf"\d{{1,4}}(?:\s*(?:bis|ter))?(?:\s+et\s+\d{{1,4}})?\s+"
+        rf"(?:{_STREET_KIND})\b[^()\n,;]{{0,80}}\s*\((?P<postal>\d{{5}})\)",
+        text,
+    ):
+        raw_city = match.group("city")
+        if re.search(rf"\b(?:{_STREET_KIND})\b", raw_city, re.I):
+            continue
+        if match.start("city") and text[match.start("city") - 1].isdigit():
+            continue
+        city = _clean_city_candidate(raw_city)
+        postal = clean_text(match.group("postal"))
+        if city:
+            cities.append((city, postal))
+
+    # Prefer a numbered street address, and stop before cadastral/legal
+    # clauses. This keeps the lawyer's address and nearby prose out.
+    for address_match in re.finditer(
+        rf"\b(?P<address>\d{{1,4}}(?:\s*(?:bis|ter))?(?:\s+et\s+\d{{1,4}})?\s+"
+        rf"(?:{_STREET_KIND})\b[^.;()\n]{{0,100}})",
+        text,
+        re.I,
+    ):
+        candidate = _trim_property_address(address_match.group("address"))
+        if candidate:
+            addresses.append(candidate)
+
+    unique_addresses = {
+        re.sub(r"\s+", " ", candidate).casefold(): candidate
+        for candidate in addresses
+    }
+    address = next(iter(unique_addresses.values())) if len(unique_addresses) == 1 else None
+
+    # If the description has several references, only retain a city when they
+    # agree. Repeated mentions of the same city are common in lot descriptions.
+    unique_cities = {city.casefold(): city for city, _ in cities if city}
+    if len(unique_cities) == 1:
+        city = next(iter(unique_cities.values()))
+        postal_values = {postal for candidate, postal in cities if candidate.casefold() == city.casefold() and postal}
+        postal_code = next(iter(postal_values)) if len(postal_values) == 1 else None
+    else:
+        city = None
+        postal_code = None
+
+    if city is None and title:
+        title_match = re.search(rf"\b(?:à|a)\s+(?P<city>{_CITY_TOKEN})(?=\s*(?:\(|$))", title)
+        if title_match:
+            city = _clean_city_candidate(title_match.group("city"))
+
+    if postal_code is None:
+        # A unique postal code in the property description is safe to use even
+        # when the city is only supplied by the title.
+        postal_values = set(re.findall(r"\b(\d{5})\b", text))
+        if len(postal_values) == 1:
+            postal_code = next(iter(postal_values))
+
+    result: dict[str, str | None] = {
+        "address": address,
+        "city": city,
+        "postal_code": postal_code,
+        "department": extract_department(postal_code),
+    }
+    return result
+
+
+def _clean_city_candidate(value: str | None) -> str | None:
+    city = clean_text(value)
+    if not city:
+        return None
+    # Greedy uppercase matching can include the lead-in phrase of a sentence
+    # such as "UN APPARTEMENT ... SIS A GEX (01170)". Keep the final place
+    # segment after the last location preposition.
+    # Split only on a standalone location preposition. Splitting every
+    # occurrence of "de" would truncate legitimate communes such as
+    # "LE PONT DE BEAUVOISIN".
+    parts = re.split(r"\b(?:à|a)\s+", city, flags=re.I)
+    city = parts[-1] if parts else city
+    city = re.sub(r"^(?:sur\s+la\s+commune\s+de|commune\s+de)\s+", "", city, flags=re.I)
+    return clean_text(city)
+
+
+def _trim_property_address(value: str) -> str | None:
+    address = clean_text(value)
+    if not address:
+        return None
+    address = address.split(",", 1)[0]
+    address = re.split(
+        r"\s+(?=(?:cadastr[ée]|cadastre|lot\b|section\b|lieudit\b|pour\b|"
+        r"et\s+figurant\b|dans\s+un\s+ensemble\b|sur\s+la\s+commune\b|"
+        r"commune\s+de\b))",
+        address,
+        maxsplit=1,
+        flags=re.I,
+    )[0]
+    if len(re.findall(rf"\b(?:{_STREET_KIND})\b", address, re.I)) > 1:
+        return None
+    return address.rstrip(" ,:;-.\"'»’") or None
 
 
 def _extract_images(soup: BeautifulSoup, page_url: str) -> list[str]:
@@ -502,7 +680,13 @@ def _looks_like_detail_title(value: str | None) -> bool:
     ):
         return False
     return bool(
-        re.search(r"\b(?:appartement|maison|immeuble|terrain|parcelle|b[âa]timent|local|garage|commerce)\b", text, re.I)
+        re.search(
+            r"\b(?:appartements?|maisons?|immeubles?|terrains?|parcelles?|b[âa]timents?|locaux?|garage|commerce|"
+            r"commercial(?:e|es|s)?|"
+            r"pavillons?|studios?|ensemble\s+immobilier)\b",
+            text,
+            re.I,
+        )
     )
 
 
@@ -555,6 +739,201 @@ def _extract_location(address: str | None, raw_text: str) -> tuple[str | None, s
 def _extract_property_type(text: str) -> str | None:
     match = re.search(r"Vente aux enchères\s+([^\n]+)", text, re.I)
     return clean_text(match.group(1)) if match else None
+
+
+def _extract_detail_property_type(
+    title: str | None,
+    description: str | None,
+    raw_text: str,
+) -> str | None:
+    """Return a conservative canonical type for a detail page.
+
+    The page's summary can describe several lots. A single category in the
+    title wins over secondary cadastral wording; several categories in that
+    title are represented as ``mixed``. The function deliberately leaves a
+    page without a defensible category as ``None``.
+    """
+
+    heading = title or _first_detail_heading(raw_text)
+    title_types = _property_type_candidates(heading)
+    if len(title_types) > 1:
+        return "mixed"
+    if len(title_types) == 1:
+        return next(iter(title_types))
+
+    description_types = _property_type_candidates(description)
+    # "Immeuble" and cadastral "parcelle" wording commonly describes the
+    # envelope of a dwelling. Keep them as secondary signals when a dwelling
+    # category is explicit in the same description.
+    if "apartment" in description_types or "house" in description_types:
+        description_types.discard("building")
+        description_types.discard("land")
+    if len(description_types) > 1:
+        return "mixed"
+    if len(description_types) == 1:
+        return next(iter(description_types))
+    return None
+
+
+def _first_detail_heading(raw_text: str) -> str | None:
+    lines = [clean_text(part) for part in raw_text.splitlines() if clean_text(part)]
+    for index, line in enumerate(lines):
+        if line and re.search(r"Vente aux enchères", line, re.I):
+            return lines[index - 1] if index else line
+    return lines[0] if lines else None
+
+
+def _property_type_candidates(value: object | None) -> set[str]:
+    text = clean_text(value) or ""
+    if not text:
+        return set()
+    candidates: set[str] = set()
+    if re.search(r"\b(?:appartements?|studios?|[tf]\s*[1-9])\b", text, re.I):
+        candidates.add("apartment")
+    if re.search(r"\b(?:maisons?|villas?|pavillons?)\b", text, re.I):
+        candidates.add("house")
+    if re.search(r"\b(?:locaux?\s+commerciaux?|boutiques?|commerces?|commercial(?:e|es|s)?)\b", text, re.I):
+        candidates.add("commercial")
+    if re.search(r"\b(?:terrains?|parcelles?|prés?|lieudit)\b", text, re.I):
+        candidates.add("land")
+    if re.search(r"\bensemble\s+immobilier\b", text, re.I):
+        # The canonical normalizer treats this source label as a mixed asset:
+        # it does not establish one dwelling whose room count can be reused.
+        candidates.add("mixed")
+    if re.search(r"\b(?:immeubles?|b[âa]timents?)\b", text, re.I):
+        candidates.add("building")
+    # A bare "local" is useful for a title such as "LOCAL", but in a
+    # descriptive phrase it can mean a room or technical area. Require the
+    # commercial qualifier unless this is the complete heading.
+    if re.fullmatch(r"\s*(?:un\s+)?local\s*", text, re.I):
+        candidates.add("commercial")
+    return candidates
+
+
+def _extract_detail_sale_date(soup: BeautifulSoup, raw_text: str) -> str | None:
+    """Read the detail page's own sale summary, excluding nearby listings."""
+
+    for strong in soup.find_all("strong"):
+        label = clean_text(strong.get_text(" ", strip=True)) or ""
+        if label.rstrip(" :").casefold() not in {"vente", "date de la vente"}:
+            continue
+        parent = strong.find_parent(["p", "div"]) or strong.parent
+        if parent is None:
+            continue
+        text = clean_text(parent.get_text(" ", strip=True)) or ""
+        value = re.sub(r"^(?:Vente|Date de la vente)\s*:?\s*", "", text, flags=re.I)
+        if value and _looks_like_date_text(value):
+            return value
+
+    match = re.search(r"(?:^|\n)\s*Vente(?!\s+aux\s+ench[eè]res)\s*:?\s*([^\n]+)", raw_text, re.I)
+    if match and _looks_like_date_text(match.group(1)):
+        return clean_text(match.group(1))
+    match = re.search(r"(?:^|\n)\s*Date de la vente\s*:?\s*([^\n]+)", raw_text, re.I)
+    return clean_text(match.group(1)) if match and _looks_like_date_text(match.group(1)) else None
+
+
+def _looks_like_date_text(value: str) -> bool:
+    return bool(
+        re.search(
+            r"(?:\b\d{1,2}\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|"
+            r"septembre|octobre|novembre|décembre|decembre)\s+\d{4}\b|"
+            r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b)",
+            value,
+            re.I,
+        )
+    )
+
+
+def _extract_detail_visit_dates(soup: BeautifulSoup, raw_text: str) -> list[str]:
+    for strong in soup.find_all("strong"):
+        label = clean_text(strong.get_text(" ", strip=True)) or ""
+        if not re.fullmatch(r"visites?\s*:?", label, re.I):
+            continue
+        container = strong.find_parent("p") or strong.find_parent("div") or strong.parent
+        if container is None:
+            continue
+        text = clean_text(container.get_text(" ", strip=True)) or ""
+        value = re.sub(r"^visites?\s*:?\s*", "", text, flags=re.I)
+        if value:
+            return [value]
+
+    lines = [clean_text(part) for part in raw_text.splitlines() if clean_text(part)]
+    for index, line in enumerate(lines):
+        if not line or not re.fullmatch(r"visites?\s*:?", line, re.I):
+            continue
+        values: list[str] = []
+        for candidate in lines[index + 1 :]:
+            if re.search(
+                r"%\s*estimez|à propos du bien|autres biens|vente aux enchères|mise à prix|"
+                r"date de la vente|cabinet\b",
+                candidate,
+                re.I,
+            ):
+                break
+            values.append(candidate)
+        value = clean_text(" ".join(values))
+        return [value] if value and _looks_like_visit_text(value) else []
+    return _extract_visit_dates(raw_text)
+
+
+def _looks_like_visit_text(value: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:\d{1,2}\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|"
+            r"septembre|octobre|novembre|décembre|decembre)\s+\d{4}|"
+            r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|"
+            r"visites?\s+libres?|sur\s+rendez-vous|sur\s+place)\b",
+            value,
+            re.I,
+        )
+    )
+
+
+def _extract_detail_rooms_count(raw_text: str, property_type: str | None, title: str | None) -> int | None:
+    """Use the summary count only for one clearly identified dwelling."""
+
+    if property_type not in {"apartment", "house"}:
+        return None
+    detail_boundary = raw_text.lower().find("à propos du bien")
+    summary_text = raw_text[:detail_boundary] if detail_boundary >= 0 else raw_text
+    combined = " ".join(part for part in (title, summary_text) if part)
+    # Lot labels normally live in the description, after the summary counter.
+    # Use the complete cleaned detail text for the ambiguity signal while
+    # keeping the actual piece count restricted to the page's own summary.
+    lot_context = " ".join(part for part in (title, raw_text) if part)
+    if re.search(r"\bvente\s+en\s+[2-9]\d*\s+lots?\b|\b(?:premier|second|troisi[eè]me)\s+lot\s+de\s+vente\b", lot_context, re.I):
+        return None
+    lot_ids = {
+        value
+        for value in re.findall(
+            r"\blot\s*(?:n[°o.]?\s*)?(\d+)\b",
+            lot_context,
+            re.I,
+        )
+    }
+    if {"1", "2"}.issubset(lot_ids):
+        return None
+    matches = re.findall(r"\b([1-9][0-9]?)\s*pi[eè]ces?\b", combined, re.I)
+    if len(matches) != 1:
+        return None
+    return int(matches[0])
+
+
+def _extract_carrez_surface(*values: object | None) -> str | None:
+    patterns = (
+        r"([0-9][0-9\s.,]*)\s*m(?:²|2)\s*(?:de\s+)?(?:surface\s+)?loi\s+carrez\b",
+        r"(?:surface\s+)?loi\s+carrez(?:\s+(?:totale|privative))?\s*(?:-|:|de)?\s*([0-9][0-9\s.,]*)\s*m(?:²|2)\b",
+        r"(?:superficie|surface)\s*\([^)]*loi\s+carrez[^)]*\)\s*:?\s*([0-9][0-9\s.,]*)\s*m(?:²|2)\b",
+    )
+    for value in values:
+        text = clean_text(value)
+        if not text:
+            continue
+        for pattern in patterns:
+            match = re.search(pattern, text, re.I)
+            if match:
+                return clean_text(match.group(1))
+    return None
 
 
 def _extract_after_label(text: str, pattern: str) -> str | None:

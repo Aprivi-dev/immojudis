@@ -643,7 +643,13 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         raise ValueError("raw sale is missing source_url")
 
     source_text = _normalization_text(raw_sale)
-    if re.search(r'vente.{0,40}\ben\s+[2-9][0-9]*\s+lots|premier\s+lot\s+de\s+vente.*second\s+lot\s+de\s+vente', source_text, re.I | re.S):
+    if re.search(
+        r'vente.{0,40}\ben\s+[2-9][0-9]*\s+lots|'
+        r'premier\s+lot\s+de\s+vente.*second\s+lot\s+de\s+vente|'
+        r'\blot\s*(?:n[°o.]?\s*)?1\b.{0,240}\blot\s*(?:n[°o.]?\s*)?2\b',
+        source_text,
+        re.I | re.S,
+    ):
         raw_sale = dict(raw_sale)
         raw_sale['quality_flags'] = [*(raw_sale.get('quality_flags') or []), 'multi_lot_sale']
     title = clean_text(raw_sale.get("title"))
@@ -710,12 +716,14 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "nombre_de_pieces",
             "critere_nombre_de_pieces",
         )
-    ) or extract_rooms_count_from_text(
-        title,
-        description,
-        raw_sale.get("raw_text"),
-        source_text,
     )
+    if rooms_count is None and not _suppress_avoventes_room_inference(raw_sale, property_type):
+        rooms_count = extract_rooms_count_from_text(
+            title,
+            description,
+            raw_sale.get("raw_text"),
+            source_text,
+        )
     bedrooms_count = parse_bedrooms_count(
         _field_or_source_block(
             raw_sale,
@@ -731,9 +739,17 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         raw_sale.get("raw_text"),
         source_text,
     )
-    surface_m2 = parse_surface(
+    structured_surface_m2 = parse_surface(
         _field_or_source_block(raw_sale, "surface_m2", "surface_m2", "surface", "detail_surface")
-    ) or _extract_built_surface_from_text(source_text)
+    )
+    text_surface_m2 = _extract_built_surface_from_text(source_text)
+    surface_m2 = (
+        text_surface_m2
+        if property_type == "mixed"
+        and _has_explicit_total_surface_evidence(source_text)
+        and text_surface_m2 is not None
+        else structured_surface_m2 or text_surface_m2
+    )
     habitable_surface_m2 = parse_surface(
         _field_or_source_block(
             raw_sale,
@@ -756,6 +772,21 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "contenance",
         )
     ) or _extract_land_surface_from_text(source_text)
+    surface_scope = clean_text(raw_sale.get("surface_scope"))
+
+    # A mixed listing can expose one measurement per lot. Keeping the first
+    # generic number as the listing's surface silently assigns a lot to the
+    # whole sale. Retain the distinct Carrez, habitable, and land fields, but
+    # leave the generic/application surface unresolved until an explicit total
+    # is present.
+    ambiguous_mixed_lot_surface = _is_ambiguous_mixed_lot_surface(property_type, source_text)
+    if ambiguous_mixed_lot_surface:
+        surface_m2 = None
+        quality_flags = list(raw_sale.get("quality_flags") or []) if isinstance(raw_sale.get("quality_flags"), list) else []
+        if "ambiguous_surface" not in quality_flags:
+            quality_flags.append("ambiguous_surface")
+        raw_sale["quality_flags"] = quality_flags
+        surface_scope = "unknown"
     bathrooms_count = parse_rooms_count(
         _field_or_source_block(
             raw_sale,
@@ -791,18 +822,39 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         clean_text(raw_sale.get("risk_notes")),
         _energy_diagnostic_risk_note(source_energy_diagnostics),
     )
-    surface_source = clean_text(raw_sale.get("surface_source"))
-    surface_evidence = clean_text(raw_sale.get("surface_evidence"))
-    if surface_evidence is None:
-        surface_evidence = _surface_evidence_for_value(
-            source_text,
-            surface_m2 or habitable_surface_m2 or carrez_surface_m2 or land_surface_m2,
+    surface_source = None if ambiguous_mixed_lot_surface else clean_text(raw_sale.get("surface_source"))
+    surface_evidence_value = (
+        None
+        if ambiguous_mixed_lot_surface
+        else _preferred_surface_evidence_value(
+            property_type,
+            surface_m2=surface_m2,
+            habitable_surface_m2=habitable_surface_m2,
+            carrez_surface_m2=carrez_surface_m2,
+            land_surface_m2=land_surface_m2,
         )
+    )
+    surface_evidence = None if ambiguous_mixed_lot_surface else clean_text(raw_sale.get("surface_evidence"))
+    if surface_evidence is not None and surface_evidence_value is not None:
+        if not _surface_evidence_matches_value(surface_evidence, surface_evidence_value):
+            surface_evidence = None
+    if surface_evidence is None:
+        surface_evidence = _surface_evidence_for_value(source_text, surface_evidence_value)
     if surface_source is None and surface_evidence is not None:
         surface_source = "source_text"
     app_surface_m2 = parse_surface(raw_sale.get("app_surface_m2"))
     app_surface_kind = clean_text(raw_sale.get("app_surface_kind"))
-    surface_scope = clean_text(raw_sale.get("surface_scope"))
+    if ambiguous_mixed_lot_surface:
+        app_surface_m2 = None
+        app_surface_kind = None
+    elif (
+        property_type == "mixed"
+        and _has_explicit_total_surface_evidence(source_text)
+        and text_surface_m2 is not None
+    ):
+        app_surface_m2 = text_surface_m2
+        app_surface_kind = "built"
+        surface_scope = "total"
     if app_surface_kind == "land" and property_type in {"apartment", "house"}:
         # A corrected dwelling classification invalidates an earlier parcel-based
         # application surface. Preserve land_surface_m2 as a separate source fact.
@@ -858,7 +910,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         app_surface_kind=app_surface_kind,
         surface_scope=surface_scope,
         surface_source=surface_source,
-        surface_confidence=parse_confidence(raw_sale.get("surface_confidence")),
+        surface_confidence=(
+            None if ambiguous_mixed_lot_surface else parse_confidence(raw_sale.get("surface_confidence"))
+        ),
         surface_evidence=surface_evidence,
         rooms_count=rooms_count,
         bedrooms_count=bedrooms_count,
@@ -1018,6 +1072,29 @@ def _derive_initial_app_surface(
     return None, None, surface_scope
 
 
+def _suppress_avoventes_room_inference(raw_sale: dict[str, object], property_type: str) -> bool:
+    """Keep ambiguous Avoventes lot counts null instead of guessing from prose.
+
+    Avoventes detail pages often describe several lots, a commercial local, or
+    a mixed property while the page chrome still contains a generic ``pièces``
+    counter. Only suppress text fallback for that source and those explicit
+    ambiguous classifications; a source-provided numeric field remains valid.
+    """
+
+    source_name = clean_text(raw_sale.get("source_name"))
+    source_url = clean_text(raw_sale.get("source_url")) or ""
+    is_avoventes = source_name == "avoventes" or urlparse(source_url).netloc.lower() in {
+        "avoventes.fr",
+        "www.avoventes.fr",
+    }
+    if not is_avoventes:
+        return False
+    if property_type in {"commercial", "mixed", "land"}:
+        return True
+    quality_flags = raw_sale.get("quality_flags")
+    return isinstance(quality_flags, list) and "multi_lot_sale" in quality_flags
+
+
 def _field_or_source_block(raw_sale: dict[str, object], field: str, *source_block_keys: str) -> object | None:
     value = raw_sale.get(field)
     if _has_value(value):
@@ -1061,6 +1138,7 @@ def _source_energy_diagnostics(raw_sale: dict[str, object]) -> dict[str, object]
             raw_sale,
             "dpe_class",
             "dpe",
+            "dpe_classe",
             "diagnostic_dpe",
             "critere_consommation_energetique",
             "consommation_energetique",
@@ -1071,6 +1149,7 @@ def _source_energy_diagnostics(raw_sale: dict[str, object]) -> dict[str, object]
             raw_sale,
             "ges_class",
             "ges",
+            "ges_classe",
             "diagnostic_ges",
             "critere_emissions_de_gaz",
             "emissions_de_gaz",
@@ -1269,8 +1348,9 @@ def _extract_built_surface_from_text(*values: object) -> Decimal | None:
     if habitable is not None:
         return habitable
     patterns = (
+        rf"\bsurface\s+totale(?:\s+(?:b[âa]tie|au\s+sol))?\s*:?\s*(?:de\s+)?"
+        rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
         rf"\b(?:surface|superficie)\s+(?:des\s+)?lots?\b[^:\n]{{0,80}}:\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
-        rf"\bsurface\s+totale\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
         rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+superficie\b",
         (
             r"\b(?:un|une|l['’]|le|la)?\s*"
@@ -1406,6 +1486,82 @@ def _surface_evidence_for_value(text: str, value: Decimal | None) -> str | None:
         number_pattern = rf"{whole_pattern}(?:[,.]0+)?"
     match = re.search(rf"([^\n.;]{{0,180}}{number_pattern}\s*m(?:2|²)\b[^\n.;]{{0,180}})", text, re.I)
     return clean_text(match.group(1)) if match else None
+
+
+def _surface_evidence_matches_value(evidence: str, value: Decimal) -> bool:
+    """Return whether an evidence excerpt cites the retained surface value."""
+
+    for match in re.finditer(rf"({SURFACE_VALUE_PATTERN})\s*m(?:2|²)\b", evidence, re.I):
+        if parse_surface(match.group(1)) == value:
+            return True
+    return False
+
+
+def _preferred_surface_evidence_value(
+    property_type: str,
+    *,
+    surface_m2: Decimal | None,
+    habitable_surface_m2: Decimal | None,
+    carrez_surface_m2: Decimal | None,
+    land_surface_m2: Decimal | None,
+) -> Decimal | None:
+    """Select the value shown as the application's primary surface.
+
+    Evidence must follow the same field precedence as the fiche. In
+    particular, an apartment's legal Carrez measurement outranks a generic
+    marketing area, while a land area remains a separate category.
+    """
+
+    if property_type == "apartment":
+        return carrez_surface_m2 or habitable_surface_m2 or surface_m2
+    if property_type == "house":
+        return habitable_surface_m2 or surface_m2
+    if property_type == "land":
+        return land_surface_m2
+    if property_type in {"commercial", "mixed"}:
+        return surface_m2 or habitable_surface_m2 or carrez_surface_m2 or land_surface_m2
+    if property_type == "building":
+        return surface_m2 or habitable_surface_m2 or carrez_surface_m2
+    return habitable_surface_m2 or carrez_surface_m2 or surface_m2 or land_surface_m2
+
+
+def _has_explicit_total_surface_evidence(text: str) -> bool:
+    if not text:
+        return False
+    return bool(
+        re.search(
+            rf"\b(?:surface|superficie)\s+totale(?:\s+(?:b[âa]tie|au\s+sol))?\b[^.;\n]{{0,100}}"
+            rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+            text,
+            re.I,
+        )
+        or re.search(
+            rf"\btotal(?:e)?\s+(?:b[âa]ti(?:e)?|au\s+sol)\b[^.;\n]{{0,100}}"
+            rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+            text,
+            re.I,
+        )
+    )
+
+
+def _is_ambiguous_mixed_lot_surface(property_type: str, text: str) -> bool:
+    """Detect several lot areas when the page gives no sale-level total."""
+
+    if property_type != "mixed" or not text or _has_explicit_total_surface_evidence(text):
+        return False
+    surface_mentions = list(
+        re.finditer(rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
+    )
+    if len(surface_mentions) < 2:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:lot|lots)\b|\bvente\s+en\s+\d+\s+lots?\b|"
+            r"\b(?:premier|deuxi[eè]me|second|troisi[eè]me)\s+lot\b",
+            text,
+            re.I,
+        )
+    )
 
 
 def _integer_with_optional_thousand_separators_pattern(value: str) -> str:

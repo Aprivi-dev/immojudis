@@ -52,7 +52,12 @@ def enrich_agrasc_operator(
                     sale[key] = {**(sale.get(key) or {}), **value}
                 elif key == "raw_text":
                     sale[key] = f"{sale.get(key) or ''}\n{value}".strip()
-                elif key not in {"source_name", "source_url", "external_id"}:
+                elif key == "external_id":
+                    # The parser only exposes this value after checking it
+                    # against the operator URL or payload, so it is safe to
+                    # replace a card slug with the stable product identifier.
+                    sale[key] = str(value).strip()
+                elif key not in {"source_name", "source_url"}:
                     sale[key] = value
             sale["operator_detail_status"] = "complete"
             sale["source_detail_status"] = "complete"
@@ -79,6 +84,9 @@ def parse_immo_operator_json(payload: str, expected_id: str) -> dict[str, Any]:
     # AGRASC's date for an online sale denotes the closing date, not its opening.
     if transaction.get("dateFinEncheres"):
         detail["sale_date"] = transaction["dateFinEncheres"]
+    # The operator API has already validated the requested product identity.
+    # Keep that stable numeric identity available to the AGRASC normalizer.
+    detail["external_id"] = expected_id
     detail.setdefault("source_blocks", {}).update({
         "operator_opening_date": transaction.get("dateDebutEncheres"),
         "operator_closing_date": transaction.get("dateFinEncheres"),
@@ -127,6 +135,7 @@ def parse_agora_operator_detail(html: str, source_url: str) -> dict[str, Any]:
         if not description:
             return {}
         detail: dict[str, Any] = {
+            "external_id": marker.group(1),
             "description": description, "raw_text": description,
             "documents": [{"label": item.get("fileName") or "Document opérateur", "url": item["url"]}
                           for item in model.get("documents", [])
@@ -149,7 +158,8 @@ def parse_agora_operator_detail(html: str, source_url: str) -> dict[str, Any]:
                 if surface:
                     detail["surface_m2"] = surface.group(1).replace(",", ".")
         field_map = {label.casefold(): value for label, value in fields}
-        land_text = field_map.get("surface terrain", "")
+        land_label = "surface terrain" if field_map.get("surface terrain") else "surface parcelle"
+        land_text = field_map.get(land_label, "")
         cadastral_text = field_map.get("références cadastrales", "")
         land_areas = _explicit_square_metres(land_text)
         cadastral_areas = _explicit_square_metres(cadastral_text)
@@ -159,8 +169,12 @@ def parse_agora_operator_detail(html: str, source_url: str) -> dict[str, Any]:
             detail["operator_land_surface_conflict"] = True
             detail["source_display_constraints"] = [
                 f"{label} : {value}" for label, value in fields
-                if label.casefold() in {"surface terrain", "références cadastrales"}
+                if label.casefold() in {"surface terrain", "surface parcelle", "références cadastrales"}
             ]
+        elif land_label == "surface parcelle" and len(land_areas) == 1:
+            # A single explicit parcel area is usable only after the same
+            # cadastral contradiction guard above has passed.
+            detail["land_surface_m2"] = _surface_text(land_areas[0])
         state = page.get("saleState") or {}
         if str(state.get("productId")) == marker.group(1):
             detail["sale_date"] = state.get("endDate")
@@ -185,3 +199,7 @@ def _operator_field_text(value: Any) -> str:
 def _explicit_square_metres(text: str) -> list[float]:
     return [float(re.sub(r"\s", "", value).replace(",", "."))
             for value in re.findall(r"(\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?)\s*m[²2]", text)]
+
+
+def _surface_text(value: float) -> str:
+    return format(value, "f").rstrip("0").rstrip(".") or "0"

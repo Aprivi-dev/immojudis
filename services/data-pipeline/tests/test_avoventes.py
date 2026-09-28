@@ -208,3 +208,168 @@ def test_detail_postponement_is_not_replaced_by_nearby_sale_date():
         'https://avoventes.fr/enchere/une-maison-dhabitation-a-marsannay-la-cote')
     assert detail['status'] == 'postponed'
     assert detail.get('sale_date') is None
+
+
+def test_detail_extracts_structured_location_schedule_and_carrez_from_reduced_fixture():
+    html = """
+    <html><body>
+      <h1>Appartement + cave à LE PONT DE BEAUVOISIN</h1>
+      <p><strong>Vente</strong><br>12 octobre 2026 à 14h00</p>
+      <p><span><strong>VISITES :</strong></span><br>
+        Sur place le 05 octobre 2026 de 10 h à 11 h</p>
+      <div><h2>À propos du bien</h2>
+        <div>Sur la commune de LE PONT DE BEAUVOISIN (33000), 12 rue des Lilas,
+        un appartement de type 3. Superficie (Loi Carrez) : 64,20 m².</div>
+      </div>
+      <h2>Autres biens à proximité</h2>
+      <div class="card annonce" data-link="https://avoventes.fr/enchere/nearby">
+        <span>Date de la vente : 20 octobre 2026</span>
+        <span>Visite le 19 octobre 2026</span>
+      </div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic")
+
+    assert details["city"] == "LE PONT DE BEAUVOISIN"
+    assert details["postal_code"] == "33000"
+    assert details["address"] == "12 rue des Lilas"
+    assert details["property_type"] == "apartment"
+    assert details["sale_date"] == "12 octobre 2026 à 14h00"
+    assert details["visit_dates"] == ["Sur place le 05 octobre 2026 de 10 h à 11 h"]
+    assert details["rooms_count"] is None
+    assert details["carrez_surface_m2"] == "64,20"
+    assert "20 octobre 2026" not in details["source_blocks"]["page_text"]
+
+
+def test_detail_keeps_ambiguous_address_and_multi_lot_rooms_unknown():
+    html = """
+    <html><body>
+      <h1>Appartement et local commercial à VILLE-TEST (33000)</h1>
+      <p><strong>Vente</strong><br>12 octobre 2026 à 14h00</p>
+      <p><span><strong>VISITES :</strong></span><br>Sur rendez-vous</p>
+      <div><h2>À propos du bien</h2>
+        <div>VILLE-TEST (33000), 12 rue des Lilas et 18 avenue du Test,
+        vente en 2 lots. Lot 1 : appartement de type 3. Lot 2 : local commercial.</div>
+      </div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-multi-lot")
+
+    assert details["city"] == "VILLE-TEST"
+    assert details["postal_code"] == "33000"
+    assert details["address"] is None
+    assert details["property_type"] == "mixed"
+    assert details["rooms_count"] is None
+
+
+def test_detail_does_not_infer_rooms_from_a_commercial_summary():
+    html = """
+    <html><body>
+      <h1>LOCAL COMMERCIAL à VILLE-TEST</h1>
+      <p><strong>Vente</strong><br>12 octobre 2026 à 14h00</p>
+      <div class="summary"><span>1</span><span>pièces</span></div>
+      <div><h2>À propos du bien</h2>
+        <div>VILLE-TEST (33000), 4 rue du Commerce. Un local commercial.</div>
+      </div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-commercial")
+
+    assert details["property_type"] == "commercial"
+    assert details["rooms_count"] is None
+
+
+def test_detail_handles_same_line_sale_date_mixed_case_city_and_ensemble_title():
+    html = """
+    <html><body>
+      <h1>Ensemble immobilier à Megève</h1>
+      <p>Vente 16 octobre 2026 à 14h00</p>
+      <div><h2>À propos du bien</h2>
+        <div>97 RUE DE GENEVE (74240), ensemble immobilier à usage d'habitation.</div>
+      </div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-mixed-case")
+
+    assert details["title"] == "Ensemble immobilier à Megève"
+    assert details["property_type"] == "mixed"
+    assert details["sale_date"] == "16 octobre 2026 à 14h00"
+    assert details["city"] == "Megève"
+    assert details["postal_code"] == "74240"
+    assert details["address"] == "97 RUE DE GENEVE"
+
+
+def test_detail_lot_one_and_two_block_room_inference_without_lot_summary():
+    html = """
+    <html><body>
+      <h1>Appartement à VILLE-TEST</h1>
+      <div class="summary">3 pièces</div>
+      <div><h2>À propos du bien</h2>
+        <div>VILLE-TEST (33000), LOT 1 : appartement de 3 pièces. LOT 2 : cave.</div>
+      </div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-lot-pair")
+
+    assert details["property_type"] == "apartment"
+    assert details["rooms_count"] is None
+
+
+def test_normalize_sale_keeps_ambiguous_avoventes_rooms_null_but_keeps_single_dwelling_count():
+    multi_lot = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-multi-lot-normalized",
+            "title": "3 APPARTEMENTS à VILLE-TEST (VENTE EN 3 LOTS)",
+            "property_type": "apartment",
+            "description": "Lot 1 : studio. Lot 2 : appartement de 3 pièces. Lot 3 : studio.",
+            "raw_text": "3 APPARTEMENTS à VILLE-TEST (VENTE EN 3 LOTS)",
+        }
+    )
+    commercial = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-commercial-normalized",
+            "title": "LOCAL COMMERCIAL à VILLE-TEST",
+            "property_type": "commercial",
+            "raw_text": "LOCAL COMMERCIAL à VILLE-TEST. Une pièce principale.",
+        }
+    )
+    mixed = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-mixed-normalized",
+            "title": "Ensemble immobilier à VILLE-TEST",
+            "property_type": "mixed",
+            "raw_text": "Ensemble immobilier composé d'un appartement de 3 pièces et d'un local.",
+        }
+    )
+    lot_pair = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-lot-pair-normalized",
+            "title": "Appartement à VILLE-TEST",
+            "property_type": "apartment",
+            "raw_text": "LOT 1 : appartement de 3 pièces. LOT 2 : cave.",
+        }
+    )
+    single_dwelling = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-single-normalized",
+            "title": "Appartement T3 à VILLE-TEST",
+            "property_type": "apartment",
+            "raw_text": "Appartement T3 de 60 m², 3 pièces et 2 chambres.",
+        }
+    )
+
+    assert multi_lot.rooms_count is None
+    assert commercial.rooms_count is None
+    assert mixed.rooms_count is None
+    assert lot_pair.rooms_count is None
+    assert single_dwelling.rooms_count == 3

@@ -78,6 +78,7 @@ function fixture({
   const facts: Row[] = [];
   const jobs: Row[] = [];
   const uploads: Array<{ path: string; bytes: Uint8Array }> = [];
+  let messageMetadataWrites = 0;
   let assetLookupCount = 0;
   let closeCaseBeforeNextUpdate = closeCaseBeforeFinalUpdate;
   let moveCaseToReviewBeforeNextUpdate = moveCaseToReviewBeforeFinalUpdate;
@@ -238,7 +239,10 @@ function fixture({
         if (target) target.status = "review";
       }
       const selected = rows.filter((row) => this.conditions.every((condition) => condition(row)));
-      if (this.operation === "update") selected.forEach((row) => Object.assign(row, this.values));
+      if (this.operation === "update") {
+        if (this.table === "information_agent_messages") messageMetadataWrites += 1;
+        selected.forEach((row) => Object.assign(row, this.values));
+      }
       return { data: selected, error: null };
     }
   }
@@ -250,14 +254,29 @@ function fixture({
       return { error: null };
     }),
   });
-  return { cases, missions, messages, assets, facts, jobs, uploads };
+  return {
+    cases,
+    missions,
+    messages,
+    assets,
+    facts,
+    jobs,
+    uploads,
+    messageMetadataWrites: () => messageMetadataWrites,
+  };
 }
 
 function receivedEmail({
   token = TOKEN_A,
   from = "Contact <contact@example.test>",
   text = "La surface habitable est de 84 m². Il y a 4 pièces.",
-}: { token?: string; from?: string; text?: string } = {}) {
+  authentication,
+}: {
+  token?: string;
+  from?: string;
+  text?: string;
+  authentication?: { spf?: string; dkim?: string; dmarc?: string } | null;
+} = {}) {
   mocks.verify.mockReturnValue({
     type: "email.received",
     created_at: "2026-09-23T10:00:00.000Z",
@@ -271,6 +290,7 @@ function receivedEmail({
       text,
       html: null,
       created_at: "2026-09-23T10:00:00.000Z",
+      ...(authentication === undefined ? {} : { authentication }),
     },
     error: null,
   });
@@ -282,6 +302,7 @@ function webhook(
   body = "signed local fixture",
   additionalHeaders: HeadersInit = {},
   deferProcessing = false,
+  envOverrides: Partial<Omit<NodeJS.ProcessEnv, "NODE_ENV">> = {},
 ): Promise<Awaited<ReturnType<typeof processInformationAgentInboundWebhook>>> {
   const request = new Request("https://example.test/api/webhooks/resend/information-agent", {
     method: "POST",
@@ -300,6 +321,7 @@ function webhook(
       RESEND_API_KEY: "fixture-key",
       RESEND_WEBHOOK_SECRET: "fixture-secret",
       INFORMATION_AGENT_INBOUND_DOMAIN: DOMAIN,
+      ...envOverrides,
     },
     fetchImpl: fetchImpl as typeof fetch,
     deferProcessing,
@@ -429,6 +451,35 @@ describe("information-agent offline inbound scenarios", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("reviews a deferred receipt with unverified authentication before creating a job", async () => {
+    const state = fixture();
+    receivedEmail({ authentication: { spf: "pass", dkim: "pass", dmarc: "gray" } });
+    const fetchImpl = vi.fn();
+
+    expect(
+      await webhook(fetchImpl, "fixture", {}, true, {
+        INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION: "true",
+      }),
+    ).toMatchObject({
+      caseId: CASE_A,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(state.jobs).toHaveLength(0);
+    expect(state.messages[0]?.metadata).toMatchObject({
+      sender_authentication: {
+        status: "unverified",
+        spf: "pass",
+        dkim: "pass",
+        dmarc: "gray",
+      },
+      inbound_processing: { status: "review", reason: "sender_authentication_unverified" },
+    });
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("persists a completed processing checkpoint and skips attachment work on a replay", async () => {
     const state = fixture();
     receivedEmail({ text: "Merci pour votre retour." });
@@ -436,6 +487,7 @@ describe("information-agent offline inbound scenarios", () => {
     const fetchImpl = vi.fn();
 
     const first = await webhook(fetchImpl);
+    const writesAfterFirstDelivery = state.messageMetadataWrites();
     const second = await webhook(fetchImpl);
 
     expect(first).toMatchObject({ processingStatus: "completed" });
@@ -450,6 +502,7 @@ describe("information-agent offline inbound scenarios", () => {
     });
     expect(mocks.list).toHaveBeenCalledTimes(1);
     expect(fetchImpl).not.toHaveBeenCalled();
+    expect(state.messageMetadataWrites()).toBe(writesAfterFirstDelivery);
   });
 
   it("keeps a case in review when a later inbound reply has no new fact", async () => {
@@ -725,6 +778,16 @@ describe("information-agent offline inbound scenarios", () => {
     expect(state.facts).toHaveLength(0);
     expect(mocks.list).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
+
+    receivedEmail({
+      authentication: { spf: "pass", dkim: "pass", dmarc: "fail" },
+    });
+    expect(await webhook(fetchImpl)).toMatchObject({
+      duplicate: true,
+      processingStatus: "review",
+    });
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("uses the actual From address when the display name contains another email", async () => {
@@ -740,6 +803,110 @@ describe("information-agent offline inbound scenarios", () => {
     });
     expect(state.cases[0]?.status).toBe("review");
     expect(state.messages[0]?.metadata).toMatchObject({ sender_matches_recipient: false });
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("keeps an explicit Resend authentication failure in review even in relaxed mode", async () => {
+    const state = fixture();
+    receivedEmail({
+      authentication: { spf: "pass", dkim: "pass", dmarc: "fail" },
+    });
+    const fetchImpl = vi.fn();
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      caseId: CASE_A,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(state.messages[0]?.metadata).toMatchObject({
+      sender_matches_recipient: true,
+      sender_authentication: {
+        status: "fail",
+        spf: "pass",
+        dkim: "pass",
+        dmarc: "fail",
+      },
+      inbound_processing: { status: "review", reason: "sender_authentication_failed" },
+    });
+    expect(state.cases[0]?.status).toBe("review");
+    expect(state.facts).toHaveLength(0);
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("requires DMARC and one aligned mechanism in strict mode without requiring both", async () => {
+    const state = fixture();
+    receivedEmail({
+      authentication: { spf: "pass", dkim: "unknown", dmarc: "pass" },
+    });
+
+    expect(
+      await webhook(vi.fn(), "fixture", {}, false, {
+        INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION: "true",
+      }),
+    ).toMatchObject({ caseId: CASE_A, factCount: 2, processingStatus: "review" });
+    expect(state.messages[0]?.metadata).toMatchObject({
+      sender_authentication: {
+        status: "pass",
+        spf: "pass",
+        dkim: "unknown",
+        dmarc: "pass",
+      },
+    });
+    expect(state.facts).toHaveLength(2);
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["SPF", { spf: "fail", dkim: "pass", dmarc: "pass" }],
+    ["DKIM", { spf: "pass", dkim: "fail", dmarc: "pass" }],
+  ] as const)(
+    "admits a DMARC pass through the other aligned mechanism when %s fails",
+    async (_mechanism, authentication) => {
+      const state = fixture();
+      receivedEmail({ authentication });
+
+      expect(
+        await webhook(vi.fn(), "fixture", {}, false, {
+          INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION: "true",
+        }),
+      ).toMatchObject({ caseId: CASE_A, factCount: 2, processingStatus: "review" });
+      expect(state.messages[0]?.metadata).toMatchObject({
+        sender_authentication: { status: "pass", ...authentication },
+      });
+      expect(state.facts).toHaveLength(2);
+      expect(mocks.list).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("reviews a missing or non-pass authentication result in strict mode before extraction", async () => {
+    const state = fixture();
+    receivedEmail({ authentication: null });
+    const fetchImpl = vi.fn();
+
+    expect(
+      await webhook(fetchImpl, "fixture", {}, false, {
+        INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION: "true",
+      }),
+    ).toMatchObject({
+      caseId: CASE_A,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(state.messages[0]?.metadata).toMatchObject({
+      sender_authentication: {
+        status: "unverified",
+        spf: "missing",
+        dkim: "missing",
+        dmarc: "missing",
+      },
+      inbound_processing: { status: "review", reason: "sender_authentication_unverified" },
+    });
+    expect(state.cases[0]?.status).toBe("review");
+    expect(state.facts).toHaveLength(0);
     expect(mocks.list).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
   });

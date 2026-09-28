@@ -109,6 +109,36 @@ def test_real_review_separates_coverage_from_accuracy_and_returns_aggregates_onl
     assert report["source_identity_cases_annotated"] == 1
     assert report["source_identity_cases_verified"] == 1
     assert report["source_identity_error_cases"] == 0
+    assert report["readiness"] == {
+        "captured_cases": 2,
+        "reviewed_cases": 1,
+        "double_reviewed_cases": 1,
+        "adjudicated_cases": 1,
+        "field_annotations": 6,
+        "fields": {
+            "external_id": 1,
+            "occupancy_status": 1,
+            "parking_count": 1,
+            "rooms_count": 1,
+            "source_url": 1,
+            "starting_price_eur": 1,
+        },
+    }
+    assert report["by_source"]["source-a"]["readiness"] == {
+        "captured_cases": 1,
+        "reviewed_cases": 1,
+        "double_reviewed_cases": 1,
+        "adjudicated_cases": 1,
+        "field_annotations": 6,
+        "fields": {
+            "external_id": 1,
+            "occupancy_status": 1,
+            "parking_count": 1,
+            "rooms_count": 1,
+            "source_url": 1,
+            "starting_price_eur": 1,
+        },
+    }
     encoded = json.dumps(report)
     assert "private-name" not in encoded
     assert "lot-1" not in encoded
