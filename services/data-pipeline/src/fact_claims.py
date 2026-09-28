@@ -2,8 +2,10 @@
 
 The catalogue fields are still the operational read model.  This module only
 emits an append-only observation for a value when the incoming source payload
-contains field-level evidence that can be pointed back to the source URL.  A
-candidate is deliberately never promoted to ``accepted`` here.
+contains field-level evidence that can be pointed back to the exact source
+URL.  Document/PDF evidence must carry its own document URL; the listing URL
+is never substituted for a missing document URL.  A candidate is deliberately
+never promoted to ``accepted`` here.
 """
 from __future__ import annotations
 
@@ -16,6 +18,8 @@ from uuid import UUID, uuid5
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_occupancy_status, parse_french_datetime, parse_price, parse_surface
 
+# The identity already includes source_url and evidence_locator.  Corrected
+# document claims receive a new UUID without duplicating unchanged v2 claims.
 FACT_CLAIMS_VERSION = "auction_fact_claims_v2"
 FACT_CLAIMS_EXTRACTOR = "immojudis.pipeline.fact_claims"
 FACT_CLAIMS_NAMESPACE = UUID("b9866b5e-df4e-4cf4-a7f5-d43cc50a4b73")
@@ -119,6 +123,11 @@ _SURFACE_FIELDS = {
     "land_surface_m2",
 }
 
+# The final item is an optional source URL override.  It is populated for
+# document evidence so the claim points at the document that contains the
+# quote, rather than at the listing that linked to that document.
+_Provenance = tuple[str, dict[str, object], float, object | None, str | None]
+
 
 def build_fact_claim_candidates(sale: AuctionSale) -> list[dict[str, object]]:
     """Return source-scoped candidates for ``sale``.
@@ -138,21 +147,32 @@ def build_fact_claim_candidates(sale: AuctionSale) -> list[dict[str, object]]:
         if not isinstance(payload, dict):
             payload = {}
         for field_key, value_key, aliases in _FIELD_SPECS:
-            for evidence_kind, locator, confidence, evidence_value in _field_provenances(
+            for evidence_kind, locator, confidence, evidence_value, evidence_source_url in _field_provenances(
                 value_key, aliases, payload
             ):
                 candidate_value = _normalized_value(value_key, evidence_value)
                 if candidate_value is None:
+                    continue
+                candidate_source_url = evidence_source_url or source_url
+                if (
+                    not isinstance(candidate_source_url, str)
+                    or not candidate_source_url.startswith("https://")
+                ):
                     continue
                 candidates.append(
                     {
                         "field_key": field_key,
                         "value_jsonb": candidate_value,
                         "evidence_kind": evidence_kind,
-                        "source_url": source_url,
+                        "source_url": candidate_source_url,
                         "evidence_locator": {
                             "source_name": source_name,
                             "field": value_key,
+                            **(
+                                {"listing_source_url": source_url}
+                                if evidence_kind == "source_document" and source_url != candidate_source_url
+                                else {}
+                            ),
                             **locator,
                         },
                         "confidence_score": confidence,
@@ -266,8 +286,8 @@ def _field_provenances(
     field: str,
     aliases: tuple[str, ...],
     payload: dict[str, object],
-) -> list[tuple[str, dict[str, object], float, object | None]]:
-    provenances: list[tuple[str, dict[str, object], float, object | None]] = []
+) -> list[_Provenance]:
+    provenances: list[_Provenance] = []
     if _has_value(payload.get(field)):
         provenances.append(
             (
@@ -275,6 +295,7 @@ def _field_provenances(
                 {"kind": "source_field", "quote": _quote(payload.get(field))},
                 0.92,
                 payload.get(field),
+                None,
             )
         )
 
@@ -288,6 +309,7 @@ def _field_provenances(
                 {"kind": "source_block", "block_key": path, "quote": _quote(value)},
                 0.9,
                 value,
+                None,
             )
         )
 
@@ -306,6 +328,13 @@ def _field_provenances(
             continue
         if not _extraction_matches_field(field, extraction_key, extraction):
             continue
+        document_url = _document_source_url(extraction)
+        # A document-derived value without its exact document URL would be
+        # incorrectly attributed to the listing URL by the caller.  Keep the
+        # candidate out of the append-only claims table until the extractor
+        # records the URL that was actually read.
+        if document_url is None:
+            continue
         locator: dict[str, object] = {"kind": "document_extraction", "extraction_key": extraction_key}
         for key in ("document_url", "document_label", "document_type", "page_number", "extraction_method"):
             value = extraction.get(key)
@@ -319,7 +348,7 @@ def _field_provenances(
         except (TypeError, ValueError):
             confidence = 0.78
         evidence_value = extraction.get("value_eur") if field == "starting_price_eur" else extraction.get("value_m2")
-        provenances.append(("source_document", locator, confidence, evidence_value))
+        provenances.append(("source_document", locator, confidence, evidence_value, document_url))
 
     # The normalizer stores a field-specific excerpt for surfaces.  Keep this
     # path narrow so arbitrary description text never becomes a surface claim.
@@ -337,6 +366,7 @@ def _field_provenances(
                 {"kind": "field_evidence", "quote": surface_evidence},
                 0.78,
                 surface_value,
+                None,
             )
         )
 
@@ -346,9 +376,22 @@ def _field_provenances(
         text_value = normalize_occupancy_status(quote)
         if quote and text_value in _KNOWN_OCCUPANCY:
             provenances.append(
-                ("source_listing", {"kind": "text_evidence", "quote": quote}, 0.72, text_value)
+                ("source_listing", {"kind": "text_evidence", "quote": quote}, 0.72, text_value, None)
             )
     return provenances
+
+
+def _document_source_url(extraction: dict[str, object]) -> str | None:
+    """Return a usable URL for the exact document behind an extraction.
+
+    A document label, page number, or OCR method is not enough to identify the
+    bytes that produced a value.  The caller must therefore drop document
+    evidence when the extractor did not preserve an HTTPS document URL.
+    """
+    document_url = clean_text(extraction.get("document_url"))
+    if not document_url or not document_url.startswith("https://"):
+        return None
+    return document_url
 
 
 def _surface_evidence_matches_field(field: str, evidence: str) -> bool:

@@ -50,11 +50,13 @@ def test_pdf_extraction_provenance_is_field_typed() -> None:
             "surface_extraction": {
                 "value_m2": 90,
                 "evidence": "Surface habitable : 90 m²",
+                "document_url": "https://source.example/pv.pdf",
                 "page_number": 4,
             },
             "land_surface_extraction": {
                 "value_m2": 420,
                 "evidence": "Terrain cadastré de 420 m²",
+                "document_url": "https://source.example/cadastre.pdf",
                 "page_number": 4,
             },
         },
@@ -68,7 +70,13 @@ def test_pdf_extraction_provenance_is_field_typed() -> None:
     assert "property.surface_m2" not in by_field
     assert "property.carrez_surface_m2" not in by_field
     assert by_field["property.habitable_surface_m2"]["evidence_kind"] == "source_document"
+    assert by_field["property.habitable_surface_m2"]["source_url"] == "https://source.example/pv.pdf"
+    assert (
+        by_field["property.habitable_surface_m2"]["evidence_locator"]["listing_source_url"]
+        == "https://source.example/sale-2"
+    )
     assert by_field["property.land_surface_m2"]["evidence_locator"]["page_number"] == 4
+    assert by_field["property.land_surface_m2"]["source_url"] == "https://source.example/cadastre.pdf"
 
 
 def test_missing_field_provenance_does_not_create_a_claim() -> None:
@@ -111,6 +119,42 @@ def test_document_evidence_without_a_scalar_does_not_reuse_the_canonical_value()
             "surface_extraction": {
                 "evidence": "Surface habitable à confirmer",
                 "document_url": "https://source.example/document.pdf",
+            }
+        },
+    )
+
+    assert build_fact_claim_candidates(sale) == []
+
+
+def test_document_evidence_without_exact_document_url_is_not_attributed_to_listing() -> None:
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://source.example/listing-with-unlocated-pdf",
+        starting_price_eur=100000,
+        raw_payload={
+            "starting_price_extraction": {
+                "value_eur": 100000,
+                "evidence": "Mise à prix : 100 000 €",
+                "document_label": "Cahier des conditions de vente",
+                "page_number": 7,
+            }
+        },
+    )
+
+    assert build_fact_claim_candidates(sale) == []
+
+
+def test_document_evidence_rejects_non_https_document_url() -> None:
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://source.example/listing-with-insecure-pdf",
+        starting_price_eur=100000,
+        raw_payload={
+            "starting_price_extraction": {
+                "value_eur": 100000,
+                "evidence": "Mise à prix : 100 000 €",
+                "document_url": "http://source.example/cahier.pdf",
+                "page_number": 7,
             }
         },
     )

@@ -268,6 +268,53 @@ describe("AdminInformationAgentReviewPanel", () => {
     });
   });
 
+  it("previews a supported private attachment inside the review panel", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "fact-preview",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          fact_key: "document",
+          display_value: "Procès-verbal reçu",
+          confidence: 0.94,
+          evidence_asset_id: "asset-preview",
+          evidence_excerpt: "Le document précise la surface habitable.",
+        },
+      ],
+      cases: [{ id: "33333333-3333-4333-8333-333333333333", status: "review" }],
+      assets: [
+        {
+          id: "asset-preview",
+          mime_type: "application/pdf",
+          rights_status: "authorized",
+          original_filename: "pv.pdf",
+        },
+      ],
+      extractions: [{ asset_id: "asset-preview", status: "completed" }],
+      messages: [],
+    });
+    mocks.fetchEvidenceUrl.mockResolvedValue(
+      "https://storage.example.test/private-preview?token=short-lived",
+    );
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Prévisualiser la pièce" }));
+    const preview = await screen.findByTitle("Aperçu privé de pv.pdf");
+    expect(preview.getAttribute("src")).toBe(
+      "https://storage.example.test/private-preview?token=short-lived",
+    );
+    expect(preview.getAttribute("sandbox")).toBe("");
+    expect(preview.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(screen.getByText(/l’original reste dans le stockage privé/)).toBeTruthy();
+  });
+
   it("allows acceptance only when a document is authorized and analyzed", async () => {
     mocks.fetchReview.mockResolvedValue({
       facts: [

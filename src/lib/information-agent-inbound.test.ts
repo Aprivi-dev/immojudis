@@ -105,4 +105,71 @@ describe("information agent inbound parsing", () => {
       { factKey: "occupancy_status", proposedValue: { value: "squatted" } },
     ]);
   });
+
+  it("extracts explicitly labelled sale dates and starting prices", () => {
+    const facts = extractInformationAgentFacts(
+      "La date de la vente est fixée au 14 septembre 2026 à 9 h. Mise à prix : 120 000 €.",
+    );
+
+    expect(facts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          factKey: "sale_date",
+          proposedValue: { value: "2026-09-14" },
+          displayValue: "14/09/2026",
+          confidence: 0.94,
+        }),
+        expect.objectContaining({
+          factKey: "starting_price_eur",
+          proposedValue: { value: 120000, unit: "EUR" },
+          displayValue: "120 000 €",
+          confidence: 0.95,
+        }),
+      ]),
+    );
+  });
+
+  it("supports ISO dates and compact thousand or kilo price notation", () => {
+    expect(
+      extractInformationAgentFacts(
+        "Date de l'adjudication : 2026-10-03. Prix de départ : 95 k€.",
+      ).map((fact) => fact.proposedValue),
+    ).toEqual([{ value: "2026-10-03" }, { value: 95000, unit: "EUR" }]);
+  });
+
+  it("rejects uncertain, contradictory and invalid labelled values", () => {
+    const extracted = extractInformationAgentFacts(
+      "Date de vente à confirmer : 14/09/2026. Date d'adjudication : 15/09/2026. Mise à prix non communiquée : 120 000 €.",
+    );
+    expect(extracted).toEqual([]);
+    expect(extractInformationAgentFacts("Date de la vente : 31/02/2026.")).toEqual([]);
+    expect(extractInformationAgentFacts("Mise à prix : 120 000 € à confirmer.")).toEqual([]);
+    expect(extractInformationAgentFacts("Date de la vente : 14/09/2026 reportée.")).toEqual([]);
+  });
+
+  it("does not borrow a visit date or another amount after an omitted field", () => {
+    expect(
+      extractInformationAgentFacts(
+        "Date de la vente : prochainement. Visite le 14/09/2026. Mise à prix : à préciser. Frais : 500 €.",
+      ),
+    ).toEqual([]);
+    expect(
+      extractInformationAgentFacts("Date de la vente : 14/09/2026, visite le 15/09/2026."),
+    ).toEqual([]);
+  });
+
+  it("rejects an invalid value when a repeated label later has a valid value", () => {
+    expect(
+      extractInformationAgentFacts("Date de la vente : 31/02/2026. Date de la vente : 14/09/2026."),
+    ).toEqual([]);
+    expect(extractInformationAgentFacts("Mise à prix : 0 €. Mise à prix : 120 000 €.")).toEqual([]);
+  });
+
+  it("does not promote unlabelled, quoted, visit or DPE values", () => {
+    const facts = extractInformationAgentFacts(
+      "Bonjour.\n> Mise à prix : 120 000 €\nVisite le 14 septembre 2026. DPE C. 130 000 €.",
+    );
+
+    expect(facts).toEqual([]);
+  });
 });

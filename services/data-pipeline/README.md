@@ -135,7 +135,40 @@ python -m src.main --backfill-llm-descriptions
 python -m src.main --backfill-llm-descriptions --limit 20 --backfill-statuses active,upcoming
 ```
 
-Le backfill manuel reste disponible depuis l’admin ou `workflow_dispatch`. La file documentaire est consommée uniquement sur lancement manuel, sans backfill idle.
+Le backfill manuel reste disponible depuis l'admin ou `workflow_dispatch`. La file documentaire est consommée uniquement sur lancement manuel, sans backfill idle.
+
+### Backfill des claims historiques
+
+La migration `auction_fact_claims` ne convertit pas les anciennes colonnes
+aplaties en claims : elles ne portent pas une preuve au niveau du champ. Le
+backfill opérateur lit uniquement `raw_payload`, `observations` et les lignes
+persistées de `auction_observations`. Il conserve un curseur local par
+`(auction_sales.updated_at, auction_sales.id)`, reprend après chaque lot
+committed et ignore les ventes sans preuve avec un compteur explicite.
+
+Le mode par défaut est une lecture sans écriture Supabase :
+
+```bash
+python scripts/backfill_fact_claims.py --limit 100 --batch-size 25
+```
+
+Pour insérer les seuls claims `candidate`, il faut demander explicitement le
+mode d'application. Une reprise d'un état `dry-run` exige `--restart` (ou un
+nouveau fichier d'état) afin de relire toute la fenêtre inspectée :
+
+```bash
+python scripts/backfill_fact_claims.py \
+  --limit 100 --batch-size 25 --apply --restart
+```
+
+Le curseur suit uniquement `auction_sales.updated_at`. Si des preuves sont
+ajoutées ou corrigées plus tard dans `auction_observations`, elles ne déplacent
+pas ce curseur : relancer avec `--restart` (ou un nouveau fichier d'état) pour
+rejouer le périmètre concerné, avec le même mode d'exécution.
+
+Le fichier d'état par défaut est ignoré par git dans `data/processed/`. Les
+UUID de claims sont déterministes et l'insert utilise `ON CONFLICT (id) DO
+NOTHING`; un rerun est donc idempotent et ne résout jamais un claim.
 
 En CI, les backfills IA sont volontairement bornés par petits lots et les
 prédictions Replicate démarrent avec `REPLICATE_WAIT_SECONDS=1` pour éviter
