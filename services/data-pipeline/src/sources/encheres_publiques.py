@@ -166,10 +166,18 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
         return {}
 
     lot_id = _lot_id_from_url(source_url)
-    lot = state.get(f"Lot:{lot_id}") if lot_id else None
+    # A detail URL is the identity boundary for the requested lot.  Apollo
+    # state can contain several lots (for example when a page is rendered from
+    # a cached route), so falling back to the first immobilier lot can silently
+    # attach another property's facts to this URL.  Fail closed until the URL
+    # identifies a lot and that exact lot exists in the payload.
+    if not lot_id:
+        return {}
+    lot = state.get(f"Lot:{lot_id}")
     if not isinstance(lot, dict):
-        lot = _first_relevant_lot(state)
-    if not lot:
+        return {}
+    payload_lot_id = lot.get("id")
+    if payload_lot_id not in (None, "") and str(payload_lot_id) != lot_id:
         return {}
 
     address = _resolve_address(state, lot)
@@ -261,14 +269,15 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
         return
     try:
         html = client.get(source_url)
+        details = parse_encheres_publiques_detail_html(html, source_url)
+        if not details:
+            raise ValueError("Requested detail did not contain the lot identified by its URL")
     except Exception as exc:
         LOGGER.warning("Encheres-Publiques detail fetch failed for %s: %s", source_url, exc)
         errors.append(f"detail {source_url}: {exc}")
         sale["_detail_fetch_failed"] = True
         sale["source_detail_status"] = "failed"
         return
-
-    details = parse_encheres_publiques_detail_html(html, source_url)
     for key, value in details.items():
         if key == "source_sale_schedule":
             # The detail page supersedes the list, including an incomplete interval.
@@ -296,13 +305,6 @@ def _resolve_ref(state: dict[str, Any], value: object) -> dict[str, Any]:
     ref = value.get("__ref")
     resolved = state.get(ref) if isinstance(ref, str) else None
     return resolved if isinstance(resolved, dict) else {}
-
-
-def _first_relevant_lot(state: dict[str, Any]) -> dict[str, Any]:
-    for key, lot in state.items():
-        if key.startswith("Lot:") and isinstance(lot, dict) and lot.get("categorie") == "immobilier":
-            return lot
-    return {}
 
 
 def _lot_id_from_url(source_url: str) -> str | None:

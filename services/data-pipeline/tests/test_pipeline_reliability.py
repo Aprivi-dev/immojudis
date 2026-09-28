@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -34,6 +35,36 @@ def test_source_check_expires_and_content_change_invalidates_enrichment():
     assert changed['superseded_analysis']['description'] == 'Ancienne analyse : bien libre'
     known[raw["source_url"]]["raw_payload"]["source_checks"][raw["source_url"]]["checked_at"] = (datetime.now(UTC) - timedelta(days=2)).isoformat()
     assert not detail_is_fresh(known[raw["source_url"]], raw["source_url"])
+
+
+def test_source_detail_refresh_detects_non_signature_fact_changes():
+    """A date/price-stable listing must still invalidate changed detail facts."""
+    source_url = "https://example.test/detail-refresh"
+    initial = {
+        "source_url": source_url,
+        "source_name": "avoventes",
+        "sale_date": "2026-12-01T10:00:00+01:00",
+        "starting_price_eur": 100000,
+        "address": "1 rue Ancienne",
+        "surface_m2": 80,
+        "documents": [{"url": "https://example.test/pv-v1.pdf", "label": "PV"}],
+    }
+    record_source_checks([initial], {})
+    known = {source_url: {"raw_payload": {"source_checks": deepcopy(initial["source_checks"])}}}
+
+    changed = {
+        **initial,
+        "address": "2 rue Nouvelle",
+        "surface_m2": 92,
+        "documents": [{"url": "https://example.test/pv-v2.pdf", "label": "PV"}],
+        "llm_display_description": "Ancienne analyse",
+    }
+    record_source_checks([changed], known)
+
+    assert changed["source_checks"][source_url]["fingerprint"] != initial["source_checks"][source_url]["fingerprint"]
+    assert changed["source_content_changed"] is True
+    assert changed["llm_display_status"] == "pending"
+    assert "llm_display_description" not in changed
 
 
 @pytest.mark.parametrize("marker", ["identity_mismatch", "quarantined"])

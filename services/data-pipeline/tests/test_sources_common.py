@@ -77,3 +77,23 @@ def test_agrasc_intermediate_does_not_disable_root_or_hostname_validation():
     certificate = Path(agrasc.__file__).with_name("certificates") / "sectigo-qualified-r39.pem"
     der = ssl.PEM_cert_to_DER_cert(certificate.read_text())
     assert hashlib.sha256(der).hexdigest() == "ac8c7ef96eb4b535fbfb4e7521f130536198a60dff716312b22d4acc4afe9a7d"
+
+
+def test_listing_signature_requires_date_and_price_before_skipping_detail() -> None:
+    url = "https://example.test/auction/1"
+
+    assert common.listing_signature({"sale_date": "10 janvier 2027", "starting_price_eur": None}) is None
+    assert common.listing_signature({"sale_date": None, "starting_price_eur": 100000}) is None
+    assert common.should_fetch_detail(
+        {"source_url": url, "sale_date": "10 janvier 2027", "starting_price_eur": None},
+        {url: "2027-01-10|"},
+    ) is True
+
+
+def test_listing_signature_skips_known_unchanged_card_when_both_values_are_present() -> None:
+    url = "https://example.test/auction/1"
+
+    sale = {"source_url": url, "sale_date": "10 janvier 2027", "starting_price_eur": 100000}
+
+    assert common.should_fetch_detail(sale, {url: "2027-01-10|100000"}) is False
+    assert sale["_known_unchanged"] is True

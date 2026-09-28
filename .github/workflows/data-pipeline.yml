@@ -100,6 +100,11 @@ jobs:
       REPLICATE_MAX_CALLS_PER_HOUR: 60
       REPLICATE_RETRY_BACKOFF_SECONDS: 30
       REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
+      # Claim two source-detail jobs per RPC, then process them sequentially.
+      # Raise to 3 only after three comparable runs show
+      # source_detail_max_batch_seconds < 900, zero expired claims, and no
+      # provider Retry-After deferrals. The queue lease is 1,800 seconds.
+      PIPELINE_ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE: 2
       REPLICATE_TEMPERATURE: 0.1
       REPLICATE_MAX_TOKENS: 512
       # Structured evidence needs room for valid JSON; summaries remain short.

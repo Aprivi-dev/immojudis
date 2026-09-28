@@ -61,6 +61,8 @@ ENRICHMENT_FAMILY = "enrichment"
 ENRICHMENT_FAMILY_CYCLE = (SOURCE_DETAIL_FAMILY,) * 5 + (ENRICHMENT_FAMILY,)
 ENRICHMENT_MAX_JOBS = 90
 ENRICHMENT_BUDGET_SECONDS = 1200
+ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE = 2
+ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_MAX = 5
 
 
 def main() -> int:
@@ -433,12 +435,21 @@ def run_enrichment_queue_worker(
     max_jobs: int | None = None,
     budget_seconds: int | None = None,
 ) -> int:
-    """Run one fair, bounded queue worker using one claim per lane slot.
+    """Run one fair, bounded queue worker.
 
-    Five source-detail slots are followed by one general enrichment slot. An
-    empty preferred lane immediately gives its slot to the other lane. A
-    deferred general job counts as handled so an exhausted AI budget cannot
-    terminate the remaining source-detail work.
+    Five source-detail jobs are followed by one general enrichment job. Detail
+    claims are grouped into small bounded RPC batches, but the jobs remain
+    sequential inside ``run_source_detail_jobs`` so provider politeness and
+    sale revision ordering are unchanged. An empty preferred lane immediately
+    gives its slot to the other lane. A deferred general job counts as handled
+    so an exhausted AI budget cannot terminate the remaining source-detail
+    work.
+
+    The claim batch size is deliberately independent from the job budget. It
+    reduces claim overhead without increasing the worker's maximum work or
+    making a detail job run concurrently. Increase it only after the emitted
+    per-lane duration and lease metrics show that the full batch fits safely
+    inside the queue lease.
     """
     if max_jobs is None:
         max_jobs = min(
@@ -455,37 +466,135 @@ def run_enrichment_queue_worker(
     else:
         budget_seconds = max(0, min(ENRICHMENT_BUDGET_SECONDS, int(budget_seconds)))
 
-    deadline = time.monotonic() + budget_seconds
+    started_at = time.monotonic()
+    deadline = started_at + budget_seconds
     processed = 0
+    processed_by_family = {SOURCE_DETAIL_FAMILY: 0, ENRICHMENT_FAMILY: 0}
+    elapsed_by_family = {SOURCE_DETAIL_FAMILY: 0.0, ENRICHMENT_FAMILY: 0.0}
+    max_batch_elapsed_by_family = {SOURCE_DETAIL_FAMILY: 0.0, ENRICHMENT_FAMILY: 0.0}
+    claim_batches = 0
+    stop_reason = "max_jobs"
     provider_clients: dict[str, object] = {}
-    for slot in range(max_jobs):
+    slot = 0
+    while processed < max_jobs:
         if time.monotonic() >= deadline:
+            stop_reason = "budget"
             break
         preferred = ENRICHMENT_FAMILY_CYCLE[slot % len(ENRICHMENT_FAMILY_CYCLE)]
         alternate = ENRICHMENT_FAMILY if preferred == SOURCE_DETAIL_FAMILY else SOURCE_DETAIL_FAMILY
+        preferred_limit = _enrichment_claim_limit(
+            preferred,
+            slot=slot,
+            remaining=max_jobs - processed,
+        )
+        claim_batches += 1
+        batch_started_at = time.monotonic()
         count = run_enrichment_queue_batch(
-            limit=1,
+            limit=preferred_limit,
             family=preferred,
             provider_clients=provider_clients,
         )
+        batch_elapsed = max(time.monotonic() - batch_started_at, 0.0)
+        elapsed_by_family[preferred] += batch_elapsed
+        max_batch_elapsed_by_family[preferred] = max(
+            max_batch_elapsed_by_family[preferred],
+            batch_elapsed,
+        )
+        claimed_family = preferred if count else None
         if not count:
+            alternate_limit = _enrichment_claim_limit(
+                alternate,
+                slot=slot,
+                remaining=max_jobs - processed,
+            )
+            claim_batches += 1
+            batch_started_at = time.monotonic()
             count = run_enrichment_queue_batch(
-                limit=1,
+                limit=alternate_limit,
                 family=alternate,
                 provider_clients=provider_clients,
             )
+            batch_elapsed = max(time.monotonic() - batch_started_at, 0.0)
+            elapsed_by_family[alternate] += batch_elapsed
+            max_batch_elapsed_by_family[alternate] = max(
+                max_batch_elapsed_by_family[alternate],
+                batch_elapsed,
+            )
+            claimed_family = alternate if count else None
         if not count:
             # Neither family is currently claimable. Avoid spinning against
             # paused/empty queues until the next scheduled worker.
+            stop_reason = "queues_empty"
             break
         processed += count
+        if claimed_family is not None:
+            processed_by_family[claimed_family] += count
+        # Advance by jobs, rather than by claim calls, so a detail batch of two
+        # still consumes exactly two positions in the five-to-one cycle.
+        slot += count
+    elapsed_seconds = max(time.monotonic() - started_at, 0.0)
+    jobs_per_hour = (processed * 3600 / elapsed_seconds) if elapsed_seconds else 0.0
+    LOGGER.info(
+        "Enrichment worker summary: processed=%s source_detail=%s enrichment=%s "
+        "claim_batches=%s elapsed_seconds=%.1f source_detail_seconds=%.1f "
+        "source_detail_max_batch_seconds=%.1f source_detail_avg_seconds_per_job=%.1f "
+        "enrichment_seconds=%.1f jobs_per_hour=%.1f stop=%s "
+        "source_detail_claim_batch_size=%s",
+        processed,
+        processed_by_family[SOURCE_DETAIL_FAMILY],
+        processed_by_family[ENRICHMENT_FAMILY],
+        claim_batches,
+        elapsed_seconds,
+        elapsed_by_family[SOURCE_DETAIL_FAMILY],
+        max_batch_elapsed_by_family[SOURCE_DETAIL_FAMILY],
+        (
+            elapsed_by_family[SOURCE_DETAIL_FAMILY]
+            / processed_by_family[SOURCE_DETAIL_FAMILY]
+            if processed_by_family[SOURCE_DETAIL_FAMILY]
+            else 0.0
+        ),
+        elapsed_by_family[ENRICHMENT_FAMILY],
+        jobs_per_hour,
+        stop_reason,
+        _enrichment_claim_batch_size(SOURCE_DETAIL_FAMILY),
+    )
     return processed
+
+
+def _enrichment_claim_batch_size(family: str) -> int:
+    """Return a bounded claim size for one queue family.
+
+    Only source-detail jobs are grouped. General jobs stay one per claim so a
+    long PDF/LLM task cannot reserve an unnecessarily large batch. Invalid or
+    out-of-range environment values fall back to the conservative default.
+    """
+    if family != SOURCE_DETAIL_FAMILY:
+        return 1
+    raw_value = os.getenv(
+        "PIPELINE_ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE",
+        str(ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE),
+    )
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        value = ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE
+    return max(1, min(ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_MAX, value))
+
+
+def _enrichment_claim_limit(family: str, *, slot: int, remaining: int) -> int:
+    """Bound one claim by both its batch size and its fair-cycle positions."""
+    if family != SOURCE_DETAIL_FAMILY:
+        return min(1, remaining)
+    cycle_position = slot % len(ENRICHMENT_FAMILY_CYCLE)
+    detail_positions = 1 if cycle_position >= 5 else 5 - cycle_position
+    return min(_enrichment_claim_batch_size(family), detail_positions, remaining)
 
 
 if __name__ == "__main__":
     if "--enrichment-only" in sys.argv:
-        # Claim one job at a time so each 30-minute lease is bounded by the
-        # work immediately following its claim. GitHub serializes writers.
+        # Detail claims are bounded batches, while each job is still processed
+        # sequentially so GitHub serializes writers and the queue lease stays
+        # visible in the worker summary.
         processed = run_enrichment_queue_worker()
         print(f'Enrichment worker completed {processed} jobs within its bounded budget')
         sys.exit(0)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
@@ -118,8 +118,12 @@ def parse_avoventes_html(
     soup = BeautifulSoup(html, "html.parser")
     sale_nodes = _find_sale_nodes(soup)
     if not sale_nodes:
-        text = soup.get_text("\n", strip=True)
-        return [_parse_text_block(text, page_url, fallback_department)] if "Mise à prix" in text else []
+        # A catalogue/search page may mention "Mise à prix" in a filter,
+        # footer, or neighbouring content without containing a property card.
+        # Treating the whole document as one sale fabricates a listing whose
+        # URL is the search page.  Detail pages have their own parser and must
+        # never enter this list-page fallback.
+        return []
     parsed_sales = [_parse_sale_node(node, page_url, fallback_department) for node in sale_nodes]
     return [sale for sale in parsed_sales if sale is not None]
 
@@ -154,9 +158,13 @@ def _find_sale_nodes(soup: BeautifulSoup) -> list[Tag]:
 def _parse_sale_node(node: Tag, page_url: str, fallback_department: str | None) -> dict[str, Any] | None:
     raw_text = node.get_text("\n", strip=True)
     links = node.find_all("a", href=True)
-    sale_url = urljoin(BASE_URL, str(node.get("data-link") or _choose_sale_url(links, page_url)))
+    candidate_url = str(node.get("data-link") or _choose_sale_url(links) or "")
+    sale_url = urljoin(BASE_URL, candidate_url)
     if not is_allowed_origin_url(sale_url, ALLOWED_ORIGINS):
         LOGGER.warning("Ignoring Avoventes listing with an untrusted source URL: %s", sale_url)
+        return None
+    if "/enchere/" not in urlparse(sale_url).path:
+        LOGGER.warning("Ignoring Avoventes card without a property detail URL: %s", sale_url)
         return None
     documents = _extract_documents(links, page_url)
     return _parse_text_block(raw_text, sale_url, fallback_department, documents=documents)
@@ -215,16 +223,12 @@ def _parse_text_block(
     }
 
 
-def _choose_sale_url(links: list[Tag], page_url: str) -> str:
+def _choose_sale_url(links: list[Tag]) -> str | None:
     for link in links:
         href = str(link.get("href"))
         if "/enchere/" in href:
             return urljoin(BASE_URL, href)
-    for link in links:
-        href = str(link.get("href"))
-        if href and not href.startswith("#") and not href.lower().endswith(".pdf"):
-            return urljoin(BASE_URL, href)
-    return page_url
+    return None
 
 
 def _extract_documents(links: list[Tag], page_url: str) -> list[dict[str, str]]:
