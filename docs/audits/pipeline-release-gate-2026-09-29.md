@@ -57,11 +57,23 @@ ces corrections ne crée à elle seule de capacité CPU, réseau, OCR ou LLM.
 
 ## Critère de publication
 
-La branche reste en brouillon tant que les migrations et l'intégration ne
-sont pas vérifiées par CI, que le contrôle de santé n'est pas rétabli et
-qu'une mesure sur au moins un cycle complet de collecte montre une file
-éligible et un stock de tâches de plus de 48 heures en diminution, sans
-dégrader la fraîcheur des sources. Les échecs Vench, PDF et relais doivent
-être absents ou explicitement quarantainés avec motif dans les nouveaux runs.
-L'envoi de courriels réels reste désactivé et suit son propre essai fournisseur
-contrôlé.
+La branche reste en brouillon tant que la CI et CodeQL ne sont pas verts sur
+son commit exact, y compris le rejeu des migrations et l'intégration locale,
+que l'essai fournisseur limité à une adresse de test n'est pas vérifié et que
+le contrôle de santé en production n'est pas rétabli. Une mesure sur au moins
+un cycle complet de collecte doit montrer une file éligible en diminution,
+sans dégrader la fraîcheur des sources. La seule baisse du stock ne suffit pas :
+les tâches de plus de 48 heures doivent être résorbées ou explicitement
+quarantainées avec un motif exploitable. Les échecs Vench, PDF et relais
+doivent être absents ou également quarantainés dans les nouveaux runs. Les
+21 champs non résolus par la revue IA et les 11 citations non vérifiées ne
+peuvent pas alimenter une valeur présentée comme confirmée.
+
+Pour mesurer l'effet réel des correctifs sur cette file, il faudrait d'abord
+appliquer les migrations et le worker en production dans une étape de
+maintenance interne, tout en gardant les nouvelles fonctions publiques et
+les courriels externes désactivés. Cette étape est distincte de la mise en ligne demandée et exige un
+accord explicite compte tenu de la condition posée par l'utilisateur : publier
+seulement une fois tout le travail terminé. Tant que cette étape n'est pas
+autorisée, le critère de santé ne peut pas être considéré comme satisfait par
+une simple simulation locale.
