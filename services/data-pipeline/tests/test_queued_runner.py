@@ -1,5 +1,6 @@
 import sys
 import types
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
@@ -19,6 +20,8 @@ except ModuleNotFoundError as exc:
     sys.modules["src.export"] = export_stub
     from src import queued_runner
     del sys.modules["src.export"]
+
+READ_DUE_ENRICHMENT_FAMILY_COUNTS = queued_runner._read_due_enrichment_family_counts
 
 
 @pytest.fixture(autouse=True)
@@ -561,6 +564,32 @@ def test_enrichment_worker_uses_five_to_one_lane_cycle(monkeypatch) -> None:
         (1, queued_runner.SOURCE_DETAIL_FAMILY),
         (1, queued_runner.ENRICHMENT_FAMILY),
     ]
+
+
+def test_due_lane_count_timeout_falls_back_without_stalling_worker(monkeypatch) -> None:
+    commands: list[str] = []
+
+    def execute(sql: str):
+        commands.append(sql.strip().lower())
+        if sql.lstrip().lower().startswith("select"):
+            raise TimeoutError("statement timeout")
+        return None
+
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://local"})
+    monkeypatch.setattr(
+        queued_runner,
+        "_postgres_connect",
+        lambda db_url, **kwargs: nullcontext(SimpleNamespace(execute=execute)),
+    )
+
+    assert READ_DUE_ENRICHMENT_FAMILY_COUNTS() == {}
+    assert commands[:3] == [
+        "set transaction read only",
+        "set local lock_timeout = '1000ms'",
+        "set local statement_timeout = '3000ms'",
+    ]
+    assert commands[3].startswith("select case when job_type")
+    assert queued_runner._enrichment_family_cycle({}) == queued_runner.ENRICHMENT_FAMILY_CYCLE
 
 
 def test_enrichment_worker_groups_detail_claims_without_exceeding_job_budget(monkeypatch) -> None:

@@ -14,12 +14,15 @@ import json
 import os
 import re
 import unicodedata
+import warnings
 from collections import Counter, defaultdict
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+
+from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 
 from src.extraction_corpus import CORPUS_SCHEMA_VERSION, classify_outcome, evaluate_corpus, values_equal
 from src.normalize import normalize_occupancy_status, normalize_property_type
@@ -30,10 +33,7 @@ REVIEW_SCHEMA_VERSION = "immojudis.real-extraction-review.v2"
 SUPPORTED_REVIEW_SCHEMA_VERSIONS = frozenset({LEGACY_REVIEW_SCHEMA_VERSION, REVIEW_SCHEMA_VERSION})
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
-NONVISIBLE_HTML_BLOCK_RE = re.compile(
-    r"<(script|style|template|noscript)\b[^>]*>.*?</\1\s*>", re.I | re.S
-)
-SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.I | re.S)
+NONVISIBLE_HTML_TAGS = ("script", "style", "template", "noscript")
 AGRASC_FICHE_PROPS_PREFIX = "React.createElement(FicheProduitApp,"
 AGRASC_ALLOWED_OPERATOR_HOST = "www.agorastore-immo.fr"
 AGRASC_OPERATOR_ID_RE = re.compile(r"-(\d+)\.aspx$", re.I)
@@ -400,9 +400,64 @@ def _captured_case(case: Mapping[str, Any]) -> tuple[dict[str, Any], str, dateti
     return dict(values), capture_sha256, extracted_at, capture_path
 
 
+def _capture_soup(value: str) -> BeautifulSoup:
+    """Parse a frozen capture with HTML-aware handling of malformed markup."""
+
+    # A frozen capture can legitimately be a URL or a file-like plain-text
+    # value. Suppress BeautifulSoup's advisory warning for those values.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", MarkupResemblesLocatorWarning)
+        return BeautifulSoup(value, "html.parser")
+
+
+def _remove_nonvisible_nodes(soup: BeautifulSoup) -> None:
+    """Remove nodes that must never provide citation evidence in place."""
+
+    for node in soup.find_all(NONVISIBLE_HTML_TAGS):
+        node.decompose()
+
+
+def _node_is_nonvisible(node: Any) -> bool:
+    """Return whether a parsed node is inside a non-rendered HTML element."""
+
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if getattr(parent, "name", None) in NONVISIBLE_HTML_TAGS:
+            return True
+        parent = getattr(parent, "parent", None)
+    return False
+
+
+def _visible_text_contains_excerpt(excerpt: str, capture_raw: str) -> bool:
+    """Check an exact excerpt against rendered text nodes, never attributes."""
+
+    soup = _capture_soup(capture_raw)
+    return any(
+        excerpt in str(text_node)
+        for text_node in soup.find_all(string=True)
+        if not _node_is_nonvisible(text_node)
+    )
+
+
+def _literal_markup_excerpt_is_visible(excerpt: str, capture_raw: str, rendered: str) -> bool:
+    """Allow a literal one-character HTML snippet only when its text is visible."""
+
+    if "<" not in excerpt or ">" not in excerpt or len(rendered) != 1:
+        return False
+    if excerpt not in capture_raw:
+        return False
+    soup = _capture_soup(capture_raw)
+    if any(excerpt in str(node) for node in soup.find_all(NONVISIBLE_HTML_TAGS)):
+        return False
+    return _visible_text_contains_excerpt(rendered, capture_raw)
+
+
 def _evidence_text(value: str) -> str:
-    text = html.unescape(NONVISIBLE_HTML_BLOCK_RE.sub(" ", value))
-    text = re.sub(r"<[^>]*>", " ", text)
+    """Normalize visible HTML text while excluding non-rendered containers."""
+
+    soup = _capture_soup(value)
+    _remove_nonvisible_nodes(soup)
+    text = html.unescape(soup.get_text(" "))
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", text)).strip().casefold()
 
 
@@ -477,8 +532,9 @@ def _agrasc_structured_evidence(
         return "", frozenset()
 
     props_objects: list[tuple[Mapping[str, Any], str]] = []
-    for script_match in SCRIPT_BLOCK_RE.finditer(capture_raw):
-        script = script_match.group(1)
+    soup = _capture_soup(capture_raw)
+    for script_node in soup.find_all("script"):
+        script = script_node.get_text()
         offsets = [match.start() for match in re.finditer(re.escape(AGRASC_FICHE_PROPS_PREFIX), script)]
         for offset in offsets:
             encoded_props = script[offset + len(AGRASC_FICHE_PROPS_PREFIX) :].lstrip()
@@ -702,10 +758,17 @@ def _ai_excerpt_is_verbatim(
     structured_leaf_texts: frozenset[str] = frozenset(),
 ) -> bool:
     rendered = _evidence_text(excerpt)
-    visible_raw = NONVISIBLE_HTML_BLOCK_RE.sub(" ", capture_raw)
     if len(rendered) >= 2 and rendered in capture_text:
         return True
-    if bool(re.search(r"\w", rendered)) and excerpt in visible_raw:
+    if (
+        bool(re.search(r"\w", rendered))
+        and "<" not in excerpt
+        and _visible_text_contains_excerpt(rendered, capture_raw)
+    ):
+        return True
+    if bool(re.search(r"\w", rendered)) and _literal_markup_excerpt_is_visible(
+        excerpt, capture_raw, rendered
+    ):
         return True
     if structured_capture_text and (
         (len(rendered) >= 2 and rendered in structured_capture_text)

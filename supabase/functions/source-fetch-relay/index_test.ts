@@ -107,6 +107,18 @@ Deno.test("redirect diagnostics keep only status and safe host/path", () => {
   if (cessionsDetail.destinationPath !== "/biens/") {
     throw new Error("Cessions detail path was not reduced to its public prefix");
   }
+
+  const externalSecret = redirectDiagnostic(
+    302,
+    "https://secret-token.evil.example/redirected",
+    "https://www.petitesaffiches.fr/",
+  );
+  if (externalSecret.destinationHost !== null || externalSecret.destinationPath !== null) {
+    throw new Error("external redirect host was logged");
+  }
+  if (JSON.stringify(externalSecret).includes("secret-token")) {
+    throw new Error("external redirect hostname leaked");
+  }
 });
 
 Deno.test("redirect diagnostics reject credentials and bound long paths", () => {
