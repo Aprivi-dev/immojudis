@@ -7,10 +7,7 @@ const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
 const PETITES_AFFICHES_HOST = "www.petitesaffiches.fr";
 const PETITES_AFFICHES_LIST_PATH = "/encheres-immobilieres/";
 const CESSIONS_HOST = "cessions.immobilier-etat.gouv.fr";
-const hosts = new Set([
-  PETITES_AFFICHES_HOST,
-  CESSIONS_HOST,
-]);
+const hosts = new Set([PETITES_AFFICHES_HOST, CESSIONS_HOST]);
 const cessionsClient = Deno.createHttpClient({
   caCerts: [SECTIGO_INTERMEDIATE],
 });
@@ -31,10 +28,7 @@ function safeRedirectPath(host: string, path: string): string | null {
     host === PETITES_AFFICHES_HOST &&
     (path === "/robots.txt" ||
       path === PETITES_AFFICHES_LIST_PATH ||
-      /^\/encheres-immobilieres\/ventes-aux-encheres-immobilieres-p\d+\.html$/
-        .test(
-          path,
-        ))
+      /^\/encheres-immobilieres\/ventes-aux-encheres-immobilieres-p\d+\.html$/.test(path))
   ) {
     return path;
   }
@@ -83,18 +77,11 @@ export function redirectDiagnostic(
   }
 }
 
-function logRedirect(
-  status: number,
-  location: string | null,
-  currentUrl: string,
-): void {
+function logRedirect(status: number, location: string | null, currentUrl: string): void {
   // Do not log the source URL or raw Location. The structured fields are the
   // complete diagnostic payload and contain no query, fragment, credentials,
   // or bearer token.
-  console.warn(
-    "source relay upstream redirect",
-    redirectDiagnostic(status, location, currentUrl),
-  );
+  console.warn("source relay upstream redirect", redirectDiagnostic(status, location, currentUrl));
 }
 
 /**
@@ -129,15 +116,10 @@ export function normalizeRedirectLocation(
     ) {
       return location;
     }
-    const normalized =
-      `https://${PETITES_AFFICHES_HOST}${PETITES_AFFICHES_LIST_PATH}`;
+    const normalized = `https://${PETITES_AFFICHES_HOST}${PETITES_AFFICHES_LIST_PATH}`;
     // A source redirecting an already canonical URL back to itself would
     // otherwise make the caller repeat the same request indefinitely.
-    if (
-      source.pathname === PETITES_AFFICHES_LIST_PATH &&
-      !source.search &&
-      !source.hash
-    ) {
+    if (source.pathname === PETITES_AFFICHES_LIST_PATH && !source.search && !source.hash) {
       return location;
     }
     return normalized;
@@ -146,17 +128,10 @@ export function normalizeRedirectLocation(
   }
 }
 
-export function allowedTarget(
-  value: string,
-  method: string,
-  body: string,
-): boolean {
+export function allowedTarget(value: string, method: string, body: string): boolean {
   try {
     const u = new URL(value);
-    if (
-      u.protocol !== "https:" || u.port || u.username || u.password ||
-      !hosts.has(u.hostname)
-    ) {
+    if (u.protocol !== "https:" || u.port || u.username || u.password || !hosts.has(u.hostname)) {
       return false;
     }
     if (method === "GET") {
@@ -198,10 +173,7 @@ export async function handler(req: Request): Promise<Response> {
   }
   const hash = [
     ...new Uint8Array(
-      await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(auth.slice(7)),
-      ),
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(auth.slice(7))),
     ),
   ]
     .map((x) => x.toString(16).padStart(2, "0"))
@@ -216,10 +188,7 @@ export async function handler(req: Request): Promise<Response> {
     }
     const input = JSON.parse(raw);
     const { url, method = "GET", body = "" } = input;
-    if (
-      typeof url !== "string" || typeof body !== "string" ||
-      !allowedTarget(url, method, body)
-    ) {
+    if (typeof url !== "string" || typeof body !== "string" || !allowedTarget(url, method, body)) {
       return new Response("Target not allowed", { status: 400 });
     }
     const headers = new Headers();
@@ -240,9 +209,7 @@ export async function handler(req: Request): Promise<Response> {
         body: method === "POST" ? body : undefined,
         redirect: "manual",
         signal: controller.signal,
-        ...(new URL(url).hostname === CESSIONS_HOST
-          ? { client: cessionsClient }
-          : {}),
+        ...(new URL(url).hostname === CESSIONS_HOST ? { client: cessionsClient } : {}),
       });
       if (REDIRECT_STATUS_CODES.has(response.status)) {
         logRedirect(response.status, response.headers.get("location"), url);
@@ -273,19 +240,8 @@ export async function handler(req: Request): Promise<Response> {
         "cache-control": "no-store",
       });
       const location = response.headers.get("location");
-      const normalizedLocation = normalizeRedirectLocation(
-        response.status,
-        location,
-        url,
-      );
-      for (
-        const name of [
-          "content-type",
-          "location",
-          "retry-after",
-          "cf-mitigated",
-        ]
-      ) {
+      const normalizedLocation = normalizeRedirectLocation(response.status, location, url);
+      for (const name of ["content-type", "location", "retry-after", "cf-mitigated"]) {
         if (response.headers.has(name)) {
           out.set(
             name,
@@ -295,7 +251,8 @@ export async function handler(req: Request): Promise<Response> {
           );
         }
       }
-      const blocked = response.headers.get("cf-mitigated") === "challenge" ||
+      const blocked =
+        response.headers.get("cf-mitigated") === "challenge" ||
         /<title>\s*(?:Just a moment|Un instant|Access Denied)/i.test(
           new TextDecoder().decode(bytes),
         );
