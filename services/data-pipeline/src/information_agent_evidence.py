@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -24,6 +27,18 @@ MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 100
 MAX_EXTRACTED_TEXT_CHARS = 240_000
 MAX_PAGE_TEXT_CHARS = 30_000
+# Image decoders expand compressed input before OCR. Keep both the dimensions
+# and the estimated RGBA allocation bounded; the latter catches tiny highly
+# compressible PNG/WebP payloads without rejecting normal property photos.
+MAX_IMAGE_DIMENSION = 10_000
+MAX_IMAGE_PIXELS = 20_000_000
+MAX_DECODED_IMAGE_BYTES = 64 * 1024 * 1024
+PDF_OCR_DPI = 300
+PDF_OCR_MAX_PIXELS = 16_000_000
+PDF_OCR_MAX_DIMENSION = 5_000
+PDF_OCR_PAGE_TIMEOUT_SECONDS = 10
+PDF_OCR_TOTAL_TIMEOUT_SECONDS = 30
+PDF_OCR_LANGUAGE = "fra+eng"
 PROCESSOR_VERSION = "evidence_v1"
 FACT_CANDIDATE_CASE_STATUSES = frozenset({"sending", "sent", "replied", "review"})
 SUPPORTED_MIME_TYPES = {
@@ -115,6 +130,10 @@ def analyze_evidence_bytes(
         return _analyze_pdf(content, filename=filename, detected_mime_type=detected, ocr_enabled=ocr_enabled)
     if detected == "text/plain":
         return _analyze_text(content, filename=filename, detected_mime_type=detected)
+    dimensions = _read_image_dimensions(content, detected)
+    image_limit = _image_limit_error(dimensions, len(content))
+    if image_limit is not None:
+        return _unsupported(image_limit[0], image_limit[1], detected)
     return _analyze_image(
         content,
         filename=filename,
@@ -199,23 +218,31 @@ def _analyze_pdf(
                 detected_mime_type,
             )
         pages: list[dict[str, object]] = []
+        ocr_candidates: list[tuple[int, fitz.Page, str]] = []
         for index, page in enumerate(document, start=1):
             raw_text = page.get_text("text") or ""
-            text = raw_text
-            method = "pymupdf_text"
-            confidence = 0.92
+            page_data: dict[str, object] = {
+                "page": index,
+                "text": raw_text,
+                "chars": 0,
+                "method": "pymupdf_text",
+                "confidence": 0.92 if raw_text else 0.0,
+            }
             if ocr_enabled and len(clean_text(raw_text) or "") < 80:
-                text, method, confidence = _ocr_pdf_page(page, raw_text)
-            cleaned = (clean_text(text) or "")[:MAX_PAGE_TEXT_CHARS]
-            pages.append(
-                {
-                    "page": index,
-                    "text": cleaned,
-                    "chars": len(cleaned),
-                    "method": method,
-                    "confidence": confidence if cleaned else 0.0,
-                }
-            )
+                if _pdf_page_ocr_allowed(page):
+                    ocr_candidates.append((index - 1, page, raw_text))
+                else:
+                    page_data["method"] = "ocr_skipped_dimensions"
+                    page_data["confidence"] = 0.2 if raw_text else 0.0
+            cleaned = (clean_text(str(page_data["text"]) or "") or "")[:MAX_PAGE_TEXT_CHARS]
+            page_data["text"] = cleaned
+            page_data["chars"] = len(cleaned)
+            if not cleaned:
+                page_data["confidence"] = 0.0
+            pages.append(page_data)
+
+        if ocr_candidates:
+            _apply_pdf_ocr_candidates(content, pages, ocr_candidates)
 
     return _completed_analysis(
         filename=filename,
@@ -287,6 +314,166 @@ def _analyze_image(
     return analysis
 
 
+def _read_image_dimensions(content: bytes, mime_type: str) -> tuple[int, int] | None:
+    if mime_type == "image/png":
+        if len(content) < 24 or content[12:16] != b"IHDR":
+            return None
+        return int.from_bytes(content[16:20], "big"), int.from_bytes(content[20:24], "big")
+    if mime_type == "image/jpeg":
+        return _jpeg_dimensions(content)
+    if mime_type == "image/webp":
+        return _webp_dimensions(content)
+    if mime_type in {"image/heic", "image/heif"}:
+        return _isobmff_dimensions(content)
+    return None
+
+
+def _jpeg_dimensions(content: bytes) -> tuple[int, int] | None:
+    if len(content) < 4 or content[:2] != b"\xff\xd8":
+        return None
+    offset = 2
+    while offset + 4 <= len(content):
+        if content[offset] != 0xFF:
+            offset += 1
+            continue
+        while offset < len(content) and content[offset] == 0xFF:
+            offset += 1
+        if offset >= len(content):
+            return None
+        marker = content[offset]
+        offset += 1
+        if marker in {0xD8, 0xD9}:
+            continue
+        if marker == 0xDA:
+            return None
+        if marker in range(0xD0, 0xD8):
+            continue
+        segment_length = int.from_bytes(content[offset : offset + 2], "big")
+        if segment_length < 2 or offset + segment_length > len(content):
+            return None
+        # SOF markers carry precision, height and width after the length.
+        if marker in {
+            *range(0xC0, 0xC4),
+            *range(0xC5, 0xC8),
+            *range(0xC9, 0xCC),
+            *range(0xCD, 0xD0),
+        }:
+            if segment_length < 7:
+                return None
+            height = int.from_bytes(content[offset + 3 : offset + 5], "big")
+            width = int.from_bytes(content[offset + 5 : offset + 7], "big")
+            return width, height
+        offset += segment_length
+    return None
+
+
+def _webp_dimensions(content: bytes) -> tuple[int, int] | None:
+    if len(content) < 16 or content[:4] != b"RIFF" or content[8:12] != b"WEBP":
+        return None
+    offset = 12
+    while offset + 8 <= len(content):
+        chunk_type = content[offset : offset + 4]
+        chunk_size = int.from_bytes(content[offset + 4 : offset + 8], "little")
+        payload_start = offset + 8
+        payload_end = payload_start + chunk_size
+        if payload_end > len(content):
+            return None
+        payload = content[payload_start:payload_end]
+        if chunk_type == b"VP8X" and len(payload) >= 10:
+            width = 1 + int.from_bytes(payload[4:7], "little")
+            height = 1 + int.from_bytes(payload[7:10], "little")
+            return width, height
+        if chunk_type == b"VP8 " and len(payload) >= 10 and payload[3:6] == b"\x9d\x01\x2a":
+            width = int.from_bytes(payload[6:8], "little") & 0x3FFF
+            height = int.from_bytes(payload[8:10], "little") & 0x3FFF
+            return width, height
+        if chunk_type == b"VP8L" and len(payload) >= 5 and payload[0] == 0x2F:
+            width = 1 + (payload[1] | ((payload[2] & 0x3F) << 8))
+            height = 1 + ((payload[2] >> 6) | (payload[3] << 2) | ((payload[4] & 0x0F) << 10))
+            return width, height
+        offset = payload_end + (chunk_size & 1)
+    return None
+
+
+def _isobmff_dimensions(content: bytes) -> tuple[int, int] | None:
+    # HEIC/HEIF stores the decoded dimensions in an ``ispe`` box. Parsing the
+    # small header avoids opening the image before the allocation guard runs.
+    marker = b"ispe"
+    dimensions: tuple[int, int] | None = None
+    search_from = 0
+    while True:
+        offset = content.find(marker, search_from)
+        if offset < 0:
+            return dimensions
+        if offset + 16 > len(content):
+            return None
+        width = int.from_bytes(content[offset + 8 : offset + 12], "big")
+        height = int.from_bytes(content[offset + 12 : offset + 16], "big")
+        if width <= 0 or height <= 0:
+            return None
+        if dimensions is None:
+            dimensions = (width, height)
+        else:
+            # A container may expose thumbnails and primary images. Guard the
+            # largest declared dimensions before any decoder is opened.
+            dimensions = (max(dimensions[0], width), max(dimensions[1], height))
+        search_from = offset + len(marker)
+
+
+def _image_limit_error(
+    dimensions: tuple[int, int] | None,
+    compressed_size: int,
+) -> tuple[str, str] | None:
+    if dimensions is None:
+        return "IMAGE_DIMENSIONS_UNREADABLE", "Les dimensions de l’image ne peuvent pas être contrôlées."
+    width, height = dimensions
+    pixels = width * height if width > 0 and height > 0 else 0
+    if (
+        width <= 0
+        or height <= 0
+        or width > MAX_IMAGE_DIMENSION
+        or height > MAX_IMAGE_DIMENSION
+        or pixels > MAX_IMAGE_PIXELS
+    ):
+        return "IMAGE_DIMENSIONS_EXCEEDED", "Les dimensions de l’image dépassent la limite autorisée."
+    estimated_decoded_bytes = pixels * 4
+    if estimated_decoded_bytes > MAX_DECODED_IMAGE_BYTES:
+        return "IMAGE_DECOMPRESSION_LIMIT", "La décompression de l’image dépasserait la limite mémoire."
+    if compressed_size <= 0:
+        return "IMAGE_SIZE_INVALID", "La taille de l’image est invalide."
+    return None
+
+
+def _pdf_page_ocr_allowed(page: fitz.Page) -> bool:
+    """Check page and embedded image sizes before PyMuPDF can rasterize them."""
+    try:
+        rectangle = page.rect
+        width_px = math.ceil(float(rectangle.width) * PDF_OCR_DPI / 72)
+        height_px = math.ceil(float(rectangle.height) * PDF_OCR_DPI / 72)
+        page_pixels = width_px * height_px if width_px > 0 and height_px > 0 else 0
+        if (
+            not math.isfinite(float(rectangle.width))
+            or not math.isfinite(float(rectangle.height))
+            or width_px <= 0
+            or height_px <= 0
+            or width_px > PDF_OCR_MAX_DIMENSION
+            or height_px > PDF_OCR_MAX_DIMENSION
+            or page_pixels > PDF_OCR_MAX_PIXELS
+        ):
+            return False
+        for image in page.get_images(full=True):
+            if len(image) < 4:
+                return False
+            image_width = int(image[2])
+            image_height = int(image[3])
+            if _image_limit_error((image_width, image_height), 1) is not None:
+                return False
+        return True
+    except Exception:
+        # A malformed resource must not reach the OCR decoder.
+        return False
+
+
 def _completed_analysis(
     *,
     filename: str,
@@ -321,15 +508,134 @@ def _completed_analysis(
     )
 
 
-def _ocr_pdf_page(page: fitz.Page, fallback: str) -> tuple[str, str, float]:
+def _apply_pdf_ocr_candidates(
+    content: bytes,
+    pages: list[dict[str, object]],
+    candidates: list[tuple[int, fitz.Page, str]],
+) -> None:
+    """Run OCR in bounded subprocesses while keeping ordinary text extraction."""
     try:
-        text_page = page.get_textpage_ocr(language="fra+eng", full=True)
-        text = page.get_text("text", textpage=text_page)
-        if clean_text(text):
+        with tempfile.TemporaryDirectory(prefix="immojudis-evidence-pdf-") as temp_dir:
+            source_path = Path(temp_dir) / "evidence.pdf"
+            source_path.write_bytes(content)
+            deadline = _monotonic() + PDF_OCR_TOTAL_TIMEOUT_SECONDS
+            for page_index, page, fallback in candidates:
+                remaining = deadline - _monotonic()
+                if remaining <= 0:
+                    text, method, confidence = _ocr_fallback(fallback, "ocr_total_timeout")
+                else:
+                    text, method, confidence = _ocr_pdf_page(
+                        page,
+                        fallback,
+                        source_path=source_path,
+                        timeout_seconds=min(PDF_OCR_PAGE_TIMEOUT_SECONDS, remaining),
+                    )
+                cleaned = (clean_text(text) or "")[:MAX_PAGE_TEXT_CHARS]
+                pages[page_index].update(
+                    {
+                        "text": cleaned,
+                        "chars": len(cleaned),
+                        "method": method,
+                        "confidence": confidence if cleaned else 0.0,
+                    }
+                )
+    except Exception:
+        # Text extraction has already succeeded. If staging or the isolated OCR
+        # worker fails, retain that text and make the skipped OCR visible.
+        for page_index, _page, fallback in candidates:
+            if pages[page_index].get("method") == "pymupdf_text":
+                pages[page_index]["method"] = "ocr_unavailable"
+                pages[page_index]["confidence"] = 0.45 if fallback else 0.0
+
+
+def _ocr_pdf_page(
+    page: fitz.Page,
+    fallback: str,
+    *,
+    source_path: Path | None = None,
+    timeout_seconds: float = PDF_OCR_PAGE_TIMEOUT_SECONDS,
+) -> tuple[str, str, float]:
+    """OCR one page in a killable child process with a hard wall-clock limit."""
+    temporary_source: tempfile.TemporaryDirectory[str] | None = None
+    process: subprocess.Popen | None = None
+    try:
+        if source_path is None:
+            parent = page.parent
+            if parent is None:
+                return _ocr_fallback(fallback, "fallback_text")
+            temporary_source = tempfile.TemporaryDirectory(prefix="immojudis-evidence-pdf-")
+            source_path = Path(temporary_source.name) / "evidence.pdf"
+            source_path.write_bytes(parent.tobytes())
+        command = [
+            sys.executable,
+            "-m",
+            "src.information_agent_evidence",
+            "--ocr-pdf-page",
+            str(source_path),
+            str(page.number),
+        ]
+        popen_kwargs: dict[str, object] = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.DEVNULL,
+            "text": True,
+            "cwd": str(Path(__file__).resolve().parents[1]),
+        }
+        if os.name == "posix":
+            popen_kwargs["start_new_session"] = True
+        process = subprocess.Popen(command, **popen_kwargs)
+        try:
+            stdout, _stderr = process.communicate(timeout=max(float(timeout_seconds), 0.01))
+        except subprocess.TimeoutExpired:
+            _terminate_process_group(process)
+            return _ocr_fallback(fallback, "ocr_timeout")
+        if process.returncode != 0:
+            return _ocr_fallback(fallback, "fallback_text")
+        payload = json.loads(stdout or "{}")
+        text = payload.get("text") if isinstance(payload, dict) else None
+        if isinstance(text, str) and clean_text(text):
             return text, "ocr_pymupdf", 0.74
     except Exception:
+        if process is not None:
+            _terminate_process_group(process)
         pass
-    return fallback, "fallback_text", 0.45 if clean_text(fallback) else 0.0
+    finally:
+        if temporary_source is not None:
+            temporary_source.cleanup()
+    return _ocr_fallback(fallback, "fallback_text")
+
+
+def _ocr_pdf_page_in_process(source_path: str, page_number: int) -> dict[str, str]:
+    with fitz.open(source_path) as document:
+        page = document.load_page(page_number)
+        text_page = page.get_textpage_ocr(language=PDF_OCR_LANGUAGE, full=True)
+        return {"text": page.get_text("text", textpage=text_page) or ""}
+
+
+def _terminate_process_group(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    else:
+        process.kill()
+    try:
+        process.communicate(timeout=1)
+    except Exception:
+        process.kill()
+
+
+def _ocr_fallback(fallback: str, method: str) -> tuple[str, str, float]:
+    return fallback, method, 0.45 if clean_text(fallback) else 0.0
+
+
+def _monotonic() -> float:
+    # Kept behind a helper so timeout behavior can be deterministic in tests.
+    import time
+
+    return time.monotonic()
 
 
 def _ocr_image_bytes(content: bytes, mime_type: str) -> str:
@@ -786,6 +1092,19 @@ def _headers(key: str) -> dict[str, str]:
     }
 
 
+def _run_pdf_ocr_child(argv: list[str]) -> int:
+    if len(argv) != 3 or argv[0] != "--ocr-pdf-page":
+        return 2
+    try:
+        payload = _ocr_pdf_page_in_process(argv[1], int(argv[2]))
+    except Exception as exc:
+        payload = {"error": str(exc)[:300]}
+    print(json.dumps(payload, ensure_ascii=False), flush=True)
+    return 0
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--ocr-pdf-page":
+        raise SystemExit(_run_pdf_ocr_child(sys.argv[1:]))
     batch_limit = max(1, min(10, int(os.getenv("INFORMATION_AGENT_EVIDENCE_BATCH_SIZE", "5"))))
     print(json.dumps({"processed": run_information_agent_evidence_batch(limit=batch_limit)}))

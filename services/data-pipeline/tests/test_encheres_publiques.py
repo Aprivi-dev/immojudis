@@ -40,6 +40,59 @@ def test_detail_window_survives_normalization_and_procedure_classification() -> 
     assert sale.sale_procedure["sale_window"]["closes_at"] == raw["source_sale_schedule"]["closes_at"]
 
 
+def test_detail_does_not_fall_back_to_another_lot_when_requested_id_is_missing() -> None:
+    state = {
+        "Lot:123": {
+            "id": "123",
+            "categorie": "immobilier",
+            "nom": "Maison qui ne correspond pas à l'URL",
+        },
+    }
+    payload = {"props": {"pageProps": {"apolloState": {"data": state}}}}
+    html = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(payload) + "</script>"
+
+    assert parse_encheres_publiques_detail_html(html, f"{BASE_URL}/encheres/maison_999") == {}
+
+
+def test_detail_rejects_payload_lot_id_mismatch() -> None:
+    state = {
+        "Lot:123": {
+            "id": "999",
+            "categorie": "immobilier",
+            "nom": "Lot dont l'identité est incohérente",
+        },
+    }
+    payload = {"props": {"pageProps": {"apolloState": {"data": state}}}}
+    html = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(payload) + "</script>"
+
+    assert parse_encheres_publiques_detail_html(html, f"{BASE_URL}/encheres/maison_123") == {}
+
+
+def test_enrich_marks_unverified_lot_detail_as_failed() -> None:
+    state = {
+        "Lot:123": {
+            "id": "123",
+            "categorie": "immobilier",
+            "nom": "Un autre lot",
+        },
+    }
+    payload = {"props": {"pageProps": {"apolloState": {"data": state}}}}
+    html = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(payload) + "</script>"
+
+    class Client:
+        def get(self, url: str) -> str:
+            assert url.endswith("_999")
+            return html
+
+    sale = {"source_url": f"{BASE_URL}/encheres/maison_999"}
+    errors: list[str] = []
+    _enrich_sale_from_detail(Client(), sale, errors)
+
+    assert sale["_detail_fetch_failed"] is True
+    assert sale["source_detail_status"] == "failed"
+    assert errors and "lot identified by its URL" in errors[0]
+
+
 def test_encheres_publiques_accepts_only_its_www_and_canonical_origins() -> None:
     allowed_origins = (BASE_URL, CANONICAL_BASE_URL)
 

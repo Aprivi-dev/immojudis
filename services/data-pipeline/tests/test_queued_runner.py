@@ -377,13 +377,54 @@ def test_enrichment_worker_uses_five_to_one_lane_cycle(monkeypatch) -> None:
 
     assert queued_runner.run_enrichment_queue_worker(max_jobs=6, budget_seconds=1200) == 6
     assert calls == [
-        (1, queued_runner.SOURCE_DETAIL_FAMILY),
-        (1, queued_runner.SOURCE_DETAIL_FAMILY),
-        (1, queued_runner.SOURCE_DETAIL_FAMILY),
-        (1, queued_runner.SOURCE_DETAIL_FAMILY),
+        (2, queued_runner.SOURCE_DETAIL_FAMILY),
+        (2, queued_runner.SOURCE_DETAIL_FAMILY),
+        (2, queued_runner.SOURCE_DETAIL_FAMILY),
+        (2, queued_runner.SOURCE_DETAIL_FAMILY),
         (1, queued_runner.SOURCE_DETAIL_FAMILY),
         (1, queued_runner.ENRICHMENT_FAMILY),
     ]
+
+
+def test_enrichment_worker_groups_detail_claims_without_exceeding_job_budget(monkeypatch) -> None:
+    calls: list[tuple[int, str]] = []
+
+    def fake_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
+        calls.append((limit, family))
+        return limit
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
+
+    assert queued_runner.run_enrichment_queue_worker(max_jobs=6, budget_seconds=1200) == 6
+    assert calls == [
+        (2, queued_runner.SOURCE_DETAIL_FAMILY),
+        (2, queued_runner.SOURCE_DETAIL_FAMILY),
+        (1, queued_runner.SOURCE_DETAIL_FAMILY),
+        (1, queued_runner.ENRICHMENT_FAMILY),
+    ]
+
+
+def test_source_detail_claim_batch_size_is_bounded_and_invalid_values_are_safe(monkeypatch) -> None:
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE", "99")
+    assert queued_runner._enrichment_claim_batch_size(queued_runner.SOURCE_DETAIL_FAMILY) == 5
+
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE", "invalid")
+    assert queued_runner._enrichment_claim_batch_size(queued_runner.SOURCE_DETAIL_FAMILY) == 2
+    assert queued_runner._enrichment_claim_batch_size(queued_runner.ENRICHMENT_FAMILY) == 1
+
+
+def test_enrichment_worker_logs_lane_counts_and_stop_reason(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", lambda **kwargs: 0)
+
+    with caplog.at_level("INFO", logger=queued_runner.LOGGER.name):
+        assert queued_runner.run_enrichment_queue_worker(max_jobs=1, budget_seconds=1200) == 0
+
+    summary = next(record.getMessage() for record in caplog.records if "Enrichment worker summary" in record.getMessage())
+    assert "processed=0" in summary
+    assert "source_detail=0" in summary
+    assert "enrichment=0" in summary
+    assert "claim_batches=2" in summary
+    assert "stop=queues_empty" in summary
 
 
 def test_enrichment_worker_gives_empty_lane_slot_to_other_family(monkeypatch) -> None:

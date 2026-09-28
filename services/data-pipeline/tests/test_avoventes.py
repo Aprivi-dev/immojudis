@@ -48,6 +48,41 @@ def test_parse_avoventes_html_rejects_cross_origin_sale_and_document_urls() -> N
     assert parse_avoventes_html(html) == []
 
 
+def test_parse_avoventes_html_does_not_turn_generic_search_text_into_a_sale() -> None:
+    html = """
+    <html>
+      <body>
+        <form action="/recherche">
+          <label>Prix minimum</label>
+          <span>Mise à prix</span>
+          <select><option>Gironde</option></select>
+        </form>
+        <p>Aucun résultat pour ces critères.</p>
+      </body>
+    </html>
+    """
+
+    assert parse_avoventes_html(
+        html,
+        page_url="https://avoventes.fr/recherche?display=liste&order=asc&sort=date",
+        fallback_department="33",
+    ) == []
+
+
+def test_parse_avoventes_html_rejects_card_without_a_property_detail_url() -> None:
+    html = """
+    <article>
+      <h2>Vente aux enchères Maison</h2>
+      <a href="/recherche">Retour aux résultats</a>
+      <p>33 000 Bordeaux</p>
+      <p>Mise à prix : 120 000 €</p>
+      <p>Date de la vente : jeudi 10 janvier 2027 à 09h00</p>
+    </article>
+    """
+
+    assert parse_avoventes_html(html, page_url="https://avoventes.fr/recherche") == []
+
+
 def test_parse_avoventes_html_extracts_adjudication_without_polluting_title() -> None:
     html = """
     <article>
