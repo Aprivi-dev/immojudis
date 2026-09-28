@@ -4,8 +4,10 @@
 
 Le contrôle primaire est exécuté toutes les 15 minutes par Supabase Cron. Le job
 `immojudis-operational-health` lit son URL et `CRON_SECRET` dans Supabase Vault, puis appelle
-`/api/cron/operational-health` avec un Bearer token. Le cron Vercel quotidien à `07:00 UTC` reste
-un second déclencheur de secours compatible avec le plan Hobby.
+`/api/cron/operational-health` avec un Bearer token. Le job distinct
+`immojudis-information-agent-inbound` appelle toutes les deux minutes la route protégée
+`/api/cron/information-agent-inbound` avec les mêmes secrets Vault. Il traite les réponses déjà
+reçues et ne déclenche aucune collecte d'annonces ni aucun envoi sortant.
 
 Chaque passage :
 
@@ -46,7 +48,8 @@ modification de seuil doit mettre à jour ce document et ses tests pgTAP dans le
   cible SLO, alertes ouvertes, sévérité et état de livraison externe.
 - Vercel → Observability / Runtime Logs, filtre
   `requestPath:/api/cron/operational-health` ou `scope:operational-alert-delivery`.
-- Supabase → Integrations / Cron / `immojudis-operational-health` pour l’historique du scheduler.
+- Supabase → Integrations / Cron / `immojudis-operational-health` et
+  `immojudis-information-agent-inbound` pour l’historique des planificateurs.
 - GitHub Actions → workflow **Immojudis Operational Alert** pour l’historique externe des incidents
   et résolutions.
 - GitHub Actions → workflow **Production smoke** pour la disponibilité des parcours publics toutes
@@ -78,7 +81,8 @@ limit 100;
 
 select jobid, jobname, schedule, active
 from cron.job
-where jobname like 'immojudis-operational%';
+where jobname like 'immojudis-operational%'
+   or jobname = 'immojudis-information-agent-inbound';
 ```
 
 ## Runbooks
@@ -89,6 +93,21 @@ where jobname like 'immojudis-operational%';
 2. Ouvrir les Runtime Logs Vercel sur la route correspondante et contrôler son dernier statut.
 3. Corriger la cause, puis déclencher manuellement la route avec `CRON_SECRET`.
 4. Vérifier au passage suivant que l’alerte est `resolved` et sa notification `delivered`.
+
+### Réponses de l'agent en attente
+
+1. Vérifier que `immojudis-information-agent-inbound` est actif avec la cadence `*/2 * * * *`
+   dans Supabase Cron, puis consulter les runs `information-agent-inbound` dans
+   `public.operational_job_runs` et les Runtime Logs Vercel de la route.
+2. Contrôler les lignes `queued`, `failed`, `processing` et `review` dans
+   `public.information_agent_inbound_jobs`. Une ligne `review` demande une intervention admin ;
+   une ligne `processing` peut être reprise après expiration de son bail de dix minutes.
+3. Si le callback signale des secrets absents ou reçoit 401, réexécuter
+   `npm run ops:health-scheduler:configure` avec l'origine HTTPS de production et le
+   `CRON_SECRET` courant. La rotation de ce secret exige cette même configuration Vault.
+4. Après correction, contrôler qu'un passage termine les jobs disponibles et que les pièces
+   arrivent dans le stockage privé. Ne pas activer `INFORMATION_AGENT_OUTBOUND_ENABLED` pour
+   réparer la réception.
 
 ### `stripe.webhook.unhealthy`
 
