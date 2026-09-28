@@ -2,9 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import { runSaleRetention } from "./sale-retention";
 
 function clientFor(removeError: string | null = null) {
-  const rpc = vi
-    .fn()
-    .mockResolvedValue({ data: { deleted: 1, remaining: 0, busy: false }, error: null });
+  const rpc = vi.fn(
+    async (
+      name: string,
+    ): Promise<{
+      data: number | { deleted: number; remaining: number | null; busy: boolean } | null;
+      error: { message: string } | null;
+    }> =>
+      name === "enqueue_orphan_information_agent_portal_uploads"
+        ? { data: 1, error: null }
+        : { data: { deleted: 1, remaining: 0, busy: false }, error: null },
+  );
   const ack = vi.fn().mockResolvedValue({ error: null, data: null });
   const remove = vi
     .fn()
@@ -30,10 +38,15 @@ function clientFor(removeError: string | null = null) {
 }
 describe("sale retention", () => {
   it("removes storage then acknowledges durable work", async () => {
-    const { client, ack, remove } = clientFor();
+    const { client, rpc, ack, remove } = clientFor();
     expect(await runSaleRetention(new Date("2026-09-11T12:00:00Z"), client)).toMatchObject({
       deleted: 1,
+      orphanUploadsQueued: 1,
       filesDeleted: 1,
+    });
+    expect(rpc).toHaveBeenCalledWith("enqueue_orphan_information_agent_portal_uploads", {
+      p_now: "2026-09-11T12:00:00.000Z",
+      p_limit: 100,
     });
     expect(remove).toHaveBeenCalledWith(["sale/file.pdf"]);
     expect(ack).toHaveBeenCalledWith("id", "job");
@@ -57,6 +70,6 @@ describe("sale retention", () => {
       busy: true,
       filesDeleted: 1,
     });
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(2);
   });
 });

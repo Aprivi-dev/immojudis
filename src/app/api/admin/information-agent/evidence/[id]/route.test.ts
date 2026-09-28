@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), from: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), from: vi.fn(), storageFrom: vi.fn() }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "token",
@@ -8,10 +8,10 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { from: mocks.from },
+  supabaseAdmin: { from: mocks.from, storage: { from: mocks.storageFrom } },
 }));
 
-import { PATCH } from "./route";
+import { GET, PATCH } from "./route";
 
 const assetId = "22222222-2222-4222-8222-222222222222";
 
@@ -62,12 +62,66 @@ function setupPatch({
   return { currentQuery, updateQuery };
 }
 
+function setupGet() {
+  const assetQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    single: vi.fn(),
+  };
+  assetQuery.select.mockReturnValue(assetQuery);
+  assetQuery.eq.mockReturnValue(assetQuery);
+  assetQuery.single.mockResolvedValue({
+    data: { storage_bucket: "information-agent-private", storage_path: "case/private.pdf" },
+    error: null,
+  });
+  mocks.from.mockReturnValue(assetQuery);
+  const createSignedUrl = vi.fn().mockResolvedValue({
+    data: { signedUrl: "https://storage.example.test/private-document?token=secret" },
+    error: null,
+  });
+  mocks.storageFrom.mockReturnValue({ createSignedUrl });
+  return createSignedUrl;
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.auth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
 });
 
 describe("information-agent evidence rights review", () => {
+  it("returns a short-lived signed URL to an authenticated JSON client", async () => {
+    const createSignedUrl = setupGet();
+    const response = await GET(
+      new Request(
+        `https://example.test/api/admin/information-agent/evidence/${assetId}?format=json`,
+      ),
+      { params: Promise.resolve({ id: assetId }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      signedUrl: "https://storage.example.test/private-document?token=secret",
+    });
+    expect(mocks.storageFrom).toHaveBeenCalledWith("information-agent-private");
+    expect(createSignedUrl).toHaveBeenCalledWith("case/private.pdf", 600);
+  });
+
+  it("keeps the direct redirect form for existing callers", async () => {
+    setupGet();
+
+    const response = await GET(
+      new Request(`https://example.test/api/admin/information-agent/evidence/${assetId}`),
+      { params: Promise.resolve({ id: assetId }) },
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://storage.example.test/private-document?token=secret",
+    );
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
   it("rejects a restriction after acceptance before issuing an update", async () => {
     setupPatch({ reviewStatus: "accepted" });
 

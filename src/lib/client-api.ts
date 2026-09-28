@@ -1249,6 +1249,61 @@ export async function reviewAdminInformationAgentFactClient(
   return readJson<{ ok: true; result: unknown }>(response);
 }
 
+export type AdminInformationAgentEvidenceRightsStatus = "authorized" | "restricted";
+
+export type AdminInformationAgentEvidenceRightsResponse = {
+  ok: true;
+  asset: {
+    id: string;
+    rights_status: AdminInformationAgentEvidenceRightsStatus;
+    review_status: "pending" | "accepted" | "rejected";
+  };
+};
+
+/**
+ * Resolve an authenticated admin request to a short-lived private asset URL.
+ *
+ * The API deliberately keeps the storage object private and returns the
+ * short-lived signed URL only to an authenticated admin client. The direct
+ * redirect form remains available for server-side or manual callers, while
+ * this JSON form avoids browser opaque-redirect behavior.
+ */
+export async function fetchAdminInformationAgentEvidenceUrlClient(
+  assetId: string,
+): Promise<string> {
+  const response = await fetch(
+    `/api/admin/information-agent/evidence/${encodeURIComponent(assetId)}?format=json`,
+    {
+      headers: await authHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const payload = await readJson<{ signedUrl?: string }>(response);
+  if (!payload.signedUrl) throw new Error("Lien sécurisé de la pièce indisponible.");
+  return payload.signedUrl;
+}
+
+export async function updateAdminInformationAgentEvidenceRightsClient({
+  assetId,
+  rightsStatus,
+  notes,
+}: {
+  assetId: string;
+  rightsStatus: AdminInformationAgentEvidenceRightsStatus;
+  notes: string | null;
+}): Promise<AdminInformationAgentEvidenceRightsResponse> {
+  const response = await fetch(
+    `/api/admin/information-agent/evidence/${encodeURIComponent(assetId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify({ rightsStatus, notes }),
+    },
+  );
+  return readJson<AdminInformationAgentEvidenceRightsResponse>(response);
+}
+
 export async function previewAdminInformationAgentEmailTemplate(
   template: InformationAgentEmailTemplateContent,
 ): Promise<{ preview: InformationAgentEmailTemplatePreview }> {

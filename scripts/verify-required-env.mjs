@@ -39,6 +39,16 @@ if (configuredSiteUrl && !isValidHttpOrigin(configuredSiteUrl)) {
   process.exit(1);
 }
 
+if (
+  process.env.INFORMATION_AGENT_OUTBOUND_ENABLED === "true" &&
+  Buffer.byteLength(process.env.INFORMATION_AGENT_PORTAL_SECRET?.trim() || "", "utf8") < 32
+) {
+  console.error(
+    "[env] INFORMATION_AGENT_PORTAL_SECRET must contain at least 32 bytes when outbound information requests are enabled.",
+  );
+  process.exit(1);
+}
+
 function unquote(value) {
   return value.replace(/^(['"])(.*)\1$/, "$2");
 }

@@ -9,6 +9,10 @@ const MAX_TOTAL_ATTACHMENT_BYTES = 40 * 1024 * 1024;
 const MAX_LISTED_ATTACHMENTS = 500;
 const MAX_HTML_BODY_CHARS = 500_000;
 const MAX_EXTRACTED_BODY_CHARS = 20_000;
+const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
+const INBOUND_ATTACHMENT_LINK_TTL_MS = 55 * 60 * 1000;
+const INBOUND_PROCESSING_VERSION = "inbound-v2";
+const OPEN_INFORMATION_AGENT_CASE_STATUSES = ["sending", "sent", "replied", "review"] as const;
 const HTML_LINE_BREAK_TAGS = new Set([
   "blockquote",
   "br",
@@ -52,12 +56,41 @@ export type InformationAgentInboundResult = {
   messageId?: string;
   factCount?: number;
   attachmentCount?: number;
+  processingStatus?: "completed" | "review" | "ignored" | "queued";
+};
+
+type InboundMessageRef = {
+  id: string;
+  duplicate: boolean;
+  metadata: Json;
+};
+
+type InboundProcessingState = {
+  version: string;
+  status: "queued" | "processing" | "completed" | "failed" | "review" | "ignored";
+  attempts: number;
+  providerEmailId: string;
+  queuedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  failedAt?: string;
+  attachmentLinkExpiresAt?: string;
+  nextAttemptAt?: string;
+  lastError?: string;
+  reason?: string;
 };
 
 export class InvalidInformationAgentWebhookSignatureError extends Error {
   constructor() {
     super("Signature webhook invalide.");
     this.name = "InvalidInformationAgentWebhookSignatureError";
+  }
+}
+
+export class InformationAgentWebhookPayloadTooLargeError extends Error {
+  constructor() {
+    super("Corps du webhook trop volumineux.");
+    this.name = "InformationAgentWebhookPayloadTooLargeError";
   }
 }
 
@@ -77,7 +110,7 @@ export async function processInformationAgentInboundWebhook({
     throw new Error("Configuration de réception de l’agent incomplète.");
   }
 
-  const rawPayload = await request.text();
+  const rawPayload = await readBoundedWebhookBody(request);
   const resend = new Resend(apiKey);
   let event: ReturnType<typeof resend.webhooks.verify>;
   try {
@@ -143,8 +176,12 @@ async function ingestReceivedEmail({
 
   const bodyText = cleanInboundBody(received.text, received.html);
   const receivedAt = received.created_at || event.created_at;
-  const senderMatches = normalizeEmail(received.from) === sharedCase.normalized_recipient_email;
-  const messageId = await insertOrLoadInboundMessage({
+  const senderEmail = normalizeEmail(received.from);
+  const expectedRecipientEmail = normalizeEmail(sharedCase.normalized_recipient_email);
+  const senderMatches = Boolean(
+    senderEmail && expectedRecipientEmail && senderEmail === expectedRecipientEmail,
+  );
+  const inboundMessage = await insertOrLoadInboundMessage({
     sharedCase,
     mission,
     providerMessageId: event.data.email_id,
@@ -155,70 +192,158 @@ async function ingestReceivedEmail({
     receivedAt,
     senderMatches,
   });
-  if (await ignoreIfCaseClosed(sharedCase.id, messageId)) {
-    return { accepted: true, caseId: sharedCase.id, messageId, factCount: 0, attachmentCount: 0 };
+  const messageId = inboundMessage.id;
+  let inboundMetadata = inboundMessage.metadata;
+  const existingProcessing = inboundProcessingState(inboundMetadata);
+  const terminalStatus =
+    existingProcessing?.status === "completed" ||
+    existingProcessing?.status === "review" ||
+    existingProcessing?.status === "ignored"
+      ? existingProcessing.status
+      : null;
+  if (inboundMessage.duplicate && terminalStatus) {
+    return {
+      accepted: true,
+      duplicate: true,
+      caseId: sharedCase.id,
+      messageId,
+      processingStatus: terminalStatus,
+    };
+  }
+  inboundMetadata = await updateInboundProcessingState(messageId, inboundMetadata, {
+    status: "processing",
+    attempts: (existingProcessing?.attempts ?? 0) + 1,
+    providerEmailId: event.data.email_id,
+    queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+    startedAt: new Date().toISOString(),
+    attachmentLinkExpiresAt: new Date(
+      Date.parse(receivedAt) + INBOUND_ATTACHMENT_LINK_TTL_MS,
+    ).toISOString(),
+  });
+  const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId);
+  if (initialClosedStatus) {
+    inboundMetadata = mergeJsonObject(inboundMetadata, {
+      processing_ignored_case_status: initialClosedStatus,
+    });
+    await updateInboundProcessingState(messageId, inboundMetadata, {
+      status: "ignored",
+      attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+      providerEmailId: event.data.email_id,
+      queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+      reason: "case_closed",
+    });
+    return {
+      accepted: true,
+      caseId: sharedCase.id,
+      messageId,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "ignored",
+    };
   }
 
   // The case address is a routing key, not proof that the sender is the expected contact.
   if (!senderMatches) {
-    const { error } = await supabaseAdmin
-      .from("information_agent_cases")
-      .update({
-        status: "review",
-        replied_at: receivedAt,
-        metadata: mergeJsonObject(sharedCase.metadata, {
-          last_inbound_email_id: event.data.email_id,
-          last_inbound_sender_matches_recipient: false,
-        }),
-      })
-      .eq("id", sharedCase.id)
-      .in("status", ["sending", "sent", "replied", "review"]);
-    if (error) throw error;
-    return { accepted: true, caseId: sharedCase.id, messageId, factCount: 0, attachmentCount: 0 };
-  }
-
-  const { attachments, truncated } = await fetchInboundAttachments(resend, event.data.email_id);
-  const { stored: storedAssets, rejected } = await storeInboundAttachments({
-    attachments,
-    sharedCase,
-    messageId,
-    fetchImpl,
-  });
-  if (truncated)
-    rejected.push({
-      filename: "Lot de pièces jointes",
-      reason: "Plus de 500 pièces jointes : traitement partiel, contrôle manuel requis",
+    const caseUpdated = await updateOpenInformationAgentCase(sharedCase.id, {
+      status: "review",
+      replied_at: receivedAt,
+      metadata: mergeJsonObject(sharedCase.metadata, {
+        last_inbound_email_id: event.data.email_id,
+        last_inbound_sender_matches_recipient: false,
+      }),
     });
-  if (rejected.length) {
-    const { error } = await supabaseAdmin
-      .from("information_agent_messages")
-      .update({
-        metadata: {
-          imported_manually: false,
-          content_trust: "untrusted",
-          sender_matches_recipient: senderMatches,
-          rejected_attachment_count: rejected.length,
-          rejected_attachments: rejected.slice(0, 50),
-        },
-      })
-      .eq("id", messageId);
-    if (error) throw error;
+    if (!caseUpdated) {
+      await updateInboundProcessingState(messageId, inboundMetadata, {
+        status: "review",
+        attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+        providerEmailId: event.data.email_id,
+        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+        reason: "case_closed_during_processing",
+      });
+      return {
+        accepted: true,
+        caseId: sharedCase.id,
+        messageId,
+        factCount: 0,
+        attachmentCount: 0,
+        processingStatus: "review",
+      };
+    }
+    await updateInboundProcessingState(messageId, inboundMetadata, {
+      status: "review",
+      attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+      providerEmailId: event.data.email_id,
+      queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+      reason: "sender_mismatch",
+    });
+    return {
+      accepted: true,
+      caseId: sharedCase.id,
+      messageId,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "review",
+    };
   }
-  if (await ignoreIfCaseClosed(sharedCase.id, messageId)) {
-    return { accepted: true, caseId: sharedCase.id, messageId, factCount: 0, attachmentCount: 0 };
-  }
-  const extractedFacts = extractInformationAgentFacts(replyTextForExtraction(bodyText));
-  await persistFactCandidates({
-    sharedCase,
-    messageId,
-    facts: extractedFacts,
-    assets: storedAssets,
-  });
 
-  const now = new Date().toISOString();
-  const { error: updateCaseError } = await supabaseAdmin
-    .from("information_agent_cases")
-    .update({
+  try {
+    const { attachments, truncated } = await fetchInboundAttachments(resend, event.data.email_id);
+    const { stored: storedAssets, rejected } = await storeInboundAttachments({
+      attachments,
+      sharedCase,
+      messageId,
+      fetchImpl,
+    });
+    if (truncated)
+      rejected.push({
+        filename: "Lot de pièces jointes",
+        reason: "Plus de 500 pièces jointes : traitement partiel, contrôle manuel requis",
+      });
+    if (rejected.length) {
+      inboundMetadata = mergeJsonObject(inboundMetadata, {
+        imported_manually: false,
+        content_trust: "untrusted",
+        sender_matches_recipient: senderMatches,
+        rejected_attachment_count: rejected.length,
+        rejected_attachments: rejected.slice(0, 50),
+      });
+      const { error } = await supabaseAdmin
+        .from("information_agent_messages")
+        .update({ metadata: inboundMetadata })
+        .eq("id", messageId);
+      if (error) throw error;
+    }
+    const closedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId);
+    if (closedStatus) {
+      inboundMetadata = mergeJsonObject(inboundMetadata, {
+        processing_ignored_case_status: closedStatus,
+      });
+      await updateInboundProcessingState(messageId, inboundMetadata, {
+        status: "ignored",
+        attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+        providerEmailId: event.data.email_id,
+        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+        reason: "case_closed",
+      });
+      return {
+        accepted: true,
+        caseId: sharedCase.id,
+        messageId,
+        factCount: 0,
+        attachmentCount: 0,
+        processingStatus: "ignored",
+      };
+    }
+    const extractedFacts = extractInformationAgentFacts(replyTextForExtraction(bodyText));
+    await persistFactCandidates({
+      sharedCase,
+      messageId,
+      facts: extractedFacts,
+      assets: storedAssets,
+    });
+
+    const now = new Date().toISOString();
+    const caseUpdated = await updateOpenInformationAgentCase(sharedCase.id, {
       status:
         extractedFacts.length || storedAssets.length || rejected.length ? "review" : "replied",
       replied_at: receivedAt,
@@ -227,35 +352,88 @@ async function ingestReceivedEmail({
         last_inbound_email_id: event.data.email_id,
         last_inbound_sender_matches_recipient: senderMatches,
       }),
-    })
-    .eq("id", sharedCase.id)
-    .in("status", ["sending", "sent", "replied", "review"]);
-  if (updateCaseError) throw updateCaseError;
+    });
+    if (!caseUpdated) {
+      await updateInboundProcessingState(messageId, inboundMetadata, {
+        status: "review",
+        attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+        providerEmailId: event.data.email_id,
+        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+        reason: "case_closed_during_processing",
+      });
+      return {
+        accepted: true,
+        caseId: sharedCase.id,
+        messageId,
+        factCount: extractedFacts.length + storedAssets.length,
+        attachmentCount: storedAssets.length,
+        processingStatus: "review",
+      };
+    }
 
-  const { error: updateMissionsError } = await supabaseAdmin
-    .from("information_agent_missions")
-    .update({ status: "replied", replied_at: receivedAt, updated_at: now })
-    .eq("case_id", sharedCase.id)
-    .in("status", ["sent", "subscribed", "replied"]);
-  if (updateMissionsError) throw updateMissionsError;
+    const { error: updateMissionsError } = await supabaseAdmin
+      .from("information_agent_missions")
+      .update({ status: "replied", replied_at: receivedAt, updated_at: now })
+      .eq("case_id", sharedCase.id)
+      .in("status", ["sent", "subscribed", "replied"]);
+    if (updateMissionsError) throw updateMissionsError;
 
-  return {
-    accepted: true,
-    caseId: sharedCase.id,
-    messageId,
-    factCount: extractedFacts.length + storedAssets.length,
-    attachmentCount: storedAssets.length,
-  };
+    const processingStatus =
+      extractedFacts.length || storedAssets.length || rejected.length ? "review" : "completed";
+    await updateInboundProcessingState(messageId, inboundMetadata, {
+      status: processingStatus,
+      attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+      providerEmailId: event.data.email_id,
+      queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+      completedAt: now,
+      reason: processingStatus === "review" ? "candidate_or_attachment_review" : undefined,
+    });
+
+    return {
+      accepted: true,
+      caseId: sharedCase.id,
+      messageId,
+      factCount: extractedFacts.length + storedAssets.length,
+      attachmentCount: storedAssets.length,
+      processingStatus,
+    };
+  } catch (error) {
+    const currentProcessing = inboundProcessingState(inboundMetadata);
+    await updateInboundProcessingState(messageId, inboundMetadata, {
+      status: "failed",
+      attempts: currentProcessing?.attempts ?? 1,
+      providerEmailId: event.data.email_id,
+      queuedAt: currentProcessing?.queuedAt ?? receivedAt,
+      failedAt: new Date().toISOString(),
+      nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      lastError: boundedInboundError(error),
+    });
+    throw error;
+  }
 }
 
-async function ignoreIfCaseClosed(caseId: string, messageId: string): Promise<boolean> {
+async function updateOpenInformationAgentCase(
+  caseId: string,
+  values: Database["public"]["Tables"]["information_agent_cases"]["Update"],
+): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_cases")
+    .update(values)
+    .eq("id", caseId)
+    .in("status", [...OPEN_INFORMATION_AGENT_CASE_STATUSES])
+    .select("id");
+  if (error) throw error;
+  return data?.some((row) => row.id === caseId) ?? false;
+}
+
+async function ignoreIfCaseClosed(caseId: string, messageId: string): Promise<string | null> {
   const { data: currentCase, error: caseError } = await supabaseAdmin
     .from("information_agent_cases")
     .select("status")
     .eq("id", caseId)
     .single();
   if (caseError) throw caseError;
-  if (["sending", "sent", "replied", "review"].includes(currentCase.status)) return false;
+  if (["sending", "sent", "replied", "review"].includes(currentCase.status)) return null;
 
   const { data: message, error: messageError } = await supabaseAdmin
     .from("information_agent_messages")
@@ -272,7 +450,7 @@ async function ignoreIfCaseClosed(caseId: string, messageId: string): Promise<bo
     })
     .eq("id", messageId);
   if (updateError) throw updateError;
-  return true;
+  return currentCase.status;
 }
 
 async function loadInitiatorMission(sharedCase: SharedCase): Promise<Mission> {
@@ -306,8 +484,24 @@ async function insertOrLoadInboundMessage({
   bodyText: string;
   receivedAt: string;
   senderMatches: boolean;
-}): Promise<string> {
+}): Promise<InboundMessageRef> {
   const id = randomUUID();
+  const queuedAt = new Date().toISOString();
+  const metadata: Json = {
+    imported_manually: false,
+    content_trust: "untrusted",
+    sender_matches_recipient: senderMatches,
+    inbound_processing: {
+      version: INBOUND_PROCESSING_VERSION,
+      status: "queued",
+      attempts: 0,
+      provider_email_id: providerMessageId,
+      queued_at: queuedAt,
+      attachment_link_expires_at: new Date(
+        Date.parse(receivedAt) + INBOUND_ATTACHMENT_LINK_TTL_MS,
+      ).toISOString(),
+    },
+  };
   const { error } = await supabaseAdmin.from("information_agent_messages").insert({
     id,
     case_id: sharedCase.id,
@@ -322,24 +516,127 @@ async function insertOrLoadInboundMessage({
     body_text: bodyText,
     provider_message_id: providerMessageId,
     received_at: receivedAt,
-    metadata: {
-      imported_manually: false,
-      content_trust: "untrusted",
-      sender_matches_recipient: senderMatches,
-    },
+    metadata,
   });
-  if (!error) return id;
+  if (!error) return { id, duplicate: false, metadata };
 
   const { data: existing, error: existingError } = await supabaseAdmin
     .from("information_agent_messages")
-    .select("id,case_id")
+    .select("id,case_id,metadata")
     .eq("provider_message_id", providerMessageId)
     .maybeSingle();
   if (existingError || !existing) throw error;
   if (existing.case_id !== sharedCase.id) {
     throw new Error("Message entrant déjà rattaché à un autre dossier.");
   }
-  return existing.id;
+  return { id: existing.id, duplicate: true, metadata: existing.metadata ?? {} };
+}
+
+async function updateInboundProcessingState(
+  messageId: string,
+  currentMetadata: Json,
+  patch: {
+    status: InboundProcessingState["status"];
+    attempts: number;
+    providerEmailId: string;
+    queuedAt: string;
+    startedAt?: string;
+    completedAt?: string;
+    failedAt?: string;
+    attachmentLinkExpiresAt?: string;
+    nextAttemptAt?: string;
+    lastError?: string;
+    reason?: string;
+  },
+): Promise<Json> {
+  const previous = inboundProcessingState(currentMetadata);
+  const state: Record<string, Json> = {
+    version: previous?.version ?? INBOUND_PROCESSING_VERSION,
+    status: patch.status,
+    attempts: Math.max(0, Math.min(10, Math.trunc(patch.attempts))),
+    provider_email_id: patch.providerEmailId,
+    queued_at: previous?.queuedAt ?? patch.queuedAt,
+  };
+  const optionalValues: Array<[string, string | undefined]> = [
+    ["started_at", patch.startedAt ?? previous?.startedAt],
+    ["completed_at", patch.completedAt],
+    ["failed_at", patch.failedAt],
+    [
+      "attachment_link_expires_at",
+      patch.attachmentLinkExpiresAt ?? previous?.attachmentLinkExpiresAt,
+    ],
+    ["next_attempt_at", patch.nextAttemptAt],
+    ["last_error", patch.lastError],
+    ["reason", patch.reason],
+  ];
+  for (const [key, value] of optionalValues) {
+    if (value) state[key] = value;
+  }
+  const nextMetadata = mergeJsonObject(currentMetadata, { inbound_processing: state });
+  const { error } = await supabaseAdmin
+    .from("information_agent_messages")
+    .update({ metadata: nextMetadata })
+    .eq("id", messageId);
+  if (error) throw error;
+  return nextMetadata;
+}
+
+function inboundProcessingState(metadata: Json): InboundProcessingState | null {
+  const object = jsonObject(metadata);
+  const raw = jsonObject(object.inbound_processing);
+  const status = raw.status;
+  const attempts = raw.attempts;
+  const providerEmailId = raw.provider_email_id;
+  const queuedAt = raw.queued_at;
+  if (
+    !isInboundProcessingStatus(status) ||
+    typeof attempts !== "number" ||
+    !Number.isFinite(attempts) ||
+    typeof providerEmailId !== "string" ||
+    typeof queuedAt !== "string"
+  ) {
+    return null;
+  }
+  return {
+    version: typeof raw.version === "string" ? raw.version : INBOUND_PROCESSING_VERSION,
+    status,
+    attempts,
+    providerEmailId,
+    queuedAt,
+    startedAt: asOptionalString(raw.started_at),
+    completedAt: asOptionalString(raw.completed_at),
+    failedAt: asOptionalString(raw.failed_at),
+    attachmentLinkExpiresAt: asOptionalString(raw.attachment_link_expires_at),
+    nextAttemptAt: asOptionalString(raw.next_attempt_at),
+    lastError: asOptionalString(raw.last_error),
+    reason: asOptionalString(raw.reason),
+  };
+}
+
+function isInboundProcessingStatus(
+  value: Json | undefined,
+): value is InboundProcessingState["status"] {
+  return (
+    value === "queued" ||
+    value === "processing" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "review" ||
+    value === "ignored"
+  );
+}
+
+function jsonObject(value: Json | undefined): Record<string, Json | undefined> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function asOptionalString(value: Json | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function boundedInboundError(error: unknown): string {
+  const value = error instanceof Error ? error.message : "Traitement entrant impossible.";
+  return value.replace(/[\r\n]+/g, " ").slice(0, 500);
 }
 
 export async function fetchInboundAttachments(resend: Resend, emailId: string) {
@@ -460,10 +757,17 @@ async function storeInboundAttachments({
         headers: { accept: mimeType },
       });
     } catch {
-      rejected.push({ filename, reason: "Téléchargement indisponible ; contrôle manuel requis" });
-      continue;
+      // A Resend attachment URL is short-lived. Let the signed webhook be
+      // retried for transient transport failures so a fresh URL can be
+      // obtained from the provider before falling back to manual review.
+      throw new Error("Téléchargement temporairement indisponible ; nouvelle tentative requise.");
     }
     if (!response.ok) {
+      if ([408, 425, 429].includes(response.status) || response.status >= 500) {
+        throw new Error(
+          `Téléchargement temporairement indisponible (HTTP ${response.status}) ; nouvelle tentative requise.`,
+        );
+      }
       rejected.push({
         filename,
         reason: `Téléchargement impossible (HTTP ${response.status}) ; contrôle manuel requis`,
@@ -546,7 +850,7 @@ async function storeInboundAttachments({
   return { stored, rejected };
 }
 
-async function persistFactCandidates({
+export async function persistFactCandidates({
   sharedCase,
   messageId,
   facts,
@@ -785,6 +1089,45 @@ function cleanInboundBody(text: string | null, html: string | null) {
   return source.slice(0, 16000);
 }
 
+async function readBoundedWebhookBody(request: Request): Promise<string> {
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_WEBHOOK_BODY_BYTES) {
+    throw new InformationAgentWebhookPayloadTooLargeError();
+  }
+  if (!request.body) return "";
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_WEBHOOK_BODY_BYTES) {
+        try {
+          await reader.cancel();
+        } catch {
+          // The size error is the actionable outcome even if the client disconnects.
+        }
+        throw new InformationAgentWebhookPayloadTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(body);
+}
+
 function safeFilename(value: string) {
   const safe = value
     .normalize("NFKD")
@@ -799,9 +1142,30 @@ function excerptAround(value: string, index: number) {
   return value.slice(Math.max(0, index - 80), Math.min(value.length, index + 240)).trim();
 }
 
-function normalizeEmail(value: string) {
-  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() ?? "";
+export function normalizeEmail(value: string) {
+  const input = value.trim();
+  if (!input) return "";
+
+  const angleStart = input.indexOf("<");
+  const angleEnd = input.indexOf(">");
+  if (angleStart !== -1 || angleEnd !== -1) {
+    if (
+      angleStart < 0 ||
+      angleEnd !== input.length - 1 ||
+      input.indexOf("<", angleStart + 1) !== -1 ||
+      input.indexOf(">", angleEnd + 1) !== -1 ||
+      /[<>;,]/.test(input.slice(0, angleStart))
+    ) {
+      return "";
+    }
+    const address = input.slice(angleStart + 1, angleEnd).trim();
+    return SIMPLE_EMAIL_PATTERN.test(address) ? address.toLowerCase() : "";
+  }
+  return SIMPLE_EMAIL_PATTERN.test(input) ? input.toLowerCase() : "";
 }
+
+const SIMPLE_EMAIL_PATTERN =
+  /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)*$/i;
 
 function requiredHeader(request: Request, name: string) {
   const value = request.headers.get(name)?.trim();

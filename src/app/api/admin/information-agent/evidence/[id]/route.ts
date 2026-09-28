@@ -32,7 +32,16 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       .from(asset.storage_bucket)
       .createSignedUrl(asset.storage_path, 10 * 60);
     if (error) throw error;
-    return NextResponse.redirect(data.signedUrl, 307);
+    if (new URL(request.url).searchParams.get("format") === "json") {
+      return NextResponse.json(
+        { signedUrl: data.signedUrl },
+        { headers: { "cache-control": "private, no-store" } },
+      );
+    }
+    return NextResponse.redirect(data.signedUrl, {
+      status: 307,
+      headers: { "cache-control": "private, no-store", "referrer-policy": "no-referrer" },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Pièce indisponible.";
     const status = message.startsWith("Unauthorized")

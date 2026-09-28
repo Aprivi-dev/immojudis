@@ -157,6 +157,10 @@ export function AdminInformationAgentMissionsPanel({
                 className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm leading-6"
               />
             </label>
+            <p className="text-xs text-[#132238]/65">
+              Le mail envoyé ajoutera une adresse de réponse propre au dossier et un lien privé
+              permettant de déposer une réponse, des liens ou des pièces sans compte.
+            </p>
           </div>
           {activeMission.status === "draft" || activeMission.status === "failed" ? (
             <div className="mt-4 flex flex-wrap gap-2">
@@ -170,7 +174,12 @@ export function AdminInformationAgentMissionsPanel({
                   bodyText.trim().length < 20
                 }
                 onClick={() => {
-                  if (!window.confirm("Confirmer l’envoi de cet email au professionnel ?")) return;
+                  if (
+                    !window.confirm(
+                      "Confirmer l’envoi de cet email au professionnel, avec une adresse de réponse et un lien privé de dépôt ?",
+                    )
+                  )
+                    return;
                   runAction.mutate({
                     action: "approve_and_send",
                     missionId: activeMission.id,

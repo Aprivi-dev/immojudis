@@ -22,6 +22,7 @@ describe("renderInformationRequestEmail", () => {
       replyTo: "enquete+1234@reponses.immojudis.com",
       caseReference: "IJ-8F31A290",
       appUrl: "https://immojudis.com",
+      contributionUrl: "https://immojudis.com/contribuer/mission#secret-token",
     });
 
     expect(message.html).toContain("IMMOJUDIS");
@@ -29,6 +30,9 @@ describe("renderInformationRequestEmail", () => {
     expect(message.html).toContain("mailto:enquete+1234@reponses.immojudis.com");
     expect(message.html).toContain("ImmoJudis n’agit pas au nom d’un tribunal");
     expect(message.html).toContain("https://immojudis.com");
+    expect(message.html).toContain("Ouvrir le dépôt sécurisé du dossier");
+    expect(message.html).toContain("https://immojudis.com/contribuer/mission#secret-token");
+    expect(message.text).toContain("https://immojudis.com/contribuer/mission#secret-token");
     expect(message.text.toLocaleLowerCase("fr-FR")).toContain(
       "informations sur une vente judiciaire",
     );
