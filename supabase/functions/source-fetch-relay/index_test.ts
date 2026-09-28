@@ -60,7 +60,8 @@ Deno.test("redirect diagnostics keep only status and safe host/path", () => {
   }
   const serialized = JSON.stringify(diagnostic);
   if (
-    serialized.includes("token") || serialized.includes("secret-value") ||
+    serialized.includes("token") ||
+    serialized.includes("secret-value") ||
     serialized.includes("fragment")
   ) {
     throw new Error("redirect query or fragment leaked");
@@ -75,8 +76,7 @@ Deno.test("redirect diagnostics keep only status and safe host/path", () => {
     throw new Error("relative host missing");
   }
   if (
-    relative.destinationPath !==
-      "/encheres-immobilieres/ventes-aux-encheres-immobilieres-p2.html"
+    relative.destinationPath !== "/encheres-immobilieres/ventes-aux-encheres-immobilieres-p2.html"
   ) {
     throw new Error("relative path missing");
   }
@@ -105,9 +105,7 @@ Deno.test("redirect diagnostics keep only status and safe host/path", () => {
     throw new Error("Cessions host missing");
   }
   if (cessionsDetail.destinationPath !== "/biens/") {
-    throw new Error(
-      "Cessions detail path was not reduced to its public prefix",
-    );
+    throw new Error("Cessions detail path was not reduced to its public prefix");
   }
 });
 
@@ -117,23 +115,18 @@ Deno.test("redirect diagnostics reject credentials and bound long paths", () => 
     "https://user:password@www.petitesaffiches.fr/private",
     "https://www.petitesaffiches.fr/",
   );
-  if (
-    credentialed.destinationHost !== null ||
-    credentialed.destinationPath !== null
-  ) {
+  if (credentialed.destinationHost !== null || credentialed.destinationPath !== null) {
     throw new Error("redirect credentials accepted");
   }
 
   const longPath = redirectDiagnostic(
     308,
-    `https://www.petitesaffiches.fr/encheres-immobilieres/ventes-aux-encheres-immobilieres-p${
-      "1".repeat(700)
-    }.html`,
+    `https://www.petitesaffiches.fr/encheres-immobilieres/ventes-aux-encheres-immobilieres-p${"1".repeat(
+      700,
+    )}.html`,
     "https://www.petitesaffiches.fr/",
   );
-  if (
-    longPath.destinationPath !== null
-  ) {
+  if (longPath.destinationPath !== null) {
     throw new Error("long redirect path was not bounded");
   }
 });
@@ -165,26 +158,18 @@ Deno.test("normalizes only the verified Petites Affiches HTTP canonical redirect
     "http://www.petitesaffiches.fr/encheres-immobilieres/?token=secret",
     "https://www.petitesaffiches.fr/encheres-immobilieres/ventes-aux-encheres-immobilieres-p2.html",
   );
-  if (
-    queryBearing !==
-      "http://www.petitesaffiches.fr/encheres-immobilieres/?token=secret"
-  ) {
+  if (queryBearing !== "http://www.petitesaffiches.fr/encheres-immobilieres/?token=secret") {
     throw new Error("query-bearing redirect was rewritten");
   }
 
-  for (
-    const [status, location] of [
-      [302, "http://www.petitesaffiches.fr/encheres-immobilieres/"],
-      [301, "http://www.petitesaffiches.fr/other/"],
-      [301, "http://evil.example/encheres-immobilieres/"],
-    ] as const
-  ) {
+  for (const [status, location] of [
+    [302, "http://www.petitesaffiches.fr/encheres-immobilieres/"],
+    [301, "http://www.petitesaffiches.fr/other/"],
+    [301, "http://evil.example/encheres-immobilieres/"],
+  ] as const) {
     if (
-      normalizeRedirectLocation(
-        status,
-        location,
-        "https://www.petitesaffiches.fr/other",
-      ) !== location
+      normalizeRedirectLocation(status, location, "https://www.petitesaffiches.fr/other") !==
+      location
     ) {
       throw new Error("unverified redirect was rewritten");
     }
