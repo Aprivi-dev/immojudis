@@ -111,6 +111,22 @@ from unnest(array[
   'cnb-lawyer-directory'
 ]) as job_name;
 
+-- The inbound worker is checked with a ten-minute freshness window. Keep a
+-- successful run immediately before the first health evaluation.
+insert into public.operational_job_runs (
+  job_name,
+  status,
+  started_at,
+  finished_at,
+  duration_ms
+) values (
+  'information-agent-inbound',
+  'success',
+  '2026-07-27T10:13:00Z'::timestamptz,
+  '2026-07-27T10:14:00Z'::timestamptz,
+  60000
+);
+
 insert into public.dvf_import_batches (
   id,
   source,
@@ -236,6 +252,12 @@ insert into public.operational_job_runs (
   '2026-07-27T16:18:00Z'::timestamptz,
   '2026-07-27T16:19:00Z'::timestamptz,
   60000
+), (
+  'information-agent-inbound',
+  'success',
+  '2026-07-27T16:18:00Z'::timestamptz,
+  '2026-07-27T16:19:00Z'::timestamptz,
+  60000
 );
 
 select lives_ok(
@@ -261,6 +283,12 @@ insert into public.operational_job_runs (
   duration_ms
 ) values (
   'sale-change-monitor',
+  'success',
+  '2026-07-27T16:20:00Z'::timestamptz,
+  '2026-07-27T16:21:00Z'::timestamptz,
+  60000
+), (
+  'information-agent-inbound',
   'success',
   '2026-07-27T16:20:00Z'::timestamptz,
   '2026-07-27T16:21:00Z'::timestamptz,
