@@ -320,6 +320,55 @@ def test_detail_lot_one_and_two_block_room_inference_without_lot_summary():
     assert details["rooms_count"] is None
 
 
+def test_detail_does_not_classify_house_t4_as_mixed():
+    html = """
+    <html><body>
+      <h1>Maison T4 à VILLE-TEST</h1>
+      <div><h2>À propos du bien</h2>
+        <div>VILLE-TEST (33000), 8 rue du Test.</div>
+      </div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-house-t4")
+
+    assert details["property_type"] == "house"
+
+
+def test_detail_does_not_turn_mixed_case_street_name_into_city():
+    html = """
+    <html><body>
+      <h1>Appartement</h1>
+      <div><h2>À propos du bien</h2>
+        <div>97 rue de Genève (74240), appartement à usage d'habitation.</div>
+      </div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-street-city")
+
+    assert details["city"] is None
+    assert details["postal_code"] == "74240"
+    assert details["address"] == "97 rue de Genève"
+
+
+def test_detail_keeps_city_after_a_previous_sentence_with_a_street_address():
+    html = """
+    <html><body>
+      <h1>Appartement</h1>
+      <div><h2>À propos du bien</h2>
+        <div>Adresse : 12 rue de Genève. Bien situé à Gex (01170).</div>
+      </div>
+    </body></html>
+    """
+
+    details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-street-and-city")
+
+    assert details["city"] == "Gex"
+    assert details["postal_code"] == "01170"
+    assert details["address"] == "12 rue de Genève"
+
+
 def test_normalize_sale_keeps_ambiguous_avoventes_rooms_null_but_keeps_single_dwelling_count():
     multi_lot = normalize_sale(
         {

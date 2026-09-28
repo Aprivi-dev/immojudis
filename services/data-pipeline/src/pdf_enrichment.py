@@ -15,7 +15,7 @@ import sys
 import tempfile
 import unicodedata
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -70,6 +70,7 @@ class PdfEnrichmentStats:
     document_cache_hits: int = 0
     document_cache_misses: int = 0
     documents_processed: int = 0
+    blocked_document_urls: list[str] = field(default_factory=list)
 
 
 class PdfExtractionDeferred(ValueError):
@@ -220,7 +221,12 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         enrich_sale_from_pdf_text(sale, pdf_texts)
         if len(sale.raw_text or "") > len(before):
             stats.raw_text_enriched += 1
-    _store_document_analysis_status(sale, downloaded_documents, pdf_texts)
+    _store_document_analysis_status(
+        sale,
+        downloaded_documents,
+        pdf_texts,
+        blocked_document_urls=stats.blocked_document_urls,
+    )
 
     return stats
 
@@ -287,6 +293,8 @@ def download_documents(
         seen_urls.add(url)
         if _is_robots_disallowed_licitor_document(url):
             LOGGER.info("Skipping robots-disallowed Licitor document %s", url)
+            if stats is not None:
+                stats.blocked_document_urls.append(url)
             continue
 
         filename = _document_filename(document)

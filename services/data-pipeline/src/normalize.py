@@ -1344,12 +1344,16 @@ def _extract_land_surface_from_text(*values: object) -> Decimal | None:
 
 def _extract_built_surface_from_text(*values: object) -> Decimal | None:
     text = _joined_text(*values)
-    habitable = _extract_habitable_surface_from_text(text)
-    if habitable is not None:
-        return habitable
+    total_surface = _extract_contextual_surface(
+        text,
+        (
+            rf"\bsurface\s+totale(?:\s+(?:b[âa]tie|au\s+sol))?\s*:?\s*(?:de\s+)?"
+            rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+        ),
+    )
+    if total_surface is not None:
+        return total_surface
     patterns = (
-        rf"\bsurface\s+totale(?:\s+(?:b[âa]tie|au\s+sol))?\s*:?\s*(?:de\s+)?"
-        rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
         rf"\b(?:surface|superficie)\s+(?:des\s+)?lots?\b[^:\n]{{0,80}}:\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
         rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+superficie\b",
         (
@@ -1363,6 +1367,9 @@ def _extract_built_surface_from_text(*values: object) -> Decimal | None:
     built = _extract_contextual_surface(text, patterns)
     if built is not None:
         return built
+    habitable = _extract_habitable_surface_from_text(text)
+    if habitable is not None:
+        return habitable
     return _extract_carrez_surface_from_text(text)
 
 
