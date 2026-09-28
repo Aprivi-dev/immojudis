@@ -107,6 +107,7 @@ from unnest(array[
   'precompute-valuations',
   'data-retention',
   'sale-retention',
+  'information-agent-inbound',
   'cnb-lawyer-directory'
 ]) as job_name;
 

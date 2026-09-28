@@ -240,6 +240,11 @@ select throws_ok(
   'a resolved decision cannot be edited in place'
 );
 
+-- service_role intentionally has no DELETE privilege.  Return to the owner
+-- role for this assertion so the append-only trigger is exercised instead of
+-- stopping at a privilege error.
+reset role;
+
 select throws_ok(
   $$delete from public.auction_fact_claims
     where id = '37000000-3000-4000-8000-000000000001'$$,
@@ -302,6 +307,10 @@ select throws_ok(
   'Fact claim evidence links must use HTTPS.',
   'source evidence links must use HTTPS'
 );
+
+-- The FK redaction path runs as the database owner in this isolated test;
+-- service_role is deliberately not allowed to delete auth accounts.
+reset role;
 
 -- Auth actor deletion is allowed to redact only the actor pointers.  The
 -- immutable observation and its provenance remain available for audit.
