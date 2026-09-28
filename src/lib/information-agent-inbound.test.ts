@@ -3,6 +3,7 @@ import {
   extractInformationAgentFacts,
   findInboundToken,
   htmlToPlainText,
+  replyTextForExtraction,
 } from "@/lib/information-agent-inbound";
 
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -24,6 +25,23 @@ describe("information agent inbound parsing", () => {
     expect(
       findInboundToken([`enquete+${token}@reponsesXimmojudis.com`], "reponses.immojudis.com"),
     ).toBeNull();
+    expect(
+      findInboundToken(
+        [
+          `enquete+${token}@reponses.immojudis.com`,
+          "enquete+22222222-2222-4222-8222-222222222222@reponses.immojudis.com",
+        ],
+        "reponses.immojudis.com",
+      ),
+    ).toBeNull();
+  });
+
+  it("does not extract claims from quoted older messages", () => {
+    expect(
+      replyTextForExtraction(
+        "Bonjour, je vérifie.\n\nLe 20 septembre, ImmoJudis a écrit :\n> Surface 84 m² et 4 pièces",
+      ),
+    ).toBe("Bonjour, je vérifie.");
   });
 
   it("extracts text with a parser and ignores active HTML content", () => {
@@ -32,6 +50,9 @@ describe("information agent inbound parsing", () => {
     );
 
     expect(text).toBe("Surface & état\n\n84 m²");
+    expect(htmlToPlainText("<p>Je vérifie.</p><blockquote>Surface 84 m²</blockquote>")).toBe(
+      "Je vérifie.",
+    );
   });
 
   it("extracts bounded candidates without treating them as verified facts", () => {
@@ -53,5 +74,24 @@ describe("information agent inbound parsing", () => {
     expect(extractInformationAgentFacts("Surface annoncée : 9999999 m² et 999 pièces.")).toEqual(
       [],
     );
+  });
+
+  it("keeps contradictory values out of automatic candidate extraction", () => {
+    const facts = extractInformationAgentFacts(
+      "La surface était 80 m², finalement 84 m². L'ancien plan comptait 3 pièces, le nouveau 4 pièces. Le bien était libre mais le logement est loué.",
+    );
+    expect(facts).toEqual([]);
+  });
+
+  it("recognizes accented French occupancy words", () => {
+    expect(extractInformationAgentFacts("Le bien est loué.")).toMatchObject([
+      { factKey: "occupancy_status", proposedValue: { value: "rented" } },
+    ]);
+    expect(extractInformationAgentFacts("La maison est occupée.")).toMatchObject([
+      { factKey: "occupancy_status", proposedValue: { value: "occupied" } },
+    ]);
+    expect(extractInformationAgentFacts("Le logement est squatté.")).toMatchObject([
+      { factKey: "occupancy_status", proposedValue: { value: "squatted" } },
+    ]);
   });
 });

@@ -25,6 +25,7 @@ MAX_PAGES = 100
 MAX_EXTRACTED_TEXT_CHARS = 240_000
 MAX_PAGE_TEXT_CHARS = 30_000
 PROCESSOR_VERSION = "evidence_v1"
+FACT_CANDIDATE_CASE_STATUSES = frozenset({"sending", "sent", "replied", "review"})
 SUPPORTED_MIME_TYPES = {
     "application/pdf",
     "image/jpeg",
@@ -530,10 +531,18 @@ def _process_job(
     extraction_id = str(job.get("id") or "")
     asset_id = str(job.get("asset_id") or "")
     attempts = int(job.get("attempts") or 1)
+    locked_at = str(job.get("locked_at") or "") or None
     if not extraction_id or not asset_id:
         return
     try:
         asset = _fetch_asset(client, base_url, key, asset_id)
+        if any(
+            not job.get(field)
+            or not asset.get(field)
+            or str(asset[field]) != str(job[field])
+            for field in ("case_id", "message_id", "sale_id")
+        ):
+            raise RuntimeError("Evidence asset association mismatch")
         content = _download_asset(client, base_url, key, asset)
         analysis = analyze_evidence_bytes(
             content,
@@ -542,12 +551,30 @@ def _process_job(
             ocr_enabled=bool(load_settings().get("pdf_ocr_enabled")),
         )
         if analysis.status == "completed" and analysis.facts:
-            sale = _fetch_sale(client, base_url, key, str(job.get("sale_id") or ""))
-            _insert_fact_candidates(client, base_url, key, job, analysis.facts, sale)
-        _finish_job(client, base_url, key, extraction_id, analysis)
+            case_status = _fetch_case_status(client, base_url, key, str(job.get("case_id") or ""))
+            if case_status in FACT_CANDIDATE_CASE_STATUSES:
+                sale = _fetch_sale(client, base_url, key, str(job.get("sale_id") or ""))
+                _insert_fact_candidates(client, base_url, key, job, analysis.facts, sale)
+        _finish_job(
+            client,
+            base_url,
+            key,
+            extraction_id,
+            analysis,
+            attempts=attempts,
+            locked_at=locked_at,
+        )
         _mark_case_for_review(client, base_url, key, str(job.get("case_id") or ""))
     except Exception as exc:
-        _fail_job(client, base_url, key, extraction_id, attempts, str(exc))
+        _fail_job(
+            client,
+            base_url,
+            key,
+            extraction_id,
+            attempts,
+            str(exc),
+            locked_at=locked_at,
+        )
 
 
 def _fetch_asset(client: httpx.Client, base_url: str, key: str, asset_id: str) -> dict[str, Any]:
@@ -555,7 +582,7 @@ def _fetch_asset(client: httpx.Client, base_url: str, key: str, asset_id: str) -
         f"{base_url}/rest/v1/information_agent_evidence_assets",
         headers=_headers(key),
         params={
-            "select": "id,storage_bucket,storage_path,original_filename,mime_type,size_bytes,sha256",
+            "select": "id,case_id,message_id,sale_id,storage_bucket,storage_path,original_filename,mime_type,size_bytes,sha256",
             "id": f"eq.{asset_id}",
             "limit": "1",
         },
@@ -596,6 +623,21 @@ def _fetch_sale(client: httpx.Client, base_url: str, key: str, sale_id: str) -> 
     return rows[0] if isinstance(rows, list) and rows else {}
 
 
+def _fetch_case_status(client: httpx.Client, base_url: str, key: str, case_id: str) -> str:
+    if not case_id:
+        return ""
+    response = client.get(
+        f"{base_url}/rest/v1/information_agent_cases",
+        headers=_headers(key),
+        params={"select": "status", "id": f"eq.{case_id}", "limit": "1"},
+    )
+    response.raise_for_status()
+    rows = response.json()
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError("Information-agent case not found")
+    return str(rows[0].get("status") or "")
+
+
 def _insert_fact_candidates(
     client: httpx.Client,
     base_url: str,
@@ -628,7 +670,7 @@ def _insert_fact_candidates(
     response = client.post(
         f"{base_url}/rest/v1/information_agent_fact_candidates",
         headers={**_headers(key), "Prefer": "resolution=ignore-duplicates,return=minimal"},
-        params={"on_conflict": "message_id,fact_key,display_value"},
+        params={"on_conflict": "message_id,fact_key,evidence_asset_id,source_page,display_value"},
         content=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
     )
     response.raise_for_status()
@@ -649,6 +691,9 @@ def _finish_job(
     key: str,
     extraction_id: str,
     analysis: EvidenceAnalysis,
+    *,
+    attempts: int | None = None,
+    locked_at: str | None = None,
 ) -> None:
     now = datetime.now(UTC).isoformat()
     payload = {
@@ -670,7 +715,7 @@ def _finish_job(
     response = client.patch(
         f"{base_url}/rest/v1/information_agent_evidence_extractions",
         headers={**_headers(key), "Prefer": "return=minimal"},
-        params={"id": f"eq.{extraction_id}", "status": "eq.processing"},
+        params=_processing_lease_params(extraction_id, attempts=attempts, locked_at=locked_at),
         json=payload,
     )
     response.raise_for_status()
@@ -683,12 +728,14 @@ def _fail_job(
     extraction_id: str,
     attempts: int,
     message: str,
+    *,
+    locked_at: str | None = None,
 ) -> None:
     now = datetime.now(UTC)
     response = client.patch(
         f"{base_url}/rest/v1/information_agent_evidence_extractions",
         headers={**_headers(key), "Prefer": "return=minimal"},
-        params={"id": f"eq.{extraction_id}"},
+        params=_processing_lease_params(extraction_id, attempts=attempts, locked_at=locked_at),
         json={
             "status": "failed",
             "error_code": "WORKER_ERROR",
@@ -699,6 +746,23 @@ def _fail_job(
         },
     )
     response.raise_for_status()
+
+
+def _processing_lease_params(
+    extraction_id: str,
+    *,
+    attempts: int | None,
+    locked_at: str | None,
+) -> dict[str, str]:
+    params = {
+        "id": f"eq.{extraction_id}",
+        "status": "eq.processing",
+    }
+    if attempts is not None:
+        params["attempts"] = f"eq.{attempts}"
+    if locked_at:
+        params["locked_at"] = f"eq.{locked_at}"
+    return params
 
 
 def _mark_case_for_review(client: httpx.Client, base_url: str, key: str, case_id: str) -> None:

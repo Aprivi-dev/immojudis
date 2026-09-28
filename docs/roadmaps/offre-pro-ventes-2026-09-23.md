@@ -10,13 +10,13 @@ Le socle de pilotes professionnels existe déjà en production via les PR 168 et
 
 ## État actuel et périmètre manquant
 
-| Sujet | État au 28 septembre 2026 | Décision |
-| --- | --- | --- |
-| Pilotes professionnels | Livrés par les PR 168 et 171 ; ils servent à apprendre et à qualifier les dossiers. | Conserver et mesurer séparément. |
-| Plans et droits | `src/lib/plans.ts` expose toujours `decouverte` et `analyse`. Analyse inclut déjà exports, API, rapports, comparables, alertes et collaboration. | Ne pas appeler ces droits « Pro ». |
-| Facturation | Analyse est vendue pour 30 jours ; les webhooks historiques normalisent encore vers `analyse`. | Aucun abonnement récurrent Pro à activer. |
-| Produit Pro | Note de décision sourcée, contrôle humain borné, scénarios reproductibles et suivi des changements restent à spécifier et tester. | Découverte et pilote assisté avant de coder les droits. |
-| Sources | Les accès et droits de collecte sont inégaux, en particulier pour le domanial. | Ne promettre ni fraîcheur uniforme ni couverture nationale. |
+| Sujet                  | État au 28 septembre 2026                                                                                                                        | Décision                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| Pilotes professionnels | Livrés par les PR 168 et 171 ; ils servent à apprendre et à qualifier les dossiers.                                                              | Conserver et mesurer séparément.                            |
+| Plans et droits        | `src/lib/plans.ts` expose toujours `decouverte` et `analyse`. Analyse inclut déjà exports, API, rapports, comparables, alertes et collaboration. | Ne pas appeler ces droits « Pro ».                          |
+| Facturation            | Analyse est vendue pour 30 jours ; les webhooks historiques normalisent encore vers `analyse`.                                                   | Aucun abonnement récurrent Pro à activer.                   |
+| Produit Pro            | Note de décision sourcée, contrôle humain borné, scénarios reproductibles et suivi des changements restent à spécifier et tester.                | Découverte et pilote assisté avant de coder les droits.     |
+| Sources                | Les accès et droits de collecte sont inégaux, en particulier pour le domanial.                                                                   | Ne promettre ni fraîcheur uniforme ni couverture nationale. |
 
 ## Hypothèse de produit à tester
 
@@ -26,14 +26,14 @@ La promesse à tester est un dossier d’aide à la décision : faits critiques 
 
 ## Jalons proposés
 
-| Étape | Livrable | Condition de passage |
-| --- | --- | --- |
-| 0. Valider l’achat et les sources | 10 à 12 entretiens, 5 pilotes réellement engagés, mesure du temps par dossier et audit de dossiers tribunal/notariaux/domaniaux. | Cas récurrent, prix réellement accepté et sources utilisables. Sinon réviser l’offre. |
+| Étape                              | Livrable                                                                                                                                   | Condition de passage                                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| 0. Valider l’achat et les sources  | 10 à 12 entretiens, 5 pilotes réellement engagés, mesure du temps par dossier et audit de dossiers tribunal/notariaux/domaniaux.           | Cas récurrent, prix réellement accepté et sources utilisables. Sinon réviser l’offre.                 |
 | 1. Registre de preuves et dossiers | Faits typés avec source/page/date, statuts `vérifié/à confirmer/conflit`, file de revue, profil d’investissement et scénarios calculables. | Aucun fait critique partageable sans provenance ; RLS, confidentialité et reproductibilité vérifiées. |
-| 2. Pilote tribunal | Note d’adjudication, occupation, frais, visite, audience, sensibilités et paquet partageable sur au moins 20 dossiers variés. | Zéro fait critique erroné dans les notes relues ; gain de temps mesuré. |
-| 3. Pilote notarial | Distinction vente interactive/adjudication, règles de visite et d’agrément, fenêtre d’offres et dossier partageable. | Aucune confusion de procédure ; chaque délai est sourcé. |
-| 4. Pilote domanial | Mode de cession, pièces, canal de dépôt, rapprochement cadastral/urbanisme/risques et suivi des avenants. | Accès autorisé et stable ; sinon bêta assistée sans promesse de veille. |
-| 5. Facturation et lancement limité | Seulement après validation : code `pro`, droits serveur/RLS, Stripe récurrent, impayé/annulation, quotas, support et liste d’attente. | Webhooks et permissions testés de bout en bout ; critères économiques et qualité atteints. |
+| 2. Pilote tribunal                 | Note d’adjudication, occupation, frais, visite, audience, sensibilités et paquet partageable sur au moins 20 dossiers variés.              | Zéro fait critique erroné dans les notes relues ; gain de temps mesuré.                               |
+| 3. Pilote notarial                 | Distinction vente interactive/adjudication, règles de visite et d’agrément, fenêtre d’offres et dossier partageable.                       | Aucune confusion de procédure ; chaque délai est sourcé.                                              |
+| 4. Pilote domanial                 | Mode de cession, pièces, canal de dépôt, rapprochement cadastral/urbanisme/risques et suivi des avenants.                                  | Accès autorisé et stable ; sinon bêta assistée sans promesse de veille.                               |
+| 5. Facturation et lancement limité | Seulement après validation : code `pro`, droits serveur/RLS, Stripe récurrent, impayé/annulation, quotas, support et liste d’attente.      | Webhooks et permissions testés de bout en bout ; critères économiques et qualité atteints.            |
 
 ## Mesures avant toute décision commerciale
 

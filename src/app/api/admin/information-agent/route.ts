@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminInformationAgentReviewSchema,
@@ -8,7 +9,14 @@ import {
 
 export async function GET(request: Request) {
   try {
-    const response = await listAdminInformationAgentReview(bearerTokenFromRequest(request));
+    const searchParams = new URL(request.url).searchParams;
+    const cursor = z.string().max(500).optional();
+    const factCursor = cursor.parse(searchParams.get("factCursor") ?? undefined);
+    const messageCursor = cursor.parse(searchParams.get("messageCursor") ?? undefined);
+    const response = await listAdminInformationAgentReview(bearerTokenFromRequest(request), {
+      factCursor,
+      messageCursor,
+    });
     return NextResponse.json(response, {
       headers: { "cache-control": "private, no-store" },
     });

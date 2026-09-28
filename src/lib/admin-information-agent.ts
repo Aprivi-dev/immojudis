@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -61,32 +62,64 @@ export const adminInformationAgentReviewSchema = z.object({
 
 export type AdminInformationAgentReviewInput = z.output<typeof adminInformationAgentReviewSchema>;
 
-export async function listAdminInformationAgentReview(authToken: string) {
+const REVIEW_PAGE_SIZE = 100;
+const REVIEW_DONE_CURSOR = "__done__";
+const reviewCursorSchema = z.object({
+  createdAt: z.string().datetime({ offset: true }),
+  id: z.string().uuid(),
+});
+
+type AdminInformationAgentReviewListOptions = {
+  factCursor?: string;
+  messageCursor?: string;
+};
+
+export async function listAdminInformationAgentReview(
+  authToken: string,
+  options: AdminInformationAgentReviewListOptions = {},
+) {
   await requireAdmin(authToken);
-  const { data: facts, error: factsError } = await supabaseAdmin
+  const factCursor = parseReviewCursor(options.factCursor);
+  const messageCursor = parseReviewCursor(options.messageCursor);
+
+  let factQuery = supabaseAdmin
     .from("information_agent_fact_candidates")
     .select("*")
     .in("status", ["pending", "conflict"])
     .order("created_at", { ascending: true })
-    .limit(100);
+    .order("id", { ascending: true });
+  if (factCursor && factCursor !== REVIEW_DONE_CURSOR) {
+    factQuery = factQuery.or(cursorFilter(factCursor, "asc"));
+  }
+  const { data: factRows, error: factsError } =
+    factCursor === REVIEW_DONE_CURSOR
+      ? { data: [], error: null }
+      : await factQuery.range(0, REVIEW_PAGE_SIZE);
   if (factsError) throw factsError;
+  const facts = (factRows ?? []).slice(0, REVIEW_PAGE_SIZE);
 
-  const { data: inboundMessages, error: messagesError } = await supabaseAdmin
+  // created_at is non-null for every message; pairing it with the UUID keeps
+  // the cursor stable when several replies share the same timestamp.
+  let messageQuery = supabaseAdmin
     .from("information_agent_messages")
-    .select("id,case_id,metadata,received_at")
+    .select("id,case_id,from_email,subject,body_text,created_at,received_at,metadata")
     .eq("direction", "inbound")
-    .filter("metadata->>rejected_attachment_count", "gt", "0")
-    .order("received_at", { ascending: false })
-    .limit(100);
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
+  if (messageCursor && messageCursor !== REVIEW_DONE_CURSOR) {
+    messageQuery = messageQuery.or(cursorFilter(messageCursor, "desc"));
+  }
+  const { data: messageRows, error: messagesError } =
+    messageCursor === REVIEW_DONE_CURSOR
+      ? { data: [], error: null }
+      : await messageQuery.range(0, REVIEW_PAGE_SIZE);
   if (messagesError) throw messagesError;
-  const rejectedMessages = (inboundMessages ?? []).filter(
-    (message): message is typeof message & { case_id: string } =>
-      !!message.case_id && Number(jsonObject(message.metadata).rejected_attachment_count) > 0,
-  );
+  const messages = (messageRows ?? []).slice(0, REVIEW_PAGE_SIZE);
+
   const caseIds = [
     ...new Set([
       ...(facts ?? []).map((fact) => fact.case_id),
-      ...rejectedMessages.map((message) => message.case_id),
+      ...messages.flatMap((message) => (message.case_id ? [message.case_id] : [])),
     ]),
   ];
   const { data: cases, error: casesError } = caseIds.length
@@ -100,11 +133,16 @@ export async function listAdminInformationAgentReview(authToken: string) {
     : { data: [], error: null };
   if (casesError) throw casesError;
 
-  const { data: assets, error: assetsError } = caseIds.length
+  // A case can accumulate more evidence than PostgREST's default response
+  // cap. The review page only needs assets linked to its facts.
+  const evidenceAssetIds = [
+    ...new Set(facts.flatMap((fact) => (fact.evidence_asset_id ? [fact.evidence_asset_id] : []))),
+  ];
+  const { data: assets, error: assetsError } = evidenceAssetIds.length
     ? await supabaseAdmin
         .from("information_agent_evidence_assets")
         .select("*")
-        .in("case_id", caseIds)
+        .in("id", evidenceAssetIds)
         .order("created_at", { ascending: true })
     : { data: [], error: null };
   if (assetsError) throw assetsError;
@@ -123,11 +161,45 @@ export async function listAdminInformationAgentReview(authToken: string) {
 
   return {
     cases: cases ?? [],
-    facts: facts ?? [],
+    facts,
     assets: assets ?? [],
     extractions: extractions ?? [],
-    rejectedMessages,
+    messages,
+    hasMoreFacts: (factRows ?? []).length > REVIEW_PAGE_SIZE,
+    nextFactsCursor:
+      (factRows ?? []).length > REVIEW_PAGE_SIZE && facts.length
+        ? encodeReviewCursor(facts[facts.length - 1])
+        : null,
+    hasMoreMessages: (messageRows ?? []).length > REVIEW_PAGE_SIZE,
+    nextMessagesCursor:
+      (messageRows ?? []).length > REVIEW_PAGE_SIZE && messages.length
+        ? encodeReviewCursor(messages[messages.length - 1])
+        : null,
   };
+}
+
+function parseReviewCursor(
+  value: string | undefined,
+): typeof REVIEW_DONE_CURSOR | z.output<typeof reviewCursorSchema> | null {
+  if (!value) return null;
+  if (value === REVIEW_DONE_CURSOR) return REVIEW_DONE_CURSOR;
+  try {
+    return reviewCursorSchema.parse(JSON.parse(value));
+  } catch {
+    throw new Error("Curseur de revue invalide.");
+  }
+}
+
+function encodeReviewCursor(row: { created_at: string; id: string }): string {
+  return JSON.stringify({ createdAt: row.created_at, id: row.id });
+}
+
+function cursorFilter(
+  cursor: z.output<typeof reviewCursorSchema>,
+  direction: "asc" | "desc",
+): string {
+  const operator = direction === "asc" ? "gt" : "lt";
+  return `created_at.${operator}.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.${operator}.${cursor.id})`;
 }
 
 export type AdminInformationAgentReviewResponse = Awaited<
@@ -143,7 +215,26 @@ export async function reviewAdminInformationAgentFact({
 }) {
   const auth = await requireAdmin(authToken);
   if (input.decision === "accepted") {
-    await stageApprovedEvidencePublication(input.factId);
+    const publication = await stageApprovedEvidencePublication(input.factId);
+    if (publication) {
+      try {
+        const { data, error } = await callInformationAgentRpc(
+          "review_information_agent_fact_candidate_with_path",
+          {
+            p_reviewer_id: auth.userId,
+            p_fact_id: input.factId,
+            p_decision: input.decision,
+            p_notes: input.notes || null,
+            p_expected_public_path: publication.publicPath,
+          },
+        );
+        if (error) throw error;
+        return { ok: true, result: data };
+      } catch (error) {
+        await abortFailedEvidencePublication(publication.factId, publication.publicPath);
+        throw error;
+      }
+    }
   }
   const { data, error } = await supabaseAdmin.rpc("review_information_agent_fact_candidate", {
     p_reviewer_id: auth.userId,
@@ -155,16 +246,40 @@ export async function reviewAdminInformationAgentFact({
   return { ok: true, result: data };
 }
 
-async function stageApprovedEvidencePublication(factId: string): Promise<void> {
+type StagedEvidencePublication = {
+  factId: string;
+  publicPath: string;
+};
+
+type InformationAgentRpc = (
+  functionName: string,
+  args: Record<string, unknown>,
+) => Promise<{ data: unknown; error: unknown }>;
+
+const callInformationAgentRpc: InformationAgentRpc = (functionName, args) =>
+  (supabaseAdmin.rpc as unknown as InformationAgentRpc).call(supabaseAdmin, functionName, args);
+
+async function stageApprovedEvidencePublication(
+  factId: string,
+): Promise<StagedEvidencePublication | null> {
   const { data: fact, error: factError } = await supabaseAdmin
     .from("information_agent_fact_candidates")
-    .select("id,fact_key,evidence_asset_id,sale_id,status")
+    .select("id,fact_key,evidence_asset_id,sale_id,status,case_id")
     .eq("id", factId)
     .single();
   if (factError) throw factError;
-  if (fact.fact_key !== "document" && fact.fact_key !== "photo") return;
+  if (fact.fact_key !== "document" && fact.fact_key !== "photo") return null;
   if (!fact.evidence_asset_id || (fact.status !== "pending" && fact.status !== "conflict")) {
     throw new Error("Pièce jointe non publiable dans son état actuel.");
+  }
+  const { data: informationCase, error: caseError } = await supabaseAdmin
+    .from("information_agent_cases")
+    .select("status")
+    .eq("id", fact.case_id)
+    .single();
+  if (caseError) throw caseError;
+  if (!reviewableCaseStatuses.has(informationCase.status)) {
+    throw new Error("Le dossier n’est plus ouvert pour cette revue.");
   }
 
   const { data: asset, error: assetError } = await supabaseAdmin
@@ -176,18 +291,35 @@ async function stageApprovedEvidencePublication(factId: string): Promise<void> {
   if (asset.rights_status !== "authorized") {
     throw new Error("Les droits de diffusion de cette pièce doivent d’abord être autorisés.");
   }
+  const { data: extraction, error: extractionError } = await supabaseAdmin
+    .from("information_agent_evidence_extractions")
+    .select("status")
+    .eq("asset_id", asset.id)
+    .single();
+  if (extractionError || extraction?.status !== "completed") {
+    throw new Error("L’analyse de la pièce doit être terminée avant sa publication.");
+  }
 
-  const staged = jsonObject(asset.metadata);
-  const stagedPath = stringValue(staged.approved_public_path);
-  const stagedUrl = stringValue(staged.approved_public_url);
+  const attemptId = randomUUID();
   const publicPath =
     fact.fact_key === "photo"
-      ? `${fact.sale_id}/${asset.id}/photo-v1.webp`
-      : (stagedPath ??
-        `${fact.sale_id}/${asset.id}/piece-jointe.${extensionForMimeType(asset.mime_type)}`);
-  const reusableStaging = stagedPath === publicPath && !!stagedUrl;
+      ? `${fact.sale_id}/${asset.id}/photo-${attemptId}.webp`
+      : `${fact.sale_id}/${asset.id}/piece-jointe-${attemptId}.${extensionForMimeType(asset.mime_type)}`;
+  const publicUrl = supabaseAdmin.storage
+    .from("information-agent-approved")
+    .getPublicUrl(publicPath).data.publicUrl;
 
-  if (!reusableStaging) {
+  const { error: stageError } = await supabaseAdmin.rpc(
+    "stage_information_agent_evidence_publication",
+    {
+      p_fact_id: fact.id,
+      p_public_path: publicPath,
+      p_public_url: publicUrl,
+    },
+  );
+  if (stageError) throw stageError;
+
+  try {
     if (fact.fact_key === "photo") {
       const { data: original, error: downloadError } = await supabaseAdmin.storage
         .from(asset.storage_bucket)
@@ -199,39 +331,40 @@ async function stageApprovedEvidencePublication(factId: string): Promise<void> {
       const { error: uploadError } = await supabaseAdmin.storage
         .from("information-agent-approved")
         .upload(publicPath, derivative, { contentType: "image/webp", upsert: false });
-      if (uploadError && !/already exists|duplicate/i.test(uploadError.message)) throw uploadError;
+      if (uploadError) throw uploadError;
     } else {
       const { error: copyError } = await supabaseAdmin.storage
         .from(asset.storage_bucket)
         .copy(asset.storage_path, publicPath, { destinationBucket: "information-agent-approved" });
-      if (copyError && !/already exists|duplicate/i.test(copyError.message)) throw copyError;
+      if (copyError) throw copyError;
     }
+  } catch (error) {
+    await abortFailedEvidencePublication(fact.id, publicPath);
+    throw error;
   }
 
-  const publicUrl = reusableStaging
-    ? stagedUrl
-    : supabaseAdmin.storage.from("information-agent-approved").getPublicUrl(publicPath).data
-        .publicUrl;
-  if (
-    fact.fact_key === "photo" &&
-    stagedPath &&
-    stagedPath !== publicPath &&
-    stagedPath.startsWith(`${fact.sale_id}/${asset.id}/`)
-  ) {
-    const { error: removeError } = await supabaseAdmin.storage
-      .from("information-agent-approved")
-      .remove([stagedPath]);
-    if (removeError) throw removeError;
+  return { factId: fact.id, publicPath };
+}
+
+async function abortFailedEvidencePublication(factId: string, publicPath: string): Promise<void> {
+  let data: unknown;
+  let error: unknown;
+  try {
+    ({ data, error } = await callInformationAgentRpc(
+      "abort_information_agent_evidence_publication",
+      { p_fact_id: factId, p_public_path: publicPath },
+    ));
+  } catch {
+    return;
   }
-  const { error: stageError } = await supabaseAdmin.rpc(
-    "stage_information_agent_evidence_publication",
-    {
-      p_fact_id: fact.id,
-      p_public_path: publicPath,
-      p_public_url: publicUrl,
-    },
-  );
-  if (stageError) throw stageError;
+  if (error || data !== true) return;
+
+  try {
+    await supabaseAdmin.storage.from("information-agent-approved").remove([publicPath]);
+  } catch {
+    // Keep the original publication error. A failed cleanup leaves the path for
+    // the next operational cleanup pass rather than risking a broader delete.
+  }
 }
 
 function extensionForMimeType(mimeType: string): string {
@@ -247,18 +380,10 @@ function extensionForMimeType(mimeType: string): string {
   return extensions[mimeType] ?? "bin";
 }
 
-function jsonObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 async function requireAdmin(authToken: string) {
   const auth = await requireSupabaseAuthContext(authToken);
   if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
   return auth;
 }
+
+const reviewableCaseStatuses = new Set(["sending", "sent", "replied", "review"]);
