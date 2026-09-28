@@ -1,5 +1,26 @@
 begin;
 
+-- Historic embedded aliases predate the normalized observation writer. Copy
+-- only aliases without an existing owner; a conflicting owner needs review.
+-- Future observations are written to auction_observations by the pipeline.
+insert into public.auction_observations (
+  source_url, source_name, canonical_source_url, observed_at
+)
+select distinct on (item->>'source_url')
+  item->>'source_url',
+  item->>'source_name',
+  s.source_url,
+  null
+from public.auction_sales s
+cross join lateral jsonb_array_elements(
+  case when jsonb_typeof(s.observations) = 'array'
+    then s.observations else '[]'::jsonb end
+) item
+where nullif(item->>'source_url', '') is not null
+  and nullif(item->>'source_name', '') is not null
+order by item->>'source_url', s.updated_at desc nulls last
+on conflict (source_url) do nothing;
+
 -- Read compact normalized observation links instead of repeatedly detoasting and
 -- expanding the large auction_sales.observations payload during every health tick.
 -- The source_checks map remains the authority for the last successful check.

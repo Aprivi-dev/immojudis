@@ -46,6 +46,7 @@ from src.storage.supabase_client import (
     finish_data_refresh_request_in_supabase,
     finish_run_in_supabase,
     has_active_running_run_in_supabase,
+    has_eligible_pdf_job_for_sale,
     mark_past_sales_in_supabase,
     retry_fact_claims_to_supabase,
     upsert_cadastre_parcels_to_supabase,
@@ -383,9 +384,27 @@ def run_enrichment_queue_batch(
                     and "pdf" not in job_types
                     and not documents_are_current(sale)
                 ):
-                    raise QueueJobDeferred(
-                        "Fact extraction deferred: PDF text cache is missing or incomplete"
-                    )
+                    if has_eligible_pdf_job_for_sale(source_url):
+                        raise QueueJobDeferred(
+                            "Fact extraction deferred: PDF text cache is missing or incomplete"
+                        )
+                    # A terminal/missing PDF prerequisite cannot advance on
+                    # the next wake-up. Keep that fact pass visible for review
+                    # while allowing an independent display job to proceed.
+                    fact_jobs = [job for job in sale_jobs if job.get("job_type") == "fact_extraction"]
+                    for job in fact_jobs:
+                        _finish_job(
+                            job,
+                            succeeded=False,
+                            cancelled=True,
+                            error_message="review_required: PDF prerequisite unavailable",
+                        )
+                    mark_enrichment_jobs_terminal(fact_jobs)
+                    sale_jobs = [job for job in sale_jobs if job.get("job_type") != "fact_extraction"]
+                    if not sale_jobs:
+                        continue
+                    job_types = {str(job.get("job_type") or "") for job in sale_jobs}
+                    fact_extraction_planned = False
                 facts_current = (
                     has_current_fact_analysis(sale)
                     if fact_extraction_planned

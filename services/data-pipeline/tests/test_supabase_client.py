@@ -47,6 +47,34 @@ def test_finish_enrichment_respects_retry_after_and_exact_lease(monkeypatch):
     assert captured['json']['next_attempt_at'] == retry_at.isoformat()
 
 
+def test_pdf_prerequisite_lookup_ignores_exhausted_jobs(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "test-only",
+        },
+    )
+    seen = []
+    rows = [
+        {"status": "failed", "attempt_count": 4, "max_attempts": 4},
+        {"status": "queued", "attempt_count": 1, "max_attempts": 4},
+    ]
+
+    def fake_get(url, **kwargs):
+        seen.append(kwargs["params"])
+        return httpx.Response(200, json=rows, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    assert supabase_client.has_eligible_pdf_job_for_sale("https://example.test/sale")
+    rows.pop()
+    assert not supabase_client.has_eligible_pdf_job_for_sale("https://example.test/sale")
+    rows[0]["status"] = "running"
+    assert supabase_client.has_eligible_pdf_job_for_sale("https://example.test/sale")
+    assert seen[0]["source_url"] == "eq.https://example.test/sale"
+
+
 def test_postgrest_upsert_batch_retries_cloudflare_520(monkeypatch) -> None:
     responses = iter(
         [
