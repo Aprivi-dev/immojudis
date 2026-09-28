@@ -487,15 +487,79 @@ def test_enriched_hashes_require_successful_document_analysis_when_requested(mon
                         }
                     },
                 },
+                {
+                    "content_hash": "hash-policy-blocked-current",
+                    "raw_payload": {
+                        "document_analysis": {
+                            "coverage_status": "partial",
+                            "documents_listed": 1,
+                            "documents_extracted": 0,
+                            "failed_documents": 0,
+                            "blocked_documents": 1,
+                            "blocked_document_urls": ["https://www.licitor.com/data/pub/media/pv.pdf"],
+                            "blocked_document_reasons": [{
+                                "url": "https://www.licitor.com/data/pub/media/pv.pdf",
+                                "reason": "robots.txt disallows fetching this Licitor document",
+                            }],
+                            "input_fingerprint": "document-fingerprint-current",
+                            "checked_at": datetime.now(UTC).isoformat(),
+                        }
+                    },
+                },
+                {
+                    "content_hash": "hash-policy-blocked-stale",
+                    "raw_payload": {
+                        "document_analysis": {
+                            "coverage_status": "partial",
+                            "documents_listed": 1,
+                            "documents_extracted": 0,
+                            "failed_documents": 0,
+                            "blocked_documents": 1,
+                            "blocked_document_urls": ["https://www.licitor.com/data/pub/media/pv.pdf"],
+                            "blocked_document_reasons": [{
+                                "url": "https://www.licitor.com/data/pub/media/pv.pdf",
+                                "reason": "robots.txt disallows fetching this Licitor document",
+                            }],
+                            "input_fingerprint": "document-fingerprint-stale",
+                            "checked_at": "2026-01-01T00:00:00+00:00",
+                        }
+                    },
+                },
+                {
+                    "content_hash": "hash-policy-blocked-without-fingerprint",
+                    "raw_payload": {
+                        "document_analysis": {
+                            "coverage_status": "partial",
+                            "documents_listed": 1,
+                            "documents_extracted": 0,
+                            "failed_documents": 0,
+                            "blocked_documents": 1,
+                            "blocked_document_urls": ["https://www.licitor.com/data/pub/media/pv.pdf"],
+                            "blocked_document_reasons": [{
+                                "url": "https://www.licitor.com/data/pub/media/pv.pdf",
+                                "reason": "robots.txt disallows fetching this Licitor document",
+                            }],
+                            "checked_at": datetime.now(UTC).isoformat(),
+                        }
+                    },
+                },
                 {"content_hash": "hash-never-analyzed", "raw_payload": {}},
             ]
 
     monkeypatch.setattr(supabase_client.httpx, "get", lambda *args, **kwargs: Response())
 
     assert supabase_client.fetch_enriched_content_hashes(
-        ["hash-extracted", "hash-source-only", "hash-not-extracted", "hash-never-analyzed"],
+        [
+            "hash-extracted",
+            "hash-source-only",
+            "hash-not-extracted",
+            "hash-policy-blocked-current",
+            "hash-policy-blocked-stale",
+            "hash-policy-blocked-without-fingerprint",
+            "hash-never-analyzed",
+        ],
         require_document_analysis=True,
-    ) == {"hash-extracted", "hash-source-only"}
+    ) == {"hash-extracted", "hash-source-only", "hash-policy-blocked-current"}
 
 
 def test_fetch_sales_needing_llm_descriptions_filters_current_rows(monkeypatch) -> None:

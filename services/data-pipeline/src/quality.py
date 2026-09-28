@@ -128,14 +128,100 @@ SOURCE_COMPLETENESS_PROFILES: dict[str, CompletenessProfile] = {
 }
 
 
+def _normalize_blocked_document_urls(values: object) -> set[str]:
+    if not isinstance(values, list):
+        return set()
+    return {
+        value.strip()
+        for value in values
+        if isinstance(value, str) and value.strip()
+    }
+
+
+def _blocked_document_count(sales: list[AuctionSale], pdf_stats: PdfEnrichmentStats) -> int:
+    """Count distinct policy-blocked document URLs from this run and persisted rows.
+
+    Incremental runs can skip a sale whose policy-blocked result is already fresh,
+    so the current run stats alone are not enough to describe coverage. The
+    persisted analysis is merged in and duplicate URLs are counted once.
+    """
+    blocked_urls = _normalize_blocked_document_urls(pdf_stats.blocked_document_urls)
+    blocked_without_urls = 0
+    for sale in sales:
+        payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+        analysis = payload.get("document_analysis")
+        if not isinstance(analysis, dict):
+            continue
+        sale_urls = _normalize_blocked_document_urls(analysis.get("blocked_document_urls"))
+        blocked_urls.update(sale_urls)
+        try:
+            blocked_documents = max(0, int(analysis.get("blocked_documents") or 0))
+        except (TypeError, ValueError):
+            blocked_documents = 0
+        blocked_without_urls += max(0, blocked_documents - len(sale_urls))
+    return len(blocked_urls) + blocked_without_urls
+
+
+def _has_incomplete_document_coverage(sales: list[AuctionSale]) -> bool:
+    for sale in sales:
+        payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+        analysis = payload.get("document_analysis")
+        if not isinstance(analysis, dict):
+            continue
+        if str(analysis.get("coverage_status") or "").strip().lower() in {
+            "partial",
+            "documents_not_extracted",
+        }:
+            return True
+        try:
+            if int(analysis.get("failed_documents") or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _pdf_coverage_status(
+    sales: list[AuctionSale],
+    pdf_stats: PdfEnrichmentStats,
+    blocked_document_urls: int,
+) -> str:
+    """Return evidence coverage without treating an unattempted pass as complete."""
+    if pdf_stats.errors or blocked_document_urls or _has_incomplete_document_coverage(sales):
+        return "partial"
+
+    document_sales = [sale for sale in sales if sale.documents]
+    if not document_sales:
+        if pdf_stats.documents_processed:
+            return "complete"
+        return "source_only" if sales else "unknown"
+
+    for sale in document_sales:
+        payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+        analysis = payload.get("document_analysis")
+        if not isinstance(analysis, dict):
+            return "unknown"
+        status = str(analysis.get("coverage_status") or "").strip().lower()
+        if status == "rich":
+            continue
+        try:
+            if int(analysis.get("documents_extracted") or 0) > 0:
+                continue
+        except (TypeError, ValueError):
+            pass
+        return "unknown"
+    return "complete"
+
+
 def build_quality_report(
     sales: list[AuctionSale],
     pdf_stats: PdfEnrichmentStats | None = None,
     llm_stats: LLMEnrichmentStats | None = None,
-) -> dict[str, float | int]:
+) -> dict[str, float | int | str]:
     total = len(sales)
     pdf_stats = pdf_stats or PdfEnrichmentStats()
     llm_stats = llm_stats or LLMEnrichmentStats()
+    pdf_blocked_document_urls = _blocked_document_count(sales, pdf_stats)
     return {
         "total": total,
         "with_tribunal_pct": _pct(sum(bool(sale.tribunal) for sale in sales), total),
@@ -160,6 +246,8 @@ def build_quality_report(
         "pdf_document_cache_hits": pdf_stats.document_cache_hits,
         "pdf_document_cache_misses": pdf_stats.document_cache_misses,
         "pdf_documents_processed": pdf_stats.documents_processed,
+        "pdf_blocked_document_urls": pdf_blocked_document_urls,
+        "pdf_coverage_status": _pdf_coverage_status(sales, pdf_stats, pdf_blocked_document_urls),
         "llm_analyzed": llm_stats.analyzed,
         "llm_valid_json": llm_stats.valid_json,
         "llm_display_evidence_flagged": sum(bool((s.raw_payload.get("llm_display_evidence_check") or {}).get("issues")) for s in sales),
@@ -339,7 +427,7 @@ def format_extraction_gap_report(report: dict[str, object], max_sale_gaps: int =
     return lines
 
 
-def format_quality_report(report: dict[str, float | int]) -> list[str]:
+def format_quality_report(report: dict[str, float | int | str]) -> list[str]:
     return [
         f"- quality_total: {report['total']}",
         f"- quality_with_tribunal: {report['with_tribunal_pct']}%",
@@ -358,6 +446,8 @@ def format_quality_report(report: dict[str, float | int]) -> list[str]:
         f"- quality_pdf_document_cache_hits: {report['pdf_document_cache_hits']}",
         f"- quality_pdf_document_cache_misses: {report['pdf_document_cache_misses']}",
         f"- quality_pdf_documents_processed: {report['pdf_documents_processed']}",
+        f"- quality_pdf_blocked_document_urls: {report['pdf_blocked_document_urls']}",
+        f"- quality_pdf_coverage_status: {report['pdf_coverage_status']}",
         f"- quality_llm_analyzed: {report['llm_analyzed']}",
         f"- quality_llm_valid_json: {report['llm_valid_json']}",
         f"- quality_llm_display_evidence_flagged: {report.get('llm_display_evidence_flagged', 0)}",

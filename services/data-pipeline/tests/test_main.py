@@ -95,6 +95,40 @@ def test_document_facts_version_forces_one_time_pdf_reanalysis() -> None:
     assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is True
 
 
+def test_heavy_current_rechecks_documents_after_policy_blocked_incremental_hit() -> None:
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://www.licitor.com/annonce/policy-blocked-current",
+        documents=[{"label": "PV", "url": "https://www.licitor.com/data/pub/media/pv.pdf"}],
+        content_hash="known-content",
+        raw_payload={
+            "document_facts_version": main.DOCUMENT_FACTS_VERSION,
+            "document_analysis": {
+                "coverage_status": "partial",
+                "documents_listed": 1,
+                "documents_extracted": 0,
+                "failed_documents": 0,
+                "blocked_documents": 1,
+                "blocked_document_urls": ["https://www.licitor.com/data/pub/media/pv.pdf"],
+                "blocked_document_reasons": [{
+                    "url": "https://www.licitor.com/data/pub/media/pv.pdf",
+                    "reason": "robots.txt disallows fetching this Licitor document",
+                }],
+                "input_fingerprint": document_fingerprint([
+                    {"label": "PV", "url": "https://www.licitor.com/data/pub/media/pv.pdf"}
+                ]),
+                "checked_at": datetime.now(UTC).isoformat(),
+            },
+        },
+    )
+
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is True
+
+    sale.documents.append({"label": "CCV", "url": "https://www.licitor.com/data/pub/media/ccv.pdf"})
+
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
+
+
 def test_heavy_enrichment_does_not_skip_stale_llm_description(monkeypatch) -> None:
     monkeypatch.setattr(main, "load_settings", lambda: {**_settings(), "llm_prompt_version": "auction_llm_v5"})
     sale = AuctionSale(
@@ -119,6 +153,26 @@ def test_heavy_enrichment_does_not_skip_stale_llm_description(monkeypatch) -> No
     sale.raw_payload["llm_display_status"] = "accepted"
     sale.raw_payload["llm_prompt_version"] = "auction_llm_v5"
     assert main._heavy_enrichment_already_current(sale, {"same-content"}, use_llm=True) is True
+
+
+def test_merge_pdf_stats_deduplicates_policy_blocked_urls() -> None:
+    total = main.PdfEnrichmentStats(
+        blocked_document_urls=["https://www.licitor.com/data/pub/media/pv.pdf"]
+    )
+    item = main.PdfEnrichmentStats(
+        blocked_document_urls=[
+            "https://www.licitor.com/data/pub/media/pv.pdf",
+            "https://www.licitor.com/data/pub/media/conditions.pdf",
+            "https://www.licitor.com/data/pub/media/conditions.pdf",
+        ]
+    )
+
+    main._merge_pdf_stats(total, item)
+
+    assert total.blocked_document_urls == [
+        "https://www.licitor.com/data/pub/media/pv.pdf",
+        "https://www.licitor.com/data/pub/media/conditions.pdf",
+    ]
 
 
 def test_needs_heavy_enrichment_keeps_incomplete_sale() -> None:

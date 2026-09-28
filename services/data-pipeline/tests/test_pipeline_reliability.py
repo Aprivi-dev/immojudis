@@ -100,6 +100,32 @@ def test_document_identity_and_failures_invalidate_analysis():
     assert not documents_are_current(sale)
 
 
+def test_policy_blocked_document_analysis_is_current_without_extracted_documents():
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/policy-blocked-current",
+            "documents": [{"url": "https://www.licitor.com/data/pub/media/pv.pdf"}],
+        }
+    )
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": datetime.now(UTC).isoformat(),
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "documents_listed": 1,
+        "documents_extracted": 0,
+        "failed_documents": 0,
+        "blocked_documents": 1,
+        "blocked_document_urls": [sale.documents[0]["url"]],
+        "blocked_document_reasons": [{
+            "url": sale.documents[0]["url"],
+            "reason": "robots.txt disallows fetching this Licitor document",
+        }],
+        "coverage_status": "partial",
+    }
+
+    assert documents_are_current(sale)
+
+
 def test_pdf_revalidation_archives_replacement_and_handles_304(tmp_path, monkeypatch):
     sale = normalize_sale({"source_name": "avoventes", "source_url": "https://example.test/sale", "documents": [{"url": "https://example.test/pv.pdf", "label": "PV descriptif"}]})
     bodies = [b"%PDF-1.4\nold\n%%EOF", b"%PDF-1.4\nnew\n%%EOF"]
