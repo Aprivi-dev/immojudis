@@ -323,6 +323,64 @@ def test_enrich_sale_from_pdf_text_detects_occupation_without_right_or_title() -
     assert sale.occupancy_status == "squatted"
 
 
+def test_enrich_sale_from_pdf_text_extracts_plural_free_occupancy() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/pdf-plural-free-occupancy",
+            "property_type": "Appartement",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, ["Le logement et ses dépendances sont libres de toute occupation."])
+
+    assert sale.occupancy_status == "vacant"
+
+
+@pytest.mark.parametrize("text", ["Bien libre.", "Maison libre.", "Biens libres."])
+def test_enrich_sale_from_pdf_text_keeps_short_property_free_phrases(text: str) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/pdf-short-free-occupancy",
+            "property_type": "Appartement",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, [text])
+
+    assert sale.occupancy_status == "vacant"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Visite libre sur rendez-vous.", None),
+        ("Visites libres sur rendez-vous.", None),
+        ("Photos libres de droits.", None),
+        ("Appartement à vendre, visite libre sur rendez-vous.", None),
+        ("La visite est libre sur rendez-vous.", None),
+        ("Les visites sont libres sur rendez-vous.", None),
+        ("Visite libre sur rendez-vous. Le logement est libre de toute occupation.", "vacant"),
+    ],
+)
+def test_enrich_sale_from_pdf_text_does_not_infer_occupancy_from_non_property_free_phrases(
+    text: str,
+    expected: str | None,
+) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/pdf-free-visit",
+            "property_type": "Appartement",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, [text])
+
+    assert sale.occupancy_status == expected
+
+
 def test_enrich_sale_from_pdf_text_detects_squatted_occupation() -> None:
     sale = normalize_sale(
         {

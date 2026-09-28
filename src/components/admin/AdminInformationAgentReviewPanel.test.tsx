@@ -128,6 +128,41 @@ describe("AdminInformationAgentReviewPanel", () => {
     expect(screen.queryByRole("button", { name: "Accepter" })).toBeNull();
   });
 
+  it("labels a manually imported message separately from a verified reply", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [],
+      assets: [],
+      extractions: [],
+      messages: [
+        {
+          id: "message-manual",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          from_email: "contact@example.test",
+          subject: "Réponse transmise par téléphone",
+          body_text: "Le bien est libre.",
+          metadata: { imported_manually: true, content_trust: "untrusted" },
+        },
+      ],
+      cases: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          recipient_email: "contact@example.test",
+        },
+      ],
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Import manuel — expéditeur non vérifié")).toBeTruthy();
+    expect(screen.getByText(/l’adresse affichée est un rattachement de dossier/)).toBeTruthy();
+  });
+
   it("keeps attachment acceptance disabled until analysis and rights checks finish", async () => {
     mocks.fetchReview.mockResolvedValue({
       facts: [

@@ -1378,7 +1378,7 @@ def _extract_occupancy_status_from_text(*values: object) -> str | None:
     if has_rented_occupancy_signal(text):
         return "rented"
     if re.search(
-        r"libre\s+(?:de\s+toute\s+occupation|d['’]occupation)|"
+        r"libre(?:s)?\s+(?:de\s+toute\s+occupation|d['’]occupation)|"
         r"bien\s+libre|"
         r"\b(?:appartement|maison|immeuble|local|logement)\s+libre\b|"
         r"inoccupe(?:e?s?)?|vacant",

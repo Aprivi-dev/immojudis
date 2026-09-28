@@ -47,6 +47,7 @@ from src.storage.supabase_client import (
     finish_run_in_supabase,
     has_active_running_run_in_supabase,
     mark_past_sales_in_supabase,
+    retry_fact_claims_to_supabase,
     upsert_cadastre_parcels_to_supabase,
     upsert_dpe_diagnostics_to_supabase,
     upsert_sales_to_supabase,
@@ -261,6 +262,14 @@ def run_enrichment_queue_batch(
         detail_jobs = [job for job in jobs if str(job.get("job_type") or "") == SOURCE_DETAIL_FAMILY]
         enrichment_jobs = [job for job in jobs if str(job.get("job_type") or "") != SOURCE_DETAIL_FAMILY]
 
+    pending_enrichment_jobs = list(enrichment_jobs)
+
+    def mark_enrichment_jobs_terminal(terminal_jobs: list[dict[str, object]]) -> None:
+        terminal_ids = {id(job) for job in terminal_jobs}
+        pending_enrichment_jobs[:] = [
+            job for job in pending_enrichment_jobs if id(job) not in terminal_ids
+        ]
+
     # Source details are deliberately completed before grouping the remaining
     # enrichment work.  Each regular group fetches its sale again below, so a
     # PDF/LLM job never writes a stale pre-detail catalogue snapshot.
@@ -287,6 +296,7 @@ def run_enrichment_queue_batch(
         except Exception as exc:
             for job in sale_jobs:
                 _finish_job(job, succeeded=False, error_message=str(exc))
+            mark_enrichment_jobs_terminal(sale_jobs)
             continue
         if sale is None:
             for job in sale_jobs:
@@ -294,12 +304,36 @@ def run_enrichment_queue_batch(
                     succeeded=False,
                     error_message="sale not found",
                 )
+            mark_enrichment_jobs_terminal(sale_jobs)
             continue
+        job_types = {str(job.get("job_type") or "") for job in sale_jobs}
+        fact_claim_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "fact_claims"]
+        regular_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") != "fact_claims"]
+        if fact_claim_jobs:
+            for job in fact_claim_jobs:
+                try:
+                    snapshot = job.get("fact_claims_snapshot")
+                    if snapshot is None:
+                        # Jobs created before the snapshot column was deployed
+                        # retain the bounded legacy fallback path.
+                        retry_fact_claims_to_supabase(sale)
+                    else:
+                        retry_fact_claims_to_supabase(sale, snapshot=snapshot)
+                except Exception as exc:
+                    LOGGER.exception("Fact claims replay failed for %s: %s", source_url, exc)
+                    _finish_job(job, succeeded=False, error_message=str(exc))
+                else:
+                    _finish_job(job, succeeded=True)
+            mark_enrichment_jobs_terminal(fact_claim_jobs)
+            sale_jobs = regular_jobs
+            job_types = {str(job.get("job_type") or "") for job in sale_jobs}
+            if not sale_jobs:
+                continue
         if is_expired(sale) or sale.status in {'cancelled', 'withdrawn', 'adjudicated', 'quarantined'}:
             for job in sale_jobs:
                 _finish_job(job, succeeded=True)
+            mark_enrichment_jobs_terminal(sale_jobs)
             continue
-        job_types = {str(job.get("job_type") or "") for job in sale_jobs}
         if job_types & {"fact_extraction", "display_description"} and settings.get("llm_enabled", True) is False:
             for job in sale_jobs:
                 _finish_job(
@@ -308,6 +342,7 @@ def run_enrichment_queue_batch(
                     cancelled=True,
                     error_message="LLM disabled; no Replicate call made",
                 )
+            mark_enrichment_jobs_terminal(sale_jobs)
             continue
         try:
             if "pdf" in job_types and sale.documents and not documents_are_current(sale):
@@ -381,6 +416,7 @@ def run_enrichment_queue_batch(
                 # retry budget so the next worker continues from the page
                 # cache. Only this sale's jobs are deferred.
                 defer_budget_jobs(sale_jobs, exc)
+                mark_enrichment_jobs_terminal(sale_jobs)
                 LOGGER.info(
                     "PDF extraction deferred after %s/%s pages for %s; %s new pages checkpointed",
                     exc.checkpointed_pages,
@@ -396,9 +432,11 @@ def run_enrichment_queue_batch(
                 LOGGER.warning("PDF extraction made no progress for %s", source_url)
                 for job in sale_jobs:
                     _finish_job(job, succeeded=False, error_message=message)
+                mark_enrichment_jobs_terminal(sale_jobs)
             continue
         except LLMEnrichmentDeferred as exc:
             defer_budget_jobs(sale_jobs, exc)
+            mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info("Fact analysis checkpointed; remaining chunks deferred: %s", source_url)
             continue
         except LLMRequestDeterministicCooldown as exc:
@@ -406,10 +444,11 @@ def run_enrichment_queue_batch(
             # key. Do not let its cooldown stall unrelated healthy sales from
             # the same claimed batch.
             defer_budget_jobs(sale_jobs, exc)
+            mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info("Deterministic LLM request cooldown deferred: %s", source_url)
             continue
         except PipelineBudgetExhausted as exc:
-            defer_budget_jobs(enrichment_jobs, exc)
+            defer_budget_jobs(pending_enrichment_jobs, exc)
             LOGGER.info("Enrichment deferred without consuming retry attempts: %s", exc)
             # A general-lane budget exhaustion is a handled queue outcome. The
             # bounded lane worker must continue its detail slots, while the
@@ -422,11 +461,13 @@ def run_enrichment_queue_batch(
                     succeeded=False,
                     error_message=str(exc),
                 )
+            mark_enrichment_jobs_terminal(sale_jobs)
             continue
         for job in sale_jobs:
             _finish_job(job,
                 succeeded=True,
             )
+        mark_enrichment_jobs_terminal(sale_jobs)
     return processed_detail_jobs + len(enrichment_jobs)
 
 

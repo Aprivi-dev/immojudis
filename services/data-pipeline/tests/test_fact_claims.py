@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.models import AuctionSale
 from src.normalize import normalize_sale
@@ -239,3 +241,326 @@ def test_rest_writer_uses_ignore_duplicates_and_keeps_candidate_status(monkeypat
     assert "resolution=ignore-duplicates" in calls[1]["headers"]["Prefer"]
     assert calls[1]["json"][0]["claim_status"] == "candidate"
     assert calls[1]["json"][0]["auction_sale_id"] == "00000000-0000-4000-8000-000000000099"
+
+
+def test_rest_writer_queues_one_deterministic_replay_after_claim_failure(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://source.example/rest-retry",
+            "source_blocks": {"occupation": "Libre de toute occupation"},
+        }
+    )
+    calls: list[dict[str, object]] = []
+    queued: list[dict[str, object]] = []
+
+    def fake_request(method, endpoint, table, **kwargs):
+        calls.append({"method": method, "endpoint": endpoint, "table": table, **kwargs})
+        if method == "GET":
+            return SimpleNamespace(
+                is_error=False,
+                status_code=200,
+                text="",
+                request=None,
+                json=lambda: [
+                    {
+                        "id": "00000000-0000-4000-8000-000000000099",
+                        "source_url": sale.source_url,
+                    }
+                ],
+            )
+        return SimpleNamespace(
+            is_error=True,
+            status_code=503,
+            text="temporarily unavailable",
+            request=None,
+        )
+
+    def fake_post(endpoint, **kwargs):
+        queued.append({"endpoint": endpoint, **kwargs})
+        return SimpleNamespace(is_error=False, status_code=201, text="")
+
+    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(supabase_client.httpx, "post", fake_post)
+
+    assert supabase_client._write_fact_claims_rest(
+        "https://supabase.example", "service-role-test", [sale]
+    ) == 0
+    assert calls[0]["method"] == "GET"
+    assert calls[1]["method"] == "POST"
+    assert len(queued) == 1
+    job = queued[0]["json"][0]
+    assert job["source_url"] == sale.source_url
+    assert job["job_type"] == "fact_claims"
+    assert str(job["input_hash"]).startswith("fact_claims_rest_v2:")
+    assert job["fact_claims_snapshot"]
+    assert job["fact_claims_snapshot"][0]["field_key"] == "property.occupancy_status"
+    assert queued[0]["params"] == {"on_conflict": "source_url,job_type,input_hash"}
+
+
+def test_fact_claim_replay_surfaces_failure_to_the_bounded_worker(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://source.example/rest-retry-fails",
+            "source_blocks": {"occupation": "Libre de toute occupation"},
+        }
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.example",
+            "supabase_service_role_key": "service-role-test",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_write_fact_claims_rest",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("temporary outage")),
+    )
+
+    with pytest.raises(RuntimeError, match="temporary outage"):
+        supabase_client.retry_fact_claims_to_supabase(sale)
+
+
+def test_fact_claim_replay_rekeys_snapshot_to_current_canonical_sale(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://source.example/rest-snapshot",
+            "source_blocks": {"occupation": "Libre de toute occupation"},
+        }
+    )
+    old_sale_id = "00000000-0000-4000-8000-000000000010"
+    current_sale_id = "00000000-0000-4000-8000-000000000011"
+    snapshot = materialize_fact_claim_rows(sale, old_sale_id)
+    posted: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.example",
+            "supabase_service_role_key": "service-role-test",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_sale_ids_for_rest",
+        lambda *args, **kwargs: {sale.source_url: current_sale_id},
+    )
+
+    def fake_request(method, endpoint, table, **kwargs):
+        if method == "POST":
+            posted.extend(kwargs["json"])
+        return SimpleNamespace(is_error=False, status_code=201, text="", request=None)
+
+    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+
+    assert supabase_client.retry_fact_claims_to_supabase(sale, snapshot=snapshot) == len(snapshot)
+    assert posted
+    assert {row["auction_sale_id"] for row in posted} == {current_sale_id}
+    assert {row["id"] for row in posted} != {row["id"] for row in snapshot}
+    assert {row["value_jsonb"] for row in posted} == {row["value_jsonb"] for row in snapshot}
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [[], {}, [{"field_key": "property.surface_m2"}]],
+)
+def test_fact_claim_replay_rejects_empty_or_malformed_snapshot(monkeypatch, snapshot) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://source.example/rest-invalid-snapshot",
+        }
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.example",
+            "supabase_service_role_key": "service-role-test",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_sale_ids_for_rest",
+        lambda *args, **kwargs: {sale.source_url: "00000000-0000-4000-8000-000000000012"},
+    )
+
+    with pytest.raises(RuntimeError, match="snapshot"):
+        supabase_client.retry_fact_claims_to_supabase(sale, snapshot=snapshot)
+
+
+def test_fact_claim_replay_rejects_mixed_snapshot_without_partial_write(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://source.example/rest-mixed-snapshot",
+        }
+    )
+    snapshot = [
+        {
+            "field_key": "property.surface_m2",
+            "value_jsonb": 80.0,
+            "source_url": sale.source_url,
+            "evidence_locator": {"field": "surface"},
+            "evidence_kind": "source_listing",
+        },
+        {"field_key": "property.occupancy_status"},
+    ]
+    posted: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.example",
+            "supabase_service_role_key": "service-role-test",
+        },
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_sale_ids_for_rest",
+        lambda *args, **kwargs: {sale.source_url: "00000000-0000-4000-8000-000000000014"},
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_request_with_retries",
+        lambda method, endpoint, table, **kwargs: posted.append(kwargs["json"])
+        or SimpleNamespace(is_error=False, status_code=201, text="", request=None),
+    )
+
+    with pytest.raises(RuntimeError, match="missing"):
+        supabase_client.retry_fact_claims_to_supabase(sale, snapshot=snapshot)
+    assert posted == []
+
+
+def test_rest_writer_queues_only_sales_missing_from_an_incomplete_target_lookup(monkeypatch) -> None:
+    sales = [
+        normalize_sale(
+            {
+                "source_name": "info_encheres",
+                "source_url": "https://source.example/rest-partial-1",
+                "source_blocks": {"occupation": "Libre de toute occupation"},
+            }
+        ),
+        normalize_sale(
+            {
+                "source_name": "info_encheres",
+                "source_url": "https://source.example/rest-partial-2",
+                "source_blocks": {"occupation": "Libre de toute occupation"},
+            }
+        ),
+    ]
+    sales[0].observations.append(
+        {
+            "source_name": "licitor",
+            "source_url": "https://source.example/shared-observation",
+            "starting_price_eur": "100 000 euros",
+            "raw_payload": {"starting_price_eur": "100 000 euros"},
+        }
+    )
+    sales[1].observations.append(
+        {
+            "source_name": "licitor",
+            "source_url": "https://source.example/shared-observation",
+            "starting_price_eur": "200 000 euros",
+            "raw_payload": {"starting_price_eur": "200 000 euros"},
+        }
+    )
+    calls: list[dict[str, object]] = []
+    queued: list[dict[str, object]] = []
+
+    def fake_request(method, endpoint, table, **kwargs):
+        calls.append({"method": method, "endpoint": endpoint, "table": table, **kwargs})
+        if method == "GET":
+            return SimpleNamespace(
+                is_error=False,
+                status_code=200,
+                text="",
+                request=None,
+                json=lambda: [
+                    {
+                        "id": "00000000-0000-4000-8000-000000000013",
+                        "source_url": sales[0].source_url,
+                    }
+                ],
+            )
+        return SimpleNamespace(is_error=False, status_code=201, text="", request=None)
+
+    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        "post",
+        lambda endpoint, **kwargs: queued.append({"endpoint": endpoint, **kwargs})
+        or SimpleNamespace(is_error=False, status_code=201, text=""),
+    )
+
+    assert supabase_client._write_fact_claims_rest(
+        "https://supabase.example", "service-role-test", sales
+    ) == 2
+    assert [call["method"] for call in calls] == ["GET", "POST"]
+    assert len(queued) == 1
+    queued_snapshot = queued[0]["json"][0]["fact_claims_snapshot"]
+    assert {row["source_url"] for row in queued_snapshot} == {
+        sales[1].source_url,
+        "https://source.example/shared-observation",
+    }
+    assert {row["value_jsonb"] for row in queued_snapshot if row["field_key"] == "sale.starting_price_eur"} == {
+        200000.0,
+    }
+
+
+def test_rest_writer_surfaces_missing_retry_queue_as_an_explicit_failure(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://source.example/rest-queue-unavailable",
+            "source_blocks": {"occupation": "Libre de toute occupation"},
+        }
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_request_with_retries",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("target lookup unavailable")),
+    )
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        "post",
+        lambda endpoint, **kwargs: SimpleNamespace(is_error=True, status_code=503, text="offline"),
+    )
+
+    with pytest.raises(RuntimeError, match="retry queue"):
+        supabase_client._write_fact_claims_rest(
+            "https://supabase.example", "service-role-test", [sale]
+        )
+
+
+def test_rest_writer_queues_when_canonical_sale_lookup_fails(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://source.example/rest-target-fails",
+            "source_blocks": {"occupation": "Libre de toute occupation"},
+        }
+    )
+    queued: list[dict[str, object]] = []
+
+    def fail_target_lookup(*args, **kwargs):
+        raise RuntimeError("target lookup unavailable")
+
+    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fail_target_lookup)
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        "post",
+        lambda endpoint, **kwargs: queued.append({"endpoint": endpoint, **kwargs})
+        or SimpleNamespace(is_error=False, status_code=201, text=""),
+    )
+
+    assert supabase_client._write_fact_claims_rest(
+        "https://supabase.example", "service-role-test", [sale]
+    ) == 0
+    assert len(queued) == 1
+    assert queued[0]["json"][0]["job_type"] == "fact_claims"

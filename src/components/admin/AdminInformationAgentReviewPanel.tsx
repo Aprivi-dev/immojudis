@@ -135,39 +135,47 @@ export function AdminInformationAgentReviewPanel() {
           {messages.map((message) => {
             const informationCase = message.case_id ? casesById.get(message.case_id) : undefined;
             const metadata = message.metadata;
-            const senderMismatch =
-              metadata &&
-              typeof metadata === "object" &&
-              !Array.isArray(metadata) &&
-              metadata.sender_matches_recipient === false;
+            const metadataObject =
+              metadata && typeof metadata === "object" && !Array.isArray(metadata)
+                ? metadata
+                : null;
+            const importedManually = metadataObject?.imported_manually === true;
+            const senderMismatch = metadataObject?.sender_matches_recipient === false;
             const ignoredCaseStatus =
-              metadata &&
-              typeof metadata === "object" &&
-              !Array.isArray(metadata) &&
-              typeof metadata.processing_ignored_case_status === "string"
-                ? metadata.processing_ignored_case_status
+              typeof metadataObject?.processing_ignored_case_status === "string"
+                ? metadataObject.processing_ignored_case_status
                 : null;
             const rejectedAttachments = rejectedEvidence(metadata);
             const rejectedCount =
-              metadata &&
-              typeof metadata === "object" &&
-              !Array.isArray(metadata) &&
-              typeof metadata.rejected_attachment_count === "number"
-                ? metadata.rejected_attachment_count
+              typeof metadataObject?.rejected_attachment_count === "number"
+                ? metadataObject.rejected_attachment_count
                 : rejectedAttachments.length;
+            const senderUnverified = importedManually || senderMismatch;
             return (
               <article
                 key={message.id}
-                className={`p-5 text-sm ${senderMismatch ? "bg-amber-50" : "bg-slate-50"}`}
+                className={`p-5 text-sm ${senderUnverified ? "bg-amber-50" : "bg-slate-50"}`}
               >
                 <p
-                  className={`font-semibold ${senderMismatch ? "text-amber-900" : "text-[#132238]"}`}
+                  className={`font-semibold ${
+                    senderUnverified ? "text-amber-900" : "text-[#132238]"
+                  }`}
                 >
-                  {senderMismatch ? "Expéditeur à vérifier" : "Réponse reçue"}
+                  {importedManually
+                    ? "Import manuel — expéditeur non vérifié"
+                    : senderMismatch
+                      ? "Expéditeur à vérifier"
+                      : "Réponse reçue"}
                 </p>
                 <p className="mt-1 text-[#132238]">
                   {message.from_email} · {message.subject}
                 </p>
+                {importedManually ? (
+                  <p className="mt-1 text-xs text-amber-900/80">
+                    Le message a été saisi par un administrateur ; l’adresse affichée est un
+                    rattachement de dossier et ne prouve pas l’identité de l’expéditeur.
+                  </p>
+                ) : null}
                 <p className="mt-1 text-[#132238]/70">
                   Dossier {message.case_id ? shortId(message.case_id) : "inconnu"} · Contact attendu
                   : {informationCase?.recipient_email || "adresse indisponible"}
