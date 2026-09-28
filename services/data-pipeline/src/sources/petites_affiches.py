@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+from datetime import datetime
 from typing import Any
 from urllib.parse import urljoin
 
@@ -29,6 +30,10 @@ DETAIL_FIELDS = {
     "postal_code",
     "surface_m2",
     "starting_price_eur",
+    "sale_date",
+    "property_type",
+    "occupancy_status",
+    "parking_count",
     "lawyer_name",
     "lawyer_contact",
     "tribunal",
@@ -405,10 +410,18 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
     visit_dates = _detail_visits(page_text)
     documents = _detail_documents(soup, source_url)
     source_images = _detail_images(soup, source_url)
+    sale_date = _detail_sale_date(description)
+    property_type = _property_type_from_title(description) or _property_type_from_title(_node_text(soup.select_one("h1")))
+    occupancy_status = _detail_occupancy_status(soup)
+    parking_count = _detail_parking_count("\n".join(filter(None, (description, detail_text))))
     blocks = [
         description,
         f"Adresse: {address}" if address else None,
         f"Mise a prix: {price}" if price else None,
+        f"Date de vente: {sale_date}" if sale_date else None,
+        f"Type: {property_type}" if property_type else None,
+        f"Occupation: {occupancy_status}" if occupancy_status else None,
+        f"Parking: {parking_count}" if parking_count is not None else None,
         f"Tribunal: {tribunal}" if tribunal else None,
         f"Avocat: {lawyer_name}" if lawyer_name else None,
         f"Contact: {lawyer_contact}" if lawyer_contact else None,
@@ -423,6 +436,10 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
         "postal_code": _extract_postal(address or ""),
         "surface_m2": _extract_surface(detail_text),
         "starting_price_eur": price,
+        "sale_date": sale_date,
+        "property_type": property_type,
+        "occupancy_status": occupancy_status,
+        "parking_count": parking_count,
         "lawyer_name": lawyer_name,
         "lawyer_contact": lawyer_contact,
         "tribunal": tribunal,
@@ -437,6 +454,10 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
                 "description": description,
                 "adresse": address,
                 "mise_a_prix": price,
+                "date_vente": sale_date,
+                "type_bien": property_type,
+                "occupation": occupancy_status,
+                "parking_count": parking_count,
                 "tribunal": tribunal,
                 "avocat": lawyer_name,
                 "contact_avocat": lawyer_contact,
@@ -522,6 +543,84 @@ def _property_type_from_title(title: str | None) -> str | None:
         return "Magasin"
     if re.search(r"\b(?:emplacement\s+de\s+)?(?:stationnement|parking|garage)\b", text):
         return "Stationnement"
+    return None
+
+
+def _detail_sale_date(description: str | None) -> str | None:
+    """Extract the hearing date from the detail page's meta description.
+
+    The detail pages repeat visit and publication dates in the body.  The meta
+    description has one explicit ``le DD/MM/YYYY`` sale date, so keep this
+    extraction scoped to that field and reject the site's epoch placeholder.
+    """
+    text = clean_text(description)
+    if not text:
+        return None
+    date_pattern = r"(?P<value>\d{1,2}[/-]\d{1,2}[/-]\d{4})"
+    matches = [
+        re.search(rf"\ble\s+{date_pattern}\b", text, re.I),
+        re.search(rf"\bdate\s+(?:de\s+la\s+)?(?:vente|audience)\s*:?\s*{date_pattern}\b", text, re.I),
+    ]
+    for match in matches:
+        if match is None:
+            continue
+        value = match.group("value")
+        try:
+            parsed = datetime.strptime(value.replace("-", "/"), "%d/%m/%Y")
+        except ValueError:
+            continue
+        if parsed == datetime(1970, 1, 1):
+            continue
+        return value
+    return None
+
+
+def _detail_occupancy_status(soup: BeautifulSoup) -> str | None:
+    """Read the source's occupancy badge while ignoring footer/navigation text."""
+    for node in soup.select(".lo-box-content label, .row.detail label"):
+        text = _normalized_text(_node_text(node))
+        if not text:
+            continue
+        if re.search(r"\bsquat", text):
+            return "squatted"
+        if re.search(r"\b(?:proprietaire|owner)\b", text):
+            return "owner_occupied"
+        if re.search(r"\b(?:locataire|lou[eé]|rented|leased|tenant|bail)\b", text):
+            return "rented"
+        if re.search(r"\b(?:libre|vacant|inoccup)\b", text):
+            return "vacant"
+        if re.search(r"\boccup", text):
+            return "occupied"
+    return None
+
+
+def _detail_parking_count(text: str | None) -> int | None:
+    """Extract parking spaces from scoped detail text, including a garage lot."""
+    normalized = _normalized_text(text)
+    if not normalized:
+        return None
+    count_token = r"(?P<count>[1-9][0-9]?|une?|deux|trois|quatre|cinq)"
+    for pattern in (
+        rf"\b{count_token}\s+places?\s+de\s+(?:parking|stationnement|garages?|box)\b",
+        r"\b(?P<count>[2-9][0-9]?|deux|trois|quatre|cinq)\s+(?:parking|stationnement|garages?|box)\b",
+        r"\b(?:parking|stationnement|garages?|box)\s*:\s*\s*(?P<count>[1-9][0-9]?|deux|trois|quatre|cinq)\b",
+    ):
+        match = re.search(pattern, normalized, re.I)
+        if not match:
+            continue
+        token = match.group("count").lower()
+        if token.isdigit():
+            return int(token)
+        return {
+            "une": 1,
+            "un": 1,
+            "deux": 2,
+            "trois": 3,
+            "quatre": 4,
+            "cinq": 5,
+        }.get(token)
+    if re.search(r"\b(?:parking|stationnement|garage|box)\b", normalized, re.I):
+        return 1
     return None
 
 

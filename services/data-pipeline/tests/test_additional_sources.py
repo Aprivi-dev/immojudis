@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import httpx
 
+from src.extraction_corpus import project_field
 from src.normalize import normalize_sale
 from src.raw_models import validate_raw_sales
 from src.sources import cessions_etat, notaires, petites_affiches
@@ -78,6 +79,8 @@ def test_parse_petites_affiches_public_detail() -> None:
     assert detail["address"] == "33000 Bordeaux"
     assert detail["postal_code"] == "33000"
     assert detail["starting_price_eur"] == "15 300"
+    assert detail["sale_date"] == "18/06/2026"
+    assert detail["property_type"] == "Appartement"
     assert detail["lawyer_name"] == "Maître MERLIN-LABRE"
     assert detail["lawyer_contact"] == "0422140871"
     assert detail["tribunal"] == "TJ DE BORDEAUX"
@@ -86,6 +89,39 @@ def test_parse_petites_affiches_public_detail() -> None:
     assert detail["source_blocks"]["mise_a_prix"] == "15 300"
     assert detail["source_blocks"]["contact_avocat"] == "0422140871"
     assert detail["source_blocks"]["visites"] == "Visite finie Jeudi 25 Juin 2026 à 11:00"
+
+
+def test_parse_petites_affiches_detail_extracts_status_and_parking_from_scoped_badges() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un garage à Bordeaux vendu au tribunal judiciaire le 14/10/2099" />
+    <div class="row detail default">
+      <div class="lo-box-content">
+        <p><label class="label label-success"><strong>Libre</strong></label></p>
+        <p>Deux places de stationnement sont comprises dans le lot.</p>
+      </div>
+    </div>
+    <footer><a>Parking visiteurs libre</a></footer>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["sale_date"] == "14/10/2099"
+    assert detail["property_type"] == "Stationnement"
+    assert detail["occupancy_status"] == "vacant"
+    assert detail["parking_count"] == 2
+    assert normalize_sale(detail).parking_count == 2
+    assert normalize_sale(detail).occupancy_status == "vacant"
+
+
+def test_parse_petites_affiches_detail_ignores_epoch_sale_date_placeholder() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un appartement vendu au tribunal judiciaire le 01/01/1970" />
+    <div class="row detail default"><p>Appartement.</p></div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["sale_date"] is None
 
 
 def test_parse_petites_affiches_detail_keeps_thousands_surface() -> None:
@@ -359,6 +395,42 @@ def test_parse_cessions_etat_public_detail_keeps_source_blocks() -> None:
     assert detail["documents"][0]["label"] == "Cahier des charges"
     assert detail["source_blocks"]["mise_a_prix"] == "210 000"
     assert detail["source_blocks"]["documents"] == "Cahier des charges"
+
+
+def test_cessions_detail_title_prevents_unrelated_page_text_from_changing_property_type() -> None:
+    html = """
+    <title>Maison forestière à vendre | Cessions immobilières</title>
+    <h1>Partager la page</h1><h1>Maison forestière à vendre</h1>
+    <div class="location-info"><span class="location-text">Bû</span></div>
+    <div id="panel-bien"><div class="texte"><div class="fr-text">
+      Maison avec jardin et deux pièces.
+    </div></div></div>
+    <footer>Autres annonces : locaux agricoles et terrains à céder</footer>
+    """
+    raw = parse_cessions_etat_detail_html(html, "https://cessions.immobilier-etat.gouv.fr/biens/test")
+
+    assert raw["title"] == "Maison forestière à vendre"
+    assert raw["city"] == "Bû"
+    assert raw["property_type"] == "house"
+    assert normalize_sale(raw).property_type == "house"
+
+
+def test_cessions_detail_reads_energy_letters_only_from_the_property_panel() -> None:
+    html = """
+    <h1>Maison à vendre</h1>
+    <div id="details-tab">
+      <p>Performance énergétique : E</p>
+      <p>Gaz à effet de serre : D</p>
+    </div>
+    <footer>Autre annonce : Performance énergétique : A, Gaz à effet de serre : B</footer>
+    """
+    raw = parse_cessions_etat_detail_html(html, "https://cessions.immobilier-etat.gouv.fr/biens/test")
+
+    assert raw["dpe_class"] == "E"
+    assert raw["ges_class"] == "D"
+    sale = normalize_sale(raw)
+    assert project_field(sale, "source_energy_dpe_class") == "E"
+    assert project_field(sale, "source_energy_ges_class") == "D"
 
 
 def test_parse_cessions_etat_detail_extracts_property_images_without_site_assets() -> None:

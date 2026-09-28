@@ -189,11 +189,16 @@ def _validate_labels(labels: Any, capture_sha256: str, description: str) -> dict
         if state != "present" and "value" in label:
             raise ValueError(f"{description} non-present label must not have a value")
         evidence = label.get("evidence")
-        if not isinstance(evidence, Mapping) or evidence.get("capture_sha256") != capture_sha256:
-            raise ValueError(f"{description} evidence must identify the frozen capture")
-        _require_text(evidence.get("locator"), f"{description} evidence locator")
         if state in {"present", "unknown"}:
+            if not isinstance(evidence, Mapping) or evidence.get("capture_sha256") != capture_sha256:
+                raise ValueError(f"{description} evidence must identify the frozen capture")
+            _require_text(evidence.get("locator"), f"{description} evidence locator")
             _require_text(evidence.get("excerpt"), f"{description} evidence excerpt")
+        elif evidence is not None and (
+            not isinstance(evidence, Mapping)
+            or (evidence.get("capture_sha256") is not None and evidence["capture_sha256"] != capture_sha256)
+        ):
+            raise ValueError(f"{description} absent evidence cannot identify another capture")
         checked[field] = dict(label)
     return checked
 
@@ -228,9 +233,15 @@ def _validate_ai_review(review: Any, capture_sha256: str, description: str) -> d
     _require_text(review.get("provider"), f"{description} provider")
     _require_text(review.get("model"), f"{description} model")
     _require_text(review.get("prompt_version"), f"{description} prompt_version")
+    prompt_record_status = review.get("prompt_record_status", "retained")
+    if prompt_record_status not in {"retained", "not_retained"}:
+        raise ValueError(f"{description} prompt_record_status is unsupported")
     prompt_sha256 = review.get("prompt_sha256")
-    if not isinstance(prompt_sha256, str) or not SHA256_RE.fullmatch(prompt_sha256):
-        raise ValueError(f"{description} prompt_sha256 must be a lowercase SHA-256 digest")
+    if prompt_record_status == "retained":
+        if not isinstance(prompt_sha256, str) or not SHA256_RE.fullmatch(prompt_sha256):
+            raise ValueError(f"{description} prompt_sha256 must be a lowercase SHA-256 digest")
+    elif prompt_sha256 is not None:
+        raise ValueError(f"{description} cannot claim a prompt digest when the prompt was not retained")
     reviewed_at = _timestamp(review.get("reviewed_at"), f"{description} reviewed_at")
     if review.get("capture_sha256") != capture_sha256:
         raise ValueError(f"{description} capture_sha256 must identify the frozen capture")
@@ -259,6 +270,7 @@ def _validate_ai_review(review: Any, capture_sha256: str, description: str) -> d
         "provider": str(review["provider"]),
         "model": str(review["model"]),
         "prompt_version": str(review["prompt_version"]),
+        "prompt_record_status": prompt_record_status,
         "prompt_sha256": prompt_sha256,
         "reviewed_at": reviewed_at,
         "capture_sha256": capture_sha256,
@@ -328,6 +340,8 @@ def _new_ai_stats() -> dict[str, Any]:
         "cases_with_agreement": 0,
         "cases_with_disagreement": 0,
         "field_annotations": 0,
+        "prompt_hashes_retained": 0,
+        "prompt_hashes_missing": 0,
         "fields_expected": 0,
         "fields_omitted": 0,
         "fields_compared": 0,
@@ -355,6 +369,12 @@ def _new_ai_stats() -> dict[str, Any]:
 def _ai_values_equal(field: str, first: Any, second: Any) -> bool:
     """Compare the two declared labels using the catalogue's bounded enums."""
 
+    if field == "city" and isinstance(first, str) and isinstance(second, str):
+        def folded_city(value: str) -> str:
+            decomposed = unicodedata.normalize("NFKD", value)
+            return re.sub(r"\s+", " ", "".join(char for char in decomposed if not unicodedata.combining(char))).strip().casefold()
+
+        return folded_city(first) == folded_city(second)
     if field == "property_type":
         left = normalize_property_type(first)
         right = normalize_property_type(second)
@@ -375,6 +395,8 @@ def _merge_ai_stats(target: dict[str, Any], source: Mapping[str, Any]) -> None:
         "cases_with_agreement",
         "cases_with_disagreement",
         "field_annotations",
+        "prompt_hashes_retained",
+        "prompt_hashes_missing",
         "fields_expected",
         "fields_omitted",
         "fields_compared",
@@ -412,6 +434,10 @@ def _compact_ai_stats(stats: Mapping[str, Any]) -> dict[str, Any]:
         if compared_cases
         else None,
         "field_annotations": annotations,
+        "prompt_provenance": {
+            "hashes_retained": int(stats["prompt_hashes_retained"]),
+            "hashes_missing": int(stats["prompt_hashes_missing"]),
+        },
         "field_coverage": {
             "fields_expected": fields_expected,
             "fields_annotated": annotations,
@@ -460,9 +486,13 @@ def _ai_case_stats(
     stats = _new_ai_stats()
     stats["reviewed_cases"] = int(bool(ai_reviews))
     stats["double_reviewed_cases"] = int(len(ai_reviews) == 2)
-    capture_text = _evidence_text(capture_path.read_text(encoding="utf-8", errors="replace")) if ai_reviews else ""
+    capture_raw = capture_path.read_text(encoding="utf-8", errors="replace") if ai_reviews else ""
+    capture_text = _evidence_text(capture_raw)
     unverified_excerpt = False
     for review in ai_reviews:
+        stats[
+            "prompt_hashes_retained" if review["prompt_record_status"] == "retained" else "prompt_hashes_missing"
+        ] += 1
         labels = review["labels"]
         stats["field_annotations"] += len(labels)
         expected_fields = set(review["expected_fields"])
@@ -480,8 +510,11 @@ def _ai_case_stats(
             if label["state"] not in {"present", "unknown"}:
                 continue
             stats["verbatim_excerpts_required"] += 1
-            excerpt = _evidence_text(str(label["evidence"]["excerpt"]))
-            if len(excerpt) >= 2 and excerpt in capture_text:
+            raw_excerpt = str(label["evidence"]["excerpt"])
+            excerpt = _evidence_text(raw_excerpt)
+            if (len(excerpt) >= 2 and excerpt in capture_text) or (
+                len(raw_excerpt.strip()) >= 2 and raw_excerpt in capture_raw
+            ):
                 stats["verbatim_excerpts_found"] += 1
             else:
                 unverified_excerpt = True
