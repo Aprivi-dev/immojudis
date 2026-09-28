@@ -365,15 +365,17 @@ def test_ai_review_compares_french_source_labels_with_catalogue_enums(tmp_path: 
     first = manifest["cases"][0]
     digest = _capture(first, tmp_path, b"French catalogue labels")
     first["prediction"]["values"].update(
-        {"property_type": "apartment", "occupancy_status": "rented"}
+        {"property_type": "apartment", "occupancy_status": "rented", "city": "Evry"}
     )
     pass_a = {
         "property_type": _label("present", digest, "Appartement"),
         "occupancy_status": _label("present", digest, "loué depuis septembre"),
+        "city": _label("present", digest, "ÉVRY"),
     }
     pass_b = {
         "property_type": _label("present", digest, "apartment"),
         "occupancy_status": _label("present", digest, "rented"),
+        "city": _label("present", digest, "Évry"),
     }
     first["ai_reviews"] = [
         _ai_review(pass_a, digest),
@@ -381,9 +383,9 @@ def test_ai_review_compares_french_source_labels_with_catalogue_enums(tmp_path: 
     ]
 
     ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
-    assert ai["fields_agree"] == 2
+    assert ai["fields_agree"] == 3
     assert ai["fields_disagree"] == 0
-    assert ai["pipeline_comparison"]["fields_match"] == 2
+    assert ai["pipeline_comparison"]["fields_match"] == 3
 
 
 def test_blind_ai_review_may_precede_replay_prediction_on_same_capture(tmp_path: Path) -> None:
@@ -421,6 +423,24 @@ def test_ai_review_flags_a_paraphrase_as_unverified_evidence(tmp_path: Path) -> 
     assert ai["needs_review_reasons"] == {"unverified_excerpt": 1}
 
 
+def test_ai_review_accepts_a_literal_html_span_with_a_one_character_value(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    excerpt = '<span class="rooms">1</span>'
+    digest = _capture(first, tmp_path, excerpt.encode())
+    labels = {"rooms_count": _label("present", digest, 1)}
+    labels["rooms_count"]["evidence"]["excerpt"] = excerpt
+    first["ai_reviews"] = [
+        _ai_review(labels, digest),
+        _ai_review(labels, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["evidence_coverage"]["verbatim_found"] == 2
+    assert ai["needs_review_reasons"] == {"pipeline_disagreement": 1}
+
+
 def test_ai_review_requires_capture_bound_metadata_and_valid_output_digest(tmp_path: Path) -> None:
     sample = _sample(tmp_path)
     manifest = prepare_manifest(sample)
@@ -449,6 +469,35 @@ def test_ai_review_requires_capture_bound_metadata_and_valid_output_digest(tmp_p
     review["prompt_sha256"] = "not-a-sha"
     first["ai_reviews"] = [review]
     with pytest.raises(ValueError, match="prompt_sha256"):
+        evaluate_real_review(manifest, sample)
+
+    review = _ai_review(labels, digest)
+    review["prompt_record_status"] = "not_retained"
+    review.pop("prompt_sha256")
+    first["ai_reviews"] = [review]
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["prompt_provenance"] == {"hashes_retained": 0, "hashes_missing": 1}
+
+    review["prompt_sha256"] = "a" * 64
+    with pytest.raises(ValueError, match="cannot claim a prompt digest"):
+        evaluate_real_review(manifest, sample)
+
+
+def test_ai_absence_without_excerpt_is_recorded_without_invented_locator(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"absence evidence is not a text span")
+    labels = {"parking_count": {"state": "absent"}}
+    first["ai_reviews"] = [_ai_review(labels, digest)]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["field_annotations"] == 1
+    assert ai["evidence_coverage"]["with_locator"] == 0
+
+    labels["parking_count"]["evidence"] = {"capture_sha256": "f" * 64}
+    first["ai_reviews"] = [_ai_review(labels, digest)]
+    with pytest.raises(ValueError, match="absent evidence cannot identify another capture"):
         evaluate_real_review(manifest, sample)
 
 

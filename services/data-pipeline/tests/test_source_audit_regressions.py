@@ -49,6 +49,24 @@ def test_cessions_current_dom_recovers_description_sale_time_and_open_visits():
     assert cessions_etat._extract_sale_date("Date d'adjudication : 05/11/2026\nCommentaire : Visite le 04 novembre 2026 à 10h30") == "05/11/2026"
 
 
+def test_cessions_detail_recognizes_explicit_offer_closing_date() -> None:
+    for text, expected in (
+        ("Fin de l'appel d'offre le 30/09/2026.", "30/09/2026"),
+        ("Date de fin de vente : 30/09/2026", "30/09/2026"),
+        ("La procédure d'appel d'offre prend fin au 30 juin 2026.", "30 juin 2026"),
+    ):
+        assert cessions_etat._extract_sale_date(text) == expected
+
+
+def test_cessions_detail_keeps_land_area_separate_from_building_area() -> None:
+    for text, expected in (
+        ("Superficie du terrain 2499 Surface en m² 134", "2499"),
+        ("Maison implantée sur son terrain clos et arboré de 439 m².", "439"),
+        ("L'immeuble est situé par la parcelle CK 34, d’une superficie de 491 m².", "491"),
+    ):
+        assert cessions_etat._extract_land_surface(text) == expected
+
+
 def test_avoventes_description_is_the_lot_not_nearby_comparables():
     html = """<h1>Appartement</h1><p>Vente aux enchères</p><p>Mise à prix : 80 000 €</p>
     <h2>À propos du bien</h2><div>Appartement T2. Superficie loi Carrez : 51,10 m². Loué 780 €/mois.</div>

@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup, Tag
 
 from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
-from src.normalize import clean_text
+from src.normalize import clean_text, normalize_property_type
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
@@ -37,7 +37,10 @@ DETAIL_FIELDS = {
     "raw_text",
     "surface_m2",
     "land_surface_m2",
+    "city",
     "postal_code",
+    "dpe_class",
+    "ges_class",
     "raw_image_url",
     "source_images",
     "source_blocks",
@@ -141,10 +144,15 @@ def parse_cessions_etat_html(html: str, page_url: str = LIST_URL) -> list[dict[s
 
 def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any]:
     soup = parse_html(html, "html.parser")
+    title = _detail_title(soup)
+    property_type = _detail_property_type(title)
+    location = soup.select_one(".location-info .location-text")
+    city = clean_text(location.get_text(" ", strip=True)) if location else None
     raw_text = "\n".join(
         line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line
     )
     description = _description(soup)
+    dpe_class, ges_class = _detail_energy_classes(soup)
     surface = _extract_surface(raw_text)
     land_surface = _extract_land_surface(raw_text)
     postal_code = _extract_postal(raw_text)
@@ -160,10 +168,15 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
     return {
         "source_name": "cessions_etat",
         "source_url": source_url,
+        **({"title": title} if title else {}),
+        **({"property_type": property_type} if property_type else {}),
+        **({"city": city} if city else {}),
         "description": description,
         "surface_m2": surface,
         "land_surface_m2": land_surface,
         "postal_code": postal_code,
+        "dpe_class": dpe_class,
+        "ges_class": ges_class,
         "starting_price_eur": starting_price,
         "sale_date": sale_date,
         "visit_dates": visit_dates,
@@ -175,9 +188,14 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
             key: value
             for key, value in {
                 "description": description,
+                "titre_detail": title,
+                "type_bien_detail": property_type,
+                "ville": city,
                 "surface": surface,
                 "surface_terrain": land_surface,
                 "code_postal": postal_code,
+                "dpe_classe": dpe_class,
+                "ges_classe": ges_class,
                 "mise_a_prix": starting_price,
                 "date_vente": sale_date,
                 "visites": " | ".join(visit_dates) if visit_dates else None,
@@ -187,6 +205,39 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
             if value
         },
     }
+
+
+def _detail_title(soup: BeautifulSoup) -> str | None:
+    for node in soup.select("h1"):
+        title = clean_text(node.get_text(" ", strip=True))
+        if title and title.lower() != "partager la page" and len(title) <= 220:
+            return title
+    if soup.title:
+        title = clean_text(soup.title.get_text(" ", strip=True).split("|", 1)[0])
+        if title and len(title) <= 220:
+            return title
+    return None
+
+
+def _detail_property_type(title: str | None) -> str | None:
+    if not title:
+        return None
+    if re.search(r"\bpavillons?\b", title, re.I):
+        return "house"
+    if re.search(r"\bbureaux?\b", title, re.I):
+        return "commercial"
+    property_type = normalize_property_type(title)
+    return property_type if property_type not in {"other", "unknown"} else None
+
+
+def _detail_energy_classes(soup: BeautifulSoup) -> tuple[str | None, str | None]:
+    scope = soup.select_one("#details-tab") or soup.select_one("#panel-description")
+    if scope is None:
+        return None, None
+    text = scope.get_text(" ", strip=True)
+    dpe = re.search(r"\bPerformance\s+[ée]nerg[ée]tique\s*:\s*([A-G])\b", text, re.I)
+    ges = re.search(r"\bGaz\s+[àa]\s+effet\s+de\s+serre\s*:\s*([A-G])\b", text, re.I)
+    return (dpe.group(1).upper() if dpe else None, ges.group(1).upper() if ges else None)
 
 
 def _parse_card(card: Tag, page_url: str) -> dict[str, Any] | None:
@@ -410,6 +461,9 @@ def _extract_land_surface(text: str) -> str | None:
         rf"\bterrain\s+d['’]une\s+superficie\s+(?:totale\s+)?de\s+{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
         rf"\bterrain\s+d['’]une\s+surface\s+(?:totale\s+)?de\s+{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
         rf"\bsuperficie\s+totale\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
+        rf"\bsuperficie\s+du\s+terrain\s*:?\s*{SURFACE_VALUE_PATTERN}(?:\s*m(?:²|2))?\b",
+        rf"\bterrain\s+clos\s+et\s+arbor[ée]\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
+        rf"\bparcelle[^.\n]{{0,60}}d['’]une\s+superficie\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
     ):
         match = re.search(pattern, text, flags=re.I)
         if match:
@@ -439,6 +493,15 @@ def _extract_sale_date(text: str) -> str | None:
         match = re.search(pattern, text, flags=re.I)
         if match:
             return clean_text(match.group(1).strip(" .;"))
+    closing_date = re.search(
+        r"\b(?:Fin\s+de\s+l['’]appel\s+d['’]offres?\s+le|"
+        r"Date\s+de\s+fin\s+de\s+vente\s*:|prend\s+fin\s+au)\s*"
+        r"(\d{1,2}(?:/\d{1,2}/\d{4}|\s+[A-Za-zÀ-ÿ]+\s+\d{4}))\b",
+        text,
+        re.I,
+    )
+    if closing_date:
+        return clean_text(closing_date.group(1))
     return None
 
 
