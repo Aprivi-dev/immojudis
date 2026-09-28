@@ -481,10 +481,9 @@ def _fill_counts(sale: AuctionSale, text: str) -> None:
             (
                 r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+(?:places?\s+de\s+)?parkings?\b",
                 r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+places?\s+de\s+stationnement\b",
-                r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+garages?\b",
             ),
         )
-        if sale.parking_count is None and re.search(r"\bparking\b|\bgarage\b", text, re.I):
+        if sale.parking_count is None and re.search(r"\bparking\b|\bstationnement\b", text, re.I):
             sale.parking_count = 1
 
 

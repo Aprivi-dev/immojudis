@@ -3131,6 +3131,69 @@ export type Database = {
         };
         Relationships: [];
       };
+      information_agent_inbound_jobs: {
+        Row: {
+          attachment_link_expires_at: string;
+          attempts: number;
+          available_at: string;
+          case_id: string;
+          created_at: string;
+          id: string;
+          last_error: string | null;
+          lease_id: string | null;
+          locked_at: string | null;
+          message_id: string;
+          provider_email_id: string;
+          status: "queued" | "processing" | "completed" | "failed" | "review" | "ignored";
+          updated_at: string;
+        };
+        Insert: {
+          attachment_link_expires_at: string;
+          attempts?: number;
+          available_at?: string;
+          case_id: string;
+          created_at?: string;
+          id?: string;
+          last_error?: string | null;
+          lease_id?: string | null;
+          locked_at?: string | null;
+          message_id: string;
+          provider_email_id: string;
+          status?: "queued" | "processing" | "completed" | "failed" | "review" | "ignored";
+          updated_at?: string;
+        };
+        Update: {
+          attachment_link_expires_at?: string;
+          attempts?: number;
+          available_at?: string;
+          case_id?: string;
+          created_at?: string;
+          id?: string;
+          last_error?: string | null;
+          lease_id?: string | null;
+          locked_at?: string | null;
+          message_id?: string;
+          provider_email_id?: string;
+          status?: "queued" | "processing" | "completed" | "failed" | "review" | "ignored";
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_inbound_jobs_case_id_fkey";
+            columns: ["case_id"];
+            isOneToOne: false;
+            referencedRelation: "information_agent_cases";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_inbound_jobs_message_id_fkey";
+            columns: ["message_id"];
+            isOneToOne: true;
+            referencedRelation: "information_agent_messages";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       information_agent_contacts: {
         Row: {
           bounce_status: "none" | "temporary" | "permanent";
@@ -4117,6 +4180,17 @@ export type Database = {
         Args: { p_metadata: Json; p_items: Json; p_set_id?: string };
         Returns: Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
       };
+      enqueue_admin_source_detail_bounded: {
+        Args: {
+          p_admin_id: string;
+          p_force?: boolean;
+          p_sale_id: string;
+        };
+        Returns: {
+          job_id: string;
+          reused: boolean;
+        }[];
+      };
       approve_information_agent_mission_bounded: {
         Args: { p_message_sha256: string; p_mission_id: string; p_user_id: string };
         Returns: {
@@ -4141,6 +4215,10 @@ export type Database = {
       claim_information_agent_evidence_extractions: {
         Args: { p_limit?: number };
         Returns: Database["public"]["Tables"]["information_agent_evidence_extractions"]["Row"][];
+      };
+      claim_information_agent_inbound_jobs: {
+        Args: { p_limit?: number; p_now?: string };
+        Returns: Database["public"]["Tables"]["information_agent_inbound_jobs"]["Row"][];
       };
       publish_information_agent_email_template: {
         Args: { p_admin_id: string; p_template_id: string };

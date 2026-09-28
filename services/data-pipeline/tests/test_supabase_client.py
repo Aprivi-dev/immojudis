@@ -20,6 +20,9 @@ _REAL_FETCH_REVIEWED_ALIAS_REGISTRY = supabase_client._fetch_reviewed_alias_regi
 @pytest.fixture(autouse=True)
 def isolate_enrichment_queue(monkeypatch):
     monkeypatch.setattr(supabase_client, "_enqueue_due_enrichment", lambda *args: None)
+    # Claim persistence has its own focused tests below; catalogue publication
+    # tests should not make network calls for the additive evidence table.
+    monkeypatch.setattr(supabase_client, "_write_fact_claims_rest", lambda *args: 0)
     monkeypatch.setattr(
         supabase_client,
         "_fetch_reviewed_alias_registry",

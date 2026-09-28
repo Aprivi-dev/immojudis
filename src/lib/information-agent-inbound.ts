@@ -98,10 +98,13 @@ export async function processInformationAgentInboundWebhook({
   request,
   env = process.env,
   fetchImpl = fetch,
+  deferProcessing = false,
 }: {
   request: Request;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
+  /** Persist the verified receipt and let the cron worker process attachments. */
+  deferProcessing?: boolean;
 }): Promise<InformationAgentInboundResult> {
   const apiKey = env.RESEND_API_KEY?.trim();
   const webhookSecret = env.RESEND_WEBHOOK_SECRET?.trim();
@@ -133,6 +136,7 @@ export async function processInformationAgentInboundWebhook({
     resend,
     inboundDomain,
     fetchImpl,
+    deferProcessing,
   });
 }
 
@@ -141,11 +145,13 @@ async function ingestReceivedEmail({
   resend,
   inboundDomain,
   fetchImpl,
+  deferProcessing = false,
 }: {
   event: EmailReceivedEvent;
   resend: Resend;
   inboundDomain: string;
   fetchImpl: typeof fetch;
+  deferProcessing?: boolean;
 }): Promise<InformationAgentInboundResult> {
   const token = findInboundToken([...event.data.to, ...event.data.received_for], inboundDomain);
   if (!token) return { accepted: true, ignored: true };
@@ -210,6 +216,84 @@ async function ingestReceivedEmail({
       processingStatus: terminalStatus,
     };
   }
+
+  if (deferProcessing) {
+    const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId);
+    if (initialClosedStatus) {
+      inboundMetadata = mergeJsonObject(inboundMetadata, {
+        processing_ignored_case_status: initialClosedStatus,
+      });
+      await updateInboundProcessingState(messageId, inboundMetadata, {
+        status: "ignored",
+        attempts: existingProcessing?.attempts ?? 0,
+        providerEmailId: event.data.email_id,
+        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+        reason: "case_closed",
+      });
+      return {
+        accepted: true,
+        caseId: sharedCase.id,
+        messageId,
+        factCount: 0,
+        attachmentCount: 0,
+        processingStatus: "ignored",
+      };
+    }
+
+    // The case address is a routing key, not proof that the sender is the expected contact.
+    if (!senderMatches) {
+      const caseUpdated = await updateOpenInformationAgentCase(sharedCase.id, {
+        status: "review",
+        replied_at: receivedAt,
+        metadata: mergeJsonObject(sharedCase.metadata, {
+          last_inbound_email_id: event.data.email_id,
+          last_inbound_sender_matches_recipient: false,
+        }),
+      });
+      await updateInboundProcessingState(messageId, inboundMetadata, {
+        status: "review",
+        attempts: existingProcessing?.attempts ?? 0,
+        providerEmailId: event.data.email_id,
+        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+        reason: caseUpdated ? "sender_mismatch" : "case_closed_during_processing",
+      });
+      return {
+        accepted: true,
+        caseId: sharedCase.id,
+        messageId,
+        factCount: 0,
+        attachmentCount: 0,
+        processingStatus: "review",
+      };
+    }
+
+    if (!inboundMessage.duplicate) {
+      await updateInboundProcessingState(messageId, inboundMetadata, {
+        status: "queued",
+        attempts: existingProcessing?.attempts ?? 0,
+        providerEmailId: event.data.email_id,
+        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+        attachmentLinkExpiresAt: new Date(
+          Date.parse(receivedAt) + INBOUND_ATTACHMENT_LINK_TTL_MS,
+        ).toISOString(),
+      });
+    }
+    await enqueueInformationAgentInboundJob({
+      messageId,
+      caseId: sharedCase.id,
+      providerEmailId: event.data.email_id,
+      receivedAt,
+    });
+    return {
+      accepted: true,
+      caseId: sharedCase.id,
+      messageId,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "queued",
+    };
+  }
+
   inboundMetadata = await updateInboundProcessingState(messageId, inboundMetadata, {
     status: "processing",
     attempts: (existingProcessing?.attempts ?? 0) + 1,
@@ -412,6 +496,222 @@ async function ingestReceivedEmail({
   }
 }
 
+type InformationAgentInboundQueueOptions = {
+  env?: NodeJS.ProcessEnv;
+  fetchImpl?: typeof fetch;
+  now?: Date;
+  limit?: number;
+};
+
+/**
+ * Replays durable inbound receipts with a fresh Resend attachment listing.
+ * The webhook intentionally does not follow links from the email body; only
+ * provider attachment URLs returned by Resend are downloaded here.
+ */
+export async function runInformationAgentInboundQueue({
+  env = process.env,
+  fetchImpl = fetch,
+  now = new Date(),
+  limit = 5,
+}: InformationAgentInboundQueueOptions = {}): Promise<Record<string, unknown>> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 10) {
+    throw new Error("La file entrante doit être traitée par lots de 1 à 10 messages.");
+  }
+  const apiKey = env.RESEND_API_KEY?.trim();
+  const inboundDomain = env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase();
+  if (!apiKey || !inboundDomain) {
+    throw new Error("Configuration de reprise de l’agent incomplète.");
+  }
+
+  const { data: jobs, error: claimError } = await supabaseAdmin.rpc(
+    "claim_information_agent_inbound_jobs",
+    { p_limit: limit, p_now: now.toISOString() },
+  );
+  if (claimError) throw claimError;
+
+  const resend = new Resend(apiKey);
+  let completed = 0;
+  let reviewed = 0;
+  let ignored = 0;
+  let failed = 0;
+  let expiredLinkRisk = 0;
+  const errors: string[] = [];
+
+  for (const job of jobs ?? []) {
+    if (
+      Date.parse(job.attachment_link_expires_at) - now.getTime() <=
+      INBOUND_ATTACHMENT_LINK_TTL_MS / 5
+    ) {
+      expiredLinkRisk++;
+    }
+    try {
+      const { data: sharedCase, error: caseError } = await supabaseAdmin
+        .from("information_agent_cases")
+        .select("*")
+        .eq("id", job.case_id)
+        .maybeSingle();
+      if (caseError) throw caseError;
+      if (!sharedCase) throw new Error("Dossier de réception introuvable.");
+
+      // A case can be closed after the verified receipt is queued. Keep the
+      // message checkpoint in sync with the durable job before retiring it so
+      // the admin view never shows a permanently queued reply.
+      if (!["sending", "sent", "replied", "review"].includes(sharedCase.status)) {
+        await markInboundMessageIgnored({
+          messageId: job.message_id,
+          providerEmailId: job.provider_email_id,
+          queuedAt: job.created_at,
+          caseStatus: sharedCase.status,
+        });
+        await settleInformationAgentInboundJob(job, "ignored");
+        ignored++;
+        continue;
+      }
+
+      const result = await ingestReceivedEmail({
+        event: replayEventForInboundJob(job, sharedCase.inbound_token, inboundDomain),
+        resend,
+        inboundDomain,
+        fetchImpl,
+      });
+      const status: "completed" | "review" | "ignored" =
+        result.processingStatus === "completed" || result.processingStatus === "review"
+          ? result.processingStatus
+          : result.processingStatus === "ignored" || result.ignored
+            ? "ignored"
+            : "review";
+      await settleInformationAgentInboundJob(job, status);
+      if (status === "completed") completed++;
+      else if (status === "review") reviewed++;
+      else if (status === "ignored") ignored++;
+      else {
+        failed++;
+        errors.push(`Message ${job.provider_email_id}: statut inattendu ${status}`);
+      }
+    } catch (error) {
+      failed++;
+      const message = boundedInboundError(error);
+      errors.push(`Message ${job.provider_email_id}: ${message}`);
+      try {
+        await failInformationAgentInboundJob(job, message, now);
+      } catch (settleError) {
+        errors.push(`File ${job.provider_email_id}: ${boundedInboundError(settleError)}`);
+      }
+    }
+  }
+
+  return {
+    claimed: jobs?.length ?? 0,
+    completed,
+    reviewed,
+    ignored,
+    failed,
+    expiredLinkRisk,
+    errors,
+  };
+}
+
+async function markInboundMessageIgnored({
+  messageId,
+  providerEmailId,
+  queuedAt,
+  caseStatus,
+}: {
+  messageId: string;
+  providerEmailId: string;
+  queuedAt: string;
+  caseStatus: string;
+}) {
+  const { data: message, error } = await supabaseAdmin
+    .from("information_agent_messages")
+    .select("metadata")
+    .eq("id", messageId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!message) throw new Error("Message entrant à ignorer introuvable.");
+  const previous = inboundProcessingState(message.metadata ?? {});
+  await updateInboundProcessingState(
+    messageId,
+    mergeJsonObject(message.metadata ?? {}, {
+      processing_ignored_case_status: caseStatus,
+    }),
+    {
+      status: "ignored",
+      attempts: previous?.attempts ?? 0,
+      providerEmailId,
+      queuedAt: previous?.queuedAt ?? queuedAt,
+      reason: "case_closed",
+    },
+  );
+}
+
+function replayEventForInboundJob(
+  job: Database["public"]["Tables"]["information_agent_inbound_jobs"]["Row"],
+  inboundToken: string,
+  inboundDomain: string,
+): EmailReceivedEvent {
+  const address = `enquete+${inboundToken}@${inboundDomain}`;
+  return {
+    type: "email.received",
+    created_at: job.created_at,
+    data: {
+      email_id: job.provider_email_id,
+      created_at: job.created_at,
+      from: "",
+      to: [address],
+      bcc: [],
+      cc: [],
+      received_for: [address],
+      message_id: job.provider_email_id,
+      subject: "",
+      attachments: [],
+    },
+  };
+}
+
+async function settleInformationAgentInboundJob(
+  job: Database["public"]["Tables"]["information_agent_inbound_jobs"]["Row"],
+  status: "completed" | "review" | "ignored",
+) {
+  if (!job.lease_id) throw new Error("Lease de file entrante manquant.");
+  const { error } = await supabaseAdmin
+    .from("information_agent_inbound_jobs")
+    .update({
+      status,
+      locked_at: null,
+      lease_id: null,
+      last_error: null,
+    })
+    .eq("id", job.id)
+    .eq("lease_id", job.lease_id);
+  if (error) throw error;
+}
+
+async function failInformationAgentInboundJob(
+  job: Database["public"]["Tables"]["information_agent_inbound_jobs"]["Row"],
+  errorMessage: string,
+  now: Date,
+) {
+  if (!job.lease_id) throw new Error("Lease de file entrante manquant.");
+  const delayMs = Math.min(10 * 60 * 1000, 30 * 1000 * 2 ** Math.max(0, job.attempts - 1));
+  const terminalReview = job.attempts >= 10;
+  const { error } = await supabaseAdmin
+    .from("information_agent_inbound_jobs")
+    .update({
+      // Ten attempts is the retry budget. Keep the message visible for an
+      // operator instead of leaving an unclaimable failed row that looks
+      // retryable but can never run again.
+      status: terminalReview ? "review" : "failed",
+      available_at: new Date(now.getTime() + delayMs).toISOString(),
+      locked_at: null,
+      lease_id: null,
+      last_error: errorMessage,
+    })
+    .eq("id", job.id)
+    .eq("lease_id", job.lease_id);
+  if (error) throw error;
+}
+
 async function updateOpenInformationAgentCase(
   caseId: string,
   values: Database["public"]["Tables"]["information_agent_cases"]["Update"],
@@ -530,6 +830,35 @@ async function insertOrLoadInboundMessage({
     throw new Error("Message entrant déjà rattaché à un autre dossier.");
   }
   return { id: existing.id, duplicate: true, metadata: existing.metadata ?? {} };
+}
+
+async function enqueueInformationAgentInboundJob({
+  messageId,
+  caseId,
+  providerEmailId,
+  receivedAt,
+}: {
+  messageId: string;
+  caseId: string;
+  providerEmailId: string;
+  receivedAt: string;
+}) {
+  const expiresAt = new Date(Date.parse(receivedAt) + INBOUND_ATTACHMENT_LINK_TTL_MS);
+  if (!Number.isFinite(expiresAt.getTime())) {
+    throw new Error("Date de réception email invalide.");
+  }
+  const { error } = await supabaseAdmin.from("information_agent_inbound_jobs").upsert(
+    {
+      message_id: messageId,
+      case_id: caseId,
+      provider_email_id: providerEmailId,
+      status: "queued",
+      available_at: new Date().toISOString(),
+      attachment_link_expires_at: expiresAt.toISOString(),
+    },
+    { onConflict: "provider_email_id", ignoreDuplicates: true },
+  );
+  if (error) throw error;
 }
 
 async function updateInboundProcessingState(
@@ -714,9 +1043,15 @@ async function storeInboundAttachments({
 
   for (const attachment of attachments) {
     const filename = safeFilename(attachment.filename || `piece-${attachment.id}`);
-    const mimeType = attachment.content_type.split(";", 1)[0].trim().toLowerCase();
+    const mimeType =
+      typeof attachment.content_type === "string"
+        ? attachment.content_type.split(";", 1)[0].trim().toLowerCase()
+        : "";
     if (
+      typeof attachment.id !== "string" ||
+      attachment.id.length === 0 ||
       !ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType) ||
+      !Number.isSafeInteger(attachment.size) ||
       attachment.size <= 0 ||
       attachment.size > MAX_ATTACHMENT_BYTES ||
       totalBytes + attachment.size > MAX_TOTAL_ATTACHMENT_BYTES

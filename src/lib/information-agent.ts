@@ -8,8 +8,16 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { getPublishedInformationAgentEmailTemplate } from "@/lib/admin-information-agent-email-template";
+import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { parseDocs } from "@/lib/documents";
 import { sendResendEmail } from "@/lib/email-alerts";
+import {
+  getFactReliabilitiesFromClaims,
+  getKeyFactReliabilities,
+  type FactReliabilityMap,
+  type FactReliabilityStatus,
+  type KeyFact,
+} from "@/lib/fact-reliability";
 import { formatDate, formatPrice } from "@/lib/format";
 import {
   DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
@@ -17,8 +25,10 @@ import {
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { publishedDay } from "@/lib/listing-evidence";
 import { getSale } from "@/lib/property-report/repository";
 import { propertyImages } from "@/lib/sale-media";
+import { getSaleProcedure } from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
@@ -29,6 +39,16 @@ type CaseRow = Database["public"]["Tables"]["information_agent_cases"]["Row"];
 type FactRow = Database["public"]["Tables"]["information_agent_fact_candidates"]["Row"];
 
 export const INFORMATION_AGENT_QUESTIONS = {
+  sale_date: {
+    label: "Date de vente",
+    question:
+      "Pouvez-vous confirmer la date, l'heure et le lieu de la vente de ce lot, ainsi que tout report ou changement annoncé ?",
+  },
+  starting_price_eur: {
+    label: "Mise à prix",
+    question:
+      "Pouvez-vous confirmer la mise à prix applicable à ce lot et nous signaler toute correction publiée ?",
+  },
   documents: {
     label: "Pièces du dossier",
     question:
@@ -164,6 +184,8 @@ export type InformationAgentContactRegistryBlock = Pick<
 
 const QUESTION_PRIORITY: Record<InformationAgentQuestionKey, { score: number; blocking: boolean }> =
   {
+    sale_date: { score: 96, blocking: true },
+    starting_price_eur: { score: 92, blocking: true },
     documents: { score: 100, blocking: true },
     sale_terms: { score: 94, blocking: true },
     visit: { score: 88, blocking: true },
@@ -233,18 +255,34 @@ export type InformationAgentAdminListResponse = {
   facts: InformationAgentFact[];
 };
 
-export function detectInformationGaps(sale: AuctionSale): InformationAgentGap[] {
+export function detectInformationGaps(
+  sale: AuctionSale,
+  facts: FactReliabilityMap = getKeyFactReliabilities(sale),
+): InformationAgentGap[] {
   const gaps: InformationAgentGap[] = [];
-  const documents = sale.documents_rich?.length || parseDocs(sale.documents).length;
+  const documents = [...parseDocs(sale.documents_rich), ...parseDocs(sale.documents)];
   const images = propertyImages(sale.media).length;
-  const visitDates = meaningfulList(sale.visit_dates);
-  const occupancy = sale.occupancy_status?.trim().toLowerCase();
+  const visitDates = Array.isArray(sale.visit_dates) ? sale.visit_dates : [sale.visit_dates];
+  const hasDatedVisit = visitDates.some(
+    (value) => typeof value === "string" && publishedDay(value) !== null,
+  );
   const surface = getSaleSurface(sale);
   const sourceText = informationAgentSourceText(sale);
-  const documentText =
-    `${JSON.stringify(sale.documents_rich ?? sale.documents ?? "")} ${sourceText}`.toLowerCase();
+  const hasDiagnosticDocument = documents.some((document) =>
+    /(?:diagnostic|\bdpe\b|performance.nerg)/i.test(
+      `${document.name ?? ""} ${document.type ?? ""} ${"document_type" in document ? (document.document_type ?? "") : ""}`,
+    ),
+  );
 
-  if (!documents)
+  addCriticalFactGap(gaps, "sale_date", facts.sale_date, Boolean(sale.sale_date));
+  addCriticalFactGap(
+    gaps,
+    "starting_price_eur",
+    facts.starting_price_eur,
+    typeof sale.starting_price_eur === "number" && sale.starting_price_eur > 0,
+  );
+
+  if (!documents.length)
     addGap(gaps, "documents", "Aucune pièce consultable n'est rattachée à l'annonce.");
   if (images < 4)
     addGap(
@@ -252,29 +290,30 @@ export function detectInformationGaps(sale: AuctionSale): InformationAgentGap[] 
       "photos",
       `${images} photo${images > 1 ? "s" : ""} exploitable${images > 1 ? "s" : ""} seulement.`,
     );
-  if (!visitDates.length) addGap(gaps, "visit", "Aucune date de visite exploitable n'est publiée.");
-  if (!occupancy || occupancy === "unknown" || occupancy === "inconnu") {
-    addGap(gaps, "occupancy", "La situation d'occupation reste à confirmer.");
+  if (!hasDatedVisit) addGap(gaps, "visit", "Aucune date de visite exploitable n'est publiée.");
+  addCriticalFactGap(
+    gaps,
+    "occupancy_status",
+    facts.occupancy_status,
+    Boolean(sale.occupancy_status && !/^(?:unknown|inconnu)$/i.test(sale.occupancy_status)),
+  );
+  addCriticalFactGap(gaps, "surface", facts.surface, surface.value != null && !surface.estimated);
+  if (!hasDiagnosticDocument) {
+    addGap(
+      gaps,
+      "diagnostics",
+      "Aucune pièce de diagnostic consultable n'est clairement identifiée.",
+    );
   }
-  if (surface.value == null || surface.estimated) {
-    addGap(gaps, "surface", "La surface est absente ou seulement estimée.");
-  }
-  if (!/(diagnostic|\bdpe\b|performance.nerg)/i.test(documentText)) {
-    addGap(gaps, "diagnostics", "Aucun diagnostic technique n'est clairement identifié.");
-  }
-  if (
-    sale.rooms_count == null &&
-    !/(?:\b\d+\s*(?:pi[eè]ces?|chambres?)\b|composition|annexe)/i.test(sourceText)
-  ) {
+  if (sale.rooms_count == null && !/\b\d+\s*(?:pi[eè]ces?|chambres?)\b/i.test(sourceText)) {
     addGap(gaps, "composition", "Le nombre de pièces n'est pas confirmé.");
   }
-  if (
-    (!sale.sale_procedure || !Object.keys(sale.sale_procedure).length) &&
-    !/(?:consignation|surench[eè]re|frais|modalit[eé].*(?:vente|paiement)|conditions de vente|ench[eè]re)/i.test(
-      sourceText,
-    )
-  ) {
-    addGap(gaps, "sale_terms", "Les modalités détaillées de la vente ne sont pas structurées.");
+  if (!hasVerifiedSaleTerms(sale)) {
+    addGap(
+      gaps,
+      "sale_terms",
+      "Les modalités de vente ne sont pas suffisamment étayées ou complètes.",
+    );
   }
 
   return gaps;
@@ -284,16 +323,20 @@ export function buildInformationRequestDraft({
   sale,
   recipientName,
   questionKeys,
+  facts,
   template = DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
 }: {
   sale: AuctionSale;
   recipientName?: string | null;
   questionKeys: readonly InformationAgentQuestionKey[];
+  facts?: FactReliabilityMap;
   template?: InformationAgentEmailTemplateContent;
 }): { subject: string; bodyText: string } {
   const title = saleDisplayTitle(sale, "Vente immobilière");
   const location = [sale.postal_code, sale.city].filter(Boolean).join(" ");
   const hearing = formatDate(sale.sale_date);
+  const hearingStatus = facts?.sale_date.status;
+  const priceStatus = facts?.starting_price_eur.status;
   const reference = [title, location, sale.tribunal].filter(Boolean).join(" — ");
   const trimmedRecipientName = recipientName?.replace(/\s+/g, " ").trim();
   return renderInformationAgentEmailContent({
@@ -306,9 +349,26 @@ export function buildInformationRequestDraft({
       sale_reference: reference || title,
       location: location || "Localisation non précisée",
       tribunal: sale.tribunal || "Tribunal non précisé",
-      hearing_date: hearing,
-      hearing_line: hearing === "Date à confirmer" ? "" : `Audience annoncée : ${hearing}`,
-      starting_price: formatPrice(sale.starting_price_eur),
+      hearing_date:
+        hearingStatus === "conflict"
+          ? "Date à confirmer"
+          : hearing !== "Date à confirmer" && hearingStatus && hearingStatus !== "observed"
+            ? `${hearing} (à confirmer)`
+            : hearing,
+      hearing_line:
+        hearing === "Date à confirmer" || hearingStatus === "conflict"
+          ? ""
+          : hearingStatus && hearingStatus !== "observed"
+            ? `Audience annoncée, à confirmer : ${hearing}`
+            : `Audience annoncée : ${hearing}`,
+      starting_price:
+        priceStatus === "conflict" ||
+        sale.starting_price_eur == null ||
+        sale.starting_price_eur <= 0
+          ? "Mise à prix à confirmer"
+          : priceStatus && priceStatus !== "observed"
+            ? `${formatPrice(sale.starting_price_eur)} (à confirmer)`
+            : formatPrice(sale.starting_price_eur),
       questions: questionKeys
         .map((key) => `- ${INFORMATION_AGENT_QUESTIONS[key].question}`)
         .join("\n"),
@@ -338,7 +398,9 @@ export async function createAdminInformationAgentDraft({
     getSale(auth.supabase, input.saleId),
     getPublishedInformationAgentEmailTemplate(),
   ]);
-  const gaps = detectInformationGaps(sale);
+  const claimRead = await readSaleFactClaims(sale.id);
+  const facts = getFactReliabilitiesFromClaims(sale, claimRead.claims);
+  const gaps = detectInformationGaps(sale, facts);
   const defaultQuestions = selectDefaultInformationAgentQuestionKeys(gaps);
   const questionKeys = uniqueQuestionKeys(input.questionKeys ?? defaultQuestions);
   if (!questionKeys.length) {
@@ -368,6 +430,7 @@ export async function createAdminInformationAgentDraft({
     sale,
     recipientName,
     questionKeys,
+    facts,
     template: emailTemplate.content,
   });
 
@@ -390,6 +453,8 @@ export async function createAdminInformationAgentDraft({
       privacy_version: LEGAL_DOCUMENTS.privacy.version,
       metadata: {
         draft_source: "admin_source_first_gap_analysis",
+        fact_claims_checked: claimRead.claimsBacked,
+        fact_claim_count: claimRead.claims.length,
         contact_discovery: {
           method: explicitRecipientEmail
             ? "admin_override"
@@ -815,12 +880,17 @@ async function listFactsForCases(caseIds: string[]): Promise<InformationAgentFac
   }));
 }
 
-function addGap(gaps: InformationAgentGap[], key: InformationAgentQuestionKey, reason: string) {
+function addGap(
+  gaps: InformationAgentGap[],
+  key: InformationAgentQuestionKey,
+  reason: string,
+  priority = QUESTION_PRIORITY[key].score,
+) {
   gaps.push({
     key,
     label: INFORMATION_AGENT_QUESTIONS[key].label,
     reason,
-    priority: QUESTION_PRIORITY[key].score,
+    priority,
     blocking: QUESTION_PRIORITY[key].blocking,
   });
 }
@@ -837,11 +907,50 @@ function shortenSubjectTitle(title: string): string {
   return `${(lastSpace >= 40 ? prefix.slice(0, lastSpace) : prefix).trimEnd()}…`;
 }
 
-function meaningfulList(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value.filter(Boolean);
-  if (typeof value === "string" && value.trim()) return [value];
-  if (value && typeof value === "object") return Object.values(value).filter(Boolean);
-  return [];
+const QUESTION_FOR_FACT: Record<KeyFact, InformationAgentQuestionKey> = {
+  sale_date: "sale_date",
+  starting_price_eur: "starting_price_eur",
+  surface: "surface",
+  occupancy_status: "occupancy",
+};
+
+function addCriticalFactGap(
+  gaps: InformationAgentGap[],
+  field: KeyFact,
+  fact: FactReliabilityMap[KeyFact],
+  hasValue: boolean,
+) {
+  if (fact.status === "observed") return;
+  const key = QUESTION_FOR_FACT[field];
+  const reason =
+    fact.status === "conflict"
+      ? `${fact.label} : les sources se contredisent et doivent être départagées.`
+      : !hasValue
+        ? `${fact.label} n'est pas renseignée pour ce lot.`
+        : fact.status === "inferred"
+          ? `${fact.label} repose sur une estimation à confirmer.`
+          : `${fact.label} est présente mais ne dispose pas encore d'une preuve validée.`;
+  const adjustment: Record<Exclude<FactReliabilityStatus, "observed">, number> = {
+    conflict: 40,
+    inferred: 5,
+    to_confirm: hasValue ? -25 : 10,
+  };
+  addGap(gaps, key, reason, QUESTION_PRIORITY[key].score + adjustment[fact.status]);
+}
+
+function hasVerifiedSaleTerms(sale: AuctionSale): boolean {
+  const procedure = getSaleProcedure(sale).procedure;
+  if (!procedure) return false;
+  if (!["verified", "cross_checked"].includes(procedure.verification.status)) return false;
+  if (!procedure.verification.case_sources.length) return false;
+  const rules = procedure.rules;
+  const hasBidMethod = Boolean(rules.bid_method.trim());
+  const hasGuarantee =
+    rules.guarantee.amount_eur != null ||
+    rules.guarantee.rate_pct != null ||
+    rules.guarantee.minimum_eur != null;
+  const hasDeadline = rules.payment_deadline_days != null || rules.overbid.window_days != null;
+  return hasBidMethod && hasGuarantee && hasDeadline;
 }
 
 /**

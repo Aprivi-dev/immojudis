@@ -94,6 +94,7 @@ const EXPECTED_CRONS = [
   "/api/cron/data-retention",
   "/api/cron/operational-health",
   "/api/cron/cnb-lawyer-directory",
+  "/api/cron/information-agent-inbound",
 ] as const;
 
 export async function getAdminOperationalReadiness(

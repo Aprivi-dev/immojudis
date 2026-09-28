@@ -71,6 +71,7 @@ function fixture({
   const messages: Row[] = [];
   const assets: Row[] = [];
   const facts: Row[] = [];
+  const jobs: Row[] = [];
   const uploads: Array<{ path: string; bytes: Uint8Array }> = [];
   let assetLookupCount = 0;
   let closeCaseBeforeNextUpdate = closeCaseBeforeFinalUpdate;
@@ -84,6 +85,7 @@ function fixture({
     information_agent_messages: messages,
     information_agent_evidence_assets: assets,
     information_agent_fact_candidates: facts,
+    information_agent_inbound_jobs: jobs,
     auction_sales: [
       {
         id: SALE_A,
@@ -134,19 +136,26 @@ function fixture({
       this.values = values;
       return this;
     }
-    upsert(values: Row[]) {
-      for (const row of values) {
-        if (
-          !facts.some(
-            (fact) =>
-              fact.message_id === row.message_id &&
-              fact.fact_key === row.fact_key &&
-              fact.evidence_asset_id === row.evidence_asset_id &&
-              fact.source_page === row.source_page &&
-              fact.display_value === row.display_value,
+    upsert(values: Row | Row[]) {
+      for (const row of Array.isArray(values) ? values : [values]) {
+        if (this.table === "information_agent_fact_candidates") {
+          if (
+            !facts.some(
+              (fact) =>
+                fact.message_id === row.message_id &&
+                fact.fact_key === row.fact_key &&
+                fact.evidence_asset_id === row.evidence_asset_id &&
+                fact.source_page === row.source_page &&
+                fact.display_value === row.display_value,
+            )
           )
-        )
-          facts.push(row);
+            facts.push(row);
+        } else if (
+          this.table === "information_agent_inbound_jobs" &&
+          !jobs.some((job) => job.provider_email_id === row.provider_email_id)
+        ) {
+          jobs.push({ ...row, id: row.id ?? `job-${jobs.length + 1}` });
+        }
       }
       return Promise.resolve({ data: null, error: null });
     }
@@ -226,7 +235,7 @@ function fixture({
       return { error: null };
     }),
   });
-  return { cases, missions, messages, assets, facts, uploads };
+  return { cases, missions, messages, assets, facts, jobs, uploads };
 }
 
 function receivedEmail({
@@ -257,6 +266,7 @@ function webhook(
   fetchImpl = vi.fn(),
   body = "signed local fixture",
   additionalHeaders: HeadersInit = {},
+  deferProcessing = false,
 ): Promise<Awaited<ReturnType<typeof processInformationAgentInboundWebhook>>> {
   const request = new Request("https://example.test/api/webhooks/resend/information-agent", {
     method: "POST",
@@ -277,6 +287,7 @@ function webhook(
       INFORMATION_AGENT_INBOUND_DOMAIN: DOMAIN,
     },
     fetchImpl: fetchImpl as typeof fetch,
+    deferProcessing,
   });
 }
 
@@ -381,6 +392,26 @@ describe("information-agent offline inbound scenarios", () => {
     expect(state.cases[1]?.status).toBe("sent");
     expect(state.uploads).toHaveLength(1);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists a verified receipt before attachment processing when deferred", async () => {
+    const state = fixture();
+    receivedEmail();
+    const fetchImpl = vi.fn();
+
+    expect(await webhook(fetchImpl, "fixture", {}, true)).toMatchObject({
+      accepted: true,
+      caseId: CASE_A,
+      processingStatus: "queued",
+      attachmentCount: 0,
+    });
+    expect(state.messages).toHaveLength(1);
+    expect(state.jobs).toHaveLength(1);
+    expect(state.messages[0]?.metadata).toMatchObject({
+      inbound_processing: { status: "queued", attempts: 0 },
+    });
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("persists a completed processing checkpoint and skips attachment work on a replay", async () => {
@@ -515,6 +546,37 @@ describe("information-agent offline inbound scenarios", () => {
       ],
     });
     expect(state.cases[0]?.status).toBe("review");
+  });
+
+  it("rejects malformed attachment metadata before downloading it", async () => {
+    const state = fixture();
+    receivedEmail({ text: "Pièce jointe." });
+    mocks.list.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: "malformed-size",
+            filename: "document.pdf",
+            content_type: "application/pdf",
+            size: Number.NaN,
+            download_url: "https://example.test/document.pdf",
+            content_disposition: "attachment",
+          },
+        ],
+      },
+      error: null,
+    });
+    const fetchImpl = vi.fn();
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(state.messages[0]?.metadata).toMatchObject({
+      rejected_attachment_count: 1,
+      rejected_attachments: [{ filename: "document.pdf", reason: "Taille hors limite" }],
+    });
   });
 
   it("asks Resend to retry a transient attachment failure so its link can be refreshed", async () => {

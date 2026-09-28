@@ -32,6 +32,10 @@ import type {
   CatalogueReadinessOverview,
 } from "@/lib/admin-catalogue-readiness";
 import type {
+  AdminAuctionFactClaimDecision,
+  AdminAuctionFactClaimReviewResponse,
+} from "@/lib/admin-auction-fact-claims-review";
+import type {
   AdminInformationAgentReviewInput,
   AdminInformationAgentReviewResponse,
 } from "@/lib/admin-information-agent";
@@ -40,6 +44,7 @@ import type { BidCeilingAnalysisResponse, BidCeilingRequestInput } from "@/lib/b
 import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import type { EnvironmentalContextResponse } from "@/lib/environment.functions";
 import type { FeaturedReferencedLawyerResponse } from "@/lib/featured-lawyers";
+import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import type { LawyerDirectoryResponse } from "@/lib/lawyer-directory";
 import type {
   LawyerPlacementEventInput,
@@ -77,6 +82,10 @@ import type {
   DataRefreshRequestInput,
   DataRefreshRequestResponse,
 } from "@/lib/data-refresh";
+import type {
+  AdminSourceRefreshRequestInput,
+  AdminSourceRefreshResponse,
+} from "@/lib/admin-source-refresh";
 import type { DataQualityReport } from "@/lib/data-quality-monitor";
 import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
@@ -162,6 +171,21 @@ async function readJson<T>(response: Response): Promise<T> {
   }
 
   return payload as T;
+}
+
+export type SaleFactReliabilitiesResponse = {
+  facts: FactReliabilityMap;
+  source: "claims" | "legacy";
+};
+
+export async function fetchSaleFactReliabilities(
+  saleId: string,
+): Promise<SaleFactReliabilitiesResponse> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/facts`, {
+    headers: await authHeaders(),
+    signal: AbortSignal.timeout(10_000),
+  });
+  return readJson<SaleFactReliabilitiesResponse>(response);
 }
 
 export async function fetchPrecomputedMarketEstimate(args: {
@@ -1182,6 +1206,38 @@ export async function runAdminCatalogueReadinessActionClient(
   return readJson<CatalogueReadinessOverview>(response);
 }
 
+export type AdminAuctionFactClaimReviewPageParam = {
+  cursor?: string;
+  limit?: number;
+  status?: "candidate" | "conflicted";
+};
+
+export async function fetchAdminAuctionFactClaimReview(
+  pageParam: AdminAuctionFactClaimReviewPageParam = {},
+): Promise<AdminAuctionFactClaimReviewResponse> {
+  const search = new URLSearchParams();
+  search.set("limit", String(pageParam.limit ?? 25));
+  if (pageParam.cursor) search.set("cursor", pageParam.cursor);
+  if (pageParam.status) search.set("status", pageParam.status);
+  const response = await fetch(`/api/admin/fact-claims/review?${search.toString()}`, {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<AdminAuctionFactClaimReviewResponse>(response);
+}
+
+export async function reviewAdminAuctionFactClaimClient(
+  data: AdminAuctionFactClaimDecision,
+): Promise<{ ok: true; result: unknown }> {
+  const response = await fetch("/api/admin/fact-claims/review", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<{ ok: true; result: unknown }>(response);
+}
+
 export async function fetchAdminInformationAgentMissions(args?: {
   saleId?: string;
 }): Promise<InformationAgentAdminListResponse> {
@@ -1216,6 +1272,29 @@ export async function runAdminInformationAgentMissionAction(
     body: JSON.stringify(data),
   });
   return readJson<InformationAgentAdminListResponse>(response);
+}
+
+export async function fetchAdminSourceRefreshStatus(
+  saleId: string,
+): Promise<AdminSourceRefreshResponse> {
+  const search = new URLSearchParams({ saleId });
+  const response = await fetch(`/api/admin/information-agent/source-refresh?${search.toString()}`, {
+    signal: AbortSignal.timeout(15_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<AdminSourceRefreshResponse>(response);
+}
+
+export async function requestAdminSourceRefresh(
+  data: AdminSourceRefreshRequestInput,
+): Promise<AdminSourceRefreshResponse> {
+  const response = await fetch("/api/admin/information-agent/source-refresh", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<AdminSourceRefreshResponse>(response);
 }
 
 export type AdminInformationAgentReviewPageParam = {

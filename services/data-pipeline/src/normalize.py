@@ -1362,7 +1362,7 @@ def _extract_parking_count_from_text(*values: object) -> int | None:
         match = re.search(pattern, text, re.I)
         if match:
             return _parse_count_token(match.group(1))
-    if re.search(r"\b(?:place\s+de\s+parking|stationnement|garage)\b", text, re.I):
+    if re.search(r"\b(?:place\s+de\s+parking|stationnement)\b", text, re.I):
         return 1
     return None
 

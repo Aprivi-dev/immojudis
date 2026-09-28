@@ -13,6 +13,8 @@ import {
 } from "@/lib/information-agent";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { AuctionSale } from "@/lib/types";
+import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
+import { DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE } from "@/lib/information-agent-email-template";
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: vi.fn(), rpc: vi.fn() },
@@ -223,6 +225,8 @@ describe("supervised information agent", () => {
     const gaps = detectInformationGaps(incompleteSale());
 
     expect(gaps.map((gap) => gap.key)).toEqual([
+      "sale_date",
+      "starting_price_eur",
       "documents",
       "photos",
       "visit",
@@ -235,13 +239,63 @@ describe("supervised information agent", () => {
     expect(selectDefaultInformationAgentQuestionKeys(gaps)).toEqual([
       "documents",
       "sale_terms",
-      "visit",
       "occupancy",
+      "visit",
     ]);
     expect(gaps.find((gap) => gap.key === "documents")).toMatchObject({
       priority: 100,
       blocking: true,
     });
+  });
+
+  it("keeps vague source mentions and unusable attachments on the question list", () => {
+    const gaps = detectInformationGaps({
+      ...incompleteSale(),
+      source_description: "Composition et diagnostics à confirmer. Conditions de vente à vérifier.",
+      documents_rich: [
+        {
+          url: "javascript:alert(1)",
+          label: "Diagnostics",
+          type: "diagnostics",
+          extraction_status: null,
+        },
+      ],
+      visit_dates: [{ note: "Visite à confirmer" }],
+      sale_procedure: { verification: { status: "pending" } },
+    });
+
+    expect(gaps.map((gap) => gap.key)).toEqual(
+      expect.arrayContaining(["documents", "visit", "diagnostics", "composition", "sale_terms"]),
+    );
+  });
+
+  it("asks to resolve a price conflict before lower-priority missing details", () => {
+    const gaps = detectInformationGaps({
+      ...incompleteSale(),
+      source_conflicts: [{ field: "starting_price_eur", selected: "85000", alternative: "95000" }],
+    });
+
+    expect(selectDefaultInformationAgentQuestionKeys(gaps)[0]).toBe("starting_price_eur");
+    expect(gaps.find((gap) => gap.key === "starting_price_eur")?.reason).toContain(
+      "se contredisent",
+    );
+  });
+
+  it("does not ask again for an accepted claim matching the displayed value", () => {
+    const sale = incompleteSale();
+    const facts = getFactReliabilitiesFromClaims(sale, [
+      {
+        field_key: "sale_date",
+        fact_status: "accepted",
+        value_jsonb: sale.sale_date,
+        captured_at: "2026-09-10T12:00:00Z",
+      },
+    ]);
+
+    expect(detectInformationGaps(sale, facts).map((gap) => gap.key)).not.toContain("sale_date");
+    expect(detectInformationGaps(sale, facts).map((gap) => gap.key)).toContain(
+      "starting_price_eur",
+    );
   });
 
   it("does not invent default questions when no gap was identified", () => {
@@ -309,6 +363,35 @@ describe("supervised information agent", () => {
     expect(draft.bodyText).toContain("cahier des conditions de vente");
     expect(draft.bodyText).not.toContain("utilisateur intéressé");
     expect(draft.bodyText).not.toMatch(/plafond d.enchère|budget de l.utilisateur/i);
+  });
+
+  it("does not assert a contradictory date or price in a draft awaiting confirmation", () => {
+    const sale = {
+      ...incompleteSale(),
+      source_conflicts: [
+        { field: "sale_date", selected: "14 septembre", alternative: "15 septembre" },
+        { field: "starting_price_eur", selected: "85000", alternative: "95000" },
+      ],
+    };
+    const template = {
+      ...DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+      blocks: DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.blocks.map((block) =>
+        block.id === "sale_details"
+          ? { ...block, content: `${block.content}\n{{starting_price}}` }
+          : block,
+      ),
+    };
+    const draft = buildInformationRequestDraft({
+      sale,
+      questionKeys: ["sale_date", "starting_price_eur"],
+      facts: getFactReliabilitiesFromClaims(sale, []),
+      template,
+    });
+
+    expect(draft.bodyText).not.toContain("14 septembre 2026");
+    expect(draft.bodyText).not.toContain("85 000 €");
+    expect(draft.bodyText).toContain("Mise à prix à confirmer");
+    expect(draft.bodyText).toContain("confirmer la date");
   });
 
   it("omits an unknown hearing date and uses a neutral greeting", () => {

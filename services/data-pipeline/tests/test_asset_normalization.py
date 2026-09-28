@@ -70,7 +70,7 @@ def test_normalize_asset_features_extracts_surfaces_features_and_score() -> None
     assert sale.app_surface_kind == "habitable"
     assert sale.surface_scope == "total"
     assert sale.bathrooms_count == 2
-    assert sale.parking_count == 1
+    assert sale.parking_count is None
     assert sale.has_garden is True
     assert sale.has_terrace is True
     assert sale.has_garage is True
