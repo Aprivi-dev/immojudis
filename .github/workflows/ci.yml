@@ -90,7 +90,26 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
       - name: Audit direct and transitive Python dependencies
-        run: python -m pip_audit -r requirements.txt
+        run: |
+          set -euo pipefail
+          audit_log="$(mktemp)"
+          trap 'rm -f "$audit_log"' EXIT
+          for attempt in 1 2 3; do
+            if python -m pip_audit -r requirements.txt >"$audit_log" 2>&1; then
+              cat "$audit_log"
+              exit 0
+            fi
+            cat "$audit_log"
+            # PyPI may briefly return a 503 for a package JSON endpoint.
+            # Do not retry genuine vulnerability findings or other failures.
+            if [[ "$(<"$audit_log")" != *"requests.exceptions.HTTPError: 503 Server Error"* ]]; then
+              exit 1
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+          done
 
   database:
     name: Supabase migrations + pgTAP
