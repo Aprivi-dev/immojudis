@@ -126,6 +126,41 @@ describe("readable listing sections", () => {
       "#rendez-vous",
     );
   });
+  it("shows a provenance status beside each key value without upgrading an unverified value", () => {
+    render(
+      <ListingOverview
+        sale={item({
+          occupancy_status: "vacant",
+          source_checks: { canonical: { checked_at: "2026-09-12T10:00:00Z" } },
+          source_conflicts: [
+            { field: "occupancy_status", selected: "vacant", alternative: "rented" },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("note", { name: /Date de vente : À confirmer/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Mise à prix : À confirmer/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Surface : Observé/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Occupation : Conflit/ })).toBeTruthy();
+  });
+
+  it("labels a provisional surface as inferred in the real listing summary", () => {
+    render(
+      <ListingOverview
+        sale={item({
+          app_surface_m2: null,
+          habitable_surface_m2: null,
+          carrez_surface_m2: null,
+          surface_evidence: null,
+          rooms_count: 1,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Surface estimée")).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Surface : Inféré/ })).toBeTruthy();
+  });
   it("does not show zero or invalid amounts as known property facts", () => {
     const { container } = render(
       <ListingOverview
