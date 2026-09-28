@@ -46,6 +46,7 @@ def _label(state: str, capture_sha256: str, value: object = None) -> dict:
 
 def _capture(case: dict, tmp_path: Path, content: bytes) -> str:
     path = tmp_path / f"capture-{case['id']}.bin"
+    content += "\nextrait de contrôle privé".encode()
     path.write_bytes(content)
     digest = hashlib.sha256(content).hexdigest()
     case["access"] = {"state": "captured", "checked_at": "2026-09-28T10:00:00Z", "reason": None}
@@ -345,6 +346,9 @@ def test_ai_reviews_are_separate_from_human_accuracy_and_return_private_aggregat
         "with_excerpt": 6,
         "locator_rate": 1.0,
         "excerpt_rate": 1.0,
+        "verbatim_required": 6,
+        "verbatim_found": 6,
+        "verbatim_rate": 1.0,
     }
     assert ai["needs_review_cases"] == 1
     assert ai["needs_review_reasons"] == {"pass_disagreement": 1}
@@ -397,6 +401,24 @@ def test_blind_ai_review_may_precede_replay_prediction_on_same_capture(tmp_path:
     first["ai_reviews"][0]["reviewed_at"] = "2026-09-28T09:00:00Z"
     with pytest.raises(ValueError, match="cannot precede the frozen capture"):
         evaluate_real_review(manifest, sample)
+
+
+def test_ai_review_flags_a_paraphrase_as_unverified_evidence(tmp_path: Path) -> None:
+    sample = _sample(tmp_path)
+    manifest = prepare_manifest(sample)
+    first = manifest["cases"][0]
+    digest = _capture(first, tmp_path, b"mise a prix 100000 euros")
+    labels = {"starting_price_eur": _label("present", digest, 100000)}
+    labels["starting_price_eur"]["evidence"]["excerpt"] = "prix de départ 100000 euros"
+    first["ai_reviews"] = [
+        _ai_review(labels, digest),
+        _ai_review(labels, digest, reviewer="codex-pass-b"),
+    ]
+
+    ai = evaluate_real_review(manifest, sample)["ai_review"]["aggregate"]
+    assert ai["evidence_coverage"]["verbatim_required"] == 2
+    assert ai["evidence_coverage"]["verbatim_found"] == 0
+    assert ai["needs_review_reasons"] == {"unverified_excerpt": 1}
 
 
 def test_ai_review_requires_capture_bound_metadata_and_valid_output_digest(tmp_path: Path) -> None:
