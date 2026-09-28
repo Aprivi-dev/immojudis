@@ -10,8 +10,10 @@ const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
 // Keep its global allowance narrow; route-level initial-load budgets remain enforced.
 // The three procedure-specific pilot workspaces add client code to the sale detail view.
 // The Annonce refactor adds financing and urbanism panels across sale detail routes.
-// Keep the global allowance narrow and continue enforcing per-route initial-load budgets.
-const MAX_TOTAL_CLIENT_JS_BYTES = 4_330_000;
+// The supervised fact review, source refresh controls, and secure contribution form add a
+// bounded private/support surface to the all-chunk total. Keep a narrow allowance for that
+// workflow while the route-level initial-load budgets below continue to protect public pages.
+const MAX_TOTAL_CLIENT_JS_BYTES = 4_370_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
