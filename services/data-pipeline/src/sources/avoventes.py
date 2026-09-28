@@ -450,10 +450,9 @@ def _extract_property_location(description: str | None, title: str | None) -> di
             # A numbered street followed by a postal code can satisfy the
             # generic ``CITY (postal)`` shape once mixed-case matching is
             # enabled. Keep that address for the address extractor, but do
-            # not expose its street name as the commune.
-            if re.search(rf"\b(?:{_STREET_KIND})\b", raw_city, re.I):
-                continue
-            if match.start("city") and text[match.start("city") - 1].isdigit():
+            # not expose its street name as the commune. The prefix check also
+            # catches a candidate that begins after a lower-case ``rue de``.
+            if _looks_like_street_city_candidate(text, match, raw_city):
                 continue
             city = _clean_city_candidate(raw_city)
             postal = clean_text(match.group("postal"))
@@ -469,9 +468,7 @@ def _extract_property_location(description: str | None, title: str | None) -> di
         text,
     ):
         raw_city = match.group("city")
-        if re.search(rf"\b(?:{_STREET_KIND})\b", raw_city, re.I):
-            continue
-        if match.start("city") and text[match.start("city") - 1].isdigit():
+        if _looks_like_street_city_candidate(text, match, raw_city):
             continue
         city = _clean_city_candidate(raw_city)
         postal = clean_text(match.group("postal"))
@@ -526,6 +523,31 @@ def _extract_property_location(description: str | None, title: str | None) -> di
         "department": extract_department(postal_code),
     }
     return result
+
+
+def _looks_like_street_city_candidate(text: str, match: re.Match[str], raw_city: str) -> bool:
+    """Reject a city match that is a fragment of a numbered street address."""
+
+    if re.search(rf"\b(?:{_STREET_KIND})\b", raw_city, re.I):
+        return True
+    candidate_start = match.start("city")
+    prefix_window_start = max(0, candidate_start - 120)
+    prefix_window = text[prefix_window_start:candidate_start]
+    # Do not let a numbered address in the previous sentence suppress a real
+    # commune in the current one.
+    separator = max(
+        (prefix_window.rfind(marker) for marker in ".!?\n,;"),
+        default=-1,
+    )
+    prefix = prefix_window[separator + 1 :]
+    return bool(
+        re.search(
+            rf"\b\d{{1,4}}(?:\s*(?:bis|ter))?(?:\s+et\s+\d{{1,4}})?\s+"
+            rf"(?:{_STREET_KIND})\b[^,;()\n]{{0,100}}$",
+            prefix,
+            re.I,
+        )
+    )
 
 
 def _clean_city_candidate(value: str | None) -> str | None:
@@ -788,7 +810,9 @@ def _property_type_candidates(value: object | None) -> set[str]:
     if not text:
         return set()
     candidates: set[str] = set()
-    if re.search(r"\b(?:appartements?|studios?|[tf]\s*[1-9])\b", text, re.I):
+    has_dwelling_code = bool(re.search(r"\b[tf]\s*[1-9]\b", text, re.I))
+    has_explicit_apartment = bool(re.search(r"\b(?:appartements?|studios?)\b", text, re.I))
+    if has_explicit_apartment or (has_dwelling_code and not re.search(r"\b(?:maisons?|villas?|pavillons?)\b", text, re.I)):
         candidates.add("apartment")
     if re.search(r"\b(?:maisons?|villas?|pavillons?)\b", text, re.I):
         candidates.add("house")

@@ -1530,6 +1530,7 @@ def test_extract_pdf_document_then_enriches_document_only_surface(tmp_path, monk
 
 
 def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, monkeypatch) -> None:
+    blocked_url = "https://www.licitor.com/data/pub/media/annonce/10/87/62/108762.000.001.pdf"
     sale = normalize_sale(
         {
             "source_name": "licitor",
@@ -1537,7 +1538,7 @@ def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, 
             "documents": [
                 {
                     "label": "PV descriptif",
-                    "url": "https://www.licitor.com/data/pub/media/annonce/10/87/62/108762.000.001.pdf",
+                    "url": blocked_url,
                     "type": "pdf",
                 }
             ],
@@ -1549,7 +1550,59 @@ def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, 
 
     monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fail_get)
 
-    assert download_documents(sale, output_root=tmp_path) == []
+    stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 0
+    assert stats.blocked_document_urls == [blocked_url]
+
+    _store_document_analysis_status(
+        sale,
+        [],
+        [],
+        blocked_document_urls=stats.blocked_document_urls,
+    )
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["coverage_status"] == "partial"
+    assert analysis["failed_documents"] == 0
+    assert analysis["failed_document_urls"] == []
+    assert analysis["blocked_documents"] == 1
+    assert analysis["blocked_document_urls"] == [blocked_url]
+    assert analysis["blocked_document_reasons"] == [
+        {
+            "url": blocked_url,
+            "reason": "robots.txt disallows fetching this Licitor document",
+        }
+    ]
+    assert "robots.txt" in analysis["warning"]
+
+
+def test_document_analysis_keeps_retryable_failure_separate_from_robots_block(tmp_path) -> None:
+    blocked_url = "https://www.licitor.com/data/pub/media/annonce/pv.pdf"
+    failed_url = "https://documents.example/pv.pdf"
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/mixed-document-status",
+            "documents": [
+                {"label": "PV bloqué", "url": blocked_url, "type": "pdf"},
+                {"label": "PV temporairement indisponible", "url": failed_url, "type": "pdf"},
+            ],
+        }
+    )
+
+    _store_document_analysis_status(
+        sale,
+        [],
+        [],
+        blocked_document_urls=[blocked_url],
+    )
+
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["coverage_status"] == "partial"
+    assert analysis["failed_documents"] == 1
+    assert analysis["failed_document_urls"] == [failed_url]
+    assert analysis["blocked_documents"] == 1
+    assert analysis["blocked_document_urls"] == [blocked_url]
 
 
 def test_download_documents_uses_legacy_type_when_label_and_url_are_vague(tmp_path, monkeypatch) -> None:

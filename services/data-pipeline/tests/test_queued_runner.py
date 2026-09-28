@@ -272,6 +272,54 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
     assert finished == [("job-pdf", True, None), ("job-facts", True, None)]
 
 
+def test_enrichment_queue_completes_pdf_job_when_documents_are_policy_blocked(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/policy-blocked",
+            "documents": [{
+                "label": "PV descriptif",
+                "url": "https://www.licitor.com/data/pub/media/annonce/pv.pdf",
+            }],
+        }
+    )
+    finished: list[tuple[str, bool, str | None]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [{"id": "job-pdf", "source_url": sale.source_url, "job_type": "pdf"}],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+
+    def policy_blocked_pdf(current_sale):
+        current_sale.raw_payload["document_analysis"] = {
+            "failed_documents": 0,
+            "failed_document_urls": [],
+            "blocked_documents": 1,
+            "blocked_document_urls": [current_sale.documents[0]["url"]],
+            "blocked_document_reasons": [{
+                "url": current_sale.documents[0]["url"],
+                "reason": "robots.txt disallows fetching this Licitor document",
+            }],
+            "coverage_status": "partial",
+        }
+        return SimpleNamespace(errors=0)
+
+    monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", policy_blocked_pdf)
+    monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
+    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
+    monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, succeeded, error_message=None: finished.append((job_id, succeeded, error_message)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1) == 1
+    assert finished == [("job-pdf", True, None)]
+
+
 def test_enrichment_queue_marks_every_sale_job_failed_on_extraction_error(monkeypatch) -> None:
     sale = normalize_sale(
         {

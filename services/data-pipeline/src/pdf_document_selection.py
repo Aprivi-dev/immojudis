@@ -171,6 +171,8 @@ def _store_document_analysis_status(
     sale: AuctionSale,
     documents: list[dict[str, str]],
     pdf_texts: list[dict[str, object]],
+    *,
+    blocked_document_urls: list[str] | None = None,
 ) -> None:
     typed_documents = [_document_profile(document) for document in documents]
     extracted_profiles = [_extracted_document_profile(payload) for payload in pdf_texts]
@@ -189,7 +191,25 @@ def _store_document_analysis_status(
         group for group, aliases in required_groups.items() if not (aliases & extracted_types)
     ]
 
-    if not documents and not sale.documents:
+    selected_documents = _select_documents_for_extraction(sale.documents, sale=sale)
+    selected_urls = {
+        str(document.get("url"))
+        for document in selected_documents
+        if document.get("url")
+    }
+    blocked_urls = list(dict.fromkeys(
+        str(url)
+        for url in (blocked_document_urls or [])
+        if str(url) in selected_urls
+    ))
+    blocked_url_set = set(blocked_urls)
+
+    if blocked_urls:
+        coverage_status = "partial"
+        warning = (
+            "Certaines pièces sont bloquées par la politique robots.txt et restent indisponibles pour l'analyse."
+        )
+    elif not documents and not sale.documents:
         coverage_status = "source_only"
         warning = "Aucun PDF officiel exploitable n'a été trouvé : l'analyse reste un pré-tri."
     elif not text_profiles:
@@ -202,13 +222,14 @@ def _store_document_analysis_status(
         coverage_status = "rich"
         warning = "Les principales familles de documents sont disponibles pour l'analyse."
 
-    selected_documents = _select_documents_for_extraction(sale.documents, sale=sale)
     extracted_urls = {str(profile.get("url") or "") for profile in text_profiles}
     failed_document_urls = list(dict.fromkeys(
         str(document.get("url")) for document in selected_documents
-        if document.get("url") and str(document["url"]) not in extracted_urls
+        if document.get("url")
+        and str(document["url"]) not in extracted_urls
+        and str(document["url"]) not in blocked_url_set
     ))
-    failed_documents = max(0, len(selected_documents) - len(text_profiles))
+    failed_documents = len(failed_document_urls)
     checked_at = datetime.now(UTC).isoformat()
     previous = sale.raw_payload.get("document_analysis") or {}
     last_successful_check_at = checked_at if not failed_documents else previous.get("last_successful_check_at")
@@ -218,6 +239,15 @@ def _store_document_analysis_status(
         "input_fingerprint": document_fingerprint(sale.documents),
         "failed_documents": failed_documents,
         "failed_document_urls": failed_document_urls,
+        "blocked_documents": len(blocked_urls),
+        "blocked_document_urls": blocked_urls,
+        "blocked_document_reasons": [
+            {
+                "url": url,
+                "reason": "robots.txt disallows fetching this Licitor document",
+            }
+            for url in blocked_urls
+        ],
         "coverage_status": coverage_status,
         "warning": warning,
         "documents_listed": len(sale.documents or []),

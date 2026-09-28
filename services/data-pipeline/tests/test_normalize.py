@@ -96,6 +96,39 @@ def test_normalize_sale_prefers_explicit_mixed_total_over_lot_value() -> None:
     assert "Surface totale bâtie : 56 m²" in (sale.surface_evidence or "")
 
 
+def test_normalize_sale_prefers_explicit_built_total_over_earlier_habitable_surface() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-habitable-built-total",
+            "property_type": "Ensemble immobilier",
+            "raw_text": (
+                "Ensemble immobilier : surface habitable 40 m². "
+                "Surface totale bâtie : 100 m²."
+            ),
+        }
+    )
+
+    assert sale.surface_m2 == Decimal("100")
+    assert sale.habitable_surface_m2 == Decimal("40")
+    assert sale.app_surface_m2 == Decimal("100")
+    assert sale.app_surface_kind == "built"
+
+
+def test_normalize_sale_keeps_habitable_surface_without_explicit_total() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/synthetic-house-habitable",
+            "property_type": "Maison",
+            "raw_text": "Maison avec surface habitable : 40 m².",
+        }
+    )
+
+    assert sale.surface_m2 == Decimal("40")
+    assert sale.habitable_surface_m2 == Decimal("40")
+
+
 def test_mixed_surface_label_without_numeric_total_stays_ambiguous() -> None:
     sale = normalize_sale(
         {
