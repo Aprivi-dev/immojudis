@@ -249,9 +249,12 @@ describeLocal("information-agent local integration", () => {
 
     const { error: signedUploadError } = await admin.storage
       .from(BUCKET)
-      .uploadToSignedUrl(portalStoragePath, prepared.token, new Blob([pdfBytes], { type: "application/pdf" }), {
-        contentType: "application/pdf",
-      });
+      .uploadToSignedUrl(
+        portalStoragePath,
+        prepared.token,
+        new Blob([pdfBytes], { type: "application/pdf" }),
+        { contentType: "application/pdf" },
+      );
     if (signedUploadError) throw signedUploadError;
 
     const submitResponse = await submitContributionRoute(

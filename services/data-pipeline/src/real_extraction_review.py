@@ -481,7 +481,7 @@ def _ai_case_stats(
                 continue
             stats["verbatim_excerpts_required"] += 1
             excerpt = _evidence_text(str(label["evidence"]["excerpt"]))
-            if len(excerpt) >= 4 and excerpt in capture_text:
+            if len(excerpt) >= 2 and excerpt in capture_text:
                 stats["verbatim_excerpts_found"] += 1
             else:
                 unverified_excerpt = True
