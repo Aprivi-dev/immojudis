@@ -218,3 +218,51 @@ traite au plus 100 lignes par appel et 75 par défaut, avec une durée maximale
 de 300 secondes. Une relance en série ne pourra commencer qu'après contrôle
 de sa configuration de production, de l'absence de job concurrent et de la
 première réponse canari ; aucun vidage automatique de cette file n'est lancé.
+
+## Vérifications du commit suivant
+
+Le commit `de32c6bd` a passé les tests Python 3.11/3.12, CodeQL, le rejeu
+complet des migrations avec pgTAP, les tests des parcours et la
+prévisualisation Vercel. Le contrôle web s'est arrêté sur une règle de taille :
+`pdf_enrichment.py` avait 1 596 lignes pour une limite de 1 500. Le commit
+`310f8cbe` extrait le transport documentaire dans son propre module et ramène
+le fichier à 1 457 lignes ; ses 123 tests PDF et de fiabilité ont passé
+localement. Sa CI complète, y compris le budget web, le rejeu Supabase avec
+pgTAP et le parcours Playwright, est verte.
+
+L'[inventaire AGRASC du premier commit](https://github.com/Aprivi-dev/immojudis/actions/runs/36550732573)
+a montré une page vendeur générique visible dans la preuve publique mais non
+émise par le parseur. Elle figurait alors comme URL non traitée, malgré le
+test de l'exclusion sur une ligne émise. Le second commit classe maintenant
+les URLs vendeurs directement depuis la preuve de catalogue, avec un motif
+explicite, et préserve le caractère partiel des anciennes cartes vendues sans
+identifiant. Le second inventaire réel a confirmé le classement dans le
+certificat du collecteur, mais le certificat recalculé par l'audit indépendant
+conservait cette URL comme non traitée. Une correction de l'audit redérive
+cette exclusion depuis les URLs publiques tracées ; son prochain inventaire
+doit confirmer les deux certificats.
+
+L'[audit de quatre sources en lecture seule](https://github.com/Aprivi-dev/immojudis/actions/runs/36550193394)
+a réussi. Il a relevé une ancienne URL Cessions État répondant 404, qui reste
+non vérifiée. Sur une fiche AGRASC de local commercial en copropriété à Nice,
+la page opérateur donne 70,53 m² Carrez et 4 609 m² de parcelle. Le second
+commit conserve la parcelle comme preuve avec une portée « copropriété » et
+cesse de la présenter comme le terrain privatif du local.
+
+À 09 h 49 UTC, la file compte 6 116 tâches non terminales, dont 6 113 dues
+et 3 124 dues depuis plus de 48 heures. Vingt-huit jobs ont épuisé quatre
+tentatives. Vingt-et-un sont liés au texte PDF ou à la qualité d'un résumé
+IA et seront candidats à un rejeu contrôlé après correction ; deux détails
+AGRASC pourront être reconsidérés après l'adaptateur. Quatre détails
+Notaires ont été retirés de l'inventaire actuel : leur API répond 400 et leurs
+pages publiques 410, alors qu'une annonce active répond 200 sur la même API.
+Un détail Cessions État répond 404. Ces cinq dernières URL ne doivent pas
+être réessayées à l'identique. Le worker de la branche les classera en revue
+permanente ; sa mise en production reste soumise au critère de publication.
+
+La revue IA seule des 73 captures a produit 21 champs indécidables et 11
+citations de type de bien non vérifiées. Le manifeste de cette revue n'est
+pas encore relié durablement aux identités canoniques des fiches ; une fiche
+authentifiée peut donc afficher une valeur litigieuse comme une donnée
+ordinaire. Ce lien et un affichage explicite des champs non résolus restent
+un blocage de publication, même si aucune relecture humaine n'est demandée.

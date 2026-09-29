@@ -17,10 +17,35 @@ from urllib.parse import urljoin
 import httpx
 
 from src.catalogue_proof import canonical, certify_catalogue, public_page_proof, record_id
+from src.sources.agrasc_urls import classify_agrasc_operator_url
 from src.sources.common import parse_html
 
 SOURCES = ('avoventes', 'licitor', 'vench', 'info_encheres', 'encheres_publiques',
            'petites_affiches', 'cessions_etat', 'agrasc', 'encheres_immobilieres', 'notaires')
+
+
+def _derive_catalogue_exclusions(source: str, proofs: list[dict]) -> dict[str, str]:
+    """Derive only safe source-specific exclusions from traced public URLs.
+
+    The audit recalculates its certificate independently from the collector's
+    coverage output.  In particular, an AGRASC seller catalogue can be visible
+    to the public-card proof while the source parser intentionally emits no
+    property row for it.  Keep that URL handled without trusting a collector
+    supplied exclusion list.
+    """
+    if source != "agrasc":
+        return {}
+    public_urls = {
+        canonical(str(url))
+        for proof in proofs
+        for url in proof.get("public_urls", [])
+        if url
+    }
+    return {
+        url: "operator_seller_catalogue_without_listing_identity"
+        for url in sorted(public_urls)
+        if classify_agrasc_operator_url(url) == "agorastore_seller"
+    }
 
 
 def page_evidence(body: str, url: str) -> dict:
@@ -148,9 +173,11 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
     sales = result.sales if result else []
     coverage = result.coverage if result else {}
     errors = result.errors if result else [fatal]
+    exclusions = _derive_catalogue_exclusions(source, proofs)
     certificate = certify_catalogue(source, proofs, parsed,
                                     {canonical(str(s['source_url'])) for s in sales},
-                                    errors, budget_exhausted, coverage, parsed_records)
+                                    errors, budget_exhausted, coverage, parsed_records,
+                                    exclusions=exclusions)
     report = {
         'certificate': certificate,
         'parser_record_ids': {key: sorted(value) for key, value in parsed_records.items()},
