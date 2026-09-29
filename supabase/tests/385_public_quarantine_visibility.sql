@@ -2,17 +2,17 @@ begin;
 
 select plan(14);
 
-select results_eq(
-  $$select ordinal_position::integer, column_name::text, data_type::text
-      from information_schema.columns
-     where table_schema = 'public'
-       and table_name = 'v_auction_sales_app_preview'
-     order by ordinal_position$$,
-  $$values
-      (1::integer, 'id'::text, 'uuid'::text),
-      (2::integer, 'starting_price_eur'::text, 'numeric'::text),
-      (3::integer, 'sale_venue_type'::text, 'text'::text),
-      (4::integer, 'sale_verification_status'::text, 'text'::text)$$,
+select is(
+  (select jsonb_agg(jsonb_build_array(ordinal_position, column_name, data_type) order by ordinal_position)
+     from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'v_auction_sales_app_preview'),
+  jsonb_build_array(
+    jsonb_build_array(1, 'id', 'uuid'),
+    jsonb_build_array(2, 'starting_price_eur', 'numeric'),
+    jsonb_build_array(3, 'sale_venue_type', 'text'),
+    jsonb_build_array(4, 'sale_verification_status', 'text')
+  ),
   'preview keeps its exact four-column contract'
 );
 
