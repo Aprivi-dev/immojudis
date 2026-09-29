@@ -166,12 +166,25 @@ def certify_catalogue(
         # Avoventes exposes amicable sales on the same page. They are an
         # explicit outside-of-scope part of the public proof, so a parser may
         # see them without making the judicial catalogue incomplete.
-        scoped_extracted = extracted - outside
+        partition_exclusions = {
+            url: reason for url, reason in effective_exclusions.items()
+            if url in urls or url in outside or url in extracted
+        }
+        scoped_extracted = extracted - outside - set(partition_exclusions)
         discovered.update(scoped_extracted)
         required = urls or scoped_extracted
-        omitted = sorted(urls - scoped_extracted)
+        # An explicit, source-scoped exclusion is a handled public URL even
+        # when the parser did not emit a row for it.  This matters for archive
+        # cards whose URL is visible to the independent catalogue proof but
+        # whose markup has no addressable listing identity.
+        omitted = sorted(urls - scoped_extracted - set(partition_exclusions))
         extra = sorted(scoped_extracted - urls) if urls else []
-        expected = next(iter(totals)) - len(outside) if len(totals) == 1 else None
+        excluded_public_count = len(set(partition_exclusions) & urls)
+        expected = (
+            next(iter(totals)) - len(outside) - excluded_public_count
+            if len(totals) == 1
+            else None
+        )
         count_proof = expected is not None and expected == len(scoped_extracted)
         public_records = {r for p in group for r in p.get('public_record_ids', [])}
         extracted_records = (parsed_records or {}).get(partition, set())
@@ -179,7 +192,13 @@ def certify_catalogue(
         if source == 'licitor':
             count_proof = bool(expected is not None and expected == source_rows
                                and public_records == extracted_records)
-        page_proof = bool(lasts and len(lasts) == 1 and not missing_pages and urls and urls == scoped_extracted)
+        page_proof = bool(
+            lasts
+            and len(lasts) == 1
+            and not missing_pages
+            and urls
+            and (urls - set(partition_exclusions)) == scoped_extracted
+        )
         reasons = []
         if len(totals) > 1:
             reasons.append('advertised_total_changed_or_ambiguous')
@@ -198,10 +217,6 @@ def certify_catalogue(
         addressable_certified = bool(certified or (reasons == ['public_cards_without_identifiers']
                                                   and unlinked and all(r['sold'] for r in unlinked.values())
                                                   and (count_proof or page_proof)))
-        partition_exclusions = {
-            url: reason for url, reason in effective_exclusions.items()
-            if url in required or url in outside or url in extracted
-        }
         partition_emitted = emitted & (required | outside | extracted)
         partition_unhandled = required - partition_emitted - set(partition_exclusions)
         unhandled_urls.update(partition_unhandled)
@@ -210,7 +225,7 @@ def certify_catalogue(
                            'unlinked_public_cards': list(unlinked.values()),
                            'basis': 'advertised_total' if count_proof else 'advertised_terminal_page_and_all_public_cards' if page_proof else None,
                            'advertised_totals': sorted(totals), 'outside_scope_count': len(outside),
-                           'public_unique_urls': len(urls), 'parsed_unique_urls': len(scoped_extracted),
+                           'public_unique_urls': len(urls), 'parsed_unique_urls': len(extracted - outside),
                            'public_parsed_urls': sorted(extracted),
                            'returned_validated_urls': sorted(partition_emitted),
                            'excluded_urls': [{'url': url, 'reason': partition_exclusions[url]}

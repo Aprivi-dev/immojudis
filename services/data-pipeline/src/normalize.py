@@ -812,6 +812,25 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "contenance",
         )
     ) or _extract_land_surface_from_text(source_text)
+    if _is_coproperty_scoped_land_surface(raw_sale, source_text):
+        # A parcel area attached to a copropriété may be the syndicate's
+        # cadastral land, not the footprint owned with the advertised lot.
+        # Keep it in source_blocks for evidence/claims, but never expose it as
+        # the sale's canonical terrain surface.
+        if land_surface_m2 is not None:
+            source_blocks = raw_sale.setdefault("source_blocks", {})
+            if isinstance(source_blocks, dict):
+                source_key = "surface_parcelle" if re.search(
+                    r"\bsurface\s+parcelle\b", source_text, re.I
+                ) else "surface_terrain"
+                source_blocks.setdefault(source_key, str(land_surface_m2))
+                source_blocks.setdefault("operator_land_surface_scope", "copropriété")
+        raw_sale.pop("land_surface_m2", None)
+        land_surface_m2 = None
+        quality_flags = list(raw_sale.get("quality_flags") or []) if isinstance(raw_sale.get("quality_flags"), list) else []
+        if "parcel_surface_scope_unverified" not in quality_flags:
+            quality_flags.append("parcel_surface_scope_unverified")
+        raw_sale["quality_flags"] = quality_flags
     surface_scope = clean_text(raw_sale.get("surface_scope"))
 
     # A mixed listing can expose one measurement per lot. Keeping the first
@@ -1203,6 +1222,24 @@ def _source_blocks_text(raw_sale: dict[str, object]) -> str | None:
         if not isinstance(value, (dict, list)) and (text := clean_text(value))
     ]
     return "\n".join(values) or None
+
+
+def _is_coproperty_scoped_land_surface(raw_sale: dict[str, object], text: str) -> bool:
+    marker = clean_text(raw_sale.get("operator_land_surface_scope")) or clean_text(
+        _source_block_lookup(raw_sale, "operator_land_surface_scope")
+    )
+    if marker and re.search(r"copropri[ée]t[ée]", marker, re.I):
+        return True
+    normalized = strip_accents(text).lower()
+    if not re.search(r"\bcopropriet[ée]\b", normalized):
+        return False
+    return bool(
+        re.search(
+            r"\bsurface\s+(?:du\s+)?(?:terrain|parcelle)\b|\bparcelle\b.{0,80}\bm(?:2|²)\b",
+            normalized,
+            re.I | re.S,
+        )
+    )
 
 
 def _source_energy_diagnostics(raw_sale: dict[str, object]) -> dict[str, object] | None:

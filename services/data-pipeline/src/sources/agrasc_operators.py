@@ -204,10 +204,25 @@ def parse_agora_operator_detail(html: str, source_url: str) -> dict[str, Any]:
         cadastral_text = field_map.get("références cadastrales", "")
         land_areas = _explicit_square_metres(land_text)
         cadastral_areas = _explicit_square_metres(cadastral_text)
+        coproperty_scoped = _land_surface_is_coproperty_scoped(fields, description)
         # Do not sum parcels or shares. A listed terrain smaller than one of
         # its cadastral areas needs reconciliation, not a confident AI scalar.
         if len(land_areas) == 1 and cadastral_areas and land_areas[0] < max(cadastral_areas):
             detail["operator_land_surface_conflict"] = True
+            detail["source_display_constraints"] = [
+                f"{label} : {value}" for label, value in fields
+                if label.casefold() in {"surface terrain", "surface parcelle", "références cadastrales"}
+            ]
+        elif len(land_areas) == 1 and coproperty_scoped:
+            # A parcel area shown on a copropriété listing can describe the
+            # syndicate's land or a cadastral reference shared by several
+            # lots. Keep the exact source fact for claims/audit, but do not
+            # promote it to the sale's land surface without an ownership
+            # scope that the operator page does not provide.
+            source_key = "surface_parcelle" if land_label == "surface parcelle" else "surface_terrain"
+            detail["operator_land_surface_scope"] = "copropriété"
+            detail["source_blocks"][source_key] = _surface_text(land_areas[0])
+            detail["source_blocks"]["operator_land_surface_scope"] = "copropriété"
             detail["source_display_constraints"] = [
                 f"{label} : {value}" for label, value in fields
                 if label.casefold() in {"surface terrain", "surface parcelle", "références cadastrales"}
@@ -363,6 +378,14 @@ def _operator_surface_value(value: str) -> str | None:
 def _explicit_square_metres(text: str) -> list[float]:
     return [float(re.sub(r"\s", "", value).replace(",", "."))
             for value in re.findall(r"(\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?)\s*m[²2]", text)]
+
+
+def _land_surface_is_coproperty_scoped(fields: list[tuple[str, str]], description: str) -> bool:
+    text = "\n".join([description, *(f"{label} : {value}" for label, value in fields)])
+    normalized = " ".join(text.casefold().split())
+    if not re.search(r"\bcopropri[ée]t[ée]\b", normalized):
+        return False
+    return bool(re.search(r"\b(?:surface\s+(?:du\s+)?(?:terrain|parcelle)|parcelle)\b", normalized))
 
 
 def _surface_text(value: float) -> str:
