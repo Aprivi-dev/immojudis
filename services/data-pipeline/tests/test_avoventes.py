@@ -1,7 +1,37 @@
 from decimal import Decimal
 
+import pytest
+
+from src.catalogue_proof import public_page_proof
 from src.normalize import normalize_sale
-from src.sources.avoventes import parse_avoventes_detail_html, parse_avoventes_html
+from src.sources.avoventes import (
+    compact_avoventes_catalogue_html,
+    parse_avoventes_detail_html,
+    parse_avoventes_html,
+)
+from src.sources.common import MAX_SOURCE_HTML_CHARS, SourceParseLimitExceeded, parse_html
+
+
+def test_large_avoventes_city_filters_do_not_hide_catalogue_cards() -> None:
+    cities = '<option value="1">Ville témoin</option>' * 65_000
+    html = (
+        '<select id="alerte_ville" name="villes[]">' + cities + '</select>'
+        '<select name="villes[]" id="modal_search_ville">' + cities + '</select>'
+        '<article data-link="/enchere/maison-bordeaux-123"><h2>Vente aux enchères Maison</h2>'
+        '<a href="/enchere/maison-bordeaux-123">Voir la vente</a>'
+        '<p>12 rue Test 33000 Bordeaux</p><p>Mise à prix : 120 000 €</p>'
+        '<p>Date de la vente : jeudi 10 janvier 2027 à 09h00</p></article>'
+    )
+    assert len(html) > MAX_SOURCE_HTML_CHARS
+    with pytest.raises(SourceParseLimitExceeded):
+        parse_html(html)
+
+    compacted = compact_avoventes_catalogue_html(html)
+    assert len(compacted) < MAX_SOURCE_HTML_CHARS
+    assert compacted.count('Ville témoin') == 0
+    assert len(parse_avoventes_html(html, fallback_department='33')) == 1
+    proof = public_page_proof('avoventes', compacted, 'https://avoventes.fr/recherche')
+    assert 'https://avoventes.fr/enchere/maison-bordeaux-123' in proof['public_urls']
 
 
 def test_parse_avoventes_html_extracts_public_sale_fields() -> None:

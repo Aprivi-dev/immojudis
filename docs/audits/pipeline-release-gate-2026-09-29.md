@@ -207,12 +207,19 @@ habitable. Ces changements et l'isolation Avoventes ont passé leurs tests
 locaux ciblés. Ils attendent la CI sur le nouveau commit et un cycle de
 collecte représentatif.
 
-La migration `20260929091424_operational_health_manual_jobs.sql`, encore en
-branche, retire du contrôle `cron.stale` les jobs CNB et pré-calcul de
-valorisation, volontairement manuels. Elle laisse le contrôle de l'inbound,
-de la file de valorisation et de la file d'enrichissement en place. Son bloc
-SQL a été exécuté sur une instance PostgreSQL jetable avec la définition
-production ; le rejeu intégral et le test pgTAP attendent la CI du commit.
+La migration `20260929091424_operational_health_manual_jobs.sql` retire du
+contrôle `cron.stale` les jobs CNB et pré-calcul de valorisation,
+volontairement manuels. Elle laisse le contrôle de l'inbound, de la file de
+valorisation et de la file d'enrichissement en place. Son bloc SQL a été
+exécuté sur une instance PostgreSQL jetable avec la définition production,
+puis a passé le rejeu intégral et les tests pgTAP. Le
+[workflow de maintenance](https://github.com/Aprivi-dev/immojudis/actions/runs/36553023142)
+l'a appliquée en production sur le commit `310f8cbe` ; le contrôle de dérive
+du schéma est vert. La base confirme la version et l'absence des deux entrées
+manuelles, tout en conservant celle de l'inbound. L'évaluation programmée de
+10 h 15 UTC a réussi en 3,7 secondes : `cron.stale` ne mentionne plus que
+`information-agent-inbound`. L'alerte d'import est résolue ; restent ouvertes
+les alertes de l'inbound, de la file de valorisation et de l'enrichissement.
 La file de valorisation compte environ 2 881 tâches dues : l'endpoint existant
 traite au plus 100 lignes par appel et 75 par défaut, avec une durée maximale
 de 300 secondes. Une relance en série ne pourra commencer qu'après contrôle
@@ -240,7 +247,27 @@ identifiant. Le second inventaire réel a confirmé le classement dans le
 certificat du collecteur, mais le certificat recalculé par l'audit indépendant
 conservait cette URL comme non traitée. Une correction de l'audit redérive
 cette exclusion depuis les URLs publiques tracées ; son prochain inventaire
-doit confirmer les deux certificats.
+doit confirmer les deux certificats. Le
+[nouvel inventaire](https://github.com/Aprivi-dev/immojudis/actions/runs/36553221574)
+confirme cette fois `unhandled_public_urls=[]` dans les deux certificats et
+l'inventaire des annonces adressables. La découverte AGRASC reste partielle :
+26 cartes anciennes déjà vendues n'exposent aucun identifiant de fiche, et
+les deux certificats conservent donc `public_discovery_certified=false`. Le
+même run certifie la découverte publique Notaires pour 817 URLs validées,
+sans URL non traitée.
+
+L'[inventaire complet des dix sources](https://github.com/Aprivi-dev/immojudis/actions/runs/36553732731)
+certifie l'inventaire adressable de huit sources. Avoventes échoue avant la
+preuve : sa page catalogue contient 5,67 millions de caractères pour un
+plafond de parsing de 4 millions. Une inspection du DOM public montre que
+deux sélecteurs de villes contiennent chacun environ 32 630 options et
+représentent 4,9 millions de caractères ; le reste de la page fait environ
+0,83 million de caractères. Le collecteur et l'audit retirent désormais
+uniquement ces deux contrôles avant le parsing, sans retirer les cartes des
+ventes. Ce correctif a passé 40 tests ciblés mais doit encore être éprouvé
+par un nouvel inventaire réel. Enchères Publiques renvoie HTTP 403 à l'audit
+direct ; un test navigateur en lecture seule est en cours pour qualifier ce
+refus, sans l'assimiler à un inventaire vide.
 
 L'[audit de quatre sources en lecture seule](https://github.com/Aprivi-dev/immojudis/actions/runs/36550193394)
 a réussi. Il a relevé une ancienne URL Cessions État répondant 404, qui reste

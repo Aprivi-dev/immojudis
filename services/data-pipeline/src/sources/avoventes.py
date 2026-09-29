@@ -12,13 +12,40 @@ from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text, extract_department, parse_surface, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, is_allowed_origin_url, parse_html
+from src.sources.common import (
+    PoliteHttpClient,
+    ScrapeResult,
+    SourceParseLimitExceeded,
+    is_allowed_origin_url,
+    parse_html,
+)
 from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://avoventes.fr"
 SEARCH_URL = f"{BASE_URL}/recherche"
 ALLOWED_ORIGINS = (BASE_URL, "https://www.avoventes.fr")
 LOGGER = logging.getLogger(__name__)
+MAX_AVOVENTES_RAW_CATALOGUE_CHARS = 8_000_000
+_CITY_SELECTORS = re.compile(
+    r'<select\b(?=[^>]*\bid\s*=\s*[\'\"](?:alerte_ville|modal_search_ville)[\'\"])[^>]*>.*?</select\s*>',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def compact_avoventes_catalogue_html(html: str) -> str:
+    """Drop two city filters, not listing evidence, before bounded HTML parsing.
+
+    The live page embeds the full 32,000-city list twice. Those two controls
+    account for almost five megabytes while the listing markup is under one
+    megabyte. Keep the raw-response size bounded and leave every other element
+    intact so the inventory proof still checks all public cards.
+    """
+    if len(html) > MAX_AVOVENTES_RAW_CATALOGUE_CHARS:
+        raise SourceParseLimitExceeded(
+            f"Avoventes catalogue has {len(html)} units; raw limit is "
+            f"{MAX_AVOVENTES_RAW_CATALOGUE_CHARS}"
+        )
+    return _CITY_SELECTORS.sub("", html)
 
 
 class AvoventesClient(PoliteHttpClient):
@@ -52,7 +79,7 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
     # départements en local (au lieu de re-télécharger la même page par dépt).
     url = f"{SEARCH_URL}?display=liste&order=asc&sort=date"
     try:
-        html = client.get(url)
+        html = compact_avoventes_catalogue_html(client.get(url))
     except Exception as exc:
         LOGGER.error("Avoventes list fetch failed: %s", exc)
         errors.append(f"list: {exc}")
@@ -115,7 +142,7 @@ def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> Sc
 def parse_avoventes_html(
     html: str, page_url: str = SEARCH_URL, fallback_department: str | None = None
 ) -> list[dict[str, Any]]:
-    soup = parse_html(html, "html.parser")
+    soup = parse_html(compact_avoventes_catalogue_html(html), "html.parser")
     sale_nodes = _find_sale_nodes(soup)
     if not sale_nodes:
         # A catalogue/search page may mention "Mise à prix" in a filter,

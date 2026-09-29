@@ -114,8 +114,12 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
                 entry['sha256'] = hashlib.sha256(response.content).hexdigest()
                 entry['bytes'] = len(response.content)
                 if response.status_code == 200 and not request.url.path.endswith('/robots.txt') and not in_detail:
-                    entry['evidence'] = page_evidence(response.text, str(request.url))
-                    proof = public_page_proof(source, response.text, str(request.url))
+                    evidence_html = response.text
+                    if source == 'avoventes':
+                        evidence_html = module.compact_avoventes_catalogue_html(evidence_html)
+                        entry['evidence_html_chars'] = len(evidence_html)
+                    entry['evidence'] = page_evidence(evidence_html, str(request.url))
+                    proof = public_page_proof(source, evidence_html, str(request.url))
                     entry['catalogue_proof'] = proof
                     proofs.append(proof)
             return response
