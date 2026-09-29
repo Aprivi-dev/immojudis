@@ -17,7 +17,7 @@ select ok(
 
 select is(
   (
-    select column_default
+    select column_default::text
       from information_schema.columns
      where table_schema = 'public'
        and table_name = 'auction_pipeline_control'
