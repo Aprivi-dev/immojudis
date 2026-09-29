@@ -1247,3 +1247,63 @@ sur les fixtures et leur nettoyage, sans changer les deux migrations. Un
 nouveau rejeu complet est requis avant maintenance. Le canari d'enrichissement
 `36628465977` est terminé avec succès ; son bilan des statuts et documents
 reste à examiner.
+
+## Reprise validée, 21 h 45 UTC
+
+La [CI 36634428200](https://github.com/Aprivi-dev/immojudis/actions/runs/36634428200)
+et [CodeQL 36634428352](https://github.com/Aprivi-dev/immojudis/actions/runs/36634428352)
+sont verts sur `f695a739`. Les 198 migrations, 1 449 assertions pgTAP dans
+77 fichiers, quotas concurrents, catalogue HTTP et deux intégrations Supabase
+local passent, ainsi que les suites Python, Web et Playwright.
+La [maintenance 36635178998](https://github.com/Aprivi-dev/immojudis/actions/runs/36635178998)
+a appliqué `2350` et `2355`, puis validé l'absence de dérive. La lecture de
+production compte 3 372 ventes et autant de projections, zéro ligne absente,
+zéro incohérence scalaire et zéro orpheline. RLS est actif ; seul le service
+peut lire la table, sans INSERT/UPDATE/DELETE, et les rôles publics ne la lisent pas.
+
+Le contrôle de santé planifié à 21 h 45 réussit en 1 593 ms. Le premier plan
+borné de fraîcheur après maintenance prend 141,539 ms, avec 3 483 blocs en
+cache et huit lus, sans écriture temporaire. La projection occupe 3,31 Mo,
+contre 310,98 Mo de TOAST dans la table canonique. La projection vient d'être
+remplie : cette mesure n'est pas présentée comme une preuve à froid et des
+ticks ultérieurs restent requis pour conclure à la stabilité.
+
+Le canari `36628465977` termine 41 traitements sur 40 identifiants distincts :
+26 terminés, six échoués, six annulés et deux remis en file. Il consomme
+1 200,1 secondes, dont 568,2 pour les détails et 630,3 pour l'enrichissement ;
+le plus long batch détail dure 161,6 secondes. Son estimation initiale de
+3 869 enrichissements et 2 597 détails choisit l'alternance 1/1. Aucun
+Retry-After ou bail expiré n'est observé. Ces traitements ne constituent pas
+un débit de réussites. Le checkpoint cloud de Noisy contient 332/416 pages ;
+le résultat local antérieur 412/416 ne lui est pas attribué. Ris-Orangis reste
+incomplet ; Uckange n'a pas été réclamé dans ce run.
+
+Le [second canari 36634662182](https://github.com/Aprivi-dev/immojudis/actions/runs/36634662182)
+attend le worker automatique sur l'ancien `main`. Pour éviter que ce worker
+au plafond de 300 pages épuise la dernière tentative de Noisy, une maintenance
+CAS reporte ce seul job `queued`, sans bail et avec trois essais, de
+21 h 40 min 54,17234 s à 22 h 30 UTC. Le nouveau worker démarre à
+21 h 50 min 59 s ; le CAS suivant restaure l'échéance originale, avec les
+trois essais conservés. Noisy prend ensuite son quatrième essai sous le
+nouveau plafond. Uckange est admissible, sans bail ni ancienne révision, mais
+le tri donne d'abord la priorité aux ventes dans les sept prochains jours :
+son échéance du 29 octobre le place derrière 442 candidats.
+
+La comparaison diagnostique de 34 valeurs énergie par la fonction SQL exacte
+retourne 52 lignes : 18 valeurs canoniques manquantes produisent aussi une
+seconde ligne de conflit, car deux branches `RETURN NEXT` omettent `RETURN`.
+Ces 18 lignes supplémentaires ne sont pas des contradictions de données.
+La migration `20260929235900` ajoute les deux sorties manquantes strictement
+à l'intérieur des branches, sans changer l'identité ni les droits de la
+fonction. Le test `405` ajoute 20 assertions : cardinalité des champs absents,
+occupation inconnue et contrôles positifs match/conflit/valeur invalide.
+La relecture indépendante est validée ; le rejeu CI et l'application restent
+requis avant tout import IA. Les clés, domaines et webhook Resend sont présents et vérifiés ;
+la route cron inbound n'est pas encore disponible dans l'app publique.
+Le secret de signature du portail est absent et n'a aucun fallback ; sa
+configuration reste nécessaire avant publication de ce parcours. Le ref du
+worker automatique est encore `main` par défaut. Un routage vers un tag du
+worker validé exige le redéploiement du code applicatif actuellement en ligne ;
+la nouvelle application conserve ses gates de publication.
+Aucun import IA, déploiement applicatif final ou envoi à un interlocuteur
+n'a eu lieu.
