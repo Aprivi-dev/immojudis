@@ -653,3 +653,46 @@ aucun contournement du défi Cloudflare n'est engagé. L'adaptateur sous licence
 devra conserver l'URL publique canonique comme identité de chaque bien,
 refuser les instantanés incomplets et éviter toute nouvelle requête HTML de
 détail lorsque le flux porte déjà les faits complets.
+
+Le commit `0058f765` a ensuite obtenu une CI et CodeQL intégralement verts.
+Après vérification qu'aucun run automatique n'était actif, la migration IA
+`20260929103000` a été appliquée en production par le
+[workflow de maintenance](https://github.com/Aprivi-dev/immojudis/actions/runs/36584497748)
+à 14 h 41 UTC ; les étapes de migration, de configuration du contrôle de santé
+et de dérive distante ont toutes réussi. Les deux tables IA sont encore vides,
+la lecture anonyme et authentifiée y est interdite, et le contrôle de sécurité
+Supabase n'a ajouté que deux avis informatifs attendus sur leurs politiques RLS
+fermées. Aucun lot de revue IA n'a été importé. L'import v4 attend toujours le
+déploiement des gardes applicatives publiques du même changement.
+
+Le code de chargement différé des filtres et statistiques de la recherche est
+sur `b993dd10`, puis le dialogue temporaire accessible sur `8a90c5dc`. Les
+deux commits ont obtenu une CI complète et CodeQL verts ; le dernier inclut
+également le parcours Playwright. La taille initiale de la route des ventes
+respecte le budget contrôlé par la CI. Le run de drainage du 29 septembre à
+14 h 16 UTC a traité 48 jobs mais a été déclaré en échec parce qu'un PDF Vench
+a épuisé sa quatrième tentative. Les 40 jobs terminés restent acquis, six jobs
+ont échoué et les documents incomplets restent traçables dans la file. Le stock
+à 14 h 49 était encore de 6 110 jobs dus, dont 3 032 âgés de plus de 48 h.
+La fenêtre de drainage a expiré à 14 h 59 UTC sans prolongation. Le correctif
+de statut du runner et une optimisation du claim SQL sont en préparation ;
+leurs nouveaux commits et contrôles devront être consignés ici avant release.
+
+Le correctif du runner `42e2a9b5` conserve un job épuisé en échec terminal,
+mais classe le run `partial_success` si le processus s'est terminé normalement
+et a réellement achevé au moins un autre job. Les codes non nuls et les
+timeouts du processus restent des échecs. Les compteurs et identifiants
+protégés des jobs épuisés sont conservés sans erreur brute ni URL de document.
+La migration `79519cb0` calcule une fois par vente la date de conservation lors
+du nettoyage préalable au claim, sans changer l'éligibilité ni les tentatives.
+Une mesure de plan en lecture seule sur la production passe de 7,78 à 1,12 s
+au premier passage et de 1,90 à 1,03 s à chaud. Les tests locaux ciblés Python
+et le contrôle des versions de migration sont verts ; le rejeu complet et
+pgTAP restent à confirmer par la CI du commit final avant toute application de
+la migration SQL en production.
+
+Une nouvelle inspection des 27 cas sans capture a confirmé qu'aucun ne dispose
+d'un fichier source ni de deux relectures IA. L'export v4 reste inchangé ;
+zéro champ a été inféré pour ces cas. L'évaluation privée est conservée dans
+`/private/tmp/immojudis-ai-review-noncaptured-assessment-20260929.json`,
+SHA-256 `dab79f2362b18b644e379caf087963dae969ef6bd10bd7d418c10a17c4ee8020`.
