@@ -71,8 +71,10 @@ sans dégrader la fraîcheur des sources. La seule baisse du stock ne suffit pas
 les tâches de plus de 48 heures doivent être résorbées ou explicitement
 quarantainées avec un motif exploitable. Les échecs Vench, PDF et relais
 doivent être absents ou également quarantainés dans les nouveaux runs. Les
-21 champs non résolus par la revue IA et les 11 citations non vérifiées ne
-peuvent pas alimenter une valeur présentée comme confirmée.
+champs `unresolved` ou `unverified` de la revue IA ne peuvent pas
+alimenter une valeur présentée comme confirmée. L'export v4 courant en compte
+respectivement 128 et 23 ; les nombres antérieurs de 21 et 11 décrivent un
+état provisoire de l'audit.
 
 ## Maintenance interne autorisée et exécutée
 
@@ -572,6 +574,11 @@ L'export privé recalculé le 29 septembre est
 `/private/tmp/immojudis-ai-review-export-20260929-consensus-v4.json`, SHA-256
 `624a3d0cf6df621dad154de351659b95522634683f604ed5d535b041040f2d60`.
 Il contient les 100 statuts de cas et 876 lignes de projection en dix lots.
+Parmi les 100 cas, 73 ont une capture et deux passes IA ; les 27 autres sont
+7 échecs de capture, 2 sources inaccessibles et 18 cas non tentés. Les 876
+champs v4 se répartissent en 424 `resolved`, 219 `absent`, 82 `unknown`,
+128 `unresolved` et 23 `unverified`. Seuls les 73 cas capturés peuvent être
+qualifiés de relus par deux IA.
 Une capture étiquetée AGRASC mais servie par l'API Notaires n'a pas de preuve
 d'identité de source suffisante ; ses douze champs sont conservés en
 `unverified`, sans valeur publiable. Les 32 tests locaux de l'importeur et de
@@ -627,3 +634,22 @@ judiciaires continuent leur pagination après une page pleine même si certaines
 ventes de cette page sont quarantainées. Les tests locaux de ces chemins,
 TypeScript et les invariants de sécurité passent ; la CI du commit final reste
 à obtenir.
+
+Le commit `7457deb07174bbc8fc61dbc7873de263d8325e66` a passé le build
+Next, le rejeu des migrations et pgTAP, les tests Python, Playwright et
+CodeQL. La seule vérification rouge est le budget global de JavaScript client :
+4 389 571 octets pour une limite de 4 370 000, soit 19 571 octets de trop.
+La limite reste en place ; une réduction du bundle et une nouvelle CI sur le
+commit corrigé sont nécessaires avant la migration IA. Le run de drainage
+démarré à 13 h 30 UTC était encore actif à 13 h 41, avec 6 113 tâches dues,
+dont 3 066 depuis plus de 48 heures. Cette mesure ne prouve pas encore une
+résorption des tâches âgées.
+
+Le propriétaire produit indique disposer d'une autorisation écrite de
+réutilisation pour Enchères Publiques et d'un accès au flux partenaire. Le
+document, l'URL, le contrat de réponse et les modalités d'authentification
+ne sont pas encore fournis ni vérifiés. Le collecteur HTML demeure suspendu ;
+aucun contournement du défi Cloudflare n'est engagé. L'adaptateur sous licence
+devra conserver l'URL publique canonique comme identité de chaque bien,
+refuser les instantanés incomplets et éviter toute nouvelle requête HTML de
+détail lorsque le flux porte déjà les faits complets.
