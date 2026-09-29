@@ -1234,3 +1234,16 @@ bloquées. Les instantanés et le rapport de comparaison restent privés sous
 `/private/tmp/immojudis-ai-canonical-comparison-20260929-resume.json`.
 Aucun import de revue IA, déploiement applicatif ni nettoyage de branche
 n'a eu lieu à cette étape.
+
+Le premier rejeu du commit `615a1f92`,
+[CI 36632419666](https://github.com/Aprivi-dev/immojudis/actions/runs/36632419666),
+applique les 198 migrations et valide la dérive et les quotas concurrents,
+mais s'arrête dans pgTAP. Le nettoyage des fixtures concurrentes contourne les
+triggers/FK et laisse des contrôles privés orphelins : l'assertion de parité les
+détecte. Le test `403` doit aussi archiver ses ventes dans Outcome Graph avant
+leur suppression normale ; `404` doit cibler le hash de son job explicite pour
+ne pas compter celui créé par le trigger automatique. Les corrections portent
+sur les fixtures et leur nettoyage, sans changer les deux migrations. Un
+nouveau rejeu complet est requis avant maintenance. Le canari d'enrichissement
+`36628465977` est terminé avec succès ; son bilan des statuts et documents
+reste à examiner.

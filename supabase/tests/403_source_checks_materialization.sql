@@ -526,6 +526,11 @@ select throws_ok(
   'source-detail admission fails closed when an active sale has no cache row'
 );
 
+-- Build the durable Outcome Graph bridge before exercising the normal sale
+-- deletion path.  The delete guard must remain enabled while the cache trigger
+-- and foreign-key cascade remove the compact projection rows.
+select * from public.bridge_auction_sales_to_outcome_graph();
+
 delete from public.auction_sales sale
  using pgtap_source_checks_403_context context
  where sale.id in (context.canonical_id, context.invalid_id);
@@ -541,7 +546,7 @@ select is(
      )
   ),
   0::bigint,
-  'deleting sales removes their compact rows through the trigger and FK cascade'
+  'deleting bridged sales removes their compact rows through the trigger and FK cascade'
 );
 
 select * from finish();

@@ -368,6 +368,8 @@ select is(
     select count(*)
       from public.auction_enrichment_jobs
      where source_url = 'https://example.test/pgtap/404/expired-queue'
+       and job_type = 'display_description'
+       and input_hash = 'pgtap-404-expired-queue-v1'
        and status = 'queued'
        and attempt_count < max_attempts
        and next_attempt_at <= statement_timestamp()
