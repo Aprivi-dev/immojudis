@@ -11,16 +11,6 @@ const securityHeaders = buildSecurityHeaders({
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  experimental: {
-    // Radix is imported through namespace entry points in the shared dialog
-    // primitives. Keep only the used modules in the client graph instead of
-    // carrying each package's full export surface into every route chunk.
-    optimizePackageImports: [
-      "@radix-ui/react-alert-dialog",
-      "@radix-ui/react-dialog",
-      "@radix-ui/react-popover",
-    ],
-  },
   images: {
     remotePatterns: listingPhotoRemotePatterns,
     formats: ["image/avif", "image/webp"],
