@@ -3621,6 +3621,7 @@ export type Database = {
           body_text: string;
           case_id: string | null;
           completed_at: string | null;
+          contribution_token_version: number;
           created_at: string;
           failure_reason: string | null;
           followup_count: number;
@@ -3661,6 +3662,7 @@ export type Database = {
           body_text: string;
           case_id?: string | null;
           completed_at?: string | null;
+          contribution_token_version?: number;
           created_at?: string;
           failure_reason?: string | null;
           followup_count?: number;
@@ -3701,6 +3703,7 @@ export type Database = {
           body_text?: string;
           case_id?: string | null;
           completed_at?: string | null;
+          contribution_token_version?: number;
           created_at?: string;
           failure_reason?: string | null;
           followup_count?: number;

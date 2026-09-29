@@ -116,6 +116,15 @@ export class InformationAgentWebhookPayloadTooLargeError extends Error {
   }
 }
 
+class InformationAgentInboundLeaseLostError extends Error {
+  constructor() {
+    super("Lease de traitement entrant perdu ; traitement abandonné.");
+    this.name = "InformationAgentInboundLeaseLostError";
+  }
+}
+
+type InboundJobLeaseGuard = () => Promise<boolean>;
+
 export async function processInformationAgentInboundWebhook({
   request,
   env = process.env,
@@ -158,7 +167,6 @@ export async function processInformationAgentInboundWebhook({
     resend,
     inboundDomain,
     fetchImpl,
-    requireEmailAuthentication: env.INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION === "true",
     deferProcessing,
   });
 }
@@ -168,14 +176,14 @@ async function ingestReceivedEmail({
   resend,
   inboundDomain,
   fetchImpl,
-  requireEmailAuthentication,
+  assertJobLease,
   deferProcessing = false,
 }: {
   event: EmailReceivedEvent;
   resend: Resend;
   inboundDomain: string;
   fetchImpl: typeof fetch;
-  requireEmailAuthentication: boolean;
+  assertJobLease?: InboundJobLeaseGuard;
   deferProcessing?: boolean;
 }): Promise<InformationAgentInboundResult> {
   const token = findInboundToken([...event.data.to, ...event.data.received_for], inboundDomain);
@@ -215,6 +223,7 @@ async function ingestReceivedEmail({
   const senderAuthentication = normalizeInboundSenderAuthentication(
     (received as unknown as { authentication?: unknown }).authentication,
   );
+  await ensureInboundJobLease(assertJobLease);
   const inboundMessage = await insertOrLoadInboundMessage({
     sharedCase,
     mission,
@@ -257,7 +266,6 @@ async function ingestReceivedEmail({
   const reviewReason = inboundReviewReason({
     senderMatches,
     senderAuthentication,
-    requireEmailAuthentication,
   });
 
   if (deferProcessing) {
@@ -286,6 +294,7 @@ async function ingestReceivedEmail({
     // The case address is a routing key, not proof that the sender or the
     // provider's authentication result is safe for automatic extraction.
     if (reviewReason) {
+      await ensureInboundJobLease(assertJobLease);
       const caseUpdated = await updateOpenInformationAgentCase(sharedCase.id, {
         status: "review",
         replied_at: receivedAt,
@@ -339,6 +348,7 @@ async function ingestReceivedEmail({
     };
   }
 
+  await ensureInboundJobLease(assertJobLease);
   inboundMetadata = await updateInboundProcessingState(messageId, inboundMetadata, {
     status: "processing",
     attempts: (existingProcessing?.attempts ?? 0) + 1,
@@ -349,11 +359,13 @@ async function ingestReceivedEmail({
       Date.parse(receivedAt) + INBOUND_ATTACHMENT_LINK_TTL_MS,
     ).toISOString(),
   });
+  await ensureInboundJobLease(assertJobLease);
   const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId);
   if (initialClosedStatus) {
     inboundMetadata = mergeJsonObject(inboundMetadata, {
       processing_ignored_case_status: initialClosedStatus,
     });
+    await ensureInboundJobLease(assertJobLease);
     await updateInboundProcessingState(messageId, inboundMetadata, {
       status: "ignored",
       attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
@@ -374,6 +386,7 @@ async function ingestReceivedEmail({
   // The case address is a routing key, not proof that the sender or the
   // provider's authentication result is safe for automatic extraction.
   if (reviewReason) {
+    await ensureInboundJobLease(assertJobLease);
     const caseUpdated = await updateOpenInformationAgentCase(sharedCase.id, {
       status: "review",
       replied_at: receivedAt,
@@ -418,6 +431,7 @@ async function ingestReceivedEmail({
   }
 
   try {
+    await ensureInboundJobLease(assertJobLease);
     const { attachments, truncated } = await fetchInboundAttachments(resend, event.data.email_id);
     const { stored: storedAssets, rejected } = await storeInboundAttachments({
       attachments,
@@ -425,6 +439,7 @@ async function ingestReceivedEmail({
       messageId,
       fetchImpl,
     });
+    await ensureInboundJobLease(assertJobLease);
     if (truncated)
       rejected.push({
         filename: "Lot de pièces jointes",
@@ -444,11 +459,13 @@ async function ingestReceivedEmail({
         .eq("id", messageId);
       if (error) throw error;
     }
+    await ensureInboundJobLease(assertJobLease);
     const closedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId);
     if (closedStatus) {
       inboundMetadata = mergeJsonObject(inboundMetadata, {
         processing_ignored_case_status: closedStatus,
       });
+      await ensureInboundJobLease(assertJobLease);
       await updateInboundProcessingState(messageId, inboundMetadata, {
         status: "ignored",
         attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
@@ -466,6 +483,7 @@ async function ingestReceivedEmail({
       };
     }
     const extractedFacts = extractInformationAgentFacts(replyTextForExtraction(bodyText));
+    await ensureInboundJobLease(assertJobLease);
     await persistFactCandidates({
       sharedCase,
       messageId,
@@ -477,6 +495,7 @@ async function ingestReceivedEmail({
     const hasReviewableEvidence = Boolean(
       extractedFacts.length || storedAssets.length || rejected.length,
     );
+    await ensureInboundJobLease(assertJobLease);
     const caseUpdated = await updateInboundReplyCase({
       sharedCase,
       hasReviewableEvidence,
@@ -506,6 +525,7 @@ async function ingestReceivedEmail({
       };
     }
 
+    await ensureInboundJobLease(assertJobLease);
     const { error: updateMissionsError } = await supabaseAdmin
       .from("information_agent_missions")
       .update({ status: "replied", replied_at: receivedAt, updated_at: now })
@@ -515,6 +535,7 @@ async function ingestReceivedEmail({
 
     const processingStatus =
       extractedFacts.length || storedAssets.length || rejected.length ? "review" : "completed";
+    await ensureInboundJobLease(assertJobLease);
     await updateInboundProcessingState(messageId, inboundMetadata, {
       status: processingStatus,
       attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
@@ -533,6 +554,7 @@ async function ingestReceivedEmail({
       processingStatus,
     };
   } catch (error) {
+    if (error instanceof InformationAgentInboundLeaseLostError) throw error;
     const currentProcessing = inboundProcessingState(inboundMetadata);
     await updateInboundProcessingState(messageId, inboundMetadata, {
       status: "failed",
@@ -586,6 +608,7 @@ export async function runInformationAgentInboundQueue({
   let ignored = 0;
   let failed = 0;
   let expiredLinkRisk = 0;
+  let staleLease = 0;
   const errors: string[] = [];
 
   for (const job of jobs ?? []) {
@@ -596,6 +619,11 @@ export async function runInformationAgentInboundQueue({
       expiredLinkRisk++;
     }
     try {
+      const assertJobLease = () => renewInformationAgentInboundJobLease(job, new Date());
+      if (!(await assertJobLease())) {
+        staleLease++;
+        continue;
+      }
       const { data: sharedCase, error: caseError } = await supabaseAdmin
         .from("information_agent_cases")
         .select("*")
@@ -608,13 +636,20 @@ export async function runInformationAgentInboundQueue({
       // message checkpoint in sync with the durable job before retiring it so
       // the admin view never shows a permanently queued reply.
       if (!["sending", "sent", "replied", "review"].includes(sharedCase.status)) {
+        if (!(await assertJobLease())) {
+          staleLease++;
+          continue;
+        }
         await markInboundMessageIgnored({
           messageId: job.message_id,
           providerEmailId: job.provider_email_id,
           queuedAt: job.created_at,
           caseStatus: sharedCase.status,
         });
-        await settleInformationAgentInboundJob(job, "ignored");
+        if (!(await settleInformationAgentInboundJob(job, "ignored"))) {
+          staleLease++;
+          continue;
+        }
         ignored++;
         continue;
       }
@@ -624,7 +659,7 @@ export async function runInformationAgentInboundQueue({
         resend,
         inboundDomain,
         fetchImpl,
-        requireEmailAuthentication: env.INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION === "true",
+        assertJobLease,
       });
       const status: "completed" | "review" | "ignored" =
         result.processingStatus === "completed" || result.processingStatus === "review"
@@ -632,7 +667,10 @@ export async function runInformationAgentInboundQueue({
           : result.processingStatus === "ignored" || result.ignored
             ? "ignored"
             : "review";
-      await settleInformationAgentInboundJob(job, status);
+      if (!(await settleInformationAgentInboundJob(job, status))) {
+        staleLease++;
+        continue;
+      }
       if (status === "completed") completed++;
       else if (status === "review") reviewed++;
       else if (status === "ignored") ignored++;
@@ -641,12 +679,17 @@ export async function runInformationAgentInboundQueue({
         errors.push(`Message ${job.provider_email_id}: statut inattendu ${status}`);
       }
     } catch (error) {
-      failed++;
       const message = boundedInboundError(error);
       errors.push(`Message ${job.provider_email_id}: ${message}`);
       try {
-        await failInformationAgentInboundJob(job, message, now);
+        if (!(await failInformationAgentInboundJob(job, message, now))) {
+          staleLease++;
+          errors.pop();
+          continue;
+        }
+        failed++;
       } catch (settleError) {
+        failed++;
         errors.push(`File ${job.provider_email_id}: ${boundedInboundError(settleError)}`);
       }
     }
@@ -658,6 +701,7 @@ export async function runInformationAgentInboundQueue({
     reviewed,
     ignored,
     failed,
+    staleLease,
     expiredLinkRisk,
     errors,
   };
@@ -721,12 +765,36 @@ function replayEventForInboundJob(
   };
 }
 
+async function renewInformationAgentInboundJobLease(
+  job: Database["public"]["Tables"]["information_agent_inbound_jobs"]["Row"],
+  now: Date,
+): Promise<boolean> {
+  if (!job.lease_id) return false;
+  const timestamp = now.toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_inbound_jobs")
+    .update({ locked_at: timestamp, updated_at: timestamp })
+    .eq("id", job.id)
+    .eq("lease_id", job.lease_id)
+    .eq("status", "processing")
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.id);
+}
+
+async function ensureInboundJobLease(assertJobLease?: InboundJobLeaseGuard): Promise<void> {
+  if (assertJobLease && !(await assertJobLease())) {
+    throw new InformationAgentInboundLeaseLostError();
+  }
+}
+
 async function settleInformationAgentInboundJob(
   job: Database["public"]["Tables"]["information_agent_inbound_jobs"]["Row"],
   status: "completed" | "review" | "ignored",
-) {
-  if (!job.lease_id) throw new Error("Lease de file entrante manquant.");
-  const { error } = await supabaseAdmin
+): Promise<boolean> {
+  if (!job.lease_id) return false;
+  const { data, error } = await supabaseAdmin
     .from("information_agent_inbound_jobs")
     .update({
       status,
@@ -735,19 +803,23 @@ async function settleInformationAgentInboundJob(
       last_error: null,
     })
     .eq("id", job.id)
-    .eq("lease_id", job.lease_id);
+    .eq("lease_id", job.lease_id)
+    .eq("status", "processing")
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
+  return Boolean(data?.id);
 }
 
 async function failInformationAgentInboundJob(
   job: Database["public"]["Tables"]["information_agent_inbound_jobs"]["Row"],
   errorMessage: string,
   now: Date,
-) {
-  if (!job.lease_id) throw new Error("Lease de file entrante manquant.");
+): Promise<boolean> {
+  if (!job.lease_id) return false;
   const delayMs = Math.min(10 * 60 * 1000, 30 * 1000 * 2 ** Math.max(0, job.attempts - 1));
   const terminalReview = job.attempts >= 10;
-  const { error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("information_agent_inbound_jobs")
     .update({
       // Ten attempts is the retry budget. Keep the message visible for an
@@ -760,8 +832,12 @@ async function failInformationAgentInboundJob(
       last_error: errorMessage,
     })
     .eq("id", job.id)
-    .eq("lease_id", job.lease_id);
+    .eq("lease_id", job.lease_id)
+    .eq("status", "processing")
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
+  return Boolean(data?.id);
 }
 
 async function updateInboundReplyCase({
@@ -1062,15 +1138,13 @@ function isResendAuthenticationResult(value: unknown): value is ResendAuthentica
 function inboundReviewReason({
   senderMatches,
   senderAuthentication,
-  requireEmailAuthentication,
 }: {
   senderMatches: boolean;
   senderAuthentication: InboundSenderAuthentication;
-  requireEmailAuthentication: boolean;
 }): InboundReviewReason | null {
   if (!senderMatches) return "sender_mismatch";
   if (senderAuthentication.status === "fail") return "sender_authentication_failed";
-  if (requireEmailAuthentication && senderAuthentication.status !== "pass") {
+  if (senderAuthentication.status !== "pass") {
     return "sender_authentication_unverified";
   }
   return null;

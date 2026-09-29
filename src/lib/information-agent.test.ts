@@ -134,6 +134,7 @@ describe("supervised information agent", () => {
       case_id: caseId,
       status: "draft",
       created_at: new Date(Date.now() - 60_000).toISOString(),
+      contribution_token_version: 1,
       recipient_email: "cabinet@example.test",
       recipient_name: "Me Dupont",
       reply_to_email: null,

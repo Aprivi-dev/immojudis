@@ -270,7 +270,7 @@ function receivedEmail({
   token = TOKEN_A,
   from = "Contact <contact@example.test>",
   text = "La surface habitable est de 84 m². Il y a 4 pièces.",
-  authentication,
+  authentication = { spf: "pass", dkim: "pass", dmarc: "pass" },
 }: {
   token?: string;
   from?: string;
@@ -290,7 +290,7 @@ function receivedEmail({
       text,
       html: null,
       created_at: "2026-09-23T10:00:00.000Z",
-      ...(authentication === undefined ? {} : { authentication }),
+      authentication,
     },
     error: null,
   });
@@ -881,16 +881,12 @@ describe("information-agent offline inbound scenarios", () => {
     },
   );
 
-  it("reviews a missing or non-pass authentication result in strict mode before extraction", async () => {
+  it("reviews missing authentication by default before extraction", async () => {
     const state = fixture();
     receivedEmail({ authentication: null });
     const fetchImpl = vi.fn();
 
-    expect(
-      await webhook(fetchImpl, "fixture", {}, false, {
-        INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION: "true",
-      }),
-    ).toMatchObject({
+    expect(await webhook(fetchImpl)).toMatchObject({
       caseId: CASE_A,
       factCount: 0,
       attachmentCount: 0,

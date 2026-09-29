@@ -40,15 +40,32 @@ vi.mock("@/lib/information-agent-inbound", async () => {
 const MISSION_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_MISSION_ID = "22222222-2222-4222-8222-222222222222";
 const CASE_ID = "33333333-3333-4333-8333-333333333333";
+const RETRIED_CASE_ID = "77777777-7777-4777-8777-777777777777";
 const USER_ID = "44444444-4444-4444-8444-444444444444";
 const CREATED_AT = new Date(Date.now() - 60_000).toISOString();
 const SECRET = "portal-secret-that-is-at-least-32-characters-long";
+const RECIPIENT_A = "contact@example.test";
+const RECIPIENT_B = "new-contact@example.test";
 const ENV: NodeJS.ProcessEnv = {
   NODE_ENV: "test",
   INFORMATION_AGENT_PORTAL_SECRET: SECRET,
 };
-const TOKEN = createInformationAgentContributionToken(MISSION_ID, CREATED_AT, SECRET);
-const OTHER_TOKEN = createInformationAgentContributionToken(OTHER_MISSION_ID, CREATED_AT, SECRET);
+const TOKEN = createInformationAgentContributionToken(
+  MISSION_ID,
+  CREATED_AT,
+  CASE_ID,
+  RECIPIENT_A,
+  1,
+  SECRET,
+);
+const OTHER_TOKEN = createInformationAgentContributionToken(
+  OTHER_MISSION_ID,
+  CREATED_AT,
+  CASE_ID,
+  RECIPIENT_A,
+  1,
+  SECRET,
+);
 
 type Row = Record<string, unknown>;
 
@@ -147,14 +164,16 @@ function fixture() {
     user_id: USER_ID,
     status: "sent",
     created_at: CREATED_AT,
+    contribution_token_version: 1,
+    recipient_email: RECIPIENT_A,
   };
   const informationCase: Row = {
     id: CASE_ID,
     sale_id: "55555555-5555-4555-8555-555555555555",
     created_by: USER_ID,
     status: "sent",
-    recipient_email: "contact@example.test",
-    normalized_recipient_email: "contact@example.test",
+    recipient_email: RECIPIENT_A,
+    normalized_recipient_email: RECIPIENT_A,
     subject: "Vente à Bordeaux",
     initiator_mission_id: MISSION_ID,
   };
@@ -180,6 +199,7 @@ function fixture() {
     informationCase,
     messages: tables.information_agent_messages,
     assets: tables.information_agent_evidence_assets,
+    cases: tables.information_agent_cases,
     storage,
   };
 }
@@ -246,7 +266,16 @@ describe("information agent contribution integration", () => {
     mocks.resolveSiteOrigin.mockReturnValue("http://immojudis.example");
 
     expect(() =>
-      informationAgentContributionUrl({ id: MISSION_ID, created_at: CREATED_AT }, ENV),
+      informationAgentContributionUrl(
+        {
+          id: MISSION_ID,
+          created_at: CREATED_AT,
+          case_id: CASE_ID,
+          recipient_email: RECIPIENT_A,
+          contribution_token_version: 1,
+        },
+        ENV,
+      ),
     ).toThrow("HTTPS");
   });
 
@@ -312,6 +341,45 @@ describe("information agent contribution integration", () => {
     expect(mocks.from).toHaveBeenCalledTimes(1);
     expect(mocks.from).toHaveBeenCalledWith("information_agent_missions");
     expect(state.informationCase.status).toBe("sent");
+  });
+
+  it("rejects the old link when a failed mission is retried for another recipient and case", async () => {
+    const state = fixture();
+    state.cases.push({
+      ...state.informationCase,
+      id: RETRIED_CASE_ID,
+      recipient_email: RECIPIENT_B,
+      normalized_recipient_email: RECIPIENT_B,
+    });
+    state.mission.case_id = RETRIED_CASE_ID;
+    state.mission.recipient_email = RECIPIENT_B;
+    state.mission.contribution_token_version = 2;
+
+    await expect(loadInformationAgentContribution(MISSION_ID, TOKEN, ENV)).rejects.toMatchObject({
+      status: 404,
+    });
+
+    const retriedToken = createInformationAgentContributionToken(
+      MISSION_ID,
+      CREATED_AT,
+      RETRIED_CASE_ID,
+      RECIPIENT_B,
+      2,
+      SECRET,
+    );
+    await expect(
+      loadInformationAgentContribution(MISSION_ID, retriedToken, ENV),
+    ).resolves.toMatchObject({ informationCase: { id: RETRIED_CASE_ID } });
+  });
+
+  it("rejects a link when the current case recipient no longer matches the mission", async () => {
+    const state = fixture();
+    state.informationCase.recipient_email = RECIPIENT_B;
+    state.informationCase.normalized_recipient_email = RECIPIENT_B;
+
+    await expect(loadInformationAgentContribution(MISSION_ID, TOKEN, ENV)).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   it("rejects a file outside the case portal folder", async () => {
