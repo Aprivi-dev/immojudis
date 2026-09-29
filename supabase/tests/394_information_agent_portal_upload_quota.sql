@@ -1,6 +1,6 @@
 begin;
 
-select plan(20);
+select plan(21);
 
 select has_table(
   'public',
@@ -199,7 +199,13 @@ select
   41943040,
   1000000,
   now() + interval '1 hour'
-from generate_series(5, 12) as numbers(number);
+from generate_series(4, 12) as numbers(number);
+select is(
+  (select count(*) from public.information_agent_portal_upload_reservations
+   where case_id = '39400000-2000-4000-8000-000000000001'),
+  12::bigint,
+  'the test fixture fills all twelve reserved upload slots'
+);
 select throws_ok(
   $$select public.reserve_information_agent_portal_upload(
     '39400000-2000-4000-8000-000000000001',
