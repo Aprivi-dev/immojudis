@@ -893,24 +893,52 @@ def _city_from_title(title: str | None) -> str | None:
 
 
 def _detail_identity_mismatch(source_url: str, detail: dict[str, Any]) -> dict[str, str] | None:
-    """Reject a detail page that clearly belongs to another city.
+    """Reject a detail page that is mismatched or lacks a usable identity.
 
     Petites Affiches has served a different lot for stale legacy URLs. The
-    city slug is the stable identity signal available on the listing URL, so
-    fail closed when it disagrees with the page title/address city.
+    city slug is the stable identity signal available on the listing URL. A
+    page that has facts but no matching city/title/address is also unsafe to
+    merge: it can be a stale redirect or a partially served old listing.
     """
     requested_city = _requested_city_from_url(source_url)
     detail_city = clean_text(detail.get("city"))
-    if not requested_city or not detail_city:
+    if not requested_city:
         return None
-    if _city_key(requested_city) == _city_key(detail_city):
+    if detail_city:
+        if _city_key(requested_city) == _city_key(detail_city):
+            return None
+        return {
+            "kind": "identity_mismatch",
+            "source_url": source_url,
+            "requested_city": requested_city,
+            "detail_city": detail_city,
+        }
+
+    identity_text = " ".join(
+        clean_text(detail.get(field)) or ""
+        for field in ("title", "address", "description")
+    )
+    requested_key = _city_key(requested_city)
+    if requested_key and f" {requested_key} " in f" {_city_key(identity_text)} ":
         return None
-    return {
-        "kind": "identity_mismatch",
-        "source_url": source_url,
-        "requested_city": requested_city,
-        "detail_city": detail_city,
-    }
+    factual_fields = (
+        "title",
+        "address",
+        "description",
+        "starting_price_eur",
+        "sale_date",
+        "property_type",
+        "documents",
+        "raw_text",
+    )
+    if any(detail.get(field) not in (None, "", []) for field in factual_fields):
+        return {
+            "kind": "identity_unverified",
+            "source_url": source_url,
+            "requested_city": requested_city,
+            "detail_city": "",
+        }
+    return None
 
 
 def _requested_city_from_url(source_url: str) -> str | None:

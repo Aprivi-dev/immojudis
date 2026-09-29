@@ -217,6 +217,55 @@ def test_petites_affiches_detail_identity_accepts_slug_without_city_accents() ->
     ) is None
 
 
+def test_petites_affiches_detail_identity_rejects_facts_without_city_anchor() -> None:
+    source_url = (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/"
+        "judiciaire/un-appartement-a-juvisy-sur-orge-58923.html"
+    )
+
+    assert petites_affiches._detail_identity_mismatch(
+        source_url,
+        {
+            "description": "Vente aux enchères d'un lot vendu le 01/01/1970",
+            "starting_price_eur": "290 000",
+        },
+    ) == {
+        "kind": "identity_unverified",
+        "source_url": source_url,
+        "requested_city": "juvisy sur orge",
+        "detail_city": "",
+    }
+
+
+def test_petites_affiches_detail_identity_accepts_city_in_description_without_city_field() -> None:
+    source_url = (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/"
+        "judiciaire/un-appartement-a-juvisy-sur-orge-58923.html"
+    )
+
+    assert petites_affiches._detail_identity_mismatch(
+        source_url,
+        {
+            "description": "Vente aux enchères d'un appartement à Juvisy-sur-Orge",
+            "starting_price_eur": "30 000",
+        },
+    ) is None
+
+
+def test_petites_affiches_detail_identity_requires_whole_city_words() -> None:
+    source_url = (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/"
+        "judiciaire/un-appartement-a-paris-58923.html"
+    )
+
+    mismatch = petites_affiches._detail_identity_mismatch(
+        source_url,
+        {"description": "Vente aux enchères à Parisis", "starting_price_eur": 30000},
+    )
+    assert mismatch is not None
+    assert mismatch["kind"] == "identity_unverified"
+
+
 def test_parse_petites_affiches_detail_ignores_visit_labels_and_visitor_parking() -> None:
     html = """
     <meta name="description" content="Vente aux enchères d'un appartement vendu au tribunal judiciaire le 18/06/2026" />

@@ -129,7 +129,7 @@ def load_settings() -> dict[str, str | float | None]:
         in {"1", "true", "yes", "on"},
         "source_process_isolation_sources": tuple(
             source.strip().lower()
-            for source in os.getenv("SOURCE_PROCESS_ISOLATION_SOURCES", "vench").split(",")
+            for source in os.getenv("SOURCE_PROCESS_ISOLATION_SOURCES", "vench,avoventes").split(",")
             if source.strip()
         ),
         "source_scrape_timeout_seconds": max(

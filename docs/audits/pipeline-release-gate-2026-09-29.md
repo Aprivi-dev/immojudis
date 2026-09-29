@@ -39,21 +39,26 @@ trois secondes, à une seconde d'attente de verrou et à trois secondes
 d'exécution SQL, guide ce ratio ; les claims SQL restent l'autorité et le
 worker revient au cycle historique si la lecture échoue.
 
-Le collecteur Vench est lancé dans un sous-processus terminable avec une
-limite de 30 minutes ; ses lots déjà vérifiés sont transmis au parent pour
-conserver la publication progressive. Les neuf autres sources conservent leur
-chemin d'exécution actuel. Les URL sociales et les médias sont écartés avant
+Les collecteurs Vench et Avoventes sont lancés dans des sous-processus
+terminables avec une limite de 30 minutes ; leurs lots déjà vérifiés sont
+transmis au parent pour conserver la publication progressive. Les huit autres
+sources conservent leur chemin d'exécution actuel. Les URL sociales et les médias sont écartés avant
 la file PDF ; les réponses documentaires 401/403, 404/410 et non exploitables
 sont signalées puis revérifiées après leur fenêtre de cache de 24 heures.
-Le relais ne réécrit vers HTTPS que la redirection canonique Petites Affiches
-observée sur le même hôte et le chemin public exact. Ces correctifs sont dans
-la branche, pas encore déployés ni mesurés en production.
+Le relais ne réécrit vers HTTPS que les redirections canoniques Petites Affiches
+observées sur le même hôte et les chemins publics autorisés. La version 3 de
+`source-fetch-relay` a été déployée séparément le 29 septembre pour un
+contrôle ciblé, détaillé ci-dessous. Comme le worker automatique de `main`
+ne dispose pas encore de la garde d'identité des anciennes fiches, la version
+4 a rétabli le comportement antérieur de la version 2 avant leur traitement
+automatique. Les autres correctifs sont
+dans la branche ou dans les migrations mentionnées ci-dessous.
 
 La migration `20260928230000_optimize_pipeline_health_and_retention.sql`
-réduit le coût du contrôle de fraîcheur. Toutes les nouvelles migrations
-doivent encore passer le rejeu Supabase local, être appliquées en production
-avant le code correspondant et être suivies d'une nouvelle mesure. Aucune de
-ces corrections ne crée à elle seule de capacité CPU, réseau, OCR ou LLM.
+réduit le coût du contrôle de fraîcheur. Le rejeu Supabase local, l'application
+des 12 migrations en production et le contrôle de dérive ont réussi ; il reste
+à mesurer la santé et la fraîcheur après un cycle complet. Aucune de ces
+corrections ne crée à elle seule de capacité CPU, réseau, OCR ou LLM.
 
 ## Critère de publication
 
@@ -69,11 +74,147 @@ doivent être absents ou également quarantainés dans les nouveaux runs. Les
 21 champs non résolus par la revue IA et les 11 citations non vérifiées ne
 peuvent pas alimenter une valeur présentée comme confirmée.
 
-Pour mesurer l'effet réel des correctifs sur cette file, il faudrait d'abord
-appliquer les migrations et le worker en production dans une étape de
-maintenance interne, tout en gardant les nouvelles fonctions publiques et
-les courriels externes désactivés. Cette étape est distincte de la mise en ligne demandée et exige un
-accord explicite compte tenu de la condition posée par l'utilisateur : publier
-seulement une fois tout le travail terminé. Tant que cette étape n'est pas
-autorisée, le critère de santé ne peut pas être considéré comme satisfait par
-une simple simulation locale.
+## Maintenance interne autorisée et exécutée
+
+L'utilisateur a autorisé explicitement cette étape le 29 septembre. Le canari
+Resend a envoyé un seul message à `delivered@resend.dev` (HTTP 200, identifiant
+`01a0ec1c-662f-7570-9da7-1f231e2b3a35`) avec un environnement isolé, sans
+annonce ni contact réel. L'envoi aux interlocuteurs reste désactivé.
+
+Le relevé de production du 29 septembre à 07 h 38–07 h 41 UTC compte 6 126
+tâches non terminales : 3 479 enrichissements et 2 647 détails de source.
+Parmi elles, 6 092 sont dues et 3 134 ont plus de 48 heures. La fraîcheur
+constatée est de 2 355 annonces sur 3 144 (74,9 %). Ces nombres sont le point
+de comparaison de la maintenance et ne valident pas la publication.
+
+Les 12 migrations de la PR 179 ont été appliquées au commit
+`37df1a4c023da3bb9a8f41b021fdab21f1d23a3a` par le
+[workflow de maintenance](https://github.com/Aprivi-dev/immojudis/actions/runs/36538092013).
+L'historique distant contient leurs 12 versions ; le contrôle de dérive du
+schéma a réussi. La nouvelle fonction de fraîcheur répond en lecture seule.
+
+La migration a aussi programmé un appel toutes les deux minutes à
+`/api/cron/information-agent-inbound`, route encore absente du site public
+(HTTP 404 sur `immojudis-dezt.vercel.app`, HTTP 401 sur la prévisualisation de
+la PR). Le cron `immojudis-information-agent-inbound` a donc été suspendu en
+production avant tout essai de réception. Il devra être réactivé après la mise
+en ligne de la route, puis sa réponse authentifiée et son suivi de santé
+devront être vérifiés. Le worker d'enrichissement du commit validé a été lancé
+séparément par le
+[run 36538417993](https://github.com/Aprivi-dev/immojudis/actions/runs/36538417993).
+Le run a réussi à 08 h 08 UTC : 32 tâches traitées en 1 424,5 secondes,
+réparties également entre détail de source et enrichissement, avec un plus
+long lot de détail à 163,1 secondes pour deux claims. Il s'est arrêté sur
+son budget de temps, sans expiration de claim observée. Sept tâches PDF
+ont échoué avec `Document extraction incomplete; retry required` ; le
+diagnostic montre un certificat intermédiaire TLS non transmis par Cessions
+État, des pages quasi vides qui font échouer l'OCR chez Info Enchères et des
+pages image seulement ou très longues chez Vench. Les documents incomplets
+restent signalés comme tels ; le correctif TLS ciblé et la politique de
+reprise OCR doivent être vérifiés avant de clore ces incidents. Deux tentatives
+Petites Affiches ont rencontré `301` puis `400` avant le déploiement du relais
+version 2.
+
+L'[audit cloud en lecture seule](https://github.com/Aprivi-dev/immojudis/actions/runs/36541112205)
+effectué après ce déploiement a certifié 245 URL uniques Cessions État et
+632 Petites Affiches sans erreur d'inventaire. Entre 08 h 10 et 08 h 14 UTC,
+les 93 appels au relais version 2 observés dans les journaux Supabase ont tous
+répondu HTTP 200. Un prochain cycle `source_detail` doit encore confirmer
+la correction des redirections de fiches, car les deux échecs du worker ont
+précédé le déploiement du relais.
+
+À 08 h 10 UTC, la file non terminale est passée de 6 126 à 5 991 tâches,
+dont 5 989 dues et 3 093 dues depuis plus de 48 heures. Ce différentiel
+comprend les annulations de tâches supplantées par une révision d'entrée plus
+récente et l'activité du pipeline régulier ; il ne mesure donc pas à lui seul
+le débit net du nouveau worker. Quatre alertes opérationnelles restent
+ouvertes, dont `cron.stale` et `valuation.queue.degraded` critiques. Le run
+planifié sur `main` a démarré après celui de maintenance. Le critère de
+publication reste non satisfait.
+
+Les contrôles `operational-health` de 07 h 45, 08 h 00 et 08 h 15 UTC ont
+réussi en 1,8 à 4,3 secondes après plusieurs délais SQL antérieurs à la
+migration. Ils continuent de signaler quatre alertes : l'appel inbound est
+volontairement suspendu tant que sa route n'est pas publiée ; les autres
+cron obsolètes (`cnb-lawyer-directory` et `precompute-valuations`), la file
+de valorisation et l'échec d'import AGRASC restent à traiter séparément.
+Le [run planifié sur `main`](https://github.com/Aprivi-dev/immojudis/actions/runs/36538496575)
+a échoué sur deux URL publiques AGRASC nouvellement découvertes, une fiche
+opérateur notarial et une page vendeur Agorastore, qui n'ont pas été émises.
+
+Le [contrôle de 10 fiches Petites Affiches avant la version 3](https://github.com/Aprivi-dev/immojudis/actions/runs/36542487879)
+n'avait pu en récupérer que 2. Le [même contrôle après la version 3](https://github.com/Aprivi-dev/immojudis/actions/runs/36543683179)
+en récupère 8 ; les 2 autres ne figurent plus dans l'inventaire courant et
+nécessitent une vérification distincte de leur conservation. Le statut
+`review_required` est appliqué par le programme d'audit à toute fiche
+récupérée : il n'indique pas à lui seul une anomalie. Les comparaisons de
+champs montrent toutefois au moins un écart sur 5 de ces 8 fiches. Quatre
+d'entre elles renvoient une ville différente de celle de l'ancienne URL,
+accompagnée de changements de date et de prix ; ces réponses doivent être
+rejetées pour l'identité d'annonce avant mise à jour. La cinquième, stockée
+comme Juvisy-sur-Orge, ne donne pas de ville exploitable sur la page renvoyée
+et affiche un prix de 290 000 € au lieu de 30 000 € en base ; son identité et
+sa provenance doivent être vérifiées avant
+toute correction du prix. La garde de ville ajoutée au worker protège les
+quatre premiers cas. Une seconde garde rejette le détail Juvisy, qui ne donne
+aucune ancre d'identité exploitable. Ces gardes doivent encore être exercées
+par un run sur le commit corrigé avant de conclure sur les données stockées.
+Le relais de production est revenu en version 4 active, contenant les fichiers
+de la version 2 : les anciennes redirections non vérifiables échouent donc
+à nouveau au lieu de fournir une autre fiche à l'ancien worker. La version
+avec redirections de détail ne doit être redéployée qu'avec le worker doté
+des gardes d'identité.
+
+Le correctif PDF en branche utilise uniquement le certificat intermédiaire
+public vérifié pour le domaine exact Cessions État, et classe comme presque
+vides les pages demeurées sans texte après OCR seulement si leur rendu a moins
+de 0,5 % de pixels sombres. Le PDF original et la preuve d'échec OCR restent
+conservés ; la couverture documentaire est alors partielle. Les pages image
+riches demeurent incomplètes et réessayables. Ces modifications nécessitent
+encore la CI et une mesure de production ciblée.
+
+À 09 h 00 UTC, une autre lecture de la file compte 6 067 tâches non
+terminales, 6 063 dues et 3 122 dues depuis plus de 48 heures. Le flux de
+nouvelles tâches a donc dépassé la baisse observée après le worker de
+maintenance ; la résorption durable reste à démontrer. Les quatre alertes
+opérationnelles précitées sont encore ouvertes.
+
+Le [run Avoventes de `main` à 08 h 45 UTC](https://github.com/Aprivi-dev/immojudis/actions/runs/36544708613)
+a publié progressivement 23 identités puis s'est arrêté avec le code 245.
+Le diagnostic de pile déclenché à 300 secondes montrait BeautifulSoup dans
+un thread lors de la lecture d'une fiche ; il ne démontre pas à lui seul la
+cause exacte de l'arrêt 20 secondes plus tard. Le garde de parsing de dix
+secondes ne s'applique pas aux threads. La branche isole maintenant Avoventes
+dans un processus enfant terminable, comme Vench, pour borner ce parcours ;
+le correctif doit être validé sur un run de source avant publication.
+
+À 09 h 21 UTC, la file compte 6 099 tâches non terminales, dont 6 096 dues
+et 3 124 dues depuis plus de 48 heures. La baisse transitoire du premier
+worker n'a donc pas produit de résorption durable. Le débit du canari
+(`32` tâches en `1 424,5` secondes) équivaut à environ 81 tâches par heure
+de calcul actif ; ce n'est pas une capacité garantie face aux nouveaux lots,
+aux échecs de fournisseurs et à la sérialisation des workflows. Aucune hausse
+de concurrence n'est engagée sans mesure des claims et des limites fournisseurs.
+
+La branche ajoute une classification stricte des URL d'opérateurs AGRASC.
+La page vendeur Agorastore, qui n'identifie aucun bien, reste dans la preuve
+d'inventaire avec un motif d'exclusion explicite. Une fiche produit
+Agorastore accepte seulement la redirection canonique vers l'origine connue,
+avec vérification de l'identifiant produit et du `robots.txt` de l'origine
+finale. La page Trocadéro fournit ses faits français, contacts et documents
+PDF de même origine ; une surface Carrez reste distincte d'une surface
+habitable. Ces changements et l'isolation Avoventes ont passé leurs tests
+locaux ciblés. Ils attendent la CI sur le nouveau commit et un cycle de
+collecte représentatif.
+
+La migration `20260929091424_operational_health_manual_jobs.sql`, encore en
+branche, retire du contrôle `cron.stale` les jobs CNB et pré-calcul de
+valorisation, volontairement manuels. Elle laisse le contrôle de l'inbound,
+de la file de valorisation et de la file d'enrichissement en place. Son bloc
+SQL a été exécuté sur une instance PostgreSQL jetable avec la définition
+production ; le rejeu intégral et le test pgTAP attendent la CI du commit.
+La file de valorisation compte environ 2 881 tâches dues : l'endpoint existant
+traite au plus 100 lignes par appel et 75 par défaut, avec une durée maximale
+de 300 secondes. Une relance en série ne pourra commencer qu'après contrôle
+de sa configuration de production, de l'absence de job concurrent et de la
+première réponse canari ; aucun vidage automatique de cette file n'est lancé.

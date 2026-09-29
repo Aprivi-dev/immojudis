@@ -44,6 +44,14 @@ PDF_TEXT_CACHE_VERSION = "pdf_text_v3_surface_calibration"
 
 DOCUMENT_FACTS_VERSION = "document_facts_v2_surface_reasoning"
 
+# A failed OCR pass on a page containing only a tiny stamp, border fragment,
+# or other rendering residue should not keep the whole PDF retryable. The
+# threshold is deliberately low: pages with a map, photograph, or normal
+# scanned text block remain incomplete and retain their retry evidence.
+VISUAL_BLANK_INK_THRESHOLD = 240
+VISUAL_BLANK_INK_RATIO_MAX = 0.005
+VISUAL_BLANK_RENDER_MAX_DIMENSION = 800
+
 DOCUMENT_TYPE_ALIASES = {
     "pv_descriptif": "pv_huissier",
     "proces_verbal_descriptif": "pv_huissier",
@@ -165,7 +173,7 @@ class _PinnedHTTPTransport(httpx.HTTPTransport):
         super().__init__(verify=True, trust_env=False, retries=0)
         self._pool.close()
         self._pool = httpcore.ConnectionPool(
-            ssl_context=ssl.create_default_context(),
+            ssl_context=_document_ssl_context(target),
             max_connections=1,
             max_keepalive_connections=0,
             http1=True,
@@ -173,6 +181,22 @@ class _PinnedHTTPTransport(httpx.HTTPTransport):
             retries=0,
             network_backend=_PinnedNetworkBackend(target),
         )
+
+
+def _document_ssl_context(target: PublicDocumentTarget) -> ssl.SSLContext:
+    """Build a verified TLS context for one pinned document origin.
+
+    The Cessions État origin omits its public Sectigo intermediate from the
+    server chain.  Its source collector already carries the reviewed
+    intermediate workaround, so reuse that context only for this exact host.
+    Other document origins retain Python's normal trust store.
+    """
+
+    if target.hostname == "cessions.immobilier-etat.gouv.fr":
+        from src.sources.cessions_etat import cessions_tls_context
+
+        return cessions_tls_context()
+    return ssl.create_default_context()
 
 
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
@@ -773,7 +797,12 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
         int(page["page"])
         for page in pages
         if str(page.get("status") or page.get("extraction_status") or "")
-        in {"blank_excluded", "blank_page_excluded"}
+        in {"blank_excluded", "blank_page_excluded", "visual_blank_excluded"}
+    ]
+    visual_blank_pages = [
+        int(page["page"])
+        for page in pages
+        if str(page.get("status") or page.get("extraction_status") or "") == "visual_blank_excluded"
     ]
     page_confidences = [
         float(page.get("confidence") or 0)
@@ -793,6 +822,7 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
         "ocr_pages": sum(1 for page in pages if str(page.get("method") or "").startswith("ocr_")),
         "empty_pages": sum(1 for page in pages if not clean_text(page.get("text"))),
         "blank_pages": blank_pages,
+        "visual_blank_pages": visual_blank_pages,
         "failed_pages": failed_pages,
         "complete": not failed_pages,
         "extraction_status": "extracted" if not failed_pages else "incomplete",
@@ -1000,6 +1030,9 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 method = str(result["method"])
                 confidence = float(result["confidence"])
             cleaned = clean_text(text) or ""
+            visual_profile: dict[str, object] = {}
+            original_status: str | None = None
+            original_failure_reason: str | None = None
             if method == "fallback_text":
                 status = "failed"
                 failure_reason = "ocr_failed"
@@ -1009,24 +1042,45 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
             else:
                 status = "failed"
                 failure_reason = failure_reason or "empty_page_not_proven_blank"
-            pages.append(
-                {
-                    "page": index,
-                    "text": cleaned,
-                    "chars": len(cleaned),
-                    "raw_text_chars": len(clean_text(raw_text) or ""),
-                    "method": method,
-                    "confidence": confidence,
-                    "status": status,
-                    "retryable": status == "failed",
-                    **({"failure_reason": failure_reason} if failure_reason else {}),
-                }
-            )
+            if status == "failed" and not cleaned and method == "fallback_text":
+                visual_profile = _visual_page_profile(page)
+                if visual_profile.get("quasi_empty") is True:
+                    original_status = status
+                    original_failure_reason = failure_reason
+                    status = "visual_blank_excluded"
+                    failure_reason = "visual_blank_after_ocr"
+            page_record: dict[str, object] = {
+                "page": index,
+                "text": cleaned,
+                "chars": len(cleaned),
+                "raw_text_chars": len(clean_text(raw_text) or ""),
+                "method": method,
+                "confidence": confidence,
+                "status": status,
+                "retryable": status == "failed",
+                **({"failure_reason": failure_reason} if failure_reason else {}),
+            }
+            if visual_profile:
+                page_record["visual_analysis"] = visual_profile
+            if status == "visual_blank_excluded":
+                # Keep the original failed OCR outcome alongside the explicit
+                # exclusion. The PDF and its page number/hash remain the
+                # source evidence; no rendered image replaces the original.
+                page_record.update(
+                    {
+                        "visual_blank": True,
+                        "source_page_preserved": True,
+                        "original_status": original_status,
+                        "original_failure_reason": original_failure_reason,
+                        "original_method": method,
+                    }
+                )
+            pages.append(page_record)
             cache_dir.mkdir(parents=True, exist_ok=True)
             temporary = cache_path.with_suffix(".tmp")
             temporary.write_text(json.dumps(pages[-1], ensure_ascii=False), encoding="utf-8")
             temporary.replace(cache_path)
-            if status == "extracted":
+            if status in {"extracted", "visual_blank_excluded"}:
                 new_progress_pages += 1
     return pages
 
@@ -1047,13 +1101,63 @@ def _is_objectively_blank_page(page: fitz.Page, raw_text: str) -> bool:
     return True
 
 
+def _visual_page_profile(page: fitz.Page) -> dict[str, object]:
+    """Measure page ink without retaining a derived image.
+
+    The source PDF remains the evidence of record. This low-resolution
+    grayscale pass only distinguishes an OCR-empty near-blank page from an
+    image-rich page that may contain information.
+    """
+
+    try:
+        rect = page.rect
+        largest_dimension = max(float(rect.width), float(rect.height), 1.0)
+        scale = min(1.0, VISUAL_BLANK_RENDER_MAX_DIMENSION / largest_dimension)
+        pixmap = page.get_pixmap(
+            matrix=fitz.Matrix(scale, scale),
+            colorspace=fitz.csGRAY,
+            alpha=False,
+        )
+        channel_count = max(int(pixmap.n), 1)
+        samples = pixmap.samples
+        pixel_count = int(pixmap.width) * int(pixmap.height)
+        if not samples or pixel_count <= 0:
+            return {
+                "analysis_status": "unavailable",
+                "quasi_empty": False,
+                "reason": "empty_render",
+            }
+        ink_pixels = sum(
+            1
+            for offset in range(0, min(len(samples), pixel_count * channel_count), channel_count)
+            if samples[offset] < VISUAL_BLANK_INK_THRESHOLD
+        )
+        ink_ratio = ink_pixels / pixel_count
+        return {
+            "analysis_status": "measured",
+            "quasi_empty": ink_ratio <= VISUAL_BLANK_INK_RATIO_MAX,
+            "ink_ratio": round(ink_ratio, 6),
+            "ink_threshold": VISUAL_BLANK_INK_THRESHOLD,
+            "ink_ratio_max": VISUAL_BLANK_INK_RATIO_MAX,
+            "pixel_count": pixel_count,
+            "render_scale": round(scale, 4),
+        }
+    except Exception as exc:
+        LOGGER.debug("Visual blank-page analysis failed: %s", exc)
+        return {
+            "analysis_status": "unavailable",
+            "quasi_empty": False,
+            "reason": "render_failed",
+        }
+
+
 def _page_requires_retry(page: object, *, ocr_enabled: bool) -> bool:
     if not isinstance(page, dict):
         return True
     status = str(page.get("status") or page.get("extraction_status") or "").strip().lower()
     if status in {"failed", "incomplete", "ocr_failed", "empty"} or page.get("retryable") is True:
         return True
-    if status in {"blank_excluded", "blank_page_excluded"}:
+    if status in {"blank_excluded", "blank_page_excluded", "visual_blank_excluded"}:
         return False
     if not clean_text(page.get("text")):
         return True

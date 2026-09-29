@@ -1,6 +1,6 @@
 # Agent d’enrichissement par email — audit de sécurité et protocole de validation
 
-Audit initial du 23 septembre 2026. Mise à jour : 28 septembre 2026. **La PR 176 passe la CI complète ; sa migration est appliquée en production avant le déploiement web/worker. Aucun envoi externe n’est autorisé.**
+Audit initial du 23 septembre 2026. Mise à jour : 29 septembre 2026. **La PR 176 passe la CI complète ; sa migration est appliquée en production avant le déploiement web/worker. Aucun envoi à un interlocuteur réel n’est autorisé.**
 
 ## Comment lire ce document
 
@@ -17,7 +17,7 @@ Le modèle d’email actif en production est la **révision 3** ; la révision 2
 
 ## Périmètre et règle d’exploitation
 
-L’agent est accessible depuis le back-office administrateur. La route destinée aux utilisateurs répond `410`. L’envoi sortant exige explicitement `INFORMATION_AGENT_OUTBOUND_ENABLED=true` ; cette variable reste à `false` pendant toute la validation. Les scénarios utilisent des adresses `example.test`, des messages simulés et des transports HTTP locaux substitués. Aucun test ne doit appeler Resend, Supabase de production ou un contact réel.
+L’agent est accessible depuis le back-office administrateur. La route destinée aux utilisateurs répond `410`. L’envoi sortant exige explicitement `INFORMATION_AGENT_OUTBOUND_ENABLED=true` ; cette variable reste à `false` sur l’application de production pendant toute la validation. Les scénarios locaux utilisent des adresses `example.test`, des messages simulés et des transports HTTP substitués. Le canari fournisseur isolé ci-dessous constitue la seule exception : il a appelé Resend sans passer par l’application ni toucher Supabase ou un contact réel.
 
 Flux audité : approbation admin → email avec adresse de réponse propre au dossier → webhook Resend signé → routage par token → message et pièces en stockage privé → extraction des PDF/images/textes → candidats avec provenance → revue admin → mise à jour de l’annonce ou publication d’une pièce après contrôle des droits.
 
@@ -122,8 +122,19 @@ Resend fournit [l'adresse de test `delivered@resend.dev`](https://resend.com/cha
 pour vérifier la voie d'envoi et [une adresse entrante `@<id>.resend.app`](https://resend.com/features/inbound)
 pour recevoir un message synthétique avec pièce et observer le webhook. Cet essai doit
 rester isolé des vraies annonces et des vrais contacts, et contrôler la configuration
-réelle de l'application. Il n'a pas encore été exécuté ; la simulation locale ne
-démontre pas la livraison ni la réception par Resend.
+réelle de l'application. Le canari d'envoi a été exécuté le 29 septembre avec
+la clé et l'expéditeur vérifié de Vercel, dans un environnement isolé : Resend
+a répondu HTTP 200 et retourné l'identifiant
+`01a0ec1c-662f-7570-9da7-1f231e2b3a35` pour l'unique destinataire
+`delivered@resend.dev`. Cela valide l'acceptation de cet envoi de test par le
+fournisseur ; la réception, le webhook et les pièces jointes réelles restent
+à qualifier.
+Le domaine `reponses.immojudis.com` a été revérifié chez Resend le même jour :
+état `verified`, envoi et réception activés, DKIM, SPF et MX de réception
+vérifiés. La clé de signature du webhook `email.received` existant a été
+transmise directement à la variable sensible `RESEND_WEBHOOK_SECRET` de Vercel
+Production, sans journaliser sa valeur. Elle prendra effet au prochain
+déploiement Production ; aucun message entrant réel n'a encore été traité.
 Pour la voie sortante, `INFORMATION_AGENT_OUTBOUND_CANARY_ONLY` vaut `true` par
 défaut dans le code et dans `.env.example` : même avec
 `INFORMATION_AGENT_OUTBOUND_ENABLED=true`, seul `delivered@resend.dev` est admis.
@@ -132,7 +143,7 @@ avant l'appel fournisseur. Un envoi à un véritable interlocuteur exige donc un
 activation explicite de l'envoi **et** la valeur `false` du mode canari, après
 validation de l'essai fournisseur.
 
-**Décision actuelle : ne pas autoriser l’envoi réel.** La migration et la CI sont validées ; les essais fournisseur et les limites restantes ci-dessus doivent encore être qualifiés avant toute adresse réelle. L’interrupteur d’envoi reste fermé jusqu’à autorisation explicite.
+**Décision actuelle : ne pas autoriser l’envoi à un interlocuteur réel.** Le canari sortant est accepté par Resend ; la réception signée, les pièces jointes et les limites restantes ci-dessus doivent encore être qualifiées avant toute adresse réelle. L’interrupteur d’envoi reste fermé jusqu’à une activation distincte après ces contrôles.
 Le dépôt contient le harnais isolé
 [`scripts/send-information-agent-provider-canary.mjs`](../../scripts/send-information-agent-provider-canary.mjs).
 Il n'importe ni l'application ni Supabase, n'accepte aucun destinataire en
@@ -142,7 +153,7 @@ expéditeur vérifié et la confirmation littérale de l'adresse de test. Il env
 un seul message texte/HTML fixe vers `delivered@resend.dev`, sans annonce, mission
 ni pièce jointe.
 
-La commande à exécuter ultérieurement, depuis la racine du dépôt, est la suivante.
+La commande de référence, depuis la racine du dépôt, est la suivante.
 Charger au préalable `RESEND_API_KEY` dans le shell depuis le coffre de secrets,
 sans coller sa valeur dans la commande ou dans l'historique :
 
@@ -160,5 +171,8 @@ env -i PATH="$PATH" \
 Le résultat attendu est un JSON `{"ok":true,"provider":"resend","recipient":"delivered@resend.dev","messageId":"..."}`.
 En l'absence de clé, d'expéditeur vérifié, d'un des deux indicateurs ou avec une
 variable Supabase présente, la commande doit s'arrêter avant tout appel réseau.
-L'essai n'a pas été exécuté dans cette validation car aucune clé Resend n'est
-disponible dans l'environnement local.
+L'essai a été exécuté sans copier la clé dans le dépôt ni l'afficher dans les
+journaux. Le harnais a activé `INFORMATION_AGENT_OUTBOUND_ENABLED` uniquement
+dans son processus isolé. Cette variable et
+`INFORMATION_AGENT_OUTBOUND_CANARY_ONLY` ne sont pas déclarées sur Vercel
+Production : l'envoi réel reste donc fermé, avec le mode canari par défaut.

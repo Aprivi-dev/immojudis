@@ -8,6 +8,19 @@ import {
 Deno.test("restrict origins and POST forms", () => {
   const cases: [string, string, string, boolean][] = [
     ["https://www.petitesaffiches.fr/encheres-immobilieres/", "GET", "", true],
+    [
+      "https://www.petitesaffiches.fr/vente/immobiliere/judiciaire/une-cave-cannes-166037.html",
+      "GET",
+      "",
+      true,
+    ],
+    ["https://www.petitesaffiches.fr/vente/immobiliere/judiciaire/private", "GET", "", false],
+    [
+      "https://www.petitesaffiches.fr/vente/immobiliere/judiciaire/une-cave-cannes-166037.html?token=secret",
+      "GET",
+      "",
+      false,
+    ],
     ["https://cessions.immobilier-etat.gouv.fr/?page=1", "GET", "", true],
     [
       "https://www.petitesaffiches.fr/encheres-immobilieres/",
@@ -82,6 +95,21 @@ Deno.test("redirect diagnostics keep only status and safe host/path", () => {
   }
   if (JSON.stringify(relative).includes("session")) {
     throw new Error("relative query leaked");
+  }
+
+  const publicDetail = redirectDiagnostic(
+    301,
+    "http://www.petitesaffiches.fr/vente/immobiliere/judiciaire/une-cave-cannes-166037.html?token=secret",
+    "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/judiciaire/une-cave-a-cannes-59033.html",
+  );
+  if (publicDetail.destinationPath !== "/vente/immobiliere/") {
+    throw new Error("canonical detail path was not reduced to its public prefix");
+  }
+  if (
+    JSON.stringify(publicDetail).includes("cannes") ||
+    JSON.stringify(publicDetail).includes("secret")
+  ) {
+    throw new Error("canonical detail identity or query leaked");
   }
 
   const opaquePath = redirectDiagnostic(
@@ -172,6 +200,30 @@ Deno.test("normalizes only the verified Petites Affiches HTTP canonical redirect
   );
   if (queryBearing !== "http://www.petitesaffiches.fr/encheres-immobilieres/?token=secret") {
     throw new Error("query-bearing redirect was rewritten");
+  }
+
+  const detailLocation =
+    "http://www.petitesaffiches.fr/vente/immobiliere/judiciaire/une-cave-cannes-166037.html";
+  const normalizedDetail = normalizeRedirectLocation(
+    301,
+    detailLocation,
+    "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/judiciaire/une-cave-a-cannes-59033.html",
+  );
+  if (
+    normalizedDetail !==
+      "https://www.petitesaffiches.fr/vente/immobiliere/judiciaire/une-cave-cannes-166037.html" ||
+    !allowedTarget(normalizedDetail, "GET", "")
+  ) {
+    throw new Error("verified public detail redirect was not made fetchable");
+  }
+  if (
+    normalizeRedirectLocation(
+      301,
+      `${detailLocation}?token=secret`,
+      "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/judiciaire/une-cave-a-cannes-59033.html",
+    ) !== `${detailLocation}?token=secret`
+  ) {
+    throw new Error("query-bearing detail redirect was rewritten");
   }
 
   for (const [status, location] of [
