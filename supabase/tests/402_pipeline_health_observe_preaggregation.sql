@@ -6,7 +6,7 @@ select ok(
   position('security definer' in lower(pg_get_functiondef(
     'public.observe_autonomous_pipeline(timestamptz)'::regprocedure
   ))) > 0
-  and position('set search_path = ''' in lower(pg_get_functiondef(
+  and position('set search_path to ''' in lower(pg_get_functiondef(
     'public.observe_autonomous_pipeline(timestamptz)'::regprocedure
   ))) > 0,
   'the health observer remains a locked-down SECURITY DEFINER function'
