@@ -1307,3 +1307,91 @@ worker validé exige le redéploiement du code applicatif actuellement en ligne 
 la nouvelle application conserve ses gates de publication.
 Aucun import IA, déploiement applicatif final ou envoi à un interlocuteur
 n'a eu lieu.
+
+## Reprise et routage du worker, 22 h 35 UTC
+
+La [CI 36636802663](https://github.com/Aprivi-dev/immojudis/actions/runs/36636802663)
+et [CodeQL 36636802906](https://github.com/Aprivi-dev/immojudis/actions/runs/36636802906)
+sont verts sur `c19125ae` : 199 migrations, 1 469 assertions pgTAP dans
+78 fichiers, quotas concurrents, catalogue HTTP, deux intégrations Supabase
+local, Python 3.11/3.12, Web et Playwright. La
+[maintenance 36637603863](https://github.com/Aprivi-dev/immojudis/actions/runs/36637603863)
+a appliqué `2359` sur ce commit et validé l'absence de dérive. La comparaison
+énergie exacte donne désormais 34 lignes pour 34 clés : 16 concordances,
+18 champs canoniques absents et zéro conflit. Cette lecture de 22 h 10 UTC
+ne remplace pas le snapshot des autres champs de 20 h 52 UTC et ne mesure
+pas une amélioration de l'exactitude.
+
+Le second canari d'enrichissement `36634662182`, sur `f695a739`, réussit :
+58 traitements sur 55 jobs distincts, dont 36 terminés, un échoué, huit
+annulés et dix remis en file. Le cycle 1/1 consomme 1 201,5 secondes, dont
+194,8 pour 29 détails et 1 005,5 pour 29 enrichissements. Le batch détail
+maximal dure 8,7 secondes ; aucun bail expiré, HTTP 429 ou Retry-After
+n'est observé. Sept reports dus au budget LLM restaurent la tentative ;
+cinq checkpoints de faits et deux prérequis PDF expliquent les reprises.
+Ces compteurs ne sont pas un débit de réussites et ne justifient pas une
+augmentation de la concurrence ou des budgets.
+
+Le quatrième essai de Noisy termine réellement dans ce canari cloud : le
+document canonique conserve le même hash et ses 416 pages, toutes extraites,
+dont 276 par PyMuPDF et 140 par OCR. Il ne reste aucun statut failed,
+retryable ou fallback. Les quatre pages précédemment échouées sont des
+cartes strictement identiques : leurs OCR identiques de 84 caractères,
+confiance 0,56, demeurent pauvres. L'achèvement textuel ne certifie pas
+l'interprétation des cartes ou du zonage. Ris-Orangis reste incomplet sur
+deux documents ; aucune remise à zéro des essais ni complétude fictive.
+Le report temporaire de Noisy est entièrement levé.
+
+Le tag `immojudis-workers-f695a739` pointe exactement sur le worker validé
+`f695a739ab6e60079cf5c95fb432cb7ef6900ba1`. Le ruleset `24214045` interdit
+sa modification et sa suppression, sans bypass. Vercel Production utilise
+ce tag pour `GITHUB_SCROLL_REF` et conserve `main` pour
+`OPERATIONS_ALERT_GITHUB_REF`. Le redéploiement interne
+`dpl_DzzDsTAXi97DoEMCeBSrXfR6fem8` est READY sur le **même code public main**
+`05cff558ada55ef4e0e99ab2e733f3a12adda49e` ; l'origine canonique répond 200.
+Les nouvelles fonctionnalités applicatives de cette PR ne sont pas publiées.
+
+Le run automatique Avoventes accepté à 22 h, encore pending et sans job
+GitHub commencé, a été annulé puis redispatché sur le tag protégé avec le
+même identifiant SQL. Le CAS du nouveau worker est intervenu avant
+l'expiration du bail accepté ; aucun writer actif n'a été interrompu.
+Le [cycle 36637742101](https://github.com/Aprivi-dev/immojudis/actions/runs/36637742101)
+est terminé avec succès : 235 annonces, couverture complète et 136/136
+requêtes réussies, sans PDF ou LLM ciblé. Le
+[canari AGRASC 36638340560](https://github.com/Aprivi-dev/immojudis/actions/runs/36638340560)
+sur ce même tag termine en `partial_success`, donc avec un code retour 1.
+Il émet huit annonces avec 7/7 requêtes réussies, zéro erreur ou refus,
+six opérateurs complets et deux unsupported. L'arrêt
+`published_links_exhausted` ne dispose pas d'une preuve indépendante de
+total d'inventaire ou de page terminale ; la collecte et la publication
+restent partielles et le nettoyage catalogue est désactivé. Une annonce
+est volontairement rejetée pour absence de prix et de surface. Les huit
+PDF sont téléchargés et traités sans erreur ; le document de 96 pages
+d'Uckange est extrait avec hash et 98 453 caractères. La seule cible LLM
+est analysée en 3,94 secondes, JSON valide, sans erreur ou report de budget.
+L'échec ne démontre donc aucune panne PDF/LLM. La recherche d'une preuve
+terminale propre à cette source se poursuit sans assouplir les contrôles.
+
+Les quatre contrôles de santé après `2350` réussissent à 21 h 45, 22 h,
+22 h 15 et 22 h 30, respectivement en 1 594, 2 797, 6 432 et 2 893 ms.
+La variation demeure réelle. Une comparaison SQL dans un même snapshot
+prouve l'équivalence de la baseline historique étroite : 5 115 candidats,
+390 runs et huit agrégats, sans différence intermédiaire ou finale.
+Le plan chaud passe de 45,1 à 32,4 ms et de 938 blocs temporaires écrits
+à zéro ; la largeur passe de 598 à 104 octets. Ce gain ponctuel supprime
+le transport du JSON dans les deux tris, sans prouver le coût à froid.
+La migration `20260930002000` conserve les 28 runs distincts, le dernier
+snapshot, l'exclusion du run courant et le cast numérique après filtrage.
+Le test `406` prépare 12 assertions. La relecture indépendante a reconstruit
+le patch et confirme les mêmes invariants, seuils, alertes, queue et ACL ;
+le rejeu CI reste requis avant application. La preuve de comparaison reste
+privée dans `/private/tmp/immojudis-baseline-2340-narrow-proof.json`.
+
+Le contrôle automatique d'autorisation a refusé l'ajout de
+`INFORMATION_AGENT_PORTAL_SECRET` à Vercel Production, en demandant une
+autorisation explicite pour ce secret et cette destination. La question
+précise est posée à l'utilisateur ; aucune autre méthode de transfert n'est
+tentée. Le secret reste uniquement dans un fichier privé local et sa valeur
+n'est pas affichée. Le flux autorisé Enchères Publiques et son accord écrit
+restent à recevoir. Aucun import IA, publication applicative finale,
+envoi à un interlocuteur ou nettoyage de branche n'a eu lieu.
