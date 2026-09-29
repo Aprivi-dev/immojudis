@@ -7,8 +7,10 @@ from pathlib import Path
 import pytest
 
 from src.ai_review_import import (
+    APPROVED_MANIFEST_SHA256S,
     EXPECTED_MANIFEST_SHA256,
     EXPECTED_SAMPLE_SHA256,
+    V42_APPROVED_MANIFEST_SHA256,
     AiReviewImportConflict,
     build_ai_review_export_payload,
     build_ai_review_import_plan,
@@ -451,6 +453,47 @@ def test_manifest_loader_rejects_an_unapproved_artifact(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="approved frozen artifact"):
         load_manifest_file(path)
+
+
+def test_only_the_two_frozen_manifest_hashes_are_authorized(tmp_path: Path) -> None:
+    captured = _case(tmp_path, "case-allowlist", "https://source.example/allowlist")
+    assert APPROVED_MANIFEST_SHA256S == frozenset(
+        {
+            EXPECTED_MANIFEST_SHA256,
+            V42_APPROVED_MANIFEST_SHA256,
+        }
+    )
+
+    old_plan = build_ai_review_import_plan(
+        _manifest([captured]), [], manifest_sha256=EXPECTED_MANIFEST_SHA256
+    )
+    v42_plan = build_ai_review_import_plan(
+        _manifest([captured]), [], manifest_sha256=V42_APPROVED_MANIFEST_SHA256
+    )
+    assert old_plan.summary["projected_rows"] == len(FIELDS)
+    assert v42_plan.summary["projected_rows"] == len(FIELDS)
+
+    with pytest.raises(ValueError, match="approved frozen artifact"):
+        build_ai_review_import_plan(
+            _manifest([captured]), [], manifest_sha256="f" * 64
+        )
+    with pytest.raises(ValueError, match="approved frozen artifact"):
+        build_ai_review_import_plan(
+            _manifest([captured]), [],
+            manifest_sha256="7b3173e09f3a3989700022cb5bea0a79c2af12e0a75c0ddee8d9f26365b2cbb8",
+        )
+
+
+def test_offline_export_accepts_v42_allowlisted_manifest_hash(tmp_path: Path) -> None:
+    captured = _case(tmp_path, "case-v42-export", "https://source.example/v42-export")
+
+    payload = build_ai_review_export_payload(
+        _manifest([captured]),
+        manifest_sha256=V42_APPROVED_MANIFEST_SHA256,
+    )
+
+    assert payload["summary"]["manifest_sha256"] == V42_APPROVED_MANIFEST_SHA256
+    assert payload["summary"]["projection_rows"] == len(FIELDS)
 
 
 def test_manifest_sample_digest_is_pinned() -> None:

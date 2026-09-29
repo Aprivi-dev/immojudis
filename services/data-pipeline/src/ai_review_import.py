@@ -79,6 +79,10 @@ CASE_STATUS_COLUMNS = (
 )
 CASE_STATUS_KEY_COLUMNS = ("sample_sha256", "case_id")
 EXPECTED_MANIFEST_SHA256 = "c2a8d1d245e738efc7549be148a59716aa32a4958aed4db996ea860a0427f6f1"
+V42_APPROVED_MANIFEST_SHA256 = "1fc0cab8cb191476d073f384ce52e14a05a1ce953bed4f75521d0eecc12e95ae"
+APPROVED_MANIFEST_SHA256S = frozenset(
+    {EXPECTED_MANIFEST_SHA256, V42_APPROVED_MANIFEST_SHA256}
+)
 EXPECTED_SAMPLE_SHA256 = "19e9756c127e1246353ef879aae92c83a254da8c95acb4bad9afb2479bfce424"
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 MAX_REDIRECT_HOPS = 8
@@ -116,13 +120,18 @@ class AiReviewImportPlan:
 
 
 def load_manifest_file(
-    path: Path, *, expected_sha256: str = EXPECTED_MANIFEST_SHA256
+    path: Path, *, expected_sha256: str | None = None
 ) -> tuple[dict[str, Any], str]:
     """Load a private manifest and return it with the digest of its bytes."""
 
     payload = path.read_bytes()
     manifest_sha256 = hashlib.sha256(payload).hexdigest()
-    if expected_sha256 and manifest_sha256 != expected_sha256:
+    accepted_hashes = (
+        APPROVED_MANIFEST_SHA256S
+        if expected_sha256 is None
+        else frozenset({expected_sha256})
+    )
+    if accepted_hashes and manifest_sha256 not in accepted_hashes:
         raise ValueError("AI review manifest digest does not match the approved frozen artifact")
     try:
         manifest = json.loads(payload.decode("utf-8"))
@@ -221,7 +230,7 @@ def build_ai_review_import_plan(
 
     if manifest_sha256:
         _required_digest(manifest_sha256, "manifest_sha256")
-        if manifest_sha256 != EXPECTED_MANIFEST_SHA256:
+        if manifest_sha256 not in APPROVED_MANIFEST_SHA256S:
             raise ValueError("AI review manifest digest is not the approved frozen artifact")
     capture_provenance_errors: dict[str, str] = {}
     expected_fields = validate_ai_review_manifest(
@@ -356,7 +365,7 @@ def build_ai_review_export_payload(
 
     if batch_size < 1 or batch_size > 500:
         raise ValueError("export batch_size must be between 1 and 500")
-    if manifest_sha256 != EXPECTED_MANIFEST_SHA256:
+    if manifest_sha256 not in APPROVED_MANIFEST_SHA256S:
         raise ValueError("AI review manifest digest is not the approved frozen artifact")
     capture_provenance_errors: dict[str, str] = {}
     expected_fields = validate_ai_review_manifest(

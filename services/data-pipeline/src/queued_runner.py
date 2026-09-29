@@ -5,6 +5,7 @@ import os
 import sys
 import time
 from collections import defaultdict
+from contextvars import ContextVar
 from urllib.parse import urlsplit
 
 from src.admission import is_expired
@@ -70,6 +71,17 @@ GENERAL_BACKLOG_RELIEF_CYCLE = (
     SOURCE_DETAIL_FAMILY,
     ENRICHMENT_FAMILY,
 )
+WORKER_OBSERVED_STATUS_KEYS = (
+    "completed",
+    "failed",
+    "cancelled",
+    "queued",
+    "running",
+)
+_WORKER_CLAIMED_JOB_IDS: ContextVar[set[str] | None] = ContextVar(
+    "worker_claimed_job_ids",
+    default=None,
+)
 
 
 def main() -> int:
@@ -97,13 +109,13 @@ def main() -> int:
         if refresh_request:
             return run_data_refresh_request(refresh_request)
         if settings.get("pipeline_enrichment_queue_enabled"):
-            processed = run_enrichment_queue_batch(
+            handled = run_enrichment_queue_batch(
                 limit=int(settings.get("pipeline_enrichment_queue_batch_size") or 10)
             )
-            if processed:
+            if handled:
                 cleaned = mark_past_sales_in_supabase()
                 print(
-                    f"Processed enrichment queue jobs: {processed}. "
+                    f"Handled enrichment queue jobs: {handled}. "
                     f"Marked past sales: {cleaned}. Marked stale runs failed: {stale_failed}."
                 )
                 return 0
@@ -242,10 +254,24 @@ def _claim_enrichment_queue_jobs(*, limit: int, family: str | None) -> list[dict
     if family is None:
         # Keep the old call shape for manual/legacy callers and for workers
         # deployed before the family RPC migration.
-        return claim_auction_enrichment_jobs_from_supabase(limit=limit)
-    if family not in {SOURCE_DETAIL_FAMILY, ENRICHMENT_FAMILY}:
-        raise ValueError(f"Unknown enrichment queue family: {family!r}")
-    return claim_auction_enrichment_jobs_family_from_supabase(family=family, limit=limit)
+        jobs = claim_auction_enrichment_jobs_from_supabase(limit=limit)
+    else:
+        if family not in {SOURCE_DETAIL_FAMILY, ENRICHMENT_FAMILY}:
+            raise ValueError(f"Unknown enrichment queue family: {family!r}")
+        jobs = claim_auction_enrichment_jobs_family_from_supabase(family=family, limit=limit)
+    _record_worker_claimed_job_ids(jobs)
+    return jobs
+
+
+def _record_worker_claimed_job_ids(jobs: list[dict[str, object]]) -> None:
+    claimed_job_ids = _WORKER_CLAIMED_JOB_IDS.get()
+    if claimed_job_ids is None:
+        return
+    claimed_job_ids.update(
+        str(job.get("id"))
+        for job in jobs
+        if job.get("id") is not None and str(job.get("id")).strip()
+    )
 
 
 def run_enrichment_queue_batch(
@@ -279,13 +305,13 @@ def run_enrichment_queue_batch(
     # Source details are deliberately completed before grouping the remaining
     # enrichment work.  Each regular group fetches its sale again below, so a
     # PDF/LLM job never writes a stale pre-detail catalogue snapshot.
-    processed_detail_jobs = run_source_detail_jobs(
+    handled_detail_jobs = run_source_detail_jobs(
         detail_jobs,
         settings=settings,
         clients=provider_clients,
     )
     if not enrichment_jobs:
-        return processed_detail_jobs
+        return handled_detail_jobs
 
     jobs_by_sale: dict[str, list[dict[str, object]]] = defaultdict(list)
     for job in enrichment_jobs:
@@ -499,8 +525,8 @@ def run_enrichment_queue_batch(
             LOGGER.info("Enrichment deferred without consuming retry attempts: %s", exc)
             # A general-lane budget exhaustion is a handled queue outcome. The
             # bounded lane worker must continue its detail slots, while the
-            # default mixed-batch API keeps its historical completion count.
-            return len(enrichment_jobs) if family == ENRICHMENT_FAMILY else processed_detail_jobs
+            # default mixed-batch API keeps its historical handled-job count.
+            return len(enrichment_jobs) if family == ENRICHMENT_FAMILY else handled_detail_jobs
         except Exception as exc:
             LOGGER.exception("Enrichment queue failed for %s: %s", source_url, exc)
             for job in sale_jobs:
@@ -515,10 +541,38 @@ def run_enrichment_queue_batch(
                 succeeded=True,
             )
         mark_enrichment_jobs_terminal(sale_jobs)
-    return processed_detail_jobs + len(enrichment_jobs)
+    return handled_detail_jobs + len(enrichment_jobs)
 
 
 def run_enrichment_queue_worker(
+    *,
+    max_jobs: int | None = None,
+    budget_seconds: int | None = None,
+) -> int:
+    """Run one worker and emit an optional post-claim status snapshot."""
+    token = _WORKER_CLAIMED_JOB_IDS.set(set())
+    try:
+        return _run_enrichment_queue_worker(
+            max_jobs=max_jobs,
+            budget_seconds=budget_seconds,
+        )
+    finally:
+        try:
+            _log_worker_claim_status_snapshot(_WORKER_CLAIMED_JOB_IDS.get() or set())
+        except Exception as exc:
+            # Status telemetry is best effort. In particular, do not let a
+            # failure in this post-worker read replace a worker exception.
+            LOGGER.warning(
+                "Enrichment worker claim status snapshot failed; "
+                "ignoring telemetry error: %s",
+                exc,
+                exc_info=True,
+            )
+        finally:
+            _WORKER_CLAIMED_JOB_IDS.reset(token)
+
+
+def _run_enrichment_queue_worker(
     *,
     max_jobs: int | None = None,
     budget_seconds: int | None = None,
@@ -558,8 +612,8 @@ def run_enrichment_queue_worker(
 
     started_at = time.monotonic()
     deadline = started_at + budget_seconds
-    processed = 0
-    processed_by_family = {SOURCE_DETAIL_FAMILY: 0, ENRICHMENT_FAMILY: 0}
+    handled = 0
+    handled_by_family = {SOURCE_DETAIL_FAMILY: 0, ENRICHMENT_FAMILY: 0}
     elapsed_by_family = {SOURCE_DETAIL_FAMILY: 0.0, ENRICHMENT_FAMILY: 0.0}
     max_batch_elapsed_by_family = {SOURCE_DETAIL_FAMILY: 0.0, ENRICHMENT_FAMILY: 0.0}
     claim_batches = 0
@@ -574,7 +628,7 @@ def run_enrichment_queue_worker(
         due_counts,
     )
     slot = 0
-    while processed < max_jobs:
+    while handled < max_jobs:
         if time.monotonic() >= deadline:
             stop_reason = "budget"
             break
@@ -583,7 +637,7 @@ def run_enrichment_queue_worker(
         preferred_limit = _enrichment_claim_limit(
             preferred,
             slot=slot,
-            remaining=max_jobs - processed,
+            remaining=max_jobs - handled,
             family_cycle=family_cycle,
         )
         claim_batches += 1
@@ -604,7 +658,7 @@ def run_enrichment_queue_worker(
             alternate_limit = _enrichment_claim_limit(
                 alternate,
                 slot=slot,
-                remaining=max_jobs - processed,
+                remaining=max_jobs - handled,
                 family_cycle=family_cycle,
             )
             claim_batches += 1
@@ -626,39 +680,130 @@ def run_enrichment_queue_worker(
             # paused/empty queues until the next scheduled worker.
             stop_reason = "queues_empty"
             break
-        processed += count
+        handled += count
         if claimed_family is not None:
-            processed_by_family[claimed_family] += count
+            handled_by_family[claimed_family] += count
         # Advance by jobs, rather than by claim calls, so a detail batch of two
         # still consumes exactly two positions in the five-to-one cycle.
         slot += count
     elapsed_seconds = max(time.monotonic() - started_at, 0.0)
-    jobs_per_hour = (processed * 3600 / elapsed_seconds) if elapsed_seconds else 0.0
+    handled_per_hour = (handled * 3600 / elapsed_seconds) if elapsed_seconds else 0.0
+    claimed_job_count = len(_WORKER_CLAIMED_JOB_IDS.get() or ())
     LOGGER.info(
-        "Enrichment worker summary: processed=%s source_detail=%s enrichment=%s "
+        "Enrichment worker summary: github_run_id=%s handled=%s handled_source_detail=%s "
+        "handled_enrichment=%s claimed_jobs=%s "
         "claim_batches=%s elapsed_seconds=%.1f source_detail_seconds=%.1f "
         "source_detail_max_batch_seconds=%.1f source_detail_avg_seconds_per_job=%.1f "
-        "enrichment_seconds=%.1f jobs_per_hour=%.1f stop=%s "
+        "enrichment_seconds=%.1f handled_per_hour=%.1f stop=%s "
         "source_detail_claim_batch_size=%s",
-        processed,
-        processed_by_family[SOURCE_DETAIL_FAMILY],
-        processed_by_family[ENRICHMENT_FAMILY],
+        os.getenv("GITHUB_RUN_ID") or "local",
+        handled,
+        handled_by_family[SOURCE_DETAIL_FAMILY],
+        handled_by_family[ENRICHMENT_FAMILY],
+        claimed_job_count,
         claim_batches,
         elapsed_seconds,
         elapsed_by_family[SOURCE_DETAIL_FAMILY],
         max_batch_elapsed_by_family[SOURCE_DETAIL_FAMILY],
         (
             elapsed_by_family[SOURCE_DETAIL_FAMILY]
-            / processed_by_family[SOURCE_DETAIL_FAMILY]
-            if processed_by_family[SOURCE_DETAIL_FAMILY]
+            / handled_by_family[SOURCE_DETAIL_FAMILY]
+            if handled_by_family[SOURCE_DETAIL_FAMILY]
             else 0.0
         ),
         elapsed_by_family[ENRICHMENT_FAMILY],
-        jobs_per_hour,
+        handled_per_hour,
         stop_reason,
         _enrichment_claim_batch_size(SOURCE_DETAIL_FAMILY),
     )
-    return processed
+    return handled
+
+
+def _read_worker_claim_status_counts(job_ids: set[str]) -> dict[str, int] | None:
+    """Read observed statuses for this worker's unique claimed job IDs.
+
+    This is optional telemetry. It uses a short, read-only connection with no
+    retry path so an unavailable database never extends the worker lease or
+    changes queue behavior.
+    """
+    if not job_ids:
+        return {}
+    try:
+        settings = load_settings()
+        db_url = str(settings.get("supabase_db_url") or "")
+        if not db_url:
+            return None
+        with _postgres_connect(
+            db_url,
+            connect_timeout=3,
+            retry_delays=(),
+        ) as connection:
+            connection.execute("set transaction read only")
+            connection.execute("set local lock_timeout = '1000ms'")
+            connection.execute("set local statement_timeout = '3000ms'")
+            rows = connection.execute(
+                """
+                select status, count(*)
+                  from public.auction_enrichment_jobs
+                 where id = any(%s::uuid[])
+                 group by status
+                """,
+                (sorted(job_ids),),
+            ).fetchall()
+    except Exception as exc:
+        LOGGER.warning(
+            "Could not read enrichment worker claim statuses: %s",
+            exc,
+        )
+        return None
+    return {str(status): int(count or 0) for status, count in rows}
+
+
+def _log_worker_claim_status_snapshot(job_ids: set[str]) -> None:
+    github_run_id = os.getenv("GITHUB_RUN_ID") or "local"
+    if not job_ids:
+        LOGGER.info(
+            "Enrichment worker claim status snapshot: github_run_id=%s "
+            "claimed_jobs=0 snapshot=not_applicable",
+            github_run_id,
+        )
+        return
+    status_counts = _read_worker_claim_status_counts(job_ids)
+    if status_counts is None:
+        LOGGER.info(
+            "Enrichment worker claim status snapshot unavailable: github_run_id=%s "
+            "claimed_jobs=%s",
+            github_run_id,
+            len(job_ids),
+        )
+        return
+    known_counts = {
+        status: status_counts.get(status, 0)
+        for status in WORKER_OBSERVED_STATUS_KEYS
+    }
+    other_count = sum(
+        count
+        for status, count in status_counts.items()
+        if status not in WORKER_OBSERVED_STATUS_KEYS
+    )
+    observed_count = sum(known_counts.values()) + other_count
+    missing_count = max(len(job_ids) - observed_count, 0)
+    LOGGER.info(
+        "Enrichment worker claim status snapshot: github_run_id=%s "
+        "claimed_jobs=%s observed_status_completed=%s observed_status_failed=%s "
+        "observed_status_cancelled=%s observed_status_queued=%s "
+        "observed_status_running=%s observed_status_other=%s "
+        "observed_status_missing=%s",
+        github_run_id,
+        len(job_ids),
+        known_counts["completed"],
+        known_counts["failed"],
+        known_counts["cancelled"],
+        known_counts["queued"],
+        known_counts["running"],
+        other_count,
+        missing_count,
+    )
 
 
 def _read_due_enrichment_family_counts() -> dict[str, int]:
@@ -779,7 +924,7 @@ if __name__ == "__main__":
         # Detail claims are bounded batches, while each job is still processed
         # sequentially so GitHub serializes writers and the queue lease stays
         # visible in the worker summary.
-        processed = run_enrichment_queue_worker()
-        print(f'Enrichment worker completed {processed} jobs within its bounded budget')
+        handled = run_enrichment_queue_worker()
+        print(f'Enrichment worker handled {handled} claimed jobs within its bounded budget')
         sys.exit(0)
     sys.exit(main())

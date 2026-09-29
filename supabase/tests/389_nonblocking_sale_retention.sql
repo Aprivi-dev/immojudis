@@ -24,10 +24,10 @@ select ok(
 
 select ok(
   position(
-    'limit least(p_limit,1)' in
-    lower(pg_catalog.pg_get_functiondef(
+    'limitleast(p_limit,1)' in
+    regexp_replace(lower(pg_catalog.pg_get_functiondef(
       'public.purge_expired_auction_sales(timestamptz,integer)'::regprocedure
-    ))
+    )), '[[:space:]]+', '', 'g')
   ) > 0,
   'each RPC archives at most one sale inside the SQL statement budget'
 );
