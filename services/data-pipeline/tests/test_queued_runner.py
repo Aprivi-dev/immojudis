@@ -804,6 +804,205 @@ def test_enrichment_worker_can_fallback_to_detail_when_relief_general_slot_is_em
     ]
 
 
+def test_worker_stops_general_claims_after_llm_budget_exhaustion_and_keeps_caps(monkeypatch) -> None:
+    calls: list[tuple[int, str]] = []
+    budget_exhausted = False
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {
+            queued_runner.SOURCE_DETAIL_FAMILY: 10,
+            queued_runner.ENRICHMENT_FAMILY: 20,
+        },
+    )
+
+    def fake_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
+        nonlocal budget_exhausted
+        calls.append((limit, family))
+        if family == queued_runner.ENRICHMENT_FAMILY:
+            assert not budget_exhausted
+            budget_exhausted = True
+            # This is the state set by run_enrichment_queue_batch after it
+            # restores the claimed general jobs for a provider budget stop.
+            queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.set(True)
+        return 1
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
+
+    assert (
+        queued_runner.run_enrichment_queue_worker(
+            max_jobs=queued_runner.ENRICHMENT_MAX_JOBS + 10,
+            budget_seconds=queued_runner.ENRICHMENT_BUDGET_SECONDS + 10,
+        )
+        == queued_runner.ENRICHMENT_MAX_JOBS
+    )
+    assert len(calls) == queued_runner.ENRICHMENT_MAX_JOBS
+    assert calls[0][1] == queued_runner.SOURCE_DETAIL_FAMILY
+    assert calls[1][1] == queued_runner.ENRICHMENT_FAMILY
+    assert sum(family == queued_runner.ENRICHMENT_FAMILY for _, family in calls) == 1
+    assert all(family == queued_runner.SOURCE_DETAIL_FAMILY for _, family in calls[2:])
+    assert all(limit == 1 for limit, _ in calls)
+    assert queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.get() is None
+
+
+def test_worker_budget_breaker_uses_real_batch_and_keeps_detail_claims(monkeypatch, caplog) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/worker-budget-breaker",
+            "description": "Maison",
+        }
+    )
+    general_job = {
+        "id": "general-budget-job",
+        "source_url": sale.source_url,
+        "job_type": "display_description",
+        "attempt_count": 2,
+        "locked_at": "2026-09-30T08:00:00+00:00",
+    }
+    claim_calls: list[tuple[str, int]] = []
+    deferred: list[tuple[list[dict[str, object]], BaseException]] = []
+    detail_number = 0
+    general_claims = 0
+
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {
+            queued_runner.SOURCE_DETAIL_FAMILY: 10,
+            queued_runner.ENRICHMENT_FAMILY: 20,
+        },
+    )
+
+    def claim(*, family: str, limit: int) -> list[dict[str, object]]:
+        nonlocal detail_number, general_claims
+        claim_calls.append((family, limit))
+        if family == queued_runner.ENRICHMENT_FAMILY:
+            general_claims += 1
+            if general_claims > 1:
+                raise AssertionError("general lane was claimed after budget exhaustion")
+            return [general_job]
+        detail_number += 1
+        return [
+            {
+                "id": f"detail-{detail_number}",
+                "source_url": f"https://example.test/detail-{detail_number}",
+                "job_type": queued_runner.SOURCE_DETAIL_FAMILY,
+                "attempt_count": 1,
+                "locked_at": "2026-09-30T08:00:00+00:00",
+            }
+        ]
+
+    monkeypatch.setattr(queued_runner, "claim_auction_enrichment_jobs_family_from_supabase", claim)
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "needs_fact_extraction", lambda _: False)
+    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_with_llm",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            queued_runner.LLMRequestBudgetExhausted("Hourly request limit reached")
+        ),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "run_source_detail_jobs",
+        lambda jobs, *, settings, clients: len(jobs),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "defer_budget_jobs",
+        lambda jobs, error: deferred.append((jobs, error)),
+    )
+    # Keep the assertion on actual transitions separate from terminal status:
+    # an unavailable read must not invent completed jobs.
+    monkeypatch.setattr(queued_runner, "_read_worker_claim_status_counts", lambda _: None)
+
+    with caplog.at_level("INFO", logger=queued_runner.LOGGER.name):
+        assert queued_runner.run_enrichment_queue_worker(max_jobs=4, budget_seconds=1200) == 4
+
+    assert [family for family, _ in claim_calls] == [
+        queued_runner.SOURCE_DETAIL_FAMILY,
+        queued_runner.ENRICHMENT_FAMILY,
+        queued_runner.SOURCE_DETAIL_FAMILY,
+        queued_runner.SOURCE_DETAIL_FAMILY,
+    ]
+    assert general_claims == 1
+    assert len(deferred) == 1
+    assert deferred[0][0] == [general_job]
+    assert isinstance(deferred[0][1], queued_runner.LLMRequestBudgetExhausted)
+    assert general_job["attempt_count"] == 2
+    assert general_job["locked_at"] == "2026-09-30T08:00:00+00:00"
+    outcome = next(
+        record.getMessage()
+        for record in caplog.records
+        if "Enrichment worker outcome summary" in record.getMessage()
+    )
+    assert "claimed=4" in outcome
+    assert "deferred_requested=1" in outcome
+    assert "status_snapshot=unavailable" in outcome
+    assert "completed=" not in outcome
+    assert queued_runner._WORKER_CLAIMED_JOB_IDS.get() is None
+    assert queued_runner._WORKER_DEFERRED_JOB_IDS.get() is None
+    assert queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.get() is None
+
+
+def test_worker_does_not_fallback_to_general_after_budget_breaker_when_details_empty(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {
+            queued_runner.SOURCE_DETAIL_FAMILY: 10,
+            queued_runner.ENRICHMENT_FAMILY: 20,
+        },
+    )
+
+    def fake_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
+        calls.append(family)
+        if family == queued_runner.ENRICHMENT_FAMILY:
+            queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.set(True)
+            return 1
+        return 0
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
+
+    assert queued_runner.run_enrichment_queue_worker(max_jobs=2, budget_seconds=1200) == 1
+    assert calls == [
+        queued_runner.SOURCE_DETAIL_FAMILY,
+        queued_runner.ENRICHMENT_FAMILY,
+        queued_runner.SOURCE_DETAIL_FAMILY,
+    ]
+    assert queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.get() is None
+
+
+def test_worker_outcome_summary_separates_statuses_from_deferred_requests(caplog) -> None:
+    deferred_token = queued_runner._WORKER_DEFERRED_JOB_IDS.set({"job-b", "job-d"})
+    try:
+        with caplog.at_level("INFO", logger=queued_runner.LOGGER.name):
+            queued_runner._log_worker_outcome_summary(
+                {"job-a", "job-b", "job-c", "job-d"},
+                {"completed": 1, "failed": 1, "cancelled": 1, "queued": 1},
+            )
+    finally:
+        queued_runner._WORKER_DEFERRED_JOB_IDS.reset(deferred_token)
+
+    summary = next(
+        record.getMessage()
+        for record in caplog.records
+        if "Enrichment worker outcome summary" in record.getMessage()
+    )
+    assert "claimed=4" in summary
+    assert "completed=1" in summary
+    assert "failed=1" in summary
+    assert "cancelled=1" in summary
+    assert "deferred_requested=2" in summary
+    assert "observed_queued=1" in summary
+    assert "missing=0" in summary
+
+
 def test_source_detail_claim_batch_size_is_bounded_and_invalid_values_are_safe(monkeypatch) -> None:
     monkeypatch.setenv("PIPELINE_ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE", "99")
     assert queued_runner._enrichment_claim_batch_size(queued_runner.SOURCE_DETAIL_FAMILY) == 5
@@ -921,10 +1120,92 @@ def test_general_budget_deferral_is_a_handled_lane_outcome(monkeypatch) -> None:
         lambda jobs, error: deferred.append((jobs, error)),
     )
 
-    assert queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY) == 1
+    worker_token = queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.set(False)
+    try:
+        assert queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY) == 1
+        assert queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.get() is True
+    finally:
+        queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.reset(worker_token)
     assert len(deferred) == 1
     assert deferred[0][0] == [job]
     assert isinstance(deferred[0][1], PipelineBudgetExhausted)
+
+
+@pytest.mark.parametrize(
+    "error_factory",
+    [
+        lambda: queued_runner.LLMEnrichmentDeferred("fact checkpoint deferred"),
+        lambda: queued_runner.LLMRequestDeterministicCooldown("deterministic cooldown"),
+    ],
+    ids=["fact_checkpoint", "deterministic_cooldown"],
+)
+def test_non_budget_deferrals_do_not_open_general_breaker(monkeypatch, error_factory) -> None:
+    from src.llm_cache import LLMCacheUnavailable
+
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/non-budget-defer",
+            "description": "Maison",
+        }
+    )
+    job = {
+        "id": "job-non-budget-defer",
+        "source_url": sale.source_url,
+        "job_type": "fact_extraction",
+        "attempt_count": 2,
+        "locked_at": "2026-09-13T08:00:00+00:00",
+    }
+    deferred: list[tuple[list[dict[str, object]], BaseException]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: [job],
+    )
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_with_llm",
+        lambda *args, **kwargs: (_ for _ in ()).throw(error_factory()),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "defer_budget_jobs",
+        lambda jobs, error: deferred.append((jobs, error)),
+    )
+
+    worker_token = queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.set(False)
+    try:
+        assert queued_runner.run_enrichment_queue_batch(
+            limit=1, family=queued_runner.ENRICHMENT_FAMILY
+        ) == 1
+        assert queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.get() is False
+    finally:
+        queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.reset(worker_token)
+    assert deferred and deferred[0][0] == [job]
+
+    # Cache transport failures are also queue deferrals, but must not look like
+    # provider budget exhaustion to the worker breaker.
+    cache_error = LLMCacheUnavailable("LLM durable cache read unavailable")
+    worker_token = queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.set(False)
+    try:
+        monkeypatch.setattr(
+            queued_runner,
+            "enrich_sale_with_llm",
+            lambda *args, **kwargs: (_ for _ in ()).throw(cache_error),
+        )
+        deferred.clear()
+        assert queued_runner.run_enrichment_queue_batch(
+            limit=1, family=queued_runner.ENRICHMENT_FAMILY
+        ) == 1
+        assert queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.get() is False
+    finally:
+        queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.reset(worker_token)
+    assert deferred and deferred[0][0] == [job]
 
 
 def test_fact_job_waits_for_pdf_cache_without_consuming_attempt(monkeypatch) -> None:
