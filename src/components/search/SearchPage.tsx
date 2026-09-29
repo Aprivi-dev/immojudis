@@ -100,7 +100,7 @@ import {
 } from "@/lib/search/search-service";
 import type { MapViewportChange } from "./MapPanel";
 import { SearchPagination } from "./SearchPagination";
-import { Footer, MapPanelSkeleton, MobileMapToggle, MoreFiltersModal } from "./SearchFilters";
+import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
 import {
   ResultsSummary,
   SearchHeader,
@@ -108,7 +108,7 @@ import {
   SaveSearchButton,
   CsvExportButton,
 } from "./SearchHeader";
-import { SearchResultsList, SearchStatisticsPanel } from "./SearchResults";
+import { SearchResultsList } from "./SearchResults";
 import { SaleComparisonBar } from "./SaleComparisonBar";
 import {
   SearchDraft,
@@ -129,6 +129,44 @@ const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPan
   loading: () => <MapPanelSkeleton />,
 });
 
+function FiltersLoadingFallback() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Chargement des filtres avancés"
+      className="fixed inset-0 z-50 bg-[#132238]/55 backdrop-blur-sm"
+    >
+      <div className="absolute inset-y-0 right-0 grid w-full max-w-3xl place-items-center bg-white px-6 shadow-xl">
+        <span className="text-sm font-bold text-[#132238]">Chargement des filtres avancés…</span>
+      </div>
+    </div>
+  );
+}
+
+function SearchStatisticsLoading() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Chargement des repères"
+      className="border-b border-[#132238]/10 bg-white px-4 py-4 text-sm font-semibold text-[#667482] sm:px-5"
+    >
+      Chargement des repères…
+    </div>
+  );
+}
+
+const LazyMoreFiltersModal = dynamic(
+  () => import("./AdvancedFiltersPanel").then((mod) => mod.MoreFiltersModal),
+  { loading: () => <FiltersLoadingFallback /> },
+);
+
+const LazySearchStatisticsPanel = dynamic(
+  () => import("./SearchStatisticsPanel").then((mod) => mod.SearchStatisticsPanel),
+  { loading: () => <SearchStatisticsLoading /> },
+);
+
 export function SearchPage({ search }: { search: SalesSearchParams }) {
   const navigate = useNavigate({ from: "/sales" });
   const currentLocation = useLocation();
@@ -146,6 +184,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const [savingAlert, setSavingAlert] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [dpeExplorerOpen, setDpeExplorerOpen] = useState(false);
+  const [statisticsOpen, setStatisticsOpen] = useState(false);
   const [draft, setDraft] = useState<SearchDraft>(() => searchToDraft(search));
   const latestSearchDraftRef = useRef<SearchDraft>(searchToDraft(search));
   const firstSearchDraftSync = useRef(true);
@@ -670,24 +709,31 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
               />
             </div>
           </div>
-          <details className="mx-4 mb-2 rounded-md border border-[#dce3eb] sm:mx-5">
+          <details
+            className="mx-4 mb-2 rounded-md border border-[#dce3eb] sm:mx-5"
+            onToggle={(event) => setStatisticsOpen(event.currentTarget.open)}
+          >
             <summary className="cursor-pointer px-4 py-2 text-sm font-medium">
               Repères sur cette recherche
             </summary>
-            <SearchStatisticsPanel
-              statistics={searchStatistics}
-              locked={statisticsLocked}
-              dpeLocked={dpeLocked}
-              loading={entitlementsLoading || statisticsLoading}
-              dpeExplorer={dpeExplorerData}
-              dpeExplorerLoading={dpeExplorerLoading}
-              dpeExplorerError={dpeExplorerError instanceof Error ? dpeExplorerError.message : null}
-              dpeExplorerRequested={dpeExplorerOpen}
-              onLoadDpeExplorer={() => {
-                setDpeExplorerOpen(true);
-                if (dpeExplorerOpen) void refetchDpeExplorer();
-              }}
-            />
+            {statisticsOpen ? (
+              <LazySearchStatisticsPanel
+                statistics={searchStatistics}
+                locked={statisticsLocked}
+                dpeLocked={dpeLocked}
+                loading={entitlementsLoading || statisticsLoading}
+                dpeExplorer={dpeExplorerData}
+                dpeExplorerLoading={dpeExplorerLoading}
+                dpeExplorerError={
+                  dpeExplorerError instanceof Error ? dpeExplorerError.message : null
+                }
+                dpeExplorerRequested={dpeExplorerOpen}
+                onLoadDpeExplorer={() => {
+                  setDpeExplorerOpen(true);
+                  if (dpeExplorerOpen) void refetchDpeExplorer();
+                }}
+              />
+            ) : null}
           </details>
           <SaleComparisonBar
             key={comparisonScope ?? "loading"}
@@ -764,16 +810,18 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         ) : null}
       </div>
 
-      <MoreFiltersModal
-        open={filtersOpen}
-        analysisLocked={isPreview || isDiscovery}
-        preview={isPreview}
-        draft={draft}
-        setDraft={setDraft}
-        activeFiltersCount={activeFiltersCount}
-        onClose={() => setFiltersOpen(false)}
-        onReset={resetFilters}
-      />
+      {filtersOpen ? (
+        <LazyMoreFiltersModal
+          open={filtersOpen}
+          analysisLocked={isPreview || isDiscovery}
+          preview={isPreview}
+          draft={draft}
+          setDraft={setDraft}
+          activeFiltersCount={activeFiltersCount}
+          onClose={() => setFiltersOpen(false)}
+          onReset={resetFilters}
+        />
+      ) : null}
 
       <MobileMapToggle
         activeFiltersCount={activeFiltersCount}

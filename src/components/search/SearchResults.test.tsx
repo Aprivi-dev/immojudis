@@ -5,7 +5,8 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
-import { ListingCard, SearchResultsList, SearchStatisticsPanel } from "./SearchResults";
+import { ListingCard, SearchResultsList } from "./SearchResults";
+import { SearchStatisticsPanel } from "./SearchStatisticsPanel";
 import { buildSearchStatistics } from "./search-page-state";
 
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: null, loading: false }) }));
@@ -145,6 +146,25 @@ describe("useful public discovery", () => {
     expect(container.textContent).not.toContain("148 000");
     expect(container.textContent).not.toContain("76/100");
     expect(container.querySelector('[class*="blur-"]')).toBeNull();
+  });
+
+  it("requests the DPE explorer only when the user activates it", () => {
+    const onLoadDpeExplorer = vi.fn();
+    render(
+      <SearchStatisticsPanel
+        statistics={buildSearchStatistics([])}
+        locked={false}
+        dpeLocked={false}
+        loading={false}
+        dpeExplorerLoading={false}
+        dpeExplorerError={null}
+        dpeExplorerRequested={false}
+        onLoadDpeExplorer={onLoadDpeExplorer}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Explorer DPE" }));
+    expect(onLoadDpeExplorer).toHaveBeenCalledOnce();
   });
 
   it("hides a property type explicitly blocked by the AI review projection", () => {
