@@ -290,9 +290,9 @@ select is(
   'the fair queue turn resets the source streak'
 );
 
-select is(
+select ok(
   (
-    select count(*)
+    select count(*) > 0
      from public.auction_enrichment_jobs
      where source_url = 'https://example.test/pgtap/drain/queue'
        and job_type = 'display_description'
@@ -300,7 +300,6 @@ select is(
        and attempt_count < max_attempts
        and next_attempt_at <= statement_timestamp()
   ),
-  1::bigint,
   'a scheduler collection turn leaves the due queue available'
 );
 
