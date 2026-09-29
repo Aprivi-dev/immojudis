@@ -1,3 +1,5 @@
+import json
+
 from src.dedupe import compute_content_hash, dedupe_sales
 from src.normalize import normalize_sale
 
@@ -93,6 +95,23 @@ def test_dedupe_merges_same_address_across_sources_when_price_differs() -> None:
     assert "https://www.licitor.com/annonce/9.html" in result[0].source_urls
     assert len(result[0].observations) == 2
     assert result[0].raw_payload["merged_sources"][0]["source_name"] == "licitor"
+
+
+def test_dedupe_breaks_shared_raw_payload_alias_before_recording_merged_source() -> None:
+    first = _make("https://avoventes.fr/enchere/shared-1")
+    second = _make("https://licitor.com/annonce/shared-1", source_name="licitor")
+    shared_payload = {"source": "shared"}
+    first.raw_payload = shared_payload
+    second.raw_payload = shared_payload
+
+    result = dedupe_sales([first, second])
+
+    assert len(result) == 1
+    merged_payload = result[0].raw_payload["merged_sources"][0]["raw_payload"]
+    assert merged_payload["source"] == "shared"
+    assert merged_payload["merged_sources"] == []
+    assert merged_payload is not result[0].raw_payload
+    json.dumps(result[0].raw_payload)
 
 
 def test_dedupe_merges_same_address_with_abbreviated_street_and_missing_postal_code() -> None:

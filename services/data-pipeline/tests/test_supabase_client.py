@@ -12,7 +12,11 @@ from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.reviewed_aliases import registry_from_rows
 from src.storage import supabase_client
-from src.storage.supabase_client import _sanitize_postgrest_payload, _secondary_source_urls
+from src.storage.supabase_client import (
+    POSTGREST_MAX_PAYLOAD_DEPTH,
+    _sanitize_postgrest_payload,
+    _secondary_source_urls,
+)
 
 _REAL_FETCH_REVIEWED_ALIAS_REGISTRY = supabase_client._fetch_reviewed_alias_registry
 
@@ -225,6 +229,36 @@ def test_sanitize_postgrest_payload_removes_null_characters_recursively() -> Non
         "untouched": None,
         "decimal_values": [187, 39.67],
     }
+
+
+def test_sanitize_postgrest_payload_allows_finite_aliases() -> None:
+    shared = {"value": "same object"}
+    payload = {"first": shared, "second": [shared]}
+
+    assert _sanitize_postgrest_payload(payload) == {
+        "first": {"value": "same object"},
+        "second": [{"value": "same object"}],
+    }
+
+
+def test_sanitize_postgrest_payload_rejects_cycles_with_json_path() -> None:
+    payload: dict[str, object] = {}
+    payload["self"] = payload
+
+    with pytest.raises(ValueError, match=r"cycle detected at root\['self'\].*root"):
+        _sanitize_postgrest_payload(payload)
+
+
+def test_sanitize_postgrest_payload_rejects_excessive_nesting() -> None:
+    payload: dict[str, object] = {}
+    cursor = payload
+    for _ in range(POSTGREST_MAX_PAYLOAD_DEPTH + 1):
+        child: dict[str, object] = {}
+        cursor["next"] = child
+        cursor = child
+
+    with pytest.raises(ValueError, match="maximum nesting depth"):
+        _sanitize_postgrest_payload(payload)
 
 
 def test_secondary_source_urls_excludes_batch_primary_urls() -> None:

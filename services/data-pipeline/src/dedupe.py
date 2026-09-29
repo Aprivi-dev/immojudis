@@ -4,6 +4,7 @@ import hashlib
 import re
 import unicodedata
 from collections.abc import Iterable
+from copy import deepcopy
 from typing import Any
 
 from src.models import AuctionSale
@@ -228,7 +229,10 @@ def _observation_summary(sale: AuctionSale) -> dict[str, Any]:
         "department": sale.department,
         "starting_price_eur": float(sale.starting_price_eur) if sale.starting_price_eur is not None else None,
         "sale_date": sale.sale_date.isoformat() if sale.sale_date else None,
-        "raw_payload": sale.raw_payload,
+        # A summary becomes part of the primary payload. Copy the source
+        # graph so merging two models that share a raw_payload cannot create a
+        # back-reference from merged_sources to the payload being built.
+        "raw_payload": deepcopy(sale.raw_payload),
     }
 
 
