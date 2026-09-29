@@ -79,7 +79,19 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
         # Keep the public-card proof independent from the department filter.
         # Cards without a public URL remain counted by CatalogueEvidence; only
         # explicitly sold/unlinked cards can receive an addressable-only result.
-        catalogue.observe(html, page_url, page_sales)
+        catalogue_proof = catalogue.observe(html, page_url, page_sales)
+        # Some AGRASC archive cards expose the Agorastore seller catalogue via
+        # ``data-url`` without the title/link structure consumed by
+        # ``parse_agrasc_html``.  The independent public-card proof still sees
+        # that URL, so classify it there and close the inventory proof with an
+        # explicit exclusion.  Never turn a seller catalogue into a property
+        # row merely to make the parser and certificate agree.
+        for public_url in catalogue_proof.get("public_urls", []):
+            if classify_agrasc_operator_url(public_url) == "agorastore_seller":
+                exclusions.setdefault(
+                    canonical(str(public_url)),
+                    "operator_seller_catalogue_without_listing_identity",
+                )
         for sale in page_sales:
             url = canonical(str(sale.get("source_url") or ""))
             if url in seen_sales:

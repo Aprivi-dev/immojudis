@@ -26,6 +26,7 @@ from src.asset_normalization_helpers import (
 from src.models import AuctionSale
 from src.normalize import (
     _is_ambiguous_mixed_lot_surface,
+    _is_coproperty_scoped_land_surface,
     _preferred_surface_evidence_value,
     _surface_evidence_for_value,
     _surface_evidence_matches_value,
@@ -63,7 +64,15 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
             "basis": "explicit_decimal_carrez_text",
         }
         _add_quality_flag(sale, "surface_conflict_resolved")
-    text_land_surface = _extract_surface_kind(text, "land_surface_m2", sale)
+    coproperty_scoped_land_surface = _is_coproperty_scoped_land_surface(sale.raw_payload, text)
+    text_land_surface = (
+        None
+        if coproperty_scoped_land_surface
+        else _extract_surface_kind(text, "land_surface_m2", sale)
+    )
+    if coproperty_scoped_land_surface and sale.land_surface_m2 is not None:
+        sale.land_surface_m2 = None
+        _add_quality_flag(sale, "parcel_surface_scope_unverified")
     if sale.land_surface_m2 is None:
         sale.land_surface_m2 = text_land_surface
     elif _should_prefer_text_land_surface(sale, text_land_surface):

@@ -1,7 +1,9 @@
 import json
+from decimal import Decimal
 
 import pytest
 
+from src.normalize import normalize_sale
 from src.sources.agrasc_operators import (
     AGORA_ORIGIN,
     enrich_agrasc_operator,
@@ -73,6 +75,25 @@ def carrez_page(product_id=407453):
     return '<script>React.createElement(FicheProduitApp, ' + json.dumps(props) + ');</script>'
 
 
+def coproperty_parcel_page(product_id=424870):
+    props = {
+        'ficheProduitModel': {
+            'productPageWrapper': {'productPageModel': {
+                'product': {'id': product_id, 'realEstateInformation': {}},
+                'descriptifs': [{'descriptifs': [
+                    {'descriptifLibelle': 'Type de bien', 'value': 'Local et cave'},
+                    {'descriptifLibelle': 'Copropriété', 'value': 'Lots 899 et 547'},
+                    {'descriptifLibelle': 'Surface parcelle', 'value': '4 609 m²'},
+                    {'descriptifLibelle': 'Surface Carrez', 'value': '70,53 m²'},
+                ]}],
+                'documents': [], 'images': [],
+            }},
+            'saleState': {'productId': product_id},
+        }
+    }
+    return '<script>React.createElement(FicheProduitApp, ' + json.dumps(props) + ');</script>'
+
+
 def test_public_props_supply_details_not_only_jsonld_photo():
     detail = parse_agora_operator_detail(page(), URL)
     assert detail['surface_m2'] == '120'
@@ -93,6 +114,30 @@ def test_surface_parcelle_is_promoted_when_no_cadastral_contradiction_exists():
 
     assert detail['external_id'] == '123456'
     assert detail['land_surface_m2'] == '120'
+
+
+def test_surface_parcelle_of_coproperty_lot_stays_source_scoped():
+    detail = parse_agora_operator_detail(
+        coproperty_parcel_page(),
+        'https://www.agorastore-immo.fr/vente-occasion/local-424870.aspx',
+    )
+
+    assert 'land_surface_m2' not in detail
+    assert detail['operator_land_surface_scope'] == 'copropriété'
+    assert detail['source_blocks']['surface_parcelle'] == '4609'
+
+    sale = normalize_sale({
+        'source_name': 'agrasc',
+        'source_url': 'https://www.agorastore-immo.fr/vente-occasion/local-424870.aspx',
+        'property_type': 'Local commercial',
+        **detail,
+    })
+
+    assert sale.land_surface_m2 is None
+    assert sale.carrez_surface_m2 == Decimal('70.53')
+    assert sale.app_surface_m2 == Decimal('70.53')
+    assert sale.raw_payload['source_blocks']['surface_parcelle'] == '4609'
+    assert 'parcel_surface_scope_unverified' in sale.quality_flags
 
 
 def test_surface_parcelle_is_withheld_when_cadastral_area_is_larger():

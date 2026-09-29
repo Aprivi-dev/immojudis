@@ -172,3 +172,33 @@ def test_agrasc_seller_catalogue_card_is_excluded_with_public_catalogue_proof(mo
         "reason": "operator_seller_catalogue_without_listing_identity",
     }]
     assert result.coverage["inventory_scope"] == "addressable_public_catalogue"
+
+
+def test_agrasc_seller_url_from_public_proof_is_excluded_when_parser_has_no_card_row(monkeypatch) -> None:
+    # The live archive has emitted seller cards with ``data-url`` but without
+    # the title/link structure used by parse_agrasc_html.  The independent
+    # catalogue proof must still classify that public URL as an explicit,
+    # non-listing exclusion.
+    html = """
+    <div class="view-liste-ventes-immobilieres">
+      <div class="card-vente-immo" data-url="https://www.agorastore.fr/ventes-occasions/vendeur/agrascimmo">
+        <h3>AGRASC</h3>
+        <p class="fr-card__desc">Ventes immobilières AGRASC.</p>
+      </div>
+      <a class="fr-pagination__link--last" href="/ventes-aux-encheres?page=0">Dernière page</a>
+    </div>
+    """
+    _patch_agrasc_client(monkeypatch, html)
+
+    result = agrasc.scrape_agrasc_aquitaine_result()
+
+    assert result.sales == []
+    certificate = result.coverage["certificate"]
+    assert certificate["public_discovery_certified"] is True
+    assert certificate["all_discovered_announcements_emitted"] is True
+    assert certificate["excluded_urls"] == [{
+        "url": "https://www.agorastore.fr/ventes-occasions/vendeur/agrascimmo",
+        "reason": "operator_seller_catalogue_without_listing_identity",
+    }]
+    assert certificate["unhandled_public_urls"] == []
+    assert result.coverage["scoped_inventory_complete"] is True
