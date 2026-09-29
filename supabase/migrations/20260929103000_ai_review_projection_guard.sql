@@ -332,7 +332,7 @@ begin
         ) > 1, false)
       into energy_values, energy_candidate_count,
         energy_invalid_present, energy_conflict
-      from energy_entries;
+      from energy_entries entry;
       if energy_candidate_count = 0 then
         canonical_text := null;
       elsif energy_invalid_present or energy_conflict then
