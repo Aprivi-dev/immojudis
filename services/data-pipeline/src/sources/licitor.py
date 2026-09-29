@@ -35,6 +35,28 @@ LICITOR_ZONE_URLS = (
 AQUITAINE_URL = LICITOR_ZONE_URLS[4]
 LOGGER = logging.getLogger(__name__)
 
+_LICITOR_DYNAMIC_COUNTER_RE = re.compile(
+    r"^\s*🔎(?:\ufe0e|\ufe0f)?\s*\d[\d.,\s]*\s*❤(?:\ufe0e|\ufe0f)?\s*\d[\d.,\s]*\s*$"
+)
+
+
+def _stable_text_lines(lines: list[str]) -> list[str]:
+    """Drop Licitor's changing view/like counter from source evidence text."""
+    return [line for line in lines if not _LICITOR_DYNAMIC_COUNTER_RE.fullmatch(line)]
+
+
+def _stable_raw_text(raw_text: str) -> str:
+    lines = [line for line in (clean_text(part) for part in raw_text.splitlines()) if line]
+    return "\n".join(_stable_text_lines(lines))
+
+
+def _stable_lots_text(lots: list[dict[str, Any]]) -> str:
+    return "\n\n".join(
+        _stable_raw_text(str(lot.get("raw_text") or ""))
+        for lot in lots
+        if lot.get("raw_text")
+    )
+
 
 class LicitorClient(PoliteHttpClient):
     def __init__(self, user_agent: str, delay_seconds: float, timeout_seconds: float):
@@ -151,7 +173,7 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
             sale["_checkpoint_signature"] = summary["_checkpoint_signature"]
             sale["_discovered_at"] = summary.get("_discovered_at")
         sale["source_lots"] = listing_by_url[detail_url].get("source_lots", [])
-        sale.setdefault("source_blocks", {})["lots_publics"] = "\n\n".join(lot["raw_text"] for lot in sale["source_lots"])
+        sale.setdefault("source_blocks", {})["lots_publics"] = _stable_lots_text(sale["source_lots"])
         postal_code = sale.get("postal_code")
         department = str(sale.get("department") or extract_department(str(postal_code) if postal_code else None) or "")
         if department and department not in TARGET_DEPARTMENTS:
@@ -205,6 +227,7 @@ def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[d
         if sale:
             sale["source_lots"] = [{"raw_text": raw_text, "title": sale.get("title"),
                                     "starting_price_eur": sale.get("starting_price_eur")}]
+            sale.setdefault("source_blocks", {})["lots_publics"] = _stable_lots_text(sale["source_lots"])
             if source_url in by_url:
                 _merge_listing_lots(by_url[source_url], sale)
             else:
@@ -215,8 +238,8 @@ def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[d
 
 def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     soup = parse_html(html, "html.parser")
-    lines = [line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line]
-    raw_text = "\n".join(lines)
+    raw_text = _stable_raw_text(soup.get_text("\n", strip=True))
+    lines = raw_text.splitlines()
 
     title = _extract_title(soup, lines, raw_text)
     city = _extract_city(soup, lines, raw_text)
@@ -383,7 +406,7 @@ def _merge_listing_lots(target: dict[str, Any], incoming: dict[str, Any]) -> Non
     for lot in incoming.get("source_lots", []):
         if lot not in lots:
             lots.append(lot)
-    target["raw_text"] = "\n\n".join(lot["raw_text"] for lot in lots)
+    target["raw_text"] = _stable_lots_text(lots)
     target.setdefault("source_blocks", {})["lots_publics"] = target["raw_text"]
 
 
@@ -410,7 +433,8 @@ def _list_item_container(link: Any) -> Any:
 
 
 def _parse_list_sale(source_url: str, raw_text: str) -> dict[str, Any] | None:
-    lines = [line for line in (clean_text(part) for part in raw_text.splitlines()) if line]
+    raw_text = _stable_raw_text(raw_text)
+    lines = raw_text.splitlines()
     if not lines:
         return None
     department = next((line for line in lines if re.fullmatch(r"\d{2,3}|2A|2B", line)), None)
