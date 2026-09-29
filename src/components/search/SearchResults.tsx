@@ -96,6 +96,15 @@ import type { MapViewportChange } from "./MapPanel";
 import { SearchPagination } from "./SearchPagination";
 import { ErrorState, ListingCardSkeleton, NoResultsState } from "./SearchFilters";
 import { SearchStatistics } from "./search-page-state";
+import { AiReviewField } from "@/components/sale-detail/AiReviewField";
+import {
+  AI_REVIEW_ENERGY_FIELD_KEYS,
+  AI_REVIEW_SURFACE_FIELD_KEYS,
+  firstBlockedAiReviewField,
+  getAiReviewFieldResult,
+  type AiReviewProjectionReadModel,
+  type AiReviewRequestStatus,
+} from "@/lib/ai-review-guard";
 export function SearchStatisticsPanel({
   statistics,
   locked,
@@ -298,6 +307,8 @@ export function SearchResultsList({
   comparedSaleIds,
   comparisonDisabled,
   onToggleComparison,
+  aiReviewBySaleId,
+  aiReviewStatus = "disabled",
 }: {
   sales: AuctionSale[];
   returnTo: string;
@@ -312,6 +323,8 @@ export function SearchResultsList({
   comparedSaleIds: string[];
   comparisonDisabled: boolean;
   onToggleComparison: (sale: AuctionSale) => void;
+  aiReviewBySaleId?: Readonly<Record<string, readonly AiReviewProjectionReadModel[]>>;
+  aiReviewStatus?: AiReviewRequestStatus;
 }) {
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
@@ -340,6 +353,8 @@ export function SearchResultsList({
                     !comparedSaleIds.includes(sale.id))
                 }
                 onToggleComparison={onToggleComparison}
+                aiReviewProjections={aiReviewBySaleId?.[sale.id]}
+                aiReviewStatus={aiReviewStatus}
               />
             ))}
       </div>
@@ -359,6 +374,8 @@ export function ListingCard({
   comparisonSelected = false,
   comparisonDisabled = false,
   onToggleComparison,
+  aiReviewProjections,
+  aiReviewStatus = "ready",
 }: {
   sale: AuctionSale;
   returnTo: string;
@@ -371,6 +388,8 @@ export function ListingCard({
   comparisonSelected?: boolean;
   comparisonDisabled?: boolean;
   onToggleComparison?: (sale: AuctionSale) => void;
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  aiReviewStatus?: AiReviewRequestStatus;
 }) {
   const displaySurface = getDisplaySurface(sale);
   const surface = getSaleSurface(sale).value;
@@ -378,19 +397,47 @@ export function ListingCard({
   const premiumLocked = locked || analysisLocked;
   const viewed = !locked && isViewed(sale.id);
   const fresh = !locked && isNew(sale.created_at);
+  const propertyTypeReview = getAiReviewFieldResult(
+    aiReviewProjections,
+    "property.property_type",
+    aiReviewStatus,
+  );
+  const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
+  const roomsReview = getAiReviewFieldResult(
+    aiReviewProjections,
+    "property.rooms_count",
+    aiReviewStatus,
+  );
+  const surfaceReviewField = firstBlockedAiReviewField(
+    aiReviewProjections,
+    AI_REVIEW_SURFACE_FIELD_KEYS,
+    aiReviewStatus,
+  );
+  const energyReviewField = firstBlockedAiReviewField(
+    aiReviewProjections,
+    AI_REVIEW_ENERGY_FIELD_KEYS,
+    aiReviewStatus,
+  );
+  const guardedPropertyType = propertyTypeReview.blocked
+    ? "À confirmer"
+    : propertyTypeLabel(sale.property_type);
+  const guardedCity = cityReview.blocked ? null : sale.city;
   const title = locked
-    ? `${propertyTypeLabel(sale.property_type)}${sale.city ? ` à ${sale.city}` : ""}`
-    : saleDisplayTitle(sale);
+    ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
+    : propertyTypeReview.blocked || cityReview.blocked
+      ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
+      : saleDisplayTitle(sale);
   const location = locked
     ? [sale.city, sale.department].filter(Boolean).join(" · ")
     : [sale.address, sale.city, sale.department ? `(${sale.department})` : null]
         .filter(Boolean)
         .join(", ");
-  const beds = sale.bedrooms_count ?? sale.rooms_count;
+  const beds = roomsReview.blocked ? null : (sale.bedrooms_count ?? sale.rooms_count);
   const baths = sale.bathrooms_count;
   const riskCount = premiumLocked ? 0 : (sale.risks?.length ?? 0);
-  const ppm = premiumLocked ? null : pricePerM2(sale.starting_price_eur, surface);
-  const dpe = premiumLocked ? null : extractDpe(sale);
+  const ppm =
+    premiumLocked || surfaceReviewField ? null : pricePerM2(sale.starting_price_eur, surface);
+  const dpe = premiumLocked || energyReviewField ? null : extractDpe(sale);
   const dpeTheme = dpeColor(dpe?.class);
   const procedure = getSaleProcedure(sale);
   const organizerLabel = locked
@@ -445,30 +492,93 @@ export function ListingCard({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3 className="font-display text-xl font-semibold leading-tight sm:text-2xl">
-              {[sale.city, sale.department].filter(Boolean).join(" · ") ||
-                "Localisation à préciser"}
+              <AiReviewField
+                fieldKey="property.city"
+                projections={aiReviewProjections}
+                reviewStatus={aiReviewStatus}
+                fallback="Localisation à préciser"
+                sourceName={sale.source_name}
+                sourceUrl={sale.source_url}
+                showSourceLink={false}
+              >
+                {[sale.city, sale.department].filter(Boolean).join(" · ") ||
+                  "Localisation à préciser"}
+              </AiReviewField>
             </h3>
             <p className="mt-1 text-sm text-[#526170]">
-              {propertyTypeLabel(sale.property_type)} ·{" "}
-              {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
-              {sale.bedrooms_count != null ? ` · ${sale.bedrooms_count} ch.` : ""}
+              <AiReviewField
+                fieldKey="property.property_type"
+                projections={aiReviewProjections}
+                reviewStatus={aiReviewStatus}
+                sourceName={sale.source_name}
+                sourceUrl={sale.source_url}
+                showSourceLink={false}
+              >
+                {propertyTypeLabel(sale.property_type)}
+              </AiReviewField>{" "}
+              ·{" "}
+              {surfaceReviewField ? (
+                <AiReviewField
+                  fieldKey={surfaceReviewField}
+                  projections={aiReviewProjections}
+                  reviewStatus={aiReviewStatus}
+                  fallback="Surface à confirmer"
+                  sourceName={sale.source_name}
+                  sourceUrl={sale.source_url}
+                  showSourceLink={false}
+                >
+                  {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
+                </AiReviewField>
+              ) : displaySurface.value != null ? (
+                displaySurface.label
+              ) : (
+                "Surface n.c."
+              )}
+              {beds != null ? ` · ${beds} ch.` : ""}
             </p>
           </div>
           <CompactFavoriteButton saleId={sale.id} locked={premiumLocked} />
         </div>
         <p className="mt-2 text-xl font-bold leading-tight text-[#9c642b] sm:text-2xl">
-          {formatPrice(sale.starting_price_eur)}
+          <AiReviewField
+            fieldKey="sale.starting_price_eur"
+            projections={aiReviewProjections}
+            reviewStatus={aiReviewStatus}
+            sourceName={sale.source_name}
+            sourceUrl={sale.source_url}
+            showSourceLink={false}
+          >
+            {formatPrice(sale.starting_price_eur)}
+          </AiReviewField>
         </p>
         <p className="text-xs text-[#526170]">Mise à prix</p>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#526170]">
           <span className="inline-flex items-center gap-1">
             <CalendarDays className="h-3.5 w-3.5" />
-            {formatDate(sale.sale_date)}
+            <AiReviewField
+              fieldKey="sale.sale_date"
+              projections={aiReviewProjections}
+              reviewStatus={aiReviewStatus}
+              sourceName={sale.source_name}
+              sourceUrl={sale.source_url}
+              showSourceLink={false}
+            >
+              {formatDate(sale.sale_date)}
+            </AiReviewField>
           </span>
           <SaleProcedureBadge sale={sale} />
           {!premiumLocked && sale.occupancy_status && (
             <span className="rounded bg-[#f0f5f3] px-2 py-1">
-              {occupancyLabel(sale.occupancy_status)}
+              <AiReviewField
+                fieldKey="property.occupancy_status"
+                projections={aiReviewProjections}
+                reviewStatus={aiReviewStatus}
+                sourceName={sale.source_name}
+                sourceUrl={sale.source_url}
+                showSourceLink={false}
+              >
+                {occupancyLabel(sale.occupancy_status)}
+              </AiReviewField>
             </span>
           )}
         </div>
@@ -481,7 +591,7 @@ export function ListingCard({
                 : "Voir le détail"}
           </span>
           <div className="flex items-center">
-            <ShareButton sale={sale} />
+            <ShareButton sale={sale} title={title} />
             {onToggleComparison && (
               <button
                 type="button"
@@ -586,7 +696,7 @@ export function ListingSignal({
   );
 }
 
-export function ShareButton({ sale }: { sale: AuctionSale }) {
+export function ShareButton({ sale, title }: { sale: AuctionSale; title: string }) {
   async function share(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -598,7 +708,7 @@ export function ShareButton({ sale }: { sale: AuctionSale }) {
 
     try {
       if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ title: saleDisplayTitle(sale, "Vente Immojudis"), url });
+        await navigator.share({ title, url });
       } else if (typeof navigator !== "undefined" && navigator.clipboard) {
         await navigator.clipboard.writeText(url);
         toast.success("Lien copié");

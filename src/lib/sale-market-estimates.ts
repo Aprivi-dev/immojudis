@@ -9,6 +9,7 @@ import {
   type MarketEstimate,
   type MarketEstimateErrorCode,
 } from "@/lib/market.functions";
+import { assertPublicationVisibleSaleRow } from "@/lib/sale-publication-guard";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 
 type StoredEstimateRow = Database["public"]["Tables"]["auction_sale_market_estimates"]["Row"];
@@ -170,6 +171,16 @@ export function marketContextFromStoredRow(
 }
 
 export async function getStoredSaleMarketContext(saleId: string): Promise<MarketContext> {
+  const { data: sale, error: saleError } = await supabaseAdmin
+    .from("auction_sales")
+    .select(
+      "id,title,address,city,postal_code,property_type,latitude,longitude,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,app_surface_kind,surface_scope,rooms_count,bedrooms_count,updated_at,status,raw_payload",
+    )
+    .eq("id", saleId)
+    .maybeSingle();
+  if (saleError) throw saleError;
+  assertPublicationVisibleSaleRow(sale);
+
   const { data, error } = await supabaseAdmin
     .from("auction_sale_market_estimates")
     .select("*")
@@ -179,13 +190,6 @@ export async function getStoredSaleMarketContext(saleId: string): Promise<Market
   if (error) throw error;
   if (!data?.estimate) return marketContextFromStoredRow(data);
 
-  const { data: sale, error: saleError } = await supabaseAdmin
-    .from("auction_sales")
-    .select(SALE_INPUT_COLUMNS.join(","))
-    .eq("id", saleId)
-    .maybeSingle();
-  if (saleError) throw saleError;
-  if (!sale) throw new Error("Vente source introuvable.");
   const fingerprint = saleValuationFingerprint(
     buildSaleValuationInput(sale as unknown as SaleValuationSource),
   );

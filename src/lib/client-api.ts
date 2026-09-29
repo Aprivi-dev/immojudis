@@ -45,6 +45,7 @@ import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import type { EnvironmentalContextResponse } from "@/lib/environment.functions";
 import type { FeaturedReferencedLawyerResponse } from "@/lib/featured-lawyers";
 import type { FactReliabilityMap } from "@/lib/fact-reliability";
+import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import type { LawyerDirectoryResponse } from "@/lib/lawyer-directory";
 import type {
   LawyerPlacementEventInput,
@@ -177,6 +178,38 @@ export type SaleFactReliabilitiesResponse = {
   facts: FactReliabilityMap;
   source: "claims" | "legacy";
 };
+
+export type SaleAiReviewResponse = {
+  projections: AiReviewProjectionReadModel[];
+};
+
+export async function fetchSalesAiReviewProjections(
+  saleIds: readonly string[],
+): Promise<SaleAiReviewResponse> {
+  if (saleIds.length === 0) return { projections: [] };
+  const headers = await authHeaders();
+  const batches: string[][] = [];
+  for (let start = 0; start < saleIds.length; start += 100) {
+    batches.push(saleIds.slice(start, start + 100));
+  }
+  const results = await Promise.all(
+    batches.map(async (batch) => {
+      const search = new URLSearchParams();
+      for (const saleId of batch) search.append("id", saleId);
+      const response = await fetch(`/api/sales/ai-review?${search.toString()}`, {
+        headers,
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      });
+      return readJson<SaleAiReviewResponse>(response);
+    }),
+  );
+  return { projections: results.flatMap((result) => result.projections) };
+}
+
+export async function fetchSaleAiReviewProjections(saleId: string): Promise<SaleAiReviewResponse> {
+  return fetchSalesAiReviewProjections([saleId]);
+}
 
 export async function fetchSaleFactReliabilities(
   saleId: string,

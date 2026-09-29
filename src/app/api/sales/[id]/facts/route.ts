@@ -7,6 +7,7 @@ import {
 import { DETAIL_VIEW } from "@/lib/queries";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
+import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
 import type { AuctionSale } from "@/lib/types";
 
 const saleIdSchema = z.string().uuid();
@@ -64,6 +65,11 @@ export async function GET(
     if (!sale) {
       return NextResponse.json({ error: "Vente introuvable." }, { status: 404 });
     }
+
+    // Admin JWTs and service-role reads can bypass the catalogue RLS policy.
+    // Keep this user-facing facts endpoint subject to the same status and
+    // publication-marker gate as the public catalogue.
+    await assertSalePublicationVisible(parsedId.data);
 
     const claimRead = await readSaleFactClaims(parsedId.data);
     const facts = getFactReliabilitiesFromClaims(sale as unknown as AuctionSale, claimRead.claims);

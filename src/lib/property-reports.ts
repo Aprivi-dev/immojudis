@@ -60,6 +60,7 @@ import {
 } from "@/lib/urban-planning-analysis";
 import { assertUsageLimitAvailable, recordFeatureUsageEvent } from "@/lib/usage";
 import { buildValuationAudit } from "@/lib/valuation-audit";
+import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import {
   buildValuationBacktestForSale,
   type ValuationBacktestResult,
@@ -282,8 +283,18 @@ export async function listPropertyReports({
   const { data, error } = await query.limit(50);
   if (error) throw error;
 
+  const reports = data ?? [];
+  const visibleSaleIds = await getPublicationVisibleSaleIds(
+    reports.map((report) => report.sale_id),
+  );
+
   return {
-    reports: (data ?? []).map((report) => attachPlan(report, plan)),
+    // A report snapshot can outlive the source listing. Do not return stale
+    // sale facts after the source is quarantined, even if the report belongs
+    // to the requesting user and RLS still allows the report row.
+    reports: reports
+      .filter((report) => visibleSaleIds.has(report.sale_id))
+      .map((report) => attachPlan(report, plan)),
     plan,
   };
 }
@@ -429,6 +440,9 @@ export async function updatePropertyReport({
     "property.reportEditing",
     "Édition des rapports réservée au plan Analyse.",
   );
+  // Resolve and publication-check the owned report before returning its
+  // snapshot through the privileged update client.
+  await getReport(auth.supabase, auth.userId, reportId);
   const patch: Database["public"]["Tables"]["saved_property_reports"]["Update"] = {};
   if (input.title !== undefined) patch.title = input.title;
   if (input.userNotes !== undefined) patch.user_notes = emptyToNull(input.userNotes ?? undefined);
@@ -548,6 +562,7 @@ export async function disablePropertyReportShare({
 }): Promise<PropertyReportShareResponse> {
   const plan = await resolvePlanEntitlements(auth);
   assertEntitlementIncluded(plan, "property.savedReports", "Partage réservé au plan Analyse.");
+  await getReport(auth.supabase, auth.userId, reportId);
 
   const { data, error } = await supabaseAdmin
     .from("saved_property_reports")

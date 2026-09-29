@@ -7,11 +7,29 @@ import { formatPrice } from "@/lib/format";
 import { parseBudgetAmount, positiveListingNumber } from "@/lib/sale-listing";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale } from "@/lib/types";
+import {
+  getAiReviewFieldResult,
+  type AiReviewProjectionReadModel,
+  type AiReviewRequestStatus,
+} from "@/lib/ai-review-guard";
 import styles from "./SaleListing.module.css";
 
-export function ListingBudget({ sale }: { sale: AuctionSale }) {
+export function ListingBudget({
+  sale,
+  aiReviewProjections = null,
+  aiReviewStatus = "ready",
+}: {
+  sale: AuctionSale;
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  aiReviewStatus?: AiReviewRequestStatus;
+}) {
   const procedure = getSaleProcedure(sale);
-  const price = positiveListingNumber(sale.starting_price_eur);
+  const priceReview = getAiReviewFieldResult(
+    aiReviewProjections,
+    "sale.starting_price_eur",
+    aiReviewStatus,
+  );
+  const price = priceReview.blocked ? null : positiveListingNumber(sale.starting_price_eur);
   const tribunal = procedure.venueType === "tribunal";
   const notary = procedure.venueType === "notary";
   const state = procedure.venueType === "state";

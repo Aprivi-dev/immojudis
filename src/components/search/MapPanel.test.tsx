@@ -129,6 +129,46 @@ describe("public map resilience", () => {
     expect(html).not.toContain("Score 85");
     expect(html).not.toContain("Private source title");
   });
+  it("masks an authenticated popup value when the review projection is blocked", () => {
+    const sale = {
+      id: "guarded",
+      title: "Maison privée à Bordeaux",
+      city: "Bordeaux",
+      property_type: "house",
+      latitude: 44.84,
+      longitude: -0.58,
+      starting_price_eur: 90_000,
+      app_surface_m2: 60,
+      source_blocks: { dpe_classe: "D" },
+      media: [],
+    } as unknown as AuctionSale;
+    showMap({
+      sales: [sale],
+      preview: false,
+      showDpeLegend: true,
+      selectedSaleId: sale.id,
+      aiReviewStatus: "ready",
+      aiReviewBySaleId: {
+        [sale.id]: [
+          {
+            auction_sale_id: sale.id,
+            field_key: "sale.starting_price_eur",
+            review_state: "unresolved",
+            citation_status: "not_required",
+            is_publishable: false,
+            source_name: "AGRASC",
+            source_url: "https://example.test/source/1",
+          },
+        ],
+      },
+    });
+    act(() => mocks.handlers.get("load")?.());
+    const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
+    expect(html).toContain("Prix non communiqué");
+    expect(html).toContain("Vente à confirmer");
+    expect(html).not.toContain("90 000");
+    expect(html).not.toContain("Maison privée à Bordeaux");
+  });
   it("replaces a stalled loading state after 12 seconds and recovers on a late load", () => {
     showMap();
     expect(screen.getByText("Chargement de la carte")).toBeTruthy();
