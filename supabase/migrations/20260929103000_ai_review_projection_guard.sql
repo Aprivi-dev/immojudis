@@ -842,7 +842,7 @@ begin
         message = 'Invalid or unsafe AI review case status payload.';
     end if;
 
-    select count(*), min(sale.id), min(sale.content_hash)
+    select count(*), min(sale.id::text)::uuid, min(sale.content_hash)
       into v_matches, v_sale_id, v_content_hash
     from public.auction_sales sale
     where sale.source_name = v_source_name
@@ -944,7 +944,7 @@ begin
         message = 'Blocked AI review projection rows require a reason.';
     end if;
 
-    select count(*), min(sale.id), min(sale.content_hash)
+    select count(*), min(sale.id::text)::uuid, min(sale.content_hash)
       into v_matches, v_sale_id, v_content_hash
     from public.auction_sales sale
     where sale.source_name = v_source_name

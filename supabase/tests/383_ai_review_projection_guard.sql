@@ -266,6 +266,7 @@ values (
   'https://example.test/ai-review/missing',
   repeat('e', 64),
   null,
+  null,
   'unmapped',
   'property.property_type',
   'resolved',
