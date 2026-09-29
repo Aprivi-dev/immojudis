@@ -910,7 +910,11 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                     original_status = status
                     original_failure_reason = failure_reason
                     status = "visual_blank_excluded"
-                    failure_reason = "visual_blank_after_ocr"
+                    failure_reason = (
+                        "decorative_edge_after_ocr"
+                        if visual_profile.get("decorative_edge_only") is True
+                        else "visual_blank_after_ocr"
+                    )
             page_record: dict[str, object] = {
                 "page": index,
                 "text": cleaned,
@@ -995,9 +999,11 @@ def _visual_page_profile(page: fitz.Page) -> dict[str, object]:
             if samples[offset] < VISUAL_BLANK_INK_THRESHOLD
         )
         ink_ratio = ink_pixels / pixel_count
+        decorative_edge_only = _is_decorative_edge_only_page(page)
         return {
             "analysis_status": "measured",
-            "quasi_empty": ink_ratio <= VISUAL_BLANK_INK_RATIO_MAX,
+            "quasi_empty": ink_ratio <= VISUAL_BLANK_INK_RATIO_MAX or decorative_edge_only,
+            "decorative_edge_only": decorative_edge_only,
             "ink_ratio": round(ink_ratio, 6),
             "ink_threshold": VISUAL_BLANK_INK_THRESHOLD,
             "ink_ratio_max": VISUAL_BLANK_INK_RATIO_MAX,
@@ -1011,6 +1017,48 @@ def _visual_page_profile(page: fitz.Page) -> dict[str, object]:
             "quasi_empty": False,
             "reason": "render_failed",
         }
+
+
+def _is_decorative_edge_only_page(page: fitz.Page) -> bool:
+    """Recognize a single solid border shape, never a scanned page or map.
+
+    Some diagnostic PDFs end with a blank page whose only visible mark is a
+    full-height coloured curve clipped at the page edge. OCR cannot extract
+    text from it, but an ink-ratio threshold alone correctly considers it
+    nonblank. Require one filled vector shape confined to an outer 15% band,
+    with no text, annotations, or embedded images, before excluding that
+    page from OCR retries. Complex vector paths remain eligible for OCR.
+    """
+
+    try:
+        if clean_text(page.get_text("text")) or next(page.annots(), None) is not None:
+            return False
+        if page.get_images(full=True) or page.get_image_info():
+            return False
+        drawings = page.get_drawings()
+        if len(drawings) != 1:
+            return False
+        drawing = drawings[0]
+        if drawing.get("type") != "f" or drawing.get("fill") is None:
+            return False
+        items = drawing.get("items") or []
+        if not 1 <= len(items) <= 8 or any(item[0] not in {"c", "re"} for item in items):
+            return False
+        shape = drawing.get("rect")
+        bounds = page.rect
+        if shape is None or bounds.width <= 0 or bounds.height <= 0:
+            return False
+        side_band = bounds.width * 0.15
+        top_band = bounds.height * 0.15
+        vertical_edge = shape.height >= bounds.height * 0.85 and (
+            shape.x0 >= bounds.x1 - side_band or shape.x1 <= bounds.x0 + side_band
+        )
+        horizontal_edge = shape.width >= bounds.width * 0.85 and (
+            shape.y0 >= bounds.y1 - top_band or shape.y1 <= bounds.y0 + top_band
+        )
+        return vertical_edge or horizontal_edge
+    except Exception:
+        return False
 
 
 def _page_requires_retry(page: object, *, ocr_enabled: bool) -> bool:

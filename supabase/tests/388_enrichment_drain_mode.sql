@@ -232,8 +232,8 @@ delete from public.auction_runs
     where case_name = 'recent-source'
  );
 
--- An overdue source gets its collection turn while the streak is below the
--- fair threshold, even though drain mode is active and the queue is due.
+-- An overdue source gets its collection turn while the streak is empty, even
+-- though drain mode is active and the queue is due.
 update public.auction_pipeline_control
    set source_dispatch_streak = 0,
        next_enrichment_at = statement_timestamp() + interval '1 hour'
@@ -264,11 +264,10 @@ delete from public.auction_runs
     where case_name = 'overdue-source'
  );
 
--- Once the bounded source fairness threshold is met, the queue receives a
--- turn and the trigger resets the streak. The queue remains available after
--- a collection claim.
+-- After one overdue source claim, the queue receives its bounded turn and the
+-- trigger resets the streak. The queue remains available after collection.
 update public.auction_pipeline_control
-   set source_dispatch_streak = 3,
+   set source_dispatch_streak = 1,
        next_enrichment_at = statement_timestamp() + interval '1 hour'
  where id;
 update public.auction_source_state
@@ -281,7 +280,7 @@ values ('fair-queue', public.claim_autonomous_pipeline_run());
 select is(
   (select payload->>'mode' from pgtap_drain_claims where case_name = 'fair-queue'),
   'enrichment',
-  'the queue receives a fair turn after three source claims'
+  'the queue receives a fair turn after one source claim'
 );
 
 select is(

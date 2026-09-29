@@ -29,7 +29,21 @@ select is(
     statement_timestamp()
   ),
   false,
-  'an overdue source keeps the collection turn before the streak threshold'
+  'the first overdue source keeps its collection turn'
+);
+
+update public.auction_pipeline_control
+   set source_dispatch_streak = 1
+ where id;
+
+select is(
+  app_private.pipeline_queue_should_preempt_source(
+    true,
+    statement_timestamp() - interval '2 hours',
+    statement_timestamp()
+  ),
+  true,
+  'one overdue collection turn lets the due queue preempt the source'
 );
 
 update public.auction_pipeline_control
@@ -42,22 +56,8 @@ select is(
     statement_timestamp() - interval '2 hours',
     statement_timestamp()
   ),
-  false,
-  'two overdue collection turns do not preempt the source'
-);
-
-update public.auction_pipeline_control
-   set source_dispatch_streak = 3
- where id;
-
-select is(
-  app_private.pipeline_queue_should_preempt_source(
-    true,
-    statement_timestamp() - interval '2 hours',
-    statement_timestamp()
-  ),
   true,
-  'the due queue receives a turn after three overdue collection claims'
+  'a persisted source streak above the bound still lets the due queue run'
 );
 
 select is(
@@ -82,6 +82,10 @@ select is(
 
 -- Verify the streak is advanced by collection claims and reset by a queue
 -- claim, rather than relying only on the pure helper above.
+update public.auction_pipeline_control
+   set source_dispatch_streak = 0
+ where id;
+
 insert into public.auction_runs (
   status, source, scheduler_owned, summary, errors
 ) values (
@@ -90,7 +94,7 @@ insert into public.auction_runs (
 
 select is(
   (select source_dispatch_streak from public.auction_pipeline_control where id),
-  4,
+  1,
   'a scheduler-owned collection claim increments the streak'
 );
 
@@ -112,9 +116,9 @@ delete from public.auction_runs
  where source in ('pgtap-throughput-source', 'enrichment-queue')
    and status = 'queued';
 
--- Four independent overdue sources prove the actual claim RPC gives the queue
--- a turn after three collection claims. The transaction rolls all fixtures
--- back at the end of the test.
+-- Multiple independent overdue sources prove the actual claim RPC gives the
+-- queue a turn after one collection claim, then resumes collection. The
+-- transaction rolls all fixtures back at the end of the test.
 insert into public.auction_source_state (source_name, enabled, next_inventory_at)
 values
   ('pgtap-throughput-a', true, statement_timestamp() - interval '4 hours'),
@@ -165,8 +169,19 @@ values (2, public.claim_autonomous_pipeline_run());
 
 select is(
   (select payload->>'mode' from pgtap_throughput_claims where ordinal = 2),
-  'collect',
-  'the second overdue source keeps its collection turn'
+  'enrichment',
+  'the due queue runs after one overdue source claim'
+);
+
+select is(
+  (
+    select next_enrichment_at > statement_timestamp() + interval '29 minutes'
+       and next_enrichment_at < statement_timestamp() + interval '31 minutes'
+    from public.auction_pipeline_control
+    where id
+  ),
+  true,
+  'the queue turn advances the existing 30-minute enrichment cadence'
 );
 
 delete from public.auction_runs
@@ -178,25 +193,16 @@ values (3, public.claim_autonomous_pipeline_run());
 select is(
   (select payload->>'mode' from pgtap_throughput_claims where ordinal = 3),
   'collect',
-  'the third overdue source keeps its collection turn'
+  'collection resumes after the bounded queue turn'
 );
 
 delete from public.auction_runs
  where id = (select (payload->>'id')::uuid from pgtap_throughput_claims where ordinal = 3);
 
-insert into pgtap_throughput_claims (ordinal, payload)
-values (4, public.claim_autonomous_pipeline_run());
-
-select is(
-  (select payload->>'mode' from pgtap_throughput_claims where ordinal = 4),
-  'enrichment',
-  'the fourth scheduler decision gives the due queue a bounded turn'
-);
-
 select is(
   (select source_dispatch_streak from public.auction_pipeline_control where id),
-  0,
-  'the queue turn resets the persisted collection streak'
+  1,
+  'the resumed source claim starts the next bounded streak'
 );
 
 select * from finish();

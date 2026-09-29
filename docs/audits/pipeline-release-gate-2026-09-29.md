@@ -900,3 +900,85 @@ source détaillés n'étaient pas disponibles au dernier relevé. Le rapport de
 file à 17 h 17 compte 6 119 jobs à traiter, soit 24 de plus qu'à 16 h 38.
 La seule réussite du workflow ne valide donc pas encore le débit ni la
 fraîcheur de chaque source.
+
+À 18 h 13 UTC, la
+[CI 36609950281](https://github.com/Aprivi-dev/immojudis/actions/runs/36609950281)
+et [CodeQL 36609950343](https://github.com/Aprivi-dev/immojudis/actions/runs/36609950343)
+ont validé le commit `268616f1`, notamment le rejeu des 190 migrations,
+pgTAP `396`, les tests Web et Python et le parcours Playwright. Le
+[workflow de maintenance 36608080831](https://github.com/Aprivi-dev/immojudis/actions/runs/36608080831)
+a appliqué en production les migrations `20260929190000`, `20260929200000`
+et `20260929201000` et confirmé l'absence de dérive de schéma. Une requête
+directe sur `supabase_migrations.schema_migrations` confirme ces trois
+versions. Aucune mission ni aucun message entrant n'existe encore en
+production ; l'envoi réel demeure désactivé.
+
+La relecture du planificateur confirme que la migration `20260929143000`
+borne déjà à trois claims de collecte la priorité des sources en retard de
+plus d'une heure. Cette borne laisse encore trop peu de créneaux à la file
+quand chaque collecte dure plusieurs dizaines de minutes. Toutes les tâches
+partagent le même groupe GitHub à un seul écrivain. Entre 07 h 06 et
+16 h 38 UTC, les quatre familles observées ont augmenté malgré quatre
+workers de 48 à 66 jobs chacun. À 17 h 17, 704 jobs avaient été créés sur
+24 heures et 539 terminés ; 2 155 attendaient depuis plus de 48 heures. Un
+arbitrage borné de la file dans le planificateur est en préparation. Aucun
+accroissement de parallélisme n'est décidé sans preuve sur les baux et la
+capacité des fournisseurs.
+
+Le [run automatique Notaires 36607163795](https://github.com/Aprivi-dev/immojudis/actions/runs/36607163795)
+s'est ensuite terminé avec un état SQL `succeeded` et une couverture
+`complete` : 832 cartes collectées et dédupliquées, 204 ventes écrites et
+206 observations, sans erreur de source. Il a occupé le créneau d'écriture
+pendant environ 33 minutes. Le
+[canari AGRASC 36609055353](https://github.com/Aprivi-dev/immojudis/actions/runs/36609055353)
+a terminé avec une couverture `partial_success` : huit annonces collectées,
+sept ventes écrites, six détails d'opérateur complets et deux non pris en
+charge, sans erreur de récupération source. Les 25 cartes d'archives sans
+URL ni identité ne permettent pas de certifier l'inventaire public ; le
+nettoyage de catalogue reste désactivé. L'unique erreur documentaire concerne
+la page 96 des diagnostics d'Uckange. Le code local limite aussi désormais
+la pagination à la vue immobilière, afin d'ignorer les paginations voisines.
+
+## Derniers correctifs et contrôles de reprise
+
+La migration locale `20260929203000` donne à une file due un créneau après
+un seul claim de source en retard. Elle conserve le writer unique, les baux,
+la cadence de 30 minutes et la protection des sources récentes. Les tests
+pgTAP antérieurs `386` et `388` sont adaptés au schéma final ; le nouveau
+test `397` vérifie aussi le véritable RPC de claim. Le rejeu CI reste requis.
+
+Le [canari d'enrichissement 36612419562](https://github.com/Aprivi-dev/immojudis/actions/runs/36612419562)
+s'est achevé avec un statut GitHub vert à 18 h 50 UTC : 64 tâches traitées,
+32 de détail et 32 d'enrichissement, en 1 206 secondes. « Traitées » ne
+signifie pas 64 extractions réussies : les deux PDF Vench ont encore échoué
+avec l'ancien plafond de 300 pages et l'OCR des cartes de Ris-Orangis. Un
+claim SQL a rencontré un timeout, puis a réussi au retry. Ces résultats ne
+valident pas encore une résorption durable de la file.
+
+Le rapport Noisy-le-Grand contient 416 pages pour environ 9,6 Mo. Le workflow
+local porte son plafond à 500 pages, avec le budget OCR par passe et la limite
+de téléchargement de 50 Mo inchangés. Pour Uckange, le correctif ne classe
+comme décorative qu'une page sans texte, annotation ni image, contenant un
+unique tracé rempli et simple sur un bord. Les cartes des pages 19 et 20 de
+Ris-Orangis restent exclues de cette règle et signalées en échec OCR. Le PDF
+original, le numéro de page et le motif OCR restent conservés. Une nouvelle
+génération de job permet la reprise après cette correction sans invalider
+les caches complets. Les 130 tests Python ciblés et Ruff passent ; un run
+réel sur le nouveau code reste requis.
+
+Le cron des estimations avait une cadence réelle de dix minutes, alors que
+la migration prévoit cinq minutes. Son retour autorisé à cinq minutes a
+traité des lots de 75, 52 puis trois éléments sans échec. Les lectures à
+18 h 41 et 18 h 50 UTC trouvent zéro estimation due, aucun retard et aucune
+ligne `pending`. Les réponses 500 observées dans les crons concernent le
+nettoyage des ventes ; son scan JSON et son comptage restent à corriger puis
+mesurer. Le timeout distinct du claim d'enrichissement est mentionné ci-dessus.
+
+La migration locale `20260929210000` calcule désormais le délai de rétention
+à l'écriture, avec un remplissage initial borné et un index partiel. Le purgeur
+lit cette valeur au lieu de reparcourir les gros JSON de toutes les ventes,
+et conserve le comptage exact du restant. Le trigger passe après les gardes
+existantes et détecte aussi leurs changements de statut ou de données source.
+Les verrous non bloquants, l'archivage statistique et la limite d'une vente par
+transaction sont conservés. pgTAP, application et mesure du temps réel restent
+requis avant de conclure que les timeouts de ce cron sont corrigés.

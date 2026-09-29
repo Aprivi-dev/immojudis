@@ -127,7 +127,9 @@ jobs:
       PDF_OCR_ENABLED: true
       PDF_MAX_DOCUMENTS_PER_SALE: 6
       PDF_MAX_DOWNLOAD_MB: 50
-      PDF_MAX_TOTAL_PAGES: 300
+      # Vench publishes a 416-page, 9.6 MB descriptive report. OCR remains
+      # limited per pass and document downloads stay capped at 50 MB.
+      PDF_MAX_TOTAL_PAGES: 500
       ENABLE_LICITOR_BENCHMARK: true
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
