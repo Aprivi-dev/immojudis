@@ -301,6 +301,7 @@ def _store_document_analysis_status(
     typed_documents = [_document_profile(document) for document in documents]
     extracted_profiles = [_extracted_document_profile(payload) for payload in pdf_texts]
     text_profiles = [profile for profile in extracted_profiles if profile["extraction_status"] == "extracted"]
+    visual_blank_documents = sum(bool(profile["visual_blank_pages"]) for profile in text_profiles)
     type_counts = Counter(profile["document_type"] for profile in typed_documents)
     extracted_type_counts = Counter(profile["document_type"] for profile in text_profiles)
 
@@ -365,6 +366,13 @@ def _store_document_analysis_status(
     else:
         coverage_status = "rich"
         warning = "Les principales familles de documents sont disponibles pour l'analyse."
+    if visual_blank_documents:
+        if coverage_status == "rich":
+            coverage_status = "partial"
+        warning += (
+            " Certaines pages presque vides ont été écartées après échec OCR ; "
+            "leurs originaux restent disponibles pour vérification."
+        )
 
     extracted_urls = {str(profile.get("url") or "") for profile in text_profiles}
     failed_document_urls = list(dict.fromkeys(
@@ -402,6 +410,7 @@ def _store_document_analysis_status(
         "documents_listed": len(sale.documents or []),
         "documents_downloaded": len(documents),
         "documents_extracted": len(text_profiles),
+        "visual_blank_documents": visual_blank_documents,
         "document_types": dict(type_counts),
         "extracted_document_types": dict(extracted_type_counts),
         "missing_core_documents": missing_core_documents,
@@ -463,6 +472,7 @@ def _extracted_document_profile(payload: dict[str, object]) -> dict[str, object]
         "complete": payload.get("complete") is not False and extraction_status == "extracted",
         "failed_pages": payload.get("failed_pages") or [],
         "blank_pages": payload.get("blank_pages") or [],
+        "visual_blank_pages": payload.get("visual_blank_pages") or [],
     }
 
 

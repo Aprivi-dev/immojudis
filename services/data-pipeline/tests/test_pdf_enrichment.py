@@ -1480,6 +1480,120 @@ def test_objectively_blank_page_is_excluded_but_empty_scan_stays_retryable(tmp_p
     assert payload["pages"][1]["failure_reason"] == "ocr_failed"
 
 
+def test_ocr_empty_near_blank_page_is_explicitly_excluded_and_preserved(tmp_path, monkeypatch) -> None:
+    import fitz
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    path = tmp_path / "near-blank-stamp.pdf"
+    with fitz.open() as document:
+        page = document.new_page()
+        page.draw_rect(fitz.Rect(72, 72, 112, 112), color=(0, 0, 0), fill=(0, 0, 0))
+        document.save(path)
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment._extract_page_text_with_ocr_result",
+        lambda page, **kwargs: {"text": "", "method": "fallback_text", "confidence": 0.0},
+    )
+    payload = extract_pdf_document(path)
+
+    page = payload["pages"][0]
+    assert payload["complete"] is True
+    assert payload["failed_pages"] == []
+    assert payload["blank_pages"] == [1]
+    assert payload["visual_blank_pages"] == [1]
+    assert page["status"] == "visual_blank_excluded"
+    assert page["retryable"] is False
+    assert page["visual_blank"] is True
+    assert page["source_page_preserved"] is True
+    assert page["original_status"] == "failed"
+    assert page["original_failure_reason"] == "ocr_failed"
+    assert page["original_method"] == "fallback_text"
+    assert page["visual_analysis"]["quasi_empty"] is True
+    assert page["visual_analysis"]["ink_ratio"] <= 0.005
+    from src.pdf_enrichment import _page_requires_retry
+
+    assert _page_requires_retry(page, ocr_enabled=True) is False
+
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/near-blank.pdf",
+            "documents": [{"label": "PV", "url": "https://example.test/near-blank.pdf"}],
+        }
+    )
+    payload.update({"label": "PV", "url": "https://example.test/near-blank.pdf"})
+    _store_document_analysis_status(
+        sale,
+        [{"label": "PV", "url": "https://example.test/near-blank.pdf"}],
+        [payload],
+    )
+    profile = sale.raw_payload["document_analysis"]["profiles"][0]
+    assert profile["extraction_status"] == "empty"
+    assert profile["visual_blank_pages"] == [1]
+
+
+def test_ocr_empty_rich_image_remains_incomplete_with_visual_evidence(tmp_path, monkeypatch) -> None:
+    import fitz
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    path = tmp_path / "rich-image.pdf"
+    with fitz.open() as document:
+        page = document.new_page()
+        page.draw_rect(fitz.Rect(0, 0, page.rect.width, page.rect.height / 2), color=(0, 0, 0), fill=(0, 0, 0))
+        document.save(path)
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment._extract_page_text_with_ocr_result",
+        lambda page, **kwargs: {"text": "", "method": "fallback_text", "confidence": 0.0},
+    )
+    payload = extract_pdf_document(path)
+
+    page = payload["pages"][0]
+    assert payload["complete"] is False
+    assert payload["failed_pages"] == [1]
+    assert payload["blank_pages"] == []
+    assert payload["visual_blank_pages"] == []
+    assert page["status"] == "failed"
+    assert page["retryable"] is True
+    assert page["visual_analysis"]["quasi_empty"] is False
+    assert page["visual_analysis"]["ink_ratio"] > 0.005
+
+
+def test_visual_blank_page_keeps_document_coverage_partial() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/example-sale.html",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    _store_document_analysis_status(
+        sale,
+        [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        [
+            {
+                "label": "PV",
+                "url": "https://example.test/pv.pdf",
+                "document_type": "pv_huissier",
+                "text": "Description du bien vérifiée sur la page 1.",
+                "complete": True,
+                "extraction_status": "extracted",
+                "visual_blank_pages": [2],
+            }
+        ],
+    )
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["failed_documents"] == 0
+    assert analysis["visual_blank_documents"] == 1
+    assert analysis["coverage_status"] == "partial"
+    assert analysis["profiles"][0]["visual_blank_pages"] == [2]
+    assert "originaux" in analysis["warning"]
+
+
 def test_legacy_fallback_page_cache_is_not_a_hit_when_ocr_is_enabled(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     file_path = tmp_path / "legacy.pdf"
@@ -1967,6 +2081,45 @@ def test_download_documents_rejects_private_network_urls(tmp_path, monkeypatch) 
     assert download_documents(sale, output_root=tmp_path, stats=stats) == []
     assert stats.errors == 1
     assert transport_targets == []
+
+
+def test_pinned_document_transport_adds_cessions_intermediate_only_for_exact_host() -> None:
+    import ssl
+    from pathlib import Path
+
+    from src.pdf_enrichment import PublicDocumentTarget, _PinnedHTTPTransport
+
+    pem = (
+        Path(__file__).parents[1]
+        / "src"
+        / "sources"
+        / "certificates"
+        / "sectigo-public-ov-r36.pem"
+    ).read_text()
+    intermediate_der = ssl.PEM_cert_to_DER_cert(pem)
+    if isinstance(intermediate_der, str):
+        intermediate_der = bytes.fromhex(intermediate_der)
+
+    def target(hostname: str) -> PublicDocumentTarget:
+        return PublicDocumentTarget(
+            url=f"https://{hostname}/document.pdf",
+            hostname=hostname,
+            port=443,
+            addresses=("203.0.113.10",),
+        )
+
+    cessions_transport = _PinnedHTTPTransport(target("cessions.immobilier-etat.gouv.fr"))
+    default_transport = _PinnedHTTPTransport(target("documents.example"))
+    try:
+        cessions_context = cessions_transport._pool._ssl_context
+        default_context = default_transport._pool._ssl_context
+        assert cessions_context.verify_mode == ssl.CERT_REQUIRED
+        assert cessions_context.check_hostname
+        assert intermediate_der in cessions_context.get_ca_certs(binary_form=True)
+        assert intermediate_der not in default_context.get_ca_certs(binary_form=True)
+    finally:
+        cessions_transport.close()
+        default_transport.close()
 
 
 def test_download_documents_fetches_duplicate_url_only_once(tmp_path, monkeypatch) -> None:

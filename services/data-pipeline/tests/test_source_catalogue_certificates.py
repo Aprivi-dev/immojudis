@@ -146,3 +146,29 @@ def test_agrasc_unknown_unlinked_cards_never_certify_inventory(monkeypatch) -> N
     assert certificate["partitions"][0]["unlinked_public_cards"][0]["sold"] is False
     assert result.coverage["coverage_complete"] is False
     assert result.coverage["scoped_inventory_complete"] is False
+
+
+def test_agrasc_seller_catalogue_card_is_excluded_with_public_catalogue_proof(monkeypatch) -> None:
+    html = """
+    <div class="view-liste-ventes-immobilieres">
+      <div class="card-vente-immo">
+        <h3 class="fr-card__title"><a href="https://www.agorastore.fr/ventes-occasions/vendeur/agrascimmo">AGRASC</a></h3>
+        <p class="fr-card__detail">Agen (47)</p>
+        <p class="fr-card__desc">Ventes immobilières AGRASC.</p>
+      </div>
+      <a class="fr-pagination__link--last" href="/ventes-aux-encheres?page=0">Dernière page</a>
+    </div>
+    """
+    _patch_agrasc_client(monkeypatch, html)
+
+    result = agrasc.scrape_agrasc_aquitaine_result()
+
+    assert result.sales == []
+    certificate = result.coverage["certificate"]
+    assert certificate["public_discovery_certified"] is True
+    assert certificate["all_discovered_announcements_emitted"] is True
+    assert certificate["excluded_urls"] == [{
+        "url": "https://www.agorastore.fr/ventes-occasions/vendeur/agrascimmo",
+        "reason": "operator_seller_catalogue_without_listing_identity",
+    }]
+    assert result.coverage["inventory_scope"] == "addressable_public_catalogue"

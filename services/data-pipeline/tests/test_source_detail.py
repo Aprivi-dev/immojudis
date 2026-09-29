@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from src import source_detail
@@ -121,6 +123,112 @@ def test_notarial_detail_keeps_requested_identity_and_rejects_empty_payload(monk
         _, _, raw = source_detail.fetch_public_detail('notaires', url, SETTINGS, {})
         assert raw['source_url'] == url
         assert raw['source_name'] == 'notaires'
+
+
+def test_trocadero_agrasc_detail_uses_the_static_operator_parser(monkeypatch):
+    from src.sources.agrasc_operators import parse_trocadero_operator_detail
+
+    requested = []
+    url = 'https://lesnotairesdutrocadero.fr/appel_d_offre/domaine-dexception-antibes/'
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def get(self, endpoint):
+            requested.append(endpoint)
+            return ('<main><h1>Domaine d’exception</h1><p>Bien situé à Antibes (06160), '
+                    '41 avenue des Pins du Cap.</p></main>')
+
+    monkeypatch.setattr(source_detail, 'PoliteHttpClient', Client)
+    endpoint, _, raw = source_detail.fetch_public_detail('agrasc', url, SETTINGS, {})
+
+    assert requested == [url]
+    assert endpoint == url
+    assert raw['source_url'] == url
+    assert raw['source_name'] == 'agrasc'
+    assert raw['city'] == 'Antibes'
+    assert parse_trocadero_operator_detail('<main></main>', url) == {}
+
+
+def test_agora_marketplace_product_follows_known_redirect_and_checks_product_id(monkeypatch):
+    url = (
+        'https://www.agorastore.fr/vente-occasion/immobilier/appartement/'
+        'appartement-115-m-paris-75-407453.aspx'
+    )
+    observed = {}
+    props = {
+        'ficheProduitModel': {
+            'productPageWrapper': {'productPageModel': {
+                'product': {'id': 407453, 'realEstateInformation': {}},
+                'descriptifs': [{'descriptifs': [
+                    {'descriptifLibelle': 'Surface Carrez', 'value': '117,31 m²'},
+                ]}],
+                'documents': [], 'images': [],
+            }},
+            'saleState': {'productId': 407453},
+        }
+    }
+    body = '<script>React.createElement(FicheProduitApp, ' + json.dumps(props) + ');</script>'
+
+    class Client:
+        def __init__(self, **kwargs):
+            observed.update(kwargs)
+
+        def get(self, endpoint):
+            assert endpoint == url
+            return body
+
+    monkeypatch.setattr(source_detail, 'PoliteHttpClient', Client)
+    endpoint, _, raw = source_detail.fetch_public_detail('agrasc', url, SETTINGS, {})
+
+    assert endpoint == url
+    assert observed['base_url'] == 'https://www.agorastore.fr'
+    assert observed['allowed_redirect_origins'] == ('https://www.agorastore-immo.fr',)
+    assert raw['external_id'] == '407453'
+    assert raw['carrez_surface_m2'] == '117.31'
+
+
+def test_agora_seller_catalogue_is_rejected_without_network_request(monkeypatch):
+    monkeypatch.setattr(source_detail, 'PoliteHttpClient', lambda **kwargs: pytest.fail('Unexpected HTTP client'))
+    with pytest.raises(ValueError, match='seller catalogue'):
+        source_detail.fetch_public_detail(
+            'agrasc',
+            'https://www.agorastore.fr/ventes-occasions/vendeur/agrascimmo',
+            SETTINGS,
+            {},
+        )
+
+
+@pytest.mark.parametrize('detail_city,expected_mismatch', [('Cannes', False), ('Pineuilh', True)])
+def test_petites_affiches_detail_refuses_redirected_other_property(monkeypatch, detail_city, expected_mismatch):
+    from src.sources import petites_affiches
+
+    legacy_url = (
+        'https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/'
+        'judiciaire/une-cave-a-cannes-59033.html'
+    )
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def get(self, url):
+            assert url == legacy_url
+            return '<html></html>'
+
+    monkeypatch.setattr(source_detail, 'PoliteHttpClient', Client)
+    monkeypatch.setattr(
+        petites_affiches,
+        'parse_petites_affiches_detail_html',
+        lambda body, url: {'title': 'Une cave', 'city': detail_city},
+    )
+    if expected_mismatch:
+        with pytest.raises(ValueError, match='identity mismatch'):
+            source_detail.fetch_public_detail('petites_affiches', legacy_url, SETTINGS, {})
+    else:
+        _, _, raw = source_detail.fetch_public_detail('petites_affiches', legacy_url, SETTINGS, {})
+        assert raw['city'] == 'Cannes'
 
 
 def test_robots_refusal_prevents_detail_request(monkeypatch):

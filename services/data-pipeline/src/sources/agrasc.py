@@ -16,6 +16,7 @@ from src.normalize import clean_text, extract_department, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.agrasc_operators import enrich_agrasc_operator
+from src.sources.agrasc_urls import classify_agrasc_operator_url
 from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, unique_dicts
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
@@ -84,6 +85,11 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
             if url in seen_sales:
                 continue
             seen_sales.add(url)
+            if classify_agrasc_operator_url(url) == "agorastore_seller":
+                # Keep this public catalogue card in CatalogueEvidence, but
+                # never publish it as a property without a listing identity.
+                exclusions[url] = "operator_seller_catalogue_without_listing_identity"
+                continue
             if sale.get("department") in TARGET_DEPARTMENTS:
                 from src.source_checkpoint import restore_detail
                 if not restore_detail(sale):

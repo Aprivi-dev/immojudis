@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from src.sources.agrasc_urls import is_allowed_agrasc_source_url
 from src.sources.common import is_allowed_origin_url
 
 SOURCE_ORIGINS: dict[str, tuple[str, ...]] = {
@@ -14,8 +15,15 @@ SOURCE_ORIGINS: dict[str, tuple[str, ...]] = {
     "encheres_publiques": ("https://www.encheres-publiques.com", "https://encheres-publiques.com"),
     "petites_affiches": ("https://www.petitesaffiches.fr", "https://petitesaffiches.fr"),
     "cessions_etat": ("https://cessions.immobilier-etat.gouv.fr",),
-    # Official AGRASC cards link directly to these two auction operators.
-    "agrasc": ("https://agrasc.gouv.fr", "https://www.agorastore-immo.fr", "https://www.immo-interactif.fr"),
+    # Official AGRASC cards can link to the catalogue, its two existing
+    # operators, and the two newly observed public operator families.
+    "agrasc": (
+        "https://agrasc.gouv.fr",
+        "https://www.agorastore-immo.fr",
+        "https://www.immo-interactif.fr",
+        "https://lesnotairesdutrocadero.fr",
+        "https://www.agorastore.fr",
+    ),
     "encheres_immobilieres": ("https://encheresimmobilieres.fr", "https://www.encheresimmobilieres.fr"),
     "notaires": (
         "https://www.immobilier.notaires.fr",
@@ -57,7 +65,9 @@ class RawAuctionSale(BaseModel):
         if not any(_has_text(value) for value in (self.title, self.description, self.raw_text)):
             raise ValueError("missing title, description or raw_text")
         allowed_origins = SOURCE_ORIGINS.get(self.source_name)
-        if allowed_origins and not is_allowed_origin_url(self.source_url, allowed_origins):
+        if self.source_name == "agrasc" and not is_allowed_agrasc_source_url(self.source_url):
+            raise ValueError("source_url is not a supported AGRASC public endpoint")
+        if allowed_origins and self.source_name != "agrasc" and not is_allowed_origin_url(self.source_url, allowed_origins):
             raise ValueError(f"source_url does not belong to source {self.source_name}")
         return self
 

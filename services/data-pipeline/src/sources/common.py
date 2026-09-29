@@ -266,6 +266,9 @@ class PoliteHttpClient:
         self._visited_urls: list[str] = []
         self._retry_not_before: str | None = None
         self._access_denials = 0
+        self._robots_by_origin: dict[tuple[str, str, int], RobotsRules] = {}
+        self._robots_unavailable: set[tuple[str, str, int]] = set()
+        self._last_robots_origin: tuple[str, str, int] | None = None
         headers = {
             "User-Agent": self.user_agent,
             "Accept": self.accept,
@@ -287,11 +290,17 @@ class PoliteHttpClient:
         try:
             response = self._fetch_robots(urljoin(self.base_url, "/robots.txt"))
             self._robots = RobotsRules.parse(response.text, self.user_agent)
+            base_origin = _origin(urlparse(self.base_url))
+            if base_origin is not None:
+                self._robots_by_origin[base_origin] = self._robots
+            if self._last_robots_origin is not None:
+                self._robots_by_origin[self._last_robots_origin] = self._robots
         except Exception as exc:  # pragma: no cover - depends on network state
             LOGGER.warning("Could not read robots.txt for %s: %s", self.base_url, exc)
 
     def _fetch_robots(self, url: str) -> httpx.Response:
         current_url = url
+        self._last_robots_origin = None
         allowed_origins = (self.base_url, *self.allowed_redirect_origins)
         for redirect_count in range(MAX_SAFE_REDIRECTS + 1):
             if not is_allowed_origin_url(current_url, allowed_origins):
@@ -299,6 +308,7 @@ class PoliteHttpClient:
             response = self._client.get(current_url)
             if response.status_code not in REDIRECT_STATUS_CODES:
                 response.raise_for_status()
+                self._last_robots_origin = _origin(urlparse(current_url))
                 return response
             if redirect_count >= MAX_SAFE_REDIRECTS:
                 raise RuntimeError(f"too many redirects while fetching {url}")
@@ -308,6 +318,38 @@ class PoliteHttpClient:
                 return response
             current_url = urljoin(current_url, location)
         raise RuntimeError(f"too many redirects while fetching {url}")
+
+    def _robots_for_url(self, url: str) -> RobotsRules:
+        """Return robots policy for the exact origin that will be requested.
+
+        Redirect targets are separate trust boundaries.  Load their robots.txt
+        lazily before the first request and fail closed if that policy cannot be
+        verified.  The base origin keeps the historical startup behavior.
+        """
+        origin = _origin(urlparse(url))
+        if origin is None:
+            raise RuntimeError(f"cannot determine source origin for {url}")
+        base_origin = _origin(urlparse(self.base_url))
+        if origin == base_origin:
+            return self._robots
+        rules = self._robots_by_origin.get(origin)
+        if rules is not None:
+            return rules
+        if origin in self._robots_unavailable:
+            raise RuntimeError(f"robots.txt could not be verified for redirect origin: {url}")
+
+        parsed = urlparse(url)
+        robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+        try:
+            response = self._fetch_robots(robots_url)
+            rules = RobotsRules.parse(response.text, self.user_agent)
+        except Exception as exc:
+            self._robots_unavailable.add(origin)
+            raise RuntimeError(f"robots.txt could not be verified for redirect origin: {url}") from exc
+        self._robots_by_origin[origin] = rules
+        if self._last_robots_origin is not None:
+            self._robots_by_origin[self._last_robots_origin] = rules
+        return rules
 
     def get(self, url: str) -> str:
         self._guard(url)
@@ -323,7 +365,7 @@ class PoliteHttpClient:
         allowed_origins = (self.base_url, *self.allowed_redirect_origins)
         if not is_allowed_origin_url(url, allowed_origins):
             raise RuntimeError(f"refusing URL outside configured source origin: {url}")
-        if not self._robots.can_fetch(url):
+        if not self._robots_for_url(url).can_fetch(url):
             raise RuntimeError(f"robots.txt does not allow fetching {url}")
 
     def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:

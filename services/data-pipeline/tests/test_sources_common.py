@@ -66,6 +66,61 @@ def test_polite_client_rejects_unconfigured_robots_redirect(monkeypatch) -> None
     assert client._robots == common.RobotsRules()
 
 
+def test_polite_client_verifies_redirect_origin_robots_before_fetch(monkeypatch) -> None:
+    requested: list[str] = []
+
+    class Client:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+
+        def get(self, url: str) -> _Response:
+            requested.append(url)
+            if url == "https://www.agorastore.fr/robots.txt":
+                return _Response(200, text="User-agent: *\n")
+            if url == "https://www.agorastore-immo.fr/robots.txt":
+                return _Response(200, text="User-agent: *\nDisallow: /vente-occasion/")
+            raise AssertionError(f"unexpected request: {url}")
+
+    monkeypatch.setattr(common.httpx, "Client", Client)
+    client = common.PoliteHttpClient(
+        base_url="https://www.agorastore.fr",
+        allowed_redirect_origins=("https://www.agorastore-immo.fr",),
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+
+    with pytest.raises(RuntimeError, match="robots.txt does not allow"):
+        client._guard("https://www.agorastore-immo.fr/vente-occasion/item-407453.aspx")
+    assert requested == [
+        "https://www.agorastore.fr/robots.txt",
+        "https://www.agorastore-immo.fr/robots.txt",
+    ]
+
+
+def test_polite_client_fails_closed_when_redirect_origin_robots_are_unavailable(monkeypatch) -> None:
+    class Client:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+
+        def get(self, url: str) -> _Response:
+            if url == "https://www.agorastore.fr/robots.txt":
+                return _Response(200, text="User-agent: *\n")
+            return _Response(503)
+
+    monkeypatch.setattr(common.httpx, "Client", Client)
+    client = common.PoliteHttpClient(
+        base_url="https://www.agorastore.fr",
+        allowed_redirect_origins=("https://www.agorastore-immo.fr",),
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+
+    with pytest.raises(RuntimeError, match="could not be verified"):
+        client._guard("https://www.agorastore-immo.fr/vente-occasion/item-407453.aspx")
+
+
 def test_agrasc_intermediate_does_not_disable_root_or_hostname_validation():
     import hashlib
     import ssl

@@ -49,6 +49,20 @@ if (
   process.exit(1);
 }
 
+const productionBuild = [process.env.VERCEL_ENV, process.env.VERCEL_TARGET_ENV].includes(
+  "production",
+);
+if (
+  productionBuild &&
+  process.env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim() &&
+  !/^whsec_[A-Za-z0-9+/=_-]{16,}$/.test(process.env.RESEND_WEBHOOK_SECRET?.trim() || "")
+) {
+  console.error(
+    "[env] RESEND_WEBHOOK_SECRET must be configured for the production information-agent inbound webhook.",
+  );
+  process.exit(1);
+}
+
 function unquote(value) {
   return value.replace(/^(['"])(.*)\1$/, "$2");
 }

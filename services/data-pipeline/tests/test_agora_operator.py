@@ -8,8 +8,17 @@ from src.sources.agrasc_operators import (
     parse_agora_operator_detail,
     parse_immo_operator_json,
 )
+from src.sources.agrasc_urls import classify_agrasc_operator_url, is_allowed_agrasc_source_url
 
 URL = 'https://www.agorastore-immo.fr/vente-occasion/maison-430647.aspx'
+LEGACY_MARKETPLACE_URL = (
+    'https://www.agorastore.fr/vente-occasion/immobilier/appartement/'
+    'appartement-115-m-paris-75-407453.aspx'
+)
+CANONICAL_MARKETPLACE_URL = (
+    'https://www.agorastore-immo.fr/vente-occasion/immobilier/appartement/'
+    'appartement-110-m-paris-75-407453.aspx'
+)
 
 
 def page(product_id=430647):
@@ -41,6 +50,23 @@ def synthetic_page(product_id=123456, *, cadastral_value=None):
     props = {
         'ficheProduitModel': {
             'productPageWrapper': {'productPageModel': model},
+            'saleState': {'productId': product_id},
+        }
+    }
+    return '<script>React.createElement(FicheProduitApp, ' + json.dumps(props) + ');</script>'
+
+
+def carrez_page(product_id=407453):
+    props = {
+        'ficheProduitModel': {
+            'productPageWrapper': {'productPageModel': {
+                'product': {'id': product_id, 'realEstateInformation': {}},
+                'descriptifs': [{'descriptifs': [
+                    {'descriptifLibelle': 'Surface Carrez', 'value': '117,31 m²'},
+                    {'descriptifLibelle': 'Adresse', 'value': '1 rue de Test, 75001 Paris'},
+                ]}],
+                'documents': [], 'images': [],
+            }},
             'saleState': {'productId': product_id},
         }
     }
@@ -99,6 +125,35 @@ def test_enrichment_uses_validated_operator_product_id_as_external_id():
     assert sale['external_id'] == '123456'
 
 
+def test_legacy_agora_hostname_keeps_its_exact_source_origin(monkeypatch):
+    url = 'https://agorastore-immo.fr/vente-occasion/maison-430647.aspx'
+    observed = {}
+
+    class Client:
+        def __init__(self, **kwargs):
+            observed.update(kwargs)
+
+        def get(self, endpoint):
+            assert endpoint == url
+            return page()
+
+    import src.sources.agrasc_operators as operators
+    monkeypatch.setattr(operators, 'PoliteHttpClient', Client)
+    sale = {'source_url': url, 'source_blocks': {}}
+    errors = []
+
+    enrich_agrasc_operator(
+        sale,
+        {},
+        {'user_agent': 'synthetic-test', 'request_delay_seconds': 0, 'request_timeout_seconds': 1},
+        errors,
+    )
+
+    assert errors == []
+    assert observed['base_url'] == 'https://agorastore-immo.fr'
+    assert sale['external_id'] == '430647'
+
+
 def test_api_product_id_is_promoted_as_external_id():
     payload = json.dumps({
         'id': 777,
@@ -115,6 +170,53 @@ def test_api_product_id_is_promoted_as_external_id():
 def test_public_props_identity_must_match_requested_listing():
     with pytest.raises(ValueError, match='identity mismatch'):
         parse_agora_operator_detail(page(123), URL)
+
+
+def test_marketplace_product_variant_keeps_identity_after_canonical_redirect():
+    marketplace_url = LEGACY_MARKETPLACE_URL
+
+    detail = parse_agora_operator_detail(carrez_page(), marketplace_url)
+
+    assert classify_agrasc_operator_url(marketplace_url) == 'agorastore_product'
+    assert is_allowed_agrasc_source_url(marketplace_url) is True
+    assert detail['external_id'] == '407453'
+    assert detail['carrez_surface_m2'] == '117.31'
+    assert 'surface_m2' not in detail
+    with pytest.raises(ValueError, match='identity mismatch'):
+        parse_agora_operator_detail(carrez_page(407454), marketplace_url)
+
+
+def test_marketplace_product_enrichment_allows_only_known_canonical_redirect(monkeypatch):
+    marketplace_url = LEGACY_MARKETPLACE_URL
+    observed = {}
+
+    class Client:
+        def __init__(self, **kwargs):
+            observed.update(kwargs)
+            self._visited_urls = []
+
+        def get(self, url):
+            assert url == marketplace_url
+            self._visited_urls.append(CANONICAL_MARKETPLACE_URL)
+            return carrez_page()
+
+    import src.sources.agrasc_operators as operators
+    monkeypatch.setattr(operators, 'PoliteHttpClient', Client)
+    sale = {'source_url': marketplace_url, 'source_blocks': {}}
+    errors = []
+
+    enrich_agrasc_operator(
+        sale,
+        {},
+        {'user_agent': 'synthetic-test', 'request_delay_seconds': 0, 'request_timeout_seconds': 1},
+        errors,
+    )
+
+    assert errors == []
+    assert observed['base_url'] == 'https://www.agorastore.fr'
+    assert observed['allowed_redirect_origins'] == (AGORA_ORIGIN,)
+    assert sale['source_blocks']['operator_canonical_url'].startswith(AGORA_ORIGIN)
+    assert sale['carrez_surface_m2'] == '117.31'
 
 
 def test_missing_public_props_retains_partial_fallback():

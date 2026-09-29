@@ -116,7 +116,7 @@ def test_run_scraper_keeps_thread_callable_when_isolation_disabled() -> None:
     assert result[1] >= 0
 
 
-def test_run_scraper_keeps_non_vench_source_on_original_thread_path(monkeypatch) -> None:
+def test_run_scraper_isolates_avoventes_by_default(monkeypatch) -> None:
     expected = ScrapeResult([], [], {"coverage_complete": True})
     isolated_calls: list[str] = []
 
@@ -128,6 +128,28 @@ def test_run_scraper_keeps_non_vench_source_on_original_thread_path(monkeypatch)
 
     result = main._run_scraper(
         "avoventes",
+        lambda: (_ for _ in ()).throw(AssertionError("thread fallback must not run")),
+        {**_settings(), "source_process_isolation": True, "source_scrape_timeout_seconds": 17},
+        {},
+        {},
+    )
+
+    assert result[0] == expected
+    assert isolated_calls == ["avoventes"]
+
+
+def test_run_scraper_keeps_other_sources_on_original_thread_path(monkeypatch) -> None:
+    expected = ScrapeResult([], [], {"coverage_complete": True})
+    isolated_calls: list[str] = []
+
+    monkeypatch.setattr(
+        main,
+        "run_source_in_subprocess",
+        lambda source, **kwargs: isolated_calls.append(source) or (expected, 0.1),
+    )
+
+    result = main._run_scraper(
+        "notaires",
         lambda: expected,
         {**_settings(), "source_process_isolation": True},
         {},

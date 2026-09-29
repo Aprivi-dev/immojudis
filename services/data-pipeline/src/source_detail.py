@@ -14,6 +14,7 @@ def fetch_public_detail(source: str, source_url: str, settings: dict, clients: d
     endpoint = source_url
     parser = getattr(module, 'parse_' + source + '_detail_html', None)
     base = module.BASE_URL
+    redirect_origins: tuple[str, ...] = ()
     public_origins = (base, 'https://www.immo-interactif.fr', 'https://immo-interactif.fr') if source == 'notaires' else (base,)
     if source != 'agrasc' and not is_allowed_origin_url(source_url, public_origins):
         raise ValueError('Unsupported source endpoint')
@@ -30,29 +31,57 @@ def fetch_public_detail(source: str, source_url: str, settings: dict, clients: d
     elif source == 'agrasc':
         from src.sources.agrasc_operators import (
             AGORA_ORIGIN,
-            IMMO_ORIGIN,
             parse_agora_operator_detail,
             parse_immo_operator_json,
+            parse_trocadero_operator_detail,
+        )
+        from src.sources.agrasc_urls import (
+            AGORA_IMMO_ORIGINS,
+            AGORA_MARKETPLACE_ORIGIN,
+            TROCADERO_ORIGIN,
+            classify_agrasc_operator_url,
         )
         from src.sources.notaires import API_URL, BASE_URL
-        if is_allowed_origin_url(endpoint, (AGORA_ORIGIN,)):
-            base, parser = AGORA_ORIGIN, parse_agora_operator_detail
-        elif is_allowed_origin_url(endpoint, (IMMO_ORIGIN,)):
+        kind = classify_agrasc_operator_url(endpoint)
+        if kind == "agorastore_seller":
+            raise ValueError('Unsupported AGRASC seller catalogue endpoint')
+        if kind == "agorastore_product":
+            if is_allowed_origin_url(endpoint, (AGORA_MARKETPLACE_ORIGIN,)):
+                base = AGORA_MARKETPLACE_ORIGIN
+                redirect_origins = (AGORA_ORIGIN,)
+            else:
+                base = next((origin for origin in AGORA_IMMO_ORIGINS if is_allowed_origin_url(endpoint, (origin,))), AGORA_ORIGIN)
+            parser = parse_agora_operator_detail
+        elif kind == "immo_interactif":
             marker = urlsplit(endpoint).path.rstrip('/').split('/')[-1]
             if not marker.isdigit():
                 raise ValueError('Unsupported operator identity')
             base, endpoint = BASE_URL, f'{API_URL}/{marker}'
             def parser(body, url, expected_id=marker):
                 return parse_immo_operator_json(body, expected_id)
+        elif kind == "trocadero_offer":
+            base, parser = TROCADERO_ORIGIN, parse_trocadero_operator_detail
         else:
             raise ValueError('Unsupported operator: document review required')
-    if not endpoint or not parser or not is_allowed_origin_url(endpoint, (base,)):
+    allowed_endpoint_origins = (base, *redirect_origins)
+    if not endpoint or not parser or not is_allowed_origin_url(endpoint, allowed_endpoint_origins):
         raise ValueError('Unsupported source endpoint')
     if base not in clients:
-        clients[base] = PoliteHttpClient(base_url=base, user_agent=str(settings['user_agent']),
-            delay_seconds=1, timeout_seconds=30,
-            tls_context=cessions_tls_context() if source == "cessions_etat" else None,
-            accept="application/json,text/plain,*/*" if source == "notaires" or (source == "agrasc" and "pub-services" in endpoint) else "text/html,*/*")
+        client_kwargs = {
+            "base_url": base,
+            "user_agent": str(settings["user_agent"]),
+            "delay_seconds": 1,
+            "timeout_seconds": 30,
+            "tls_context": cessions_tls_context() if source == "cessions_etat" else None,
+            "accept": (
+                "application/json,text/plain,*/*"
+                if source == "notaires" or (source == "agrasc" and "pub-services" in endpoint)
+                else "text/html,*/*"
+            ),
+        }
+        if redirect_origins:
+            client_kwargs["allowed_redirect_origins"] = redirect_origins
+        clients[base] = PoliteHttpClient(**client_kwargs)
         if source == 'licitor':
             rules = module.RobotsRules.parse(clients[base].get(base + '/robots.txt'), str(settings['user_agent']))
             clients[base].audit_robots = rules
@@ -61,6 +90,10 @@ def fetch_public_detail(source: str, source_url: str, settings: dict, clients: d
         raise ValueError('Robots access refused')
     body = client.get(endpoint)
     raw = parser(body, endpoint)
+    if source == 'petites_affiches' and isinstance(raw, dict):
+        mismatch = module._detail_identity_mismatch(source_url, raw)
+        if mismatch:
+            raise ValueError('Petites Affiches detail identity mismatch: review required')
     factual_fields = ('title', 'description', 'address', 'city', 'starting_price_eur', 'sale_date',
                       'surface_m2', 'habitable_surface_m2', 'carrez_surface_m2', 'land_surface_m2', 'documents')
     if not isinstance(raw, dict) or not (

@@ -6,6 +6,10 @@ const MAX_REDIRECT_LOG_PATH = 512;
 const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
 const PETITES_AFFICHES_HOST = "www.petitesaffiches.fr";
 const PETITES_AFFICHES_LIST_PATH = "/encheres-immobilieres/";
+const PETITES_AFFICHES_LEGACY_DETAIL_PATH =
+  /^\/encheres-immobilieres\/vente\/immobiliere\/(?:judiciaire|volontaire)\/[a-z0-9-]+-\d+\.html$/;
+const PETITES_AFFICHES_CANONICAL_DETAIL_PATH =
+  /^\/vente\/immobiliere\/(?:judiciaire|volontaire)\/[a-z0-9-]+-\d+\.html$/;
 const CESSIONS_HOST = "cessions.immobilier-etat.gouv.fr";
 const hosts = new Set([PETITES_AFFICHES_HOST, CESSIONS_HOST]);
 const cessionsClient = Deno.createHttpClient({
@@ -31,6 +35,9 @@ function safeRedirectPath(host: string, path: string): string | null {
       /^\/encheres-immobilieres\/ventes-aux-encheres-immobilieres-p\d+\.html$/.test(path))
   ) {
     return path;
+  }
+  if (host === PETITES_AFFICHES_HOST && PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(path)) {
+    return "/vente/immobiliere/";
   }
   if (host === CESSIONS_HOST && path.startsWith("/biens/")) {
     return "/biens/";
@@ -93,10 +100,10 @@ function logRedirect(status: number, location: string | null, currentUrl: string
 }
 
 /**
- * Upgrade the one observed Petites Affiches HTTP canonical redirect before it
- * reaches the caller. The relay still accepts HTTPS targets only; this is a
- * response-header rewrite, never an HTTP fetch. Query-bearing redirects are
- * left untouched so their semantics are not changed silently.
+ * Upgrade observed same-host Petites Affiches HTTP canonical redirects before
+ * they reach the caller. The relay still accepts HTTPS targets only; this is
+ * a response-header rewrite, never an HTTP fetch. Query-bearing redirects
+ * are left untouched so their semantics are not changed silently.
  */
 export function normalizeRedirectLocation(
   status: number,
@@ -118,16 +125,22 @@ export function normalizeRedirectLocation(
       destination.port ||
       destination.username ||
       destination.password ||
-      destination.pathname !== PETITES_AFFICHES_LIST_PATH ||
       destination.search ||
       destination.hash
     ) {
       return location;
     }
-    const normalized = `https://${PETITES_AFFICHES_HOST}${PETITES_AFFICHES_LIST_PATH}`;
+    const isListRedirect = destination.pathname === PETITES_AFFICHES_LIST_PATH;
+    const isDetailRedirect =
+      PETITES_AFFICHES_LEGACY_DETAIL_PATH.test(source.pathname) &&
+      PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(destination.pathname) &&
+      !source.search &&
+      !source.hash;
+    if (!isListRedirect && !isDetailRedirect) return location;
+    const normalized = `https://${PETITES_AFFICHES_HOST}${destination.pathname}`;
     // A source redirecting an already canonical URL back to itself would
     // otherwise make the caller repeat the same request indefinitely.
-    if (source.pathname === PETITES_AFFICHES_LIST_PATH && !source.search && !source.hash) {
+    if (source.pathname === destination.pathname && !source.search && !source.hash) {
       return location;
     }
     return normalized;
@@ -147,7 +160,11 @@ export function allowedTarget(value: string, method: string, body: string): bool
         !body &&
         (u.hostname === CESSIONS_HOST ||
           u.pathname === "/robots.txt" ||
-          u.pathname.startsWith(PETITES_AFFICHES_LIST_PATH))
+          u.pathname.startsWith(PETITES_AFFICHES_LIST_PATH) ||
+          (u.hostname === PETITES_AFFICHES_HOST &&
+            PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(u.pathname) &&
+            !u.search &&
+            !u.hash))
       );
     }
     if (
