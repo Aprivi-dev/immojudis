@@ -143,6 +143,10 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
             raw_sales.append(summary)
             continue
         sale = parse_licitor_detail_html(detail_html, detail_url)
+        if (sale.get('title') or sale.get('description')) and any(
+            sale.get(key) for key in ('address', 'city', 'starting_price_eur', 'surface_m2', 'documents')
+        ):
+            sale['source_detail_status'] = 'complete'
         if summary.get("_checkpoint_signature"):
             sale["_checkpoint_signature"] = summary["_checkpoint_signature"]
             sale["_discovered_at"] = summary.get("_discovered_at")

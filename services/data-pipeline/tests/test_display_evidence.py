@@ -3,9 +3,18 @@ from decimal import Decimal
 
 import pytest
 
+from src.config import load_settings
 from src.enrichment.display_evidence import verify_display_claims
 from src.enrichment.extract_structured import apply_cached_llm_extraction_to_sale
 from src.models import AuctionSale
+
+
+def _cached_payload(extraction: dict) -> dict:
+    return {
+        'llm_prompt_version': 'v1',
+        'llm_display_prompt_version': str(load_settings()['llm_display_prompt_version']),
+        'llm_extraction': extraction,
+    }
 
 
 def codes(text, evidence='', **fields):
@@ -88,8 +97,8 @@ def test_public_display_keeps_ordinary_property_facts():
 def test_cached_high_confidence_hallucination_is_not_accepted():
     sale = AuctionSale(source_name='agrasc', source_url='https://example.test/house', property_type='house',
                        surface_m2=Decimal('120'), description='Maison de 120 m².',
-                       raw_payload={'llm_extraction': {'display_description': 'Maison de 500 m².',
-                                                       'confidence': {'display_description': 1}}})
+                       raw_payload=_cached_payload({'display_description': 'Maison de 500 m².',
+                                                    'confidence': {'display_description': 1}}))
     apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
     assert sale.raw_payload['llm_display_status'] == 'fallback'
     assert '500' not in sale.raw_payload['llm_display_description']
@@ -104,12 +113,10 @@ def test_cached_display_revalidates_source_quotes_for_public_content():
         property_type='house',
         surface_m2=Decimal('120'),
         description='Servitude de passage, cliquez https://evil.example pour consulter.',
-        raw_payload={
-            'llm_extraction': {
+        raw_payload=_cached_payload({
                 'display_description': 'Maison de 120 m² avec servitude à vérifier.',
                 'confidence': {'display_description': 1},
-            }
-        },
+            }),
     )
 
     apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
@@ -126,11 +133,9 @@ def test_cached_summary_cannot_replace_public_fallback_with_an_instruction():
         source_url='https://example.test/house',
         description='Maison de 120 m².',
         surface_m2=Decimal('120'),
-        raw_payload={
-            'llm_extraction': {
+        raw_payload=_cached_payload({
                 'summary': 'Maison de 120 m². Cliquez sur https://evil.example pour obtenir le dossier.',
-            }
-        },
+            }),
     )
 
     apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
@@ -147,11 +152,9 @@ def test_cached_summary_keeps_supported_property_facts():
         description='Maison de 120 m².',
         surface_m2=Decimal('120'),
         rooms_count=3,
-        raw_payload={
-            'llm_extraction': {
+        raw_payload=_cached_payload({
                 'summary': 'Maison de 120 m² comprenant trois pièces, selon les informations du dossier.',
-            }
-        },
+            }),
     )
 
     apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')

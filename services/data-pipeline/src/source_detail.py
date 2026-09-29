@@ -103,6 +103,10 @@ def fetch_public_detail(source: str, source_url: str, settings: dict, clients: d
         raise ValueError('Source detail contains no verifiable facts')
     raw.setdefault('source_url', source_url)
     raw.setdefault('source_name', source)
+    # This marker is written only after an actual detail request, identity
+    # checks and factual validation. A listing capture cannot supply it.
+    if raw.get('source_detail_status') not in {'complete', 'restricted'}:
+        raw['source_detail_status'] = 'complete'
     return endpoint, body, raw
 
 
@@ -138,6 +142,8 @@ def prepare_source_revision(existing, raw: dict):
         # manual qualification merely by normalizing the original card again.
         result = existing.model_copy(deep=True)
         result.raw_payload['source_checks'] = raw['source_checks']
+        if raw.get('source_detail_status') in {'complete', 'restricted'}:
+            result.raw_payload['source_detail_status'] = raw['source_detail_status']
     else:
         result = merge_revision(existing, incoming)
     # This version is compared under the existing publication row lock.

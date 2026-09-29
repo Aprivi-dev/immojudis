@@ -291,7 +291,8 @@ def test_unchanged_source_preserves_later_documentary_qualification(monkeypatch)
 
     monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
     raw = {'source_name':'licitor','source_url':'https://www.licitor.com/annonce/1',
-           'raw_text':'Appartement 50 m²','starting_price_eur':10000,'habitable_surface_m2':50}
+           'raw_text':'Appartement 50 m²','starting_price_eur':10000,'habitable_surface_m2':50,
+           'source_detail_status':'complete'}
     first = deepcopy(raw)
     record_source_checks([first], {})
     existing = normalize_sale(first)
@@ -299,11 +300,14 @@ def test_unchanged_source_preserves_later_documentary_qualification(monkeypatch)
     existing.carrez_surface_m2 = Decimal('48')
     existing.quality_flags = ['surface_type_unverified']
     existing.raw_payload['qualification_surface'] = {'document':'PV','page':3,'carrez':48}
+    existing.raw_payload['source_detail_status'] = 'failed'
     revised = source_detail.prepare_source_revision(existing, deepcopy(raw))
     assert revised.habitable_surface_m2 is None
     assert revised.carrez_surface_m2 == 48
     assert revised.quality_flags == ['surface_type_unverified']
     assert revised.raw_payload['qualification_surface']['page'] == 3
+    assert revised.raw_payload['source_detail_status'] == 'complete'
+    assert revised.raw_payload['source_checks'][existing.source_url]['detail_status'] == 'complete'
     assert revised.raw_payload['source_checks'][existing.source_url]['checked_at'] >= first['source_checks'][existing.source_url]['checked_at']
 
 

@@ -279,7 +279,30 @@ def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
         result.primary_source = existing.primary_source or existing.source_name
         _merge_source_check_provenance(result, [existing, incoming])
         if incoming.raw_payload.get('source_content_changed'):
-            invalidate_analysis(result.raw_payload, 'source_revision_changed')
+            incoming_is_operational = (
+                incoming.raw_payload.get('source_operational_changed') is True
+                and incoming.raw_payload.get('source_content_change_reason') == 'source_operational_changed'
+            )
+            previous_content_changed = existing.raw_payload.get('source_content_changed') is True
+            previous_reason = existing.raw_payload.get('source_content_change_reason')
+            previous_documentary_or_unknown = previous_content_changed and previous_reason != 'source_operational_changed'
+            if incoming_is_operational and previous_documentary_or_unknown:
+                # The primary row already carries a documentary (or
+                # unexplained) invalidation.  Keep that conservative reason
+                # while clearing any stale facts through the same documentary
+                # invalidation contract; the operational collector must not
+                # make it eligible for deterministic display refresh.
+                invalidate_analysis(
+                    result.raw_payload,
+                    previous_reason or 'source_revision_changed',
+                )
+                result.raw_payload['source_operational_changed'] = True
+            else:
+                invalidate_analysis(
+                    result.raw_payload,
+                    'source_operational_changed' if incoming_is_operational else 'source_revision_changed',
+                    preserve_facts=incoming_is_operational,
+                )
     ensure_room_bedroom_consistency(result, existing, incoming)
     reason = quarantine_reason(incoming)
     if reason:

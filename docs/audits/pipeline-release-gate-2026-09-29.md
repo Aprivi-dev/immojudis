@@ -1070,3 +1070,99 @@ calcul sont lisibles par les utilisateurs authentifiés au même titre que les
 autres colonnes autorisées d'`auction_sales` ; elles ne contiennent aucun
 secret. Une future modification de la politique `sale_retention_deadline()`
 devra inclure un nouveau remplissage des valeurs matérialisées.
+
+## CI et maintenance confirmées, puis réduction des relectures inutiles
+
+La [CI 36619711898](https://github.com/Aprivi-dev/immojudis/actions/runs/36619711898)
+et [CodeQL 36619712038](https://github.com/Aprivi-dev/immojudis/actions/runs/36619712038)
+sont verts sur `dbf84f20`. Le rejeu vérifie 194 migrations, 1 382 assertions
+pgTAP dans 73 fichiers, la concurrence des quotas et les deux scénarios
+d'intégration du circuit de contribution sur un véritable Supabase local.
+Les suites Python, le Web, ses budgets et Playwright sont également verts.
+
+Le [workflow de maintenance 36620546689](https://github.com/Aprivi-dev/immojudis/actions/runs/36620546689)
+a appliqué `20260929203000`, `20260929210000`, `20260929220000` et
+`20260929230000`, puis validé l'absence de dérive. La lecture de production
+à 19 h 39 UTC confirme ces quatre versions, les deux nouveaux index et zéro
+vente sans délai matérialisé. Les tables de statuts et projections IA sont
+toujours vides : aucun import ni changement de visibilité lié à cet artefact
+n'a été effectué. L'export privé approuvé `v4.2` compte 11 lots pour 912
+projections ; son SHA-256 est
+`66097999f18459d672f815a0708bb7bdbdb67387445818f949a02f1f773abd28`.
+
+Les passages du purgeur à 19 h 40 et 19 h 50 UTC effectuent réellement le
+scan : 6,06 ms puis 10,07 ms, contre une moyenne historique de 2 370,80 ms.
+Ils répondent HTTP 200, sans ligne à supprimer. À 19 h 45, le passage de
+5,10 ms signale `busy=true` : le verrou occupé lui fait sauter le scan.
+Ces observations concernent le purgeur. À 20 h 05, le compteur des claims
+ajoute 23 appels pour 4 208,37 ms, soit 183 ms de moyenne sur cet intervalle.
+Une fenêtre complète et les statuts réellement terminés restent à mesurer.
+Le contrôle de santé échoue encore à 19 h 45 après 10,3 s avec un timeout
+SQL ; celui de 20 h 00 réussit en 7,4 s. La fonction d'observation répétant
+les mêmes agrégations de source est en cours d'optimisation. Le timeout
+revient à 20 h 15 après 9,9 s ; la santé n'est donc pas déclarée restaurée.
+
+Un diagnostic de code montre qu'une variation structurée de prix/date/statut,
+sans changement des preuves documentaires, peut activer simultanément
+`source_operational_changed` et `source_content_changed`. Le chemin d'enqueue
+crée alors une nouvelle révision de résumé IA. Une reproduction locale de
+changement de prix seul confirme ce cas. Le relevé du worker de 18 h 50
+compte 4 063 créations display sur 24 heures et 3 921 annulations récentes,
+mais ne permet pas d'attribuer rétrospectivement chacune à cette cause : les
+hashes sont opaques et la base ne conserve pas les transitions antérieures.
+Le correctif en cours utilise la reconstruction déterministe existante avant
+l'enqueue quand elle est suffisante, conserve la relecture en cas de preuve
+modifiée ou de qualifications documentaires, et protège les invalidations
+antérieures encore non réconciliées.
+
+La cadence récurrente des détails se fonde déjà sur les captures source.
+À 19 h 58, 9 246 références brutes représentent 3 133 couples distincts
+(vente canonique, source, alias), et 3 131 URLs distinctes pour 3 043 ventes
+admissibles. Les 2 661 tâches ouvertes bloquent la création de nouvelles
+révisions dues. Parmi elles, 1 364 ont une vérification du bon alias et de
+la bonne version postérieure à leur création et encore fraîche, mais seules
+224 observations portent explicitement un marqueur de lecture détail.
+La fraîcheur seule ne permet donc pas de conclure ces tâches. Le correctif
+en cours exige une preuve détail durable, puis revalide la vente et le bail
+dans la transaction de clôture, en conservant les cadences exactes 5 h / 23 h.
+La migration `20260929233000` réutilise le délai de rétention matérialisé
+dans l'enqueue des détails, en conservant les alias et les règles de reprise.
+Les tests SQL vérifient ventes futures, reportées, sans date et expirées.
+
+Le cycle Vench `36619679198` terminé à 19 h 48 parcourt 54 pages, émet
+648 lignes et déclare une couverture de catalogue complète, sans erreur
+source. Il conserve 648 observations et écrit 642 ventes finales ; 504
+lectures détail sont évitées par le cache existant. Ces compteurs de collecte
+ne prouvent pas une validation documentaire de chaque fiche. Ce cycle tourne
+encore sur `main`, avant les nouvelles protections de cache et de résumé.
+
+## Correctifs de cohérence et contrôle de santé préparés
+
+La relecture indépendante a reproduit une date opérationnelle conservée dans
+une citation légale, une réserve PDF perdue par le fallback et un cache
+ancien réestampillé sous un nouveau prompt. Les trois parcours sont corrigés :
+les citations contenant prix/date/visite/report nécessitent la relecture,
+les biens documentés exigent un manifeste factuel actuel, et le cache doit
+déjà correspondre aux versions de prompt et d'affichage avant toute mutation.
+Le modèle réel du provider est conservé. Une invalidation documentaire
+antérieure, y compris sans motif connu, demeure bloquante après fusion avec
+un second collecteur ou changement de prix/date.
+
+Le worker peut clore sans HTTP un ancien contrôle satisfait par une capture
+de détail plus récente, avec preuve explicite dans `source_checks`. Il exige
+le même alias, source et version, une date postérieure à la création de la
+tâche et une fraîcheur strictement inférieure à 5 h / 23 h. La transaction
+revérifie la preuve et le bail exact sous verrou, puis restitue l'essai qui
+n'a consommé aucune requête. Une simple capture de listing ou une ancienne
+observation sans preuve liée au contrôle courant ne suffit pas.
+
+La migration `20260929234000` préagrège les métriques des runs courants et la
+baseline historique du contrôle de santé. Elle conserve les 28 runs distincts,
+le dernier snapshot de chaque run, le JSON et les seuils d'alerte existants.
+Les deux nouvelles migrations ont reçu une relecture IA indépendante ;
+leurs tests pgTAP restent à exécuter dans la CI avant maintenance.
+
+La suite locale consolidée vérifie 287 tests et saute 16 scénarios nécessitant
+PostgreSQL jetable. Ruff, Prettier, `git diff --check` et les 196 versions
+uniques de migrations passent. Les scénarios PostgreSQL de preuve/bail,
+les nouvelles assertions pgTAP et la suite complète sont requis dans la CI.

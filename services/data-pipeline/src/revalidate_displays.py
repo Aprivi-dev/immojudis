@@ -16,6 +16,7 @@ def revalidate_cached_displays(limit: int = 1000) -> dict[str, int]:
     settings = load_settings()
     version = str(settings['llm_prompt_version'])
     display_version = str(settings['llm_display_prompt_version'])
+    model_version = str(settings.get('replicate_model') or '') or None
     sales = fetch_sales_needing_llm_descriptions(limit=limit, prompt_version=version)
     report = {'selected': len(sales), 'revalidated': 0, 'rejected': 0, 'without_cache': 0, 'persisted': 0}
     for sale in sales:
@@ -24,7 +25,7 @@ def revalidate_cached_displays(limit: int = 1000) -> dict[str, int]:
             continue
         before = json.dumps(sale.to_storage_dict(), sort_keys=True, default=str)
         apply_cached_llm_extraction_to_sale(sale, prompt_version=version)
-        valid = has_current_display(sale.raw_payload, version, display_version)
+        valid = has_current_display(sale.raw_payload, version, display_version, model_version)
         report['revalidated' if valid else 'rejected'] += 1
         if before != json.dumps(sale.to_storage_dict(), sort_keys=True, default=str):
             count = upsert_sales_to_supabase([sale], refresh_last_seen=False)

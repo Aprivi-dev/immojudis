@@ -19,6 +19,7 @@ def has_current_display(
     payload: Any,
     prompt_version: str | None = None,
     display_prompt_version: str | None = None,
+    model_version: str | None = None,
 ) -> bool:
     if not isinstance(payload, dict):
         return False
@@ -31,6 +32,13 @@ def has_current_display(
         and (
             not display_prompt_version
             or payload.get("llm_display_prompt_version") == display_prompt_version
+        )
+        # Rows written before model provenance was persisted remain readable;
+        # a known model mismatch, however, must go through enrichment.
+        and (
+            not model_version
+            or not payload.get("llm_display_model")
+            or payload.get("llm_display_model") == model_version
         )
     )
 
