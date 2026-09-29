@@ -74,7 +74,12 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
             LOGGER.error("AGRASC list fetch failed: %s", exc)
             errors.append(f"{page_url}: {exc}")
             break
-        pages.observe(html, page_url)
+        # The archive page contains separate paginated views for general
+        # auctions and real estate.  They share the ``page`` query parameter,
+        # so following every link in the full document would make the
+        # real-estate traversal fetch unrelated pages and invalidate the
+        # catalogue proof.  Keep pagination scoped to the view parsed below.
+        pages.observe(_real_estate_view_html(html), page_url)
         page_sales = parse_agrasc_html(html, page_url=page_url)
         # Keep the public-card proof independent from the department filter.
         # Cards without a public URL remain counted by CatalogueEvidence; only
@@ -129,6 +134,13 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
          "operator_details": {status: sum(s.get("operator_detail_status") == status for s in raw_sales)
                               for status in ("complete", "partial", "failed", "unsupported")}},
     )
+
+
+def _real_estate_view_html(html: str) -> str:
+    """Return only AGRASC's real-estate view for pagination traversal."""
+
+    view = parse_html(html, "html.parser").select_one(".view-liste-ventes-immobilieres")
+    return str(view) if view is not None else html
 
 
 def parse_agrasc_html(html: str, page_url: str = LIST_URL) -> list[dict[str, Any]]:

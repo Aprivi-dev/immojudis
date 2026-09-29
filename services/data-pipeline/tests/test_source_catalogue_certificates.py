@@ -148,6 +148,29 @@ def test_agrasc_unknown_unlinked_cards_never_certify_inventory(monkeypatch) -> N
     assert result.coverage["scoped_inventory_complete"] is False
 
 
+def test_agrasc_pagination_ignores_unrelated_archive_view(monkeypatch) -> None:
+    html = """
+    <div class="view-other-auctions">
+      <div class="card-vente-immo"><h3>Véhicules</h3></div>
+      <a class="fr-pagination__link--last" href="?page=4">Dernière page</a>
+    </div>
+    <div class="view-liste-ventes-immobilieres">
+      <div class="card-vente-immo">
+        <h3 class="fr-card__title"><a href="/vente/house">Maison</a></h3>
+        <p class="fr-card__detail">Agen (47)</p>
+      </div>
+      <a class="fr-pagination__link--last" href="?page=1">Dernière page</a>
+    </div>
+    """
+    _patch_agrasc_client(monkeypatch, html)
+
+    result = agrasc.scrape_agrasc_aquitaine_result()
+
+    assert result.coverage["pages_fetched"] == 2
+    assert result.coverage["certificate"]["partitions"][0]["visited_page_indices"] == [0, 1]
+    assert result.coverage["linked_pages_complete"] is True
+
+
 def test_agrasc_seller_catalogue_card_is_excluded_with_public_catalogue_proof(monkeypatch) -> None:
     html = """
     <div class="view-liste-ventes-immobilieres">

@@ -88,12 +88,11 @@ EXPIRED_SALE_DELETE_TABLES = (
     "properties",
     "auction_sales",
 )
-# Keep the PDF retry generation tied to the extraction cache version.  When
-# the extractor changes, bumping ``PDF_TEXT_CACHE_VERSION`` creates a new
-# queue identity for incomplete documents while retaining the old job row as
-# an audit record.  The queue claim guard then cancels an obsolete queued
-# generation before it can consume another extraction attempt.
-PDF_RETRY_GENERATION = PDF_TEXT_CACHE_VERSION
+# A narrowly revised blank-page rule must retry incomplete documents without
+# invalidating complete text caches for unrelated PDFs. The distinct queue
+# identity preserves exhausted attempts as an audit record; failed page caches
+# remain retryable under the same text cache version.
+PDF_RETRY_GENERATION = f"{PDF_TEXT_CACHE_VERSION}:decorative_edge_v1"
 POSTGRES_JSON_COLUMNS = {
     "source_urls",
     "visit_dates",

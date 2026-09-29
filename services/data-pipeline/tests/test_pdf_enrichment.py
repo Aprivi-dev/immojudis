@@ -1357,6 +1357,30 @@ def test_extract_pdf_document_preserves_page_level_text(tmp_path, monkeypatch) -
     assert "bail en cours" in payload["text"]
 
 
+def test_long_text_pdf_is_complete_with_bounded_500_page_ceiling(tmp_path, monkeypatch) -> None:
+    import fitz
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "false")
+    monkeypatch.setenv("PDF_MAX_TOTAL_PAGES", "500")
+    path = tmp_path / "long-report.pdf"
+    with fitz.open() as document:
+        for page_number in range(1, 417):
+            page = document.new_page()
+            page.insert_text((72, 72), f"Report page {page_number}: property description and evidence.")
+        document.save(path)
+
+    pages = extract_pdf_pages(path)
+    assert len(pages) == 416
+    assert pages[-1]["page"] == 416
+    assert "Report page 416" in pages[-1]["text"]
+
+    monkeypatch.setenv("PDF_MAX_TOTAL_PAGES", "300")
+    with pytest.raises(ValueError, match="300-page safety limit"):
+        extract_pdf_pages(path)
+
+
 def test_failed_ocr_page_is_retried_without_reocring_successful_cached_pages(tmp_path, monkeypatch) -> None:
     import fitz
 
@@ -1532,6 +1556,79 @@ def test_ocr_empty_near_blank_page_is_explicitly_excluded_and_preserved(tmp_path
     profile = sale.raw_payload["document_analysis"]["profiles"][0]
     assert profile["extraction_status"] == "empty"
     assert profile["visual_blank_pages"] == [1]
+
+
+def test_ocr_empty_decorative_edge_is_excluded_without_discarding_rich_pages(tmp_path, monkeypatch) -> None:
+    import fitz
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    path = tmp_path / "edge-and-content.pdf"
+    with fitz.open() as document:
+        edge = document.new_page()
+        edge.draw_rect(
+            fitz.Rect(edge.rect.width * 0.89, -15, edge.rect.width + 30, edge.rect.height + 15),
+            color=None,
+            fill=(0.89, 0.38, 0.05),
+        )
+        content = document.new_page()
+        content.draw_rect(
+            fitz.Rect(72, 72, content.rect.width - 72, content.rect.height - 72),
+            color=None,
+            fill=(0.2, 0.3, 0.4),
+        )
+        document.save(path)
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment._extract_page_text_with_ocr_result",
+        lambda page, **kwargs: {"text": "", "method": "fallback_text", "confidence": 0.0},
+    )
+    payload = extract_pdf_document(path)
+
+    edge_page, rich_page = payload["pages"]
+    assert edge_page["status"] == "visual_blank_excluded"
+    assert edge_page["failure_reason"] == "decorative_edge_after_ocr"
+    assert edge_page["visual_analysis"]["decorative_edge_only"] is True
+    assert edge_page["source_page_preserved"] is True
+    assert rich_page["status"] == "failed"
+    assert rich_page["visual_analysis"]["decorative_edge_only"] is False
+    assert payload["failed_pages"] == [2]
+
+
+def test_decorative_edge_classifier_preserves_text_annotations_and_complex_paths() -> None:
+    import fitz
+
+    from src.pdf_enrichment import _is_decorative_edge_only_page
+
+    with fitz.open() as document:
+        page = document.new_page()
+        page.draw_rect(
+            fitz.Rect(page.rect.width * 0.89, -15, page.rect.width + 30, page.rect.height + 15),
+            color=None,
+            fill=(0.89, 0.38, 0.05),
+        )
+        assert _is_decorative_edge_only_page(page) is True
+        page.insert_text((72, 72), "Surface : 55 m2")
+        assert _is_decorative_edge_only_page(page) is False
+
+        annotated = document.new_page()
+        annotated.draw_rect(
+            fitz.Rect(annotated.rect.width * 0.89, -15, annotated.rect.width + 30, annotated.rect.height + 15),
+            color=None,
+            fill=(0.89, 0.38, 0.05),
+        )
+        annotated.add_rect_annot(fitz.Rect(72, 72, 200, 200))
+        assert _is_decorative_edge_only_page(annotated) is False
+
+        complex_page = document.new_page()
+        shape = complex_page.new_shape()
+        for index in range(9):
+            shape.draw_rect(fitz.Rect(complex_page.rect.width * 0.89, index * 95, complex_page.rect.width, (index + 1) * 95))
+        shape.finish(color=None, fill=(0.89, 0.38, 0.05))
+        shape.commit()
+        assert len(complex_page.get_drawings()) == 1
+        assert _is_decorative_edge_only_page(complex_page) is False
 
 
 def test_ocr_empty_rich_image_remains_incomplete_with_visual_evidence(tmp_path, monkeypatch) -> None:
