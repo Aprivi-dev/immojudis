@@ -71,28 +71,24 @@ select is(
 );
 
 select ok(
-  regexp_count(
-    lower(
-      pg_get_functiondef(
-        'public.enqueue_due_source_details_unlocked(timestamptz,integer)'::regprocedure
-      )
-    ),
-    'where not exists'
-  ) = 2
-  and position(
-    'j.input_hash = d.signature' in lower(
-      pg_get_functiondef(
-        'public.enqueue_due_source_details_unlocked(timestamptz,integer)'::regprocedure
-      )
+  (
+    with function_source as (
+      select lower(
+        pg_get_functiondef(
+          'public.enqueue_due_source_details_unlocked(timestamptz,integer)'::regprocedure
+        )
+      ) as definition
     )
-  ) > 0
-  and position(
-    'j.status in (''queued'', ''running'')' in lower(
-      pg_get_functiondef(
-        'public.enqueue_due_source_details_unlocked(timestamptz,integer)'::regprocedure
-      )
-    )
-  ) > 0,
+    select definition ~ 'where[[:space:]]+not[[:space:]]+exists'
+       and definition ~ 'and[[:space:]]+not[[:space:]]+exists'
+       and regexp_count(
+         definition,
+         'from[[:space:]]+public[.][[:space:]]*auction_enrichment_jobs[[:space:]]+j'
+       ) = 2
+       and definition ~ 'j[[:space:]]*[.][[:space:]]*input_hash[[:space:]]*=[[:space:]]*d[[:space:]]*[.][[:space:]]*signature'
+       and definition ~ 'j[[:space:]]*[.][[:space:]]*status[[:space:]]+in[[:space:]]*[(][[:space:]]*''queued''[[:space:]]*,[[:space:]]*''running''[[:space:]]*[)]'
+    from function_source
+  ),
   'source-detail admission uses separate exact-signature and open-job anti-joins'
 );
 
