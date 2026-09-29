@@ -60,6 +60,7 @@ def test_agrasc_accepts_linked_operators_but_not_lookalike_origins():
         ("www.immo-interactif.fr", True),
         ("lesnotairesdutrocadero.fr", True),
         ("www.agorastore.fr", True),
+        ("daudruy-lantez-vanoverbeke-nivelet-douriez-senlis.notaires.fr", True),
         ("www.agorastore-immo.fr.evil.test", False),
     ]:
         errors = []
@@ -69,6 +70,9 @@ def test_agrasc_accepts_linked_operators_but_not_lookalike_origins():
             "www.immo-interactif.fr": "/encheres-en-ligne/maison/test/42",
             "lesnotairesdutrocadero.fr": "/appel_d_offre/domaine-dexception-antibes/",
             "www.agorastore.fr": "/ventes-occasions/vendeur/agrascimmo",
+            "daudruy-lantez-vanoverbeke-nivelet-douriez-senlis.notaires.fr": (
+                "/detail-annonces-immobilieres-sas-daudruy-lantez-mani-van-overbeke-nivelet-douriez/2087240.html"
+            ),
         }.get(host, "/vente")
         rows = validate_raw_sales(
             "agrasc", [dict(source_name="agrasc", source_url=f"https://{host}{path}", title="Maison")], errors
@@ -92,6 +96,8 @@ def test_agrasc_new_operator_hosts_are_restricted_to_public_listing_paths():
         "https://www.immo-interactif.fr/vente",
         "https://lesnotairesdutrocadero.fr/contact",
         "https://www.agorastore.fr/ventes-occasions/vendeur/other-seller",
+        "https://daudruy-lantez-vanoverbeke-nivelet-douriez-senlis.notaires.fr/contact",
+        "https://other-agency.notaires.fr/detail-annonces-immobilieres-agency/2087240.html",
     ]:
         errors = []
         rows = validate_raw_sales(

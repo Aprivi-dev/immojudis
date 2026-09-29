@@ -103,6 +103,38 @@ def test_agorastore_seller_catalogue_is_retained_without_fetching_other_products
     assert sale["source_blocks"]["operator_detail_reason"] == "seller_catalogue_without_listing_identity"
 
 
+def test_known_notarial_operator_identity_keeps_verified_agrasc_card_facts():
+    url = (
+        "https://daudruy-lantez-vanoverbeke-nivelet-douriez-senlis.notaires.fr/"
+        "detail-annonces-immobilieres-sas-daudruy-lantez-mani-van-overbeke-nivelet-douriez/2087240.html"
+        "?token=public-card-token"
+    )
+    sale = {
+        "source_name": "agrasc",
+        "source_url": url,
+        "title": "Maison 3 pièces",
+        "surface_m2": "55",
+        "source_blocks": {"origine": "AGRASC"},
+    }
+    errors = []
+
+    enrich_agrasc_operator(
+        sale,
+        {},
+        {"user_agent": "test", "request_delay_seconds": 0, "request_timeout_seconds": 1},
+        errors,
+    )
+
+    assert errors == []
+    assert sale["title"] == "Maison 3 pièces"
+    assert sale["surface_m2"] == "55"
+    assert sale["operator_detail_status"] == "unsupported"
+    assert sale["source_detail_status"] == "unsupported"
+    assert sale["source_blocks"]["operator_detail_reason"] == (
+        "known_notarial_listing_without_safe_detail_adapter"
+    )
+
+
 def test_agrasc_cards_emit_both_new_public_operator_urls():
     html = """
     <div class="view-liste-ventes-immobilieres">

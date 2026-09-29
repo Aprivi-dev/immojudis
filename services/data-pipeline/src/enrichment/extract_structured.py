@@ -2315,7 +2315,17 @@ def _apply_extraction_to_sale(
         stats.risks_detected += 1
 
     if extraction.summary and _is_better_summary(sale.description, extraction.summary):
-        sale.description = extraction.summary
+        # The legacy summary also reaches the public fiche when the dedicated
+        # display description is absent. Apply the same evidence and public
+        # content checks before replacing the source description.
+        summary_check = verify_display_claims(
+            extraction.summary,
+            "\n".join(filter(None, (extract_source_description(reference_sale), context))),
+            reference_sale.model_dump(),
+        )
+        sale.raw_payload["llm_summary_evidence_check"] = summary_check
+        if not summary_check["issues"]:
+            sale.description = extraction.summary
 
     due_diligence = _due_diligence_payload(extraction)
     if due_diligence:

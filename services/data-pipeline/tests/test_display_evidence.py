@@ -120,6 +120,46 @@ def test_cached_display_revalidates_source_quotes_for_public_content():
     assert {'public_link', 'public_call_to_action'} <= issue_codes
 
 
+def test_cached_summary_cannot_replace_public_fallback_with_an_instruction():
+    sale = AuctionSale(
+        source_name='agrasc',
+        source_url='https://example.test/house',
+        description='Maison de 120 m².',
+        surface_m2=Decimal('120'),
+        raw_payload={
+            'llm_extraction': {
+                'summary': 'Maison de 120 m². Cliquez sur https://evil.example pour obtenir le dossier.',
+            }
+        },
+    )
+
+    apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
+
+    assert sale.description == 'Maison de 120 m².'
+    issue_codes = {issue['code'] for issue in sale.raw_payload['llm_summary_evidence_check']['issues']}
+    assert {'public_link', 'public_call_to_action'} <= issue_codes
+
+
+def test_cached_summary_keeps_supported_property_facts():
+    sale = AuctionSale(
+        source_name='agrasc',
+        source_url='https://example.test/house',
+        description='Maison de 120 m².',
+        surface_m2=Decimal('120'),
+        rooms_count=3,
+        raw_payload={
+            'llm_extraction': {
+                'summary': 'Maison de 120 m² comprenant trois pièces, selon les informations du dossier.',
+            }
+        },
+    )
+
+    apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
+
+    assert sale.description.startswith('Maison de 120 m² comprenant trois pièces')
+    assert sale.raw_payload['llm_summary_evidence_check']['issues'] == []
+
+
 def test_written_rooms_and_exact_cadastral_units_are_supported():
     assert not codes('4 pièces sur un terrain de 1115 m².', 'Quatre pièces. Terrain de 11 a 15 ca.')
     assert 'unsupported_area' in codes('Terrain de 2900 m².', 'Contenance de 29 a et 31 ca.')

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { loadInformationAgentContribution } from "@/lib/information-agent-contribution";
+import {
+  loadInformationAgentContribution,
+  PORTAL_UPLOAD_QUOTA_BYTES,
+  PORTAL_UPLOAD_QUOTA_FILES,
+} from "@/lib/information-agent-contribution";
 import {
   contributionErrorResponse,
   readContributionJson,
@@ -24,6 +28,8 @@ export async function POST(
         subject: informationCase.subject,
         maxFileBytes: 20 * 1024 * 1024,
         maxSubmissionBytes: 40 * 1024 * 1024,
+        maxPortalBytes: PORTAL_UPLOAD_QUOTA_BYTES,
+        maxPortalFiles: PORTAL_UPLOAD_QUOTA_FILES,
       },
       { headers: { "cache-control": "private, no-store" } },
     );

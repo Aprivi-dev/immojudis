@@ -48,7 +48,7 @@ from src.fact_claims import (
 from src.freshness import document_fingerprint, documents_are_current, timestamp_is_fresh
 from src.models import AuctionSale
 from src.normalize import make_sale_signature
-from src.pdf_enrichment import classify_document_type, sale_storage_id
+from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, classify_document_type, sale_storage_id
 from src.reviewed_aliases import (
     ReviewedAliasRegistry,
     ReviewedAliasRegistryError,
@@ -88,6 +88,12 @@ EXPIRED_SALE_DELETE_TABLES = (
     "properties",
     "auction_sales",
 )
+# Keep the PDF retry generation tied to the extraction cache version.  When
+# the extractor changes, bumping ``PDF_TEXT_CACHE_VERSION`` creates a new
+# queue identity for incomplete documents while retaining the old job row as
+# an audit record.  The queue claim guard then cancels an obsolete queued
+# generation before it can consume another extraction attempt.
+PDF_RETRY_GENERATION = PDF_TEXT_CACHE_VERSION
 POSTGRES_JSON_COLUMNS = {
     "source_urls",
     "visit_dates",
@@ -349,7 +355,7 @@ def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> Non
             analysis = sale.raw_payload.get("document_analysis") or {}
             # A failed document keeps the same retry budget across daily scans.
             last_success = analysis.get("last_successful_check_at") or "initial"
-            kinds.append(("pdf", revision + str(last_success), 30))
+            kinds.append(("pdf", revision + str(last_success) + PDF_RETRY_GENERATION, 30))
         if not _has_current_llm_description(sale.raw_payload, prompt_version) or sale.raw_payload.get("source_content_changed"):
             kinds.append(("display_description", revision, 20))
         if needs_fact_extraction(sale):
@@ -3440,6 +3446,7 @@ def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
                 "page_text_chars": extracted.get("page_text_chars"),
                 "confidence": extraction_confidence,
             }
+        extraction_status = _document_extraction_status(extracted)
         rows.append(
             {
                 "source_url": sale.source_url,
@@ -3453,13 +3460,32 @@ def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
                 "sha256": extracted.get("sha256"),
                 "download_status": "downloaded" if extracted.get("file_path") else "unknown",
                 "text_chars": text_chars,
-                "extraction_status": "extracted" if extracted.get("text") else "pending",
+                "extraction_status": extraction_status,
                 "docling_status": extracted.get("extraction_method"),
                 "raw_payload": raw_payload,
                 "updated_at": datetime.now(UTC).isoformat(),
             }
         )
     return rows
+
+
+def _document_extraction_status(extracted: dict[str, object]) -> str:
+    """Map a PDF cache payload to the materialized document status.
+
+    A partial cache can contain useful text while still having failed pages.
+    Keep that payload visible for diagnostics, but never advertise it as a
+    complete extraction in ``auction_documents``.
+    """
+    declared_status = str(extracted.get("extraction_status") or "").strip().lower()
+    if declared_status in {"failed", "incomplete"}:
+        return declared_status
+    if extracted.get("complete") is False or extracted.get("failed_pages"):
+        return "incomplete"
+    if declared_status == "empty":
+        return "empty"
+    if str(extracted.get("text") or "").strip():
+        return "extracted"
+    return "pending"
 
 
 def _unique_rows_by_key(rows: list[dict[str, object]], key: str) -> list[dict[str, object]]:
