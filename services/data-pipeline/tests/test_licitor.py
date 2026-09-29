@@ -87,6 +87,35 @@ def test_parse_licitor_list_sales_extracts_light_listing() -> None:
     assert sales[0]["source_blocks"]["ville"] == "Paris 2ème"
 
 
+def test_parse_licitor_list_sales_stabilizes_evidence_but_preserves_raw_lot_proof() -> None:
+    def parse(counter: str) -> dict:
+        html = f"""
+        <div class="Result">
+          <a href="/annonce/10/91/27/vente-aux-encheres/trois-appartements/paris-2eme/paris/109127.html">
+            <span>75</span>
+            <span>Paris 2ème</span>
+            <strong>Trois appartements</strong>
+            <p>Lot n°59</p>
+            <p>🔎︎ {counter} ❤ 179</p>
+            <p>Mise à prix : 82 610 €</p>
+            <time>Mercredi 10 juin</time>
+          </a>
+        </div>
+        """
+        return parse_licitor_list_sales(html)[0]
+
+    first = parse("2.358")
+    second = parse("2.423")
+
+    assert first["raw_text"] == second["raw_text"]
+    assert "🔎" not in first["raw_text"]
+    assert "Lot n°59" in first["raw_text"]
+    assert first["source_blocks"]["page_text"] == second["source_blocks"]["page_text"]
+    assert first["source_blocks"]["lots_publics"] == second["source_blocks"]["lots_publics"]
+    assert "🔎" in first["source_lots"][0]["raw_text"]
+    assert "🔎" in second["source_lots"][0]["raw_text"]
+
+
 def test_licitor_uses_aquitaine_listing_page_for_aquitaine_targets(monkeypatch) -> None:
     monkeypatch.setattr(licitor, "TARGET_DEPARTMENTS", ("24", "33", "40", "47", "64"))
 
@@ -116,6 +145,28 @@ def test_parse_licitor_detail_html_extracts_national_postal_code() -> None:
 
     assert raw["department"] == "75"
     assert raw["postal_code"] == "75001"
+
+
+def test_parse_licitor_detail_html_drops_dynamic_reaction_counter_from_evidence() -> None:
+    def parse(counter: str) -> dict:
+        return parse_licitor_detail_html(
+            f"""
+            <h1>Annonce n°109000 : un appartement à Paris (Paris), mise à prix : 100 000 €</h1>
+            <p>Tribunal Judiciaire de Paris</p>
+            <p>🔎︎ {counter} ❤ 179</p>
+            <p>1234567</p>
+            <p>12 rue Test - 75001 Paris</p>
+            """,
+            "https://www.licitor.com/annonce/10/90/00/vente-aux-encheres/un-appartement/paris/paris/109000.html",
+        )
+
+    first = parse("2.358")
+    second = parse("2.423")
+
+    assert first["raw_text"] == second["raw_text"]
+    assert "🔎" not in first["raw_text"]
+    assert "1234567" in first["raw_text"]
+    assert first["source_blocks"]["page_text"] == second["source_blocks"]["page_text"]
 
 
 def test_parse_licitor_detail_html_derives_paris_arrondissement_postal_code_from_location_block() -> None:
