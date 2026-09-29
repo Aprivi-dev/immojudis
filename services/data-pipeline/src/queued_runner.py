@@ -24,7 +24,11 @@ from src.enrichment.operational_display import refresh_operational_display
 from src.freshness import documents_are_current
 from src.geocode import geocode_sale
 from src.information_agent_evidence import run_information_agent_evidence_batch
-from src.llm_requests import LLMRequestDeterministicCooldown, llm_request_context
+from src.llm_requests import (
+    LLMRequestBudgetExhausted,
+    LLMRequestDeterministicCooldown,
+    llm_request_context,
+)
 from src.main import (
     SOURCE_NAMES,
     PipelineOptions,
@@ -80,6 +84,14 @@ WORKER_OBSERVED_STATUS_KEYS = (
 )
 _WORKER_CLAIMED_JOB_IDS: ContextVar[set[str] | None] = ContextVar(
     "worker_claimed_job_ids",
+    default=None,
+)
+_WORKER_DEFERRED_JOB_IDS: ContextVar[set[str] | None] = ContextVar(
+    "worker_deferred_job_ids",
+    default=None,
+)
+_WORKER_LLM_BUDGET_EXHAUSTED: ContextVar[bool | None] = ContextVar(
+    "worker_llm_budget_exhausted",
     default=None,
 )
 
@@ -272,6 +284,24 @@ def _record_worker_claimed_job_ids(jobs: list[dict[str, object]]) -> None:
         for job in jobs
         if job.get("id") is not None and str(job.get("id")).strip()
     )
+
+
+def _record_worker_deferred_job_ids(jobs: list[dict[str, object]]) -> None:
+    deferred_job_ids = _WORKER_DEFERRED_JOB_IDS.get()
+    if deferred_job_ids is None:
+        return
+    deferred_job_ids.update(
+        str(job.get("id"))
+        for job in jobs
+        if job.get("id") is not None and str(job.get("id")).strip()
+    )
+
+
+def _is_llm_budget_exhausted(error: PipelineBudgetExhausted) -> bool:
+    if isinstance(error, LLMRequestBudgetExhausted):
+        return True
+    message = str(error).lower()
+    return "budget exhausted" in message or "budget is exhausted" in message
 
 
 def run_enrichment_queue_batch(
@@ -481,6 +511,7 @@ def run_enrichment_queue_batch(
                 # completed document. Requeue without consuming this job's
                 # retry budget so the next worker continues from the page
                 # cache. Only this sale's jobs are deferred.
+                _record_worker_deferred_job_ids(sale_jobs)
                 defer_budget_jobs(sale_jobs, exc)
                 mark_enrichment_jobs_terminal(sale_jobs)
                 LOGGER.info(
@@ -504,11 +535,13 @@ def run_enrichment_queue_batch(
             # Prerequisite coordination is a queue state, not a failed
             # extraction.  The helper releases the claim and restores the
             # attempt count while preserving a bounded wake-up time.
+            _record_worker_deferred_job_ids(sale_jobs)
             defer_budget_jobs(sale_jobs, exc)
             mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info("Enrichment prerequisite deferred for %s: %s", source_url, exc)
             continue
         except LLMEnrichmentDeferred as exc:
+            _record_worker_deferred_job_ids(sale_jobs)
             defer_budget_jobs(sale_jobs, exc)
             mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info("Fact analysis checkpointed; remaining chunks deferred: %s", source_url)
@@ -517,13 +550,26 @@ def run_enrichment_queue_batch(
             # A deterministic output failure belongs to one exact sale/prompt
             # key. Do not let its cooldown stall unrelated healthy sales from
             # the same claimed batch.
+            _record_worker_deferred_job_ids(sale_jobs)
             defer_budget_jobs(sale_jobs, exc)
             mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info("Deterministic LLM request cooldown deferred: %s", source_url)
             continue
         except PipelineBudgetExhausted as exc:
+            _record_worker_deferred_job_ids(pending_enrichment_jobs)
             defer_budget_jobs(pending_enrichment_jobs, exc)
             LOGGER.info("Enrichment deferred without consuming retry attempts: %s", exc)
+            # The family claim is intentionally kept as a handled queue
+            # outcome for legacy direct callers.  A bounded worker marks the
+            # general lane unavailable for the remainder of this run when the
+            # provider budget is exhausted, so it does not claim another job
+            # that can only be deferred again.
+            if (
+                family == ENRICHMENT_FAMILY
+                and _is_llm_budget_exhausted(exc)
+                and _WORKER_LLM_BUDGET_EXHAUSTED.get() is not None
+            ):
+                _WORKER_LLM_BUDGET_EXHAUSTED.set(True)
             # A general-lane budget exhaustion is a handled queue outcome. The
             # bounded lane worker must continue its detail slots, while the
             # default mixed-batch API keeps its historical handled-job count.
@@ -551,7 +597,9 @@ def run_enrichment_queue_worker(
     budget_seconds: int | None = None,
 ) -> int:
     """Run one worker and emit an optional post-claim status snapshot."""
-    token = _WORKER_CLAIMED_JOB_IDS.set(set())
+    claimed_token = _WORKER_CLAIMED_JOB_IDS.set(set())
+    deferred_token = _WORKER_DEFERRED_JOB_IDS.set(set())
+    budget_token = _WORKER_LLM_BUDGET_EXHAUSTED.set(False)
     try:
         return _run_enrichment_queue_worker(
             max_jobs=max_jobs,
@@ -559,7 +607,9 @@ def run_enrichment_queue_worker(
         )
     finally:
         try:
-            _log_worker_claim_status_snapshot(_WORKER_CLAIMED_JOB_IDS.get() or set())
+            claimed_job_ids = _WORKER_CLAIMED_JOB_IDS.get() or set()
+            status_counts = _log_worker_claim_status_snapshot(claimed_job_ids)
+            _log_worker_outcome_summary(claimed_job_ids, status_counts)
         except Exception as exc:
             # Status telemetry is best effort. In particular, do not let a
             # failure in this post-worker read replace a worker exception.
@@ -570,7 +620,9 @@ def run_enrichment_queue_worker(
                 exc_info=True,
             )
         finally:
-            _WORKER_CLAIMED_JOB_IDS.reset(token)
+            _WORKER_LLM_BUDGET_EXHAUSTED.reset(budget_token)
+            _WORKER_DEFERRED_JOB_IDS.reset(deferred_token)
+            _WORKER_CLAIMED_JOB_IDS.reset(claimed_token)
 
 
 def _run_enrichment_queue_worker(
@@ -587,8 +639,10 @@ def _run_enrichment_queue_worker(
     small bounded RPC batches, but the jobs remain sequential inside
     ``run_source_detail_jobs`` so provider politeness and sale revision
     ordering are unchanged. An empty preferred lane immediately gives its slot
-    to the other lane. A deferred general job counts as handled so an
-    exhausted AI budget cannot terminate the remaining source-detail work.
+    to the other lane. A deferred general claim remains a queue outcome for
+    compatibility with direct callers. Once the bounded worker sees an actual
+    provider-budget exhaustion, it stops claiming the general lane for this
+    run and spends its remaining fixed budget on source-detail work.
 
     The claim batch size is deliberately independent from the job budget. It
     reduces claim overhead without increasing the worker's maximum work or
@@ -633,8 +687,16 @@ def _run_enrichment_queue_worker(
         if time.monotonic() >= deadline:
             stop_reason = "budget"
             break
-        preferred = family_cycle[slot % len(family_cycle)]
-        alternate = ENRICHMENT_FAMILY if preferred == SOURCE_DETAIL_FAMILY else SOURCE_DETAIL_FAMILY
+        if _WORKER_LLM_BUDGET_EXHAUSTED.get():
+            # A budget exception restores every claimed job's attempt and
+            # gives it a future wake-up.  Do not immediately claim another
+            # general job that will hit the same guard; use the remaining
+            # fixed worker budget for source-detail work instead.
+            preferred = SOURCE_DETAIL_FAMILY
+            alternate = None
+        else:
+            preferred = family_cycle[slot % len(family_cycle)]
+            alternate = ENRICHMENT_FAMILY if preferred == SOURCE_DETAIL_FAMILY else SOURCE_DETAIL_FAMILY
         preferred_limit = _enrichment_claim_limit(
             preferred,
             slot=slot,
@@ -655,7 +717,7 @@ def _run_enrichment_queue_worker(
             batch_elapsed,
         )
         claimed_family = preferred if count else None
-        if not count:
+        if not count and alternate is not None:
             alternate_limit = _enrichment_claim_limit(
                 alternate,
                 slot=slot,
@@ -760,7 +822,7 @@ def _read_worker_claim_status_counts(job_ids: set[str]) -> dict[str, int] | None
     return {str(status): int(count or 0) for status, count in rows}
 
 
-def _log_worker_claim_status_snapshot(job_ids: set[str]) -> None:
+def _log_worker_claim_status_snapshot(job_ids: set[str]) -> dict[str, int] | None:
     github_run_id = os.getenv("GITHUB_RUN_ID") or "local"
     if not job_ids:
         LOGGER.info(
@@ -768,7 +830,7 @@ def _log_worker_claim_status_snapshot(job_ids: set[str]) -> None:
             "claimed_jobs=0 snapshot=not_applicable",
             github_run_id,
         )
-        return
+        return {}
     status_counts = _read_worker_claim_status_counts(job_ids)
     if status_counts is None:
         LOGGER.info(
@@ -777,7 +839,7 @@ def _log_worker_claim_status_snapshot(job_ids: set[str]) -> None:
             github_run_id,
             len(job_ids),
         )
-        return
+        return None
     known_counts = {
         status: status_counts.get(status, 0)
         for status in WORKER_OBSERVED_STATUS_KEYS
@@ -804,6 +866,54 @@ def _log_worker_claim_status_snapshot(job_ids: set[str]) -> None:
         known_counts["running"],
         other_count,
         missing_count,
+    )
+    return status_counts
+
+
+def _log_worker_outcome_summary(
+    job_ids: set[str],
+    status_counts: dict[str, int] | None,
+) -> None:
+    """Log terminal statuses separately from queue outcomes and deferrals.
+
+    ``run_enrichment_queue_batch`` returns a claim outcome count for backwards
+    compatibility.  It is not a success count: a claimed job may be failed,
+    cancelled, or restored to ``queued`` after a bounded deferral.  The final
+    read-only status snapshot is therefore the source for terminal counts;
+    deferred IDs are reported as requests made by this worker and are kept
+    separate from observed queued rows when the optional read is unavailable.
+    """
+    github_run_id = os.getenv("GITHUB_RUN_ID") or "local"
+    deferred_job_ids = _WORKER_DEFERRED_JOB_IDS.get() or set()
+    if status_counts is None:
+        LOGGER.info(
+            "Enrichment worker outcome summary: github_run_id=%s claimed=%s "
+            "deferred_requested=%s status_snapshot=unavailable",
+            github_run_id,
+            len(job_ids),
+            len(deferred_job_ids),
+        )
+        return
+    observed = sum(status_counts.values())
+    missing = max(len(job_ids) - observed, 0)
+    LOGGER.info(
+        "Enrichment worker outcome summary: github_run_id=%s claimed=%s "
+        "completed=%s failed=%s cancelled=%s deferred_requested=%s "
+        "observed_queued=%s observed_running=%s observed_other=%s missing=%s",
+        github_run_id,
+        len(job_ids),
+        status_counts.get("completed", 0),
+        status_counts.get("failed", 0),
+        status_counts.get("cancelled", 0),
+        len(deferred_job_ids),
+        status_counts.get("queued", 0),
+        status_counts.get("running", 0),
+        sum(
+            count
+            for status, count in status_counts.items()
+            if status not in WORKER_OBSERVED_STATUS_KEYS
+        ),
+        missing,
     )
 
 
@@ -925,7 +1035,10 @@ if __name__ == "__main__":
         # Detail claims are bounded batches, while each job is still processed
         # sequentially so GitHub serializes writers and the queue lease stays
         # visible in the worker summary.
-        handled = run_enrichment_queue_worker()
-        print(f'Enrichment worker handled {handled} claimed jobs within its bounded budget')
+        claim_outcomes = run_enrichment_queue_worker()
+        print(
+            f'Enrichment worker recorded {claim_outcomes} bounded claim outcomes; '
+            'terminal statuses are reported separately'
+        )
         sys.exit(0)
     sys.exit(main())
