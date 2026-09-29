@@ -165,7 +165,7 @@ values
     'queued',
     10000,
     'pgtap-retention-live-v1',
-    statement_timestamp()
+    now() - interval '1 minute'
   ),
   (
     'https://example.test/pgtap/retention/expired',
@@ -173,7 +173,7 @@ values
     'queued',
     10000,
     'pgtap-retention-expired-v1',
-    statement_timestamp()
+    now() - interval '1 minute'
   ),
   (
     'https://example.test/pgtap/retention/ineligible',
@@ -181,7 +181,7 @@ values
     'queued',
     10000,
     'pgtap-retention-ineligible-v1',
-    statement_timestamp()
+    now() - interval '1 minute'
   );
 
 select lives_ok(
