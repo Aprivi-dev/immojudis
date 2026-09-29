@@ -293,8 +293,9 @@ select is(
 select is(
   (
     select count(*)
-      from public.auction_enrichment_jobs
+     from public.auction_enrichment_jobs
      where source_url = 'https://example.test/pgtap/drain/queue'
+       and job_type = 'display_description'
        and status in ('queued', 'failed')
        and attempt_count < max_attempts
        and next_attempt_at <= statement_timestamp()
