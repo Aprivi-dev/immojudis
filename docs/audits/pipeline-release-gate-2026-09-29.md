@@ -887,3 +887,16 @@ correction du pgTAP `393`. Les contrôles locaux passent : 27 tests Web ciblés,
 52 tests Python groupés, TypeScript, ESLint, Prettier, Ruff et unicité des
 190 migrations. pgTAP et la CI distante restent requis avant application
 de ces migrations en production.
+
+Une vérification directe de `supabase_migrations.schema_migrations` à 17 h 40
+UTC confirme que les versions de garde IA `20260929103000`, de visibilité
+publique `20260929133000` et de statut quarantainé `20260929170000` sont
+appliquées, ainsi que l'index `20260929183000`. Les versions `1900`, `2000`
+et `2010` attendent encore le résultat de la CI du commit `2fe7f01a`.
+Le run automatique
+[36605383311](https://github.com/Aprivi-dev/immojudis/actions/runs/36605383311)
+s'est achevé avec un état GitHub `success` à 17 h 38 UTC ; les journaux de
+source détaillés n'étaient pas disponibles au dernier relevé. Le rapport de
+file à 17 h 17 compte 6 119 jobs à traiter, soit 24 de plus qu'à 16 h 38.
+La seule réussite du workflow ne valide donc pas encore le débit ni la
+fraîcheur de chaque source.
