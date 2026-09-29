@@ -67,6 +67,7 @@ CLAIM_RPC_MAX_WAIT_SECONDS = 60.0
 POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE = 50
 POSTGRES_CONNECT_TIMEOUT = 15
 POSTGRES_CONNECT_RETRY_DELAYS = (1.0, 3.0, 8.0)
+POSTGRES_OBSERVATION_BATCH_SIZE = 25
 EXPIRED_SALE_DELETE_TABLES = (
     "auction_observations",
     "auction_enrichment_jobs",
@@ -2744,24 +2745,74 @@ def _postgres_upsert_observations_with_parent_guard(
     payload: list[dict[str, object]],
     on_conflict: str,
 ) -> int:
-    connection = _PUBLICATION_CONNECTION.get()
-    if connection is not None:
-        eligible = _parented_observation_payload(connection, payload)
+    def write_batch(connection: Any, batch: list[dict[str, object]]) -> int:
+        eligible = _parented_observation_payload(connection, batch)
         if not eligible:
             return 0
         _transaction_write("auction_observations", eligible, on_conflict)
         return len(eligible)
 
-    with _postgres_connect(db_url) as connection:
-        eligible = _parented_observation_payload(connection, payload)
-        if not eligible:
-            return 0
-        token = _PUBLICATION_CONNECTION.set(connection)
-        try:
-            _transaction_write("auction_observations", eligible, on_conflict)
-        finally:
-            _PUBLICATION_CONNECTION.reset(token)
-        return len(eligible)
+    if not payload:
+        return 0
+
+    connection = _PUBLICATION_CONNECTION.get()
+    if connection is not None:
+        return sum(
+            write_batch(connection, batch)
+            for batch in _observation_payload_batches(payload)
+        )
+
+    persisted = 0
+    # Each batch uses its own transaction. A later timeout therefore leaves
+    # earlier observation checkpoints durable and safe to replay idempotently.
+    for batch in _observation_payload_batches(payload):
+        with _postgres_connect(db_url) as connection:
+            token = _PUBLICATION_CONNECTION.set(connection)
+            try:
+                persisted += write_batch(connection, batch)
+            finally:
+                _PUBLICATION_CONNECTION.reset(token)
+    return persisted
+
+
+def _observation_payload_batches(
+    payload: list[dict[str, object]],
+    batch_size: int = POSTGRES_OBSERVATION_BATCH_SIZE,
+) -> list[list[dict[str, object]]]:
+    """Split observation writes without separating one canonical sale's aliases.
+
+    The caller fills ``canonical_source_url`` from the sale identity. Keeping
+    that canonical group together avoids locking and resolving the same parent
+    repeatedly while preserving the source URL uniqueness used by the
+    idempotent ``ON CONFLICT`` write. A group larger than the bound is split
+    because the bound must remain hard. A malformed direct caller without a
+    canonical value is grouped by its source URL only; the parent guard still
+    rejects that row because it cannot prove a canonical parent.
+    """
+    if batch_size <= 0:
+        raise ValueError("Observation batch size must be positive")
+    groups: dict[str, list[dict[str, object]]] = {}
+    for row in payload:
+        canonical = str(row.get("canonical_source_url") or row.get("source_url") or "")
+        groups.setdefault(canonical, []).append(row)
+
+    batches: list[list[dict[str, object]]] = []
+    current: list[dict[str, object]] = []
+    for group in groups.values():
+        if len(group) > batch_size:
+            if current:
+                batches.append(current)
+                current = []
+            for offset in range(0, len(group), batch_size):
+                batches.append(group[offset : offset + batch_size])
+            continue
+        if current and len(current) + len(group) > batch_size:
+            batches.append(current)
+            current = []
+        current.extend(group)
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _postgres_upsert(
