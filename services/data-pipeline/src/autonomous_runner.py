@@ -21,6 +21,33 @@ INVENTORY_CADENCE = timedelta(hours=6)
 INVENTORY_DISPATCH_MARGIN = timedelta(minutes=45)
 NEAR_SALE_HORIZON = timedelta(days=7)
 ACTIVE_LISTING_STATUSES = frozenset({'active', 'upcoming', 'postponed', 'unknown'})
+ENRICHMENT_TERMINAL_STATUSES = frozenset({'completed', 'failed'})
+
+
+def _enrichment_completed(counts: dict[object, object]) -> int:
+    """Count jobs successfully completed during this worker run.
+
+    A terminal failure proves queue activity, but it does not establish useful
+    business progress for the batch.  At least one completed job is required
+    before an exhausted item can downgrade the run to partial success.
+    """
+    return int(counts.get('completed', 0) or 0)
+
+
+def _enrichment_terminal(counts: dict[object, object]) -> int:
+    """Count completed and failed jobs for bounded worker activity metrics."""
+    return sum(int(counts.get(status, 0) or 0) for status in ENRICHMENT_TERMINAL_STATUSES)
+
+
+def _enrichment_exhausted_detail(row: tuple[object, ...]) -> dict[str, object]:
+    """Return a bounded, non-sensitive summary for one exhausted job."""
+    job_id, job_type, attempt_count, max_attempts = row
+    return {
+        'job_id': str(job_id) if job_id is not None else None,
+        'job_type': str(job_type) if job_type is not None else None,
+        'attempt_count': int(attempt_count or 0),
+        'max_attempts': int(max_attempts or 0),
+    }
 
 
 def next_attempt(*, failures: int, access_denied: bool, retry_not_before: str | None,
@@ -310,9 +337,16 @@ def execute(run_id: str) -> int:
         code, failure = 1, 'Execution budget exceeded; committed checkpoints preserved'
     except Exception as exc:
         code, failure = 1, str(exc)[:1000]
+    worker_code = code
     with _postgres_connect(db_url) as db:
         existing_summary = db.execute('select summary from public.auction_runs where id=%s', (run_id,)).fetchone()[0] or {}
-        summary = {"scheduler_budget_seconds":budget,"execution_seconds":(datetime.now(UTC)-execution_started).total_seconds()}
+        summary = {"scheduler_budget_seconds":budget,"execution_seconds":(datetime.now(UTC)-execution_started).total_seconds(),
+                   "worker_exit_code": worker_code}
+        run_errors: dict[str, list[str]] = {}
+        counts: dict[object, object] = {}
+        exhausted = 0
+        if worker_code:
+            run_errors['runner'] = [failure or f'Worker exited with status {worker_code}']
         if source == 'enrichment-queue':
             counts = dict(db.execute("select status,count(*) from public.auction_enrichment_jobs where updated_at>=%s group by status", (execution_started,)).fetchall())
             summary['enrichment_jobs'] = counts
@@ -320,32 +354,57 @@ def execute(run_id: str) -> int:
                 where updated_at>=%s and status='failed' and attempt_count>=max_attempts""",
                 (execution_started,)).fetchone()[0]
             summary['enrichment_jobs_exhausted'] = exhausted
+            completed = _enrichment_completed(counts)
+            summary['enrichment_jobs_completed'] = completed
+            summary['enrichment_jobs_terminal'] = _enrichment_terminal(counts)
             if exhausted:
-                code, failure = 1, 'One or more enrichment jobs exhausted their retry budget'
+                exhausted_rows = db.execute("""select id,job_type,attempt_count,max_attempts
+                    from public.auction_enrichment_jobs
+                    where updated_at>=%s and status='failed' and attempt_count>=max_attempts
+                    order by updated_at desc limit 20""", (execution_started,)).fetchall()
+                summary['enrichment_jobs_exhausted_details'] = [
+                    _enrichment_exhausted_detail(row) for row in (exhausted_rows or [])
+                ]
+                exhaustion_message = f'{exhausted} enrichment job(s) exhausted their retry budget'
+                run_errors['enrichment_jobs'] = [exhaustion_message]
+                # The completion-status decision below requires at least one
+                # successfully completed job. Never replace a non-zero worker
+                # code; its systemic failure must remain visible.
+                if worker_code == 0 and completed == 0:
+                    code, failure = 1, 'Exhausted enrichment jobs reported without worker progress'
+                    run_errors['runner'] = [failure]
         existing_completion = existing_summary.get('completion_status') if isinstance(existing_summary, dict) else None
         existing_coverage = (existing_summary.get('scrape_coverage') or {}).get(source, {}) if isinstance(existing_summary, dict) else {}
         source_budget_stop = bool(isinstance(existing_coverage, dict) and existing_coverage.get('budget_exhausted'))
         # A source can finish its bounded collection and publish a useful
         # partial result with exit code 0. Preserve that explicit status instead
         # of replacing it with the scheduler's transport status.
-        if source_budget_stop:
+        if source == 'enrichment-queue' and worker_code:
+            summary['completion_status'] = 'interrupted'
+        elif source == 'enrichment-queue' and exhausted and worker_code == 0 and _enrichment_completed(counts) > 0:
+            summary['completion_status'] = 'partial_success'
+        elif source_budget_stop:
             summary['completion_status'] = 'partial_success'
             summary['stop_reason'] = 'source_budget_exhausted'
         elif existing_completion in {'partial_success', 'partial', 'scoped_partial', 'incomplete'}:
             summary['completion_status'] = existing_completion
         elif source == 'enrichment-queue' and exhausted:
-            summary['completion_status'] = 'retry_exhausted'
+            summary['completion_status'] = 'interrupted' if worker_code else 'retry_exhausted'
         elif code:
             summary['completion_status'] = 'interrupted'
         elif source == 'enrichment-queue' and counts.get('failed'):
             summary['completion_status'] = 'partial_success'
         else:
             summary['completion_status'] = 'complete'
+        if source == 'enrichment-queue' and counts.get('failed') and 'enrichment_jobs' not in run_errors:
+            run_errors['enrichment_jobs'] = [
+                f"{int(counts.get('failed') or 0)} enrichment job(s) failed and remain retryable"
+            ]
         db.execute("""update public.auction_runs set status=%s,finished_at=now(),updated_at=now(),
             errors=coalesce(errors,'{}') || %s,
             summary=coalesce(summary,'{}') || %s
             where id=%s and status in ('queued','running')""",
-            ('failed' if code else 'succeeded', Jsonb({'runner':[failure or 'Worker failed']} if code else {}),
+            ('failed' if code else 'succeeded', Jsonb(run_errors),
              Jsonb(summary),run_id))
         db.execute("update public.auction_runs set summary=coalesce(summary,'{}') || %s where id=%s", (Jsonb(summary),run_id))
     finish_source(db_url, run_id)
