@@ -1,5 +1,26 @@
 # État de la file avant publication — 29 septembre 2026
 
+## Synthèse actuelle — 22 h 50 UTC
+
+| Chantier           | État vérifié                                                                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL et CI          | `520abb05` vert : 200 migrations, 1 481 assertions pgTAP, CodeQL, Web, Python et navigateur. Maintenance `36641397586` réussie, sans dérive.                                                                                    |
+| Santé              | Cinq ticks successifs réussis depuis 21 h 45 ; durées de 1,6 à 6,4 secondes. La dernière optimisation nécessite encore des ticks ultérieurs.                                                                                    |
+| Worker automatique | Tag protégé `immojudis-workers-f695a739`. Redéploiement interne du même code public `05cff558`, sans publication des nouvelles fonctionnalités de la PR.                                                                        |
+| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                            |
+| Collecte AGRASC    | Huit annonces et huit PDF sans erreur ; terminal changeant pendant le scan et 25 archives sans lien. Périmètre adressable distinct du certificat public global, qui reste partiel.                                              |
+| Documents          | Noisy : 416/416 pages extraites dans le cloud, avec incertitude sémantique sur quatre cartes. Uckange : PDF de 96 pages extrait. Ris-Orangis : documents désormais extraits, couverture page par page en cours de confirmation. |
+| Capacité           | 2 764 des 2 795 jobs ouverts de plus de 48 h sont réellement claimables. Allocation temporelle et annulations répétées de révisions en cours de diagnostic ; aucune quarantaine massive.                                        |
+| Revue IA           | Export privé v4.2 conservé ; aucun import. Gardes applicatives, lecture transactionnelle fraîche et réconciliation requises avant import.                                                                                       |
+| Resend et portail  | Clé, domaines et webhook vérifiés ; canari fournisseur livré. Secret portail absent : ajout Vercel Production refusé par auto-review, accord précis pending. Aucun envoi à un interlocuteur.                                    |
+| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                        |
+| Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                         |
+| Publication finale | PR en brouillon, pas de publication applicative finale, pas de nettoyage de branches.                                                                                                                                           |
+
+Les sections suivantes conservent la chronologie. Leurs compteurs datés ne
+doivent pas être utilisés comme l'état courant sans lire cette synthèse et
+les derniers relevés en fin de document.
+
 ## Relevé de production en lecture seule
 
 Au 28 septembre 2026 à 21 h 50 UTC, la file compte 6 029 tâches non
@@ -1395,3 +1416,84 @@ tentée. Le secret reste uniquement dans un fichier privé local et sa valeur
 n'est pas affichée. Le flux autorisé Enchères Publiques et son accord écrit
 restent à recevoir. Aucun import IA, publication applicative finale,
 envoi à un interlocuteur ou nettoyage de branche n'a eu lieu.
+
+## Maintenance de la baseline et diagnostic de capacité, 22 h 50 UTC
+
+La [CI 36640799126](https://github.com/Aprivi-dev/immojudis/actions/runs/36640799126)
+et [CodeQL 36640798983](https://github.com/Aprivi-dev/immojudis/actions/runs/36640798983)
+sont verts sur `520abb05` : 200 migrations, 1 481 assertions pgTAP dans
+79 fichiers, quotas concurrents, catalogue HTTP, deux intégrations Supabase
+local, Python 3.11/3.12, Web et parcours navigateur. La
+[maintenance 36641397586](https://github.com/Aprivi-dev/immojudis/actions/runs/36641397586)
+applique `20260930002000` et valide la dérive. Les lectures avant et après
+confirment l'OID `322363`, SECURITY DEFINER, le `search_path` vide et l'ACL
+exacte `{postgres=X/postgres,service_role=X/postgres}` ; les rôles publics
+n'exécutent toujours pas la fonction. La projection étroite est présente.
+Le tick de santé de 22 h 45 réussit en 3 599 ms ; les trois prochains ticks
+permettront de suivre le comportement après cette dernière maintenance.
+
+L'audit de backlog de 22 h 45 min 48 s compte 2 795 jobs ouverts créés
+depuis plus de 48 heures : 2 764 sont effectivement claimables. Les 31
+autres comprennent neuf essais épuisés, 21 prérequis de source bloqués
+(Enchères Publiques) et un retry différé. Aucun n'est une ancienne révision,
+une vente hors rétention, un bail actif, un scheduler désactivé ou une vente
+absente. Il y a 101 candidats claimables dont la vente est dans les sept
+jours, 2 431 hors de cette fenêtre et 232 sans date. Une quarantaine massive
+masquerait donc du travail réel ; elle n'est pas proposée. Le rapport agrégé
+reste privé dans `/private/tmp/immojudis-backlog-over48h-audit-20260930.json`.
+
+Un relevé voisin compte 5 896 jobs non terminaux au total. Les historiques
+de `display_description` comprennent 56 816 empreintes pour 3 206 ventes,
+avec 3 991 annulations superseded sur 24 heures contre 133 complétions.
+Ces annulations ne sont pas du débit. Le diagnostic examine maintenant les
+entrées volatiles éventuelles des fingerprints et la répartition du temps
+entre familles, sans relâcher les règles de provenance ou augmenter les
+budgets et la concurrence. Le cycle automatique `36639927563` démarre
+à 22 h 30 min 54 s sur le tag qualifié ; son bilan fournira une troisième
+observation, à comparer seulement après vérification de ses paramètres.
+
+La vérification officielle AGRASC expose une vue Drupal immobilière isolée,
+avec un lien explicite de dernière page. Les marqueurs du canari passent de
+5 à 6 : un parcours dont le terminal change n'est pas une preuve stable.
+Un snapshot ultérieur des pages 0 à 6 conserve un terminal stable, mais des
+cartes vendues sans lien ; l'inventaire adressable peut être certifié alors
+que la découverte publique complète reste partielle. La raison explicite
+`advertised_terminal_page_changed_or_ambiguous` est ajoutée à la certification.
+Elle ne transforme pas un verdict partiel en succès et n'autorise aucun
+nettoyage de catalogue.
+
+La relecture AGRASC corrige un faux positif du statut d'archive : la classe
+`sold` doit être accompagnée du badge structuré
+`.fr-card__start .fr-badge--error`, avec un libellé complet vendu/archivé.
+Une occurrence de ces mots dans le titre ou la description ne suffit pas.
+Les 25 cartes du snapshot réel ont toutes cette preuve et des empreintes
+distinctes. Chaque occurrence, page et multiplicité est conservée dans le
+certificat ; aucune identité de vente canonique n'est créée. Les 26 tests
+ciblés et Ruff passent. Le test du terminal instable conserve toutes les
+pages et un compteur cohérent, afin de démontrer que ce seul changement
+refuse la certification.
+
+Le troisième cycle `36639927563` réussit : 36 détails et 35 traitements
+généraux en 1 205,2 secondes, dont 200,2 pour les détails et 1 003,5 pour
+le général. Il conserve le ratio 1/1. Ses 71 traitements ne sont pas 71
+réussites : des claims répétés et un identifiant absent du snapshot final
+nécessitent les statuts par transition. Après l'épuisement du budget LLM à
+22 h 49 min 29 s, sept autres jobs généraux sont réclamés puis différés,
+consommant environ 80 secondes. Le correctif en préparation arrête les
+nouveaux claims généraux pour ce worker et poursuit les détails dans les
+mêmes limites ; il ne relève pas les budgets, ne remet pas les essais à zéro
+et ne modifie pas encore le ratio de familles. Cette suspension générale
+temporaire doit aussi tenir compte des jobs PDF sans LLM. La preuve agrégée
+reste privée dans `/private/tmp/immojudis-capacity-cycles-20260930.json`.
+
+Les neuf jobs de plus de 48 heures aux essais épuisés concernent huit
+prérequis PDF sans texte exploitable et un rejet de qualité sans document
+associé. Les huit premiers ont 37 lignes documentaires uniques, encore
+pending/unknown dans ce relevé. La récupération doit extraire leurs PDF
+avant toute nouvelle révision fact/display ; elle ne consiste pas à
+relancer le même input ou à déclarer les tâches complètes. Un nouveau détail
+Petites Affiches épuisé à 22 h 47 est examiné séparément pour une erreur
+de relais/authentification. La lecture de Ris indique désormais trois
+documents téléchargés et extraits, mais le manifeste page par page doit
+confirmer cette complétude avant de clore le cas. Le premier tick de santé
+après `30002000`, à 23 h, réussit en 2 864 ms.

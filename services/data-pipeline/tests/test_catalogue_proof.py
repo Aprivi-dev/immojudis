@@ -36,6 +36,52 @@ def test_missing_intermediate_page_prevents_terminal_page_certificate():
     assert c['public_discovery_certified']
 
 
+def test_changing_agrasc_terminal_page_refuses_inventory_certificate():
+    pages = [{
+        'partition': 'agrasc', 'page_index': index, 'advertised_totals': [2],
+        'advertised_last_pages': [5] if index < 6 else [6],
+        'public_urls': ['a', 'b'] if index == 0 else [],
+        'outside_scope_urls': [], 'unlinked_cards': 0,
+    } for index in range(7)]
+    c = certify_catalogue('agrasc', pages, {'agrasc': {'a', 'b'}},
+                          {'a', 'b'}, [], False, {})
+    assert not c['public_discovery_certified']
+    assert c['partitions'][0]['reasons'] == ['advertised_terminal_page_changed_or_ambiguous']
+    assert c['partitions'][0]['basis'] == 'advertised_total'
+    assert c['partitions'][0]['missing_page_indices'] == []
+
+
+def test_agrasc_unlinked_archive_occurrences_keep_multiplicity_and_status_proof():
+    html = '<div class="view-liste-ventes-immobilieres">' \
+           '<div class="card-vente-immo"><h3 class="fr-card__title"><a href="/a">Maison</a></h3></div>' \
+           '<div class="card-vente-immo sold no-link"><h3>Archive vendue</h3>' \
+           '<div class="fr-card__start"><p class="fr-badge fr-badge--error">Vendu</p></div></div>' \
+           '<div class="card-vente-immo sold no-link"><h3>Archive vendue</h3>' \
+           '<div class="fr-card__start"><p class="fr-badge fr-badge--error">Vendu</p></div></div>' \
+           '<a class="fr-pagination__link--last" href="?page=0">Dernière page</a></div>'
+    p = public_page_proof('agrasc', html, 'https://agrasc.gouv.fr/list')
+    c = certify_catalogue('agrasc', [p], {'agrasc': {'https://agrasc.gouv.fr/a'}},
+                          {'https://agrasc.gouv.fr/a'}, [], False, {})
+    part = c['partitions'][0]
+    assert part['addressable_inventory_certified']
+    assert part['unlinked_public_card_count'] == 2
+    assert part['unlinked_public_card_unique_count'] == 1
+    assert part['unlinked_public_card_multiplicity'][0]['occurrences'] == 2
+    assert part['unlinked_public_cards'][0]['status_proof'] == 'sold_class_and_visible_status'
+
+
+def test_agrasc_descriptive_sold_text_does_not_prove_archive_status():
+    html = '<div class="view-liste-ventes-immobilieres">' \
+           '<div class="card-vente-immo sold no-link">' \
+           '<h3>Maison vendue dans le descriptif</h3>' \
+           '<p class="fr-card__desc">Cette maison a été vendue avant la publication.</p>' \
+           '</div>' \
+           '<a class="fr-pagination__link--last" href="?page=0">Dernière page</a></div>'
+    p = public_page_proof('agrasc', html, 'https://agrasc.gouv.fr/list')
+    assert p['unlinked_records'][0]['sold'] is False
+    assert p['unlinked_records'][0]['status_proof'] is None
+
+
 def test_access_failure_or_budget_prevents_certificate():
     p = public_page_proof('info_encheres', '<p>1 annonce</p>', 'https://example.test/list')
     p['advertised_totals'] = [1]
@@ -110,7 +156,8 @@ def test_cessions_department_fallback_requires_title_and_url_agreement():
 def test_unlinked_sold_archive_only_allows_qualified_certificate():
     html = '<div class="view-liste-ventes-immobilieres"><div class="card-vente-immo">' \
            '<h3 class="fr-card__title"><a href="/a">Maison</a></h3></div>' \
-           '<div class="card-vente-immo sold no-link"><h3>Archive vendue</h3></div>' \
+           '<div class="card-vente-immo sold no-link"><h3>Archive vendue</h3>' \
+           '<div class="fr-card__start"><p class="fr-badge fr-badge--error">Vendu</p></div></div>' \
            '<a class="fr-pagination__link--last" href="?page=0">Dernière page</a></div>'
     p = public_page_proof('agrasc', html, 'https://agrasc.gouv.fr/list')
     c = certify_catalogue('agrasc', [p], {'agrasc': {'https://agrasc.gouv.fr/a'}},
