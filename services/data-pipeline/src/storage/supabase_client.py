@@ -61,6 +61,7 @@ LOGGER = logging.getLogger(__name__)
 POSTGREST_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
 POSTGREST_UPSERT_RETRIES = 5
 POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
+POSTGREST_MAX_PAYLOAD_DEPTH = 64
 CLAIM_RPC_ATTEMPTS = 4
 CLAIM_RPC_RETRY_DELAYS = (1.0, 3.0, 5.0)
 CLAIM_RPC_MAX_WAIT_SECONDS = 60.0
@@ -3293,16 +3294,55 @@ def _timestamped(row: dict[str, object], now: str) -> dict[str, object]:
     return row
 
 
-def _sanitize_postgrest_payload(value: Any) -> Any:
+def _sanitize_postgrest_payload(
+    value: Any,
+    *,
+    _path: str = "root",
+    _active_paths: dict[int, str] | None = None,
+    _depth: int = 0,
+) -> Any:
     if isinstance(value, str):
         return value.replace("\x00", "")
     if isinstance(value, Decimal):
         return int(value) if value == value.to_integral_value() else float(value)
-    if isinstance(value, list):
-        return [_sanitize_postgrest_payload(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _sanitize_postgrest_payload(item) for key, item in value.items()}
-    return value
+    if not isinstance(value, (list, dict)):
+        return value
+
+    if _depth > POSTGREST_MAX_PAYLOAD_DEPTH:
+        raise ValueError(
+            f"PostgREST payload exceeds maximum nesting depth {POSTGREST_MAX_PAYLOAD_DEPTH} at {_path}"
+        )
+
+    active_paths = _active_paths if _active_paths is not None else {}
+    value_id = id(value)
+    first_path = active_paths.get(value_id)
+    if first_path is not None:
+        raise ValueError(
+            f"PostgREST payload cycle detected at {_path}; container first seen at {first_path}"
+        )
+    active_paths[value_id] = _path
+    try:
+        if isinstance(value, list):
+            return [
+                _sanitize_postgrest_payload(
+                    item,
+                    _path=f"{_path}[{index}]",
+                    _active_paths=active_paths,
+                    _depth=_depth + 1,
+                )
+                for index, item in enumerate(value)
+            ]
+        return {
+            key: _sanitize_postgrest_payload(
+                item,
+                _path=f"{_path}[{key!r}]",
+                _active_paths=active_paths,
+                _depth=_depth + 1,
+            )
+            for key, item in value.items()
+        }
+    finally:
+        del active_paths[value_id]
 
 
 def _risk_occurrence_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
