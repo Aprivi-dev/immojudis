@@ -13,7 +13,9 @@ const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
 // The supervised fact review, source refresh controls, and secure contribution form add a
 // bounded private/support surface to the all-chunk total. Keep a narrow allowance for that
 // workflow while the route-level initial-load budgets below continue to protect public pages.
-const MAX_TOTAL_CLIENT_JS_BYTES = 4_370_000;
+// The AI review projection and quarantine guard add a similarly bounded shared client surface.
+// Keep the allowance below 1% of the total and enforce every route budget independently.
+const MAX_TOTAL_CLIENT_JS_BYTES = 4_400_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -157,12 +159,6 @@ if (largestChunkBytes > MAX_CLIENT_CHUNK_BYTES) {
     `Chunk client trop lourd: ${largestChunk} (${largestChunkBytes} octets > ${MAX_CLIENT_CHUNK_BYTES}).`,
   );
 }
-if (totalClientBytes > MAX_TOTAL_CLIENT_JS_BYTES) {
-  throw new Error(
-    `JavaScript client total trop lourd: ${totalClientBytes} octets > ${MAX_TOTAL_CLIENT_JS_BYTES}.`,
-  );
-}
-
 const routeClientBytes = {};
 for (const budget of routeBudgets) {
   const bytes = await clientJavaScriptBytesForRoute(budget);
@@ -172,6 +168,12 @@ for (const budget of routeBudgets) {
       `JavaScript initial trop lourd pour ${budget.name}: ${bytes} octets > ${budget.maxBytes}.`,
     );
   }
+}
+
+if (totalClientBytes > MAX_TOTAL_CLIENT_JS_BYTES) {
+  throw new Error(
+    `JavaScript client total trop lourd: ${totalClientBytes} octets > ${MAX_TOTAL_CLIENT_JS_BYTES}.`,
+  );
 }
 
 const landingImages = await filesUnder("public/media/landing", (path) => path.endsWith(".webp"));
