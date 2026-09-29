@@ -144,6 +144,12 @@ values
     '{}'::jsonb
   );
 
+-- The sale insert trigger creates the ordinary enrichment revisions. Remove
+-- those fixture rows so the explicit jobs below are not superseded by a
+-- pipeline_v2 revision during the claim's unchanged revision cleanup.
+delete from public.auction_enrichment_jobs
+ where source_url like 'https://example.test/pgtap/retention/%';
+
 insert into public.auction_enrichment_jobs (
   source_url,
   job_type,
