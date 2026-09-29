@@ -3,7 +3,7 @@ begin;
 select plan(14);
 
 select results_eq(
-  $$select ordinal_position, column_name, data_type
+  $$select ordinal_position::integer, column_name::text, data_type::text
       from information_schema.columns
      where table_schema = 'public'
        and table_name = 'v_auction_sales_app_preview'
@@ -86,7 +86,7 @@ values (
   'c3850000-0000-4000-8000-000000000010',
   '00000000-0000-0000-0000-000000000000',
   'authenticated', 'authenticated', 'public-quarantine-premium@example.test', '',
-  now(), now(), '{}'::jsonb, '{}'::jsonb
+  now(), now(), now(), '{}'::jsonb, '{}'::jsonb
 );
 insert into public.user_subscriptions (user_id, plan_code, status, current_period_end)
 values (
