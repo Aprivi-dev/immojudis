@@ -21,6 +21,7 @@ from src.enrichment.display_quality import DISPLAY_MIN_CHARS, DISPLAY_QUALITY_VE
 from src.enrichment.llm_client import ReplicateClient, create_llm_client, repair_json_payload
 from src.enrichment.prompts import (
     DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
+    PROMPT_SAFETY_VERSION,
     SYSTEM_PROMPT,
     build_display_description_prompt,
     build_user_prompt,
@@ -1558,6 +1559,8 @@ def _llm_cache_key(context: str, model: str, prompt_version: str = "auction_llm_
     digest = hashlib.sha256()
     digest.update(model.encode("utf-8"))
     digest.update(b"\0")
+    digest.update(PROMPT_SAFETY_VERSION.encode("utf-8"))
+    digest.update(b"\0")
     digest.update(prompt_version.encode("utf-8"))
     digest.update(b"\0")
     digest.update(context.encode("utf-8"))
@@ -2281,6 +2284,19 @@ def _apply_extraction_to_sale(
     )
     sale.raw_payload["llm_display_source_constraints"] = source_quotes
     sale.raw_payload.pop("llm_display_quality_version", None)
+    if checked_display:
+        final_display_check = verify_display_claims(
+            checked_display,
+            "\n".join(filter(None, (extract_source_description(sale), context))),
+            sale.model_dump(),
+        )
+        if final_display_check["issues"]:
+            # Source quotations are appended after the first display check. A
+            # hostile quote must not turn an otherwise safe fallback into
+            # public prose containing a link, contact detail or instruction.
+            sale.raw_payload["llm_display_evidence_check"] = final_display_check
+            sale.raw_payload["llm_display_status"] = "rejected"
+            checked_display = None
     if checked_display:
         sale.raw_payload["llm_display_description"] = checked_display
         sale.raw_payload["llm_display_description_word_count"] = len(checked_display.split())
