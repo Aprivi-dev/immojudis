@@ -1,4 +1,3 @@
-import dynamic from "next/dynamic";
 import { SaleProcedureBadge } from "@/components/SaleProcedurePanel";
 import { getSaleProcedure, saleEventLabel } from "@/lib/sale-procedure";
 import type * as React from "react";

@@ -99,6 +99,7 @@ import {
   fetchSearchResults,
 } from "@/lib/search/search-service";
 import type { MapViewportChange } from "./MapPanel";
+import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
 import {
@@ -128,21 +129,6 @@ const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPan
   ssr: false,
   loading: () => <MapPanelSkeleton />,
 });
-
-function FiltersLoadingFallback() {
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      aria-label="Chargement des filtres avancés"
-      className="fixed inset-0 z-50 bg-[#132238]/55 backdrop-blur-sm"
-    >
-      <div className="absolute inset-y-0 right-0 grid w-full max-w-3xl place-items-center bg-white px-6 shadow-xl">
-        <span className="text-sm font-bold text-[#132238]">Chargement des filtres avancés…</span>
-      </div>
-    </div>
-  );
-}
 
 function SearchStatisticsLoading() {
   return (
