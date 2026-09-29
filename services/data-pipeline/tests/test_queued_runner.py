@@ -592,6 +592,134 @@ def test_due_lane_count_timeout_falls_back_without_stalling_worker(monkeypatch) 
     assert queued_runner._enrichment_family_cycle({}) == queued_runner.ENRICHMENT_FAMILY_CYCLE
 
 
+def test_worker_claim_status_snapshot_reads_unique_ids_without_retries(monkeypatch) -> None:
+    calls: list[tuple[str, object]] = []
+
+    def execute(sql: str, params=None):
+        calls.append((sql.strip().lower(), params))
+        if sql.lstrip().lower().startswith("select status"):
+            return SimpleNamespace(
+                fetchall=lambda: [("completed", 1), ("failed", 1), ("queued", 1)]
+            )
+        return SimpleNamespace(fetchall=lambda: [])
+
+    connection = SimpleNamespace(execute=execute)
+    connect_kwargs = {}
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://local"})
+
+    def connect(db_url: str, **kwargs):
+        connect_kwargs.update(kwargs)
+        return nullcontext(connection)
+
+    monkeypatch.setattr(queued_runner, "_postgres_connect", connect)
+
+    assert queued_runner._read_worker_claim_status_counts({"job-b", "job-a"}) == {
+        "completed": 1,
+        "failed": 1,
+        "queued": 1,
+    }
+    assert connect_kwargs == {"connect_timeout": 3, "retry_delays": ()}
+    assert [sql for sql, _ in calls[:3]] == [
+        "set transaction read only",
+        "set local lock_timeout = '1000ms'",
+        "set local statement_timeout = '3000ms'",
+    ]
+    query, params = calls[3]
+    assert query.startswith("select status, count(*)")
+    assert "where id = any(%s::uuid[])" in query
+    assert params == (["job-a", "job-b"],)
+
+
+def test_worker_claim_status_snapshot_failure_is_optional(monkeypatch) -> None:
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://local"})
+    monkeypatch.setattr(
+        queued_runner,
+        "_postgres_connect",
+        lambda db_url, **kwargs: (_ for _ in ()).throw(TimeoutError("snapshot timeout")),
+    )
+
+    assert queued_runner._read_worker_claim_status_counts({"job-a"}) is None
+
+
+def test_worker_claim_status_snapshot_cannot_mask_worker_exception(monkeypatch) -> None:
+    worker_error = RuntimeError("worker failed")
+
+    def fail_worker(**kwargs):
+        raise worker_error
+
+    monkeypatch.setattr(queued_runner, "_run_enrichment_queue_worker", fail_worker)
+    monkeypatch.setattr(
+        queued_runner,
+        "_log_worker_claim_status_snapshot",
+        lambda job_ids: (_ for _ in ()).throw(RuntimeError("telemetry failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="worker failed"):
+        queued_runner.run_enrichment_queue_worker(max_jobs=1, budget_seconds=60)
+    assert queued_runner._WORKER_CLAIMED_JOB_IDS.get() is None
+
+
+def test_worker_reports_handled_jobs_and_isolates_claim_snapshot_context(monkeypatch, caplog) -> None:
+    snapshots: list[set[str]] = []
+    run_calls = iter([2, 0, 0])
+    claim_results = iter([
+        [{"id": "job-a"}, {"id": "job-b"}],
+        [],
+        [],
+    ])
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda **kwargs: next(claim_results),
+    )
+
+    def fake_batch(**kwargs) -> int:
+        count = next(run_calls)
+        queued_runner._claim_enrichment_queue_jobs(
+            limit=kwargs["limit"],
+            family=kwargs["family"],
+        )
+        return count
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_worker_claim_status_counts",
+        lambda job_ids: snapshots.append(set(job_ids))
+        or {"completed": 1, "failed": 1},
+    )
+    monkeypatch.setenv("GITHUB_RUN_ID", "run-398")
+
+    with caplog.at_level("INFO", logger=queued_runner.LOGGER.name):
+        assert queued_runner.run_enrichment_queue_worker(max_jobs=2, budget_seconds=1200) == 2
+        assert queued_runner.run_enrichment_queue_worker(max_jobs=1, budget_seconds=1200) == 0
+
+    summary = next(
+        record.getMessage()
+        for record in caplog.records
+        if "Enrichment worker summary" in record.getMessage()
+    )
+    assert "github_run_id=run-398" in summary
+    assert "handled=2" in summary
+    assert "handled_source_detail=2" in summary
+    assert "completed=2" not in summary
+    snapshot = next(
+        record.getMessage()
+        for record in caplog.records
+        if "claim status snapshot:" in record.getMessage()
+        and "unavailable" not in record.getMessage()
+    )
+    assert "observed_status_completed=1" in snapshot
+    assert "observed_status_failed=1" in snapshot
+    assert snapshots == [{"job-a", "job-b"}]
+    assert queued_runner._WORKER_CLAIMED_JOB_IDS.get() is None
+    assert any(
+        "claimed_jobs=0 snapshot=not_applicable" in record.getMessage()
+        for record in caplog.records
+    )
+
+
 def test_enrichment_worker_groups_detail_claims_without_exceeding_job_budget(monkeypatch) -> None:
     calls: list[tuple[int, str]] = []
 
@@ -692,9 +820,9 @@ def test_enrichment_worker_logs_lane_counts_and_stop_reason(monkeypatch, caplog)
         assert queued_runner.run_enrichment_queue_worker(max_jobs=1, budget_seconds=1200) == 0
 
     summary = next(record.getMessage() for record in caplog.records if "Enrichment worker summary" in record.getMessage())
-    assert "processed=0" in summary
-    assert "source_detail=0" in summary
-    assert "enrichment=0" in summary
+    assert "handled=0" in summary
+    assert "handled_source_detail=0" in summary
+    assert "handled_enrichment=0" in summary
     assert "claim_batches=2" in summary
     assert "stop=queues_empty" in summary
 

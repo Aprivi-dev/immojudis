@@ -40,6 +40,7 @@ from src.pdf_document_transport import (
 from src.pdf_document_transport import (
     resolve_public_document_target as _resolve_public_document_target,
 )
+from src.pdf_page_analysis import is_decorative_edge_only_page as _is_decorative_edge_only_page
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1017,48 +1018,6 @@ def _visual_page_profile(page: fitz.Page) -> dict[str, object]:
             "quasi_empty": False,
             "reason": "render_failed",
         }
-
-
-def _is_decorative_edge_only_page(page: fitz.Page) -> bool:
-    """Recognize a single solid border shape, never a scanned page or map.
-
-    Some diagnostic PDFs end with a blank page whose only visible mark is a
-    full-height coloured curve clipped at the page edge. OCR cannot extract
-    text from it, but an ink-ratio threshold alone correctly considers it
-    nonblank. Require one filled vector shape confined to an outer 15% band,
-    with no text, annotations, or embedded images, before excluding that
-    page from OCR retries. Complex vector paths remain eligible for OCR.
-    """
-
-    try:
-        if clean_text(page.get_text("text")) or next(page.annots(), None) is not None:
-            return False
-        if page.get_images(full=True) or page.get_image_info():
-            return False
-        drawings = page.get_drawings()
-        if len(drawings) != 1:
-            return False
-        drawing = drawings[0]
-        if drawing.get("type") != "f" or drawing.get("fill") is None:
-            return False
-        items = drawing.get("items") or []
-        if not 1 <= len(items) <= 8 or any(item[0] not in {"c", "re"} for item in items):
-            return False
-        shape = drawing.get("rect")
-        bounds = page.rect
-        if shape is None or bounds.width <= 0 or bounds.height <= 0:
-            return False
-        side_band = bounds.width * 0.15
-        top_band = bounds.height * 0.15
-        vertical_edge = shape.height >= bounds.height * 0.85 and (
-            shape.x0 >= bounds.x1 - side_band or shape.x1 <= bounds.x0 + side_band
-        )
-        horizontal_edge = shape.width >= bounds.width * 0.85 and (
-            shape.y0 >= bounds.y1 - top_band or shape.y1 <= bounds.y0 + top_band
-        )
-        return vertical_edge or horizontal_edge
-    except Exception:
-        return False
 
 
 def _page_requires_retry(page: object, *, ocr_enabled: bool) -> bool:

@@ -32,23 +32,23 @@ select ok(
 
 select ok(
   position(
-    'with sales_with_deadline as materialized' in lower(
+    'retention_deadline_materialized' in lower(
       pg_get_functiondef(
         'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
       )
     )
   ) > 0,
-  'retention cleanup materializes one deadline calculation per sale'
+  'retention cleanup reads the persisted deadline fence'
 );
 
 select ok(
-  position('from live_sales' in lower(
+  position('not s.retention_deadline_materialized' in lower(
     pg_get_functiondef(
       'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
     )
   )) > 0
   and position(
-    'retention_deadline is null' in lower(
+    's.retention_deadline is null' in lower(
       pg_get_functiondef(
         'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
       )
@@ -61,7 +61,7 @@ select ok(
       )
     )
   ) > 0,
-  'retention cleanup keeps the null-or-future deadline rule'
+  'retention cleanup keeps unfenced, null, or future deadlines'
 );
 
 select ok(

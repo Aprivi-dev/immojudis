@@ -4,6 +4,17 @@ select plan(21);
 
 set local role service_role;
 
+-- The migration baseline may contain unrelated queue rows. The empty-queue
+-- scenarios below need a genuinely empty queue and no pre-existing writer;
+-- all changes are rolled back with the fixture transaction.
+delete from public.auction_enrichment_jobs;
+delete from public.auction_runs where status in ('queued', 'running');
+update public.auction_source_state set enabled = false;
+update public.auction_pipeline_control
+   set enrichment_drain_until = null,
+       queue_claim_not_before = null
+ where id;
+
 select ok(
   to_regprocedure(
     'app_private.pipeline_queue_should_preempt_source(boolean,timestamptz,timestamptz)'

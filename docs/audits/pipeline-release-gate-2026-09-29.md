@@ -982,3 +982,91 @@ existantes et détecte aussi leurs changements de statut ou de données source.
 Les verrous non bloquants, l'archivage statistique et la limite d'une vente par
 transaction sont conservés. pgTAP, application et mesure du temps réel restent
 requis avant de conclure que les timeouts de ce cron sont corrigés.
+
+## Vérifications complémentaires, 19 h 20 UTC
+
+La [CI 36616380084](https://github.com/Aprivi-dev/immojudis/actions/runs/36616380084)
+du commit `d56f5157` a validé les deux suites Python, Playwright, les invariants
+de sécurité, le build Web et le rejeu des 192 migrations sans dérive.
+[CodeQL 36616380098](https://github.com/Aprivi-dev/immojudis/actions/runs/36616380098)
+est vert. La CI globale est toutefois rouge : le module PDF dépasse de six
+lignes le plafond de 1 500, une assertion SQL dépend des espaces, et le
+scénario de file vide de `397` conserve les jobs de référence. Le helper de
+page décorative est extrait dans un module dédié sans relever le plafond ;
+les deux scénarios SQL sont corrigés. Les 24 assertions de `398`, y compris
+le changement de statut par un trigger précédent, avaient déjà réussi.
+Une nouvelle CI complète sur le prochain commit demeure nécessaire.
+
+Une extraction réelle du PDF de Noisy-le-Grand avec le plafond de 500 pages
+a parcouru les 416 pages en deux passes bornées : 412 pages produisent du
+texte, dont 136 par OCR, et quatre cartes ou plans (285, 328, 372, 412)
+restent en échec OCR. Cette preuve privée ne constitue pas encore un run
+cloud ni une couverture documentaire complète. La nouvelle règle de page
+décorative ne s'applique à aucune de ces quatre pages.
+
+La migration locale `20260929220000` réutilise le délai de rétention
+matérialisé dans les claims et ajoute un index pour la recherche des baux
+actifs par URL source. Elle conserve les verrous, les baux, l'ordre des
+familles et l'annulation des révisions. Le coût du tri global des révisions
+subsiste ; la réduction réelle des durées SQL doit être mesurée après
+application. Les métriques Python distinguent désormais les tâches traitées
+(`handled`) de leur statut final observé. Une lecture facultative, bornée et
+indexable, compte les statuts des seuls identifiants réellement claimés et
+conserve l'identifiant GitHub du run ; son échec n'affecte pas le worker.
+
+Le [run automatique 36612495549](https://github.com/Aprivi-dev/immojudis/actions/runs/36612495549)
+s'est terminé à 19 h 08 UTC sur l'ancien code de `main`. Son message
+« completed 90 jobs » compte des tâches traitées et ne certifie pas 90
+réussites. Noisy-le-Grand a encore rencontré le plafond de 300 pages. Une
+lecture à 19 h 16 UTC compte 5 979 tâches éligibles non terminales, dont
+5 945 dues et 2 985 dues depuis plus de 48 heures ; 14 ont épuisé leur budget
+de tentatives. Ces critères sont identiques à ceux du relevé de 18 h 57
+(6 103 éligibles, 6 092 dues, 2 999 anciennes). La baisse ponctuelle n'établit
+pas encore la capacité durable ni la résorption des tâches anciennes.
+
+L'extension privée de la revue IA `v4.1` est rejetée : les deux passes des
+trois nouveaux cas avaient été construites par copie des mêmes labels, sans
+deux exécutions indépendantes. Aucun import de données n'a eu lieu. Les
+captures source vérifiées sont conservées et deux agents
+distincts ont exécuté de nouvelles passes aveugles le 29 septembre, avec
+instructions, résultats bruts et heures réelles conservés. Leur assemblage
+`v4.2` est vérifié : 35 accords sur 36 champs, avec un désaccord sur le nombre
+de pièces d'AGRASC 362606 conservé sans adjudication. Le manifeste privé a
+pour SHA-256 `1fc0cab8cb191476d073f384ce52e14a05a1ce953bed4f75521d0eecc12e95ae`.
+Il compte 76 captures sur 100 cas, 57 identités exactes, 19 sans vente
+correspondante et aucune ambiguïté dans l'instantané. Sur 912 projections,
+347 passent la garde locale de provenance et 565 restent bloquées. Ces
+chiffres ne décrivent pas une exactitude statistique ni des valeurs déjà
+publiées. Le cas AGRASC dont l'endpoint ne correspond pas à l'URL source reste
+entièrement non vérifié.
+
+Les 73 anciens cas sont conservés sans changement : leurs sorties et labels
+diffèrent entre les deux passes, sans preuve concrète de duplication, mais
+leurs 146 passes ne conservent ni identifiant d'exécution ni hash de prompt.
+Cette limite de traçabilité historique est explicite ; ces cas ne sont pas
+présentés comme de nouvelles exécutions. L'ajout de l'artefact `v4.2` exact
+aux gardes d'import Python et SQL est préparé dans la migration locale
+`20260929230000`, et `v4.1` reste refusé. Cette migration refuse aussi
+explicitement les métadonnées obligatoires absentes ou `NULL`, au lieu de
+laisser le comportement SQL de `NULL` échapper à un `IF`. Les 125 tests Python
+PDF et worker, les 22 tests d'import IA, Ruff, Prettier et le contrôle des
+194 versions de migrations passent localement ; les nouveaux tests SQL
+nécessitent encore le rejeu CI.
+
+Le dry-run du script d'import, sur l'instantané privé, a relu le manifeste v4.2
+avec la nouvelle autorisation : 912 lignes, 57 correspondances exactes,
+19 sans correspondance, 347 lignes passant la garde locale après la garde de
+provenance, et 565 bloquées. Aucun `--apply` n'a été exécuté. L'export privé
+sanitisé [v4.2](/private/tmp/immojudis-ai-review-export-20260929-v4.2.json)
+contient 11 lots et 912 lignes, sans chemin de capture ni extrait privé ; son
+SHA-256 est
+`66097999f18459d672f815a0708bb7bdbdb67387445818f949a02f1f773abd28`.
+
+La relecture SQL indépendante ne trouve pas de régression de rétention ni de
+bail dans `2100` et `2200`. Le remplissage initial ne nomme ni `content_hash`
+ni les colonnes des triggers d'enqueue ; les triggers génériques d'audit et
+de quarantaine peuvent toutefois s'exécuter. Les deux nouvelles colonnes de
+calcul sont lisibles par les utilisateurs authentifiés au même titre que les
+autres colonnes autorisées d'`auction_sales` ; elles ne contiennent aucun
+secret. Une future modification de la politique `sale_retention_deadline()`
+devra inclure un nouveau remplissage des valeurs matérialisées.
