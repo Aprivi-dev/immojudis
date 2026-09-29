@@ -9,6 +9,7 @@ import {
   type OutcomeGraphProbability,
   type OutcomeGraphQuantiles,
 } from "@/lib/outcome-graph";
+import { assertPublicationVisibleSaleRow } from "@/lib/sale-publication-guard";
 
 const horizonSchema = z.enum(["T-30", "T-14", "T-7", "T-1", "T-2h"]);
 const cohortLevelSchema = z.enum([
@@ -106,6 +107,12 @@ const cohortDefinitionSchema = z.object({
   label: z.string().min(1),
 });
 
+const saleVisibilitySchema = z.object({
+  id: z.string().uuid(),
+  status: z.string().nullable().optional(),
+  raw_payload: z.unknown().nullable().optional(),
+});
+
 export type StoredOutcomeGraphRecord = {
   lot: z.infer<typeof lotSchema>;
   round: z.infer<typeof roundSchema>;
@@ -132,6 +139,17 @@ const outcomeGraphAdmin = supabaseAdmin as unknown as OutcomeGraphAdminClient;
 export async function getOutcomeGraphForecastForSale(
   saleId: string,
 ): Promise<OutcomeGraphForecast> {
+  const sale = await selectMaybeOne(
+    outcomeGraphAdmin
+      .from("auction_sales")
+      .select("id,status,raw_payload")
+      .eq("id", saleId)
+      .maybeSingle(),
+    saleVisibilitySchema,
+    "lecture de la visibilité de la vente",
+  );
+  assertPublicationVisibleSaleRow(sale);
+
   const lot = await selectMaybeOne(
     outcomeGraphAdmin
       .from("auction_lots")

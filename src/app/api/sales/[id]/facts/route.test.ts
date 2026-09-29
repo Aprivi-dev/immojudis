@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   adminFrom: vi.fn(),
+  assertPublicationVisible: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -12,6 +13,9 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: mocks.adminFrom },
+}));
+vi.mock("@/lib/sale-publication-guard", () => ({
+  assertSalePublicationVisible: mocks.assertPublicationVisible,
 }));
 
 import { GET } from "./route";
@@ -124,6 +128,7 @@ describe("sale fact reliability route", () => {
     expect(claimQuery.select).toHaveBeenCalledWith(
       "field_key,fact_status,value_jsonb,confidence_score,captured_at",
     );
+    expect(mocks.assertPublicationVisible).toHaveBeenCalledWith(saleId);
   });
 
   it("falls back to legacy field evidence when the additive view is unavailable", async () => {
@@ -145,6 +150,18 @@ describe("sale fact reliability route", () => {
 
     expect(response.status).toBe(404);
     expect(mocks.adminFrom).not.toHaveBeenCalled();
+  });
+
+  it("does not expose claims for a quarantined sale", async () => {
+    const { claimQuery } = setup();
+    mocks.assertPublicationVisible.mockRejectedValue(
+      new Error("Vente introuvable ou inaccessible."),
+    );
+
+    const response = await GET(request(), context);
+
+    expect(response.status).toBe(400);
+    expect(claimQuery.in).not.toHaveBeenCalled();
   });
 
   it("rejects malformed ids before checking auth", async () => {

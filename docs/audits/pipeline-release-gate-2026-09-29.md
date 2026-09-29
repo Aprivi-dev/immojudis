@@ -266,8 +266,8 @@ représentent 4,9 millions de caractères ; le reste de la page fait environ
 uniquement ces deux contrôles avant le parsing, sans retirer les cartes des
 ventes. Ce correctif a passé 40 tests ciblés mais doit encore être éprouvé
 par un nouvel inventaire réel. Enchères Publiques renvoie HTTP 403 à l'audit
-direct ; un test navigateur en lecture seule est en cours pour qualifier ce
-refus, sans l'assimiler à un inventaire vide.
+direct ; le test navigateur en lecture seule a également rencontré un défi
+Cloudflare, sans l'assimiler à un inventaire vide.
 
 L'[audit de quatre sources en lecture seule](https://github.com/Aprivi-dev/immojudis/actions/runs/36550193394)
 a réussi. Il a relevé une ancienne URL Cessions État répondant 404, qui reste
@@ -284,8 +284,10 @@ AGRASC pourront être reconsidérés après l'adaptateur. Quatre détails
 Notaires ont été retirés de l'inventaire actuel : leur API répond 400 et leurs
 pages publiques 410, alors qu'une annonce active répond 200 sur la même API.
 Un détail Cessions État répond 404. Ces cinq dernières URL ne doivent pas
-être réessayées à l'identique. Le worker de la branche les classera en revue
-permanente ; sa mise en production reste soumise au critère de publication.
+être réessayées à l'identique pendant leur fenêtre d'exclusion, puis doivent
+être revérifiées : leur indisponibilité pourrait être transitoire. La page
+vendeur AGRASC, dépourvue d'identité de bien, exige une exclusion durable.
+La mise en production de cette garde reste soumise au critère de publication.
 
 La revue IA seule des 73 captures a produit 21 champs indécidables et 11
 citations de type de bien non vérifiées. Le manifeste de cette revue n'est
@@ -293,3 +295,335 @@ pas encore relié durablement aux identités canoniques des fiches ; une fiche
 authentifiée peut donc afficher une valeur litigieuse comme une donnée
 ordinaire. Ce lien et un affichage explicite des champs non résolus restent
 un blocage de publication, même si aucune relecture humaine n'est demandée.
+
+## Relevé complémentaire du 29 septembre, 10 h 25 UTC
+
+La CI complète du commit `4fba0612` est verte : tests Python 3.11 et 3.12,
+vérification web, Playwright, rejeu des migrations et pgTAP, CodeQL et
+prévisualisation Vercel. Le
+[nouvel inventaire en lecture seule](https://github.com/Aprivi-dev/immojudis/actions/runs/36555120215)
+certifie Avoventes sur 233 URLs uniques et Vench sur 643 URLs, avec
+`unhandled_public_urls=[]` et aucune erreur pour ces deux sources. Le passage
+Enchères Immobilières de ce même run a expiré sur sa page catalogue avant
+lecture ; sa certification obtenue lors du passage précédent ne remplace pas
+un contrôle de stabilité. Un
+[second passage immédiat](https://github.com/Aprivi-dev/immojudis/actions/runs/36556066931)
+a certifié 204 annonces Enchères Immobilières, ainsi que 233 Avoventes et
+643 Vench, sans erreur ni URL publique non traitée. Le premier délai reste
+un incident intermittent à surveiller. Le
+[test navigateur Enchères Publiques](https://github.com/Aprivi-dev/immojudis/actions/runs/36554613019)
+a confirmé un défi Cloudflare HTTP 403. Aucune tentative de contournement
+de ce défi ni conclusion d'inventaire vide n'en découle. Une ouverture
+manuelle en lecture seule de l'hôte canonique sans `www` et du chemin
+`/fr/ventes/immobilier` affiche la même vérification de sécurité ; le simple
+changement d'hôte ne donne donc pas une source exploitable au collecteur.
+
+Le rapprochement exact `(source_name, source_url)` de la revue IA avec les
+ventes courantes donne 54 captures rattachées une seule fois, 19 non
+rattachées et aucune ambiguïté parmi les 73 captures. Ce relevé est ponctuel
+et doit être rejoué avant l'import des projections. Les cas non rattachés
+restent privés ; aucune association par similarité d'URL ou contenu ne leur
+sera attribuée. La migration et l'import de la projection sont en revue :
+aucun statut IA n'a encore été appliqué aux ventes de production.
+La comparaison exacte des 27 autres cas de l'échantillon, sans capture
+exploitable, trouve 24 ventes courantes uniques et 3 URL absentes ; aucune
+ambiguïté. Les 24 ventes devront porter un statut de cas privé qui les
+quarantaine sans inventer de hash de capture ni de preuve.
+Le rapprochement a été rejoué dans une seule lecture cohérente le 29
+septembre à 11 h 06 min 51 s UTC. Son instantané privé hors dépôt est
+`/private/tmp/immojudis-ai-review-sale-mapping-20260929.json`, SHA-256
+`bf75ad7823ef55eb122a930025b9f2e7f2f6ae2af0bc29d18821be81cd552ebf`.
+Il confirme 54 captures exactes, 19 absentes, 24 cas non capturés exacts,
+3 absents et 0 ambigus. Cet instantané n'autorise pas une association si
+l'identité change avant l'import : la base recalculera chaque correspondance.
+
+Une ligne de production AGRASC provenait d'une page vendeur générique sans
+identité de bien : `98e9df19-1075-4a98-ae17-f7106400cf54`. Une maintenance
+ciblée lui a ajouté le marqueur `publication_quarantine` à 10 h 25 UTC. Les
+vues fiche et découverte ne la retournent plus. La vue publique
+`v_auction_sales_app_preview` et la fonction de recherche de secours v3
+n'appliquent toutefois pas encore ce marqueur ; cette exposition résiduelle
+bloque une publication tant que leurs contrats ne sont pas corrigés et
+vérifiés. L'exclusion durable de la page vendeur et le traitement borné des
+jobs épuisés sont également en revue.
+
+À 10 h 40 UTC, cette vente AGRASC a en outre reçu le statut
+`quarantined`, avec contrôle de son URL et de son identifiant exacts. La
+recherche v3 ne la retourne désormais plus ; l'aperçu public reste à une
+ligne. La correction générale des accès preview et des anciens RPC demeure
+nécessaire, car un prochain cas quarantainé pourrait garder un statut
+éligible à la recherche.
+
+Le [second worker d'enrichissement de la branche](https://github.com/Aprivi-dev/immojudis/actions/runs/36553470288)
+s'est terminé avec succès à 10 h 28 UTC après environ 21 minutes de traitement.
+La lecture des lignes de file modifiées dans sa fenêtre montre 14 détails de
+source, 9 PDF, 4 descriptions et 2 extractions de faits terminés. Huit lignes
+ont fini en échec : quatre PDF (trois Vench, un Avoventes), deux détails
+Enchères Immobilières expirés et deux détails Petites Affiches pour lesquels
+le relais a refusé ou n'a pas répondu. Ce relevé est une corrélation temporelle
+avec le run, pas une attribution parfaite de chaque ligne à son identifiant
+GitHub ; les journaux détaillés doivent encore être conservés. À environ
+10 h 34 UTC, la file non terminale compte 6 141 lignes, dont 6 131 dues et
+3 106 âgées de plus de 48 heures. Le stock ne décroît donc pas durablement.
+
+À 10 h 52 UTC, un premier appel borné au pré-calcul de valorisation a été
+déclenché par `app_private.invoke_market_valuation_precompute_endpoint()`.
+Cette fonction lit l'URL et le secret dans Supabase Vault puis appelle la
+route de production ; aucun secret n'a été copié dans la branche ou dans un
+workflow. La réponse réseau est HTTP 200. L'exécution
+`793a2f83-86d2-44ec-8469-5a6bca03073b` s'est terminée en 27 secondes :
+75 dossiers pris et examinés, 67 valorisations prêtes, 8 données
+insuffisantes, 0 échec. Un deuxième appel strictement séquentiel, après
+vérification qu'aucune exécution n'était active, a reçu l'identifiant réseau
+`2643`. Il a lui aussi répondu HTTP 200 : l'exécution
+`4722659c-382a-4a05-82ed-7e085586578b` a traité 75 dossiers en 25
+secondes, dont 74 prêts, 1 à données insuffisantes et aucun échec. Ces deux
+appels font 150 dossiers examinés, 141 prêts, 9 insuffisants et zéro échec.
+Le cron
+automatique demeure désactivé tant que la capacité et les alertes ne sont
+pas stabilisées.
+
+La migration `20260929143000_queue_scheduler_throughput_fairness.sql` prépare
+un compteur de tours du planificateur : après trois collectes consécutives
+déjà en retard, elle accorde un tour borné à la file d'enrichissement. Elle
+attend encore le rejeu Supabase et les tests pgTAP sur son commit exact.
+
+Deux revues indépendantes des correctifs IA ont relevé des chemins de
+publication encore ouverts avant l'import : une projection partielle pouvait
+laisser paraître la valeur canonique ; un badge « Vérifié » ne comparait pas
+la valeur IA à la valeur effectivement affichée ; la carte Mapbox lisait
+directement certains champs bruts. Une fiche pouvait aussi être lue par
+un client connecté directement dans `auction_sales` malgré son marqueur de
+quarantaine. La branche ajoute maintenant une restriction à la politique
+`auction_sales_authenticated_read` pour les clients non administrateurs.
+Les autres chemins restent en correction et doivent être vérifiés en CI et
+sur le commit exact avant tout import ou publication.
+
+Parmi les 54 captures IA rattachées exactement, cinq ventes n'ont pas de
+`content_hash` canonique au relevé de production. Leur revue peut être
+conservée comme preuve privée, mais la fiche doit rester en quarantaine tant
+que cette empreinte est absente : un changement de contenu à URL stable ne
+serait autrement pas détectable. La migration introduit un hash canonique
+figé à l'import et un blocage si le hash courant change ; le test du cas
+sans hash est en cours.
+Un second instantané privé des dix champs canoniques directement stockés,
+pris à 11 h 30 min 03 s UTC pour les 54 captures rattachées, est conservé
+hors dépôt sous `/private/tmp/immojudis-ai-review-canonical-values-20260929.json`
+(SHA-256 `f1075d2d47d5f92f2b69fa95d7e626f5ce19c9a9309bf6d1097ee12b72151c85`).
+Une comparaison des 320 valeurs IA « resolved » correspondantes,
+avec normalisation des types, dates et espaces, relève 84 désaccords sur
+dix champs. Un seul relève de l'accentuation ; les autres incluent des
+écarts de ville, de surface et de prix. La comparaison métier et la
+réconciliation des valeurs doivent donc
+être vérifiées avant d'étiqueter une fiche comme confirmée ou de publier
+les projections. Le garde de l'API masque désormais toute divergence qu'il
+détecte, sans modifier automatiquement la valeur canonique.
+
+La seconde analyse en lecture seule reprend les 54 captures rattachées et
+320 projections « resolved » sur les dix champs directement comparables.
+Elle confirme les 84 écarts initiaux ; après normalisation des accents,
+83 restent substantiels. Cinquante-et-un contredisent une valeur déjà
+présente en base et 32 proposent un renseignement pour un champ vide.
+Les cinq écarts de mise à prix dépassent chacun 10 %, et cinq dates de vente
+diffèrent réellement. Un accord des deux lectures IA indépendantes, puis
+une comparaison explicite à la valeur canonique, sont nécessaires avant
+toute promotion ; une valeur trouvée pour un champ vide reste une candidate
+privée avec sa provenance. Les désaccords restent en quarantaine.
+
+Le projecteur privé exige maintenant l'accord des deux passes IA
+indépendantes avant de retenir un champ `present`. L'adjudicateur IA ne peut
+plus départager seul une divergence. Le recalcul du manifeste figé conserve
+876 lignes de champs, dont 433 satisfont les seuls critères de consensus,
+de citation et de mapping du projecteur ; 129 sont bloquées pour désaccord
+entre passes et 11 pour citation non vérifiée. L'ancien export qui indiquait
+462 lignes publiables est périmé et ne doit pas être importé. Ces 433 lignes
+ne sont pas encore autorisées à paraître : la comparaison au canonique et
+les gardes de publication SQL restent à valider.
+
+La file d'enrichissement compte 6 238 lignes non terminales à 11 h 02 UTC,
+dont 6 232 dues et 3 084 dues depuis plus de 48 heures. La règle de trois
+tours de collecte pour un tour de file limite sa famine, mais le writer
+GitHub unique, le plafond de 90 jobs ou 1 200 secondes par worker et le
+limiteur Replicate de 60 appels par heure plafonnent toujours le débit.
+Le stock reste donc un blocage de capacité mesurée ; aucune concurrence
+supplémentaire n'est activée sans limiteur partagé.
+
+La reprise séquentielle de valorisation a ensuite traité 33 lots de 75
+dossiers, chacun avec HTTP 200 et zéro échec. La file `pending` de
+`auction_sale_market_estimates` est passée de 2 814 avant l'opération à 339
+à 11 h 27 UTC ; 2 218 lignes sont `ready`, 335 sont classées
+`insufficient_data`, et aucune ligne `processing` n'a dépassé son lease de
+300 secondes. Le dernier lot a duré 65,9 secondes : le garde opérationnel
+fixé à 60 secondes a donc arrêté les relances suivantes. Le cron demeure
+désactivé ; ce ralentissement doit être compris avant un nouveau lot.
+
+Après exclusion d'une exécution concurrente et contrôle de l'absence de
+claims expirés, trois nouveaux lots canaris strictement séquentiels de 75
+dossiers ont répondu HTTP 200, sans échec. Leurs durées sont 43,6 s, 22,0 s
+et 18,7 s ; la reprise demeure sous surveillance et le cron automatique
+restait désactivé à ce stade.
+
+Un quatrième lot canari de 75 dossiers a ensuite réussi en 16,4 s, toujours
+sans échec. À 11 h 46 UTC, la file de valorisation est vide : 0 `pending`,
+0 `processing`, 0 `failed`, 2 544 `ready` et 355 `insufficient_data`.
+Le job `immojudis-market-valuations` a été réactivé à `*/10 * * * *`
+au lieu de son ancien intervalle de cinq minutes. Son premier passage
+automatique et l'évolution de la file restent à contrôler avant publication.
+
+Le premier passage automatique, à 11 h 50 UTC, a réussi : 44 dossiers
+apparus depuis la vidange ont été pris et 44 estimations sont prêtes, sans
+échec. La fonction de santé actuelle conserve néanmoins l'alerte
+`valuation.queue.degraded` dès que moins de 95 % des dossiers ont une
+estimation chiffrée. Les 355 dossiers correctement classés
+`insufficient_data` abaissent artificiellement cette couverture à 87,8 %.
+La migration `20260929150000_valuation_health_terminal_coverage.sql`
+sépare la couverture des estimations et le taux de dossiers traités ; elle
+doit passer pgTAP et être appliquée avant d'interpréter cette alerte.
+
+Le second passage automatique, à 12 h 00 UTC, a traité 37 nouveaux dossiers
+avec 37 estimations prêtes et aucun échec en 17,2 s. Ce cron est désormais
+actif toutes les dix minutes. La mesure de santé reste faussée jusqu'à
+l'application de la migration ci-dessus.
+
+Le correctif de visibilité publique `20260929133000_public_quarantine_visibility.sql`
+a passé la CI complète et CodeQL au commit `6755b12bdd6b079c8eed2e26f64b2cd0f5f9edda`.
+Il a été appliqué en production par le
+[workflow de migration](https://github.com/Aprivi-dev/immojudis/actions/runs/36566606793),
+dont le contrôle de dérive a réussi. Une requête de lecture après application
+confirme que la ligne AGRASC `98e9df19-1075-4a98-ae17-f7106400cf54`
+reste en base avec le marqueur de quarantaine, tandis que les vues d'aperçu,
+de fiche et de découverte en renvoient chacune zéro. La migration ultérieure
+`20260929170000_status_quarantine_visibility.sql` doit encore faire appliquer
+le même blocage aux lignes dont seul le statut vaut `quarantined`.
+
+La purge de rétention a échoué par dépassement du délai SQL à 11 h 55,
+12 h 00, 12 h 05 et 12 h 10 UTC. À 12 h 15, elle a répondu rapidement
+`busy=true` tandis que la tâche de santé réussissait en 6 s. Deux ventes
+étaient éligibles à la purge au relevé en lecture seule. À 12 h 20, une
+exécution a supprimé ces deux lignes en 8,0 s, juste à la limite du délai
+SQL. L'attente d'un verrou et le coût de traitement par ligne peuvent donc
+tous deux contribuer aux quatre échecs précédents. La migration
+`20260929160000_nonblocking_sale_retention.sql` prépare un `LOCK NOWAIT`,
+un retour `busy` pour éviter d'attendre un writer et une seule suppression
+par appel RPC ; la boucle du cron pourra poursuivre lors de la même
+exécution ou à son prochain passage. Les règles de conservation restent
+inchangées. La migration attend ses tests pgTAP et une mesure en production
+après application ; des réponses `busy` répétées devront être surveillées
+explicitement.
+
+La migration `20260929153000_enrichment_drain_mode.sql` prépare une fenêtre
+de drainage d'au plus six heures, désactivée par défaut. Elle permet à la
+file due d'utiliser chaque tick du planificateur tout en gardant le writer
+unique et les tours équitables des sources. Les tests ciblés sur PostgreSQL
+isolé ont réussi ; le passage CI et une mesure réelle de débit restent
+nécessaires avant toute activation. Le stock de 6 428 tâches en attente,
+dont 3 489 de plus de 24 heures au relevé de 11 h 45, interdit encore la
+publication.
+
+Le relevé ultérieur à 12 h 18 UTC compte 7 147 tâches non terminales,
+dont 7 144 immédiatement dues, 3 487 âgées de plus de 24 heures et 25
+épuisées. Les 24 dernières heures n'ont terminé que 744 tâches. Le dernier
+worker `enrichment-queue` a commencé à 06 h 46 UTC et s'est terminé en
+échec à 07 h 06 ; toutes les exécutions automatiques ultérieures examinées
+jusqu'à 12 h 19 ont été des collectes de sources. Le mode de drainage et la
+fairness sont donc des mesures de capacité à vérifier rapidement après la
+CI, mais aucune résorption n'est encore démontrée.
+
+L'audit Resend en lecture seule a confirmé à 12 h 24 UTC que la clé de
+production répond à l'API du fournisseur (HTTP 200), que le domaine
+`immojudis.com` et le sous-domaine de réponse sont vérifiés et qu'un
+déploiement Vercel protégé contient la route webhook, qui rejette une
+signature absente (HTTP 400). Aucun nouveau message n'a été envoyé. Le
+canari historique de livraison reste la seule preuve d'envoi ;
+`INFORMATION_AGENT_OUTBOUND_ENABLED` demeure absent et les contacts réels ne
+reçoivent rien. `ALERT_EMAIL_FROM` a ensuite été configuré en Production avec
+l'adresse existante `ImmoJudis <assistant@immojudis.com>` ; cette modification
+n'a pas déclenché de déploiement. Un contrôle séparé de l'origine canonique
+enregistrée dans Supabase Vault, `https://immojudis-dezt.vercel.app`, renvoie
+encore HTTP 404 sur `/api/cron/information-agent-inbound`. Le worker entrant
+reste donc non planifié jusqu'à ce que cette route soit déployée sur l'origine
+utilisée par le scheduler et vérifiée avec son authentification.
+
+Le commit opérationnel `aa032b004227020cf0d70ab0c12a7699486dfb41`
+a passé la CI complète, CodeQL et les 1 155 assertions pgTAP. Les six
+migrations `20260929124000`, `143000`, `150000`, `153000`, `160000` et
+`170000` ont été appliquées à 12 h 54 UTC par le
+[workflow de maintenance](https://github.com/Aprivi-dev/immojudis/actions/runs/36571174745) ;
+le contrôle de dérive distant a réussi. Le mode de drainage est toujours
+désactivé. Le précontrôle de 12 h 54 comptait 7 320 tâches dues et une
+collecte `encheres_immobilieres` active depuis 12 h 46. Cette collecte doit
+terminer avant l'activation d'une fenêtre de drainage bornée et surveillée.
+
+Le rapprochement des 19 captures sans vente courante a été affiné avec le
+journal `auction_collection_items`. Cinq des six cas initialement considérés
+sans trace avaient bien été découverts et publiés, puis purgés après leur
+audience ; le sixième est une ancienne page Petites Affiches datant de 2012.
+Le constat ne démontre donc aucun nouveau défaut de découverte pour ces six
+cas. L'instantané privé de mapping ne consultait pas ce journal et ne doit
+plus qualifier leur absence courante de `never_discovered`. Les 19 restent
+sans rattachement à une vente actuelle : aucune projection ne peut leur être
+attribuée par similarité ou par historique seul.
+
+L'importeur de la revue IA exige deux passes distinctes avec métadonnées
+d'exécution et citations vérifiées dans la capture. Pour les pages Notaires
+dont le contenu provient de l'API officielle, il vérifie l'identifiant
+numérique identique dans l'URL publique, l'URL d'API et le JSON capturé.
+L'export privé recalculé le 29 septembre est
+`/private/tmp/immojudis-ai-review-export-20260929-consensus-v4.json`, SHA-256
+`624a3d0cf6df621dad154de351659b95522634683f604ed5d535b041040f2d60`.
+Il contient les 100 statuts de cas et 876 lignes de projection en dix lots.
+Une capture étiquetée AGRASC mais servie par l'API Notaires n'a pas de preuve
+d'identité de source suffisante ; ses douze champs sont conservés en
+`unverified`, sans valeur publiable. Les 32 tests locaux de l'importeur et de
+la projection, Ruff et la compilation Python ont réussi. L'ancien export v3
+ne doit pas être importé. La migration SQL et ses tests pgTAP sont en CI ;
+aucun import de cet export v4 n'a encore eu lieu.
+
+Après application de la garde `source_detail`, la maintenance transactionnelle
+bornée `supabase/maintenance/20260929124000_quarantine_agrasc_seller_and_close_excluded_jobs.sql`
+a vérifié les six identités exactes et les a passées de `failed` à
+`cancelled`. Elle a confirmé le statut `quarantined` et le marqueur de la
+page vendeur AGRASC. Une lecture indépendante trouve zéro ligne pour cette
+identité dans les vues d'aperçu, de fiche et de découverte. Les cinq
+exclusions temporaires doivent être recontrôlées après leur fenêtre de sept
+jours ; elles ne constituent pas une disparition définitive de ces biens.
+
+La migration de projection IA a ensuite passé le rejeu complet et pgTAP sur le
+commit `d2dbf0a4` ; CodeQL, les tests Python et Playwright sont aussi verts.
+La CI globale de ce commit reste rouge uniquement sur le build Next : le
+résolveur `next/font/google` a signalé `next/font/google queries have exactly
+one entry` pour IBM Plex Sans, sans changement du module de police dans ce
+commit. Le build du commit précédent avait réussi. Un nouveau build sur le
+commit final doit confirmer si cet échec est transitoire ; la migration IA ne
+sera pas appliquée avant une CI intégralement verte.
+
+La collecte Vench du 29 septembre, lancée à 13 h 00 UTC, s'est terminée
+correctement à 13 h 18. Le contrôle de 13 h 21 constate cependant 7 521
+tâches d'enrichissement immédiatement éligibles, dont 3 085 âgées de plus de
+48 heures. Le drainage temporaire reste actif jusqu'à 14 h 59 UTC, mais
+aucune baisse durable n'est encore démontrée. L'alerte
+`pipeline.source.encheres_publiques.missed` reste ouverte : le site répond
+HTTP 403, son dernier inventaire complet a échoué le 22 septembre et le
+collecteur est suspendu jusqu'au 30 septembre à 01 h 01 UTC. Les 26 annonces
+encore actives pour cette source ne sont pas fraîches. Le confinement du
+connecteur évite de transformer ce refus d'accès en fausse absence ; il ne
+rétablit pas l'accès. Le domaine canonique et un éventuel flux autorisé sont
+en cours de vérification. Le précontrôle HTTP de 13 h 30 a ensuite trouvé le
+même défi Cloudflare (`403`, `cf-mitigated: challenge`) sur le domaine canonique
+et sur `www` après redirection ; changer l'hôte du collecteur ne résoudrait
+donc pas le refus. Les [conditions d'utilisation de la source](https://encheres-publiques.com/cgu)
+interdisent la rediffusion, même partielle, sans accord. Le
+[jeu historique publié sur data.gouv.fr](https://www.data.gouv.fr/datasets/distribution-des-prix-de-vente-des-biens-immobiliers-des-tribunaux-judiciaires-francais)
+s'arrête à 2024 et ne peut pas
+remplacer un inventaire courant. La décision de conserver la source en pause
+ou de fournir un accord/flux partenaire est demandée au propriétaire produit ;
+aucun contournement d'accès n'est engagé.
+
+La relecture des chemins serveur utilisant le service role a ajouté la garde
+de publication aux exports, aux comparaisons, aux rapports sauvegardés et aux
+agrégats. Les lectures de visibilité en lots utilisent désormais le seul
+marqueur `publication_quarantine` au lieu du JSON complet, et les listes
+judiciaires continuent leur pagination après une page pleine même si certaines
+ventes de cette page sont quarantainées. Les tests locaux de ces chemins,
+TypeScript et les invariants de sécurité passent ; la CI du commit final reste
+à obtenir.

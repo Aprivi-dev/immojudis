@@ -82,6 +82,11 @@ import {
   UrbanPlanningSignalRow,
 } from "../property-reports";
 import { appSaleRowToAuctionSale } from "./serialization";
+import {
+  assertSalePublicationVisible,
+  getPublicationVisibleSaleIds,
+} from "@/lib/sale-publication-guard";
+
 export async function getSale(supabase: SupabaseClient, saleId: string): Promise<AuctionSale> {
   const { data, error } = await supabase
     .from("v_auction_sales_app")
@@ -91,6 +96,11 @@ export async function getSale(supabase: SupabaseClient, saleId: string): Promise
 
   if (error) throw error;
   if (!data?.id) throw new Error("Vente introuvable ou inaccessible.");
+
+  // Public share links and some server workflows use the service-role client.
+  // Re-check the source row outside the curated view so status and the
+  // publication marker remain effective when RLS is bypassed.
+  await assertSalePublicationVisible(saleId);
 
   return appSaleRowToAuctionSale(data);
 }
@@ -130,13 +140,16 @@ export async function getActiveComparableSales(
     if (byId.size >= 8) break;
   }
 
+  const visibleSaleIds = await getPublicationVisibleSaleIds([...byId.keys()]);
+  const visibleSales = [...byId.values()].filter((comparable) => visibleSaleIds.has(comparable.id));
+
   return {
     scopeLabel: usedLabels.length
       ? usedLabels.length === 1
         ? usedLabels[0]
         : `Périmètre élargi : ${usedLabels.slice(0, 3).join(" · ")}`
       : "Aucun périmètre actif trouvé",
-    sales: [...byId.values()].slice(0, 12),
+    sales: visibleSales.slice(0, 12),
   };
 }
 
@@ -436,6 +449,7 @@ export async function getReport(
 
   if (error) throw error;
   if (!data) throw new Error("Rapport introuvable.");
+  await assertSalePublicationVisible(data.sale_id);
   return data;
 }
 

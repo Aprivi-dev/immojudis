@@ -2,8 +2,10 @@ import { propertyTypeLabel } from "@/lib/format";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale } from "@/lib/types";
 
+export const GENERIC_SALE_SEO_TITLE = "Vente aux enchères immobilière — Immojudis";
+
 export function saleSeoTitle(sale: AuctionSale | null | undefined): string {
-  if (!sale) return "Vente aux enchères immobilière — Immojudis";
+  if (!sale) return GENERIC_SALE_SEO_TITLE;
 
   const procedure = getSaleProcedure(sale);
   const property = propertyTypeLabel(sale.property_type);

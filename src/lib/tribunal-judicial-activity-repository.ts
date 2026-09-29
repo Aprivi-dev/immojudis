@@ -15,6 +15,7 @@ import {
   type TribunalJudicialActivityDirectoryResponse,
   type TribunalJudicialActivityDirectorySale,
 } from "@/lib/tribunal-judicial-activity-directory";
+import { isPublicationQuarantinedMarker } from "@/lib/sale-publication-guard";
 
 const PAGE_SIZE = 1_000;
 const MAX_SALES_PER_COURT = 5_000;
@@ -29,6 +30,7 @@ const SALE_COLUMNS = [
   "property_type",
   "visit_dates",
   "first_seen_at",
+  "publication_quarantine:raw_payload->>publication_quarantine",
 ].join(",");
 const DIRECTORY_SALE_COLUMNS = `tribunal_code,${SALE_COLUMNS}`;
 
@@ -46,6 +48,8 @@ const storedSaleCourtSchema = z
     tribunal: z.string().min(1).nullable(),
     sale_venue_type: z.string().min(1),
     sale_verification_status: z.string().min(1),
+    status: z.string().nullable().optional(),
+    publication_quarantine: z.string().nullable().optional(),
   })
   .strict();
 
@@ -79,6 +83,7 @@ const storedSaleSchema = z
     property_type: z.string().nullable(),
     visit_dates: z.unknown(),
     first_seen_at: z.string().datetime({ offset: true }).nullable(),
+    publication_quarantine: z.string().nullable().optional(),
   })
   .strict();
 
@@ -180,7 +185,9 @@ export async function getTribunalJudicialActivityDirectory(
 export async function resolveCourtCodeFromSale(saleId: string): Promise<string> {
   const result = await activityAdmin
     .from("auction_sales")
-    .select("tribunal_code,tribunal,sale_venue_type,sale_verification_status")
+    .select(
+      "tribunal_code,tribunal,sale_venue_type,sale_verification_status,status,publication_quarantine:raw_payload->>publication_quarantine",
+    )
     .eq("id", saleId)
     .limit(1)
     .maybeSingle();
@@ -193,6 +200,9 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
     throw new TribunalJudicialActivityUnavailableError("No judicial sale is available.");
   }
   const sale = storedSaleCourtSchema.parse(result.data);
+  if (isPublicationQuarantinedMarker(sale.publication_quarantine, sale.status)) {
+    throw new TribunalJudicialActivityUnavailableError("No judicial sale is available.");
+  }
   if (sale.sale_venue_type !== "tribunal") {
     throw new TribunalJudicialActivityUnavailableError(
       "The sale is not identified as a judicial tribunal sale.",
@@ -304,7 +314,10 @@ async function loadEligibleSales(input: {
       );
     }
     const page = z.array(storedSaleSchema).parse(result.data ?? []);
-    for (const row of page) {
+    for (const row of page.filter(
+      (candidate) =>
+        !isPublicationQuarantinedMarker(candidate.publication_quarantine, candidate.status),
+    )) {
       rows.push({
         id: row.id,
         saleDate: row.sale_date,
@@ -372,7 +385,10 @@ async function loadEligibleDirectorySales(input: {
       );
     }
     const page = z.array(storedDirectorySaleSchema).parse(result.data ?? []);
-    for (const row of page) {
+    for (const row of page.filter(
+      (candidate) =>
+        !isPublicationQuarantinedMarker(candidate.publication_quarantine, candidate.status),
+    )) {
       rows.push({
         tribunalCode: row.tribunal_code,
         ...mapStoredSale(row),

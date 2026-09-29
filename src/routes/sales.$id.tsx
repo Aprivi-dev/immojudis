@@ -12,7 +12,7 @@ import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { fetchAccessPlan } from "@/lib/client-api";
 import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
-import { saleSeoTitle } from "@/lib/seo";
+import { GENERIC_SALE_SEO_TITLE, saleSeoTitle } from "@/lib/seo";
 import type { AuctionSale } from "@/lib/types";
 
 const DiscoverySaleDetailView = dynamic(
@@ -88,9 +88,14 @@ export function SaleDetailPage({
   });
   const sale = data?.sale ?? null;
   const preview = data?.preview ?? null;
-  const pageTitle = `${saleSeoTitle(
-    !authLoading && accessReady && session ? (sale ?? preview) : preview,
-  )} - Immojudis`;
+  // The authenticated sale is still raw until the detail view receives and
+  // applies its AI review projection. Keep sensitive fields out of the tab
+  // title during that gap; the public preview has an intentionally limited
+  // shape and can keep its generic publication title.
+  const titleSale = sale ? null : preview;
+  const pageTitle = `${
+    !authLoading && accessReady && titleSale ? saleSeoTitle(titleSale) : GENERIC_SALE_SEO_TITLE
+  } - Immojudis`;
 
   useEffect(() => {
     const previousTitle = document.title;

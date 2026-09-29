@@ -139,7 +139,7 @@ describe("listing access resolution", () => {
     expect(mocks.entitlements).not.toHaveBeenCalled();
   });
 
-  it("updates the tab title from the authorized listing and clears it when leaving", async () => {
+  it("keeps raw authorized fields out of the tab title until review guards the detail view", async () => {
     document.title = "Aperçu public - Immojudis";
     mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
     mocks.sale.mockResolvedValue({
@@ -154,8 +154,9 @@ describe("listing access resolution", () => {
         <SaleDetailPage id="sale" />
       </QueryClientProvider>,
     );
-    await waitFor(() => expect(document.title).toContain("Appartement Bayonne"));
-    expect(document.title).toContain("30 000 €");
+    await waitFor(() => expect(document.title).toContain("Vente aux enchères immobilière"));
+    expect(document.title).not.toContain("Bayonne");
+    expect(document.title).not.toContain("30 000 €");
     view.unmount();
     expect(document.title).toBe("Aperçu public - Immojudis");
   });

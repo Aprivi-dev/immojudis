@@ -44,6 +44,7 @@ import {
   fetchDpeExplorer,
   exportSalesCsv,
   fetchFeatureEntitlements,
+  fetchSalesAiReviewProjections,
   fetchSalesStatistics,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
@@ -67,6 +68,7 @@ import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/fre
 import type { AuctionSale } from "@/lib/types";
 import type { WatchedZoneInput } from "@/lib/watched-zones";
 import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
+import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
 import {
   DEFAULT_SEARCH_LIMIT,
   HOME_TYPE_OPTIONS,
@@ -334,7 +336,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           )
       )
         .filter(hasCoordinates)
-        .slice(0, 300),
+        .slice(0, 500),
     [center, isPreview, rawMapSales, rawSales, search],
   );
 
@@ -345,6 +347,33 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   const mapListFollowsViewport = false;
   const displayedSales = mapListFollowsViewport ? mapViewportResults.sales : filteredSales;
+  const aiReviewSaleIds = useMemo(
+    () => [...new Set([...displayedSales, ...mapSales].map((sale) => sale.id).filter(Boolean))],
+    [displayedSales, mapSales],
+  );
+  const { data: aiReviewData, isError: aiReviewError } = useQuery({
+    queryKey: ["sales-ai-review", user?.id ?? "anonymous", aiReviewSaleIds],
+    queryFn: () => fetchSalesAiReviewProjections(aiReviewSaleIds),
+    enabled: Boolean(user && !authLoading && !isPreview && aiReviewSaleIds.length),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const aiReviewBySaleId = useMemo(() => {
+    const grouped: Record<string, AiReviewProjectionReadModel[]> = {};
+    for (const projection of aiReviewData?.projections ?? []) {
+      if (!projection.auction_sale_id) continue;
+      (grouped[projection.auction_sale_id] ??= []).push(projection);
+    }
+    return grouped;
+  }, [aiReviewData]);
+  const aiReviewStatus: AiReviewRequestStatus =
+    !user || isPreview || aiReviewSaleIds.length === 0
+      ? "disabled"
+      : aiReviewError
+        ? "error"
+        : aiReviewData
+          ? "ready"
+          : "loading";
   const hasLocalFilters = false;
   const isInitialLoading = authLoading || entitlementsLoading || isLoading;
   const activeFiltersCount = countActiveSearchFilters(search);
@@ -685,6 +714,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
             comparedSaleIds={comparison.items.map((item) => item.id)}
             comparisonDisabled={!catalogReady}
             onToggleComparison={comparison.toggle}
+            aiReviewBySaleId={aiReviewBySaleId}
+            aiReviewStatus={aiReviewStatus}
           />
 
           <SearchPagination
@@ -716,6 +747,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
                 searchAsMove={!isPreview && Boolean(search.searchAsMove)}
                 preview={isPreview}
                 showDpeLegend={!dpeLocked}
+                aiReviewBySaleId={aiReviewBySaleId}
+                aiReviewStatus={aiReviewStatus}
                 onHover={setHoveredSaleId}
                 onSelect={handleMapSelect}
                 onViewportChange={handleViewportChange}
@@ -791,6 +824,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
                 searchAsMove={!isPreview && Boolean(search.searchAsMove)}
                 preview={isPreview}
                 showDpeLegend={!dpeLocked}
+                aiReviewBySaleId={aiReviewBySaleId}
+                aiReviewStatus={aiReviewStatus}
                 onHover={setHoveredSaleId}
                 onSelect={handleMapSelect}
                 onViewportChange={handleViewportChange}

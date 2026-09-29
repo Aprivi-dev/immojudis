@@ -6,6 +6,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { cleanSaleTitle } from "@/lib/sale-title";
+import { getPublicationVisibleSaleIds, publicationVisibleRows } from "@/lib/sale-publication-guard";
 import {
   buildSaleComparisonSnapshot,
   readSaleComparisonSnapshot,
@@ -372,6 +373,11 @@ export async function getSharedSaleComparison(token: string): Promise<PublicShar
     throw new Error("Comparaison partagée introuvable ou expirée.");
   }
 
+  const visibleSaleIds = await getPublicationVisibleSaleIds(items.map((item) => item.id));
+  if (items.some((item) => !visibleSaleIds.has(item.id))) {
+    throw new Error("Comparaison partagée introuvable ou expirée.");
+  }
+
   return {
     name: data.name,
     items,
@@ -491,12 +497,12 @@ async function fetchSaleSummaries(
   if (!includeAnalysis) {
     const { data, error } = await supabaseAdmin
       .from("auction_sales")
-      .select("id,city,department,starting_price_eur,sale_date")
+      .select("id,city,department,starting_price_eur,sale_date,status,raw_payload")
       .in("id", saleIds);
     if (error) throw error;
 
     return new Map(
-      (data ?? []).map((sale) => [
+      publicationVisibleRows(data ?? []).map((sale) => [
         sale.id,
         {
           id: sale.id,
@@ -512,25 +518,32 @@ async function fetchSaleSummaries(
   }
 
   const { data, error } = await auth.supabase
-    .from("auction_sales")
+    .from("v_auction_sales_app")
     .select("id,title,city,department,starting_price_eur,sale_date,investment_score")
     .in("id", saleIds);
 
   if (error) throw error;
 
+  const rows = (data ?? []).filter(
+    (sale): sale is typeof sale & { id: string } => typeof sale.id === "string",
+  );
+  const visibleSaleIds = await getPublicationVisibleSaleIds(rows.map((sale) => sale.id));
+
   return new Map(
-    (data ?? []).map((sale) => [
-      sale.id,
-      {
-        id: sale.id,
-        title: cleanSaleTitle(sale.title),
-        city: sale.city,
-        department: sale.department,
-        startingPriceEur: sale.starting_price_eur,
-        saleDate: sale.sale_date,
-        investmentScore: sale.investment_score,
-      },
-    ]),
+    rows
+      .filter((sale) => visibleSaleIds.has(sale.id))
+      .map((sale) => [
+        sale.id,
+        {
+          id: sale.id,
+          title: cleanSaleTitle(sale.title),
+          city: sale.city,
+          department: sale.department,
+          startingPriceEur: sale.starting_price_eur,
+          saleDate: sale.sale_date,
+          investmentScore: sale.investment_score,
+        },
+      ]),
   );
 }
 
@@ -740,13 +753,13 @@ async function buildCanonicalComparisonSnapshot(
   const { data, error } = await supabaseAdmin
     .from("auction_sales")
     .select(
-      "id,city,department,property_type,sale_venue_type,sale_date,starting_price_eur,app_surface_m2,app_surface_kind,rooms_count,bedrooms_count,bathrooms_count,status",
+      "id,city,department,property_type,sale_venue_type,sale_date,starting_price_eur,app_surface_m2,app_surface_kind,rooms_count,bedrooms_count,bathrooms_count,status,raw_payload",
     )
     .in("id", saleIds)
     .in("status", ["upcoming", "unknown"]);
   if (error) throw error;
 
-  const byId = new Map((data ?? []).map((sale) => [sale.id, sale]));
+  const byId = new Map(publicationVisibleRows(data ?? []).map((sale) => [sale.id, sale]));
   const missing = saleIds.filter((saleId) => !byId.has(saleId));
   if (missing.length) throw new Error("Certains biens à comparer sont introuvables ou expirés.");
 

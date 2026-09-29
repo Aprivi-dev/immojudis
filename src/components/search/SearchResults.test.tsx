@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
+import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { ListingCard, SearchResultsList, SearchStatisticsPanel } from "./SearchResults";
 import { buildSearchStatistics } from "./search-page-state";
 
@@ -144,5 +145,97 @@ describe("useful public discovery", () => {
     expect(container.textContent).not.toContain("148 000");
     expect(container.textContent).not.toContain("76/100");
     expect(container.querySelector('[class*="blur-"]')).toBeNull();
+  });
+
+  it("hides a property type explicitly blocked by the AI review projection", () => {
+    const sale = {
+      id: "sale-ai-blocked",
+      city: "Bordeaux",
+      department: "33",
+      property_type: "apartment",
+      starting_price_eur: 90000,
+      sale_date: "2026-10-01T09:00:00Z",
+      app_surface_m2: 60,
+      app_surface_kind: "habitable",
+      media: [],
+      source_name: "AGRASC",
+      source_url: "https://agrasc.gouv.fr/vente/1",
+    } as unknown as AuctionSale;
+    const projection: AiReviewProjectionReadModel = {
+      auction_sale_id: sale.id,
+      field_key: "property.property_type",
+      review_state: "unresolved",
+      citation_status: "not_required",
+      is_publishable: false,
+      source_name: "AGRASC",
+      source_url: "https://agrasc.gouv.fr/vente/1",
+    };
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ListingCard
+          sale={sale}
+          aiReviewProjections={[projection]}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          active={false}
+          index={0}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText("À confirmer")).toBeTruthy();
+    expect(screen.queryByText("Appartement", { exact: true })).toBeNull();
+    expect(screen.getByText(/Source : AGRASC/)).toBeTruthy();
+  });
+
+  it("uses the guarded card title in the native share payload", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: share,
+    });
+    const sale = {
+      id: "sale-city-blocked",
+      title: "Appartement à Bordeaux",
+      city: "Bordeaux",
+      department: "33",
+      property_type: "apartment",
+      media: [],
+      source_name: "AGRASC",
+      source_url: "https://agrasc.gouv.fr/vente/1",
+    } as unknown as AuctionSale;
+    const projection: AiReviewProjectionReadModel = {
+      auction_sale_id: sale.id,
+      field_key: "property.city",
+      review_state: "unresolved",
+      citation_status: "not_required",
+      is_publishable: false,
+      source_name: "AGRASC",
+      source_url: "https://agrasc.gouv.fr/vente/1",
+    };
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ListingCard
+          sale={sale}
+          aiReviewProjections={[projection]}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          active={false}
+          index={0}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Partager cette vente" }));
+    expect(share).toHaveBeenCalledWith(expect.objectContaining({ title: "Appartement" }));
+    expect(share.mock.calls[0]?.[0]?.title).not.toContain("Bordeaux");
   });
 });

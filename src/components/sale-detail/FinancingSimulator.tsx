@@ -4,6 +4,11 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { formatPrice } from "@/lib/format";
 import { positiveListingNumber } from "@/lib/sale-listing";
 import type { AuctionSale } from "@/lib/types";
+import {
+  getAiReviewFieldResult,
+  type AiReviewProjectionReadModel,
+  type AiReviewRequestStatus,
+} from "@/lib/ai-review-guard";
 import styles from "./FinancingSimulator.module.css";
 
 const TERM_OPTIONS = [10, 15, 20, 25, 30] as const;
@@ -92,6 +97,9 @@ export type FinancingSimulatorProps = {
   initialInsuranceRate?: number | null;
   /** Useful when a page renders more than one simulator. */
   idPrefix?: string;
+  /** Review rows for the published starting price. */
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  aiReviewStatus?: AiReviewRequestStatus;
 };
 
 function inputValue(value: number | null | undefined): string {
@@ -127,10 +135,17 @@ export function FinancingSimulator({
   initialTermYears = DEFAULT_TERM_YEARS,
   initialInsuranceRate,
   idPrefix = "financing-simulator",
+  aiReviewProjections = null,
+  aiReviewStatus = "ready",
 }: FinancingSimulatorProps) {
   const reactId = useId();
   const componentId = `${idPrefix}-${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const listingPrice = positiveListingNumber(sale.starting_price_eur);
+  const priceReview = getAiReviewFieldResult(
+    aiReviewProjections,
+    "sale.starting_price_eur",
+    aiReviewStatus,
+  );
+  const listingPrice = priceReview.blocked ? null : positiveListingNumber(sale.starting_price_eur);
   const normalizedInitialPrice = listingPrice;
   const requestedInitialDownPayment =
     initialDownPayment != null && Number.isFinite(initialDownPayment)
