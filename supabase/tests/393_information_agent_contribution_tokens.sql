@@ -193,16 +193,12 @@ select is(
   'the trigger prevents contribution token version rollback'
 );
 
+update public.information_agent_missions
+set recipient_email = 'contact-a@example.test'
+where id = '39300000-2000-4000-8000-000000000001';
 select is(
-  (
-    with changed as (
-      update public.information_agent_missions
-      set recipient_email = 'contact-a@example.test'
-      where id = '39300000-2000-4000-8000-000000000001'
-      returning contribution_token_version
-    )
-    select contribution_token_version from changed
-  ),
+  (select contribution_token_version from public.information_agent_missions
+   where id = '39300000-2000-4000-8000-000000000001'),
   5::bigint,
   'returning to a previous recipient rotates again so an old link cannot revive'
 );

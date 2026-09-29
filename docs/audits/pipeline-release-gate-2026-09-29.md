@@ -696,3 +696,194 @@ d'un fichier source ni de deux relectures IA. L'export v4 reste inchangé ;
 zéro champ a été inféré pour ces cas. L'évaluation privée est conservée dans
 `/private/tmp/immojudis-ai-review-noncaptured-assessment-20260929.json`,
 SHA-256 `dab79f2362b18b644e379caf087963dae969ef6bd10bd7d418c10a17c4ee8020`.
+
+Le commit `ca3f251a` a passé la CI complète
+([run 36590361088](https://github.com/Aprivi-dev/immojudis/actions/runs/36590361088))
+et CodeQL
+([run 36590361049](https://github.com/Aprivi-dev/immojudis/actions/runs/36590361049)).
+Le rejeu de toutes les migrations et les 1 232 assertions pgTAP sur 64 fichiers
+sont verts. Il groupe les écritures d'observations canoniques par lots de 25,
+dans des transactions indépendantes et rejouables. La migration
+`20260929180000` a ensuite été appliquée à la production avec contrôle de
+dérive réussi par le
+[workflow 36591139260](https://github.com/Aprivi-dev/immojudis/actions/runs/36591139260).
+La migration `20260929160000` de rétention non bloquante est également bien
+présente en production ; les réponses HTTP 500 ponctuelles observées sur
+`sale-retention` et `operational-health` nécessitent encore une mesure des
+prochains passages du planificateur. `pg_stat_statements` rapporte 569 appels
+au claim du planificateur, avec une moyenne de 5,9 s et un maximum de 7,98 s :
+la marge avant timeout reste faible.
+
+L'importeur IA a été exécuté en mode lecture seule sur un instantané des
+identités de ventes de production, sans écrire dans les deux tables IA : 100
+cas examinés, dont 73 avec deux lectures IA, 27 sans capture, 54 identités
+exactes, 19 sans vente correspondante et aucune ambiguïté. Sur 876 champs
+projetés, 319 passent la règle locale de publication et 557 restent bloqués.
+L'instantané privé est conservé dans
+`/private/tmp/immojudis-ai-review-sales-snapshot-20260929.json` (SHA-256
+`888e574f8f9a5b8392b1dbc154adf896fd896df44ee3f7a558b44dfd8fc43140`).
+L'import réel reste suspendu jusqu'au déploiement de la garde applicative et
+à une nouvelle vérification des identités. Sur la prévisualisation Vercel du
+commit `ca3f251a`, la route
+`/api/cron/information-agent-inbound` existe et renvoie `401 AUTH_REQUIRED`
+sans secret ; elle répond encore `404` sur le domaine canonique, ce qui est
+attendu avant publication. Aucun message n'a été envoyé à un interlocuteur
+réel et le cron entrant n'a pas été activé.
+
+Le [run Vench 36591912352](https://github.com/Aprivi-dev/immojudis/actions/runs/36591912352)
+a confirmé 648 URL publiques sur 648 et 89 requêtes sur 89 sans erreur de
+collecte. Il a publié 150 éléments de contrôle, mais le processus a terminé
+avec un `SIGSEGV` pendant la préparation de l'upsert `auction_sales` du lot
+151–175. La finalisation a marqué le run `failed/interrupted` ; la source n'a
+pas été déclarée complète et les points de reprise publiés sont conservés.
+Les 25 charges déjà persistées de ce lot mesurent 20–27 Ko et ne révèlent
+pas d'anomalie de taille. Le parcours récursif de préparation JSON doit être
+sécurisé et vérifié avant toute relance Vench. Une fenêtre interne de drainage
+de deux heures a été activée jusqu'au 29 septembre à 17 h 51 UTC ; le
+planificateur garde la priorité aux sources échues au plus trois passages
+consécutifs. Le stock dû était encore de 6 218 jobs à 16 h 03 UTC, dont 39
+en échec ; cette fenêtre ne démontre pas encore une résorption durable.
+
+Le correctif `0c6e4262` sépare par copie profonde la preuve brute d'une
+observation avant une fusion et refuse les graphes JSON circulaires ou plus
+profonds que 64 niveaux avec un chemin d'erreur. Il traite une cause plausible
+du `SIGSEGV` Vench, qui n'a pas pu être démontrée à partir des seules charges
+déjà persistées. Les 64 tests ciblés et Ruff passent localement ; la
+[CI 36596335136](https://github.com/Aprivi-dev/immojudis/actions/runs/36596335136)
+et [CodeQL 36596335152](https://github.com/Aprivi-dev/immojudis/actions/runs/36596335152)
+sont lancés sur ce commit exact. Aucune nouvelle exécution Vench n'est lancée
+pendant leur contrôle ni pendant un run automatique concurrent.
+
+La collecte Avoventes démarrée à 16 h 01 UTC s'est achevée à 16 h 14 avec un
+inventaire certifié de 235 annonces, sans erreur de requête : 197 publiées,
+25 expirées selon la date de conservation et 13 mises en quarantaine pour
+identité conflictuelle ou ambiguë. Le planificateur a réservé ensuite un run
+`enrichment-queue` à 16 h 15 UTC, conformément à la règle de priorité de la
+file après trois passages de sources.
+
+La [CI 36596335136](https://github.com/Aprivi-dev/immojudis/actions/runs/36596335136)
+et [CodeQL 36596335152](https://github.com/Aprivi-dev/immojudis/actions/runs/36596335152)
+ont terminé avec succès sur `0c6e4262`, y compris le rejeu des migrations,
+pgTAP, les deux versions Python, le typage, le lint et Playwright. L'essai
+réel Vench après ce correctif reste à faire, sans chevauchement avec le worker
+réservé à 16 h 15. À 16 h 20, celui-ci avait achevé huit jobs ; 6 158 jobs
+restaient dus, dont 3 053 âgés de plus de 48 heures. Il est trop tôt pour
+qualifier ce débit de résorption durable.
+
+L'analyse du plan de `claim_autonomous_pipeline_run` a isolé la recherche
+des tâches `source_detail` ouvertes : elle parcourt l'historique d'environ
+76 000 jobs alors que 3 041 ventes éligibles produisent environ 9 308 alias.
+Le rôle HTTP a une limite SQL de 8 s, proche du maximum observé de 7,98 s.
+Le commit `5b84f6fb` ajoute un index partiel sur l'identité des jobs ouverts et
+sépare la vérification de signature de celle des jobs en cours, avec des tests
+pgTAP pour les signatures terminées, les jobs ouverts et les échecs épuisés.
+Il reste à obtenir la CI exacte, appliquer la migration par maintenance puis
+mesurer le plan et les prochains ticks en production. Aucun élargissement de
+la concurrence des workers n'est activé à ce stade.
+
+Le test pgTAP de cette migration a d'abord échoué parce qu'il cherchait deux
+occurrences littérales de `where not exists`, alors que la seconde
+anti-jointure commence par `and not exists`. Le commit `3edf61a3` corrige
+uniquement cette assertion. La
+[CI 36598880613](https://github.com/Aprivi-dev/immojudis/actions/runs/36598880613)
+et [CodeQL 36598880341](https://github.com/Aprivi-dev/immojudis/actions/runs/36598880341)
+sont verts sur ce commit. Le
+[workflow 36599631747](https://github.com/Aprivi-dev/immojudis/actions/runs/36599631747)
+a ensuite appliqué `20260929183000` en production et confirmé l'absence de
+dérive de schéma. L'index partiel existe et a déjà été utilisé au moins une
+fois par le planificateur. Le cumul des appels SQL englobe encore les passages
+antérieurs à l'index : trois cycles comparables restent nécessaires avant de
+conclure à une amélioration durable du débit et de la fraîcheur.
+
+Les commits `625c2049` et `04fb6b89` durcissent respectivement les sorties IA
+face aux instructions contenues dans une source et le portail de contribution :
+un lien est désormais lié à la mission, à son destinataire et à une version
+monotone qui change si le dossier ou le destinataire change ; les pièces et
+faits reçus par mail exigent une authentification d'expéditeur vérifiée ; les
+écritures du worker entrant respectent son bail. La migration
+`20260929190000` porte cette version de jeton. La
+[CI 36600333770](https://github.com/Aprivi-dev/immojudis/actions/runs/36600333770)
+et [CodeQL 36600334083](https://github.com/Aprivi-dev/immojudis/actions/runs/36600334083)
+doivent encore confirmer le commit `04fb6b89` avant l'application de cette
+migration. Aucune mission n'existe en production ; ces liens anciens ne sont
+donc pas en circulation. L'envoi réel et l'import IA restent désactivés.
+
+Un parcours Vench complet a été relancé sur `3edf61a3` dans le
+[run 36600177762](https://github.com/Aprivi-dev/immojudis/actions/runs/36600177762).
+Il est encore en cours : son résultat et son état final en base déterminent si
+le correctif de préparation JSON permet de terminer la collecte.
+
+La [CI 36600333770](https://github.com/Aprivi-dev/immojudis/actions/runs/36600333770)
+a passé Web, Playwright, Python et CodeQL, puis a échoué dans le nouveau pgTAP
+`393` : sa première assertion comparait le domaine SQL `character_data` à
+`text`. Le commit `dd05cab2` ajoute le cast requis. La
+[CI 36601037387](https://github.com/Aprivi-dev/immojudis/actions/runs/36601037387)
+a passé les 14 premières assertions de ce test, puis a révélé une seconde
+erreur de forme : un `UPDATE` imbriqué dans un `SELECT`. Le test est corrigé
+localement en deux instructions ; aucun de ces deux échecs ne provient du
+rejeu des migrations. Une nouvelle CI complète reste nécessaire.
+
+L'audit de sécurité du nouveau flux a trouvé un chemin public où le champ
+`summary` de l'extraction IA remplaçait `auction_sales.description` sans
+contrôle de preuve. Ce résumé de secours passe désormais par
+`verify_display_claims` avant écriture ; 22 tests ciblés et Ruff sont verts.
+Une requête en lecture seule sur la production ne trouve aucune fiche dont la
+description actuelle est égale au `summary` stocké dans `llm_extraction`, ni
+aucun texte suspect dans ce sous-ensemble. Le même audit a relevé une fenêtre
+de course entre bail entrant et écritures métier ; un correctif de clôture
+atomique est en cours, avec migration et tests, avant publication.
+
+Le run AGRASC de 16 h 46 UTC a terminé partiellement : six cartes collectées,
+cinq persistées et trois URL d'opérateurs rejetées. Il utilisait encore
+l'ancien code pour Trocadéro et Agorastore ; la troisième URL appartient à
+une agence notariale précise associée à une carte AGRASC. La branche accepte
+désormais uniquement cet hôte et la forme exacte de sa page de bien, conserve
+les faits de la carte et classe le détail externe `unsupported` tant qu'aucun
+adaptateur sûr n'existe. Aucun joker sur `*.notaires.fr` ni récupération
+générique n'a été introduit. Les 33 tests ciblés et Ruff sont verts.
+
+Le triage des documents a identifié sept profils PDF encore incomplets, dont
+Villeparisis avec un job épuisé. Le code local distingue maintenant un texte
+partiel d'une extraction complète dans `auction_documents` et versionne
+l'identité de reprise PDF avec la version de l'extracteur, sans effacer le job
+précédent. Les 52 tests Python groupés et Ruff sont verts. Un passage réel des six
+jobs en attente et de la nouvelle génération Villeparisis reste à mesurer.
+
+Le portail de contribution reçoit un plafond SQL sérialisé de 12 URL signées
+et 480 Mio par dossier. Chaque URL réserve les 40 Mio que le bucket Storage
+peut accepter, même pour un fichier déclaré plus petit. Une réservation
+expirée reste comptée tant que le nettoyage administratif n'a pas prouvé
+l'absence d'objet privé. Le jeton Storage est créé côté serveur, puis le quota
+est réservé ; le jeton n'est transmis au navigateur que si la réservation
+réussit. Un incident Storage ne consomme donc pas de capacité. L'API et le
+formulaire montrent la capacité restante. La migration, pgTAP et les tests
+d'intégration doivent passer sur le commit final.
+
+Le [run Vench 36600177762](https://github.com/Aprivi-dev/immojudis/actions/runs/36600177762)
+s'est achevé à 17 h 17 UTC avec un job GitHub vert et un état SQL `succeeded`.
+Les 648 annonces ont été collectées, normalisées et dédupliquées, 642 ventes
+admissibles publiées, 655 observations écrites et aucune erreur de source
+Vench. Le verdict applicatif reste `partial_success` à cause de deux erreurs
+documentaires sur deux ventes ; le correctif de reprise PDF et leur résultat
+réel doivent encore être vérifiés. Le crash `SIGSEGV` du premier essai ne
+s'est pas reproduit sur ce parcours complet.
+
+Le triage des deux échecs documentaires Vench identifie Noisy-le-Grand
+(`73982.pdf`, téléchargement inconnu, job de reprise en attente) et
+Ris-Orangis (`73502.pdf`, pages 19 et 20 en échec OCR, job de reprise en
+attente). Le second document de Ris-Orangis (`73503.pdf`) est maintenant
+entièrement extrait et ne demande pas de reprise spécifique. Les deux ventes
+restent publiées avec une couverture documentaire incomplète ; ce run ne
+certifie donc pas encore la qualité documentaire de Vench. Les jobs doivent
+terminer et les statuts de couverture doivent être revérifiés.
+
+La clôture atomique des baux entrants est maintenant implémentée localement
+dans `20260929201000` et le worker : la prise d'un job inscrit le même bail
+sur son message dans la transaction SQL, puis les écritures de pièces, faits,
+dossiers et missions vérifient le bail et l'identité du dossier au moment de
+l'écriture. Les clés transitoires sont retirées des métadonnées persistées.
+La même série inclut `20260929200000` pour le quota du portail et la
+correction du pgTAP `393`. Les contrôles locaux passent : 27 tests Web ciblés,
+52 tests Python groupés, TypeScript, ESLint, Prettier, Ruff et unicité des
+190 migrations. pgTAP et la CI distante restent requis avant application
+de ces migrations en production.

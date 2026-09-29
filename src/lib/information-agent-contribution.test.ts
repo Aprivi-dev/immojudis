@@ -10,6 +10,7 @@ import { createInformationAgentContributionToken } from "@/lib/information-agent
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   storageFrom: vi.fn(),
+  rpc: vi.fn(),
   enforceRateLimit: vi.fn(),
   persistFactCandidates: vi.fn(),
   resolveSiteOrigin: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
     from: mocks.from,
+    rpc: mocks.rpc,
     storage: { from: mocks.storageFrom },
   },
 }));
@@ -192,6 +194,25 @@ function fixture() {
   };
   mocks.from.mockImplementation((table: string) => new Query(table, tables));
   mocks.storageFrom.mockReturnValue(storage);
+  mocks.rpc.mockImplementation(async (name: string) => {
+    if (name === "reserve_information_agent_portal_upload") {
+      return {
+        data: [
+          {
+            used_bytes: 41943040,
+            used_files: 1,
+            remaining_bytes: 461373440,
+            remaining_files: 11,
+          },
+        ],
+        error: null,
+      };
+    }
+    if (name === "consume_information_agent_portal_upload") {
+      return { data: null, error: null };
+    }
+    throw new Error(`Unexpected RPC: ${name}`);
+  });
   mocks.enforceRateLimit.mockResolvedValue(undefined);
   mocks.persistFactCandidates.mockResolvedValue(undefined);
   return {
@@ -310,6 +331,96 @@ describe("information agent contribution integration", () => {
     expect(persisted.assets).toHaveLength(1);
     expect(state.informationCase.status).toBe("review");
     expect(state.mission.status).toBe("replied");
+  });
+
+  it("stops a signed upload when the database quota is exhausted", async () => {
+    const state = fixture();
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "reserve_information_agent_portal_upload") {
+        return {
+          data: null,
+          error: { code: "54000", message: "INFORMATION_AGENT_PORTAL_QUOTA_EXCEEDED" },
+        };
+      }
+      return { data: null, error: null };
+    });
+
+    await expect(
+      prepareInformationAgentContributionUpload({
+        missionId: MISSION_ID,
+        input: {
+          token: TOKEN,
+          filename: "cahier.pdf",
+          mimeType: "application/pdf",
+          size: 1024,
+        },
+        env: ENV,
+      }),
+    ).rejects.toMatchObject({
+      status: 413,
+      message:
+        "La capacité de dépôt de ce dossier est atteinte. Contactez-nous pour faire réinitialiser le dépôt.",
+    });
+    expect(state.storage.createSignedUploadUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reserve capacity when Storage cannot issue a signed URL", async () => {
+    const state = fixture();
+    state.storage.createSignedUploadUrl.mockRejectedValueOnce(new Error("Storage unavailable"));
+
+    await expect(
+      prepareInformationAgentContributionUpload({
+        missionId: MISSION_ID,
+        input: {
+          token: TOKEN,
+          filename: "cahier.pdf",
+          mimeType: "application/pdf",
+          size: 1024,
+        },
+        env: ENV,
+      }),
+    ).rejects.toMatchObject({ message: "Storage unavailable" });
+    expect(mocks.rpc).not.toHaveBeenCalledWith(
+      "reserve_information_agent_portal_upload",
+      expect.anything(),
+    );
+  });
+
+  it("does not persist a message when the upload reservation has expired", async () => {
+    const state = fixture();
+    const file = await preparedFile(state);
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "reserve_information_agent_portal_upload") {
+        return {
+          data: [
+            {
+              used_bytes: 41943040,
+              used_files: 1,
+              remaining_bytes: 461373440,
+              remaining_files: 11,
+            },
+          ],
+          error: null,
+        };
+      }
+      return {
+        data: null,
+        error: {
+          code: "22023",
+          message: "Information-agent portal upload reservation expired.",
+        },
+      };
+    });
+
+    await expect(
+      submitInformationAgentContribution({
+        missionId: MISSION_ID,
+        input: submission(file),
+        env: ENV,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(state.messages).toHaveLength(0);
+    expect(state.assets).toHaveLength(0);
   });
 
   it("keeps the contribution when the case closes before the review update", async () => {

@@ -29,6 +29,8 @@ function referenceResponse() {
     subject: "Informations sur le bien",
     maxFileBytes: 20 * 1024 * 1024,
     maxSubmissionBytes: 40 * 1024 * 1024,
+    maxPortalBytes: 480 * 1024 * 1024,
+    maxPortalFiles: 12,
   });
 }
 
@@ -139,6 +141,8 @@ describe("InformationAgentContributionForm", () => {
           path: "case/portal/file/pv.pdf",
           token: "signed-upload-token",
           ticket: `1234567890123.${"b".repeat(64)}`,
+          remainingBytes: 440 * 1024 * 1024,
+          remainingFiles: 11,
         }),
       )
       .mockResolvedValueOnce(
@@ -146,6 +150,7 @@ describe("InformationAgentContributionForm", () => {
       );
     renderContribution();
     await screen.findByText("CASE-1234");
+    expect(screen.getByText(/jusqu’à 12 dépôts/)).toBeTruthy();
     fillRequiredFields();
     const file = new File(["%PDF-1.7"], "pv.pdf", { type: "application/pdf" });
     fireEvent.change(screen.getByLabelText("Pièces jointes"), {
@@ -220,6 +225,8 @@ describe("InformationAgentContributionForm", () => {
       path: "case/portal/file/pv.pdf",
       token: "signed-upload-token",
       ticket: `1234567890123.${"b".repeat(64)}`,
+      remainingBytes: 440 * 1024 * 1024,
+      remainingFiles: 11,
     });
     mocks.fetch
       .mockResolvedValueOnce(referenceResponse())

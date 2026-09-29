@@ -13,6 +13,12 @@ from urllib.parse import urlsplit
 from src.sources.common import is_allowed_origin_url
 
 TROCADERO_ORIGIN = "https://lesnotairesdutrocadero.fr"
+# AGRASC currently publishes one listing through a notarial agency subdomain.
+# Keep the observed origin explicit: a wildcard ``*.notaires.fr`` allowlist
+# would authorize arbitrary agency pages as AGRASC facts.
+NOTAIRES_OPERATOR_ORIGINS = (
+    "https://daudruy-lantez-vanoverbeke-nivelet-douriez-senlis.notaires.fr",
+)
 AGORA_MARKETPLACE_ORIGIN = "https://www.agorastore.fr"
 AGORA_IMMO_ORIGINS = ("https://www.agorastore-immo.fr", "https://agorastore-immo.fr")
 AGORA_SELLER_PATH = "/ventes-occasions/vendeur/agrascimmo"
@@ -20,8 +26,17 @@ AGORA_IMMO_SELLER_PATH = "/ventes-immobilieres/vendeur/agrascimmo"
 # Legacy AGRASC links include category segments before the product slug, e.g.
 # ``/vente-occasion/immobilier/appartement/appartement-115-m-paris-75-407453.aspx``.
 AGORA_PRODUCT_PATH_RE = re.compile(r"/vente-occasion/(?:[^/]+/)*[^/]+-\d+\.aspx$", re.I)
+NOTAIRES_OPERATOR_PATH_RE = re.compile(
+    r"/detail-annonces-immobilieres-[a-z0-9-]+/\d+\.html$", re.I
+)
 
-OperatorUrlKind = Literal["immo_interactif", "agorastore_product", "trocadero_offer", "agorastore_seller"]
+OperatorUrlKind = Literal[
+    "immo_interactif",
+    "agorastore_product",
+    "trocadero_offer",
+    "agorastore_seller",
+    "notaires_operator",
+]
 
 
 def classify_agrasc_operator_url(url: str) -> OperatorUrlKind | None:
@@ -42,6 +57,8 @@ def classify_agrasc_operator_url(url: str) -> OperatorUrlKind | None:
         return "agorastore_product" if re.search(r"-\d+\.aspx$", path) else None
     if is_allowed_origin_url(url, (TROCADERO_ORIGIN,)):
         return "trocadero_offer" if path.startswith("/appel_d_offre/") else None
+    if is_allowed_origin_url(url, NOTAIRES_OPERATOR_ORIGINS):
+        return "notaires_operator" if NOTAIRES_OPERATOR_PATH_RE.fullmatch(path) else None
     if is_allowed_origin_url(url, (AGORA_MARKETPLACE_ORIGIN,)):
         if AGORA_PRODUCT_PATH_RE.fullmatch(path):
             return "agorastore_product"

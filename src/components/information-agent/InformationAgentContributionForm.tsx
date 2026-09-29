@@ -12,6 +12,8 @@ import { supabase } from "@/integrations/supabase/client";
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 const DEFAULT_MAX_FILE_BYTES = 20 * 1024 * 1024;
 const DEFAULT_MAX_SUBMISSION_BYTES = 40 * 1024 * 1024;
+const DEFAULT_MAX_PORTAL_BYTES = 480 * 1024 * 1024;
+const DEFAULT_MAX_PORTAL_FILES = 12;
 const MAX_FILES = 10;
 const MAX_EXTERNAL_LINKS = 5;
 
@@ -34,6 +36,8 @@ type ContributionSession = {
   subject: string;
   maxFileBytes: number;
   maxSubmissionBytes: number;
+  maxPortalBytes: number;
+  maxPortalFiles: number;
 };
 
 type SelectedFile = {
@@ -47,6 +51,13 @@ type UploadResult = {
   path: string;
   token: string;
   ticket: string;
+  remainingBytes: number;
+  remainingFiles: number;
+};
+
+type PortalQuota = {
+  remainingBytes: number;
+  remainingFiles: number;
 };
 
 type UploadedFile = {
@@ -78,6 +89,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
   const [submitted, setSubmitted] = useState(false);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [portalQuota, setPortalQuota] = useState<PortalQuota | null>(null);
 
   useEffect(() => {
     if (initializedMission.current === missionId) return;
@@ -100,6 +112,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     setSubmitted(false);
     setSubmissionId(null);
     setUploadedFiles([]);
+    setPortalQuota(null);
     setFiles([]);
 
     if (!TOKEN_PATTERN.test(fragment)) {
@@ -121,6 +134,8 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
           subject: data.subject,
           maxFileBytes: data.maxFileBytes || DEFAULT_MAX_FILE_BYTES,
           maxSubmissionBytes: data.maxSubmissionBytes || DEFAULT_MAX_SUBMISSION_BYTES,
+          maxPortalBytes: data.maxPortalBytes || DEFAULT_MAX_PORTAL_BYTES,
+          maxPortalFiles: data.maxPortalFiles || DEFAULT_MAX_PORTAL_FILES,
         });
         setState("ready");
       })
@@ -238,6 +253,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
             size: selected.file.size,
           },
         );
+        setPortalQuota({
+          remainingBytes: prepared.remainingBytes,
+          remainingFiles: prepared.remainingFiles,
+        });
         const { error: uploadError } = await supabase.storage
           .from(prepared.bucket)
           .uploadToSignedUrl(prepared.path, prepared.token, selected.file);
@@ -455,6 +474,22 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     >
                       PDF, JPEG, PNG, WebP, HEIC, HEIF ou TXT · 20 Mo par fichier · 40 Mo au total.
                     </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Ce dossier accepte jusqu’à {session.maxPortalFiles} dépôts, dans une capacité
+                      réservée de {formatBytes(session.maxPortalBytes)}. Chaque préparation réserve
+                      40 Mo, même pour une pièce plus petite.
+                    </p>
+                    {portalQuota ? (
+                      <p
+                        id="files-quota"
+                        role="status"
+                        className="mt-1 text-xs leading-relaxed text-muted-foreground"
+                      >
+                        Capacité restante après cette préparation :{" "}
+                        {formatBytes(portalQuota.remainingBytes)} et {portalQuota.remainingFiles}{" "}
+                        {portalQuota.remainingFiles > 1 ? "fichiers" : "fichier"}.
+                      </p>
+                    ) : null}
                     <label
                       htmlFor="contribution-files"
                       className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gold/50 bg-cream/40 px-4 py-5 text-center transition hover:border-gold hover:bg-cream"

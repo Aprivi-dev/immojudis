@@ -93,6 +93,7 @@ type InboundProcessingState = {
   attempts: number;
   providerEmailId: string;
   queuedAt: string;
+  leaseId?: string;
   startedAt?: string;
   completedAt?: string;
   failedAt?: string;
@@ -124,6 +125,10 @@ class InformationAgentInboundLeaseLostError extends Error {
 }
 
 type InboundJobLeaseGuard = () => Promise<boolean>;
+type InboundLeaseFence = {
+  leaseId: string;
+  messageId: string;
+};
 
 export async function processInformationAgentInboundWebhook({
   request,
@@ -177,6 +182,7 @@ async function ingestReceivedEmail({
   inboundDomain,
   fetchImpl,
   assertJobLease,
+  leaseId,
   deferProcessing = false,
 }: {
   event: EmailReceivedEvent;
@@ -184,6 +190,7 @@ async function ingestReceivedEmail({
   inboundDomain: string;
   fetchImpl: typeof fetch;
   assertJobLease?: InboundJobLeaseGuard;
+  leaseId?: string;
   deferProcessing?: boolean;
 }): Promise<InformationAgentInboundResult> {
   const token = findInboundToken([...event.data.to, ...event.data.received_for], inboundDomain);
@@ -237,6 +244,7 @@ async function ingestReceivedEmail({
     senderAuthentication,
   });
   const messageId = inboundMessage.id;
+  const leaseFence = leaseId ? { leaseId, messageId } : undefined;
   // A worker may fetch a more complete provider result than the initial
   // receipt. Carry it into the next processing-state write without issuing a
   // separate stale-snapshot update for a duplicate delivery.
@@ -246,6 +254,14 @@ async function ingestReceivedEmail({
         sender_authentication: senderAuthentication,
       })
     : inboundMessage.metadata;
+  if (inboundMessage.duplicate && leaseId) {
+    await updateInboundMessageMetadata(
+      messageId,
+      inboundMessage.metadata,
+      inboundMetadata,
+      leaseId,
+    );
+  }
   const existingProcessing = inboundProcessingState(inboundMetadata);
   const terminalStatus =
     existingProcessing?.status === "completed" ||
@@ -262,6 +278,17 @@ async function ingestReceivedEmail({
       processingStatus: terminalStatus,
     };
   }
+  if (inboundMessage.duplicate && existingProcessing?.leaseId && !assertJobLease) {
+    // A webhook replay must not bypass the queue worker's fenced checkpoint.
+    // The durable job owns the active lease and will publish the next state.
+    return {
+      accepted: true,
+      duplicate: true,
+      caseId: sharedCase.id,
+      messageId,
+      processingStatus: "queued",
+    };
+  }
 
   const reviewReason = inboundReviewReason({
     senderMatches,
@@ -269,18 +296,23 @@ async function ingestReceivedEmail({
   });
 
   if (deferProcessing) {
-    const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId);
+    const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId, leaseId);
     if (initialClosedStatus) {
       inboundMetadata = mergeJsonObject(inboundMetadata, {
         processing_ignored_case_status: initialClosedStatus,
       });
-      await updateInboundProcessingState(messageId, inboundMetadata, {
-        status: "ignored",
-        attempts: existingProcessing?.attempts ?? 0,
-        providerEmailId: event.data.email_id,
-        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-        reason: "case_closed",
-      });
+      await updateInboundProcessingState(
+        messageId,
+        inboundMetadata,
+        {
+          status: "ignored",
+          attempts: existingProcessing?.attempts ?? 0,
+          providerEmailId: event.data.email_id,
+          queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+          reason: "case_closed",
+        },
+        leaseId,
+      );
       return {
         accepted: true,
         caseId: sharedCase.id,
@@ -295,22 +327,32 @@ async function ingestReceivedEmail({
     // provider's authentication result is safe for automatic extraction.
     if (reviewReason) {
       await ensureInboundJobLease(assertJobLease);
-      const caseUpdated = await updateOpenInformationAgentCase(sharedCase.id, {
-        status: "review",
-        replied_at: receivedAt,
-        metadata: mergeJsonObject(sharedCase.metadata, {
-          last_inbound_email_id: event.data.email_id,
-          last_inbound_sender_matches_recipient: senderMatches,
-          last_inbound_sender_authentication_status: senderAuthentication.status,
-        }),
-      });
-      await updateInboundProcessingState(messageId, inboundMetadata, {
-        status: "review",
-        attempts: existingProcessing?.attempts ?? 0,
-        providerEmailId: event.data.email_id,
-        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-        reason: caseUpdated ? reviewReason : "case_closed_during_processing",
-      });
+      const caseUpdated = await updateOpenInformationAgentCase(
+        sharedCase.id,
+        {
+          status: "review",
+          replied_at: receivedAt,
+          metadata: mergeJsonObject(sharedCase.metadata, {
+            last_inbound_email_id: event.data.email_id,
+            last_inbound_sender_matches_recipient: senderMatches,
+            last_inbound_sender_authentication_status: senderAuthentication.status,
+          }),
+        },
+        sharedCase.updated_at,
+        leaseFence,
+      );
+      await updateInboundProcessingState(
+        messageId,
+        inboundMetadata,
+        {
+          status: "review",
+          attempts: existingProcessing?.attempts ?? 0,
+          providerEmailId: event.data.email_id,
+          queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+          reason: caseUpdated ? reviewReason : "case_closed_during_processing",
+        },
+        leaseId,
+      );
       return {
         accepted: true,
         caseId: sharedCase.id,
@@ -322,15 +364,20 @@ async function ingestReceivedEmail({
     }
 
     if (!inboundMessage.duplicate) {
-      await updateInboundProcessingState(messageId, inboundMetadata, {
-        status: "queued",
-        attempts: existingProcessing?.attempts ?? 0,
-        providerEmailId: event.data.email_id,
-        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-        attachmentLinkExpiresAt: new Date(
-          Date.parse(receivedAt) + INBOUND_ATTACHMENT_LINK_TTL_MS,
-        ).toISOString(),
-      });
+      await updateInboundProcessingState(
+        messageId,
+        inboundMetadata,
+        {
+          status: "queued",
+          attempts: existingProcessing?.attempts ?? 0,
+          providerEmailId: event.data.email_id,
+          queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+          attachmentLinkExpiresAt: new Date(
+            Date.parse(receivedAt) + INBOUND_ATTACHMENT_LINK_TTL_MS,
+          ).toISOString(),
+        },
+        leaseId,
+      );
     }
     await enqueueInformationAgentInboundJob({
       messageId,
@@ -349,30 +396,40 @@ async function ingestReceivedEmail({
   }
 
   await ensureInboundJobLease(assertJobLease);
-  inboundMetadata = await updateInboundProcessingState(messageId, inboundMetadata, {
-    status: "processing",
-    attempts: (existingProcessing?.attempts ?? 0) + 1,
-    providerEmailId: event.data.email_id,
-    queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-    startedAt: new Date().toISOString(),
-    attachmentLinkExpiresAt: new Date(
-      Date.parse(receivedAt) + INBOUND_ATTACHMENT_LINK_TTL_MS,
-    ).toISOString(),
-  });
+  inboundMetadata = await updateInboundProcessingState(
+    messageId,
+    inboundMetadata,
+    {
+      status: "processing",
+      attempts: (existingProcessing?.attempts ?? 0) + 1,
+      providerEmailId: event.data.email_id,
+      queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+      startedAt: new Date().toISOString(),
+      attachmentLinkExpiresAt: new Date(
+        Date.parse(receivedAt) + INBOUND_ATTACHMENT_LINK_TTL_MS,
+      ).toISOString(),
+    },
+    leaseId,
+  );
   await ensureInboundJobLease(assertJobLease);
-  const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId);
+  const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId, leaseId);
   if (initialClosedStatus) {
     inboundMetadata = mergeJsonObject(inboundMetadata, {
       processing_ignored_case_status: initialClosedStatus,
     });
     await ensureInboundJobLease(assertJobLease);
-    await updateInboundProcessingState(messageId, inboundMetadata, {
-      status: "ignored",
-      attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
-      providerEmailId: event.data.email_id,
-      queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-      reason: "case_closed",
-    });
+    await updateInboundProcessingState(
+      messageId,
+      inboundMetadata,
+      {
+        status: "ignored",
+        attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+        providerEmailId: event.data.email_id,
+        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+        reason: "case_closed",
+      },
+      leaseId,
+    );
     return {
       accepted: true,
       caseId: sharedCase.id,
@@ -387,23 +444,33 @@ async function ingestReceivedEmail({
   // provider's authentication result is safe for automatic extraction.
   if (reviewReason) {
     await ensureInboundJobLease(assertJobLease);
-    const caseUpdated = await updateOpenInformationAgentCase(sharedCase.id, {
-      status: "review",
-      replied_at: receivedAt,
-      metadata: mergeJsonObject(sharedCase.metadata, {
-        last_inbound_email_id: event.data.email_id,
-        last_inbound_sender_matches_recipient: senderMatches,
-        last_inbound_sender_authentication_status: senderAuthentication.status,
-      }),
-    });
-    if (!caseUpdated) {
-      await updateInboundProcessingState(messageId, inboundMetadata, {
+    const caseUpdated = await updateOpenInformationAgentCase(
+      sharedCase.id,
+      {
         status: "review",
-        attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
-        providerEmailId: event.data.email_id,
-        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-        reason: "case_closed_during_processing",
-      });
+        replied_at: receivedAt,
+        metadata: mergeJsonObject(sharedCase.metadata, {
+          last_inbound_email_id: event.data.email_id,
+          last_inbound_sender_matches_recipient: senderMatches,
+          last_inbound_sender_authentication_status: senderAuthentication.status,
+        }),
+      },
+      sharedCase.updated_at,
+      leaseFence,
+    );
+    if (!caseUpdated) {
+      await updateInboundProcessingState(
+        messageId,
+        inboundMetadata,
+        {
+          status: "review",
+          attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+          providerEmailId: event.data.email_id,
+          queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+          reason: "case_closed_during_processing",
+        },
+        leaseId,
+      );
       return {
         accepted: true,
         caseId: sharedCase.id,
@@ -413,13 +480,18 @@ async function ingestReceivedEmail({
         processingStatus: "review",
       };
     }
-    await updateInboundProcessingState(messageId, inboundMetadata, {
-      status: "review",
-      attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
-      providerEmailId: event.data.email_id,
-      queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-      reason: reviewReason,
-    });
+    await updateInboundProcessingState(
+      messageId,
+      inboundMetadata,
+      {
+        status: "review",
+        attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+        providerEmailId: event.data.email_id,
+        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+        reason: reviewReason,
+      },
+      leaseId,
+    );
     return {
       accepted: true,
       caseId: sharedCase.id,
@@ -438,6 +510,8 @@ async function ingestReceivedEmail({
       sharedCase,
       messageId,
       fetchImpl,
+      assertJobLease,
+      leaseId,
     });
     await ensureInboundJobLease(assertJobLease);
     if (truncated)
@@ -446,6 +520,7 @@ async function ingestReceivedEmail({
         reason: "Plus de 500 pièces jointes : traitement partiel, contrôle manuel requis",
       });
     if (rejected.length) {
+      const previousInboundMetadata = inboundMetadata;
       inboundMetadata = mergeJsonObject(inboundMetadata, {
         imported_manually: false,
         content_trust: "untrusted",
@@ -453,26 +528,32 @@ async function ingestReceivedEmail({
         rejected_attachment_count: rejected.length,
         rejected_attachments: rejected.slice(0, 50),
       });
-      const { error } = await supabaseAdmin
-        .from("information_agent_messages")
-        .update({ metadata: inboundMetadata })
-        .eq("id", messageId);
-      if (error) throw error;
+      await updateInboundMessageMetadata(
+        messageId,
+        previousInboundMetadata,
+        inboundMetadata,
+        leaseId,
+      );
     }
     await ensureInboundJobLease(assertJobLease);
-    const closedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId);
+    const closedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId, leaseId);
     if (closedStatus) {
       inboundMetadata = mergeJsonObject(inboundMetadata, {
         processing_ignored_case_status: closedStatus,
       });
       await ensureInboundJobLease(assertJobLease);
-      await updateInboundProcessingState(messageId, inboundMetadata, {
-        status: "ignored",
-        attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
-        providerEmailId: event.data.email_id,
-        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-        reason: "case_closed",
-      });
+      await updateInboundProcessingState(
+        messageId,
+        inboundMetadata,
+        {
+          status: "ignored",
+          attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+          providerEmailId: event.data.email_id,
+          queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+          reason: "case_closed",
+        },
+        leaseId,
+      );
       return {
         accepted: true,
         caseId: sharedCase.id,
@@ -489,6 +570,8 @@ async function ingestReceivedEmail({
       messageId,
       facts: extractedFacts,
       assets: storedAssets,
+      assertJobLease,
+      leaseId,
     });
 
     const now = new Date().toISOString();
@@ -506,15 +589,22 @@ async function ingestReceivedEmail({
         last_inbound_sender_matches_recipient: senderMatches,
         last_inbound_sender_authentication_status: senderAuthentication.status,
       }),
+      expectedUpdatedAt: sharedCase.updated_at,
+      leaseFence,
     });
     if (!caseUpdated) {
-      await updateInboundProcessingState(messageId, inboundMetadata, {
-        status: "review",
-        attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
-        providerEmailId: event.data.email_id,
-        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-        reason: "case_closed_during_processing",
-      });
+      await updateInboundProcessingState(
+        messageId,
+        inboundMetadata,
+        {
+          status: "review",
+          attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+          providerEmailId: event.data.email_id,
+          queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+          reason: "case_closed_during_processing",
+        },
+        leaseId,
+      );
       return {
         accepted: true,
         caseId: sharedCase.id,
@@ -526,24 +616,44 @@ async function ingestReceivedEmail({
     }
 
     await ensureInboundJobLease(assertJobLease);
-    const { error: updateMissionsError } = await supabaseAdmin
+    const missionUpdateQuery = supabaseAdmin
       .from("information_agent_missions")
-      .update({ status: "replied", replied_at: receivedAt, updated_at: now })
+      .update({
+        status: "replied",
+        replied_at: receivedAt,
+        updated_at: now,
+        ...(leaseFence ? { metadata: addInboundLeaseFence(mission.metadata, leaseFence) } : {}),
+      })
       .eq("case_id", sharedCase.id)
       .in("status", ["sent", "subscribed", "replied"]);
-    if (updateMissionsError) throw updateMissionsError;
+    if (leaseId && mission.updated_at) {
+      const { data: updatedMission, error: updateMissionsError } = await missionUpdateQuery
+        .eq("updated_at", mission.updated_at)
+        .select("id")
+        .maybeSingle();
+      if (updateMissionsError) throw updateMissionsError;
+      if (!updatedMission?.id) throw new InformationAgentInboundLeaseLostError();
+    } else {
+      const { error: updateMissionsError } = await missionUpdateQuery;
+      if (updateMissionsError) throw updateMissionsError;
+    }
 
     const processingStatus =
       extractedFacts.length || storedAssets.length || rejected.length ? "review" : "completed";
     await ensureInboundJobLease(assertJobLease);
-    await updateInboundProcessingState(messageId, inboundMetadata, {
-      status: processingStatus,
-      attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
-      providerEmailId: event.data.email_id,
-      queuedAt: existingProcessing?.queuedAt ?? receivedAt,
-      completedAt: now,
-      reason: processingStatus === "review" ? "candidate_or_attachment_review" : undefined,
-    });
+    await updateInboundProcessingState(
+      messageId,
+      inboundMetadata,
+      {
+        status: processingStatus,
+        attempts: inboundProcessingState(inboundMetadata)?.attempts ?? 1,
+        providerEmailId: event.data.email_id,
+        queuedAt: existingProcessing?.queuedAt ?? receivedAt,
+        completedAt: now,
+        reason: processingStatus === "review" ? "candidate_or_attachment_review" : undefined,
+      },
+      leaseId,
+    );
 
     return {
       accepted: true,
@@ -556,15 +666,20 @@ async function ingestReceivedEmail({
   } catch (error) {
     if (error instanceof InformationAgentInboundLeaseLostError) throw error;
     const currentProcessing = inboundProcessingState(inboundMetadata);
-    await updateInboundProcessingState(messageId, inboundMetadata, {
-      status: "failed",
-      attempts: currentProcessing?.attempts ?? 1,
-      providerEmailId: event.data.email_id,
-      queuedAt: currentProcessing?.queuedAt ?? receivedAt,
-      failedAt: new Date().toISOString(),
-      nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-      lastError: boundedInboundError(error),
-    });
+    await updateInboundProcessingState(
+      messageId,
+      inboundMetadata,
+      {
+        status: "failed",
+        attempts: currentProcessing?.attempts ?? 1,
+        providerEmailId: event.data.email_id,
+        queuedAt: currentProcessing?.queuedAt ?? receivedAt,
+        failedAt: new Date().toISOString(),
+        nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        lastError: boundedInboundError(error),
+      },
+      leaseId,
+    );
     throw error;
   }
 }
@@ -645,6 +760,7 @@ export async function runInformationAgentInboundQueue({
           providerEmailId: job.provider_email_id,
           queuedAt: job.created_at,
           caseStatus: sharedCase.status,
+          leaseId: job.lease_id ?? undefined,
         });
         if (!(await settleInformationAgentInboundJob(job, "ignored"))) {
           staleLease++;
@@ -660,6 +776,7 @@ export async function runInformationAgentInboundQueue({
         inboundDomain,
         fetchImpl,
         assertJobLease,
+        leaseId: job.lease_id ?? undefined,
       });
       const status: "completed" | "review" | "ignored" =
         result.processingStatus === "completed" || result.processingStatus === "review"
@@ -712,11 +829,13 @@ async function markInboundMessageIgnored({
   providerEmailId,
   queuedAt,
   caseStatus,
+  leaseId,
 }: {
   messageId: string;
   providerEmailId: string;
   queuedAt: string;
   caseStatus: string;
+  leaseId?: string;
 }) {
   const { data: message, error } = await supabaseAdmin
     .from("information_agent_messages")
@@ -738,6 +857,7 @@ async function markInboundMessageIgnored({
       queuedAt: previous?.queuedAt ?? queuedAt,
       reason: "case_closed",
     },
+    leaseId,
   );
 }
 
@@ -794,6 +914,7 @@ async function settleInformationAgentInboundJob(
   status: "completed" | "review" | "ignored",
 ): Promise<boolean> {
   if (!job.lease_id) return false;
+  if (!(await releaseInboundMessageLease(job))) return false;
   const { data, error } = await supabaseAdmin
     .from("information_agent_inbound_jobs")
     .update({
@@ -817,6 +938,7 @@ async function failInformationAgentInboundJob(
   now: Date,
 ): Promise<boolean> {
   if (!job.lease_id) return false;
+  if (!(await releaseInboundMessageLease(job))) return false;
   const delayMs = Math.min(10 * 60 * 1000, 30 * 1000 * 2 ** Math.max(0, job.attempts - 1));
   const terminalReview = job.attempts >= 10;
   const { data, error } = await supabaseAdmin
@@ -840,32 +962,84 @@ async function failInformationAgentInboundJob(
   return Boolean(data?.id);
 }
 
+/**
+ * Clear the message-side fence before releasing a job lease. The nested lease
+ * condition makes this safe if another worker already reclaimed the job: that
+ * worker's lease has replaced the message checkpoint and this update returns
+ * no row, so the old worker cannot publish a terminal checkpoint.
+ */
+async function releaseInboundMessageLease(
+  job: Database["public"]["Tables"]["information_agent_inbound_jobs"]["Row"],
+): Promise<boolean> {
+  if (!job.lease_id) return false;
+  const { data: message, error } = await supabaseAdmin
+    .from("information_agent_messages")
+    .select("metadata")
+    .eq("id", job.message_id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!message) return false;
+  const currentProcessing = inboundProcessingState(message.metadata ?? {});
+  if (currentProcessing?.leaseId !== job.lease_id) return false;
+  const nextProcessing = {
+    ...jsonObject(jsonObject(message.metadata).inbound_processing),
+    lease_id: null,
+  } as Record<string, Json>;
+  try {
+    await updateInboundMessageMetadata(
+      job.message_id,
+      message.metadata ?? {},
+      mergeJsonObject(message.metadata ?? {}, { inbound_processing: nextProcessing }),
+      job.lease_id,
+    );
+  } catch (error) {
+    if (error instanceof InformationAgentInboundLeaseLostError) return false;
+    throw error;
+  }
+  return true;
+}
+
 async function updateInboundReplyCase({
   sharedCase,
   hasReviewableEvidence,
+  expectedUpdatedAt,
+  leaseFence,
   ...values
 }: {
   sharedCase: SharedCase;
   hasReviewableEvidence: boolean;
+  expectedUpdatedAt?: string;
+  leaseFence?: InboundLeaseFence;
   replied_at: string;
   failure_reason: null;
   metadata: Json;
 }): Promise<boolean> {
   const keepReview = hasReviewableEvidence || sharedCase.status === "review";
+  const caseUpdatedAt = expectedUpdatedAt ?? sharedCase.updated_at;
   if (keepReview) {
-    return updateOpenInformationAgentCase(sharedCase.id, {
-      ...values,
-      status: "review",
-    });
+    return updateOpenInformationAgentCase(
+      sharedCase.id,
+      {
+        ...values,
+        status: "review",
+      },
+      caseUpdatedAt,
+      leaseFence,
+    );
   }
 
-  const { data: repliedCase, error: repliedError } = await supabaseAdmin
+  const repliedValues = {
+    ...values,
+    status: "replied" as const,
+    ...(leaseFence ? { metadata: addInboundLeaseFence(values.metadata, leaseFence) } : {}),
+  };
+  let repliedQuery = supabaseAdmin
     .from("information_agent_cases")
-    .update({ ...values, status: "replied" })
+    .update(repliedValues)
     .eq("id", sharedCase.id)
-    .in("status", ["sending", "sent", "replied"])
-    .select("id")
-    .maybeSingle();
+    .in("status", ["sending", "sent", "replied"]);
+  if (caseUpdatedAt) repliedQuery = repliedQuery.eq("updated_at", caseUpdatedAt);
+  const { data: repliedCase, error: repliedError } = await repliedQuery.select("id").maybeSingle();
   if (repliedError) throw repliedError;
   if (repliedCase) return true;
 
@@ -874,17 +1048,24 @@ async function updateInboundReplyCase({
   // metadata; never let this reply downgrade it back to replied.
   const { data: currentCase, error: currentError } = await supabaseAdmin
     .from("information_agent_cases")
-    .select("status")
+    .select("status,updated_at,metadata")
     .eq("id", sharedCase.id)
     .maybeSingle();
   if (currentError) throw currentError;
   if (currentCase?.status !== "review") return false;
 
-  const { data: preservedCase, error: preserveError } = await supabaseAdmin
+  let preserveQuery = supabaseAdmin
     .from("information_agent_cases")
-    .update({ replied_at: values.replied_at })
+    .update({
+      replied_at: values.replied_at,
+      ...(leaseFence ? { metadata: addInboundLeaseFence(currentCase.metadata, leaseFence) } : {}),
+    })
     .eq("id", sharedCase.id)
-    .eq("status", "review")
+    .eq("status", "review");
+  if (currentCase.updated_at) {
+    preserveQuery = preserveQuery.eq("updated_at", currentCase.updated_at);
+  }
+  const { data: preservedCase, error: preserveError } = await preserveQuery
     .select("id")
     .maybeSingle();
   if (preserveError) throw preserveError;
@@ -894,18 +1075,31 @@ async function updateInboundReplyCase({
 async function updateOpenInformationAgentCase(
   caseId: string,
   values: Database["public"]["Tables"]["information_agent_cases"]["Update"],
+  expectedUpdatedAt?: string,
+  leaseFence?: InboundLeaseFence,
 ): Promise<boolean> {
-  const { data, error } = await supabaseAdmin
+  const fencedValues = leaseFence
+    ? {
+        ...values,
+        metadata: addInboundLeaseFence(values.metadata ?? {}, leaseFence),
+      }
+    : values;
+  let query = supabaseAdmin
     .from("information_agent_cases")
-    .update(values)
+    .update(fencedValues)
     .eq("id", caseId)
-    .in("status", [...OPEN_INFORMATION_AGENT_CASE_STATUSES])
-    .select("id");
+    .in("status", [...OPEN_INFORMATION_AGENT_CASE_STATUSES]);
+  if (expectedUpdatedAt) query = query.eq("updated_at", expectedUpdatedAt);
+  const { data, error } = await query.select("id");
   if (error) throw error;
   return data?.some((row) => row.id === caseId) ?? false;
 }
 
-async function ignoreIfCaseClosed(caseId: string, messageId: string): Promise<string | null> {
+async function ignoreIfCaseClosed(
+  caseId: string,
+  messageId: string,
+  expectedLeaseId?: string,
+): Promise<string | null> {
   const { data: currentCase, error: caseError } = await supabaseAdmin
     .from("information_agent_cases")
     .select("status")
@@ -920,15 +1114,10 @@ async function ignoreIfCaseClosed(caseId: string, messageId: string): Promise<st
     .eq("id", messageId)
     .single();
   if (messageError) throw messageError;
-  const { error: updateError } = await supabaseAdmin
-    .from("information_agent_messages")
-    .update({
-      metadata: mergeJsonObject(message.metadata, {
-        processing_ignored_case_status: currentCase.status,
-      }),
-    })
-    .eq("id", messageId);
-  if (updateError) throw updateError;
+  const nextMetadata = mergeJsonObject(message.metadata, {
+    processing_ignored_case_status: currentCase.status,
+  });
+  await updateInboundMessageMetadata(messageId, message.metadata, nextMetadata, expectedLeaseId);
   return currentCase.status;
 }
 
@@ -1062,8 +1251,12 @@ async function updateInboundProcessingState(
     lastError?: string;
     reason?: string;
   },
+  expectedLeaseId?: string,
 ): Promise<Json> {
   const previous = inboundProcessingState(currentMetadata);
+  if (!expectedLeaseId && previous?.leaseId) {
+    throw new InformationAgentInboundLeaseLostError();
+  }
   const state: Record<string, Json> = {
     version: previous?.version ?? INBOUND_PROCESSING_VERSION,
     status: patch.status,
@@ -1071,6 +1264,7 @@ async function updateInboundProcessingState(
     provider_email_id: patch.providerEmailId,
     queued_at: previous?.queuedAt ?? patch.queuedAt,
   };
+  if (expectedLeaseId) state.lease_id = expectedLeaseId;
   const optionalValues: Array<[string, string | undefined]> = [
     ["started_at", patch.startedAt ?? previous?.startedAt],
     ["completed_at", patch.completedAt],
@@ -1087,12 +1281,47 @@ async function updateInboundProcessingState(
     if (value) state[key] = value;
   }
   const nextMetadata = mergeJsonObject(currentMetadata, { inbound_processing: state });
-  const { error } = await supabaseAdmin
+  await updateInboundMessageMetadata(messageId, currentMetadata, nextMetadata, expectedLeaseId);
+  return nextMetadata;
+}
+
+/**
+ * Update an inbound message only while this worker still holds its lease.
+ * Queue claims replace the lease in the same database statement as the job
+ * claim, so the JSONB lease predicate fences each checkpoint at write time.
+ */
+async function updateInboundMessageMetadata(
+  messageId: string,
+  currentMetadata: Json,
+  nextMetadata: Json,
+  expectedLeaseId?: string,
+): Promise<void> {
+  if (!expectedLeaseId && inboundProcessingState(currentMetadata)?.leaseId) {
+    throw new InformationAgentInboundLeaseLostError();
+  }
+  const query = supabaseAdmin
     .from("information_agent_messages")
     .update({ metadata: nextMetadata })
     .eq("id", messageId);
+  if (!expectedLeaseId) {
+    const { error } = await query;
+    if (error) throw error;
+    return;
+  }
+
+  const { data, error } = await query
+    .eq("metadata->inbound_processing->>lease_id", expectedLeaseId)
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
-  return nextMetadata;
+  if (!data?.id) throw new InformationAgentInboundLeaseLostError();
+}
+
+function addInboundLeaseFence(metadata: Json, leaseFence: InboundLeaseFence): Json {
+  return mergeJsonObject(metadata, {
+    inbound_lease_id: leaseFence.leaseId,
+    inbound_message_id: leaseFence.messageId,
+  });
 }
 
 function normalizeInboundSenderAuthentication(value: unknown): InboundSenderAuthentication {
@@ -1172,6 +1401,7 @@ function inboundProcessingState(metadata: Json): InboundProcessingState | null {
     attempts,
     providerEmailId,
     queuedAt,
+    leaseId: asOptionalString(raw.lease_id),
     startedAt: asOptionalString(raw.started_at),
     completedAt: asOptionalString(raw.completed_at),
     failedAt: asOptionalString(raw.failed_at),
@@ -1265,11 +1495,15 @@ async function storeInboundAttachments({
   sharedCase,
   messageId,
   fetchImpl,
+  assertJobLease,
+  leaseId,
 }: {
   attachments: AttachmentData[];
   sharedCase: SharedCase;
   messageId: string;
   fetchImpl: typeof fetch;
+  assertJobLease?: InboundJobLeaseGuard;
+  leaseId?: string;
 }) {
   const stored: Array<{
     id: string;
@@ -1282,6 +1516,7 @@ async function storeInboundAttachments({
   let totalBytes = 0;
 
   for (const attachment of attachments) {
+    await ensureInboundJobLease(assertJobLease);
     const filename = safeFilename(attachment.filename || `piece-${attachment.id}`);
     const mimeType =
       typeof attachment.content_type === "string"
@@ -1364,6 +1599,7 @@ async function storeInboundAttachments({
       continue;
     }
 
+    await ensureInboundJobLease(assertJobLease);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     const attachmentKey = createHash("sha256").update(attachment.id).digest("hex");
     const storagePath = `${sharedCase.id}/${messageId}/${attachmentKey}/${sha256}-${filename}`;
@@ -1375,6 +1611,7 @@ async function storeInboundAttachments({
       });
     if (uploadError && !/already exists|duplicate/i.test(uploadError.message)) throw uploadError;
 
+    await ensureInboundJobLease(assertJobLease);
     const { data: asset, error: assetError } = await supabaseAdmin
       .from("information_agent_evidence_assets")
       .insert({
@@ -1387,7 +1624,10 @@ async function storeInboundAttachments({
         mime_type: mimeType,
         size_bytes: bytes.length,
         sha256,
-        metadata: { content_disposition: attachment.content_disposition },
+        metadata: {
+          content_disposition: attachment.content_disposition,
+          ...(leaseId ? { inbound_lease_id: leaseId, inbound_message_id: messageId } : {}),
+        },
       })
       .select("id")
       .single();
@@ -1430,6 +1670,8 @@ export async function persistFactCandidates({
   messageId,
   facts,
   assets,
+  assertJobLease,
+  leaseId,
 }: {
   sharedCase: SharedCase;
   messageId: string;
@@ -1441,7 +1683,10 @@ export async function persistFactCandidates({
     storagePath: string;
     size: number;
   }>;
+  assertJobLease?: InboundJobLeaseGuard;
+  leaseId?: string;
 }) {
+  await ensureInboundJobLease(assertJobLease);
   const { data: sale, error: saleError } = await supabaseAdmin
     .from("auction_sales")
     .select("surface_m2,app_surface_m2,rooms_count,occupancy_status,sale_date,starting_price_eur")
@@ -1460,6 +1705,9 @@ export async function persistFactCandidates({
       evidence_excerpt: fact.evidenceExcerpt,
       confidence: fact.confidence,
       status: conflictsWithSale(fact, sale) ? ("conflict" as const) : ("pending" as const),
+      ...(leaseId
+        ? { metadata: { inbound_lease_id: leaseId, inbound_message_id: messageId } }
+        : {}),
     })),
     ...assets.map((asset) => ({
       case_id: sharedCase.id,
@@ -1472,9 +1720,13 @@ export async function persistFactCandidates({
       evidence_excerpt: null,
       confidence: 1,
       status: "pending" as const,
+      ...(leaseId
+        ? { metadata: { inbound_lease_id: leaseId, inbound_message_id: messageId } }
+        : {}),
     })),
   ];
   if (!rows.length) return;
+  await ensureInboundJobLease(assertJobLease);
   const { error } = await supabaseAdmin.from("information_agent_fact_candidates").upsert(rows, {
     onConflict: "message_id,fact_key,evidence_asset_id,source_page,display_value",
     ignoreDuplicates: true,

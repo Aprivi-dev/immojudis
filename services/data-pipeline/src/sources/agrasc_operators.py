@@ -39,6 +39,17 @@ def enrich_agrasc_operator(
             "operator_detail_reason": "seller_catalogue_without_listing_identity",
         })
         return
+    if kind == "notaires_operator":
+        # The AGRASC card is the verified fact source.  The observed agency
+        # page is allowlisted as an identity, but has no safe adapter yet;
+        # never fetch or promote unparsed operator content by default.
+        sale["operator_detail_status"] = "unsupported"
+        sale["source_detail_status"] = "unsupported"
+        sale.setdefault("source_blocks", {}).update({
+            "operator_endpoint": url,
+            "operator_detail_reason": "known_notarial_listing_without_safe_detail_adapter",
+        })
+        return
     api = kind == "immo_interactif"
     marketplace_product = kind == "agorastore_product" and is_allowed_origin_url(
         url, (AGORA_MARKETPLACE_ORIGIN,)

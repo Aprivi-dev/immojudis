@@ -222,6 +222,86 @@ def test_failed_pdf_retains_same_retry_identity_across_scans(monkeypatch):
     assert next(row["input_hash"] for row in rows if row["job_type"] == "pdf") == first
 
 
+def test_incomplete_pdf_gets_a_new_retry_generation_after_extractor_revision(monkeypatch):
+    rows = []
+    monkeypatch.setattr(storage, "_postgrest_upsert", lambda url, key, table, payload, conflict: rows.extend(payload))
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/retry-generation",
+            "sale_date": "2099-01-01",
+            "documents": [{"url": "https://example.test/pv.pdf"}],
+        }
+    )
+    sale.raw_payload["document_analysis"] = {
+        "failed_documents": 1,
+        "checked_at": "2026-09-01T00:00:00+00:00",
+    }
+    storage._enqueue_due_enrichment([sale], "url", "key")
+    first = next(row["input_hash"] for row in rows if row["job_type"] == "pdf")
+
+    rows.clear()
+    monkeypatch.setattr(storage, "PDF_RETRY_GENERATION", "pdf_text_v4_extractor_revision")
+    storage._enqueue_due_enrichment([sale], "url", "key")
+    second = next(row["input_hash"] for row in rows if row["job_type"] == "pdf")
+
+    assert second != first
+    assert second.startswith("pipeline_v2:")
+
+
+@pytest.mark.parametrize(
+    ("extracted", "expected_status"),
+    [
+        (
+            {
+                "text": "Texte partiel",
+                "text_chars": 13,
+                "complete": False,
+                "extraction_status": "extracted",
+                "failed_pages": [9],
+            },
+            "incomplete",
+        ),
+        (
+            {
+                "text": "Texte illisible",
+                "text_chars": 15,
+                "complete": False,
+                "extraction_status": "failed",
+            },
+            "failed",
+        ),
+    ],
+)
+def test_document_rows_keep_incomplete_or_failed_pdf_status(
+    extracted, expected_status, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/partial-document",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    (tmp_path / f"{storage.sale_storage_id(sale)}.json").write_text(
+        json.dumps(
+            [
+                {
+                    "url": "https://example.test/pv.pdf",
+                    **extracted,
+                    "extraction_method": "pymupdf_pages",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rows = storage._document_rows_for_sale(sale)
+
+    assert rows[0]["extraction_status"] == expected_status
+
+
 def test_replaced_document_creates_new_fact_job_even_at_same_url(monkeypatch):
     rows = []
     monkeypatch.setattr(storage, "_postgrest_upsert", lambda url, key, table, payload, conflict: rows.extend(payload))

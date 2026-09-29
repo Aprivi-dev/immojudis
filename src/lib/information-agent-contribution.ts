@@ -19,6 +19,10 @@ const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_SUBMISSION_BYTES = 40 * 1024 * 1024;
 const MAX_FILES = 10;
 const UPLOAD_TICKET_LIFETIME_MS = 2 * 60 * 60 * 1000;
+export const PORTAL_UPLOAD_RESERVATION_BYTES = 40 * 1024 * 1024;
+export const PORTAL_UPLOAD_QUOTA_FILES = 12;
+export const PORTAL_UPLOAD_QUOTA_BYTES =
+  PORTAL_UPLOAD_RESERVATION_BYTES * PORTAL_UPLOAD_QUOTA_FILES;
 const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
@@ -31,6 +35,38 @@ const ALLOWED_MIME_TYPES = new Set([
 
 type Mission = Database["public"]["Tables"]["information_agent_missions"]["Row"];
 type InformationCase = Database["public"]["Tables"]["information_agent_cases"]["Row"];
+
+type PortalUploadQuotaRow = {
+  used_bytes: number;
+  used_files: number;
+  remaining_bytes: number;
+  remaining_files: number;
+};
+
+type PortalUploadQuotaRpcError = {
+  code?: string;
+  message?: string;
+};
+
+type PortalUploadQuotaRpcClient = {
+  rpc(
+    name: "reserve_information_agent_portal_upload",
+    args: {
+      p_case_id: string;
+      p_storage_path: string;
+      p_size_bytes: number;
+      p_expires_at: string;
+    },
+  ): Promise<{ data: PortalUploadQuotaRow[] | null; error: PortalUploadQuotaRpcError | null }>;
+  rpc(
+    name: "consume_information_agent_portal_upload",
+    args: {
+      p_case_id: string;
+      p_storage_path: string;
+      p_size_bytes: number;
+    },
+  ): Promise<{ data: null; error: PortalUploadQuotaRpcError | null }>;
+};
 
 export type ContributionSession = {
   mission: Mission;
@@ -197,12 +233,29 @@ export async function prepareInformationAgentContributionUpload({
   await enforceContributionRateLimit(informationCase, "prepare", 16, 24 * 60 * 60);
   const safeName = storageFilename(input.filename);
   const path = `${informationCase.id}/portal/${randomUUID()}/${safeName}`;
+  const uploadExpiresAt = new Date(Date.now() + UPLOAD_TICKET_LIFETIME_MS).toISOString();
+  // Generate the private ticket first. If Storage is unavailable, no durable
+  // quota slot is consumed; callers only receive the token after reservation.
   const { data, error } = await supabaseAdmin.storage.from(BUCKET).createSignedUploadUrl(path);
   if (error || !data?.token) throw error ?? new Error("Autorisation de dépôt indisponible.");
+  const { data: quotaRows, error: quotaError } = await (
+    supabaseAdmin as unknown as PortalUploadQuotaRpcClient
+  ).rpc("reserve_information_agent_portal_upload", {
+    p_case_id: informationCase.id,
+    p_storage_path: path,
+    p_size_bytes: input.size,
+    p_expires_at: uploadExpiresAt,
+  });
+  if (quotaError) throwPortalUploadQuotaError(quotaError);
+  const quota = quotaRows?.[0];
+  if (!quota) throw new Error("Réservation de dépôt indisponible.");
   return {
     bucket: BUCKET,
     path,
     token: data.token,
+    expiresAt: uploadExpiresAt,
+    remainingBytes: quota.remaining_bytes,
+    remainingFiles: quota.remaining_files,
     ticket: createUploadTicket(
       informationCase.id,
       path,
@@ -212,6 +265,53 @@ export async function prepareInformationAgentContributionUpload({
       env,
     ),
   };
+}
+
+async function consumeInformationAgentPortalUpload({
+  caseId,
+  path,
+  size,
+}: {
+  caseId: string;
+  path: string;
+  size: number;
+}): Promise<void> {
+  const { error } = await (supabaseAdmin as unknown as PortalUploadQuotaRpcClient).rpc(
+    "consume_information_agent_portal_upload",
+    {
+      p_case_id: caseId,
+      p_storage_path: path,
+      p_size_bytes: size,
+    },
+  );
+  if (error) throwPortalUploadQuotaError(error);
+}
+
+function throwPortalUploadQuotaError(error: PortalUploadQuotaRpcError): never {
+  const message = error.message ?? "";
+  if (message.includes("INFORMATION_AGENT_PORTAL_QUOTA_EXCEEDED")) {
+    throw new InformationAgentContributionError(
+      "La capacité de dépôt de ce dossier est atteinte. Contactez-nous pour faire réinitialiser le dépôt.",
+      413,
+    );
+  }
+  if (
+    message.includes("reservation expired") ||
+    message.includes("reservation not found") ||
+    message.includes("upload asset mismatch")
+  ) {
+    throw new InformationAgentContributionError(
+      "Cette autorisation de fichier n'est plus valide. Recommencez le dépôt de la pièce.",
+      409,
+    );
+  }
+  if (error.code === "22023" || error.code === "23514" || error.code === "P0002") {
+    throw new InformationAgentContributionError(
+      "Autorisation de fichier invalide ou expirée.",
+      400,
+    );
+  }
+  throw new Error(message || "Contrôle de capacité de dépôt indisponible.");
 }
 
 export async function submitInformationAgentContribution({
@@ -299,6 +399,17 @@ export async function submitInformationAgentContribution({
       mimeType: file.mimeType,
       size: bytes.length,
       sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
+  }
+
+  // Claim every validated reservation before creating the inbound message.
+  // A stale or missing reservation must not leave a message without its
+  // corresponding evidence asset.
+  for (const file of validatedFiles) {
+    await consumeInformationAgentPortalUpload({
+      caseId: informationCase.id,
+      path: file.path,
+      size: file.size,
     });
   }
 
