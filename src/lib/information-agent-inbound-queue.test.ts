@@ -53,6 +53,7 @@ function configureCaseLookup(
       queued_at: "2026-09-28T10:00:00.000Z",
     },
   },
+  jobLeaseAvailable = true,
 ) {
   mocks.from.mockImplementation((table: string) => {
     if (table === "information_agent_cases") {
@@ -79,9 +80,15 @@ function configureCaseLookup(
       return {
         update: (values: unknown) => {
           mocks.jobUpdate(values);
-          return {
-            eq: () => ({ eq: async () => ({ error: null }) }),
+          const query = {
+            eq: () => query,
+            select: () => query,
+            maybeSingle: async () => ({
+              data: jobLeaseAvailable ? { id: "job-1" } : null,
+              error: null,
+            }),
           };
+          return query;
         },
       };
     }
@@ -110,6 +117,30 @@ describe("information-agent inbound durable queue", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("claim_information_agent_inbound_jobs", {
       p_limit: 5,
       p_now: expect.any(String),
+    });
+  });
+
+  it("abandons a job whose lease was replaced before worker processing", async () => {
+    const job = jobFixture();
+    mocks.rpc.mockResolvedValueOnce({ data: [job], error: null });
+    configureCaseLookup(null, null, undefined, false);
+
+    const result = await runInformationAgentInboundQueue({
+      env: {
+        NODE_ENV: "test",
+        RESEND_API_KEY: "resend-test-key",
+        INFORMATION_AGENT_INBOUND_DOMAIN: "reponses.immojudis.com",
+      },
+      now: new Date("2026-09-28T10:01:00.000Z"),
+      limit: 1,
+    });
+
+    expect(result).toMatchObject({ claimed: 1, staleLease: 1, failed: 0 });
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.messageUpdate).not.toHaveBeenCalled();
+    expect(mocks.jobUpdate).toHaveBeenCalledWith({
+      locked_at: expect.any(String),
+      updated_at: expect.any(String),
     });
   });
 
@@ -235,7 +266,12 @@ describe("information-agent inbound durable queue", () => {
         return {
           update: (values: unknown) => {
             mocks.jobUpdate(values);
-            return { eq: () => ({ eq: async () => ({ error: null }) }) };
+            const query = {
+              eq: () => query,
+              select: () => query,
+              maybeSingle: async () => ({ data: { id: job.id }, error: null }),
+            };
+            return query;
           },
         };
       }

@@ -268,10 +268,7 @@ describeLocal("information-agent local integration", () => {
   }, 30_000);
 
   it("runs signed portal upload, local Resend receipt, Storage persistence, and review", async () => {
-    const contributionUrl = informationAgentContributionUrl(
-      { id: missionId, created_at: (await missionRow()).created_at },
-      process.env,
-    );
+    const contributionUrl = informationAgentContributionUrl(await missionRow(), process.env);
     expect(contributionUrl).toMatch(new RegExp(`/contribuer/${missionId}#`));
 
     const prepareResponse = await prepareUploadRoute(
@@ -704,11 +701,17 @@ describeLocal("information-agent local integration", () => {
 async function missionRow() {
   const { data, error } = await admin
     .from("information_agent_missions")
-    .select("created_at")
+    .select("id,created_at,case_id,recipient_email,contribution_token_version")
     .eq("id", missionId)
     .single();
   if (error || !data) throw error ?? new Error("Local mission missing.");
-  return data as { created_at: string };
+  return data as {
+    id: string;
+    created_at: string;
+    case_id: string;
+    recipient_email: string;
+    contribution_token_version: number;
+  };
 }
 
 function respondJson(response: import("node:http").ServerResponse, body: unknown) {

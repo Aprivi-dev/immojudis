@@ -76,7 +76,10 @@ export const submitContributionSchema = z.object({
 export type SubmitContributionInput = z.output<typeof submitContributionSchema>;
 
 export function informationAgentContributionUrl(
-  mission: Pick<Mission, "id" | "created_at">,
+  mission: Pick<
+    Mission,
+    "id" | "created_at" | "case_id" | "recipient_email" | "contribution_token_version"
+  >,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const origin = resolveSiteOrigin(env);
@@ -88,11 +91,27 @@ export function informationAgentContributionUrl(
       503,
     );
   }
-  const token = createInformationAgentContributionToken(mission.id, mission.created_at, secret);
+  if (!mission.case_id) {
+    throw new InformationAgentContributionError(
+      "Cette enquête n'est pas encore rattachée à un dossier.",
+      409,
+    );
+  }
+  const token = createInformationAgentContributionToken(
+    mission.id,
+    mission.created_at,
+    mission.case_id,
+    mission.recipient_email,
+    mission.contribution_token_version,
+    secret,
+  );
   if (
     !verifyInformationAgentContributionToken({
       missionId: mission.id,
       createdAt: mission.created_at,
+      caseId: mission.case_id,
+      recipientEmail: mission.recipient_email,
+      contributionTokenVersion: mission.contribution_token_version,
       token,
       secret,
     })
@@ -127,6 +146,9 @@ export async function loadInformationAgentContribution(
     !verifyInformationAgentContributionToken({
       missionId: mission.id,
       createdAt: mission.created_at,
+      caseId: mission.case_id,
+      recipientEmail: mission.recipient_email,
+      contributionTokenVersion: mission.contribution_token_version,
       token,
       secret,
     })
@@ -147,6 +169,11 @@ export async function loadInformationAgentContribution(
     !["sending", "sent", "replied", "review"].includes(informationCase.status)
   ) {
     throw new InformationAgentContributionError("Ce dossier n'accepte plus de dépôt.", 410);
+  }
+  if (
+    informationCase.normalized_recipient_email !== normalizeRecipientEmail(mission.recipient_email)
+  ) {
+    throw new InformationAgentContributionError("Lien de dépôt invalide.", 404);
   }
   if (informationCase.initiator_mission_id && informationCase.initiator_mission_id !== mission.id) {
     throw new InformationAgentContributionError("Lien de dépôt invalide.", 404);
@@ -618,4 +645,8 @@ function contributionSecret(env: NodeJS.ProcessEnv): string {
     throw new InformationAgentContributionError("Dépôt temporairement indisponible.", 503);
   }
   return secret;
+}
+
+function normalizeRecipientEmail(value: string): string {
+  return value.trim().toLowerCase();
 }
