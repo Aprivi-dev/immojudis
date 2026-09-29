@@ -10,7 +10,7 @@ select has_column(
 );
 select is(
   (
-    select column_default
+    select column_default::text
     from information_schema.columns
     where table_schema = 'public'
       and table_name = 'information_agent_missions'
