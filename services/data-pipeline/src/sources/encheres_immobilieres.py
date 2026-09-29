@@ -292,6 +292,10 @@ def _enrich_sale_from_detail(
             detail_external_id,
         )
         return
+    if (detail.get('title') or detail.get('description')) and any(
+        detail.get(key) for key in ('address', 'city', 'starting_price_eur', 'surface_m2', 'documents')
+    ):
+        sale['source_detail_status'] = 'complete'
     for key in DETAIL_OVERRIDE_FIELDS:
         value = detail.get(key)
         if value in (None, "", []):

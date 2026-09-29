@@ -176,12 +176,16 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_display_description",
     "llm_display_description_word_count",
     "llm_display_status",
+    "llm_display_model",
     "llm_display_origin",
     "source_operational_changed",
     "llm_display_quality_version",
     "llm_display_source_constraints",
     "llm_display_evidence_check",
     "llm_prompt_version",
+    "source_content_changed",
+    "source_content_change_reason",
+    "superseded_analysis",
     "document_analysis",
     "surface_extraction",
     "surface_analysis",
@@ -552,6 +556,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                     _mark_llm_description_failure(sale, sale_llm_stats, prompt_version=prompt_version)
                 elif not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
                     sale.raw_payload.pop("source_content_changed", None)
+                    sale.raw_payload.pop("source_content_change_reason", None)
                     sale.raw_payload.pop("source_operational_changed", None)
                     _clear_llm_description_failure(sale)
                 if options.upsert:
@@ -1578,16 +1583,17 @@ def _needs_llm_display_description_refresh(
     display_description = clean_payload_text(sale.raw_payload.get("llm_display_description"))
     if not display_description:
         return True
+    settings = load_settings()
     current_prompt_version = clean_payload_text(
-        prompt_version if prompt_version is not None else load_settings().get("llm_prompt_version")
+        prompt_version if prompt_version is not None else settings.get("llm_prompt_version")
     )
-    current_display_prompt_version = clean_payload_text(
-        load_settings().get("llm_display_prompt_version")
-    )
+    current_display_prompt_version = clean_payload_text(settings.get("llm_display_prompt_version"))
+    current_model = clean_payload_text(settings.get("replicate_model"))
     return not has_current_display(
         sale.raw_payload,
         current_prompt_version,
         current_display_prompt_version,
+        current_model,
     )
 
 

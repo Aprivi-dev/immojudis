@@ -467,6 +467,7 @@ def run_enrichment_queue_batch(
                         raise RuntimeError("Fact extraction coverage incomplete")
             if "display_description" in job_types or "fact_extraction" in job_types:
                 sale.raw_payload.pop("source_content_changed", None)
+                sale.raw_payload.pop("source_content_change_reason", None)
                 sale.raw_payload.pop("source_operational_changed", None)
             if sale.latitude is None or sale.longitude is None:
                 geocode_sale(sale)

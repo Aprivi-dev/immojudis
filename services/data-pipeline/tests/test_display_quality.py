@@ -1,11 +1,20 @@
+from copy import deepcopy
 from decimal import Decimal
 
 import pytest
 
 from src import main
+from src.config import load_settings
 from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION, has_current_display, preserve_source_constraints
 from src.enrichment.extract_structured import apply_cached_llm_extraction_to_sale
 from src.models import AuctionSale
+
+
+def _cached_metadata() -> dict[str, str]:
+    return {
+        'llm_prompt_version': 'v1',
+        'llm_display_prompt_version': str(load_settings()['llm_display_prompt_version']),
+    }
 
 
 @pytest.mark.parametrize('status', ['accepted', 'fallback'])
@@ -55,8 +64,9 @@ def test_over_budget_source_constraints_are_not_silently_truncated():
 def test_cached_extraction_revalidates_and_keeps_source_caveat_without_ai():
     source = 'Maison de 140 m². Plusieurs parcelles sont non constructibles et frappées d’un emplacement réservé par la commune.'
     sale = AuctionSale(source_name='agrasc', source_url='https://example.test/evry', description=source,
-                       raw_payload={'description': source, 'llm_display_description': 'Maison de 140 m².',
-                                    'llm_prompt_version': 'v1', 'llm_extraction': {'display_description': 'Maison de 140 m².'}})
+                       raw_payload={**_cached_metadata(), 'description': source,
+                                    'llm_display_description': 'Maison de 140 m².',
+                                    'llm_extraction': {'display_description': 'Maison de 140 m².'}})
     assert main._needs_llm_display_description_refresh(sale, prompt_version='v1')
     assert apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
     assert 'emplacement réservé' in sale.raw_payload['llm_display_description']
@@ -67,7 +77,8 @@ def test_cached_extraction_revalidates_and_keeps_source_caveat_without_ai():
 def test_cached_fallback_repairs_scientific_notation_without_ai():
     sale = AuctionSale(source_name='agrasc', source_url='https://example.test/revel', property_type='house',
                        city='Revel', surface_m2=Decimal('120'), description='Maison de 120 m².',
-                       raw_payload={'llm_display_description': 'Maison de 1,2E+2 m².', 'llm_extraction': {}})
+                       raw_payload={**_cached_metadata(), 'llm_display_description': 'Maison de 1,2E+2 m².',
+                                    'llm_extraction': {}})
     assert apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
     assert '120 m²' in sale.raw_payload['llm_display_description']
     assert 'E+' not in sale.raw_payload['llm_display_description']
@@ -86,7 +97,7 @@ def test_source_section_boundary_keeps_constraint_before_room_inventory():
 def test_rejected_constraint_budget_removes_old_display_and_current_marker():
     source = 'Servitude ' + 'précisions ' * 200
     sale = AuctionSale(source_name='agrasc', source_url='https://example.test/budget', description=source,
-                       raw_payload={'description': source, 'llm_display_description': 'Ancien texte.',
+                       raw_payload={**_cached_metadata(), 'description': source, 'llm_display_description': 'Ancien texte.',
                                     'llm_display_quality_version': DISPLAY_QUALITY_VERSION,
                                     'llm_extraction': {'display_description': 'Maison.'}})
     assert not apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
@@ -99,7 +110,7 @@ def test_source_land_conflict_cannot_be_published_as_confident_generated_surface
     source = 'Surface terrain : 92 m². Références cadastrales : YD 59 (1 742m²) et YD 60 (91 m²).'
     sale = AuctionSale(source_name='agrasc', source_url='https://example.test/land-conflict',
                        property_type='house', surface_m2=Decimal('120'), description=source,
-                       raw_payload={'description': source, 'operator_land_surface_conflict': True,
+                       raw_payload={**_cached_metadata(), 'description': source, 'operator_land_surface_conflict': True,
                                     'source_display_constraints': ['Surface terrain : 92 m².', 'Références cadastrales : YD 59 (1 742m²) et YD 60 (91 m²).'],
                                     'llm_extraction': {'display_description': 'Maison sur un terrain de 92 m².'}})
     assert apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
@@ -119,9 +130,47 @@ def test_stale_extra_quote_is_not_reintroduced_into_new_source():
 def test_short_cached_fallback_is_preserved_but_not_certified():
     sale = AuctionSale(source_name='licitor', source_url='https://example.test/short',
                        property_type='house', city='Paris', description='Maison.',
-                       raw_payload={'llm_extraction': {}})
+                       raw_payload={**_cached_metadata(), 'llm_extraction': {}})
     apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
     assert sale.raw_payload['llm_display_description']
     assert len(sale.raw_payload['llm_display_description']) < 80
     assert 'llm_display_quality_version' not in sale.raw_payload
     assert not has_current_display(sale.raw_payload, 'v1')
+
+
+@pytest.mark.parametrize('stale_field', ['llm_prompt_version', 'llm_display_prompt_version'])
+def test_cached_extraction_rejects_stale_versions_before_mutation(stale_field):
+    payload = {
+        **_cached_metadata(),
+        'llm_display_description': 'Résumé déjà généré avec les informations du dossier. ' * 3,
+        'llm_display_status': 'accepted',
+        'llm_display_quality_version': DISPLAY_QUALITY_VERSION,
+        'llm_extraction': {
+            'display_description': 'Résumé déjà généré avec les informations du dossier. ' * 3,
+        },
+    }
+    payload[stale_field] = 'stale-version'
+    sale = AuctionSale(source_name='agrasc', source_url='https://example.test/stale', raw_payload=payload)
+    before = deepcopy(sale.raw_payload)
+
+    assert not apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
+    assert sale.raw_payload == before
+
+
+def test_cached_extraction_rejects_known_model_mismatch_before_mutation(monkeypatch):
+    monkeypatch.setenv('REPLICATE_MODEL', 'provider/current-model')
+    payload = {
+        **_cached_metadata(),
+        'llm_display_description': 'Résumé déjà généré avec les informations du dossier. ' * 3,
+        'llm_display_status': 'accepted',
+        'llm_display_quality_version': DISPLAY_QUALITY_VERSION,
+        'llm_display_model': 'provider/old-model',
+        'llm_extraction': {
+            'display_description': 'Résumé déjà généré avec les informations du dossier. ' * 3,
+        },
+    }
+    sale = AuctionSale(source_name='agrasc', source_url='https://example.test/stale-model', raw_payload=payload)
+    before = deepcopy(sale.raw_payload)
+
+    assert not apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
+    assert sale.raw_payload == before

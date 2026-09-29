@@ -6,6 +6,8 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.enrichment.display_quality import has_current_display
+
 SOURCE_EXTRACTION_VERSION = "source_extraction_20260913_v3"
 
 SOURCE_FACT_FIELDS = (
@@ -79,7 +81,19 @@ def record_source_checks(raw_sales: list, known: dict) -> None:
         fingerprint = hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()
         evidence_fingerprint = source_evidence_fingerprint(content)
         old = previous.get(url) or {}
-        payload["source_checks"][url] = {"checked_at": sale.get("_checkpoint_checked_at") or datetime.now(UTC).isoformat(), "source_name": sale.get("source_name"), "fingerprint": fingerprint, "evidence_fingerprint": evidence_fingerprint, "extractor_version": SOURCE_EXTRACTION_VERSION}
+        check = {
+            "checked_at": sale.get("_checkpoint_checked_at") or datetime.now(UTC).isoformat(),
+            "source_name": sale.get("source_name"),
+            "fingerprint": fingerprint,
+            "evidence_fingerprint": evidence_fingerprint,
+            "extractor_version": SOURCE_EXTRACTION_VERSION,
+        }
+        # A detail-status marker is proof that the dedicated detail fetch was
+        # validated. Listing captures must replace the previous check without
+        # inheriting that proof from the stored row.
+        if sale.get("source_detail_status") in {"complete", "restricted"}:
+            check["detail_status"] = sale["source_detail_status"]
+        payload["source_checks"][url] = check
         if old.get("fingerprint") != fingerprint:
             operational_only = old.get("evidence_fingerprint") == evidence_fingerprint
             invalidate_analysis(payload, "source_operational_changed" if operational_only else "source_content_changed", preserve_facts=operational_only)
@@ -96,20 +110,63 @@ def documents_are_current(sale: Any) -> bool:
 
 def invalidate_analysis(payload: dict, reason: str, *, preserve_facts: bool = False) -> None:
     """Retain dated evidence, never publish the superseded synthesis as current."""
+    previous_content_changed = bool(payload.get("source_content_changed"))
+    # A reason without its queue flag is a stale marker from a caller that
+    # already consumed the previous invalidation. Do not let it make the next
+    # operational revision look documentary.
+    previous_content_reason = payload.get("source_content_change_reason") if previous_content_changed else None
     payload["source_content_changed"] = True
     if preserve_facts:
         payload["source_operational_changed"] = True
+        # An operational-only refresh uses source_content_changed as the
+        # queue-visible invalidation flag. Keep its origin explicit so a
+        # later successful deterministic refresh cannot clear a documentary
+        # invalidation that was already pending.
+        if not previous_content_changed:
+            payload["source_content_change_reason"] = reason
     else:
         payload.pop("source_operational_changed", None)
+        payload["source_content_change_reason"] = reason
     if payload.get("llm_display_description"):
+        fact_manifest = payload.get("llm_fact_context_manifest")
+        previous_model = payload.get("llm_display_model")
+        if not previous_model and isinstance(fact_manifest, dict):
+            # Older structured runs did not persist a display-stage model, but
+            # their validated fact manifest was produced by the same model
+            # contract. Reuse that evidence when it is available; rows with
+            # no model provenance remain enrichment-required.
+            previous_model = fact_manifest.get("model")
+        display_refreshable = bool(
+            reason == "source_operational_changed"
+            and not (
+                previous_content_changed
+                and previous_content_reason != "source_operational_changed"
+            )
+            and has_current_display(payload)
+            and payload.get("llm_prompt_version")
+            and payload.get("llm_display_prompt_version")
+            and previous_model
+        )
         payload["superseded_analysis"] = {
             "description": payload.pop("llm_display_description"),
             "prompt_version": payload.get("llm_prompt_version"),
+            "display_prompt_version": payload.get("llm_display_prompt_version"),
+            "model": previous_model,
+            "quality_version": payload.get("llm_display_quality_version"),
+            "status": payload.get("llm_display_status"),
+            "operational_refreshable": display_refreshable,
+            "source_content_changed_before": previous_content_changed,
+            "source_content_change_reason_before": previous_content_reason,
             "superseded_at": datetime.now(UTC).isoformat(),
             "reason": reason,
         }
     payload["llm_display_status"] = "pending"
-    keys = ["llm_prompt_version", "llm_extraction", "llm_due_diligence", "investment_analysis"]
+    keys = [
+        "llm_prompt_version", "llm_extraction", "llm_due_diligence", "investment_analysis",
+        "llm_display_prompt_version", "llm_display_model", "llm_display_quality_version",
+        "llm_display_origin", "llm_display_description_word_count", "llm_display_source_constraints",
+        "llm_display_evidence_check",
+    ]
     if not preserve_facts:
         keys.extend(["document_facts_version", "llm_fact_prompt_version", "llm_fact_extraction",
                      "llm_fact_coverage", "llm_fact_input_key", "llm_fact_context_manifest", "llm_fact_context_coverage"])

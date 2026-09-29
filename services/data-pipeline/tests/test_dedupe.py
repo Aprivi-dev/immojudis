@@ -114,6 +114,37 @@ def test_dedupe_breaks_shared_raw_payload_alias_before_recording_merged_source()
     json.dumps(result[0].raw_payload)
 
 
+def test_dedupe_preserves_invalidation_markers_from_secondary_source() -> None:
+    primary = _make("https://avoventes.fr/enchere/invalidation")
+    secondary = _make(
+        "https://licitor.com/annonce/invalidation",
+        source_name="licitor",
+    )
+    primary.raw_payload["llm_display_description"] = "Ancienne synthèse à remplacer."
+    marker = {
+        "description": "Ancienne synthèse à remplacer.",
+        "reason": "source_operational_changed",
+        "operational_refreshable": True,
+    }
+    secondary.raw_payload.update(
+        source_content_changed=True,
+        source_operational_changed=True,
+        source_content_change_reason="source_operational_changed",
+        superseded_analysis=marker,
+    )
+
+    result = dedupe_sales([primary, secondary])
+
+    assert len(result) == 1
+    payload = result[0].raw_payload
+    assert payload["source_content_changed"] is True
+    assert payload["source_operational_changed"] is True
+    assert payload["source_content_change_reason"] == "source_operational_changed"
+    assert payload["superseded_analysis"] == marker
+    assert "llm_display_description" not in payload
+    assert payload["llm_display_status"] == "pending"
+
+
 def test_dedupe_merges_same_address_with_abbreviated_street_and_missing_postal_code() -> None:
     avoventes = _make(
         "https://avoventes.fr/enchere/9-bis",

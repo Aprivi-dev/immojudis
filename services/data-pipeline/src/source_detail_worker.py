@@ -21,6 +21,7 @@ from src.source_detail import (
     prepare_source_revision,
     publish_source_revision,
 )
+from src.source_detail_reuse import complete_already_verified_detail_job
 from src.sources.common import is_allowed_origin_url
 from src.storage import supabase_client as storage
 from src.storage.supabase_client import (
@@ -139,6 +140,10 @@ def process_source_detail_job(
     if existing is None:
         _finish_job(job, succeeded=False, error_message="sale not found")
         return False
+
+    satisfied = complete_already_verified_detail_job(existing, job, active_settings)
+    if satisfied is not None:
+        return satisfied
 
     # The sale lookup can race an administrative pause.  Repeat the gate at
     # the actual network boundary, after all local work for this item.

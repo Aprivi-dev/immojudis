@@ -595,6 +595,7 @@ def enrich_sale_with_llm(
                 stats,
                 display_context,
                 prompt_version=prompt_version,
+                model_name=model_name,
             )
             sale.raw_payload["llm_extraction"] = display_extraction.model_dump(mode="json")
             sale.raw_payload["llm_cache_hit"] = True
@@ -625,7 +626,14 @@ def enrich_sale_with_llm(
             return stats
 
         stats.valid_json += 1
-        _apply_extraction_to_sale(sale, extraction, stats, display_context, prompt_version=prompt_version)
+        _apply_extraction_to_sale(
+            sale,
+            extraction,
+            stats,
+            display_context,
+            prompt_version=prompt_version,
+            model_name=model_name,
+        )
         if not stats.errors:
             _save_extraction(
                 sale,
@@ -856,7 +864,14 @@ def enrich_sale_with_llm(
                 stats.error_messages.append(_llm_error_message(sale, exc))
 
     stats.valid_json += 1
-    _apply_extraction_to_sale(sale, extraction, stats, full_evidence_context, prompt_version=prompt_version)
+    _apply_extraction_to_sale(
+        sale,
+        extraction,
+        stats,
+        full_evidence_context,
+        prompt_version=prompt_version,
+        model_name=model_name,
+    )
     sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
     sale.raw_payload["llm_fact_extraction"] = extraction.model_dump(mode="json")
     sale.raw_payload["llm_cache_hit"] = bool(cache_hits == len(fact_contexts) and display_cache_hit)
@@ -890,11 +905,19 @@ def apply_cached_llm_extraction_to_sale(sale: AuctionSale, *, prompt_version: st
 
     This is intentionally network-free. It lets a pipeline version that adds a
     new public display field populate it from a previously validated extraction
-    without re-downloading PDFs or calling Replicate again.
+    without re-downloading PDFs or calling Replicate again. The stored
+    extraction must already carry the current prompt/display contract. This
+    function is a revalidation step, not a way to certify an unversioned or
+    stale generation by stamping it with the current metadata.
     """
-    if sale.raw_payload.get("source_content_changed") or (sale.raw_payload.get("llm_fact_coverage") or {}).get("complete") is False:
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else None
+    if not isinstance(raw_payload, dict):
         return False
-    payload = sale.raw_payload.get("llm_extraction") if isinstance(sale.raw_payload, dict) else None
+    if raw_payload.get("source_content_changed") or (raw_payload.get("llm_fact_coverage") or {}).get("complete") is False:
+        return False
+    if not _cached_extraction_matches_current_contract(raw_payload, prompt_version):
+        return False
+    payload = raw_payload.get("llm_extraction")
     if not isinstance(payload, dict):
         return False
     try:
@@ -907,6 +930,32 @@ def apply_cached_llm_extraction_to_sale(sale: AuctionSale, *, prompt_version: st
     _apply_extraction_to_sale(sale, extraction, stats, context=load_llm_context_for_sale(sale) or "", prompt_version=prompt_version)
     after = clean_text(sale.raw_payload.get("llm_display_description"))
     return bool(after and after != before)
+
+
+def _cached_extraction_matches_current_contract(
+    raw_payload: dict[str, Any], prompt_version: str | None,
+) -> bool:
+    """Check cache provenance before any cached extraction can mutate a sale."""
+    settings = load_settings()
+    expected_prompt_version = str(
+        prompt_version if prompt_version is not None else settings.get("llm_prompt_version") or ""
+    )
+    expected_display_prompt_version = str(
+        settings.get("llm_display_prompt_version") or expected_prompt_version
+    )
+    if expected_prompt_version and raw_payload.get("llm_prompt_version") != expected_prompt_version:
+        return False
+    if expected_display_prompt_version and raw_payload.get("llm_display_prompt_version") != expected_display_prompt_version:
+        return False
+
+    # Model provenance was added after the first display generations. Preserve
+    # those rows for compatibility, but never reuse a row that explicitly says
+    # it was produced by a different configured provider model.
+    current_model = str(settings.get("replicate_model") or "")
+    cached_model = raw_payload.get("llm_display_model")
+    if current_model and cached_model not in (None, "") and cached_model != current_model:
+        return False
+    return True
 
 
 def load_pdf_text_for_sale(sale: AuctionSale, max_chars: int = 12000) -> str | None:
@@ -970,7 +1019,11 @@ def load_llm_fact_context_chunks_for_sale(
     return chunks
 
 
-def has_current_fact_analysis(sale: AuctionSale) -> bool:
+def has_current_fact_analysis(
+    sale: AuctionSale,
+    *,
+    settings: dict[str, Any] | None = None,
+) -> bool:
     """Return whether the sale has complete facts for its current evidence.
 
     The comparison is content-addressed and excludes the display stage.  When
@@ -979,6 +1032,7 @@ def has_current_fact_analysis(sale: AuctionSale) -> bool:
     source evidence fingerprint.  A source-only fallback therefore cannot
     accidentally certify a previously document-backed analysis.
     """
+    settings = load_settings() if settings is None else settings
     raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     coverage = raw_payload.get("llm_fact_coverage") or {}
     input_key = clean_text(raw_payload.get("llm_fact_input_key"))
@@ -987,17 +1041,21 @@ def has_current_fact_analysis(sale: AuctionSale) -> bool:
     manifest = raw_payload.get("llm_fact_context_manifest")
     if not isinstance(manifest, dict):
         manifest = None
-    if manifest is not None and not _manifest_matches_current(sale, manifest):
+    if manifest is not None and not _manifest_matches_current(sale, manifest, settings=settings):
         return False
     document_path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
     if sale.documents and not document_path.exists():
-        return bool(manifest and manifest.get("documents") and _manifest_matches_current(sale, manifest))
+        return bool(
+            manifest
+            and manifest.get("documents")
+            and _manifest_matches_current(sale, manifest, settings=settings)
+        )
 
     previous_context_coverage = raw_payload.get("llm_fact_context_coverage", _MISSING)
     try:
         contexts = load_llm_fact_context_chunks_for_sale(
             sale,
-            chunk_chars=int(load_settings().get("llm_fact_chunk_chars") or 12000),
+            chunk_chars=int(settings.get("llm_fact_chunk_chars") or 12000),
             max_chunks=0,
         )
     finally:
@@ -1010,13 +1068,12 @@ def has_current_fact_analysis(sale: AuctionSale) -> bool:
             raw_payload["llm_fact_context_coverage"] = previous_context_coverage
     if not contexts or (sale.documents and not (raw_payload.get("document_analysis") or {}).get("documents_extracted")):
         return False
-    settings = load_settings()
     model = str(settings.get("replicate_model") or "")
     prompt_version = str(settings.get("llm_fact_prompt_version") or settings.get("llm_prompt_version") or "")
     expected = _fact_input_cache_key("\n\n".join(contexts), model, prompt_version)
     if expected == input_key and not raw_payload.get("source_content_changed"):
         return True
-    if manifest is not None and _manifest_matches_current(sale, manifest):
+    if manifest is not None and _manifest_matches_current(sale, manifest, settings=settings):
         return True
     return False
 
@@ -1967,8 +2024,13 @@ def _current_source_checks(sale: AuctionSale) -> list[dict[str, str]]:
     )
 
 
-def _manifest_matches_current(sale: AuctionSale, manifest: dict[str, Any]) -> bool:
-    settings = load_settings()
+def _manifest_matches_current(
+    sale: AuctionSale,
+    manifest: dict[str, Any],
+    *,
+    settings: dict[str, Any] | None = None,
+) -> bool:
+    settings = load_settings() if settings is None else settings
     current_model = str(settings.get("replicate_model") or "")
     manifest_model = manifest.get("model")
     if manifest_model != current_model and not (
@@ -2167,6 +2229,7 @@ def _apply_extraction_to_sale(
     stats: LLMEnrichmentStats,
     context: str = "",
     prompt_version: str | None = None,
+    model_name: str | None = None,
 ) -> None:
     reference_sale = sale.model_copy()
     confidence = extraction.confidence
@@ -2302,10 +2365,18 @@ def _apply_extraction_to_sale(
         sale.raw_payload["llm_display_description_word_count"] = len(checked_display.split())
         if len(checked_display.strip()) >= DISPLAY_MIN_CHARS:
             sale.raw_payload["llm_display_quality_version"] = DISPLAY_QUALITY_VERSION
+            if model_name:
+                # Persist the exact model used by a paid or cache-backed
+                # synthesis. Operational refreshes may reuse this result only
+                # while the configured model remains unchanged.
+                sale.raw_payload["llm_display_model"] = model_name
+        else:
+            sale.raw_payload.pop("llm_display_model", None)
     else:
         sale.raw_payload["llm_display_status"] = "rejected"
         sale.raw_payload.pop("llm_display_description", None)
         sale.raw_payload.pop("llm_display_description_word_count", None)
+        sale.raw_payload.pop("llm_display_model", None)
         stats.errors += 1
         stats.error_messages.append("Display quality rejected: no summary preserving source constraints within budget")
 

@@ -436,6 +436,7 @@ def _write_sale_revisions(
     written_at: datetime | None = None,
 ) -> int:
     """Write all catalogue tables inside the caller's admission/version boundary."""
+    from src.enrichment.operational_display import refresh_operational_display
     from src.publication_identity import ensure_room_bedroom_consistency
 
     url = settings["supabase_url"]
@@ -443,6 +444,17 @@ def _write_sale_revisions(
     now = (written_at or datetime.now(UTC)).isoformat()
     payload = []
     for sale in sales:
+        # Source collectors can observe a price/date/status-only revision after
+        # the early publication pass. Resolve that revision at the write
+        # boundary so the persisted row and the enqueue decision see the same
+        # current display, and so a paid display job is not created first.
+        try:
+            refresh_operational_display(sale, settings=settings)
+        except Exception:
+            # A deterministic refresh is an optimization, never a reason to
+            # lose the source revision. Leave the invalidation flags intact so
+            # the normal enrichment queue reconciles it.
+            LOGGER.exception("Operational display refresh failed for %s", sale.source_url)
         # Normalization can happen after identity resolution (for example in
         # a detail/enrichment path).  Recheck the SQL invariant immediately
         # before serializing the parent row so a contradictory pair is stored
@@ -2244,6 +2256,7 @@ def _has_current_llm_description(raw_payload: Any, prompt_version: str | None) -
         raw_payload,
         prompt_version,
         str(settings.get("llm_display_prompt_version") or "") or None,
+        str(settings.get("replicate_model") or "") or None,
     )
 
 

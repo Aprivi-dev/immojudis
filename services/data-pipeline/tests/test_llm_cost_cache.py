@@ -249,6 +249,29 @@ def test_display_cache_version_does_not_invalidate_fact_chunks(tmp_path: Path, m
     assert len([call for call in client.calls if call[0] == DISPLAY_DESCRIPTION_SYSTEM_PROMPT]) == 2
 
 
+def test_display_extraction_persists_provider_model_not_settings_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
+    monkeypatch.setenv("REPLICATE_MODEL", "settings/model-alias")
+    _patch_contexts(monkeypatch, ["chunk-A"])
+    sale = _sale()
+    client = FakeClient()  # The provider client reports the model it will use.
+
+    stats = enrich_sale_with_llm(
+        sale,
+        client=client,
+        output_dir=tmp_path,
+        extraction_mode="display_description",
+    )
+
+    assert stats.errors == 0
+    assert sale.raw_payload["llm_display_model"] == client.model
+    artifact = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
+    assert artifact["_cache"]["model"] == client.model
+
+
 def test_durable_empty_fact_result_is_reused_without_provider_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
