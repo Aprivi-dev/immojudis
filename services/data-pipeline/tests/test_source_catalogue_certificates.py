@@ -88,7 +88,10 @@ def _agrasc_html(*, unknown_unlinked: bool = False) -> str:
         <h3 class="fr-card__title"><a href="/vente/house">Maison</a></h3>
         <p class="fr-card__detail">Agen (47)</p>
       </div>
-      <div class="{unlinked_class}"><h3>Archive vendue sans lien</h3></div>
+      <div class="{unlinked_class}">
+        <h3>Archive vendue sans lien</h3>
+        <div class="fr-card__start"><p class="fr-badge fr-badge--error">Vendu</p></div>
+      </div>
       <a class="fr-pagination__link--last" href="/ventes-aux-encheres?page=0">Dernière page</a>
     </div>
     """
@@ -146,6 +149,19 @@ def test_agrasc_unknown_unlinked_cards_never_certify_inventory(monkeypatch) -> N
     assert certificate["partitions"][0]["unlinked_public_cards"][0]["sold"] is False
     assert result.coverage["coverage_complete"] is False
     assert result.coverage["scoped_inventory_complete"] is False
+
+
+def test_agrasc_descriptive_sold_text_does_not_certify_unlinked_card(monkeypatch) -> None:
+    _patch_agrasc_client(monkeypatch, _agrasc_html().replace(
+        '<div class="fr-card__start"><p class="fr-badge fr-badge--error">Vendu</p></div>',
+        '',
+    ))
+
+    result = agrasc.scrape_agrasc_aquitaine_result()
+
+    certificate = result.coverage["certificate"]
+    assert certificate["addressable_public_inventory_certified"] is False
+    assert certificate["partitions"][0]["unlinked_public_cards"][0]["sold"] is False
 
 
 def test_agrasc_pagination_ignores_unrelated_archive_view(monkeypatch) -> None:

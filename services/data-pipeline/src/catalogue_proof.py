@@ -26,6 +26,26 @@ def canonical(url: str) -> str:
     return urlparse(url)._replace(fragment='').geturl()
 
 
+def _agrasc_sold_card(card) -> tuple[bool, str | None]:
+    """Require the archive class and a structured visible sold marker.
+
+    AGRASC puts the state of an unlinked real-estate card in the error badge
+    under ``.fr-card__start`` (currently ``Vendu``).  Do not search the whole
+    card: titles and descriptions legitimately mention properties that were
+    sold, which is not evidence that the card itself is an archived item.
+    """
+    classes = set(card.get('class') or [])
+    has_sold_class = 'sold' in classes
+    status_marker = re.compile(
+        r'^(?:vend(?:u|ue|us|ues)|archiv(?:e|é|ée|és|ées))$', re.I
+    )
+    for badge in card.select('.fr-card__start .fr-badge--error'):
+        label = ' '.join(badge.stripped_strings)
+        if has_sold_class and status_marker.fullmatch(label):
+            return True, 'sold_class_and_visible_status'
+    return False, None
+
+
 def page_index(source: str, url: str) -> int:
     parsed = urlparse(url)
     if source == 'petites_affiches':
@@ -79,8 +99,15 @@ def public_page_proof(source: str, body: str, url: str, partition: str | None = 
             href = links[0]['href'] if links else None
         if not href:
             missing_links += 1
-            unlinked_records.append({'id': record_id(urlparse(url)._replace(query='').geturl(), card.get_text(' ', strip=True)),
-                                     'sold': 'sold' in (card.get('class') or []),
+            source_page = canonical(urlparse(url)._replace(query='').geturl())
+            card_key = record_id(source_page, card.get_text(' ', strip=True))
+            sold, status_proof = _agrasc_sold_card(card) if source == 'agrasc' else (
+                'sold' in (card.get('class') or []), None)
+            unlinked_records.append({'id': card_key, 'card_key': card_key,
+                                     'source_page': source_page,
+                                     'page_index': page_index(source, url),
+                                     'sold': sold,
+                                     'status_proof': status_proof,
                                      'title': card.select_one('h3').get_text(' ', strip=True) if card.select_one('h3') else None})
             continue
         target = canonical(urljoin(url, str(href)))
@@ -202,6 +229,11 @@ def certify_catalogue(
         reasons = []
         if len(totals) > 1:
             reasons.append('advertised_total_changed_or_ambiguous')
+        if len(lasts) > 1:
+            # A moving Drupal pager is not a terminal proof: the inventory
+            # changed while it was being traversed, so the scan must remain
+            # partial even when every observed page was fetched.
+            reasons.append('advertised_terminal_page_changed_or_ambiguous')
         if omitted:
             reasons.append('public_announcements_not_parsed')
         if extra:
@@ -212,17 +244,28 @@ def certify_catalogue(
             reasons.append('advertised_pages_not_fetched')
         if not count_proof and not page_proof:
             reasons.append('no_matching_total_or_terminal_page_proof')
-        unlinked = {r['id']: r for p in group for r in p.get('unlinked_records', [])}
+        unlinked_records = [r for p in group for r in p.get('unlinked_records', [])]
+        unlinked_by_id = {r['id']: r for r in unlinked_records}
+        unlinked_multiplicity = [
+            {'card_key': card_id,
+             'occurrences': sum(r['id'] == card_id for r in unlinked_records),
+             'page_indices': sorted({r.get('page_index') for r in unlinked_records
+                                      if r['id'] == card_id and r.get('page_index') is not None})}
+            for card_id in sorted(unlinked_by_id)
+        ]
         certified = not reasons and bool(count_proof or page_proof)
         addressable_certified = bool(certified or (reasons == ['public_cards_without_identifiers']
-                                                  and unlinked and all(r['sold'] for r in unlinked.values())
+                                                  and unlinked_records and all(r['sold'] for r in unlinked_records)
                                                   and (count_proof or page_proof)))
         partition_emitted = emitted & (required | outside | extracted)
         partition_unhandled = required - partition_emitted - set(partition_exclusions)
         unhandled_urls.update(partition_unhandled)
         partitions.append({'partition': partition, 'certified': certified,
                            'addressable_inventory_certified': addressable_certified,
-                           'unlinked_public_cards': list(unlinked.values()),
+                           'unlinked_public_cards': unlinked_records,
+                           'unlinked_public_card_count': len(unlinked_records),
+                           'unlinked_public_card_unique_count': len(unlinked_by_id),
+                           'unlinked_public_card_multiplicity': unlinked_multiplicity,
                            'basis': 'advertised_total' if count_proof else 'advertised_terminal_page_and_all_public_cards' if page_proof else None,
                            'advertised_totals': sorted(totals), 'outside_scope_count': len(outside),
                            'public_unique_urls': len(urls), 'parsed_unique_urls': len(extracted - outside),
