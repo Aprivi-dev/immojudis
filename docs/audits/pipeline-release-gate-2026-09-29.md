@@ -1166,3 +1166,71 @@ La suite locale consolidée vérifie 287 tests et saute 16 scénarios nécessita
 PostgreSQL jetable. Ruff, Prettier, `git diff --check` et les 196 versions
 uniques de migrations passent. Les scénarios PostgreSQL de preuve/bail,
 les nouvelles assertions pgTAP et la suite complète sont requis dans la CI.
+
+## CI et maintenance validées, diagnostic du coût à froid
+
+La [CI 36627249061](https://github.com/Aprivi-dev/immojudis/actions/runs/36627249061)
+et [CodeQL 36627249055](https://github.com/Aprivi-dev/immojudis/actions/runs/36627249055)
+sont verts sur `5a5a5552`. Le rejeu compte 196 migrations et 1 404 assertions
+pgTAP dans 75 fichiers. Les tests de concurrence, les deux intégrations
+Supabase local, les suites Python 3.11/3.12 (1 896 tests), Web et Playwright
+passent. La prévisualisation Vercel est également verte sur ce commit.
+
+La [maintenance 36627934832](https://github.com/Aprivi-dev/immojudis/actions/runs/36627934832)
+a appliqué `2330` et `2340` sur ce même commit puis validé l'absence de
+dérive. Le contrôle de santé de 20 h 45 UTC dépasse pourtant encore son délai
+après 9,68 secondes ; celui de 21 h réussit en 6,89 secondes. Ces passages
+alternés ne démontrent pas une restauration durable.
+
+Le diagnostic en lecture seule isole `auction_all_source_freshness()` : son
+plan à froid prend 12 650 ms avec 9 760 blocs lus et 40 543 blocs déjà en
+cache, contre 821 ms à chaud. Il parcourt 3 043 ventes actives et détache
+`source_checks` des gros `raw_payload` ; la relation TOAST correspondante
+occupe environ 311 Mo. Le plan des agrégations introduites dans `2340`
+prend environ 1 128 ms, et les autres évaluateurs restent sous 1,7 seconde.
+Aucun verrou pertinent n'a été constaté lors de ce diagnostic ; cela
+n'exclut pas une attente de verrou à un autre instant.
+
+La correction en préparation conserve les contrôles dans une table privée
+compacte, remplie directement sans `UPDATE auction_sales`, et maintenue par
+trigger dans la transaction de chaque révision. Fraîcheur et admission des
+détails doivent conserver leurs alias, dates, exclusions et cadences. Le
+dispatcher doit aussi résoudre le bail du writer actif avant l'admission
+facultative de nouveaux détails. Ces nouveaux correctifs nécessitent leur
+rejeu SQL, la relecture et une mesure réelle avant déclaration de succès.
+
+La relecture indépendante de `2350` et `2355` est terminée. Un garde étroit
+refuse fraîcheur et admission si une vente active manque dans la projection,
+plutôt que réduire silencieusement le dénominateur. Le worker n'a que le droit
+de lecture sur la table privée ; le trigger assure les écritures. Les fichiers
+`403` et `404` ajoutent respectivement 25 et 20 assertions, notamment les
+timestamps futurs, le cache incomplet et les branches de bail/retry. Les 198
+versions de migration et les vérifications statiques passent ; ces 45 assertions
+restent à exécuter dans la CI.
+
+Le [canari 36628465977](https://github.com/Aprivi-dev/immojudis/actions/runs/36628465977)
+sur `5a5a5552` démarre à 21 h 07 UTC après le writer Petites Affiches
+`36626783222`, terminé avec succès après 632 éléments de collecte. Les jobs PDF
+Uckange et Ris-Orangis ont reçu une priorité de 1 000 sans remise à zéro des
+essais ; Noisy-le-Grand était déjà à cette priorité et prend son quatrième
+essai à 21 h 08. Le résultat documentaire du canari reste à mesurer,
+y compris les pages image qui demeurent illisibles.
+
+L'instantané privé de 20 h 52 UTC conserve 78 ventes correspondantes : les
+76 captures de la revue `v4.2` donnent 57 identités exactes, 19 non rattachées
+et zéro ambiguïté. Le dry-run conserve 100 cas, 912 projections, 347 champs
+passant la garde locale et 565 bloqués. La comparaison actuelle de dix champs
+stockés, avec les règles de type/date/espaces/casse de la route applicative,
+compte 313 valeurs : 244 concordantes, 35 contradictoires et 34 proposées pour
+un champ canonique vide. Les 34 champs d'énergie nécessitent une comparaison
+séparée. Ce périmètre diffère du relevé ancien de 320 valeurs : le nombre
+d'écarts ne constitue donc pas une mesure d'amélioration de l'exactitude.
+
+Huit des 54 anciennes fiches ont changé depuis le relevé de 11 h 30,
+dont six empreintes de contenu ; huit de ces 54 fiches n'ont pas d'empreinte
+actuelle. Les candidates, contradictions et preuves sans hash restent
+bloquées. Les instantanés et le rapport de comparaison restent privés sous
+`/private/tmp/immojudis-ai-review-*-20260929-resume.json` et
+`/private/tmp/immojudis-ai-canonical-comparison-20260929-resume.json`.
+Aucun import de revue IA, déploiement applicatif ni nettoyage de branche
+n'a eu lieu à cette étape.
