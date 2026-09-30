@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src import pdf_enrichment
 from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
@@ -1198,6 +1199,69 @@ def test_enrichment_worker_logs_lane_counts_and_stop_reason(monkeypatch, caplog)
     assert "stop=queues_empty" in summary
 
 
+def test_worker_pdf_deadline_is_scoped_and_leaves_finalization_margin(monkeypatch) -> None:
+    observed_remaining: list[float | None] = []
+
+    def fake_batch(**_kwargs) -> int:
+        observed_remaining.append(pdf_enrichment.pdf_deadline_remaining())
+        return 0
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
+
+    assert queued_runner._run_enrichment_queue_worker(max_jobs=1, budget_seconds=1200) == 0
+    assert observed_remaining
+    assert all(
+        value is not None
+        and 0 < value <= 1200 - queued_runner._pdf_finalization_margin_seconds(1200)
+        for value in observed_remaining
+    )
+    assert pdf_enrichment.pdf_deadline_remaining() is None
+
+
+def test_worker_pdf_deadline_scope_resets_when_batch_raises(monkeypatch) -> None:
+    observed_remaining: list[float | None] = []
+
+    def failing_batch(**_kwargs) -> int:
+        observed_remaining.append(pdf_enrichment.pdf_deadline_remaining())
+        raise RuntimeError("batch failed")
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", failing_batch)
+
+    with pytest.raises(RuntimeError, match="batch failed"):
+        queued_runner._run_enrichment_queue_worker(max_jobs=1, budget_seconds=1200)
+    assert observed_remaining and observed_remaining[0] is not None
+    assert pdf_enrichment.pdf_deadline_remaining() is None
+
+
+def test_worker_does_not_claim_inside_pdf_finalization_margin(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+    timestamps = iter([100.0, 158.0, 158.0])
+    monkeypatch.setattr(queued_runner.time, "monotonic", lambda: next(timestamps))
+    monkeypatch.setattr(
+        queued_runner,
+        "run_enrichment_queue_batch",
+        lambda **kwargs: calls.append(kwargs) or 1,
+    )
+
+    assert queued_runner._run_enrichment_queue_worker(max_jobs=1, budget_seconds=60) == 0
+    assert calls == []
+
+
+def test_worker_short_budget_keeps_a_scaled_pdf_margin_and_processes_job(monkeypatch) -> None:
+    observed_remaining: list[float | None] = []
+
+    def fake_batch(**_kwargs) -> int:
+        observed_remaining.append(pdf_enrichment.pdf_deadline_remaining())
+        return 1
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
+
+    assert queued_runner._run_enrichment_queue_worker(max_jobs=1, budget_seconds=60) == 1
+    assert observed_remaining and observed_remaining[0] is not None
+    assert 0 < observed_remaining[0] <= 60 - queued_runner._pdf_finalization_margin_seconds(60)
+    assert queued_runner._pdf_finalization_margin_seconds(60) < queued_runner.PDF_FINALIZATION_MARGIN_SECONDS
+
+
 def test_enrichment_worker_gives_empty_lane_slot_to_other_family(monkeypatch) -> None:
     calls: list[str] = []
 
@@ -1590,6 +1654,57 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
     assert queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY) == 1
     assert bool(deferred) is should_defer
     assert finished == [] if should_defer else finished[0][1]['succeeded'] is False
+
+
+def test_pdf_deadline_deferral_restores_claim_without_consuming_retry(monkeypatch) -> None:
+    from src.pdf_enrichment import PdfDeadlineExceeded
+
+    sale = normalize_sale(
+        {
+            'source_name': 'avoventes',
+            'source_url': 'https://example.test/pdf-deadline',
+            'description': 'Maison',
+            'documents': [{'label': 'PV', 'url': 'https://example.test/pv.pdf'}],
+        }
+    )
+    job = {
+        'id': 'job-pdf-deadline',
+        'source_url': sale.source_url,
+        'job_type': 'pdf',
+        'attempt_count': 2,
+        'locked_at': '2026-09-30T08:00:00+00:00',
+    }
+    deferred: list[tuple[list[dict[str, object]], BaseException]] = []
+    finished: list[tuple[str, dict[str, object]]] = []
+    error = PdfDeadlineExceeded(
+        'PDF worker deadline reached; retry resumes from checkpoint',
+        checkpointed_pages=0,
+        total_pages=8,
+        new_progress_pages=0,
+    )
+
+    monkeypatch.setattr(
+        queued_runner,
+        'claim_auction_enrichment_jobs_family_from_supabase',
+        lambda *, family, limit: [job],
+    )
+    monkeypatch.setattr(queued_runner, 'load_settings', lambda: {'llm_prompt_version': 'test'})
+    monkeypatch.setattr(queued_runner, 'fetch_sale_for_data_refresh', lambda _: sale)
+    monkeypatch.setattr(
+        queued_runner,
+        'enrich_sale_from_pdfs',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
+    )
+    monkeypatch.setattr(queued_runner, 'defer_budget_jobs', lambda jobs, exc: deferred.append((jobs, exc)))
+    monkeypatch.setattr(
+        queued_runner,
+        'finish_auction_enrichment_job_in_supabase',
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY) == 1
+    assert deferred == [([job], error)]
+    assert finished == []
 
 
 def test_failed_pdf_job_records_document_path_without_query_token(monkeypatch) -> None:

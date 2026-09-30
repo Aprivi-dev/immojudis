@@ -36,7 +36,13 @@ from src.main import (
     run_llm_description_backfill,
     run_pipeline,
 )
-from src.pdf_enrichment import PdfExtractionDeferred, enrich_sale_from_pdfs
+from src.pdf_enrichment import (
+    PDF_FINALIZATION_MARGIN_SECONDS,
+    PdfDeadlineExceeded,
+    PdfExtractionDeferred,
+    enrich_sale_from_pdfs,
+    pdf_deadline_scope,
+)
 from src.pipeline_usage import PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
@@ -69,6 +75,7 @@ ENRICHMENT_FAMILY = "enrichment"
 ENRICHMENT_FAMILY_CYCLE = (SOURCE_DETAIL_FAMILY,) * 5 + (ENRICHMENT_FAMILY,)
 ENRICHMENT_MAX_JOBS = 90
 ENRICHMENT_BUDGET_SECONDS = 1200
+PDF_FINALIZATION_MARGIN_FRACTION = PDF_FINALIZATION_MARGIN_SECONDS / ENRICHMENT_BUDGET_SECONDS
 ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE = 2
 ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_MAX = 5
 GENERAL_BACKLOG_RELIEF_CYCLE = (
@@ -295,6 +302,13 @@ def _record_worker_deferred_job_ids(jobs: list[dict[str, object]]) -> None:
         for job in jobs
         if job.get("id") is not None and str(job.get("id")).strip()
     )
+
+
+def _pdf_finalization_margin_seconds(budget_seconds: int | float) -> float:
+    """Reserve the production 60-second margin, scaled for short test runs."""
+
+    budget = max(0.0, float(budget_seconds))
+    return min(PDF_FINALIZATION_MARGIN_SECONDS, budget * PDF_FINALIZATION_MARGIN_FRACTION)
 
 
 def _pdf_evidence_is_terminal_for_facts(sale: object) -> bool:
@@ -571,6 +585,20 @@ def run_enrichment_queue_batch(
             classify_sale_procedure(sale)
             normalize_asset_features(sale)
             upsert_sales_to_supabase([sale], refresh_last_seen=False)
+        except PdfDeadlineExceeded as exc:
+            # The worker cutoff is coordination, even when no page finished.
+            # Release the claim and restore its attempt so a slow PDF cannot
+            # become a false OCR failure or consume the bounded retry budget.
+            _record_worker_deferred_job_ids(sale_jobs)
+            defer_budget_jobs(sale_jobs, exc)
+            mark_enrichment_jobs_terminal(sale_jobs)
+            LOGGER.info(
+                "PDF extraction deferred at worker deadline after %s/%s pages for %s",
+                exc.checkpointed_pages,
+                exc.total_pages,
+                source_url,
+            )
+            continue
         except PdfExtractionDeferred as exc:
             if exc.progress_made:
                 # OCR page checkpoints are real work, but they are not a
@@ -657,6 +685,29 @@ def run_enrichment_queue_batch(
     return handled_detail_jobs + len(enrichment_jobs)
 
 
+def _run_enrichment_queue_batch_with_deadline(
+    *,
+    limit: int,
+    family: str,
+    provider_clients: dict[str, object],
+    worker_deadline: float,
+    finalization_margin_seconds: float,
+) -> int:
+    """Run one claim with a PDF cutoff that leaves worker finalization time."""
+
+    pdf_deadline = worker_deadline - finalization_margin_seconds
+    if time.monotonic() >= pdf_deadline:
+        # Recheck immediately before the claim RPC as the outer worker check
+        # can race with a batch that finishes at the cutoff.
+        return 0
+    with pdf_deadline_scope(pdf_deadline):
+        return run_enrichment_queue_batch(
+            limit=limit,
+            family=family,
+            provider_clients=provider_clients,
+        )
+
+
 def run_enrichment_queue_worker(
     *,
     max_jobs: int | None = None,
@@ -740,6 +791,11 @@ def _run_enrichment_queue_worker(
     claim_batches = 0
     stop_reason = "max_jobs"
     provider_clients: dict[str, object] = {}
+    # Do not start a fresh claim in the finalization margin.  A claim can
+    # otherwise arrive after the last PDF cutoff and spend the margin merely
+    # being deferred, even though it did no useful work.
+    finalization_margin_seconds = _pdf_finalization_margin_seconds(budget_seconds)
+    claim_deadline = deadline - finalization_margin_seconds
     due_counts = _read_due_enrichment_family_counts()
     family_cycle = _enrichment_family_cycle(due_counts)
     LOGGER.info(
@@ -750,8 +806,9 @@ def _run_enrichment_queue_worker(
     )
     slot = 0
     while handled < max_jobs:
-        if time.monotonic() >= deadline:
-            stop_reason = "budget"
+        now = time.monotonic()
+        if now >= claim_deadline:
+            stop_reason = "budget" if now >= deadline else "finalization_margin"
             break
         if _WORKER_LLM_BUDGET_EXHAUSTED.get():
             # A budget exception restores every claimed job's attempt and
@@ -771,10 +828,12 @@ def _run_enrichment_queue_worker(
         )
         claim_batches += 1
         batch_started_at = time.monotonic()
-        count = run_enrichment_queue_batch(
+        count = _run_enrichment_queue_batch_with_deadline(
             limit=preferred_limit,
             family=preferred,
             provider_clients=provider_clients,
+            worker_deadline=deadline,
+            finalization_margin_seconds=finalization_margin_seconds,
         )
         batch_elapsed = max(time.monotonic() - batch_started_at, 0.0)
         elapsed_by_family[preferred] += batch_elapsed
@@ -784,6 +843,10 @@ def _run_enrichment_queue_worker(
         )
         claimed_family = preferred if count else None
         if not count and alternate is not None:
+            now = time.monotonic()
+            if now >= claim_deadline:
+                stop_reason = "budget" if now >= deadline else "finalization_margin"
+                break
             alternate_limit = _enrichment_claim_limit(
                 alternate,
                 slot=slot,
@@ -792,10 +855,12 @@ def _run_enrichment_queue_worker(
             )
             claim_batches += 1
             batch_started_at = time.monotonic()
-            count = run_enrichment_queue_batch(
+            count = _run_enrichment_queue_batch_with_deadline(
                 limit=alternate_limit,
                 family=alternate,
                 provider_clients=provider_clients,
+                worker_deadline=deadline,
+                finalization_margin_seconds=finalization_margin_seconds,
             )
             batch_elapsed = max(time.monotonic() - batch_started_at, 0.0)
             elapsed_by_family[alternate] += batch_elapsed

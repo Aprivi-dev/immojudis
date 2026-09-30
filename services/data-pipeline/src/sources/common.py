@@ -34,6 +34,42 @@ class SourceParseLimitExceeded(RuntimeError):
     """Raised when a source returns a page too large to parse safely."""
 
 
+class RobotsUnavailableError(httpx.NetworkError, RuntimeError):
+    """Raised when a source's robots policy cannot be verified.
+
+    This is deliberately a transport-style error rather than a robots refusal:
+    callers can keep the source retryable while still failing closed for the
+    catalogue request. ``response`` is retained when an HTTP status caused
+    the failure so queue workers can preserve its diagnostic status code.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        response: httpx.Response | None = None,
+        origin: tuple[str, str, int] | None = None,
+    ) -> None:
+        super().__init__(message, request=getattr(response, "request", None))
+        self.response = response
+        self.origin = origin
+
+
+class RobotsAccessRefusedError(RuntimeError):
+    """Raised when robots.txt is an access challenge rather than a policy."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        response: httpx.Response | None = None,
+        origin: tuple[str, str, int] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.response = response
+        self.origin = origin
+
+
 @contextmanager
 def _source_parse_deadline(timeout_seconds: float):
     """Bound BeautifulSoup CPU time when parsing on the process main thread.
@@ -247,6 +283,33 @@ class RobotsRules:
         return len(matched_allow) >= len(matched_disallow)
 
 
+def _looks_like_html_challenge(response: httpx.Response) -> bool:
+    """Reject an HTML/WAF response instead of treating it as empty policy."""
+    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if response.headers.get("cf-mitigated", "").strip().casefold() == "challenge":
+        return True
+    try:
+        body = response.text[:8192].lstrip().casefold()
+    except Exception:
+        return True
+    if re.search(r"<(?:(?:!doctype)\s+)?html\b", body):
+        return True
+    if content_type == "text/html" or content_type.endswith("+html"):
+        # Some providers mislabel a plain-text robots file as HTML. Preserve
+        # actual directives while rejecting an otherwise unparseable page.
+        return not bool(
+            re.search(r"(?im)^\s*(?:user-agent|allow|disallow|sitemap|crawl-delay)\s*:", body)
+        )
+    return False
+
+
+def _parse_robots_response(response: httpx.Response, user_agent: str) -> RobotsRules:
+    """Parse published rules, treating an absent file as an empty policy."""
+    if response.status_code in {404, 410}:
+        return RobotsRules()
+    return RobotsRules.parse(response.text, user_agent)
+
+
 @dataclass
 class PoliteHttpClient:
     base_url: str
@@ -268,6 +331,9 @@ class PoliteHttpClient:
         self._access_denials = 0
         self._robots_by_origin: dict[tuple[str, str, int], RobotsRules] = {}
         self._robots_unavailable: set[tuple[str, str, int]] = set()
+        self._robots_unavailable_errors: dict[
+            tuple[str, str, int], RobotsUnavailableError | RobotsAccessRefusedError
+        ] = {}
         self._last_robots_origin: tuple[str, str, int] | None = None
         headers = {
             "User-Agent": self.user_agent,
@@ -289,14 +355,16 @@ class PoliteHttpClient:
         self._robots = RobotsRules()
         try:
             response = self._fetch_robots(urljoin(self.base_url, "/robots.txt"))
-            self._robots = RobotsRules.parse(response.text, self.user_agent)
+            self._robots = _parse_robots_response(response, self.user_agent)
             base_origin = _origin(urlparse(self.base_url))
             if base_origin is not None:
                 self._robots_by_origin[base_origin] = self._robots
             if self._last_robots_origin is not None:
                 self._robots_by_origin[self._last_robots_origin] = self._robots
         except Exception as exc:  # pragma: no cover - depends on network state
-            LOGGER.warning("Could not read robots.txt for %s: %s", self.base_url, exc)
+            base_origin = _origin(urlparse(self.base_url))
+            self._remember_robots_unavailable(base_origin, exc)
+            LOGGER.warning("Could not verify robots.txt for %s: %s", self.base_url, exc)
 
     def _fetch_robots(self, url: str) -> httpx.Response:
         current_url = url
@@ -304,48 +372,126 @@ class PoliteHttpClient:
         allowed_origins = (self.base_url, *self.allowed_redirect_origins)
         for redirect_count in range(MAX_SAFE_REDIRECTS + 1):
             if not is_allowed_origin_url(current_url, allowed_origins):
-                raise RuntimeError(f"refusing robots.txt redirect outside configured source origin: {current_url}")
-            response = self._client.get(current_url)
+                raise RobotsUnavailableError(
+                    f"robots.txt redirect could not be verified outside configured source origin: {current_url}",
+                    origin=_origin(urlparse(current_url)),
+                )
+            current_origin = _origin(urlparse(current_url))
+            try:
+                response = self._client.get(current_url)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                raise RobotsUnavailableError(
+                    f"robots.txt could not be verified for {current_url}: {exc}",
+                    origin=current_origin,
+                ) from exc
             if response.status_code not in REDIRECT_STATUS_CODES:
-                response.raise_for_status()
-                self._last_robots_origin = _origin(urlparse(current_url))
+                if response.status_code in {404, 410}:
+                    # RFC 9309 §2.3.1.3: an absent robots.txt means that no
+                    # restrictions were published for this origin.
+                    self._last_robots_origin = current_origin
+                    return response
+                if response.status_code >= 400:
+                    error_type = (
+                        RobotsAccessRefusedError
+                        if response.status_code in {401, 403}
+                        else RobotsUnavailableError
+                    )
+                    diagnostic = (
+                        f"robots access refused for {current_url}: HTTP {response.status_code}"
+                        if response.status_code in {401, 403}
+                        else f"robots.txt could not be verified for {current_url}: HTTP {response.status_code}"
+                    )
+                    raise error_type(
+                        diagnostic,
+                        response=response,
+                        origin=current_origin,
+                    )
+                if _looks_like_html_challenge(response):
+                    raise RobotsAccessRefusedError(
+                        f"robots access refused for {current_url}: HTML challenge response",
+                        response=response,
+                        origin=current_origin,
+                    )
+                self._last_robots_origin = current_origin
                 return response
             if redirect_count >= MAX_SAFE_REDIRECTS:
-                raise RuntimeError(f"too many redirects while fetching {url}")
+                raise RobotsUnavailableError(
+                    f"robots.txt could not be verified for {url}: too many redirects",
+                    origin=current_origin,
+                )
             location = response.headers.get("location")
             if not location:
-                response.raise_for_status()
-                return response
+                raise RobotsUnavailableError(
+                    f"robots.txt could not be verified for {current_url}: redirect has no location",
+                    response=response,
+                    origin=current_origin,
+                )
             current_url = urljoin(current_url, location)
         raise RuntimeError(f"too many redirects while fetching {url}")
+
+    def _remember_robots_unavailable(
+        self,
+        requested_origin: tuple[str, str, int] | None,
+        exc: BaseException,
+    ) -> RobotsUnavailableError | RobotsAccessRefusedError:
+        if isinstance(exc, (RobotsUnavailableError, RobotsAccessRefusedError)):
+            error = exc
+        else:
+            error = RobotsUnavailableError(
+                f"robots.txt could not be verified for {self.base_url}: {exc}",
+                origin=requested_origin,
+            )
+        origins = {origin for origin in (requested_origin, error.origin) if origin is not None}
+        for origin in origins:
+            self._robots_unavailable.add(origin)
+            self._robots_unavailable_errors[origin] = error
+        return error
 
     def _robots_for_url(self, url: str) -> RobotsRules:
         """Return robots policy for the exact origin that will be requested.
 
         Redirect targets are separate trust boundaries.  Load their robots.txt
         lazily before the first request and fail closed if that policy cannot be
-        verified.  The base origin keeps the historical startup behavior.
+        verified.  A network or server failure is surfaced as an unavailable
+        source so the caller can retry it, never as an explicit robots refusal.
         """
         origin = _origin(urlparse(url))
         if origin is None:
             raise RuntimeError(f"cannot determine source origin for {url}")
         base_origin = _origin(urlparse(self.base_url))
         if origin == base_origin:
+            if origin in self._robots_unavailable:
+                error = self._robots_unavailable_errors.get(origin)
+                if error is not None:
+                    raise error
+                raise RobotsUnavailableError(
+                    f"robots.txt could not be verified for {url}",
+                    origin=origin,
+                )
             return self._robots
         rules = self._robots_by_origin.get(origin)
         if rules is not None:
             return rules
         if origin in self._robots_unavailable:
-            raise RuntimeError(f"robots.txt could not be verified for redirect origin: {url}")
+            error = self._robots_unavailable_errors.get(origin)
+            if error is not None:
+                raise error
+            raise RobotsUnavailableError(
+                f"robots.txt could not be verified for redirect origin: {url}",
+                origin=origin,
+            )
 
         parsed = urlparse(url)
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
         try:
             response = self._fetch_robots(robots_url)
-            rules = RobotsRules.parse(response.text, self.user_agent)
+            rules = _parse_robots_response(response, self.user_agent)
+        except RobotsUnavailableError as exc:
+            self._remember_robots_unavailable(origin, exc)
+            raise
         except Exception as exc:
-            self._robots_unavailable.add(origin)
-            raise RuntimeError(f"robots.txt could not be verified for redirect origin: {url}") from exc
+            error = self._remember_robots_unavailable(origin, exc)
+            raise error from exc
         self._robots_by_origin[origin] = rules
         if self._last_robots_origin is not None:
             self._robots_by_origin[self._last_robots_origin] = rules

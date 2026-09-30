@@ -1,4 +1,6 @@
 import socket
+import subprocess
+import time
 import unicodedata
 import zipfile
 from datetime import UTC, datetime
@@ -13,13 +15,16 @@ from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
+    PdfDeadlineExceeded,
     PdfEnrichmentStats,
     PublicDocumentTarget,
     _adaptive_docling_timeout,
     _bounded_document_content,
     _document_candidate_rejection_reason,
     _download_document_response,
+    _extract_pdf_text_with_docling_subprocess,
     _PinnedNetworkBackend,
+    _read_document_stream,
     _read_document_text_cache,
     _resolve_public_document_target,
     _select_documents_for_extraction,
@@ -31,6 +36,7 @@ from src.pdf_enrichment import (
     extract_attached_document,
     extract_pdf_document,
     extract_pdf_pages,
+    pdf_deadline_scope,
 )
 
 
@@ -49,6 +55,121 @@ def test_bounded_document_content_rejects_declared_and_actual_oversize_payloads(
         raise AssertionError("actual oversize payload should be rejected")
     except ValueError as exc:
         assert "download limit" in str(exc)
+
+
+def test_deadline_ocr_skips_uninterruptible_native_path_and_propagates_timeout(monkeypatch) -> None:
+    calls = {"native": 0, "timeout": None}
+
+    class Pixmap:
+        def save(self, path: str) -> None:
+            from pathlib import Path
+
+            Path(path).write_bytes(b"image")
+
+    class Page:
+        def get_textpage_ocr(self, **_kwargs):
+            calls["native"] += 1
+            raise AssertionError("native OCR must not run under a worker deadline")
+
+        def get_pixmap(self, **_kwargs):
+            return Pixmap()
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment.load_settings",
+        lambda: {"pdf_ocr_tessdata": None, "pdf_ocr_language": "fra"},
+    )
+
+    def timeout_run(*args, **kwargs):
+        calls["timeout"] = kwargs["timeout"]
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr("src.pdf_enrichment.subprocess.run", timeout_run)
+
+    with pytest.raises(PdfDeadlineExceeded) as error:
+        with pdf_deadline_scope(time.monotonic() + 5):
+            from src.pdf_enrichment import _extract_page_text_with_ocr_result
+
+            _extract_page_text_with_ocr_result(
+                Page(),
+                fallback="",
+                checkpointed_pages=2,
+                total_pages=3,
+                new_progress_pages=1,
+            )
+
+    assert calls["native"] == 0
+    assert calls["timeout"] is not None and 0 < calls["timeout"] <= 5
+    assert error.value.checkpointed_pages == 2
+    assert error.value.progress_made is True
+
+
+def test_deadline_ocr_recomputes_timeout_after_render(monkeypatch) -> None:
+    captured = {"timeout": None}
+
+    class Pixmap:
+        def save(self, path: str) -> None:
+            from pathlib import Path
+
+            Path(path).write_bytes(b"image")
+
+    class Page:
+        def get_pixmap(self, **_kwargs):
+            # Rendering consumed almost all of the original five-second
+            # allowance; the subprocess must receive only the remainder.
+            from src import pdf_enrichment
+
+            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() + 0.2)
+            return Pixmap()
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment.load_settings",
+        lambda: {"pdf_ocr_tessdata": None, "pdf_ocr_language": "fra"},
+    )
+
+    def timeout_run(*args, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr("src.pdf_enrichment.subprocess.run", timeout_run)
+
+    with pytest.raises(PdfDeadlineExceeded):
+        with pdf_deadline_scope(time.monotonic() + 5):
+            from src.pdf_enrichment import _extract_page_text_with_ocr_result
+
+            _extract_page_text_with_ocr_result(Page(), fallback="")
+
+    assert captured["timeout"] is not None
+    assert 0 < captured["timeout"] <= 0.2
+
+
+def test_deadline_checks_between_continuous_document_stream_chunks() -> None:
+    class Stream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b"first"
+            # Simulate a peer that keeps the read timeout alive with tiny
+            # chunks until the worker cutoff is reached.
+            from src import pdf_enrichment
+
+            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() - 1)
+            yield b"second"
+
+    response = httpx.Response(200, stream=Stream())
+    with pytest.raises(PdfDeadlineExceeded):
+        with pdf_deadline_scope(time.monotonic() + 5):
+            _read_document_stream(response, max_bytes=1024)
+
+
+def test_deadline_docling_timeout_propagates_without_becoming_empty_text(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("src.pdf_enrichment.DOCLING_TEXTS_DIR", tmp_path / "docling-cache")
+
+    def timeout_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr("src.pdf_enrichment.subprocess.run", timeout_run)
+
+    with pytest.raises(PdfDeadlineExceeded):
+        with pdf_deadline_scope(time.monotonic() + 5):
+            _extract_pdf_text_with_docling_subprocess(tmp_path / "input.pdf", timeout=5)
 
 
 def test_resolve_public_document_target_rejects_any_non_public_answer() -> None:
