@@ -5,7 +5,6 @@ import importlib
 import json
 import logging
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -17,7 +16,6 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote, unquote, urljoin, urlparse, urlsplit, urlunsplit
 from xml.etree import ElementTree
@@ -43,7 +41,32 @@ from src.pdf_document_transport import (
 from src.pdf_document_transport import (
     resolve_public_document_target as _resolve_public_document_target,
 )
-from src.pdf_page_analysis import is_decorative_edge_only_page as _is_decorative_edge_only_page
+from src.pdf_document_types import (
+    DEFAULT_DOCUMENT_GROUPS,  # noqa: F401
+    DOCUMENT_TYPE_ALIASES,  # noqa: F401
+    GENERIC_DOCUMENT_TYPES,  # noqa: F401
+    PDF_ANNOUNCE_GROUP,  # noqa: F401
+    PDF_BAIL_GROUP,  # noqa: F401
+    PDF_CADASTRE_GROUP,  # noqa: F401
+    PDF_CONDITIONS_GROUP,  # noqa: F401
+    PDF_DESCRIPTION_GROUP,  # noqa: F401
+    PDF_DIAGNOSTICS_GROUP,  # noqa: F401
+    _canonical_document_type,  # noqa: F401
+    _normalize_document_classifier_text,  # noqa: F401
+    classify_document_type,  # noqa: F401
+)
+from src.pdf_page_analysis import (
+    VISUAL_BLANK_INK_RATIO_MAX,  # noqa: F401
+    VISUAL_BLANK_INK_THRESHOLD,  # noqa: F401
+    VISUAL_BLANK_RENDER_MAX_DIMENSION,  # noqa: F401
+    _is_objectively_blank_page,  # noqa: F401
+    _page_requires_retry,
+    _page_text_confidence,
+    _visual_page_profile,
+)
+from src.pdf_page_analysis import (
+    is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -55,37 +78,12 @@ PDF_TEXT_CACHE_VERSION = "pdf_text_v3_surface_calibration"
 
 DOCUMENT_FACTS_VERSION = "document_facts_v2_surface_reasoning"
 
-# A failed OCR pass on a page containing only a tiny stamp, border fragment,
-# or other rendering residue should not keep the whole PDF retryable. The
-# threshold is deliberately low: pages with a map, photograph, or normal
-# scanned text block remain incomplete and retain their retry evidence.
-VISUAL_BLANK_INK_THRESHOLD = 240
-VISUAL_BLANK_INK_RATIO_MAX = 0.005
-VISUAL_BLANK_RENDER_MAX_DIMENSION = 800
-
 # Keep a fixed part of the queue worker budget for the sale write, lease
 # telemetry, and claim cleanup after a bounded PDF pass returns.  The worker
 # still owns the 1,200-second budget; this is only the PDF's effective cutoff.
 PDF_FINALIZATION_MARGIN_SECONDS = 60.0
 
 _PDF_DEADLINE: ContextVar[float | None] = ContextVar("pdf_enrichment_deadline", default=None)
-
-DOCUMENT_TYPE_ALIASES = {
-    "pv_descriptif": "pv_huissier",
-    "proces_verbal_descriptif": "pv_huissier",
-    "proces_verbal_de_description": "pv_huissier",
-    "proces_verbal_de_constat": "pv_huissier",
-    "pvd": "pv_huissier",
-    "diagnostic": "diagnostics_techniques",
-    "diagnostics": "diagnostics_techniques",
-    "diagnostic_technique": "diagnostics_techniques",
-    "cahier_conditions": "cahier_conditions_vente",
-    "cahier_des_conditions": "cahier_conditions_vente",
-    "cahier_des_conditions_de_vente": "cahier_conditions_vente",
-    "ccv": "cahier_conditions_vente",
-}
-
-GENERIC_DOCUMENT_TYPES = {"document", "documents", "file", "fichier", "pdf", "piece_jointe", "pieces_jointes"}
 
 
 @dataclass
@@ -1115,89 +1113,6 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
     return pages
 
 
-def _is_objectively_blank_page(page: fitz.Page, raw_text: str) -> bool:
-    """Return true only when a page has no text, image, or vector drawing."""
-    if clean_text(raw_text):
-        return False
-    try:
-        if page.get_images(full=True):
-            return False
-        if page.get_drawings():
-            return False
-    except Exception:
-        # An inspection failure must leave the page eligible for OCR. An empty
-        # page cannot be called objectively blank without all three checks.
-        return False
-    return True
-
-
-def _visual_page_profile(page: fitz.Page) -> dict[str, object]:
-    """Measure page ink without retaining a derived image.
-
-    The source PDF remains the evidence of record. This low-resolution
-    grayscale pass only distinguishes an OCR-empty near-blank page from an
-    image-rich page that may contain information.
-    """
-
-    try:
-        rect = page.rect
-        largest_dimension = max(float(rect.width), float(rect.height), 1.0)
-        scale = min(1.0, VISUAL_BLANK_RENDER_MAX_DIMENSION / largest_dimension)
-        pixmap = page.get_pixmap(
-            matrix=fitz.Matrix(scale, scale),
-            colorspace=fitz.csGRAY,
-            alpha=False,
-        )
-        channel_count = max(int(pixmap.n), 1)
-        samples = pixmap.samples
-        pixel_count = int(pixmap.width) * int(pixmap.height)
-        if not samples or pixel_count <= 0:
-            return {
-                "analysis_status": "unavailable",
-                "quasi_empty": False,
-                "reason": "empty_render",
-            }
-        ink_pixels = sum(
-            1
-            for offset in range(0, min(len(samples), pixel_count * channel_count), channel_count)
-            if samples[offset] < VISUAL_BLANK_INK_THRESHOLD
-        )
-        ink_ratio = ink_pixels / pixel_count
-        decorative_edge_only = _is_decorative_edge_only_page(page)
-        return {
-            "analysis_status": "measured",
-            "quasi_empty": ink_ratio <= VISUAL_BLANK_INK_RATIO_MAX or decorative_edge_only,
-            "decorative_edge_only": decorative_edge_only,
-            "ink_ratio": round(ink_ratio, 6),
-            "ink_threshold": VISUAL_BLANK_INK_THRESHOLD,
-            "ink_ratio_max": VISUAL_BLANK_INK_RATIO_MAX,
-            "pixel_count": pixel_count,
-            "render_scale": round(scale, 4),
-        }
-    except Exception as exc:
-        LOGGER.debug("Visual blank-page analysis failed: %s", exc)
-        return {
-            "analysis_status": "unavailable",
-            "quasi_empty": False,
-            "reason": "render_failed",
-        }
-
-
-def _page_requires_retry(page: object, *, ocr_enabled: bool) -> bool:
-    if not isinstance(page, dict):
-        return True
-    status = str(page.get("status") or page.get("extraction_status") or "").strip().lower()
-    if status in {"failed", "incomplete", "ocr_failed", "empty"} or page.get("retryable") is True:
-        return True
-    if status in {"blank_excluded", "blank_page_excluded", "visual_blank_excluded"}:
-        return False
-    if not clean_text(page.get("text")):
-        return True
-    # Older caches represented a failed OCR pass as fallback_text. Once OCR is
-    # enabled, that text is evidence to retain, never a successful page hit.
-    return ocr_enabled and str(page.get("method") or "") == "fallback_text"
-
-
 def _should_try_ocr(text: str) -> bool:
     settings = load_settings()
     if not settings["pdf_ocr_enabled"]:
@@ -1356,147 +1271,6 @@ def _extract_page_text_with_tesseract_result(
         "retryable": True,
         "failure_reason": "ocr_failed",
     }
-
-
-def _page_text_confidence(text: str | None, *, method: str) -> float:
-    chars = len(clean_text(text) or "")
-    if chars == 0:
-        return 0.0
-    if method == "pymupdf_text":
-        base = Decimal("0.92")
-    elif method == "ocr_pymupdf":
-        base = Decimal("0.74")
-    elif method == "ocr_tesseract":
-        base = Decimal("0.70")
-    else:
-        base = Decimal("0.45")
-    if chars < 120:
-        base -= Decimal("0.18")
-    elif chars < 500:
-        base -= Decimal("0.08")
-    return float(max(Decimal("0.1"), min(Decimal("0.98"), base)))
-
-
-def classify_document_type(label: str | None, url: str | None = None) -> str:
-    text = _normalize_document_classifier_text(f"{label or ''} {url or ''}")
-    if any(pattern in text for pattern in ("diagnostic", "dpe", "erp", "amiante", "plomb", "termites", "crep")):
-        return "diagnostics_techniques"
-    if re.search(r"\bdiag(?:nostics?)?\b", text):
-        return "diagnostics_techniques"
-    if any(
-        pattern in text
-        for pattern in (
-            "cahier",
-            "cahier des conditions",
-            "cahier_des_conditions",
-            "cahier des charges",
-            "cahier_des_charges",
-            "ccv",
-            "dossier de consultation",
-            "dossier_de_consultation",
-            "dossier de presentation",
-            "dossier_de_presentation",
-            "reglement de consultation",
-        )
-    ):
-        return "cahier_conditions_vente"
-    if "conditions de vente" in text or "conditions_de_vente" in text:
-        return "conditions_vente"
-    if any(pattern in text for pattern in ("pv notaire", "notaire", "notarié", "notarie")):
-        return "pv_notaire"
-    if any(
-        pattern in text
-        for pattern in (
-            "pv descriptif",
-            "pv description",
-            "pvd",
-            "descriptif",
-            "proces-verbal de constat",
-            "commissaire de justice",
-            "huissier",
-        )
-    ):
-        return "pv_huissier"
-    if re.search(r"\bproces[-\s]+verbal\b.*\b(?:description|descriptif|constat)\b", text):
-        return "pv_huissier"
-    if re.search(r"\bpv\b", text):
-        return "pv_huissier"
-    if re.search(r"\bproces[-\s]+verbal\b", text):
-        return "proces_verbal"
-    if any(
-        pattern in text
-        for pattern in (
-            "avis",
-            "simplifie",
-            "simplifié",
-            "affiche",
-            "insertion",
-            "annonce",
-            "placard",
-            "publicite",
-            "publicité",
-        )
-    ):
-        return "annonce_vente"
-    if "bail" in text or "location" in text:
-        return "bail"
-    if any(pattern in text for pattern in ("hypothecaire", "hypothécaire", "commandement")):
-        return "procedure_saisie"
-    if any(pattern in text for pattern in ("cadastre", "plan", "parcelle")):
-        return "cadastre"
-    if ".pdf" in text:
-        return "pdf"
-    return "other"
-
-
-def _normalize_document_classifier_text(value: object | None) -> str:
-    text = clean_text(value) or ""
-    normalized = unicodedata.normalize("NFKD", text)
-    without_accents = "".join(char for char in normalized if not unicodedata.combining(char))
-    return without_accents.lower()
-
-
-def _canonical_document_type(
-    document_type: object | None,
-    *,
-    label: object | None = None,
-    url: object | None = None,
-) -> str:
-    classified = classify_document_type(clean_text(label), clean_text(url))
-    raw = clean_text(document_type)
-    if raw:
-        normalized = _normalize_document_classifier_text(raw).replace("-", "_").replace(" ", "_")
-        normalized = re.sub(r"_+", "_", normalized).strip("_")
-        alias = DOCUMENT_TYPE_ALIASES.get(normalized)
-        if alias:
-            return alias
-        if normalized in GENERIC_DOCUMENT_TYPES and classified != "other":
-            return classified
-        if normalized not in {"other", "unknown"}:
-            return normalized
-    return classified
-
-
-PDF_DESCRIPTION_GROUP = frozenset({"pv_huissier", "pv_notaire", "proces_verbal"})
-
-PDF_DIAGNOSTICS_GROUP = frozenset({"diagnostics_techniques"})
-
-PDF_CONDITIONS_GROUP = frozenset({"cahier_conditions_vente", "conditions_vente"})
-
-PDF_ANNOUNCE_GROUP = frozenset({"annonce_vente"})
-
-PDF_BAIL_GROUP = frozenset({"bail"})
-
-PDF_CADASTRE_GROUP = frozenset({"cadastre"})
-
-DEFAULT_DOCUMENT_GROUPS = (
-    PDF_DESCRIPTION_GROUP,
-    PDF_DIAGNOSTICS_GROUP,
-    PDF_CONDITIONS_GROUP,
-    PDF_ANNOUNCE_GROUP,
-    PDF_BAIL_GROUP,
-    PDF_CADASTRE_GROUP,
-)
 
 
 def _document_text_cache_path(document: dict[str, str], file_path: Path) -> Path:

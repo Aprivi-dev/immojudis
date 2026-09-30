@@ -1,10 +1,10 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 07 h 46 UTC
+## Synthèse actuelle — 30 septembre, 08 h 08 UTC
 
 | Chantier           | État vérifié                                                                                                                                                                                                                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `ad980898` vert. CI `df0904a6` rouge : ancien contrat du test robots et nouvelles alertes npm ; CodeQL vert. Test corrigé, dépendances de production sans alerte après mise à jour ciblée. Nouveau HEAD requis pour la CI et le cloud.                  |
+| SQL et CI          | `dc69bb98` : seul le budget de taille du module PDF échoue. Séparation terminée et relue : module à 1 494 lignes, 232 tests verts. Audits npm complets sans alerte. La CI et le cloud doivent qualifier le prochain SHA exact.                          |
 | Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                    |
 | Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Candidat `ad980898` retenu après dépassement de deadline et perte des statuts PDF. Aucun worker actif au relevé de 07 h 42.                                                                 |
 | Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                    |
@@ -1887,3 +1887,46 @@ de plus de 48 heures, dont 2 071 détails, 598 descriptions, 35 faits et
 07 h 06 en 1 203,9 secondes. Vench termine à 07 h 37 avec couverture
 d'inventaire complète ; Enchères Immobilières reste en échec fournisseur.
 Ces observations ne satisfont pas le critère de résorption durable.
+
+## Garde de taille de module — 30 septembre, 07 h 57 UTC
+
+La [CI 36686057381](https://github.com/Aprivi-dev/immojudis/actions/runs/36686057381)
+termine sur `dc69bb98` avec un seul contrôle en échec :
+`pdf_enrichment.py` compte 1 720 lignes pour un plafond métier de 1 500.
+Python 3.11/3.12, audit des dépendances, SQL, invariant du planificateur,
+Playwright et [CodeQL](https://github.com/Aprivi-dev/immojudis/actions/runs/36686057418)
+réussissent. Le job Web passe audit npm, typecheck, lint, tests, invariants
+et build avant le refus du budget de module.
+
+Les compteurs finalisés sont 1 966 tests Python réussis et 18 ignorés par
+version, audits pip sans vulnérabilité connue, 200 migrations distinctes,
+79 fichiers pgTAP et 1 481 assertions, aucune dérive. Le Web compte
+1 336 tests réussis, cinq ignorés ; le catalogue HTTP et l'intégration inbound
+locale réussissent aussi. Ces succès ne remplacent pas la CI du refactor.
+
+La classification documentaire et les mesures de pages sont séparées en
+modules dédiés, avec conservation des imports existants et sans modification
+du comportement de deadline, OCR ou preuve PDF. Le nouveau module reste
+soumis au même budget de taille. Le plafond de 1 500 n'est pas relevé.
+
+Le comptage identique au script CI donne maintenant 1 494 lignes pour
+`pdf_enrichment.py`, 148 pour `pdf_document_types.py` et 159 pour
+`pdf_page_analysis.py`. Les suites PDF, reprise, worker, stockage et fiabilité
+comptent 232 succès et deux tests ignorés ; Ruff et le diff sont propres.
+Le build complet précédent est vert ; le contrôle des budgets Web et la CI
+complète doivent repasser sur le SHA de ce refactor.
+
+La relecture IA indépendante confirme l'identité des fonctions déplacées
+et des constantes, l'absence de cycle et les noms réexportés depuis le
+module initial. Les callbacks OCR patchés par les tests restent dans ce
+module. Les nouveaux tests de helpers doivent viser leur module propriétaire ;
+aucun appelant actuel ne remplace leur binding réexporté à l'exécution.
+
+La santé opérationnelle existante réussit à 07 h 45 en 4,4 secondes.
+L'alerte `cron.stale` concerne uniquement `information-agent-inbound`,
+volontairement non activé avant publication de sa route. L'alerte d'import
+est résolue ; l'inventaire Enchères Immobilières et le backlog demeurent
+les incidents opérationnels actifs. Les 2 067 anciens détails de source
+ne sont pas des tâches terminales oubliées : 2 046 sont réclamables et
+21 sont bloqués par la suspension d'Enchères Publiques. Aucun de ces jobs
+ne justifie une clôture artificielle au titre de la rétention.
