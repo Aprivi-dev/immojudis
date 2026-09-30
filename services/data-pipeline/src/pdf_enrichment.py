@@ -73,7 +73,7 @@ from src.pdf_page_analysis import (
 from src.pdf_page_analysis import (
     is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
 )
-from src.pdf_progress import PDF_TEXT_CACHE_VERSION, merge_pdf_cache, stale_complete_document_urls
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
 
 LOGGER = logging.getLogger(__name__)
 
@@ -188,6 +188,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     stats = PdfEnrichmentStats()
     _ensure_pdf_deadline(operation="starting document download")
     downloaded_documents = download_documents(sale, stats=stats)
+    restore_pdf_page_caches_from_manifest(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", downloaded_documents, cache_root=PDF_DOCUMENT_TEXTS_DIR, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]))
     _invalidate_replaced_document_facts(sale, downloaded_documents)
     pdf_texts: list[dict[str, object]] = []
     failed_document_diagnostics: list[dict[str, object]] = []
@@ -204,7 +205,8 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
                 continue
             stats.document_cache_misses += 1
             payload = extract_attached_document(file_path, document=document)
-        except PdfExtractionDeferred:
+        except PdfExtractionDeferred as exc:
+            checkpoint_partial_pdf_progress(file_path, document, error=exc, total_pages=exc.total_pages, cache_root=PDF_DOCUMENT_TEXTS_DIR, manifest_path=PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", current_texts=pdf_texts, sale=sale, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]), merge_cache=merge_pdf_cache, write_cache=_write_pdf_text_cache, store_status=_store_document_analysis_status)
             raise
         except Exception as exc:
             marker = pdf_extraction_exception_marker(document.get("url"), type(exc).__name__)
@@ -236,7 +238,6 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         _write_document_text_cache(document, file_path, payload)
         stats.documents_processed += 1
         pdf_texts.append(payload)
-
     merged_pdf_texts = merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures)
     if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures:
         _write_pdf_text_cache(sale, merged_pdf_texts)
@@ -253,7 +254,6 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         permanent_document_failures=stats.permanent_document_failures,
         failed_document_diagnostics=failed_document_diagnostics,
     )
-
     return stats
 
 

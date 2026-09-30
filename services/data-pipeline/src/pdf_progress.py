@@ -32,6 +32,280 @@ def payload_text_sha256(payload: dict[str, Any]) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
 
 
+def _page_cache_directory(
+    file_path: Path,
+    cache_root: Path,
+    *,
+    ocr_enabled: bool,
+    ocr_language: str,
+) -> Path:
+    cache_key = hashlib.sha256(
+        file_path.read_bytes()
+        + str((bool(ocr_enabled), str(ocr_language), PDF_TEXT_CACHE_VERSION)).encode()
+    ).hexdigest()
+    return cache_root / "pages" / cache_key
+
+
+def _valid_cached_page(page: object, expected_page: int | None = None) -> bool:
+    if not isinstance(page, dict):
+        return False
+    if expected_page is not None and page.get("page") != expected_page:
+        return False
+    if not isinstance(page.get("text"), str) or page.get("retryable") is True:
+        return False
+    return str(page.get("status") or "") in {
+        "extracted",
+        "blank_page",
+        "blank_excluded",
+        "visual_blank_excluded",
+    }
+
+
+def read_checkpointed_pdf_pages(
+    file_path: Path,
+    cache_root: Path,
+    *,
+    total_pages: int,
+    ocr_enabled: bool,
+    ocr_language: str,
+) -> list[dict[str, Any]]:
+    """Read only successful page records from the durable page cache."""
+
+    if total_pages <= 0:
+        return []
+    try:
+        cache_dir = _page_cache_directory(
+            file_path,
+            cache_root,
+            ocr_enabled=ocr_enabled,
+            ocr_language=ocr_language,
+        )
+    except OSError:
+        return []
+    pages: list[dict[str, Any]] = []
+    for page_number in range(1, total_pages + 1):
+        try:
+            page = json.loads((cache_dir / f"{page_number}.json").read_text(encoding="utf-8"))
+        except (OSError, TypeError, UnicodeError, ValueError, json.JSONDecodeError):
+            continue
+        if not _valid_cached_page(page, page_number):
+            continue
+        pages.append(dict(page))
+    return pages
+
+
+def partial_pdf_payload_from_page_cache(
+    file_path: Path,
+    document: dict[str, Any],
+    *,
+    cache_root: Path,
+    total_pages: int,
+    ocr_enabled: bool,
+    ocr_language: str,
+) -> dict[str, Any] | None:
+    """Build modern incomplete evidence from pages already checkpointed."""
+
+    pages = read_checkpointed_pdf_pages(
+        file_path,
+        cache_root,
+        total_pages=total_pages,
+        ocr_enabled=ocr_enabled,
+        ocr_language=ocr_language,
+    )
+    if not pages:
+        return None
+    page_numbers = {int(page["page"]) for page in pages}
+    text = clean_text("\n".join(str(page.get("text") or "") for page in pages)) or ""
+    failed_pages = [page for page in range(1, total_pages + 1) if page not in page_numbers]
+    blank_pages = [
+        int(page["page"])
+        for page in pages
+        if str(page.get("status") or "") in {"blank_page", "blank_excluded", "visual_blank_excluded"}
+    ]
+    visual_blank_pages = [
+        int(page["page"])
+        for page in pages
+        if str(page.get("status") or "") == "visual_blank_excluded"
+    ]
+    return {
+        "cache_version": PDF_TEXT_CACHE_VERSION,
+        "label": document.get("label") or "",
+        "url": document_url(document),
+        "type": document.get("type") or "pdf",
+        "document_type": document.get("document_type") or document.get("type") or "pdf",
+        "file_path": str(file_path),
+        "text": text,
+        "pages": pages,
+        "sha256": hashlib.sha256(file_path.read_bytes()).hexdigest(),
+        "page_count": total_pages,
+        "text_chars": len(text),
+        "page_text_chars": sum(int(page.get("chars") or 0) for page in pages),
+        "ocr_pages": sum(1 for page in pages if str(page.get("method") or "").startswith("ocr_")),
+        "empty_pages": sum(1 for page in pages if not clean_text(page.get("text"))),
+        "blank_pages": blank_pages,
+        "visual_blank_pages": visual_blank_pages,
+        "failed_pages": failed_pages,
+        "complete": False,
+        "extraction_status": "incomplete",
+        "extraction_method": "pymupdf_pages",
+        "confidence": round(
+            sum(float(page.get("confidence") or 0) for page in pages) / len(pages),
+            3,
+        ),
+        "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest() if text else "",
+        **(
+            {"http_checked_at": clean_text(document.get("http_checked_at"))}
+            if clean_text(document.get("http_checked_at"))
+            else {}
+        ),
+    }
+
+
+def restore_pdf_page_cache_from_payload(
+    file_path: Path,
+    payload: dict[str, Any],
+    *,
+    cache_root: Path,
+    ocr_enabled: bool,
+    ocr_language: str,
+) -> int:
+    """Materialize a verified cold checkpoint into the page cache."""
+
+    if payload.get("_persisted_pdf_proof") is not True:
+        return 0
+    pages = payload.get("pages")
+    if not isinstance(pages, list) or not pages:
+        return 0
+    try:
+        if hashlib.sha256(file_path.read_bytes()).hexdigest() != clean_text(payload.get("sha256")):
+            return 0
+        cache_dir = _page_cache_directory(
+            file_path,
+            cache_root,
+            ocr_enabled=ocr_enabled,
+            ocr_language=ocr_language,
+        )
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return 0
+    restored = 0
+    for page in pages:
+        page_number = page.get("page") if isinstance(page, dict) else None
+        if not isinstance(page_number, int) or not _valid_cached_page(page, page_number):
+            continue
+        cache_path = cache_dir / f"{page_number}.json"
+        temporary = cache_path.with_suffix(".tmp")
+        try:
+            temporary.write_text(json.dumps(page, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(cache_path)
+        except OSError:
+            temporary.unlink(missing_ok=True)
+            continue
+        restored += 1
+    return restored
+
+
+def restore_pdf_page_caches_from_manifest(
+    manifest_path: Path,
+    documents: list[dict[str, Any]],
+    *,
+    cache_root: Path,
+    ocr_enabled: bool,
+    ocr_language: str,
+) -> int:
+    """Restore page caches for persisted modern payloads after download."""
+
+    payloads = read_modern_cache(manifest_path) if manifest_path.exists() else []
+    payload_by_url = {
+        document_url(payload): payload
+        for payload in payloads
+        if payload.get("_persisted_pdf_proof") is True and document_url(payload)
+    }
+    restored = 0
+    for document in documents:
+        url = document_url(document)
+        payload = payload_by_url.get(url)
+        file_path = document.get("file_path")
+        if not payload or not isinstance(file_path, str) or not file_path:
+            continue
+        restored += restore_pdf_page_cache_from_payload(
+            Path(file_path),
+            payload,
+            cache_root=cache_root,
+            ocr_enabled=ocr_enabled,
+            ocr_language=ocr_language,
+        )
+    return restored
+
+
+def checkpoint_partial_pdf_progress(
+    file_path: Path,
+    document: dict[str, Any],
+    *,
+    error: Any,
+    total_pages: int,
+    cache_root: Path,
+    manifest_path: Path,
+    current_texts: list[dict[str, Any]],
+    sale: Any,
+    analysis: object,
+    documents: list[dict[str, Any]],
+    downloaded_documents: list[dict[str, Any]],
+    ocr_enabled: bool,
+    ocr_language: str,
+    merge_cache: Callable[..., list[dict[str, Any]]],
+    write_cache: Callable[..., object],
+    store_status: Callable[..., object],
+) -> bool:
+    """Finalize an incomplete page pass before its queue exception escapes."""
+
+    payload = partial_pdf_payload_from_page_cache(
+        file_path,
+        document,
+        cache_root=cache_root,
+        total_pages=total_pages,
+        ocr_enabled=ocr_enabled,
+        ocr_language=ocr_language,
+    )
+    if payload is not None:
+        error.partial_payload = dict(payload)
+        current_texts.append(payload)
+    if not current_texts:
+        return False
+    merged = merge_cache(
+        manifest_path,
+        current_texts,
+        analysis=analysis,
+        documents=documents,
+        downloaded_documents=downloaded_documents,
+    )
+    write_error: Exception | None = None
+    if merged:
+        try:
+            write_cache(sale, merged)
+        except Exception as exc:
+            # The local aggregate is an optimization. Preserve the original
+            # deferred extraction and hand the validated in-memory payload to
+            # the queue's direct SQL checkpoint below.
+            write_error = exc
+    status_error: Exception | None = None
+    try:
+        store_status(sale, downloaded_documents, current_texts, merged_pdf_texts=merged)
+    except Exception as exc:
+        status_error = exc
+    raw_payload = getattr(sale, "raw_payload", None)
+    checkpoint_analysis = raw_payload.get("document_analysis") if isinstance(raw_payload, dict) else None
+    if not isinstance(checkpoint_analysis, dict) and isinstance(analysis, dict):
+        checkpoint_analysis = analysis
+    error.partial_analysis = dict(checkpoint_analysis) if isinstance(checkpoint_analysis, dict) else {}
+    error.partial_pdf_texts = [dict(item) for item in merged]
+    if write_error is not None:
+        error.partial_cache_error = write_error
+    if status_error is not None:
+        error.partial_status_error = status_error
+    return True
+
+
 def is_sha256(value: object) -> bool:
     text = clean_text(value) or ""
     return len(text) == 64 and all(character in "0123456789abcdefABCDEF" for character in text)

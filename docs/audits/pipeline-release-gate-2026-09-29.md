@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 15 h 02 UTC
+## Synthèse actuelle — 30 septembre, 16 h 31 UTC
 
-| Chantier           | État vérifié                                                                                                                                                                                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `7eb76202` : CodeQL, Web, Playwright et migrations verts. Python 3.11/3.12 : 2 069 succès, 18 ignorés et un échec identique dans le double de connexion du test du checkpoint dédié. Test d'isolation réelle à qualifier avant nouveau canari.                  |
-| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                            |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `74dd49f6` réussi en 1 141,8 s : 31 claims, 26 completed, quatre failed, un queued, aucun running. Les deltas suivants restent à qualifier ; routage automatique inchangé.            |
-| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                            |
-| Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB. |
-| Documents          | Progression de 16 PDF et revalidation HTTP en 6+6+4, retrait du texte après 404, reprise cold et garde de génération vérifiés localement : 315 succès, 15 scénarios PostgreSQL réservés à CI. Cache froid réel encore non qualifié.                             |
-| Capacité           | Au relevé de 13 h 47 : 5 952 jobs ouverts, 5 925 dus réessayables, 2 649 anciens encore sous le plafond d'essais, aucun en cours et dix épuisés. Résorption durable non démontrée ; ce relevé ne mesure pas l'effet du commit candidat.                         |
-| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                              |
-| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                      |
-| Inbound            | Nouvelle route non publiée, cron absent. Cause courante de l'alerte critique `cron.stale` confirmée : `information-agent-inbound`. Canari canonique authentifié puis activation et santé requis après déploiement.                                              |
-| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                          |
-| Publication finale | PR en brouillon. Preview exacte `7eb76202` READY ; Python CI à corriger avant tout nouveau canari. Aucun import IA ni publication applicative finale. Plan de branches préparé, aucune suppression.                                                             |
+| Chantier           | État vérifié                                                                                                                                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL et CI          | `0bff122a` : CI complète et CodeQL verts. Python 3.11/3.12 : 2 070 succès et 18 ignorés chacun ; test PostgreSQL dédié exécuté. Web, Playwright, 200 migrations et 1 481 assertions pgTAP passent. Le correctif OCR découvert après canari exigera une nouvelle qualification.            |
+| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                                                      |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `0bff122a` réussi en 1 141,3 s : 82 claims uniques, 47 completed, zéro failed, deux cancelled, 33 queued, aucun running ni missing. Durabilité OCR interrompu encore à corriger ; routage automatique inchangé. |
+| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                                                      |
+| Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB.                           |
+| Documents          | Progression et revalidation en 6+6+4 passent en tests. Le canari s'arrête à 75/93 et 30/50 pages ; ces progrès restent dans le cache du worker, sans checkpoint SQL. Correctif des interruptions OCR/deadline en cours, puis essais warm et cold réels requis.                            |
+| Capacité           | Relevé à 16 h 31 : 5 975 jobs ouverts, 5 957 dus réessayables, 2 654 anciens encore sous le plafond, zéro running et 12 épuisés. Valorisation : zéro ouvert. Quatre alertes ouvertes et couverture source incomplète ; résorption durable non démontrée.                                  |
+| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                                                        |
+| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                                                |
+| Inbound            | Nouvelle route non publiée, cron absent. Cause courante de l'alerte critique `cron.stale` confirmée : `information-agent-inbound`. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                        |
+| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                                                    |
+| Publication finale | PR en brouillon. Preview exacte `0bff122a` READY ; accueil/catalogue 200, inbound sans auth 401, webhook GET 405. Correctif OCR et conditions externes encore nécessaires. Aucun import IA ni publication applicative finale. Plan de branches préparé, aucune suppression.               |
 
 ### Qualification des textes stockés — 30 septembre, 12 h 01 UTC
 
@@ -2598,5 +2598,154 @@ La [preview exacte](https://immojudis-dezt-7cwpv6ty9-antoine-s-projects7.vercel.
 est READY (`dpl_H5ohfus8cAHiU9Q5dZ6Uv5JieTY7`). Aucun canari, routage
 automatique, import IA, envoi à un interlocuteur ou nettoyage de branche n'a
 été lancé sur cette CI en échec. Les deux entrées externes restent en attente.
+
+## Qualification et interruption OCR — 30 septembre, 16 h 04 UTC
+
+Le commit `0bff122a6d5de68cf85efbc2dea54360e0be4bd1` passe la
+[CI complète](https://github.com/Aprivi-dev/immojudis/actions/runs/36734501508)
+et [CodeQL](https://github.com/Aprivi-dev/immojudis/actions/runs/36734501114).
+Python 3.11 et 3.12 comptent chacun 2 070 succès et 18 cas ignorés ; le
+test de connexion PostgreSQL dédiée s'exécute réellement. Web : 1 336
+succès, cinq ignorés et 20 invariants sécurité. Playwright : 87 succès,
+huit ignorés. 200 migrations uniques, 79 fichiers pgTAP et 1 481 assertions
+passent sans dérive ; budget maximal surveillé à 1 499 lignes sur 1 500.
+La preview exacte est READY (`dpl_9T4aveZfC34gcNKzTTPV1i3pVnza`) et ses
+GET accueil/catalogue, inbound sans auth et webhook donnent 200/200/401/405.
+
+Le tag `immojudis-workers-0bff122a` et sa future référence cold sont protégés
+par le ruleset actif `24255565`, sans bypass, modification ni suppression.
+Le [canari](https://github.com/Aprivi-dev/immojudis/actions/runs/36735589361)
+tourne de 15 h 23 min 05 s à 15 h 43 min 18 s, SHA exact. Son traitement
+dure 1 141,3 secondes sur 1 200 et s'arrête à la marge de finalisation.
+Le set des claims et le snapshot SQL final comptent 82 identifiants uniques :
+47 completed, zéro failed, deux cancelled et 33 deferred/queued, zéro running
+ou missing. Le plus long lot de détail dure 10,6 secondes. Six prédictions
+Replicate sont créées en HTTP 201, sans quota/429 ni erreur fournisseur.
+Le cache extraction est réellement absent au départ puis sauvegardé.
+
+Cette réussite technique ne qualifie pas la durabilité des OCR interrompus.
+Les deux ventes Avoventes `une-maison-2` et `un-studio-mansarde` sont différées
+après 75/93 et 30/50 pages. La relecture du code montre une propagation de
+l'exception avant consolidation de l'analyse de vente ; la queue diffère
+ensuite sans checkpoint SQL. Une revue indépendante des deux URLs, tous
+statuts et toutes tailles de manifeste, confirme zéro écriture dans
+auction_sales, auction_documents et auction_extractions durant le canari.
+Leurs dernières extractions, à 11 h 58, restent legacy. Les pages dans le
+cache GitHub ne sont donc pas une preuve de reprise après perte du worker.
+
+Le correctif doit conserver les documents complets déjà traités et les
+pages partielles vérifiées avant déférence, puis restaurer le vrai cache de
+pages sous garde SHA, sans déclarer le dossier complet. Dans le périmètre
+post-canari de 311 ventes upcoming hors EP à un à six documents, aucune
+preuve moderne entière n'est encore éligible. Aucun essai warm ou cold
+n'est lancé avant correction et nouvelle qualification exacte.
+
+Le run EImmo historique `36723925938` est un échec de transport : timeout
+robots puis catalogue, quatre tentatives et zéro réponse réussie, sans refus
+d'accès ni indice de défaut du parseur. Couverture incomplète, publication
+et nettoyage correctement bloqués. Le rétablissement doit être constaté
+lors d'une prochaine collecte normale.
 Ces corrections seront vérifiées dans la CI du nouveau commit exact avant
 tout essai de worker.
+
+## File et couverture — 30 septembre, 16 h 31 min 54 s UTC
+
+Le contrôle en lecture seule compte 5 975 jobs ouverts, 5 957 dus
+réessayables, 2 654 de plus de 48 heures encore sous le plafond et 12
+épuisés. Aucun job running ni lease stale. Les familles ouvertes sont
+2 901 descriptions, 97 faits, 374 PDF et 2 603 détails de source.
+Le critère d'ancienneté porte sur les jobs ouverts sous le plafond, sans
+filtre d'échéance ; le critère « dû » exige queued/failed et une échéance
+atteinte. La résorption durable n'est toujours pas démontrée.
+
+La valorisation compte 2 844 lignes : aucun job ouvert, 2 452 ready et
+392 insufficient_data terminaux. Quatre alertes restent ouvertes :
+cron.stale (critical), pipeline.enrichment.stalled (warning),
+pipeline.import.unhealthy (warning) et
+pipeline.source.encheres_immobilieres.missed (critical).
+
+Sur le dernier run propre à chacune des neuf sources autorisées, hors
+maintenance et run all : six couvertures complètes (Avoventes, Cessions
+État, Info Enchères, Licitor, Petites Affiches, Vench), deux non complètes
+(AGRASC, Enchères Immobilières), une couverture Notaires inconnue ou en
+échec à diagnostiquer. L'audit API Notaires précédent de 832 URL ne
+prouve pas l'état de ce run ni sa persistance en base.
+
+L'observation antérieure de deux UUID individuels prétendument issus du
+canari est retirée : ils ne figurent pas dans son log exact. Le snapshot
+SQL final du worker conserve 82 claims, zéro missing ; aucune anomalie
+de rétention n'est déduite de cette attribution erronée.
+
+### Diagnostic Notaires — 30 septembre, 16 h 48 UTC
+
+Le run `3e39d3c1-5b99-479e-b948-0f51513756c7`, de 15 h 44 min 24 s à
+16 h 19 min 24 s, est failed/interrupted après le budget de 2 100 secondes.
+Le [workflow exact](https://github.com/Aprivi-dev/immojudis/actions/runs/36737207143)
+utilise `f695a739ab6e60079cf5c95fb432cb7ef6900ba1`, le worker automatique
+actuel. La stack s'arrête dans la persistance source_checkpoint ; les logs
+PostgreSQL montrent dix indisponibilités de connexion 57P03, deux timeouts
+SELECT 57014 et un reset 08006 entre 16 h 05 et 16 h 07.
+Aucun défaut de parseur ni de transport public Notaires n'est démontré.
+Les timeouts SELECT et le reset sont attribués à PostgREST, pas au worker.
+La stack seule ne distingue pas l'attente SQL de l'attente socket pendant
+l'indisponibilité. La session serveur actuelle limite les statements à
+deux minutes, mais les checkpoints source n'imposent pas leur propre limite
+de verrou ni de statement ; ce bornage local reste à corriger et vérifier.
+
+680 checkpoints ont un détail complet. Le suivi des items compte 203
+published, 470 expired, deux quarantined et cinq discovered/pending.
+Les quarantaines possèdent des motifs d'identité ambigüe et de conflit
+entre prix fixe et périmètre des enchères. Le certificat final de couverture
+et les compteurs de requêtes manquent ; ce run reste incomplet.
+
+L'alerte pipeline.import.unhealthy est réouverte/actualisée, pas créée ce
+jour : première occurrence le 19 août, dernier constat à 16 h 30 avec un
+échec dans l'heure, zéro stuck_running et zéro queued. Le health check
+réussit et signale correctement l'échec. Une collecte Notaires normale,
+épinglée à la version qualifiée après stabilité DB, reste requise.
+
+## Correctif de durabilité OCR — 30 septembre, 16 h 49 UTC
+
+La consolidation d'une interruption conserve maintenant le préfixe de
+documents complets et les pages déjà réussies, sous manifeste explicitement
+incomplet. Les preuves en mémoire sont transmises directement au writer SQL
+avant déférence ; l'écriture du cache local n'est pas une précondition.
+Une erreur de statut ne permet pas de repli vers un ancien cache local.
+Un checkpoint non durable consomme seulement l'essai PDF, tandis que ses
+dépendances facts/display sont différées.
+
+La relecture impose les bornes et l'unicité des pages, leur statut, leurs
+longueurs, le complément exact des pages échouées, et le lien entre le texte
+agrégé et les pages pour l'extraction pymupdf_pages. Le texte Docling peut
+être plus riche que les pages, avec sa propre preuve de texte et la même
+garde de couverture. Les diagnostics retryable restent stockés ; seules
+les pages réussies sont réutilisées sous SHA exact du PDF téléchargé.
+Un cache local legacy ou malformé ne bloque plus la récupération SQL.
+Aucune preuve legacy n'est transformée en preuve moderne.
+
+La suite Python isolée complète passe : 1 993 succès, 101 cas ignorés
+localement, dont les scénarios PostgreSQL, sept warnings. Ruff et git diff --check
+passent. Les modules surveillés pdf_enrichment et queued_runner restent
+à 1 499 lignes ; pdf_progress compte 810 lignes. La fixture de diagnostic
+PDF fournit désormais les paramètres OCR requis. Le test PostgreSQL de
+perte de cache écrit et supprime explicitement le cache avant restauration.
+Ces tests PostgreSQL et la qualification du worker sur le nouveau commit
+restent requis ; aucune écriture en production ni publication finale n'est
+effectuée avec ce correctif non encore qualifié en CI.
+
+### Bornage des checkpoints source — 30 septembre, 17 h 01 UTC
+
+Les trois chemins de source_checkpoint (lecture, curseur, détail) imposent
+désormais connect_timeout=5 sans retries de connexion, puis lock_timeout=5s
+et statement_timeout=15s dans leur transaction. Les exceptions de persistance
+restent visibles et empêchent la réussite du checkpoint. Le helper global
+de connexion et ses politiques existantes ne sont pas modifiés.
+Le réseau après établissement de la connexion reste soumis aux réglages
+libpq/serveur existants : ce correctif ne prouve pas le rétablissement DB.
+
+Un test PostgreSQL sur base locale jetable verrouille un vrai curseur depuis
+une seconde connexion. Il exige les limites 5s/15s via trigger,
+LockNotAvailable sur l'UPSERT et la conservation des checkpoints antérieurs,
+sans curseur complet déclaré. Son exécution réelle est requise en CI.
+La suite locale complète de l'ensemble du correctif passe avec 1 996
+succès, 102 cas ignorés, dont les scénarios PostgreSQL, et sept warnings.

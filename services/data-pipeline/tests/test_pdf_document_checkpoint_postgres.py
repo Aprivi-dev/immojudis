@@ -20,6 +20,7 @@ from psycopg.types.json import Jsonb
 from test_autonomy_postgres import migration, setup
 
 from src import pdf_fact_extraction
+from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.pdf_document_selection import _store_document_analysis_status
@@ -38,7 +39,7 @@ def _modern_payload(document: dict[str, str], index: int) -> dict[str, object]:
         "text": text,
         "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
         "sha256": hashlib.sha256(f"pdf-bytes-{index}".encode()).hexdigest(),
-        "pages": [{"page": 1, "text": text, "status": "extracted"}],
+        "pages": [{"page": 1, "text": text, "chars": len(text), "status": "extracted"}],
         "page_count": 1,
         "page_text_chars": len(text),
         "text_chars": len(text),
@@ -163,6 +164,273 @@ def test_checkpoint_preparation_rejects_legacy_cache(monkeypatch, tmp_path: Path
         encoding="utf-8",
     )
     assert storage._prepare_pdf_document_checkpoint(sale) is None
+
+
+def test_progress_checkpoint_requires_modern_page_evidence(monkeypatch, tmp_path: Path) -> None:
+    source_url = "https://example.test/pdf-documentary-checkpoint/strict"
+    monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
+    monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", tmp_path)
+    sale, _ = _checkpoint_fixture(tmp_path, source_url)
+    analysis = sale.raw_payload["document_analysis"]
+    payload = json.loads(
+        (tmp_path / f"{storage.sale_storage_id(sale)}.json").read_text(encoding="utf-8")
+    )
+    payload[0].pop("pages")
+
+    assert storage._validate_pdf_document_checkpoint_payload(sale, analysis, payload) is None
+
+    payload = json.loads(
+        (tmp_path / f"{storage.sale_storage_id(sale)}.json").read_text(encoding="utf-8")
+    )
+    payload[0]["text_sha256"] = hashlib.sha256(b"tampered").hexdigest()
+    assert storage._validate_pdf_document_checkpoint_payload(sale, analysis, payload) is None
+
+    payload[0]["text_sha256"] = hashlib.sha256(payload[0]["text"].encode()).hexdigest()
+    payload[0]["pages"][0]["status"] = "failed"
+    payload[0]["pages"][0]["retryable"] = True
+    assert storage._validate_pdf_document_checkpoint_payload(sale, analysis, payload) is None
+
+    payload = json.loads(
+        (tmp_path / f"{storage.sale_storage_id(sale)}.json").read_text(encoding="utf-8")
+    )
+    payload[0]["pages"][0]["page"] = 2
+    assert storage._validate_pdf_document_checkpoint_payload(sale, analysis, payload) is None
+
+    payload[0]["pages"][0]["page"] = 1
+    payload[0]["pages"][0]["chars"] -= 1
+    assert storage._validate_pdf_document_checkpoint_payload(sale, analysis, payload) is None
+
+    payload[0]["pages"][0]["chars"] = len(payload[0]["pages"][0]["text"])
+    payload[0]["pages"][0]["text"] = "different page text"
+    assert storage._validate_pdf_document_checkpoint_payload(sale, analysis, payload) is None
+
+    failed_payload = _modern_payload(sale.documents[0], 0)
+    failed_payload.update({"complete": False, "extraction_status": "incomplete", "failed_pages": [1]})
+    failed_payload["pages"][0].update({"status": "failed", "retryable": True})
+    assert storage._checkpoint_pages_match_payload(failed_payload, require_chars=True) is True
+
+
+def test_progress_checkpoint_keeps_success_pages_with_retryable_diagnostics(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source_url = "https://example.test/pdf-documentary-checkpoint/mixed-pages"
+    monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
+    monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", tmp_path)
+    sale, _ = _checkpoint_fixture(tmp_path, source_url)
+    document = sale.documents[0]
+    payload = _modern_payload(document, 0)
+    successful_text = str(payload["text"])
+    payload.update(
+        {
+            "page_count": 2,
+            "complete": False,
+            "extraction_status": "incomplete",
+            "failed_pages": [2],
+        }
+    )
+    payload["pages"] = [
+        {"page": 1, "text": successful_text, "chars": len(successful_text), "status": "extracted"},
+        {"page": 2, "text": "", "chars": 0, "status": "failed", "retryable": True},
+    ]
+    _store_document_analysis_status(
+        sale,
+        [document],
+        [payload],
+        merged_pdf_texts=[payload],
+    )
+    prepared = storage._validate_pdf_document_checkpoint_payload(
+        sale,
+        sale.raw_payload["document_analysis"],
+        [payload],
+    )
+    assert prepared is not None
+    assert storage._reusable_pdf_checkpoint_pages(payload["pages"]) == [payload["pages"][0]]
+
+    payload["extraction_method"] = "docling"
+    payload["text"] = f"{successful_text} Docling aggregate has additional structure."
+    payload["text_chars"] = len(payload["text"])
+    payload["text_sha256"] = hashlib.sha256(str(payload["text"]).encode()).hexdigest()
+    _store_document_analysis_status(
+        sale,
+        [document],
+        [payload],
+        merged_pdf_texts=[payload],
+    )
+    assert storage._validate_pdf_document_checkpoint_payload(
+        sale,
+        sale.raw_payload["document_analysis"],
+        [payload],
+    ) is not None
+
+
+def test_partial_restore_rejects_complete_manifest_and_legacy_local_cache(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source_url = "https://example.test/pdf-documentary-checkpoint/cache-integrity"
+    monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
+    monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", tmp_path)
+    sale, _ = _checkpoint_fixture(tmp_path, source_url)
+    cache_path = tmp_path / f"{storage.sale_storage_id(sale)}.json"
+    assert storage._has_usable_local_pdf_cache(sale) is True
+
+    legacy_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    legacy_payload[0].pop("pages")
+    cache_path.write_text(json.dumps(legacy_payload), encoding="utf-8")
+    assert storage._has_usable_local_pdf_cache(sale) is False
+
+    partial = _modern_payload(sale.documents[0], 0)
+    partial.update({"complete": False, "extraction_status": "incomplete", "failed_pages": []})
+    downloaded = [dict(sale.documents[0], sha256=partial["sha256"])]
+    _store_document_analysis_status(
+        sale,
+        downloaded,
+        [partial],
+        merged_pdf_texts=[partial],
+    )
+    analysis = sale.raw_payload["document_analysis"]
+    analysis["manifest_complete"] = True
+    row = {
+        "source_url": sale.source_url,
+        "provider": storage.PDF_EXTRACTION_PROVIDER,
+        "model": storage.PDF_EXTRACTION_MODEL,
+        "schema_version": storage.PDF_EXTRACTION_SCHEMA_VERSION,
+        "result": [partial],
+        "updated_at": "2026-09-30T00:00:00+00:00",
+    }
+    assert storage._validated_persisted_pdf_progress(sale, row) is None
+
+
+def test_partial_progress_checkpoint_restores_pages_after_cache_loss(monkeypatch, tmp_path: Path) -> None:
+    """A deferred modern prefix survives aggregate-cache loss without becoming current."""
+
+    db_url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not db_url:
+        pytest.skip("Requires disposable PostgreSQL")
+
+    source_url = "https://example.test/pdf-documentary-checkpoint/partial"
+    pdf_texts_dir = tmp_path / "pdf-texts"
+    page_cache_dir = pdf_texts_dir / "documents"
+    monkeypatch.setattr(storage, "PDF_TEXTS_DIR", pdf_texts_dir)
+    monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", pdf_texts_dir)
+    monkeypatch.setattr(storage, "PDF_DOCUMENT_TEXTS_DIR", page_cache_dir)
+    monkeypatch.setattr(pdf_fact_extraction, "PDF_DOCUMENT_TEXTS_DIR", page_cache_dir)
+
+    documents = [
+        {
+            "label": "PV descriptif",
+            "url": f"{source_url}/pv.pdf",
+            "document_type": "pv_huissier",
+        }
+    ]
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": source_url,
+            "status": "upcoming",
+            "documents": documents,
+        }
+    )
+    local_pdf = tmp_path / "pv.pdf"
+    local_bytes = b"%PDF-1.4 durable partial checkpoint"
+    local_pdf.write_bytes(local_bytes)
+    file_sha = hashlib.sha256(local_bytes).hexdigest()
+    documents[0]["sha256"] = file_sha
+    partial = _modern_payload(documents[0], 0)
+    partial.update(
+        {
+            "file_path": str(local_pdf),
+            "sha256": file_sha,
+            "complete": False,
+            "extraction_status": "incomplete",
+            "failed_pages": [],
+            "pages": [
+                {
+                    "page": 1,
+                    "text": partial["text"],
+                    "chars": partial["text_chars"],
+                    "status": "extracted",
+                }
+            ],
+        }
+    )
+    _store_document_analysis_status(
+        sale,
+        documents,
+        [partial],
+        merged_pdf_texts=[partial],
+    )
+    checked_at = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
+    sale.updated_at = checked_at
+    downloaded = [{**documents[0], "file_path": str(local_pdf), "sha256": file_sha}]
+    # The in-memory checkpoint helper deliberately does not write the local
+    # aggregate cache. Materialize the cache explicitly to model the normal
+    # deferred-extraction path, then remove it after the SQL checkpoint.
+    pdf_fact_extraction._write_pdf_text_cache(sale, [partial])
+    aggregate_cache = pdf_texts_dir / f"{storage.sale_storage_id(sale)}.json"
+    assert aggregate_cache.exists()
+
+    settings = {
+        "supabase_db_url": db_url,
+        "supabase_url": "https://supabase.test",
+        "supabase_service_role_key": "test-only",
+        "pdf_ocr_enabled": True,
+        "pdf_ocr_language": "fra",
+    }
+    monkeypatch.setattr(storage, "load_settings", lambda: settings)
+
+    with _postgres_connect(db_url) as db:
+        try:
+            _prepare_test_db(monkeypatch, db_url, db)
+            monkeypatch.setattr(storage, "load_settings", lambda: settings)
+            _insert_sale(db, sale, checked_at, {"document_analysis": sale.raw_payload["document_analysis"]})
+            token = storage._PUBLICATION_CONNECTION.set(db)
+            try:
+                assert storage.persist_pdf_progress_checkpoint_to_supabase(
+                    sale,
+                    analysis=sale.raw_payload["document_analysis"],
+                    pdf_texts=[partial],
+                ) is True
+            finally:
+                storage._PUBLICATION_CONNECTION.reset(token)
+
+            stored_analysis = db.execute(
+                "select raw_payload->'document_analysis' from public.auction_sales where source_url=%s",
+                (source_url,),
+            ).fetchone()[0]
+            assert stored_analysis["manifest_complete"] is False
+            assert stored_analysis["last_successful_check_at"] is None
+            extraction = db.execute(
+                "select result from public.auction_extractions where source_url=%s",
+                (source_url,),
+            ).fetchone()[0]
+            assert extraction[0]["complete"] is False
+            assert extraction[0]["pages"][0]["text"] == partial["pages"][0]["text"]
+
+            aggregate_cache.unlink()
+            page_cache_dir.mkdir(parents=True, exist_ok=True)
+            restored_token = storage._PUBLICATION_CONNECTION.set(db)
+            try:
+                restored = storage.restore_persisted_pdf_progress_for_sale(
+                    sale,
+                    downloaded_documents=downloaded,
+                )
+            finally:
+                storage._PUBLICATION_CONNECTION.reset(restored_token)
+            assert len(restored) == 1
+            assert restored[0]["complete"] is False
+            assert restored[0]["pages"] == partial["pages"]
+            assert aggregate_cache.exists()
+            assert not documents_are_current(sale)
+            cache_key = hashlib.sha256(
+                local_bytes + str((True, "fra", PDF_TEXT_CACHE_VERSION)).encode()
+            ).hexdigest()
+            restored_page = page_cache_dir / "pages" / cache_key / "1.json"
+            assert restored_page.exists()
+            assert json.loads(restored_page.read_text(encoding="utf-8"))["text"] == partial["pages"][0]["text"]
+        finally:
+            db.rollback()
 
 
 def test_dedicated_checkpoint_owns_queue_and_bounds_session(

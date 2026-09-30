@@ -201,7 +201,15 @@ def test_enrichment_exception_logs_safe_marker_and_forwards_it(monkeypatch, tmp_
     )
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(pdf_enrichment, "load_settings", lambda: {"incremental_enrichment": False})
+    monkeypatch.setattr(
+        pdf_enrichment,
+        "load_settings",
+        lambda: {
+            "incremental_enrichment": False,
+            "pdf_ocr_enabled": False,
+            "pdf_ocr_language": "fra",
+        },
+    )
     monkeypatch.setattr(pdf_enrichment, "download_documents", lambda _sale, stats: [document])
     monkeypatch.setattr(
         pdf_enrichment,
