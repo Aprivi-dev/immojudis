@@ -61,6 +61,7 @@ def test_source_task_deadline_api_is_bounded_and_resets() -> None:
 def test_source_detail_deadline_releases_all_unstarted_claims(monkeypatch) -> None:
     jobs = [_job(id="job-1"), _job(id="job-2")]
     released: list[tuple[str, str]] = []
+    deferred: list[str] = []
     monkeypatch.setattr(
         worker,
         "release_source_detail_job_without_attempt",
@@ -77,16 +78,19 @@ def test_source_detail_deadline_releases_all_unstarted_claims(monkeypatch) -> No
             jobs,
             settings=_settings(),
             deadline=time.monotonic() - 1,
+            on_deferred=deferred.extend,
         )
         == len(jobs)
     )
     assert [job_id for job_id, _reason in released] == ["job-1", "job-2"]
+    assert deferred == ["job-1", "job-2"]
     assert all("deadline" in reason.lower() for _job_id, reason in released)
 
 
 def test_source_detail_deadline_before_publication_releases_without_finish(monkeypatch) -> None:
     sale = _sale()
     released = []
+    deferred: list[str] = []
     finished = []
     published = []
 
@@ -120,16 +124,18 @@ def test_source_detail_deadline_before_publication_releases_without_finish(monke
         lambda *args, **kwargs: finished.append((args, kwargs)),
     )
 
-    assert worker.process_source_detail_job(_job(), settings=_settings()) is False
+    assert worker.process_source_detail_job(_job(), settings=_settings(), on_deferred=deferred.extend) is False
     assert published == []
     assert finished == []
     assert len(released) == 1
+    assert deferred == ["job-1"]
     assert "publishing source-detail revision" in released[0][1]
 
 
 def test_source_detail_batch_deadline_release_is_safe_when_repeated(monkeypatch) -> None:
     jobs = [_job(id="job-1"), _job(id="job-2")]
     released = []
+    deferred: list[str] = []
     error = SourceTaskDeadlineExceeded("starting source-detail fetch", deadline=1, remaining=-1)
     monkeypatch.setattr(
         worker,
@@ -142,8 +148,13 @@ def test_source_detail_batch_deadline_release_is_safe_when_repeated(monkeypatch)
         lambda job, *, reason, settings=None, retry_not_before=None: released.append(job["id"]),
     )
 
-    assert worker.run_source_detail_jobs(jobs, settings=_settings()) == len(jobs)
+    assert worker.run_source_detail_jobs(
+        jobs,
+        settings=_settings(),
+        on_deferred=deferred.extend,
+    ) == len(jobs)
     assert released == ["job-1", "job-2"]
+    assert deferred == ["job-1", "job-2"]
 
 
 def test_source_detail_gate_fails_closed_without_database():

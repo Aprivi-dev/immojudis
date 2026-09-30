@@ -255,6 +255,9 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
         ],
     )
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    # This ordering test mocks the extractor itself; the progression and
+    # strict-manifest contract is covered by the bounded-pass tests.
+    monkeypatch.setattr(queued_runner, "manifest_is_complete", lambda *_args: True)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
     monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", lambda current: calls.append("pdf") or SimpleNamespace(errors=0))
     monkeypatch.setattr(
@@ -411,6 +414,8 @@ def test_enrichment_queue_cancels_terminal_facts_but_keeps_display_independent(m
         current_sale.raw_payload["document_analysis"] = {
             "checked_at": datetime.now(UTC).isoformat(),
             "input_fingerprint": document_fingerprint(current_sale.documents),
+            "progress_schema_version": 1,
+            "manifest_complete": True,
             "documents_listed": 1,
             "documents_extracted": 0,
             "failed_documents": 0,
@@ -474,6 +479,10 @@ def test_enrichment_queue_completes_pdf_job_when_documents_are_policy_blocked(mo
 
     def policy_blocked_pdf(current_sale):
         current_sale.raw_payload["document_analysis"] = {
+            "checked_at": datetime.now(UTC).isoformat(),
+            "input_fingerprint": document_fingerprint(current_sale.documents),
+            "progress_schema_version": 1,
+            "manifest_complete": True,
             "failed_documents": 0,
             "failed_document_urls": [],
             "blocked_documents": 1,
@@ -482,6 +491,8 @@ def test_enrichment_queue_completes_pdf_job_when_documents_are_policy_blocked(mo
                 "url": current_sale.documents[0]["url"],
                 "reason": "robots.txt disallows fetching this Licitor document",
             }],
+            "skipped_document_urls": [],
+            "terminal_document_urls": [],
             "coverage_status": "partial",
         }
         return SimpleNamespace(errors=0)
@@ -1085,7 +1096,7 @@ def test_worker_budget_breaker_uses_real_batch_and_keeps_detail_claims(monkeypat
     monkeypatch.setattr(
         queued_runner,
         "run_source_detail_jobs",
-        lambda jobs, *, settings, clients: len(jobs),
+        lambda jobs, *, settings, clients, on_deferred=None: len(jobs),
     )
     monkeypatch.setattr(
         queued_runner,
@@ -1321,7 +1332,7 @@ def test_enrichment_worker_reuses_provider_clients_between_detail_claims(monkeyp
         except StopIteration:
             return []
 
-    def process_details(*args, settings, clients) -> int:
+    def process_details(*args, settings, clients, on_deferred=None) -> int:
         observed_maps.append(clients)
         client = clients.setdefault(
             "https://provider.test",
@@ -1532,6 +1543,20 @@ def test_fact_job_stops_waiting_when_pdf_prerequisite_is_terminal(monkeypatch) -
             "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
         }
     )
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": datetime.now(UTC).isoformat(),
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "progress_schema_version": 1,
+        "manifest_complete": True,
+        "documents_listed": 1,
+        "documents_extracted": 0,
+        "failed_documents": 0,
+        "blocked_documents": 1,
+        "blocked_document_urls": [sale.documents[0]["url"]],
+        "blocked_document_reasons": [{"url": sale.documents[0]["url"], "reason": "robots"}],
+        "skipped_document_urls": [],
+        "terminal_document_urls": [],
+    }
     job = {
         "id": "job-fact-terminal-pdf",
         "source_url": sale.source_url,
@@ -1563,6 +1588,460 @@ def test_fact_job_stops_waiting_when_pdf_prerequisite_is_terminal(monkeypatch) -
     assert finished[0][0] == job["id"]
     assert finished[0][1]["cancelled"] is True
     assert finished[0][1]["error_message"].startswith("review_required:")
+
+
+def test_fact_job_with_partial_pdf_manifest_is_deferred_without_llm(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/pdf-partial-manifest",
+            "description": "Maison",
+            "documents": [
+                {"label": "PV", "url": "https://example.test/pv.pdf"},
+                {"label": "CCV", "url": "https://example.test/ccv.pdf"},
+            ],
+        }
+    )
+    first_url, second_url = [document["url"] for document in sale.documents]
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": datetime.now(UTC).isoformat(),
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "progress_schema_version": 1,
+        "manifest_complete": False,
+        "failed_documents": 0,
+        "failed_document_urls": [],
+        "pending_document_urls": [second_url],
+        "document_progress": [],
+        "blocked_document_urls": [],
+        "skipped_document_urls": [],
+        "terminal_document_urls": [],
+    }
+    job = {
+        "id": "job-fact-partial-pdf",
+        "source_url": sale.source_url,
+        "job_type": "fact_extraction",
+        "attempt_count": 1,
+        "locked_at": "2026-09-30T08:00:00+00:00",
+    }
+    deferred = []
+    finished = []
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: [job],
+    )
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: True)
+    monkeypatch.setattr(
+        queued_runner,
+        "create_llm_client",
+        lambda: (_ for _ in ()).throw(AssertionError("partial PDF evidence must not invoke the LLM")),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "defer_budget_jobs",
+        lambda jobs, error: deferred.append((jobs, error)),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY) == 1
+    assert deferred and deferred[0][0] == [job]
+    assert finished == []
+    assert first_url not in sale.raw_payload["document_analysis"]["pending_document_urls"]
+    assert second_url in sale.raw_payload["document_analysis"]["pending_document_urls"]
+
+
+def test_fact_job_with_current_exhausted_pdf_failure_is_reviewed_without_llm(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/pdf-exhausted",
+            "description": "Maison",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    checked_at = datetime.now(UTC).isoformat()
+    document_url = sale.documents[0]["url"]
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": checked_at,
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "progress_schema_version": 1,
+        "manifest_complete": False,
+        "failed_documents": 1,
+        "failed_document_urls": [document_url],
+        "pending_document_urls": [document_url],
+        "document_progress": [],
+        "blocked_document_urls": [],
+        "skipped_document_urls": [],
+        "terminal_document_urls": [],
+    }
+    job = {
+        "id": "job-fact-exhausted-pdf",
+        "source_url": sale.source_url,
+        "job_type": "fact_extraction",
+        "attempt_count": 1,
+        "locked_at": "2026-09-30T08:00:00+00:00",
+    }
+    finished = []
+    deferred = []
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: [job],
+    )
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(
+        queued_runner,
+        "pdf_enrichment_input_hash_for_sale",
+        lambda *_args, **_kwargs: "pipeline_v2:current",
+    )
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(
+        queued_runner,
+        "read_pdf_job_states_for_sale",
+        lambda _, **_kwargs: [{
+            "status": "failed",
+            "attempt_count": 4,
+            "max_attempts": 4,
+            "input_hash": "pipeline_v2:current",
+            "updated_at": checked_at,
+        }],
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "has_eligible_pdf_job_for_sale",
+        lambda _: (_ for _ in ()).throw(AssertionError("exhausted PDF state must not recheck eligibility")),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "create_llm_client",
+        lambda: (_ for _ in ()).throw(AssertionError("exhausted PDF evidence must not invoke the LLM")),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "defer_budget_jobs",
+        lambda jobs, error: deferred.append((jobs, error)),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY) == 1
+    assert deferred == []
+    assert finished == [
+        (
+            job["id"],
+            {
+                "succeeded": False,
+                "cancelled": True,
+                "error_message": "review_required: PDF extraction retry budget exhausted",
+                "attempt_count": job["attempt_count"],
+                "locked_at": job["locked_at"],
+            },
+        )
+    ]
+
+
+def test_pdf_retry_cap_ignores_exhausted_previous_generation(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/pdf-generation-boundary",
+            "description": "Maison",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    document_url = sale.documents[0]["url"]
+    checked_at = "2026-09-30T09:00:00+00:00"
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": checked_at,
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "failed_documents": 1,
+        "failed_document_urls": [document_url],
+    }
+    monkeypatch.setattr(
+        queued_runner,
+        "pdf_enrichment_input_hash_for_sale",
+        lambda *_args, **_kwargs: "pipeline_v2:current",
+    )
+    states = [
+        {
+            "status": "failed",
+            "attempt_count": 4,
+            "max_attempts": 4,
+            "input_hash": "pipeline_v2:old",
+            "created_at": "2026-09-29T09:00:00+00:00",
+            "updated_at": "2026-09-30T12:00:00+00:00",
+        },
+        {
+            "status": "queued",
+            "attempt_count": 0,
+            "max_attempts": 4,
+            "input_hash": "pipeline_v2:current",
+            "created_at": "2026-09-30T09:30:00+00:00",
+            "updated_at": "2026-09-30T09:30:00+00:00",
+        },
+    ]
+    monkeypatch.setattr(
+        queued_runner,
+        "read_pdf_job_states_for_sale",
+        lambda _, **_kwargs: states,
+    )
+
+    assert not queued_runner._pdf_failure_reached_retry_cap(sale, sale.source_url)
+
+    states[1].update(
+        {
+            "status": "failed",
+            "attempt_count": 4,
+            "updated_at": "2026-09-30T10:00:00+00:00",
+        }
+    )
+    assert queued_runner._pdf_failure_reached_retry_cap(sale, sale.source_url)
+
+
+def test_pdf_retry_cap_accepts_current_exhaustion_without_failure_marker(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/pdf-download-failure-before-marker",
+            "description": "Maison",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    document_url = sale.documents[0]["url"]
+    checked_at = "2026-09-30T09:00:00+00:00"
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": checked_at,
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "progress_schema_version": 1,
+        "manifest_complete": False,
+        # The download failed before analysis could attach a URL-level marker.
+        "failed_documents": 0,
+        "failed_document_urls": [],
+        "pending_document_urls": [document_url],
+    }
+    monkeypatch.setattr(
+        queued_runner,
+        "pdf_enrichment_input_hash_for_sale",
+        lambda *_args, **_kwargs: "pipeline_v2:current",
+    )
+    states = [
+        {
+            "status": "failed",
+            "attempt_count": 4,
+            "max_attempts": 4,
+            "input_hash": "pipeline_v2:old",
+            "created_at": "2026-09-29T09:00:00+00:00",
+            "updated_at": "2026-09-30T12:00:00+00:00",
+        },
+        {
+            "status": "queued",
+            "attempt_count": 0,
+            "max_attempts": 4,
+            "input_hash": "pipeline_v2:current",
+            "created_at": "2026-09-30T09:30:00+00:00",
+            "updated_at": "2026-09-30T09:30:00+00:00",
+        },
+    ]
+    monkeypatch.setattr(
+        queued_runner,
+        "read_pdf_job_states_for_sale",
+        lambda _, **_kwargs: states,
+    )
+
+    # A newer queued generation with the same input revision is still
+    # actionable, so it must prevent fact cancellation.
+    assert not queued_runner._pdf_failure_reached_retry_cap(sale, sale.source_url)
+
+    states[1].update(
+        {
+            "status": "failed",
+            "attempt_count": 4,
+            "updated_at": "2026-09-30T10:00:00+00:00",
+        }
+    )
+    # The exact current row proves exhaustion even though the analysis has no
+    # failed_documents/failed_document_urls marker.
+    assert queued_runner._pdf_failure_reached_retry_cap(sale, sale.source_url)
+
+    # Missing or unreadable queue state is inconclusive and must leave the
+    # dependent claim waiting for a later PDF observation.
+    monkeypatch.setattr(queued_runner, "read_pdf_job_states_for_sale", lambda _, **_kwargs: [])
+    assert not queued_runner._pdf_failure_reached_retry_cap(sale, sale.source_url)
+    monkeypatch.setattr(
+        queued_runner,
+        "read_pdf_job_states_for_sale",
+        lambda _, **_kwargs: (_ for _ in ()).throw(RuntimeError("queue unavailable")),
+    )
+    assert not queued_runner._pdf_failure_reached_retry_cap(sale, sale.source_url)
+
+
+def test_partial_pdf_checkpoint_failure_consumes_pdf_retry(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/pdf-checkpoint-persistence",
+            "description": "Maison",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    document_url = sale.documents[0]["url"]
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": "2026-09-30T09:00:00+00:00",
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "progress_schema_version": 1,
+        "manifest_complete": False,
+        "failed_documents": 0,
+        "failed_document_urls": [],
+        "pending_document_urls": [document_url],
+        "document_progress": [],
+        "blocked_document_urls": [],
+        "skipped_document_urls": [],
+        "terminal_document_urls": [],
+    }
+    job = {
+        "id": "job-pdf-checkpoint-persistence",
+        "source_url": sale.source_url,
+        "job_type": "pdf",
+        "attempt_count": 2,
+        "locked_at": "2026-09-30T08:00:00+00:00",
+    }
+    finished = []
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: [job],
+    )
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "restore_persisted_pdf_progress_for_sale", lambda _: [])
+    monkeypatch.setattr(queued_runner, "documents_are_current", lambda _: False)
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_from_pdfs",
+        lambda _: SimpleNamespace(errors=0),
+    )
+    monkeypatch.setattr(queued_runner, "manifest_is_complete", lambda *_args: False)
+    monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(
+        limit=1, family=queued_runner.ENRICHMENT_FAMILY
+    ) == 1
+    assert finished == [
+        (
+            job["id"],
+            {
+                "succeeded": False,
+                "error_message": "PDF document checkpoint was not persisted; retry required",
+                "attempt_count": job["attempt_count"],
+                "locked_at": job["locked_at"],
+            },
+        )
+    ]
+
+
+def test_shared_pdf_and_fact_claim_defers_fact_attempt_after_pdf_failure(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/pdf-fact-shared-failure",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    document_url = sale.documents[0]["url"]
+    jobs = [
+        {
+            "id": "job-pdf-shared-failure",
+            "source_url": sale.source_url,
+            "job_type": "pdf",
+            "attempt_count": 2,
+            "locked_at": "2026-09-30T08:00:00+00:00",
+        },
+        {
+            "id": "job-facts-shared-failure",
+            "source_url": sale.source_url,
+            "job_type": "fact_extraction",
+            "attempt_count": 2,
+            "locked_at": "2026-09-30T08:00:00+00:00",
+        },
+    ]
+    finished = []
+    deferred = []
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: jobs,
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+
+    def failed_pdf(current_sale):
+        current_sale.raw_payload["document_analysis"] = {
+            "checked_at": datetime.now(UTC).isoformat(),
+            "input_fingerprint": document_fingerprint(current_sale.documents),
+            "progress_schema_version": 1,
+            "manifest_complete": False,
+            "failed_documents": 0,
+            "failed_document_urls": [document_url],
+            "pending_document_urls": [document_url],
+            "blocked_document_urls": [],
+            "skipped_document_urls": [],
+            "terminal_document_urls": [],
+            "document_progress": [],
+            "cache_proof": {"version": 1, "documents": []},
+            "profiles": [],
+        }
+        raise RuntimeError("Document extraction incomplete; retry required")
+
+    monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", failed_pdf)
+    monkeypatch.setattr(
+        queued_runner,
+        "create_llm_client",
+        lambda: (_ for _ in ()).throw(AssertionError("PDF failure must block the LLM")),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "upsert_sales_to_supabase",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("failed PDF must not publish")),
+    )
+    checkpoint_calls = []
+    monkeypatch.setattr(
+        queued_runner,
+        "persist_pdf_document_checkpoint_to_supabase",
+        lambda current_sale, **_kwargs: checkpoint_calls.append(current_sale.source_url) or False,
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "defer_budget_jobs",
+        lambda jobs_to_defer, error: deferred.append((jobs_to_defer, error)),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=2) == 2
+    assert [job["id"] for job in deferred[0][0]] == [jobs[1]["id"]]
+    assert [job_id for job_id, _kwargs in finished] == [jobs[0]["id"]]
+    assert finished[0][1]["succeeded"] is False
+    assert checkpoint_calls == [sale.source_url]
 
 
 def test_general_budget_does_not_defer_completed_fact_claim_job(monkeypatch) -> None:
@@ -1682,6 +2161,81 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
     assert queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY) == 1
     assert bool(deferred) is should_defer
     assert finished == [] if should_defer else finished[0][1]['succeeded'] is False
+
+
+def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) -> None:
+    from src.pdf_enrichment import PdfExtractionDeferred
+    from src.pipeline_usage import QueueJobDeferred
+
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/pdf-no-progress-shared",
+            "description": "Maison",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    jobs = [
+        {
+            "id": "job-pdf-no-progress",
+            "source_url": sale.source_url,
+            "job_type": "pdf",
+            "attempt_count": 2,
+            "locked_at": "2026-09-30T08:00:00+00:00",
+        },
+        {
+            "id": "job-facts-no-progress",
+            "source_url": sale.source_url,
+            "job_type": "fact_extraction",
+            "attempt_count": 2,
+            "locked_at": "2026-09-30T08:00:00+00:00",
+        },
+        {
+            "id": "job-display-no-progress",
+            "source_url": sale.source_url,
+            "job_type": "display_description",
+            "attempt_count": 1,
+            "locked_at": "2026-09-30T08:00:00+00:00",
+        },
+    ]
+    deferred = []
+    finished = []
+    error = PdfExtractionDeferred(
+        "OCR pass budget reached without a new page",
+        checkpointed_pages=0,
+        total_pages=1,
+        new_progress_pages=0,
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: jobs,
+    )
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_from_pdfs",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "defer_budget_jobs",
+        lambda jobs_to_defer, exc: deferred.append((jobs_to_defer, exc)),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(
+        limit=3, family=queued_runner.ENRICHMENT_FAMILY
+    ) == 3
+    assert [job["id"] for job in deferred[0][0]] == [jobs[1]["id"], jobs[2]["id"]]
+    assert isinstance(deferred[0][1], QueueJobDeferred)
+    assert [job_id for job_id, _kwargs in finished] == [jobs[0]["id"]]
+    assert finished[0][1]["succeeded"] is False
 
 
 def test_pdf_deadline_deferral_restores_claim_without_consuming_retry(monkeypatch) -> None:

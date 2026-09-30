@@ -122,6 +122,13 @@ def documents_are_current(sale: Any) -> bool:
         or failed_documents != 0
     ):
         return False
+    modern_manifest = analysis.get("progress_schema_version") == 1
+    if modern_manifest and analysis.get("manifest_complete") is not True:
+        return False
+    if modern_manifest:
+        pending_http = analysis.get("http_revalidation_pending_urls")
+        if pending_http is not None and (not isinstance(pending_http, list) or pending_http):
+            return False
     if not documents:
         return True
 
@@ -223,6 +230,8 @@ def documents_are_current(sale: Any) -> bool:
             and profile.get("complete") is True
             and not profile.get("failed_pages")
         ):
+            return False
+        if modern_manifest and not timestamp_is_fresh(item.get("http_checked_at")):
             return False
     expected_hashes = {
         url: clean_text(item.get("sha256"))

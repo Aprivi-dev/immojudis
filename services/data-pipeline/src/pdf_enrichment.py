@@ -23,7 +23,7 @@ from xml.etree import ElementTree
 import fitz
 import httpx
 
-from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, load_settings
+from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
 from src.freshness import invalidate_analysis, timestamp_is_fresh
 from src.models import AuctionSale
 from src.normalize import (
@@ -68,14 +68,13 @@ from src.pdf_page_analysis import (
 from src.pdf_page_analysis import (
     is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
 )
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION, merge_pdf_cache, stale_complete_document_urls
 
 LOGGER = logging.getLogger(__name__)
 
 DOCUMENT_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 
 MAX_DOCUMENT_REDIRECTS = 5
-
-PDF_TEXT_CACHE_VERSION = "pdf_text_v3_surface_calibration"
 
 DOCUMENT_FACTS_VERSION = "document_facts_v2_surface_reasoning"
 
@@ -187,7 +186,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     _invalidate_replaced_document_facts(sale, downloaded_documents)
     pdf_texts: list[dict[str, object]] = []
     failed_document_diagnostics: list[dict[str, object]] = []
-    for document in _select_documents_for_extraction(downloaded_documents, sale=sale):
+    for document in _select_documents_for_extraction(downloaded_documents, sale=sale, revalidate_urls={str(item.get("url") or "") for item in downloaded_documents}):
         _ensure_pdf_deadline(operation="starting document extraction")
         file_path = Path(document["file_path"])
         try:
@@ -233,16 +232,18 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         stats.documents_processed += 1
         pdf_texts.append(payload)
 
-    if pdf_texts:
-        _write_pdf_text_cache(sale, pdf_texts)
+    merged_pdf_texts = merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures)
+    if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures:
+        _write_pdf_text_cache(sale, merged_pdf_texts)
         before = sale.raw_text or ""
-        enrich_sale_from_pdf_text(sale, pdf_texts)
+        enrich_sale_from_pdf_text(sale, merged_pdf_texts)
         if len(sale.raw_text or "") > len(before):
             stats.raw_text_enriched += 1
     _store_document_analysis_status(
         sale,
         downloaded_documents,
         pdf_texts,
+        merged_pdf_texts=merged_pdf_texts,
         blocked_document_urls=stats.blocked_document_urls,
         permanent_document_failures=stats.permanent_document_failures,
         failed_document_diagnostics=failed_document_diagnostics,
@@ -301,7 +302,7 @@ def download_documents(
     }
     downloaded: list[dict[str, str]] = []
     seen_urls: set[str] = set()
-    for document in _select_documents_for_extraction(sale.documents, sale=sale):
+    for document in _select_documents_for_extraction(sale.documents, sale=sale, revalidate_urls=stale_complete_document_urls(sale.raw_payload.get("document_analysis"), sale.documents, sale_dir, _document_filename)):
         _ensure_pdf_deadline(operation="selecting document")
         url = document.get("url")
         document_type = _canonical_document_type(
@@ -418,12 +419,13 @@ def download_documents(
                     temporary = file_path.with_suffix(file_path.suffix + ".tmp")
                     temporary.write_bytes(content)
                     temporary.replace(file_path)
-                    metadata_path.write_text(json.dumps({
+                    metadata = {
                         "checked_at": datetime.now(UTC).isoformat(),
                         "etag": response_headers.get("etag"),
                         "last_modified": response_headers.get("last-modified"),
                         "sha256": hashlib.sha256(content).hexdigest(),
-                    }))
+                    }
+                    metadata_path.write_text(json.dumps(metadata))
                     if stats:
                         stats.downloaded += 1
                     download_error = None
@@ -453,7 +455,6 @@ def download_documents(
                     if stats:
                         stats.errors += 1
                 continue
-
         _ensure_pdf_deadline(operation="finalizing downloaded document")
         enriched_document = dict(document)
         file_format = (
@@ -469,6 +470,8 @@ def download_documents(
         enriched_document["document_type"] = document_type
         enriched_document["file_path"] = str(file_path)
         enriched_document["sha256"] = hashlib.sha256(file_path.read_bytes()).hexdigest()
+        enriched_document["http_checked_at"] = str(metadata.get("checked_at") or "")
+        document["sha256"] = enriched_document["sha256"]
         downloaded.append(enriched_document)
     return downloaded
 
@@ -1378,7 +1381,6 @@ def _should_docling_ocr(
         return False
     if mode in {"1", "true", "yes", "on", "always"}:
         return True
-
     profile = profile or _profile_pdf_for_docling(path)
     if profile["page_count"] > int(settings["pdf_docling_ocr_max_pages"]):
         LOGGER.info(

@@ -2120,6 +2120,55 @@ def test_download_documents_reuses_fresh_permanent_failure_without_network(tmp_p
     ]
 
 
+def test_download_documents_retries_permanent_failure_after_http_ttl(tmp_path, monkeypatch) -> None:
+    class NotFoundResponse:
+        status_code = 404
+        headers = {"content-type": "text/html"}
+        content = b"not found"
+
+        def raise_for_status(self) -> None:
+            raise AssertionError("the permanent status should be classified before raise_for_status")
+
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-expiring-permanent.html",
+            "documents": [{"label": "PV", "url": "https://source.example/pv.pdf", "type": "pdf"}],
+        }
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "src.pdf_enrichment._send_pinned_document_request",
+        lambda url, **_kwargs: (calls.append(url), NotFoundResponse())[1],
+    )
+
+    first_stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=first_stats) == []
+    _store_document_analysis_status(
+        sale,
+        [],
+        [],
+        permanent_document_failures=first_stats.permanent_document_failures,
+    )
+    assert len(calls) == 1
+
+    second_stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=second_stats) == []
+    assert len(calls) == 1
+
+    metadata_path = next(tmp_path.rglob("*.http.json"))
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["checked_at"] = "2020-01-01T00:00:00+00:00"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    third_stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=third_stats) == []
+    assert len(calls) == 2
+    assert third_stats.permanent_document_failures == [
+        {"url": "https://source.example/pv.pdf", "reason": "not_found"}
+    ]
+
+
 def test_download_documents_keeps_server_errors_retryable(tmp_path, monkeypatch) -> None:
     response = httpx.Response(503, headers={"content-type": "text/html"})
     monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", lambda *args, **kwargs: response)
@@ -2875,7 +2924,7 @@ def test_pdf_text_cache_writer_satisfies_freshness_only_for_complete_payload(tmp
         "text": text,
         "pages": [{"page": 1, "text": text, "status": "extracted"}],
         "cache_version": "pdf_text_v3_surface_calibration",
-        "sha256": "pdf-complete",
+        "sha256": "a" * 64,
         "page_count": 1,
         "text_chars": len(text),
         "page_text_chars": len(text),
