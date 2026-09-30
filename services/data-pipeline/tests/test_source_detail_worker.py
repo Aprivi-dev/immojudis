@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -9,6 +10,12 @@ import pytest
 
 from src import source_detail_worker as worker
 from src.models import AuctionSale
+from src.source_task_deadline import (
+    SourceTaskDeadlineExceeded,
+    source_task_bounded_timeout,
+    source_task_deadline_remaining,
+    source_task_deadline_scope,
+)
 
 
 def _job(**overrides):
@@ -35,6 +42,108 @@ def _sale():
 
 def _settings():
     return {"user_agent": "test", "supabase_db_url": None}
+
+
+def test_source_task_deadline_api_is_bounded_and_resets() -> None:
+    assert source_task_deadline_remaining() is None
+    deadline = time.monotonic() + 5
+    with source_task_deadline_scope(deadline):
+        remaining = source_task_deadline_remaining()
+        assert remaining is not None and 0 < remaining <= 5
+        assert 0 < source_task_bounded_timeout(30, "test HTTP") <= remaining
+    assert source_task_deadline_remaining() is None
+
+    with source_task_deadline_scope(time.monotonic() - 1):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="test HTTP"):
+            source_task_bounded_timeout(30, "test HTTP")
+
+
+def test_source_detail_deadline_releases_all_unstarted_claims(monkeypatch) -> None:
+    jobs = [_job(id="job-1"), _job(id="job-2")]
+    released: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        worker,
+        "release_source_detail_job_without_attempt",
+        lambda job, *, reason, settings=None, retry_not_before=None: released.append((job["id"], reason)),
+    )
+    monkeypatch.setattr(
+        worker,
+        "process_source_detail_job",
+        lambda *args, **kwargs: pytest.fail("expired source-detail work must not start"),
+    )
+
+    assert (
+        worker.run_source_detail_jobs(
+            jobs,
+            settings=_settings(),
+            deadline=time.monotonic() - 1,
+        )
+        == len(jobs)
+    )
+    assert [job_id for job_id, _reason in released] == ["job-1", "job-2"]
+    assert all("deadline" in reason.lower() for _job_id, reason in released)
+
+
+def test_source_detail_deadline_before_publication_releases_without_finish(monkeypatch) -> None:
+    sale = _sale()
+    released = []
+    finished = []
+    published = []
+
+    def ensure(operation: str):
+        if operation == "publishing source-detail revision":
+            raise SourceTaskDeadlineExceeded(operation, deadline=1, remaining=-1)
+        return 10.0
+
+    monkeypatch.setattr(worker, "ensure_source_task_deadline", ensure)
+    monkeypatch.setattr(worker, "source_detail_source_enabled", lambda source, settings: True)
+    monkeypatch.setattr(worker, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(
+        worker,
+        "fetch_public_detail",
+        lambda *args: (args[1], "body", {"source_url": args[1], "source_name": "licitor"}),
+    )
+    monkeypatch.setattr(worker, "prepare_source_revision", lambda existing, raw: existing)
+    monkeypatch.setattr(
+        worker,
+        "publish_source_revision",
+        lambda *args: published.append(args) or pytest.fail("deadline must prevent publication"),
+    )
+    monkeypatch.setattr(
+        worker,
+        "release_source_detail_job_without_attempt",
+        lambda job, *, reason, settings=None, retry_not_before=None: released.append((job["id"], reason)),
+    )
+    monkeypatch.setattr(
+        worker,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda *args, **kwargs: finished.append((args, kwargs)),
+    )
+
+    assert worker.process_source_detail_job(_job(), settings=_settings()) is False
+    assert published == []
+    assert finished == []
+    assert len(released) == 1
+    assert "publishing source-detail revision" in released[0][1]
+
+
+def test_source_detail_batch_deadline_release_is_safe_when_repeated(monkeypatch) -> None:
+    jobs = [_job(id="job-1"), _job(id="job-2")]
+    released = []
+    error = SourceTaskDeadlineExceeded("starting source-detail fetch", deadline=1, remaining=-1)
+    monkeypatch.setattr(
+        worker,
+        "process_source_detail_job",
+        lambda *args, **kwargs: (_ for _ in ()).throw(error),
+    )
+    monkeypatch.setattr(
+        worker,
+        "release_source_detail_job_without_attempt",
+        lambda job, *, reason, settings=None, retry_not_before=None: released.append(job["id"]),
+    )
+
+    assert worker.run_source_detail_jobs(jobs, settings=_settings()) == len(jobs)
+    assert released == ["job-1", "job-2"]
 
 
 def test_source_detail_gate_fails_closed_without_database():

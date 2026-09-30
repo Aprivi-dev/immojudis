@@ -3,6 +3,7 @@ import json
 import httpx
 import pytest
 
+from src.source_task_deadline import SourceTaskDeadlineExceeded, source_task_deadline_scope
 from src.sources.cloud_transport import SourceRelayTransport, configured_transport
 
 
@@ -111,3 +112,102 @@ def test_relay_redirect_is_checked_by_source_guard(monkeypatch):
     assert robots_request["url"] == "https://www.petitesaffiches.fr/robots.txt"
     assert robots_request["method"] == "GET"
     client._client.close()
+
+
+def test_relay_deadline_expires_before_post_after_request_body(monkeypatch):
+    now = [99.0]
+    monkeypatch.setattr("src.source_task_deadline.time.monotonic", lambda: now[0])
+    calls = []
+
+    def upstream(request):
+        calls.append(request)
+        return httpx.Response(200, headers={"x-immojudis-source-relay": "1"}, text="ok")
+
+    transport = SourceRelayTransport("https://example.supabase.co/relay", "test")
+    transport.client.close()
+    transport.client = httpx.Client(transport=httpx.MockTransport(upstream))
+    request = httpx.Request("GET", "https://www.petitesaffiches.fr/annonce")
+    original_read = request.read
+
+    def read_body():
+        body = original_read()
+        now[0] = 100.0
+        return body
+
+    request.read = read_body
+    with source_task_deadline_scope(100.0), pytest.raises(
+        SourceTaskDeadlineExceeded, match="preparing source relay POST"
+    ):
+        transport.handle_request(request)
+    assert calls == []
+    transport.close()
+
+
+def test_relay_timeout_is_bounded_by_time_remaining_after_body(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr("src.source_task_deadline.time.monotonic", lambda: now[0])
+    seen = {}
+
+    def upstream(request):
+        seen["timeout"] = request.extensions["timeout"]
+        return httpx.Response(200, headers={"x-immojudis-source-relay": "1"}, text="ok")
+
+    transport = SourceRelayTransport("https://example.supabase.co/relay", "test")
+    transport.client.close()
+    transport.client = httpx.Client(transport=httpx.MockTransport(upstream))
+    request = httpx.Request(
+        "GET",
+        "https://www.petitesaffiches.fr/annonce",
+        extensions={
+            "timeout": {"connect": 30.0, "read": 30.0, "write": 30.0, "pool": 30.0}
+        },
+    )
+    original_read = request.read
+
+    def read_body():
+        body = original_read()
+        now[0] = 106.0
+        return body
+
+    request.read = read_body
+    with source_task_deadline_scope(110.0):
+        response = transport.handle_request(request)
+    assert response.text == "ok"
+    assert seen["timeout"] == {
+        "connect": pytest.approx(4.0),
+        "read": pytest.approx(4.0),
+        "write": pytest.approx(4.0),
+        "pool": pytest.approx(4.0),
+    }
+    response.close()
+    transport.close()
+
+
+def test_relay_defaults_to_forty_seconds_without_deadline_scope():
+    seen = {}
+
+    def upstream(request):
+        seen["timeout"] = request.extensions["timeout"]
+        return httpx.Response(200, headers={"x-immojudis-source-relay": "1"}, text="ok")
+
+    transport = SourceRelayTransport("https://example.supabase.co/relay", "test")
+    transport.client.close()
+    transport.client = httpx.Client(transport=httpx.MockTransport(upstream))
+    response = transport.handle_request(
+        httpx.Request(
+            "GET",
+            "https://www.petitesaffiches.fr/annonce",
+            extensions={
+                "timeout": {"connect": 3.0, "read": 3.0, "write": 3.0, "pool": 3.0}
+            },
+        )
+    )
+    assert response.text == "ok"
+    assert seen["timeout"] == {
+        "connect": pytest.approx(40.0),
+        "read": pytest.approx(40.0),
+        "write": pytest.approx(40.0),
+        "pool": pytest.approx(40.0),
+    }
+    response.close()
+    transport.close()

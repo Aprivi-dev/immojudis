@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -22,6 +23,11 @@ from src.source_detail import (
     publish_source_revision,
 )
 from src.source_detail_reuse import complete_already_verified_detail_job
+from src.source_task_deadline import (
+    SourceTaskDeadlineExceeded,
+    ensure_source_task_deadline,
+    source_task_deadline_scope,
+)
 from src.sources.common import is_allowed_origin_url
 from src.storage import supabase_client as storage
 from src.storage.supabase_client import (
@@ -63,6 +69,7 @@ def run_source_detail_jobs(
     *,
     settings: dict[str, Any] | None = None,
     clients: dict[str, Any] | None = None,
+    deadline: float | None = None,
 ) -> int:
     """Run claimed source-detail jobs in claim order.
 
@@ -70,23 +77,75 @@ def run_source_detail_jobs(
     keys that map by provider origin, so this also gives aliases of the same
     provider one polite request cadence.  Jobs are intentionally processed one
     at a time: each following job re-reads its sale after the preceding detail
-    has been published.
+    has been published.  ``deadline`` is an absolute monotonic cutoff for
+    direct callers; the queue worker normally provides the same cutoff through
+    the inherited task-local scope.
     """
     batch = [job for job in jobs if str(job.get("job_type") or "") == "source_detail"]
     if not batch:
         return 0
     active_settings = settings if settings is not None else load_settings()
     provider_clients = clients if clients is not None else {}
-    for job in batch:
-        try:
-            process_source_detail_job(job, settings=active_settings, clients=provider_clients)
-        except Exception:
-            # A malformed queue row or an unexpected adapter failure must not
-            # prevent the remaining providers in the claimed bounded batch
-            # from being attempted.  The job itself is finished by the
-            # per-job error path whenever possible.
-            LOGGER.exception("Source-detail worker failed for job %s", job.get("id"))
+    deadline_scope = source_task_deadline_scope(deadline) if deadline is not None else nullcontext()
+    with deadline_scope:
+        for index, job in enumerate(batch):
+            try:
+                ensure_source_task_deadline("starting source-detail job")
+                process_source_detail_job(job, settings=active_settings, clients=provider_clients)
+            except SourceTaskDeadlineExceeded as exc:
+                _release_deadline_claims(
+                    batch[index:],
+                    settings=active_settings,
+                    operation=exc.operation,
+                )
+                LOGGER.info(
+                    "Source-detail worker deadline reached; released %s claimed job(s)",
+                    len(batch) - index,
+                )
+                break
+            except Exception:
+                # A malformed queue row or an unexpected adapter failure must not
+                # prevent the remaining providers in the claimed bounded batch
+                # from being attempted.  The job itself is finished by the
+                # per-job error path whenever possible.
+                LOGGER.exception("Source-detail worker failed for job %s", job.get("id"))
     return len(batch)
+
+
+def _release_deadline_claims(
+    jobs: Iterable[dict[str, Any]],
+    *,
+    settings: dict[str, Any],
+    operation: str,
+) -> None:
+    """Return unstarted deadline claims without consuming an attempt.
+
+    The guarded release is intentionally safe to repeat: a claim that was
+    already released, completed, or reclaimed by another worker is a no-op.
+    """
+
+    reason = f"Source-detail task deadline reached during {operation}"
+    for job in jobs:
+        release_source_detail_job_without_attempt(
+            job,
+            reason=reason,
+            settings=settings,
+        )
+
+
+def _release_deadline_claim(
+    job: dict[str, Any],
+    *,
+    settings: dict[str, Any],
+    exc: SourceTaskDeadlineExceeded,
+) -> None:
+    """Release one claim after a cooperative source-task cutoff."""
+
+    release_source_detail_job_without_attempt(
+        job,
+        reason=f"Source-detail task deadline reached during {exc.operation}",
+        settings=settings,
+    )
 
 
 def process_source_detail_job(
@@ -103,6 +162,11 @@ def process_source_detail_job(
     """
     active_settings = settings if settings is not None else load_settings()
     provider_clients = clients if clients is not None else {}
+    try:
+        ensure_source_task_deadline("starting source-detail job")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        return False
     source_name = str(job.get("detail_source_name") or "").strip()
     canonical_url = str(job.get("source_url") or "").strip()
     detail_url = str(job.get("detail_source_url") or "").strip()
@@ -113,7 +177,13 @@ def process_source_detail_job(
     # The SQL claim checks these switches, but they can change while a worker
     # is fetching another row.  Check immediately before any client creation
     # or HTTP request so a pause never starts a new network call.
-    if not source_detail_source_enabled(source_name, active_settings):
+    try:
+        source_enabled = source_detail_source_enabled(source_name, active_settings)
+        ensure_source_task_deadline("finishing source-detail source gate")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        return False
+    if not source_enabled:
         release_source_detail_job_without_attempt(
             job, reason="Source-detail source is paused before fetch", settings=active_settings
         )
@@ -122,7 +192,13 @@ def process_source_detail_job(
     # A shared provider client can already carry a future Retry-After from a
     # previous job. Releasing this claim before the adapter is called prevents
     # a second task from consuming an attempt without issuing HTTP.
-    retry_not_before = _client_retry_not_before(source_name, detail_url, provider_clients)
+    try:
+        ensure_source_task_deadline("checking source-detail provider retry deadline")
+        retry_not_before = _client_retry_not_before(source_name, detail_url, provider_clients)
+        ensure_source_task_deadline("finishing source-detail provider retry check")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        return False
     if retry_not_before is not None and retry_not_before > datetime.now(UTC):
         release_source_detail_job_without_attempt(
             job,
@@ -134,6 +210,10 @@ def process_source_detail_job(
 
     try:
         existing = fetch_sale_for_data_refresh(canonical_url)
+        ensure_source_task_deadline("finishing source-detail sale lookup")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        return False
     except Exception as exc:
         _finish_job(job, succeeded=False, error_message=str(exc))
         return False
@@ -141,19 +221,32 @@ def process_source_detail_job(
         _finish_job(job, succeeded=False, error_message="sale not found")
         return False
 
-    satisfied = complete_already_verified_detail_job(existing, job, active_settings)
+    try:
+        ensure_source_task_deadline("checking verified source-detail reuse")
+        satisfied = complete_already_verified_detail_job(existing, job, active_settings)
+        ensure_source_task_deadline("finishing verified source-detail reuse")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        return False
     if satisfied is not None:
         return satisfied
 
     # The sale lookup can race an administrative pause.  Repeat the gate at
     # the actual network boundary, after all local work for this item.
-    if not source_detail_source_enabled(source_name, active_settings):
+    try:
+        source_enabled = source_detail_source_enabled(source_name, active_settings)
+        ensure_source_task_deadline("finishing source-detail source gate")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        return False
+    if not source_enabled:
         release_source_detail_job_without_attempt(
             job, reason="Source-detail source is paused before fetch", settings=active_settings
         )
         return False
 
     try:
+        ensure_source_task_deadline("starting source-detail fetch")
         _endpoint, _body, raw = fetch_public_detail(
             source_name,
             detail_url,
@@ -164,11 +257,15 @@ def process_source_detail_job(
             raise ValueError("Source detail parser returned no mapping")
         if not raw:
             raise ValueError("Source detail parser returned no verified data")
+        ensure_source_task_deadline("finishing source-detail fetch")
         # All existing adapters normally emit this identity themselves.  The
         # fallback is needed for a small provider alias parser that only emits
         # facts, and keeps freshness keyed to the URL that was actually read.
         raw.setdefault("source_url", detail_url)
         raw.setdefault("source_name", source_name)
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        return False
     except Exception as exc:
         metrics = _client_metrics(_client_for_job(source_name, detail_url, provider_clients))
         status_code = _http_status_code(exc)
@@ -197,12 +294,18 @@ def process_source_detail_job(
         return False
 
     try:
+        ensure_source_task_deadline("preparing source-detail publication")
         revision = prepare_source_revision(existing, raw)
+        ensure_source_task_deadline("finishing source-detail publication preparation")
+        ensure_source_task_deadline("publishing source-detail revision")
         # This operation owns the lease check, catalogue revision check, table
         # writes, and terminal job update in one transaction.  A false result
         # means another worker reclaimed the lease or a newer catalogue row
         # won the race; finishing it here would be unsafe.
         return bool(publish_source_revision(revision, job, active_settings))
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        return False
     except Exception as exc:
         LOGGER.exception("Source-detail publication failed for %s", canonical_url)
         _finish_job(job, succeeded=False, error_message=str(exc))

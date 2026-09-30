@@ -53,6 +53,7 @@ const businessModules = [
   "services/data-pipeline/src/pdf_enrichment.py",
   "services/data-pipeline/src/pdf_page_analysis.py",
   "services/data-pipeline/src/pdf_fact_extraction.py",
+  "services/data-pipeline/src/source_task_deadline.py",
 ];
 
 const routeBudgets = [

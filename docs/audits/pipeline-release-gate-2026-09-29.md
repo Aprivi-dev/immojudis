@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 08 h 08 UTC
+## Synthèse actuelle — 30 septembre, 08 h 45 UTC
 
 | Chantier           | État vérifié                                                                                                                                                                                                                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `dc69bb98` : seul le budget de taille du module PDF échoue. Séparation terminée et relue : module à 1 494 lignes, 232 tests verts. Audits npm complets sans alerte. La CI et le cloud doivent qualifier le prochain SHA exact.                          |
+| SQL et CI          | `81022c19` : CI complète et CodeQL verts, 1 966 tests Python par version, 1 336 tests Web, 200 migrations et 1 481 assertions pgTAP. Le nouveau correctif de deadline des détails doit encore être qualifié sur son propre SHA.                         |
 | Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                    |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Candidat `ad980898` retenu après dépassement de deadline et perte des statuts PDF. Aucun worker actif au relevé de 07 h 42.                                                                 |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `81022c19` démarré à 08 h 41, après la collecte automatique Petites Affiches. Aucune promotion du candidat ; correction des délais source en relecture.                       |
 | Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                    |
-| Collecte AGRASC    | Huit annonces et huit PDF sans erreur ; terminal changeant pendant le scan et 25 archives sans lien. Périmètre adressable distinct du certificat public global, qui reste partiel.                                                                      |
+| Collecte AGRASC    | Audit public : huit annonces émises, un catalogue vendeur exclu et 25 archives vendues sans lien. Le HTML primaire confirme un lien terminal vers page 5 puis page 6 ; aucun certificat de complétude n'est accordé.                                    |
 | Documents          | Défaut réel de sérialisation confirmé : les marqueurs de complétude n'étaient pas enregistrés avec les textes. Writer corrigé et relu, tests de bout en bout verts. Une nouvelle extraction réelle est requise ; aucune promotion des anciens payloads. |
-| Capacité           | Au relevé de 07 h 42 : 6 581 jobs dus, 2 731 ouverts de plus de 48 h, 17 ouverts ayant épuisé leurs essais. Circuit quota testé localement mais non déclenché dans le dernier canari. Résorption durable non démontrée.                                 |
+| Capacité           | Au relevé de 08 h 45 : 6 091 jobs ouverts, 6 067 dus réessayables, 2 718 ouverts de plus de 48 h, un en cours et 18 ayant épuisé leurs essais. Circuit quota testé localement ; résorption durable non démontrée.                                       |
 | Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                      |
 | Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                              |
 | Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                |
 | Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                                                 |
-| Publication finale | PR en brouillon, nouvelles corrections en cours. Preview validée en lecture seule ; pas de publication applicative finale ni import IA. Plan de branches préparé, aucune suppression.                                                                   |
+| Publication finale | PR en brouillon, nouvelles corrections en relecture. Preview exacte `81022c19` validée en lecture seule ; pas de publication applicative finale ni import IA. Plan de branches préparé, aucune suppression.                                             |
 
 Les sections suivantes conservent la chronologie. Leurs compteurs datés ne
 doivent pas être utilisés comme l'état courant sans lire cette synthèse et
@@ -1930,3 +1930,87 @@ les incidents opérationnels actifs. Les 2 067 anciens détails de source
 ne sont pas des tâches terminales oubliées : 2 046 sont réclamables et
 21 sont bloqués par la suspension d'Enchères Publiques. Aucun de ces jobs
 ne justifie une clôture artificielle au titre de la rétention.
+
+## Qualification de `81022c19` — 30 septembre, 08 h 45 UTC
+
+La [CI 36687905674](https://github.com/Aprivi-dev/immojudis/actions/runs/36687905674)
+et [CodeQL 36687905650](https://github.com/Aprivi-dev/immojudis/actions/runs/36687905650)
+réussissent sur le SHA exact
+`81022c1910154c64605dd7fc595352499623a5c6`. Python 3.11 et 3.12 comptent
+chacun 1 966 succès et 18 tests ignorés ; pip-audit est vert. Le Web compte
+1 336 succès et cinq tests ignorés ; audit npm, types, lint, invariants,
+build et budgets réussissent. Les 200 migrations, 79 fichiers pgTAP et
+1 481 assertions passent sans dérive ; intégration inbound locale,
+catalogue HTTP, Playwright et planificateur sont également verts.
+
+La preview Vercel `dpl_HkgHuLqZdwoohUbUqntccGMAnnSo` est prête sur ce SHA.
+Les GET de l'accueil et de `/sales` répondent 200 ; l'en-tête
+`x-robots-tag: noindex` est présent. Sans authentification, le GET inbound
+répond 401 et le GET webhook Resend 405. Ces contrôles ne déclenchent
+aucun envoi, import, upload ou écriture de production.
+
+Le tag `immojudis-workers-81022c19` pointe exactement vers ce commit,
+protégé contre mise à jour et suppression par la règle 24234724 sans
+bypass. Le [canari 36688865110](https://github.com/Aprivi-dev/immojudis/actions/runs/36688865110)
+attend la fin de la collecte automatique puis démarre à 08 h 41 min 36 s.
+Il devra produire les nouveaux marqueurs PDF et vérifier l'arrêt et la
+libération des claims. Sa réussite ne qualifiera pas le correctif source
+suivant, encore non commité. La route automatique reste sur `f695a739`.
+
+## Inventaires publics et pagination AGRASC — 30 septembre, 08 h 43 UTC
+
+L'[audit 36689110240](https://github.com/Aprivi-dev/immojudis/actions/runs/36689110240)
+utilise le même tag et neutralise Supabase et LLM. Notaires émet 831 URL
+uniques en 37 requêtes réussies, sans erreur, et atteint la fin de la
+source. Le certificat couvre l'inventaire du connecteur ; il ne certifie
+ni une énumération indépendante du site ni la complétude de la base.
+
+AGRASC compte 37 cartes sur sept pages et huit requêtes réussies : neuf
+URL adressables, dont huit émises et un catalogue vendeur exclu faute
+d'identité d'annonce. Les 25 cartes sans lien portent à la fois la classe
+et le statut visible de vente terminée. Aucun total public exploitable
+n'est présent ; les certificats global, adressable, émission complète et
+base restent tous faux.
+
+Une sonde limitée à la page initiale et `page=1`, avec le client existant,
+ses robots et sa cadence, confirme le HTML primaire. Chaque réponse
+contient un seul widget dans `.view-liste-ventes-immobilieres` : le lien
+explicite `fr-pagination__link--last` mène à `page=5` sur la page initiale
+et à `page=6` sur la seconde. Trois URL de détail se répètent entre leurs
+six cartes respectives. Les liens sont sur le même chemin avec le seul
+paramètre `page`. Il s'agit d'une ambiguïté des réponses du fournisseur,
+sans preuve pour départager pagination dynamique et autre défaut côté site.
+Le parseur ne confond pas deux widgets. Aucune fin n'est choisie par
+inférence ; aucun nettoyage ni création des archives sans identité.
+
+## Deadline coopérative des détails — 30 septembre, 08 h 45 UTC
+
+La vérification des durées montre qu'un lot source de deux détails peut
+prendre 162,6 secondes. Commencer juste avant la limite d'admission à
+1 140 secondes peut donc dépasser le budget worker de 1 200 secondes.
+Le cutoff PDF existant ne protégeait pas ces requêtes.
+
+Le patch en relecture transmet désormais le même cutoff aux détails,
+avec la marge de finalisation dynamique existante. Un contexte task-local
+est restauré dans `finally`. Les contrôles couvrent admission de job,
+robots, cadence, retries, réponse, préparation et début de publication.
+Les timeouts HTTP sont recalculés au moment de la requête. Une expiration
+est distinguée d'un refus fournisseur ou d'une indisponibilité robots.
+La tâche possédée et les claims restants sont restitués sans perte de
+tentative, avec les gardes de lease existantes et une restitution
+idempotente. Le transport relais borne aussi son client interne,
+qui ignorait le timeout externe. Le body est lu et décodé avant le dernier
+calcul du timeout ; hors contexte, les 40 secondes historiques sont
+conservées. La relecture indépendante valide ce delta et ses 12 tests.
+
+Les appels SQL et les opérations natives déjà engagés restent
+non interruptibles par ces contrôles coopératifs. Le patch ne garantit
+donc pas une limite absolue de 1 200 secondes pour toute opération.
+Il ne modifie ni les quotas, ni les retries autorisés, ni les règles SQL.
+Les auteurs ont vérifié 138 tests source/queue, dont 14 ignorés, et
+49 tests client/retry/relais réussis. La suite intégrée finale compte
+159 succès et 14 tests PostgreSQL ignorés localement ; Ruff et le diff
+sont propres. La relecture indépendante du worker confirme les leases,
+le reset du contexte et l'absence de capture large dans les parseurs du
+chemin `fetch_public_detail` ; ses 111 tests ciblés réussissent, un est
+ignoré. Nouvelle CI et canari du prochain SHA restent requis.

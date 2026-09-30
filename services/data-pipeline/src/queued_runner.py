@@ -46,6 +46,7 @@ from src.pdf_enrichment import (
 from src.pipeline_usage import PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
+from src.source_task_deadline import source_task_deadline_scope
 from src.storage.supabase_client import (
     _postgres_connect,
     claim_auction_enrichment_jobs_family_from_supabase,
@@ -693,14 +694,14 @@ def _run_enrichment_queue_batch_with_deadline(
     worker_deadline: float,
     finalization_margin_seconds: float,
 ) -> int:
-    """Run one claim with a PDF cutoff that leaves worker finalization time."""
+    """Run one claim with PDF and source-detail cutoffs before finalization."""
 
     pdf_deadline = worker_deadline - finalization_margin_seconds
     if time.monotonic() >= pdf_deadline:
         # Recheck immediately before the claim RPC as the outer worker check
         # can race with a batch that finishes at the cutoff.
         return 0
-    with pdf_deadline_scope(pdf_deadline):
+    with pdf_deadline_scope(pdf_deadline), source_task_deadline_scope(pdf_deadline):
         return run_enrichment_queue_batch(
             limit=limit,
             family=family,
