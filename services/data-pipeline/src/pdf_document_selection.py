@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import Counter
 from datetime import UTC, datetime
@@ -298,6 +299,56 @@ def _store_document_analysis_status(
     blocked_document_urls: list[str] | None = None,
     permanent_document_failures: list[dict[str, str]] | None = None,
 ) -> None:
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    if not isinstance(sale.raw_payload, dict):
+        sale.raw_payload = raw_payload
+    sale_documents = sale.documents
+    malformed_input = (
+        not isinstance(sale_documents, list)
+        or any(not isinstance(document, dict) or not clean_text(document.get("url")) for document in sale_documents)
+        or not isinstance(documents, list)
+        or any(not isinstance(document, dict) for document in documents)
+        or not isinstance(pdf_texts, list)
+        or any(not isinstance(payload, dict) for payload in pdf_texts)
+        or (blocked_document_urls is not None and not isinstance(blocked_document_urls, list))
+        or (permanent_document_failures is not None and not isinstance(permanent_document_failures, list))
+    )
+    if malformed_input:
+        checked_at = datetime.now(UTC).isoformat()
+        try:
+            input_fingerprint = document_fingerprint(sale_documents if isinstance(sale_documents, list) else [])
+        except (TypeError, ValueError):
+            input_fingerprint = ""
+        raw_payload["document_analysis"] = {
+            "last_successful_check_at": raw_payload.get("document_analysis", {}).get("last_successful_check_at")
+            if isinstance(raw_payload.get("document_analysis"), dict)
+            else None,
+            "checked_at": checked_at,
+            "input_fingerprint": input_fingerprint,
+            "failed_documents": 1,
+            "failed_document_urls": [],
+            "blocked_documents": 0,
+            "blocked_document_urls": [],
+            "permanent_document_failures": [],
+            "skipped_documents": 0,
+            "skipped_document_urls": [],
+            "coverage_status": "documents_not_extracted",
+            "warning": "Le manifeste ou le cache PDF est malformé ; aucune preuve documentaire n'est certifiée.",
+            "documents_listed": len(sale_documents) if isinstance(sale_documents, list) else 0,
+            "documents_downloaded": len(documents) if isinstance(documents, list) else 0,
+            "documents_extracted": 0,
+            "profiles": [],
+            "cache_proof": {
+                "version": 1,
+                "verified_at": checked_at,
+                "input_fingerprint": input_fingerprint,
+                "documents": [],
+            },
+        }
+        return
+
+    if not isinstance(raw_payload.get("document_analysis"), dict):
+        raw_payload["document_analysis"] = {}
     typed_documents = [_document_profile(document) for document in documents]
     extracted_profiles = [_extracted_document_profile(payload) for payload in pdf_texts]
     text_profiles = [profile for profile in extracted_profiles if profile["extraction_status"] == "extracted"]
@@ -316,8 +367,8 @@ def _store_document_analysis_status(
         group for group, aliases in required_groups.items() if not (aliases & extracted_types)
     ]
 
-    candidate_rejections = _document_candidate_rejections(sale.documents)
-    selected_documents = _select_documents_for_extraction(sale.documents, sale=sale)
+    candidate_rejections = _document_candidate_rejections(sale_documents)
+    selected_documents = _select_documents_for_extraction(sale_documents, sale=sale)
     selected_urls = {
         str(document.get("url"))
         for document in selected_documents
@@ -341,6 +392,19 @@ def _store_document_analysis_status(
     ]
     permanent_failures = list({item["url"]: item for item in permanent_failures}.values())
     permanent_url_set = {item["url"] for item in permanent_failures}
+    empty_document_urls = list(dict.fromkeys(
+        str(profile.get("url"))
+        for payload, profile in zip(pdf_texts, extracted_profiles, strict=False)
+        if isinstance(payload, dict)
+        and profile.get("url")
+        and str(profile.get("url")) in selected_urls
+        and profile.get("extraction_status") == "empty"
+        and payload.get("complete") is True
+        and not payload.get("failed_pages")
+    ))
+    terminal_document_urls = list(dict.fromkeys(
+        [*empty_document_urls, *(item["url"] for item in permanent_failures)]
+    ))
 
     if blocked_urls:
         coverage_status = "partial"
@@ -352,9 +416,15 @@ def _store_document_analysis_status(
         warning = (
             "Certaines URL de pièces sont durablement indisponibles ou ne renvoient pas un document exploitable."
         )
-    elif not documents and not sale.documents:
+    elif not documents and not sale_documents:
         coverage_status = "source_only"
         warning = "Aucun PDF officiel exploitable n'a été trouvé : l'analyse reste un pré-tri."
+    elif empty_document_urls and not text_profiles:
+        coverage_status = "partial"
+        warning = (
+            "Certaines pièces PDF sont vides après une extraction complète ; elles restent indisponibles "
+            "pour l'analyse et ne seront pas certifiées comme des faits documentaires."
+        )
     elif not text_profiles:
         coverage_status = "documents_not_extracted"
         warning = "Des documents sont listés, mais aucun texte PDF n'a encore été extrait."
@@ -366,6 +436,13 @@ def _store_document_analysis_status(
     else:
         coverage_status = "rich"
         warning = "Les principales familles de documents sont disponibles pour l'analyse."
+    if empty_document_urls and text_profiles:
+        if coverage_status == "rich":
+            coverage_status = "partial"
+        warning += (
+            " Certaines pièces PDF sont vides après une extraction complète ; "
+            "elles restent indisponibles pour l'analyse."
+        )
     if visual_blank_documents:
         if coverage_status == "rich":
             coverage_status = "partial"
@@ -381,17 +458,37 @@ def _store_document_analysis_status(
         and str(document["url"]) not in extracted_urls
         and str(document["url"]) not in blocked_url_set
         and str(document["url"]) not in permanent_url_set
+        and str(document["url"]) not in set(empty_document_urls)
     ))
     failed_documents = len(failed_document_urls)
     checked_at = datetime.now(UTC).isoformat()
+    cache_proof_documents = []
+    for payload, profile in zip(pdf_texts, extracted_profiles, strict=False):
+        if not isinstance(payload, dict):
+            continue
+        text = clean_text(payload.get("text")) or ""
+        cache_proof_documents.append(
+            {
+                "url": profile.get("url"),
+                "sha256": str(payload.get("sha256") or ""),
+                "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest() if text else "",
+                "text_chars": len(text),
+                "text_present": bool(text),
+                "extraction_status": profile.get("extraction_status"),
+                "complete": payload.get("complete") is True,
+                "failed_pages": payload.get("failed_pages") or [],
+            }
+        )
     previous = sale.raw_payload.get("document_analysis") or {}
     last_successful_check_at = checked_at if not failed_documents else previous.get("last_successful_check_at")
     sale.raw_payload["document_analysis"] = {
         "last_successful_check_at": last_successful_check_at,
         "checked_at": checked_at,
-        "input_fingerprint": document_fingerprint(sale.documents),
+        "input_fingerprint": document_fingerprint(sale_documents),
         "failed_documents": failed_documents,
         "failed_document_urls": failed_document_urls,
+        "empty_document_urls": empty_document_urls,
+        "terminal_document_urls": terminal_document_urls,
         "blocked_documents": len(blocked_urls),
         "blocked_document_urls": blocked_urls,
         "blocked_document_reasons": [
@@ -407,13 +504,23 @@ def _store_document_analysis_status(
         "skipped_document_reasons": candidate_rejections,
         "coverage_status": coverage_status,
         "warning": warning,
-        "documents_listed": len(sale.documents or []),
+        "documents_listed": len(sale_documents or []),
         "documents_downloaded": len(documents),
         "documents_extracted": len(text_profiles),
         "visual_blank_documents": visual_blank_documents,
         "document_types": dict(type_counts),
         "extracted_document_types": dict(extracted_type_counts),
         "missing_core_documents": missing_core_documents,
+        # This is deliberately derived from the current PDF payloads, never
+        # copied from an older ``profiles`` manifest.  The text itself stays
+        # in the local cache; the persisted marker records enough provenance
+        # for freshness gates to prove that text and bytes were both present.
+        "cache_proof": {
+            "version": 1,
+            "verified_at": checked_at,
+            "input_fingerprint": document_fingerprint(sale_documents),
+            "documents": cache_proof_documents,
+        },
         "official_documents_found": bool(
             {
                 "pv_huissier",
@@ -445,6 +552,24 @@ def _document_profile(document: dict[str, str]) -> dict[str, object]:
 
 
 def _extracted_document_profile(payload: dict[str, object]) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        return {
+            "label": None,
+            "url": None,
+            "document_type": "other",
+            "family": "autre",
+            "extraction_status": "failed",
+            "sha256": None,
+            "text_chars": 0,
+            "page_count": 0,
+            "ocr_pages": 0,
+            "confidence": 0.0,
+            "method": None,
+            "complete": False,
+            "failed_pages": [],
+            "blank_pages": [],
+            "visual_blank_pages": [],
+        }
     document_type = _canonical_document_type(
         payload.get("document_type") or payload.get("type"),
         label=payload.get("label"),
@@ -457,6 +582,22 @@ def _extracted_document_profile(payload: dict[str, object]) -> dict[str, object]
         extraction_status = "extracted" if clean_text(payload.get("text")) else "empty"
     if extraction_status == "extracted" and not clean_text(payload.get("text")):
         extraction_status = "empty"
+    try:
+        text_chars = int(payload.get("text_chars") or len(str(payload.get("text") or "")))
+    except (OverflowError, TypeError, ValueError):
+        text_chars = 0
+    try:
+        page_count = int(payload.get("page_count") or 0)
+    except (OverflowError, TypeError, ValueError):
+        page_count = 0
+    try:
+        ocr_pages = int(payload.get("ocr_pages") or 0)
+    except (OverflowError, TypeError, ValueError):
+        ocr_pages = 0
+    try:
+        confidence = float(payload.get("confidence") or 0)
+    except (OverflowError, TypeError, ValueError):
+        confidence = 0.0
     return {
         "label": payload.get("label") or None,
         "url": payload.get("url") or None,
@@ -464,12 +605,15 @@ def _extracted_document_profile(payload: dict[str, object]) -> dict[str, object]
         "family": _document_family(document_type),
         "extraction_status": extraction_status,
         "sha256": payload.get("sha256"),
-        "text_chars": int(payload.get("text_chars") or len(str(payload.get("text") or ""))),
-        "page_count": int(payload.get("page_count") or 0),
-        "ocr_pages": int(payload.get("ocr_pages") or 0),
-        "confidence": float(payload.get("confidence") or 0),
+        "text_chars": text_chars,
+        "page_count": page_count,
+        "ocr_pages": ocr_pages,
+        "confidence": confidence,
         "method": payload.get("extraction_method") or None,
-        "complete": payload.get("complete") is not False and extraction_status == "extracted",
+        # Missing completion metadata is not proof of a complete document;
+        # old profiles remain useful for diagnostics but cannot satisfy a
+        # current PDF/fact gate.
+        "complete": payload.get("complete") is True and extraction_status == "extracted",
         "failed_pages": payload.get("failed_pages") or [],
         "blank_pages": payload.get("blank_pages") or [],
         "visual_blank_pages": payload.get("visual_blank_pages") or [],

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.enrichment.display_quality import has_current_display
+from src.normalize import clean_text
 
 SOURCE_EXTRACTION_VERSION = "source_extraction_20260913_v3"
 
@@ -64,6 +65,8 @@ def detail_is_fresh(row: dict[str, Any], source_url: str) -> bool:
 
 
 def document_fingerprint(documents: list) -> str:
+    if not isinstance(documents, list):
+        return ""
     identities = sorted((str(d.get("url") or ""), str(d.get("label") or "")) for d in documents if isinstance(d, dict))
     return hashlib.sha256(json.dumps(identities).encode()).hexdigest()
 
@@ -100,12 +103,205 @@ def record_source_checks(raw_sales: list, known: dict) -> None:
 
 
 def documents_are_current(sale: Any) -> bool:
-    analysis = sale.raw_payload.get("document_analysis") or {}
-    return (
-        analysis.get("input_fingerprint") == document_fingerprint(sale.documents)
-        and timestamp_is_fresh(analysis.get("checked_at"))
-        and not analysis.get("failed_documents")
-    )
+    raw_payload = getattr(sale, "raw_payload", None)
+    documents = getattr(sale, "documents", None)
+    if not isinstance(raw_payload, dict) or not isinstance(documents, list):
+        return False
+    analysis = raw_payload.get("document_analysis")
+    if not isinstance(analysis, dict):
+        return False
+    if any(not isinstance(document, dict) or not clean_text(document.get("url")) for document in documents):
+        return False
+    try:
+        failed_documents = int(analysis.get("failed_documents") or 0)
+    except (OverflowError, TypeError, ValueError):
+        return False
+    if (
+        analysis.get("input_fingerprint") != document_fingerprint(documents)
+        or not timestamp_is_fresh(analysis.get("checked_at"))
+        or failed_documents != 0
+    ):
+        return False
+    if not documents:
+        return True
+
+    def _document_url_set(value: object) -> set[str] | None:
+        if value is None:
+            return set()
+        if not isinstance(value, (list, tuple, set)):
+            return None
+        urls = {clean_text(item) for item in value if clean_text(item)}
+        return urls
+
+    # A robots-policy-only result is a bounded, deliberate terminal state:
+    # there is no local PDF cache to prove, but retrying the same URL would
+    # only recreate the same blocked job. Mixed results still require proof
+    # for every non-blocked document below.
+    blocked_urls = _document_url_set(analysis.get("blocked_document_urls"))
+    skipped_urls = _document_url_set(analysis.get("skipped_document_urls"))
+    terminal_urls = _document_url_set(analysis.get("terminal_document_urls"))
+    if blocked_urls is None or skipped_urls is None or terminal_urls is None:
+        return False
+    document_urls = {
+        clean_text(document.get("url"))
+        for document in documents
+    }
+    if (
+        not blocked_urls.issubset(document_urls)
+        or not skipped_urls.issubset(document_urls)
+        or not terminal_urls.issubset(document_urls)
+    ):
+        return False
+    excluded_urls = blocked_urls | skipped_urls | terminal_urls
+    expected_urls = document_urls - excluded_urls
+    if not expected_urls:
+        return bool(excluded_urls)
+
+    proof = analysis.get("cache_proof")
+    if not isinstance(proof, dict):
+        return False
+    if (
+        proof.get("version") != 1
+        or
+        proof.get("input_fingerprint") != document_fingerprint(documents)
+        or not timestamp_is_fresh(proof.get("verified_at"))
+    ):
+        return False
+    proof_documents = proof.get("documents")
+    if not isinstance(proof_documents, list):
+        return False
+    if any(not isinstance(item, dict) or not clean_text(item.get("url")) for item in proof_documents):
+        return False
+    proof_by_url = {
+        clean_text(item.get("url")): item
+        for item in proof_documents
+    }
+    proof_urls = set(proof_by_url)
+    if (
+        len(proof_by_url) != len(proof_documents)
+        or not expected_urls.issubset(proof_urls)
+        or not (proof_urls - expected_urls).issubset(terminal_urls)
+    ):
+        return False
+    profiles_payload = analysis.get("profiles")
+    if not isinstance(profiles_payload, list):
+        return False
+    if any(not isinstance(item, dict) or not clean_text(item.get("url")) for item in profiles_payload):
+        return False
+    analysis_profiles = {clean_text(item.get("url")): item for item in profiles_payload}
+    profile_urls = set(analysis_profiles)
+    if (
+        len(analysis_profiles) != len(profiles_payload)
+        or not expected_urls.issubset(profile_urls)
+        or not (profile_urls - expected_urls).issubset(excluded_urls)
+    ):
+        return False
+    for url in expected_urls:
+        item = proof_by_url[url]
+        try:
+            text_chars = int(item.get("text_chars") or 0)
+        except (OverflowError, TypeError, ValueError):
+            return False
+        profile = analysis_profiles.get(url)
+        profile_sha = clean_text(profile.get("sha256")) if isinstance(profile, dict) else ""
+        profile_status = (
+            (clean_text(profile.get("extraction_status")) or "").casefold()
+            if isinstance(profile, dict)
+            else ""
+        )
+        if not (
+            item.get("extraction_status") == "extracted"
+            and item.get("complete") is True
+            and not item.get("failed_pages")
+            and bool(clean_text(item.get("sha256")))
+            and bool(clean_text(item.get("text_sha256")))
+            and item.get("text_present") is True
+            and text_chars > 0
+            and bool(profile_sha)
+            and profile_sha == clean_text(item.get("sha256"))
+            and profile_status == "extracted"
+            and profile.get("complete") is True
+            and not profile.get("failed_pages")
+        ):
+            return False
+    expected_hashes = {
+        url: clean_text(item.get("sha256"))
+        for url, item in proof_by_url.items()
+        if url in expected_urls
+        if clean_text(item.get("sha256"))
+    }
+    expected_text_hashes = {
+        url: clean_text(item.get("text_sha256"))
+        for url, item in proof_by_url.items()
+        if url in expected_urls
+        if clean_text(item.get("text_sha256"))
+    }
+    if set(expected_hashes) != expected_urls or set(expected_text_hashes) != expected_urls:
+        return False
+
+    # The persisted marker proves how the manifest was produced, but a
+    # worker must also have the current text cache before it skips extraction.
+    # A previous run's JSON profile alone would otherwise recreate the
+    # unknown/pending rows when this worker has no local cache.
+    return _local_pdf_cache_is_complete(sale, expected_urls, expected_hashes, expected_text_hashes)
+
+
+def _local_pdf_cache_is_complete(
+    sale: Any,
+    expected_urls: set[str],
+    expected_hashes: dict[str, str],
+    expected_text_hashes: dict[str, str],
+) -> bool:
+    try:
+        from src.config import PDF_TEXTS_DIR
+        from src.pdf_enrichment import sale_storage_id
+
+        path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (ImportError, OSError, TypeError, UnicodeError, ValueError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, list):
+        return False
+    if any(not isinstance(item, dict) or not clean_text(item.get("url")) for item in payload):
+        return False
+    by_url = {
+        clean_text(item.get("url")): item
+        for item in payload
+    }
+    analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+    terminal_urls: set[str] = set()
+    if isinstance(analysis, dict):
+        raw_terminal_urls = analysis.get("terminal_document_urls")
+        if raw_terminal_urls is not None and not isinstance(raw_terminal_urls, (list, tuple, set)):
+            return False
+        terminal_urls = {clean_text(url) for url in raw_terminal_urls or [] if clean_text(url)}
+    cache_urls = set(by_url)
+    if (
+        len(by_url) != len(payload)
+        or not expected_urls.issubset(cache_urls)
+        or not (cache_urls - expected_urls).issubset(terminal_urls)
+    ):
+        return False
+    for url in expected_urls:
+        item = by_url[url]
+        try:
+            normalized_text = clean_text(item.get("text")) or ""
+            text_chars = int(item.get("text_chars") or len(normalized_text))
+        except (OverflowError, TypeError, ValueError):
+            return False
+        if not (
+            normalized_text
+            and str(item.get("sha256") or "").strip()
+            and item.get("complete") is True
+            and not item.get("failed_pages")
+            and str(item.get("extraction_status") or "").strip().lower() == "extracted"
+            and text_chars > 0
+            and str(item.get("sha256")) == expected_hashes.get(str(item.get("url")))
+            and hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
+            == str(expected_text_hashes.get(str(item.get("url"))))
+        ):
+            return False
+    return True
 
 
 def invalidate_analysis(payload: dict, reason: str, *, preserve_facts: bool = False) -> None:

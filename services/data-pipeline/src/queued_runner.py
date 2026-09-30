@@ -297,6 +297,54 @@ def _record_worker_deferred_job_ids(jobs: list[dict[str, object]]) -> None:
     )
 
 
+def _pdf_evidence_is_terminal_for_facts(sale: object) -> bool:
+    """Return whether the current PDF pass has no extractable fact evidence.
+
+    ``documents_are_current`` deliberately treats an all-terminal result as
+    fresh so the worker does not redownload the same blocked/empty/skipped
+    URLs forever.  That freshness signal must not be mistaken for a usable
+    fact context: an explicit fact job still needs to be cancelled for
+    review when every listed document is excluded and no document was
+    extracted.
+    """
+    documents = getattr(sale, "documents", None)
+    raw_payload = getattr(sale, "raw_payload", None)
+    if not isinstance(documents, list) or not documents or not isinstance(raw_payload, dict):
+        return False
+    if not documents_are_current(sale):
+        return False
+    analysis = raw_payload.get("document_analysis")
+    if not isinstance(analysis, dict):
+        return False
+    try:
+        extracted = int(analysis.get("documents_extracted") or 0)
+        failed = int(analysis.get("failed_documents") or 0)
+    except (OverflowError, TypeError, ValueError):
+        return False
+    if extracted != 0 or failed != 0:
+        return False
+    document_urls = {
+        str(document.get("url") or "").strip()
+        for document in documents
+        if isinstance(document, dict) and str(document.get("url") or "").strip()
+    }
+    if not document_urls:
+        return False
+    excluded_urls: set[str] = set()
+    for key in ("skipped_document_urls", "blocked_document_urls", "terminal_document_urls"):
+        values = analysis.get(key)
+        if values is None:
+            continue
+        if not isinstance(values, (list, tuple, set)):
+            return False
+        excluded_urls.update(
+            str(url).strip()
+            for url in values
+            if str(url).strip()
+        )
+    return document_urls.issubset(excluded_urls)
+
+
 def _is_llm_budget_exhausted(error: PipelineBudgetExhausted) -> bool:
     if isinstance(error, LLMRequestBudgetExhausted):
         return True
@@ -433,19 +481,31 @@ def run_enrichment_queue_batch(
                 fact_extraction_planned = (
                     "fact_extraction" in job_types or needs_fact_extraction(sale)
                 )
+                # A verified fact manifest may be reused after the ephemeral
+                # PDF text cache is gone. Compute this before the PDF
+                # prerequisite branch so that strict cache freshness does not
+                # cancel an already current fact pass.
+                facts_current = (
+                    has_current_fact_analysis(sale)
+                    if fact_extraction_planned
+                    else True
+                )
+                facts_needed = fact_extraction_planned and not facts_current
                 # A fact pass cannot build a trustworthy context until the PDF
                 # worker has populated the document cache.  When the PDF job
                 # is in this claim it is handled above; otherwise return the
                 # fact/display claim to the queue without spending its retry.
                 # This avoids turning an ordinary worker ordering race into a
                 # growing retry-exhausted backlog.
-                if (
-                    fact_extraction_planned
+                terminal_pdf_evidence = facts_needed and _pdf_evidence_is_terminal_for_facts(sale)
+                missing_pdf_prerequisite = (
+                    facts_needed
                     and sale.documents
                     and "pdf" not in job_types
                     and not documents_are_current(sale)
-                ):
-                    if has_eligible_pdf_job_for_sale(source_url):
+                )
+                if terminal_pdf_evidence or missing_pdf_prerequisite:
+                    if missing_pdf_prerequisite and has_eligible_pdf_job_for_sale(source_url):
                         raise QueueJobDeferred(
                             "Fact extraction deferred: PDF text cache is missing or incomplete"
                         )
@@ -458,7 +518,11 @@ def run_enrichment_queue_batch(
                             job,
                             succeeded=False,
                             cancelled=True,
-                            error_message="review_required: PDF prerequisite unavailable",
+                            error_message=(
+                                "review_required: no extractable PDF evidence"
+                                if terminal_pdf_evidence
+                                else "review_required: PDF prerequisite unavailable"
+                            ),
                         )
                     mark_enrichment_jobs_terminal(fact_jobs)
                     sale_jobs = [job for job in sale_jobs if job.get("job_type") != "fact_extraction"]
@@ -466,35 +530,37 @@ def run_enrichment_queue_batch(
                         continue
                     job_types = {str(job.get("job_type") or "") for job in sale_jobs}
                     fact_extraction_planned = False
-                facts_current = (
-                    has_current_fact_analysis(sale)
-                    if fact_extraction_planned
-                    else True
-                )
-                facts_needed = fact_extraction_planned and not facts_current
-                if not description_current or facts_needed:
-                    if llm_client is None:
-                        llm_client = create_llm_client()
-                    with llm_request_context(
-                        source_url=source_url,
-                        job_id=str(sale_jobs[0]["id"]),
-                        reason="new_fact_evidence" if facts_needed else "missing_or_stale_display",
-                    ):
-                        llm_stats = enrich_sale_with_llm(
-                            sale, client=llm_client,
-                            extraction_mode="structured_then_display" if facts_needed else "display_description",
-                        )
-                    if llm_stats.unavailable or not llm_stats.valid_json or getattr(llm_stats, "errors", 0):
-                        detail = (
-                            llm_stats.error_messages[-1]
-                            if llm_stats.error_messages
-                            else "LLM extraction incomplete"
-                        )
-                        raise RuntimeError(detail)
-                    if not sale.raw_payload.get("llm_display_description") or _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
-                        raise RuntimeError("Missing or stale display description")
-                    if fact_extraction_planned and not (sale.raw_payload.get("llm_fact_coverage") or {}).get("complete"):
-                        raise RuntimeError("Fact extraction coverage incomplete")
+                    facts_current = True
+                # Fact cancellation can leave a PDF-only claim. Do not let
+                # the original outer branch turn that claim into an
+                # unintended display LLM call just because its description is
+                # absent. A display job that remains in the filtered group
+                # still takes the normal independent path.
+                if job_types & {"fact_extraction", "display_description"}:
+                    facts_needed = fact_extraction_planned and not facts_current
+                    if not description_current or facts_needed:
+                        if llm_client is None:
+                            llm_client = create_llm_client()
+                        with llm_request_context(
+                            source_url=source_url,
+                            job_id=str(sale_jobs[0]["id"]),
+                            reason="new_fact_evidence" if facts_needed else "missing_or_stale_display",
+                        ):
+                            llm_stats = enrich_sale_with_llm(
+                                sale, client=llm_client,
+                                extraction_mode="structured_then_display" if facts_needed else "display_description",
+                            )
+                        if llm_stats.unavailable or not llm_stats.valid_json or getattr(llm_stats, "errors", 0):
+                            detail = (
+                                llm_stats.error_messages[-1]
+                                if llm_stats.error_messages
+                                else "LLM extraction incomplete"
+                            )
+                            raise RuntimeError(detail)
+                        if not sale.raw_payload.get("llm_display_description") or _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
+                            raise RuntimeError("Missing or stale display description")
+                        if fact_extraction_planned and not (sale.raw_payload.get("llm_fact_coverage") or {}).get("complete"):
+                            raise RuntimeError("Fact extraction coverage incomplete")
             if "display_description" in job_types or "fact_extraction" in job_types:
                 sale.raw_payload.pop("source_content_changed", None)
                 sale.raw_payload.pop("source_content_change_reason", None)

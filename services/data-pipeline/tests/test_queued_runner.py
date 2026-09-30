@@ -1,11 +1,13 @@
 import sys
 import types
 from contextlib import nullcontext
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 
 from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
+from src.freshness import document_fingerprint
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 
@@ -274,6 +276,176 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
     assert queued_runner.run_enrichment_queue_batch(limit=10) == 2
     assert calls == ["pdf", "facts_then_display", "geocode", "normalize", "upsert"]
     assert finished == [("job-pdf", True, None), ("job-facts", True, None)]
+
+
+def test_enrichment_queue_reuses_verified_facts_when_ephemeral_pdf_cache_is_missing(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/verified-facts-cache-loss",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    sale.raw_payload.update(
+        {
+            "llm_display_description": "Description documentaire déjà vérifiée. " * 5,
+            "source_content_changed": False,
+        }
+    )
+    finished: list[tuple[str, bool, str | None]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [{"id": "job-facts", "source_url": sale.source_url, "job_type": "fact_extraction"}],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda current: None)
+    monkeypatch.setattr(queued_runner, "needs_fact_extraction", lambda current: True)
+    monkeypatch.setattr(queued_runner, "has_current_fact_analysis", lambda current: True)
+    monkeypatch.setattr(queued_runner, "documents_are_current", lambda current: False)
+    monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda source_url: False)
+    monkeypatch.setattr(queued_runner, "_needs_llm_display_description_refresh", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        queued_runner,
+        "create_llm_client",
+        lambda: (_ for _ in ()).throw(AssertionError("verified facts must not invoke the LLM")),
+    )
+    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda current: None)
+    monkeypatch.setattr(queued_runner, "classify_sale_procedure", lambda current: None)
+    monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
+    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
+    monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, succeeded, error_message=None: finished.append((job_id, succeeded, error_message)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1) == 1
+    assert finished == [("job-facts", True, None)]
+
+
+def test_enrichment_queue_cancels_preexisting_terminal_pdf_fact_job_without_llm(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/terminal-facts",
+            "documents": [{"label": "PV", "url": "https://www.licitor.com/data/pv.pdf"}],
+        }
+    )
+    document_url = sale.documents[0]["url"]
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": datetime.now(UTC).isoformat(),
+        "input_fingerprint": document_fingerprint(sale.documents),
+        # Candidate filtering can produce a terminal skipped-only result
+        # without a positive listed count, while the sale still has URLs.
+        "documents_listed": 0,
+        "documents_extracted": 0,
+        "failed_documents": 0,
+        "blocked_documents": 0,
+        "blocked_document_urls": [],
+        "blocked_document_reasons": [],
+        "skipped_documents": 1,
+        "skipped_document_urls": [document_url],
+        "skipped_document_reasons": [{"url": document_url, "reason": "candidate_rejected"}],
+        "terminal_document_urls": [],
+        "coverage_status": "partial",
+    }
+    finished: list[tuple[str, bool, str | None, bool]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [{"id": "job-facts", "source_url": sale.source_url, "job_type": "fact_extraction"}],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda current: None)
+    monkeypatch.setattr(
+        queued_runner,
+        "create_llm_client",
+        lambda: (_ for _ in ()).throw(AssertionError("terminal PDF facts must not invoke the LLM")),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, succeeded, error_message=None, cancelled=False: finished.append(
+            (job_id, succeeded, error_message, cancelled)
+        ),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1) == 1
+    assert finished == [
+        ("job-facts", False, "review_required: no extractable PDF evidence", True)
+    ]
+
+
+def test_enrichment_queue_cancels_terminal_facts_but_keeps_display_independent(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/terminal-pdf-batch",
+            "documents": [{"label": "PV", "url": "https://www.licitor.com/data/pv.pdf"}],
+        }
+    )
+    document_url = sale.documents[0]["url"]
+    calls: list[str] = []
+    finished: list[tuple[str, bool, str | None, bool]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [
+            {"id": "job-pdf", "source_url": sale.source_url, "job_type": "pdf"},
+            {"id": "job-facts", "source_url": sale.source_url, "job_type": "fact_extraction"},
+        ],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+
+    def terminal_pdf(current_sale):
+        calls.append("pdf")
+        current_sale.raw_payload["document_analysis"] = {
+            "checked_at": datetime.now(UTC).isoformat(),
+            "input_fingerprint": document_fingerprint(current_sale.documents),
+            "documents_listed": 1,
+            "documents_extracted": 0,
+            "failed_documents": 0,
+            "blocked_documents": 1,
+            "blocked_document_urls": [document_url],
+            "blocked_document_reasons": [{"url": document_url, "reason": "robots"}],
+            "skipped_documents": 0,
+            "skipped_document_urls": [],
+            "terminal_document_urls": [],
+            "coverage_status": "partial",
+        }
+        return SimpleNamespace(errors=0)
+
+    monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", terminal_pdf)
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda current: None)
+    monkeypatch.setattr(
+        queued_runner,
+        "create_llm_client",
+        lambda: (_ for _ in ()).throw(AssertionError("PDF-only terminal batch must not invoke the LLM")),
+    )
+    monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
+    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda current: None)
+    monkeypatch.setattr(queued_runner, "classify_sale_procedure", lambda current: None)
+    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
+    monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: calls.append("upsert") or len(sales))
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, succeeded, error_message=None, cancelled=False: finished.append(
+            (job_id, succeeded, error_message, cancelled)
+        ),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=2) == 2
+    assert calls == ["pdf", "upsert"]
+    assert finished == [
+        ("job-facts", False, "review_required: no extractable PDF evidence", True),
+        ("job-pdf", True, None, False),
+    ]
 
 
 def test_enrichment_queue_completes_pdf_job_when_documents_are_policy_blocked(monkeypatch) -> None:
