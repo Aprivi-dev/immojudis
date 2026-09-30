@@ -10,8 +10,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unicodedata
 import zipfile
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -59,6 +62,13 @@ DOCUMENT_FACTS_VERSION = "document_facts_v2_surface_reasoning"
 VISUAL_BLANK_INK_THRESHOLD = 240
 VISUAL_BLANK_INK_RATIO_MAX = 0.005
 VISUAL_BLANK_RENDER_MAX_DIMENSION = 800
+
+# Keep a fixed part of the queue worker budget for the sale write, lease
+# telemetry, and claim cleanup after a bounded PDF pass returns.  The worker
+# still owns the 1,200-second budget; this is only the PDF's effective cutoff.
+PDF_FINALIZATION_MARGIN_SECONDS = 60.0
+
+_PDF_DEADLINE: ContextVar[float | None] = ContextVar("pdf_enrichment_deadline", default=None)
 
 DOCUMENT_TYPE_ALIASES = {
     "pv_descriptif": "pv_huissier",
@@ -117,13 +127,69 @@ class PdfExtractionDeferred(ValueError):
         self.next_attempt_at = datetime.now(UTC) + timedelta(minutes=30)
 
 
+class PdfDeadlineExceeded(PdfExtractionDeferred):
+    """The worker cutoff was reached; release the claim without spending retry."""
+
+
+@contextmanager
+def pdf_deadline_scope(deadline: float | None):
+    """Set a task-local monotonic cutoff for one queue batch."""
+
+    token = _PDF_DEADLINE.set(float(deadline) if deadline is not None else None)
+    try:
+        yield
+    finally:
+        _PDF_DEADLINE.reset(token)
+
+
+def pdf_deadline_remaining() -> float | None:
+    deadline = _PDF_DEADLINE.get()
+    if deadline is None:
+        return None
+    return deadline - time.monotonic()
+
+
+def _ensure_pdf_deadline(
+    *,
+    operation: str,
+    checkpointed_pages: int = 0,
+    total_pages: int = 0,
+    new_progress_pages: int = 0,
+) -> float | None:
+    remaining = pdf_deadline_remaining()
+    if remaining is not None and remaining <= 0:
+        raise PdfDeadlineExceeded(
+            f"PDF worker deadline reached during {operation}; retry resumes from checkpoint",
+            checkpointed_pages=checkpointed_pages,
+            total_pages=total_pages,
+            new_progress_pages=new_progress_pages,
+        )
+    return remaining
+
+
+def _deadline_bounded_timeout(
+    timeout_seconds: float,
+    *,
+    operation: str,
+) -> tuple[float, bool]:
+    """Recompute a subprocess/HTTP timeout after preparation work."""
+
+    requested_timeout = max(0.001, float(timeout_seconds))
+    remaining = _ensure_pdf_deadline(operation=operation)
+    if remaining is None:
+        return requested_timeout, False
+    return max(0.001, min(requested_timeout, remaining)), remaining <= requested_timeout
+
+
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     stats = PdfEnrichmentStats()
+    _ensure_pdf_deadline(operation="starting document download")
     downloaded_documents = download_documents(sale, stats=stats)
     _invalidate_replaced_document_facts(sale, downloaded_documents)
     pdf_texts: list[dict[str, object]] = []
 
     for document in _select_documents_for_extraction(downloaded_documents, sale=sale):
+        _ensure_pdf_deadline(operation="starting document extraction")
         file_path = Path(document["file_path"])
         try:
             cached_payload = (
@@ -234,6 +300,7 @@ def download_documents(
     downloaded: list[dict[str, str]] = []
     seen_urls: set[str] = set()
     for document in _select_documents_for_extraction(sale.documents, sale=sale):
+        _ensure_pdf_deadline(operation="selecting document")
         url = document.get("url")
         document_type = _canonical_document_type(
             document.get("document_type") or document.get("type"),
@@ -287,6 +354,7 @@ def download_documents(
             permanent_failures: list[PermanentDocumentFailure] = []
             try:
                 for candidate_url in _document_url_variants(url):
+                    _ensure_pdf_deadline(operation="starting document request")
                     try:
                         response = _download_document_response(
                             candidate_url,
@@ -327,6 +395,8 @@ def download_documents(
                                 "response is not a supported document "
                                 f"(content-type={content_type or 'unknown'})",
                             )
+                    except PdfDeadlineExceeded:
+                        raise
                     except PermanentDocumentFailure as exc:
                         permanent_failures.append(exc)
                         download_error = exc
@@ -356,6 +426,8 @@ def download_documents(
                         stats.downloaded += 1
                     download_error = None
                     break
+            except PdfDeadlineExceeded:
+                raise
             except Exception as exc:
                 download_error = exc
             if download_error is not None:
@@ -380,6 +452,7 @@ def download_documents(
                         stats.errors += 1
                 continue
 
+        _ensure_pdf_deadline(operation="finalizing downloaded document")
         enriched_document = dict(document)
         file_format = (
             _document_file_format(
@@ -477,8 +550,10 @@ def _download_document_response(
     headers: dict[str, str],
     timeout_seconds: float,
 ) -> httpx.Response:
+    _ensure_pdf_deadline(operation="starting document redirect chain")
     current_url = url
     for redirect_count in range(MAX_DOCUMENT_REDIRECTS + 1):
+        _ensure_pdf_deadline(operation="following document redirect")
         response = _send_pinned_document_request(
             current_url,
             headers=headers,
@@ -502,26 +577,54 @@ def _send_pinned_document_request(
     headers: dict[str, str],
     timeout_seconds: float,
 ) -> httpx.Response:
+    requested_timeout = float(timeout_seconds)
+    _ensure_pdf_deadline(operation="starting document HTTP request")
     target = _resolve_public_document_target(url)
+    timeout_seconds, deadline_bounded = _deadline_bounded_timeout(
+        requested_timeout,
+        operation="connecting to document host",
+    )
     transport = _PinnedHTTPTransport(target)
-    with httpx.Client(
-        transport=transport,
-        follow_redirects=False,
-        timeout=timeout_seconds,
-        trust_env=False,
-    ) as client:
-        with client.stream("GET", target.url, headers=headers) as response:
-            content = _read_document_stream(response, int(load_settings()["pdf_max_download_mb"]) * 1024 * 1024)
-            response_headers = dict(response.headers)
-            response_headers.pop("content-encoding", None)
-            response_headers["content-length"] = str(len(content))
-            return httpx.Response(response.status_code, headers=response_headers, content=content, request=response.request)
+    try:
+        with httpx.Client(
+            transport=transport,
+            follow_redirects=False,
+            timeout=timeout_seconds,
+            trust_env=False,
+        ) as client:
+            with client.stream("GET", target.url, headers=headers) as response:
+                content = _read_document_stream(response, int(load_settings()["pdf_max_download_mb"]) * 1024 * 1024)
+                _ensure_pdf_deadline(operation="reading document response")
+                response_headers = dict(response.headers)
+                response_headers.pop("content-encoding", None)
+                response_headers["content-length"] = str(len(content))
+                return httpx.Response(response.status_code, headers=response_headers, content=content, request=response.request)
+    except httpx.TimeoutException as exc:
+        if deadline_bounded:
+            raise PdfDeadlineExceeded(
+                "PDF worker deadline reached during document download; retry resumes",
+                checkpointed_pages=0,
+                total_pages=0,
+                new_progress_pages=0,
+            ) from exc
+        raise
 
 
 def _read_document_stream(response: httpx.Response, max_bytes: int) -> bytes:
     parts = []
     size = 0
-    for chunk in response.iter_bytes(chunk_size=64 * 1024):
+    chunks = iter(response.iter_bytes(chunk_size=64 * 1024))
+    while True:
+        # A healthy peer can keep a read stream alive indefinitely by sending
+        # small chunks.  The transport's read timeout is therefore not enough
+        # to enforce the worker cutoff; check the task-local deadline between
+        # every chunk as well.
+        _ensure_pdf_deadline(operation="reading document chunk")
+        try:
+            chunk = next(chunks)
+        except StopIteration:
+            break
+        _ensure_pdf_deadline(operation="received document chunk")
         size += len(chunk)
         if size > max_bytes:
             raise ValueError(f"document exceeds the {max_bytes}-byte download limit")
@@ -622,6 +725,7 @@ def extract_pdf_text(file: str | Path, document: dict[str, str] | None = None) -
 
 def extract_pdf_document(file: str | Path, document: dict[str, str] | None = None) -> dict[str, object]:
     path = Path(file)
+    _ensure_pdf_deadline(operation="opening PDF document")
     settings = load_settings()
     max_bytes = int(settings["pdf_max_download_mb"]) * 1024 * 1024
     if path.stat().st_size > max_bytes:
@@ -632,7 +736,9 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
     extraction_method = "pymupdf_pages"
     docling_text = ""
     if str(settings["pdf_extractor"]) == "docling":
+        _ensure_pdf_deadline(operation="starting Docling extraction")
         timeout = _adaptive_docling_timeout(path, document=document, settings=settings)
+        _ensure_pdf_deadline(operation="starting bounded Docling extraction")
         docling_text = extract_pdf_text_with_docling(path, timeout_seconds=timeout)
         if docling_text:
             extraction_method = "docling"
@@ -645,11 +751,13 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
         and str(settings["pdf_extractor"]) == "auto"
         and len(text) < int(settings["pdf_docling_threshold_chars"])
     ):
+        _ensure_pdf_deadline(operation="starting automatic Docling extraction")
         docling_text = extract_pdf_text_with_docling(path)
         if len(docling_text) > len(text):
             text = docling_text
             extraction_method = "docling_auto"
 
+    _ensure_pdf_deadline(operation="finalizing PDF document")
     sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
     failed_pages = [
         int(page["page"])
@@ -696,11 +804,17 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
 
 def extract_pdf_text_with_docling(file: str | Path, timeout_seconds: float | None = None) -> str:
     path = Path(file)
+    remaining = _ensure_pdf_deadline(operation="reading Docling cache")
     cached = _read_docling_cache(path)
     if cached is not None:
         return cached
     settings = load_settings()
     timeout = float(timeout_seconds if timeout_seconds is not None else settings["pdf_docling_timeout_seconds"] or 0)
+    if remaining is not None:
+        if timeout <= 0:
+            timeout = remaining
+        else:
+            timeout = min(timeout, remaining)
     if timeout > 0:
         text = _extract_pdf_text_with_docling_subprocess(path, timeout)
         if text:
@@ -715,6 +829,8 @@ def extract_pdf_text_with_docling(file: str | Path, timeout_seconds: float | Non
 def _extract_pdf_text_with_docling_direct(path: Path) -> str:
     try:
         _ensure_docling_available()
+    except PdfDeadlineExceeded:
+        raise
     except Exception as exc:
         LOGGER.warning("Docling is unavailable: %s", exc)
         return ""
@@ -728,6 +844,8 @@ def _extract_pdf_text_with_docling_direct(path: Path) -> str:
         else:
             converter = _build_docling_converter(do_ocr, settings)
             text = _convert_docling_pdf(converter, path)
+    except PdfDeadlineExceeded:
+        raise
     except Exception as exc:
         LOGGER.warning("Docling extraction failed for %s: %s", path, exc)
         return ""
@@ -801,9 +919,14 @@ def _docling_chunk_pages(settings: dict[str, object], do_ocr: bool) -> int:
 
 
 def _extract_pdf_text_with_docling_subprocess(path: Path, timeout: float) -> str:
+    _ensure_pdf_deadline(operation="preparing Docling subprocess")
     DOCLING_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
     output_path = _docling_cache_path(path).with_suffix(".tmp.txt")
     command = [sys.executable, "-m", "src.pdf_enrichment", "--docling-extract", str(path), str(output_path)]
+    timeout, deadline_bounded = _deadline_bounded_timeout(
+        timeout,
+        operation="starting Docling subprocess",
+    )
     try:
         result = subprocess.run(
             command,
@@ -813,9 +936,18 @@ def _extract_pdf_text_with_docling_subprocess(path: Path, timeout: float) -> str
             timeout=timeout,
             check=False,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        if deadline_bounded:
+            raise PdfDeadlineExceeded(
+                "PDF worker deadline reached during Docling extraction; retry resumes",
+                checkpointed_pages=0,
+                total_pages=0,
+                new_progress_pages=0,
+            ) from exc
+        _ensure_pdf_deadline(operation="checking deadline after Docling timeout")
         LOGGER.warning("Docling extraction timed out after %.0fs for %s", timeout, path)
         return ""
+    _ensure_pdf_deadline(operation="finishing Docling extraction")
     if result.returncode != 0:
         stderr = clean_text(result.stderr)[-1000:] if result.stderr else ""
         LOGGER.warning("Docling extraction subprocess failed for %s: %s", path, stderr)
@@ -829,6 +961,7 @@ def _extract_pdf_text_with_docling_subprocess(path: Path, timeout: float) -> str
 
 def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
     pages: list[dict[str, object]] = []
+    _ensure_pdf_deadline(operation="opening PDF pages")
     settings = load_settings()
     max_pages = int(settings["pdf_max_extract_pages"])
     hard_limit = int(settings.get("pdf_max_total_pages", 300))
@@ -841,6 +974,12 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
         ocr_attempts = 0
         new_progress_pages = 0
         for index, page in enumerate(document, start=1):
+            _ensure_pdf_deadline(
+                operation=f"starting PDF page {index}",
+                checkpointed_pages=index - 1,
+                total_pages=document.page_count,
+                new_progress_pages=new_progress_pages,
+            )
             cache_path = cache_dir / f"{index}.json"
             if cache_path.exists():
                 try:
@@ -880,6 +1019,12 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
             status = "extracted" if clean_text(raw_text) else "failed"
             failure_reason = "empty_page_not_proven_blank" if not clean_text(raw_text) else None
             if _should_try_ocr(raw_text):
+                _ensure_pdf_deadline(
+                    operation=f"checking OCR budget for page {index}",
+                    checkpointed_pages=index - 1,
+                    total_pages=document.page_count,
+                    new_progress_pages=new_progress_pages,
+                )
                 if ocr_attempts >= max_pages:
                     raise PdfExtractionDeferred(
                         f"OCR pass budget reached; {index - 1}/{document.page_count} pages checkpointed; retry resumes",
@@ -888,7 +1033,13 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                         new_progress_pages=new_progress_pages,
                     )
                 ocr_attempts += 1
-                result = _extract_page_text_with_ocr_result(page, fallback=raw_text)
+                result = _extract_page_text_with_ocr_result(
+                    page,
+                    fallback=raw_text,
+                    checkpointed_pages=index - 1,
+                    total_pages=document.page_count,
+                    new_progress_pages=new_progress_pages,
+                )
                 text = str(result["text"])
                 method = str(result["method"])
                 confidence = float(result["confidence"])
@@ -949,6 +1100,18 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
             temporary.replace(cache_path)
             if status in {"extracted", "visual_blank_excluded"}:
                 new_progress_pages += 1
+            _ensure_pdf_deadline(
+                operation=f"checkpointing PDF page {index}",
+                checkpointed_pages=index,
+                total_pages=document.page_count,
+                new_progress_pages=new_progress_pages,
+            )
+    _ensure_pdf_deadline(
+        operation="finishing PDF pages",
+        checkpointed_pages=len(pages),
+        total_pages=len(pages),
+        new_progress_pages=new_progress_pages,
+    )
     return pages
 
 
@@ -1046,9 +1209,37 @@ def _extract_page_text_with_ocr(page: fitz.Page, fallback: str) -> str:
     return str(_extract_page_text_with_ocr_result(page, fallback=fallback)["text"])
 
 
-def _extract_page_text_with_ocr_result(page: fitz.Page, fallback: str) -> dict[str, object]:
+def _extract_page_text_with_ocr_result(
+    page: fitz.Page,
+    fallback: str,
+    *,
+    checkpointed_pages: int = 0,
+    total_pages: int = 0,
+    new_progress_pages: int = 0,
+) -> dict[str, object]:
     settings = load_settings()
     tessdata = settings.get("pdf_ocr_tessdata")
+    remaining = _ensure_pdf_deadline(
+        operation="starting OCR",
+        checkpointed_pages=checkpointed_pages,
+        total_pages=total_pages,
+        new_progress_pages=new_progress_pages,
+    )
+    if remaining is not None:
+        # PyMuPDF's native OCR call has no timeout. During a bounded queue
+        # pass use the interruptible tesseract subprocess instead, with the
+        # remaining PDF budget recomputed after page rendering as its hard
+        # timeout.
+        return _extract_page_text_with_tesseract_result(
+            page,
+            fallback=fallback,
+            settings=settings,
+            tessdata=tessdata,
+            timeout=60.0,
+            checkpointed_pages=checkpointed_pages,
+            total_pages=total_pages,
+            new_progress_pages=new_progress_pages,
+        )
     try:
         text_page = page.get_textpage_ocr(
             language=str(settings["pdf_ocr_language"]),
@@ -1064,13 +1255,54 @@ def _extract_page_text_with_ocr_result(page: fitz.Page, fallback: str) -> dict[s
                 "status": "extracted",
                 "retryable": False,
             }
+    except PdfDeadlineExceeded:
+        raise
     except Exception as exc:
         LOGGER.debug("PDF OCR unavailable or failed: %s", exc)
+    return _extract_page_text_with_tesseract_result(
+        page,
+        fallback=fallback,
+        settings=settings,
+        tessdata=tessdata,
+        timeout=60.0,
+        checkpointed_pages=checkpointed_pages,
+        total_pages=total_pages,
+        new_progress_pages=new_progress_pages,
+    )
+
+
+def _extract_page_text_with_tesseract_result(
+    page: fitz.Page,
+    *,
+    fallback: str,
+    settings: dict[str, object],
+    tessdata: object,
+    timeout: float,
+    checkpointed_pages: int,
+    total_pages: int,
+    new_progress_pages: int,
+) -> dict[str, object]:
     try:
+        _ensure_pdf_deadline(
+            operation="rendering OCR page",
+            checkpointed_pages=checkpointed_pages,
+            total_pages=total_pages,
+            new_progress_pages=new_progress_pages,
+        )
         with tempfile.TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir) / "page.png"
             pixmap = page.get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
+            _ensure_pdf_deadline(
+                operation="preparing OCR image",
+                checkpointed_pages=checkpointed_pages,
+                total_pages=total_pages,
+                new_progress_pages=new_progress_pages,
+            )
             pixmap.save(str(image_path))
+            timeout, deadline_bounded = _deadline_bounded_timeout(
+                timeout,
+                operation="starting OCR subprocess",
+            )
             env = os.environ.copy()
             if tessdata:
                 env["TESSDATA_PREFIX"] = str(tessdata)
@@ -1078,9 +1310,15 @@ def _extract_page_text_with_ocr_result(page: fitz.Page, fallback: str) -> dict[s
                 ["tesseract", str(image_path), "stdout", "-l", str(settings["pdf_ocr_language"])],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=timeout,
                 env=env,
                 check=False,
+            )
+            _ensure_pdf_deadline(
+                operation="finishing OCR subprocess",
+                checkpointed_pages=checkpointed_pages,
+                total_pages=total_pages,
+                new_progress_pages=new_progress_pages,
             )
             if result.returncode == 0 and clean_text(result.stdout):
                 return {
@@ -1091,6 +1329,23 @@ def _extract_page_text_with_ocr_result(page: fitz.Page, fallback: str) -> dict[s
                     "retryable": False,
                 }
             LOGGER.debug("Tesseract OCR returned %s: %s", result.returncode, result.stderr)
+    except subprocess.TimeoutExpired as exc:
+        if deadline_bounded:
+            raise PdfDeadlineExceeded(
+                "PDF worker deadline reached during OCR; retry resumes from checkpoint",
+                checkpointed_pages=checkpointed_pages,
+                total_pages=total_pages,
+                new_progress_pages=new_progress_pages,
+            ) from exc
+        _ensure_pdf_deadline(
+            operation="checking deadline after OCR timeout",
+            checkpointed_pages=checkpointed_pages,
+            total_pages=total_pages,
+            new_progress_pages=new_progress_pages,
+        )
+        LOGGER.debug("Tesseract OCR timed out after %.1fs", timeout)
+    except PdfDeadlineExceeded:
+        raise
     except Exception as exc:
         LOGGER.debug("Tesseract OCR fallback failed: %s", exc)
     return {

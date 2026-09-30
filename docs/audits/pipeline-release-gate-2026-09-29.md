@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 00 h 38 UTC
+## Synthèse actuelle — 30 septembre, 07 h 17 UTC
 
-| Chantier           | État vérifié                                                                                                                                                                                                                                                                                                                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `520abb05` vert : 200 migrations, 1 481 assertions pgTAP, CodeQL, Web, Python et navigateur. Maintenance `36641397586` réussie, sans dérive.                                                                                                                                                                                                          |
-| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                                                                                                                  |
-| Worker automatique | Tag protégé `immojudis-workers-f695a739`. Redéploiement interne du même code public `05cff558`, sans publication des nouvelles fonctionnalités de la PR.                                                                                                                                                                                              |
-| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                                                                                                                  |
-| Collecte AGRASC    | Huit annonces et huit PDF sans erreur ; terminal changeant pendant le scan et 25 archives sans lien. Périmètre adressable distinct du certificat public global, qui reste partiel.                                                                                                                                                                    |
-| Documents          | Noisy : 416/416 pages extraites dans le cloud, avec incertitude sémantique sur quatre cartes. Uckange : PDF de 96 pages extrait. Ris-Orangis : lignes canoniques optimistes, mais manifeste encore partiel avec deux pages échouées ; non clos. Correctif PDF validé localement : 238 tests ciblés et accord indépendant ; CI et canari cloud requis. |
-| Capacité           | 2 764 des 2 795 jobs ouverts de plus de 48 h sont réellement claimables. Circuit d'arrêt des claims généraux après épuisement LLM et retrait des compteurs Licitor des empreintes factuelles relus et commités, pas encore qualifiés dans le cloud. Aucune quarantaine massive.                                                                       |
-| Revue IA           | Export privé v4.2 conservé ; aucun import. Gardes applicatives, lecture transactionnelle fraîche et réconciliation requises avant import.                                                                                                                                                                                                             |
-| Resend et portail  | Clé, domaines et webhook vérifiés ; canari fournisseur livré. Secret portail absent : ajout Vercel Production refusé par auto-review, accord précis pending. Aucun envoi à un interlocuteur.                                                                                                                                                          |
-| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                                                                                                              |
-| Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                                                                                                                                               |
-| Publication finale | PR en brouillon, pas de publication applicative finale, pas de nettoyage de branches.                                                                                                                                                                                                                                                                 |
+| Chantier           | État vérifié                                                                                                                                                                                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL et CI          | `ad980898` vert : CI et CodeQL, 200 migrations, 1 481 assertions pgTAP, 1 928 tests Python par version, Web et navigateur. Correctifs deadline, textes persistés et robots approuvés en relecture ; nouveau HEAD à qualifier en CI puis cloud.                       |
+| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                                 |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Tag candidat `immojudis-workers-ad980898` immuable ; canari terminé mais deux blocages réels empêchent sa bascule.                                                                                       |
+| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                                 |
+| Collecte AGRASC    | Huit annonces et huit PDF sans erreur ; terminal changeant pendant le scan et 25 archives sans lien. Périmètre adressable distinct du certificat public global, qui reste partiel.                                                                                   |
+| Documents          | Noisy 416/416 et Uckange 96 pages extraites. Ris-Orangis reste incomplet, nouveau PDF naturellement épuisé 4/4 après supersession. Correction de perte des statuts depuis textes persistés complets, relue ; manifestes mixtes et historiques sans preuve v1 exclus. |
+| Capacité           | Au relevé de 06 h 30 : 6 012 jobs dus et 2 732 ouverts de plus de 48 h. Circuit quota testé localement mais non déclenché dans le dernier canari. Aucun gain durable extrapolé des variations ou annulations.                                                        |
+| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                                   |
+| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                           |
+| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                             |
+| Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                                                              |
+| Publication finale | PR en brouillon, nouvelles corrections en cours. Preview validée en lecture seule ; pas de publication applicative finale ni import IA. Plan de branches préparé, aucune suppression.                                                                                |
 
 Les sections suivantes conservent la chronologie. Leurs compteurs datés ne
 doivent pas être utilisés comme l'état courant sans lire cette synthèse et
@@ -1640,3 +1640,184 @@ Le job PDF de Ris-Orangis est désormais `failed` à quatre essais sur quatre,
 sans lease active. Il ne sera pas réinitialisé pour le canari. Le worker
 automatique démarré à 00 h 31 UTC doit terminer avant tout nouvel essai
 manuel, conformément à la sérialisation des écritures.
+
+## Qualification verte et déploiement interne du relais
+
+Le HEAD `ad98089839aee2d1d9411dd569b5b3d597a7f582` passe la CI
+`36651386737` et CodeQL `36651386735`. Python 3.11 et 3.12 comptent
+1 928 tests réussis et 18 ignorés. Le rejeu SQL vérifie 200 migrations et
+1 481 assertions dans 79 fichiers pgTAP, sans dérive ; quotas concurrents,
+catalogue HTTP, intégration locale inbound et parcours navigateur passent.
+La preview Vercel `dpl_4Zs4dj5HVZZ2xMAwPPU6s9XdHtjB` est READY au
+même SHA. Avec l'accès officiel de la session CLI Vercel, le catalogue
+répond 200, le cron inbound refuse une requête sans Authorization avec
+401, et le webhook refuse GET avec 405. Aucun traitement entrant, import,
+upload ou message à un contact réel n'est déclenché par ces lectures.
+
+Le tag `immojudis-workers-ad980898` pointe exactement vers ce SHA. La
+règle GitHub `24219887` interdit sa mise à jour et sa suppression, sans
+acteur de bypass. Le routage automatique reste sur le tag précédent
+jusqu'à qualification du canari `36653152710`, lancé à 01 h 01 min 56 s
+après vérification d'une file de runs SQL vide et de la fin du workflow
+Vench. Les limites restent de 90 jobs et 1 200 secondes ; aucun essai,
+bail ou ordre de priorité n'est réinitialisé.
+
+Le worker précédent `36650632243` termine à 00 h 42 min 56 s. Ses logs
+prouvent 90 claims uniques, 45 détails et 45 généraux, en 706,3 secondes :
+61 completed, cinq failed, cinq cancelled, 19 queued, zéro running et
+zéro missing. Les 160 statuts du résumé SQL incluent des jobs voisins et
+ne sont pas attribués à ces 90 claims. Trois échecs de détail sont les
+HTTP 400 du relais après redirection, un échec facts manque de cache PDF
+complet et un PDF reste incomplet. Les reports suivent l'épuisement du
+budget LLM ; aucun essai n'est remis à zéro.
+
+La collecte Vench suivante utilise le transport direct. Le relais peut
+donc être corrigé indépendamment de ce run actif, après fin du worker
+d'enrichissement. La version distante 4 a été sauvegardée exactement ;
+elle ne contient ni le chemin `/n/` ni la garde `safeRedirectLocation`.
+Un bundle local initialement présenté comme backup distant a été rejeté
+comme preuve et correctement identifié comme candidat local. La version
+5 est déployée à 00 h 54 UTC, ACTIVE, avec authentification custom
+inchangée. La relecture distante confirme une égalité exacte des quatre
+fichiers avec le HEAD validé ; digest bundle
+`0362b895889089192cbb0efbd4ab5960b2aebd9e200936e58af690197458201e`.
+Les requêtes sans token et avec un faux token répondent 401 sans fetch
+source. Le contrôle authentifié des chemins publics reste à effectuer.
+
+## Canari du nouveau worker et deux blocages concrets
+
+Le run `36653152710` réussit côté GitHub, mais ne qualifie pas encore une
+bascule automatique. Ses 38 claims uniques, 19 détails et 19 généraux,
+donnent 25 completed, un failed, sept cancelled, cinq queued, zéro running
+et zéro missing. Six reports ont été demandés. Il dure 1 325,3 secondes,
+soit 125,3 secondes au-delà du budget nominal de 1 200 secondes, parce que
+la deadline est vérifiée avant le claim sans interrompre une passe OCR
+déjà lancée. Cinq passes checkpointent environ 75 pages ; le PDF failed
+reste incomplet. Neuf appels LLM réels et leurs caches sont observés,
+sans épuisement quota : ce run ne constitue pas une preuve cloud du
+circuit quota, couvert par ses tests locaux. Aucun HTTP 4xx du relais
+n'apparaît sur cet échantillon plus petit de détails.
+
+Une borne de temps propagée au PDF, avec OCR réellement interrompable,
+marge de clôture et restitution des claims est en correction. Elle doit
+conserver les checkpoints et distinguer un arrêt par deadline d'un PDF
+illisible sans progrès ; aucun de ces états ne peut être déclaré complete.
+
+La vérification après renouvellement de l'accès Supabase est datée de
+05 h 49 UTC, quatre heures après le canari ; ses statuts courants ne sont
+pas attribués rétroactivement au run. Le job PDF `80de5924` porte deux
+documents bloqués par robots et aucun texte : les lignes canoniques pending
+sont cohérentes. Le job `b5ae1461` a au contraire quatre profils et preuves
+complets à 01 h 24 min 38 s, avec extraction persistée. Un worker ultérieur
+réécrit pourtant ses quatre lignes en unknown/pending à 05 h 47 min 25 s
+lorsque le cache local manque. C'est un défaut de matérialisation : une
+preuve persistée valide doit survivre au cache éphémère, tandis qu'une
+nouvelle génération factuelle exige toujours un cache complet. Le correctif
+est en cours, avec validation exacte des profils, empreintes et documents.
+
+L'ancien job Ris-Orangis `e5d6e2a2` est annulé à 01 h 02 min 40 s avec le
+motif `Superseded by a newer input revision`, tentative toujours quatre
+sur quatre. La révision source a créé un nouveau PDF à 00 h 47 min 28 s.
+Ce dernier épuise ses essais naturellement à 04 h 02 min 37 s, document
+toujours incomplet ; aucun reset, claim ciblé ou clôture artificielle.
+
+À 05 h 56 UTC, la file due compte 2 911 display, 76 facts, 406 PDF et
+2 634 détails. Les tâches ouvertes de plus de 48 heures restent respectivement
+596, 35, 24 et 2 067. Les variations depuis la baseline mêlent traitements,
+nouveaux inventaires et supersessions ; elles ne prouvent pas une résorption
+durable. La production reste sur `f695a739`. Le plan de nettoyage est prêt
+en lecture seule et préserve PR ouvertes, worktrees actifs et tags de rollback.
+Aucune publication applicative finale, import IA ou suppression de branche.
+
+## Reprise du 30 septembre à 06 h 30 UTC
+
+Le relevé compte 6 012 tâches dues : 2 889 descriptions, 73 faits,
+392 PDF et 2 658 détails. Les tâches ouvertes de plus de 48 heures sont
+respectivement 597, 28, 26 et 2 081, soit 2 732. Aucun job d'enrichissement
+n'est running dans cet instantané. Le workflow automatique `36678538535`
+vient toutefois de démarrer ; cette absence de bail ne permet pas de lancer
+un autre traitement en parallèle. Le worker précédent `36676018028` dure
+1 200,6 secondes sur `f695a739` : 34 claims uniques, 25 completed, cinq
+failed, deux cancelled et deux queued. Ses 37 passages ne sont pas 37
+réussites distinctes. Ces nouveaux compteurs ne qualifient pas une résorption.
+
+Le correctif de deadline reçoit un accord de relecture IA indépendante.
+Le temps résiduel est recalculé après DNS, préparation Docling et rendu
+plus sauvegarde PNG, avant HTTP ou subprocess. L'expiration restitue
+l'essai, conserve les checkpoints et coupe les nouveaux claims pendant
+la marge finale. Les opérations natives synchrones de rendu et certains
+SDK restent sans interruption absolue ; le correctif ne promet pas une
+borne sur chacun de ces appels. La qualification CI et cloud de ce nouveau
+diff reste à effectuer.
+
+La revue automatique refuse une variante de récupération d'un sous-ensemble
+de textes PDF : elle considère que cela pourrait affaiblir la validation
+globale du manifeste. Elle refuse ensuite une alternative de statut fondée
+sur des métadonnées seules, même sans transmettre de texte, car le statut
+extracted pourrait constituer un faux succès en l'absence du résultat réel.
+Les deux variantes sont annulées. Une récupération des textes complets
+réellement persistés est en préparation, avec validation du manifeste entier,
+de la provenance et de chaque SHA texte recalculé. Elle est limitée à la
+matérialisation documentaire ; les manifestes mixtes restent inéligibles,
+et la garde de génération conserve son exigence du cache local complet.
+
+Les 166 tests des suites PDF, reprise et worker passent dans un cache
+temporaire. Le diagnostic des huit jobs PDF failed ne justifie aucun reset
+ni quarantine ; des résultats postérieurs existent pour quatre d'entre eux,
+trois portent des pages encore échouées et un possède déjà un successeur
+queued. Parmi les 26 PDF ouverts de plus de 48 heures, neuf possèdent des
+profils historiques sans preuve v1 : ils ne seront pas restaurés par ce
+fallback et devront être réextraits. Onze n'ont pas de résultat antérieur,
+cinq pas de ligne documentaire et un porte un état intermédiaire. Aucun
+succès artificiel n'est produit à partir de ces compteurs.
+
+Une troisième lecture IA aveugle de la capture AGRASC 362606 retient quatre
+pièces, séjour et trois chambres, avec SHA de capture vérifié. Le résultat
+privé conserve prompt exact, hash, identité réelle de l'agent et heures de
+lecture. Il complète la chronologie de relecture sans modifier le manifeste
+v4.2, sa garde d'import ou l'état non vérifié de l'identité source. Aucun
+import n'est réalisé.
+
+## Trois correctifs relus avant nouvelle qualification
+
+Les trois diffs sont figés et reçoivent chacun un accord IA indépendant.
+La récupération documentaire centrale lit les seuls dossiers sans cache
+local et avec manifeste complet. PostgreSQL limite à cinq versions par
+source ; REST travaille par lots de cinq et fait une seule tentative de
+15 secondes, connexion de cinq secondes, sans toucher aux retries des
+écritures. Le modèle, provider, schéma, empreinte documentaire, profils et
+preuves v1 sont exacts ; les SHA fichier correspondent et le SHA texte est
+recalculé sur le texte réellement lu. Un hash global de fiche différent
+n'invalide pas ces identités documentaires. Les SHA exigent exactement
+64 caractères hexadécimaux, sans signe ni préfixe `0x`.
+
+La matérialisation ne réexpose aucun chemin local disparu. Elle conserve
+`verified_at` historique, indique la provenance `persisted_pdf_text` et
+utilise le statut de téléchargement `verified`, sans simuler un nouveau
+download. Les textes ne rejoignent ni `_load_pdf_texts`, ni les risques,
+ni la génération. Une corruption ou un manifeste mixte refuse entièrement
+la récupération. La limite REST est globale au lot : un historique très
+déséquilibré peut laisser un dossier en attente, sans accepter une preuve
+partielle. Les 123 tests stockage/main/fiabilité passent ; les neuf cas
+ciblés finaux couvrent reconstruction, corruption, timeout et formats SHA.
+
+La collecte Enchères Immobilières `36678538535` échoue de nouveau à
+06 h 33 UTC, zéro upsert : quatre tentatives de liste, aucune page, puis
+arrêt contrôlé sans nettoyage. Une lecture publique ordinaire confirme
+le timeout de l'origine ; augmenter les retries n'apporterait pas de preuve.
+Le client commun corrige séparément son comportement après échec robots :
+réseau/5xx interdit toute requête catalogue avec diagnostic retryable,
+403 et challenges restent des refus distincts, et les corps 404/410 sont
+ignorés comme absence de politique, y compris après redirection.
+Ces règles suivent la [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309.html#section-2.3.1.4).
+Les tests common finaux comptent 22 succès ; 37 tests sources/retry/catalogue
+et sept tests ciblés source_detail, un ignoré, ont également réussi. La
+relecture finale valide le delta 404/410 après correction.
+
+Ruff et `git diff --check` sont verts. La CI complète, le nouveau tag
+candidat et les essais cloud restent requis ; le worker automatique garde
+le tag qualifié précédent. Une collecte Avoventes sur un nouveau tag est
+le premier essai prévu pour le cas de cache absent : GitHub isole les caches
+de tags différents, selon sa [documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
+La présence réelle ou l'absence du cache devra être constatée dans le run,
+sans être déduite du seul nom du tag.

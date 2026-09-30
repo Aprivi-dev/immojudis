@@ -1,19 +1,257 @@
 import time
 
+import httpx
 import pytest
 
 from src.sources import common
 
 
 class _Response:
-    def __init__(self, status_code: int, *, text: str = "", location: str | None = None) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        *,
+        text: str = "",
+        location: str | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.status_code = status_code
         self.text = text
-        self.headers = {"location": location} if location else {}
+        self.headers = dict(headers or {})
+        if location:
+            self.headers["location"] = location
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
             raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def _patch_http_client(monkeypatch, response_batches):
+    clients = []
+
+    class Client:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+            self.responses = list(response_batches.pop(0))
+            self.calls: list[tuple[str, str]] = []
+            clients.append(self)
+
+        def _next(self, method: str, url: str):
+            self.calls.append((method, url))
+            if not self.responses:
+                raise AssertionError(f"unexpected HTTP request: {method} {url}")
+            response = self.responses.pop(0)
+            if isinstance(response, BaseException):
+                raise response
+            return response
+
+        def get(self, url: str):
+            return self._next("GET", url)
+
+        def request(self, method: str, url: str, **kwargs: object):
+            del kwargs
+            return self._next(method, url)
+
+    monkeypatch.setattr(common.httpx, "Client", Client)
+    return clients
+
+
+@pytest.mark.parametrize(
+    "robots_response",
+    [httpx.ReadTimeout("robots timeout"), _Response(503, text="upstream unavailable")],
+)
+def test_polite_client_blocks_catalogue_when_robots_is_unavailable(monkeypatch, robots_response) -> None:
+    clients = _patch_http_client(monkeypatch, [[robots_response]])
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+
+    with pytest.raises(common.RobotsUnavailableError) as caught:
+        client.get("https://source.example/catalogue")
+
+    assert isinstance(caught.value, httpx.NetworkError)
+    assert "robots.txt could not be verified" in str(caught.value)
+    assert "does not allow" not in str(caught.value)
+    assert clients[0].calls == [("GET", "https://source.example/robots.txt")]
+
+
+@pytest.mark.parametrize("status_code", [404, 410])
+def test_polite_client_treats_absent_robots_as_empty_policy(monkeypatch, status_code) -> None:
+    clients = _patch_http_client(
+        monkeypatch,
+        [[
+            _Response(status_code, text="User-agent: *\nDisallow: /catalogue"),
+            _Response(200, text="catalogue"),
+        ]],
+    )
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+
+    assert client.get("https://source.example/catalogue") == "catalogue"
+    assert clients[0].calls == [
+        ("GET", "https://source.example/robots.txt"),
+        ("GET", "https://source.example/catalogue"),
+    ]
+
+
+@pytest.mark.parametrize("status_code", [404, 410])
+def test_polite_client_ignores_absent_robots_body_after_redirect(monkeypatch, status_code) -> None:
+    clients = _patch_http_client(
+        monkeypatch,
+        [[
+            _Response(200, text="User-agent: *\nAllow: /"),
+            _Response(302, location="https://cdn.example/landing"),
+            _Response(status_code, text="User-agent: *\nDisallow: /landing"),
+            _Response(200, text="catalogue"),
+        ]],
+    )
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        allowed_redirect_origins=("https://cdn.example",),
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+
+    assert client.get("https://source.example/catalogue") == "catalogue"
+    assert clients[0].calls == [
+        ("GET", "https://source.example/robots.txt"),
+        ("GET", "https://source.example/catalogue"),
+        ("GET", "https://cdn.example/robots.txt"),
+        ("GET", "https://cdn.example/landing"),
+    ]
+
+
+def test_polite_client_recovers_with_a_new_client_after_robots_failure(monkeypatch) -> None:
+    clients = _patch_http_client(
+        monkeypatch,
+        [
+            [httpx.ReadTimeout("robots timeout")],
+            [
+                _Response(200, text="User-agent: *\nAllow: /"),
+                _Response(200, text="catalogue"),
+            ],
+        ],
+    )
+    first = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+    with pytest.raises(common.RobotsUnavailableError):
+        first.get("https://source.example/catalogue")
+
+    second = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+    assert second.get("https://source.example/catalogue") == "catalogue"
+    assert len(clients) == 2
+    assert clients[1].calls == [
+        ("GET", "https://source.example/robots.txt"),
+        ("GET", "https://source.example/catalogue"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "robots_response, exception_type",
+    [
+        (_Response(403, text="<html><body>challenge</body></html>"), common.RobotsAccessRefusedError),
+        (
+            _Response(200, text="<!doctype html><html><body>Just a moment...</body></html>"),
+            common.RobotsAccessRefusedError,
+        ),
+        (
+            _Response(
+                200,
+                text="<html><body>Please enable JavaScript</body></html>",
+                headers={"content-type": "text/html; charset=utf-8"},
+            ),
+            common.RobotsAccessRefusedError,
+        ),
+    ],
+)
+def test_polite_client_does_not_interpret_html_or_403_as_empty_robots(
+    monkeypatch, robots_response, exception_type
+) -> None:
+    clients = _patch_http_client(monkeypatch, [[robots_response]])
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+
+    with pytest.raises(exception_type):
+        client.get("https://source.example/catalogue")
+    assert clients[0].calls == [("GET", "https://source.example/robots.txt")]
+
+
+def test_polite_client_keeps_actual_rules_when_plain_text_is_mislabeled_html(monkeypatch) -> None:
+    clients = _patch_http_client(
+        monkeypatch,
+        [[
+            _Response(
+                200,
+                text="User-agent: *\nDisallow: /private\nAllow: /",
+                headers={"content-type": "text/html; charset=utf-8"},
+            ),
+            _Response(200, text="catalogue"),
+        ]],
+    )
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+
+    assert client.get("https://source.example/catalogue") == "catalogue"
+    assert clients[0].calls[-1] == ("GET", "https://source.example/catalogue")
+
+
+@pytest.mark.parametrize(
+    "redirect_robots_response",
+    [httpx.ReadTimeout("redirect robots timeout"), _Response(503)],
+)
+def test_polite_client_blocks_redirect_target_when_robots_is_unavailable(
+    monkeypatch, redirect_robots_response
+) -> None:
+    clients = _patch_http_client(
+        monkeypatch,
+        [
+            [
+                _Response(200, text="User-agent: *\nAllow: /"),
+                _Response(302, location="https://cdn.example/landing"),
+                redirect_robots_response,
+            ]
+        ],
+    )
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        allowed_redirect_origins=("https://cdn.example",),
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+
+    with pytest.raises(common.RobotsUnavailableError, match="could not be verified"):
+        client.get("https://source.example/catalogue")
+    assert clients[0].calls == [
+        ("GET", "https://source.example/robots.txt"),
+        ("GET", "https://source.example/catalogue"),
+        ("GET", "https://cdn.example/robots.txt"),
+    ]
 
 
 def test_polite_client_accepts_configured_canonical_robots_redirect(monkeypatch) -> None:

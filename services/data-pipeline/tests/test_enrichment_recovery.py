@@ -1,3 +1,4 @@
+import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -167,6 +168,42 @@ def test_ocr_budget_without_new_page_progress_is_bounded(tmp_path, monkeypatch):
     assert error.value.progress_made is False
     assert error.value.new_progress_pages == 0
     assert error.value.checkpointed_pages == 1
+
+
+def test_deadline_checkpoint_is_reused_on_next_pdf_pass(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf_enrichment, 'PDF_DOCUMENT_TEXTS_DIR', tmp_path / 'cache')
+    monkeypatch.setenv('PDF_MAX_EXTRACT_PAGES', '2')
+    monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
+    path = tmp_path / 'deadline-checkpoint.pdf'
+    with fitz.open() as document:
+        for _ in range(2):
+            page = document.new_page()
+            page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        document.save(path)
+
+    calls = []
+
+    def checkpoint_then_expire(page, **_kwargs):
+        calls.append(page.number)
+        if len(calls) == 1:
+            # The page is returned and atomically checkpointed before the
+            # extraction loop notices that its bounded pass has expired.
+            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() - 1)
+        return {'text': f'OCR page {page.number + 1}', 'method': 'ocr_test', 'confidence': .8}
+
+    monkeypatch.setattr(pdf_enrichment, '_extract_page_text_with_ocr_result', checkpoint_then_expire)
+
+    with pytest.raises(pdf_enrichment.PdfDeadlineExceeded) as error:
+        with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 5):
+            pdf_enrichment.extract_pdf_pages(path)
+    assert error.value.checkpointed_pages == 1
+    assert calls == [0]
+    assert pdf_enrichment.pdf_deadline_remaining() is None
+
+    pages = pdf_enrichment.extract_pdf_pages(path)
+    assert calls == [0, 1]
+    assert len(pages) == 2
+    assert all(page['status'] == 'extracted' for page in pages)
 
 
 def test_health_fails_for_old_queue_stalled_runs_and_stale_sources():

@@ -69,6 +69,15 @@ POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE = 50
 POSTGRES_CONNECT_TIMEOUT = 15
 POSTGRES_CONNECT_RETRY_DELAYS = (1.0, 3.0, 8.0)
 POSTGRES_OBSERVATION_BATCH_SIZE = 25
+PDF_EXTRACTION_PROVIDER = "pdf_text"
+PDF_EXTRACTION_MODEL = "docling+pymupdf+tesseract"
+PDF_EXTRACTION_SCHEMA_VERSION = "pdf_text_v2_page_level"
+# Persisted PDF payloads contain the complete page text and can be large. Keep
+# the recovery lookup bounded while still batching it separately from the
+# document materialization write (one lookup per small URL batch, never one
+# lookup per sale).
+PERSISTED_PDF_LOOKUP_BATCH_SIZE = 5
+PERSISTED_PDF_LOOKUP_TIMEOUT = httpx.Timeout(15.0, connect=5.0)
 EXPIRED_SALE_DELETE_TABLES = (
     "auction_observations",
     "auction_enrichment_jobs",
@@ -1765,6 +1774,410 @@ def update_run_progress_in_supabase(
         LOGGER.warning("Supabase run progress update failed: %s", response.text)
 
 
+def _is_sha256(value: object) -> bool:
+    text = clean_text(value) or ""
+    return len(text) == 64 and all(character in "0123456789abcdefABCDEF" for character in text)
+
+
+def _historical_timestamp_is_valid(value: object) -> bool:
+    """Accept a persisted verification timestamp without applying the 24h TTL.
+
+    The timestamp describes when the bytes were checked.  Freshness for a new
+    extraction remains the responsibility of ``documents_are_current``; this
+    guard only rejects malformed or future-dated provenance.
+    """
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return False
+    return parsed.tzinfo is not None and parsed <= datetime.now(UTC)
+
+
+def _manifest_urls(value: object) -> set[str] | None:
+    if value is None:
+        return set()
+    if not isinstance(value, (list, tuple, set)):
+        return None
+    urls: set[str] = set()
+    for item in value:
+        url = clean_text(item)
+        if not url:
+            return None
+        urls.add(url)
+    return urls
+
+
+def _validated_persisted_pdf_manifest(sale: AuctionSale) -> dict[str, object] | None:
+    """Validate the complete historical PDF manifest for one reconstructed sale.
+
+    This is deliberately stricter than the normal materialization path.  A
+    persisted text fallback is eligible only when every current document has a
+    matching profile and cache-proof entry.  It never accepts a mixed/partial
+    sibling, a legacy profile, or metadata without a real text hash.
+    """
+    documents = sale.documents
+    if not isinstance(documents, list) or any(not isinstance(document, dict) for document in documents):
+        return None
+    document_urls = [clean_text(document.get("url")) for document in documents]
+    if not document_urls or any(not url for url in document_urls):
+        return None
+    normalized_document_urls = [str(url) for url in document_urls]
+    if len(set(normalized_document_urls)) != len(normalized_document_urls):
+        return None
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    analysis = raw_payload.get("document_analysis")
+    if not isinstance(analysis, dict):
+        return None
+    if analysis.get("input_fingerprint") != document_fingerprint(documents):
+        return None
+    if not _historical_timestamp_is_valid(analysis.get("checked_at")):
+        return None
+    try:
+        failed_documents = int(analysis.get("failed_documents") or 0)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    if failed_documents != 0:
+        return None
+
+    document_url_set = set(normalized_document_urls)
+    excluded_urls: set[str] = set()
+    excluded_groups: list[set[str]] = []
+    for key in ("blocked_document_urls", "skipped_document_urls", "terminal_document_urls"):
+        urls = _manifest_urls(analysis.get(key))
+        if urls is None or not urls.issubset(document_url_set):
+            return None
+        excluded_groups.append(urls)
+        excluded_urls.update(urls)
+    if any(left & right for index, left in enumerate(excluded_groups) for right in excluded_groups[index + 1:]):
+        return None
+    # This fallback must never turn a mixed/blocked manifest into a partial
+    # materialization.  The ordinary path retains those per-document states;
+    # persisted text recovery is reserved for a globally complete manifest.
+    if excluded_urls:
+        return None
+    expected_urls = document_url_set - excluded_urls
+    if not expected_urls:
+        return None
+
+    proof = analysis.get("cache_proof")
+    if not isinstance(proof, dict):
+        return None
+    if (
+        proof.get("version") != 1
+        or proof.get("input_fingerprint") != document_fingerprint(documents)
+        or not _historical_timestamp_is_valid(proof.get("verified_at"))
+    ):
+        return None
+    proof_documents = proof.get("documents")
+    if not isinstance(proof_documents, list):
+        return None
+    proof_by_url: dict[str, dict[str, object]] = {}
+    for item in proof_documents:
+        if not isinstance(item, dict):
+            return None
+        url = clean_text(item.get("url"))
+        if not url or url in proof_by_url:
+            return None
+        proof_by_url[url] = item
+    proof_urls = set(proof_by_url)
+    if (
+        not expected_urls.issubset(proof_urls)
+        or not (proof_urls - expected_urls).issubset(excluded_urls)
+    ):
+        return None
+
+    profiles_payload = analysis.get("profiles")
+    if not isinstance(profiles_payload, list):
+        return None
+    profiles_by_url: dict[str, dict[str, object]] = {}
+    for item in profiles_payload:
+        if not isinstance(item, dict):
+            return None
+        url = clean_text(item.get("url"))
+        if not url or url in profiles_by_url:
+            return None
+        profiles_by_url[url] = item
+    profile_urls = set(profiles_by_url)
+    if (
+        not expected_urls.issubset(profile_urls)
+        or not (profile_urls - expected_urls).issubset(excluded_urls)
+    ):
+        return None
+
+    for url in expected_urls:
+        proof_item = proof_by_url[url]
+        profile = profiles_by_url[url]
+        try:
+            proof_text_chars = int(proof_item.get("text_chars") or 0)
+            profile_text_chars = int(profile.get("text_chars") or 0)
+        except (OverflowError, TypeError, ValueError):
+            return None
+        proof_status = (clean_text(proof_item.get("extraction_status")) or "").casefold()
+        profile_status = (clean_text(profile.get("extraction_status")) or "").casefold()
+        proof_failed_pages = proof_item.get("failed_pages")
+        profile_failed_pages = profile.get("failed_pages")
+        if (
+            proof_status != "extracted"
+            or proof_item.get("complete") is not True
+            or bool(proof_failed_pages)
+            or proof_item.get("text_present") is not True
+            or proof_text_chars <= 0
+            or not _is_sha256(proof_item.get("sha256"))
+            or not _is_sha256(proof_item.get("text_sha256"))
+            or profile_status != "extracted"
+            or profile.get("complete") is not True
+            or bool(profile_failed_pages)
+            or not _is_sha256(profile.get("sha256"))
+            or clean_text(profile.get("sha256")) != clean_text(proof_item.get("sha256"))
+            or profile_text_chars != proof_text_chars
+        ):
+            return None
+
+    return {
+        "expected_urls": expected_urls,
+        "excluded_urls": excluded_urls,
+        "terminal_urls": _manifest_urls(analysis.get("terminal_document_urls")) or set(),
+        "proof_by_url": proof_by_url,
+        "profiles_by_url": profiles_by_url,
+        "verified_at": clean_text(proof.get("verified_at")),
+    }
+
+
+def _has_usable_local_pdf_cache(sale: AuctionSale) -> bool:
+    """Return true for any non-empty local cache, including partial payloads.
+
+    The persisted fallback is intentionally limited to reconstructed sales
+    without a local cache.  A local partial cache follows the existing strict
+    materializer path and must not be combined with a historical sibling.
+    """
+    payload = _read_json_file(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json")
+    return bool(payload) and isinstance(payload, list) and all(isinstance(item, dict) for item in payload)
+
+
+def _validated_persisted_pdf_texts(
+    sale: AuctionSale,
+    extraction_row: dict[str, object],
+) -> list[dict[str, object]] | None:
+    manifest = _validated_persisted_pdf_manifest(sale)
+    if manifest is None:
+        return None
+    if (
+        clean_text(extraction_row.get("source_url")) != sale.source_url
+        or extraction_row.get("provider") != PDF_EXTRACTION_PROVIDER
+        or extraction_row.get("model") != PDF_EXTRACTION_MODEL
+        or extraction_row.get("schema_version") != PDF_EXTRACTION_SCHEMA_VERSION
+    ):
+        return None
+    # ``input_hash`` belongs to the source sale revision and can legitimately
+    # change after an operational/factual refresh while the document identity
+    # and both persisted byte/text hashes remain unchanged.  The strict
+    # document identity is the manifest fingerprint plus the per-document
+    # SHA checks below; do not couple this reader to the whole-sale hash.
+    result = extraction_row.get("result")
+    if not isinstance(result, list) or any(not isinstance(item, dict) for item in result):
+        return None
+    expected_urls = manifest["expected_urls"]
+    excluded_urls = manifest["excluded_urls"]
+    terminal_urls = manifest["terminal_urls"]
+    if not isinstance(expected_urls, set) or not isinstance(excluded_urls, set) or not isinstance(terminal_urls, set):
+        return None
+    result_by_url: dict[str, dict[str, object]] = {}
+    for item in result:
+        url = clean_text(item.get("url"))
+        if not url or url in result_by_url:
+            return None
+        result_by_url[url] = item
+    result_urls = set(result_by_url)
+    if (
+        not expected_urls.issubset(result_urls)
+        or not (result_urls - expected_urls).issubset(terminal_urls)
+    ):
+        return None
+
+    proof_by_url = manifest["proof_by_url"]
+    if not isinstance(proof_by_url, dict):
+        return None
+    validated: list[dict[str, object]] = []
+    for url in sorted(expected_urls):
+        item = result_by_url[url]
+        proof_item = proof_by_url.get(url)
+        if not isinstance(proof_item, dict):
+            return None
+        text = clean_text(item.get("text")) or ""
+        try:
+            text_chars = int(item.get("text_chars") or len(text))
+            proof_text_chars = int(proof_item.get("text_chars") or 0)
+        except (OverflowError, TypeError, ValueError):
+            return None
+        computed_text_sha = hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
+        item_text_sha = clean_text(item.get("text_sha256"))
+        if not (
+            item.get("cache_version") == PDF_TEXT_CACHE_VERSION
+            and (clean_text(item.get("extraction_status")) or "").casefold() == "extracted"
+            and item.get("complete") is True
+            and not item.get("failed_pages")
+            and text
+            and text_chars == len(text)
+            and text_chars == proof_text_chars
+            and clean_text(item.get("sha256")) == clean_text(proof_item.get("sha256"))
+            and _is_sha256(item.get("sha256"))
+            and _is_sha256(proof_item.get("sha256"))
+            and computed_text_sha == clean_text(proof_item.get("text_sha256"))
+            and _is_sha256(proof_item.get("text_sha256"))
+            and (item_text_sha is None or item_text_sha == computed_text_sha)
+        ):
+            return None
+        sanitized = dict(item)
+        # The original local path is not available on the worker that reads
+        # this persisted result.  Keep actual text and hashes, but never claim
+        # that a path can be opened again.
+        sanitized["file_path"] = None
+        sanitized["_persisted_pdf_proof"] = True
+        sanitized["_persisted_verified_at"] = manifest.get("verified_at")
+        validated.append(sanitized)
+    return validated
+
+
+_PERSISTED_PDF_ROW_COLUMNS = (
+    "source_url",
+    "provider",
+    "model",
+    "input_hash",
+    "schema_version",
+    "result",
+    "updated_at",
+)
+
+
+def _normalize_persisted_pdf_row(row: object) -> dict[str, object] | None:
+    if isinstance(row, dict):
+        return {str(key): value for key, value in row.items()}
+    if isinstance(row, (list, tuple)):
+        if len(row) == 1 and isinstance(row[0], dict):
+            return {str(key): value for key, value in row[0].items()}
+        if len(row) == len(_PERSISTED_PDF_ROW_COLUMNS):
+            return dict(zip(_PERSISTED_PDF_ROW_COLUMNS, row, strict=True))
+    try:
+        return {column: row[column] for column in _PERSISTED_PDF_ROW_COLUMNS}  # type: ignore[index]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def _read_persisted_pdf_rows_postgres(connection: Any, source_urls: list[str]) -> list[dict[str, object]]:
+    cursor = connection.execute(
+        """
+        select extracted.source_url, extracted.provider, extracted.model,
+               extracted.input_hash, extracted.schema_version, extracted.result,
+               extracted.updated_at
+        from unnest(%s::text[]) as requested(source_url)
+        cross join lateral (
+            select candidate.source_url, candidate.provider, candidate.model,
+                   candidate.input_hash, candidate.schema_version, candidate.result,
+                   candidate.updated_at
+            from public.auction_extractions as candidate
+            where candidate.source_url = requested.source_url
+              and candidate.provider = %s
+              and candidate.model = %s
+              and candidate.schema_version = %s
+            order by candidate.updated_at desc
+            limit 5
+        ) as extracted
+        order by extracted.updated_at desc
+        """,
+        (source_urls, PDF_EXTRACTION_PROVIDER, PDF_EXTRACTION_MODEL, PDF_EXTRACTION_SCHEMA_VERSION),
+    )
+    return [normalized for row in cursor.fetchall() if (normalized := _normalize_persisted_pdf_row(row)) is not None]
+
+
+def _read_persisted_pdf_rows_rest(
+    supabase_url: str,
+    api_key: str,
+    source_urls: list[str],
+) -> list[dict[str, object]]:
+    # This lookup is optional recovery work.  It must not inherit the five
+    # retry attempts used by durable writes, otherwise a missing/slow cache
+    # can consume most of a worker budget before normal pending rows are
+    # materialized.
+    response = httpx.get(
+        f"{supabase_url.rstrip('/')}/rest/v1/auction_extractions",
+        params={
+            "select": ",".join(_PERSISTED_PDF_ROW_COLUMNS),
+            "source_url": _postgrest_in_filter(source_urls),
+            "provider": f"eq.{PDF_EXTRACTION_PROVIDER}",
+            "model": f"eq.{PDF_EXTRACTION_MODEL}",
+            "schema_version": f"eq.{PDF_EXTRACTION_SCHEMA_VERSION}",
+            "order": "updated_at.desc",
+            "limit": str(min(len(source_urls) * 5, 100)),
+        },
+        headers=_rest_headers(api_key, prefer="count=none"),
+        timeout=PERSISTED_PDF_LOOKUP_TIMEOUT,
+    )
+    if response.is_error:
+        raise RuntimeError(f"Persisted PDF extraction lookup failed ({response.status_code})")
+    payload = response.json()
+    if not isinstance(payload, list):
+        raise RuntimeError("Persisted PDF extraction lookup returned a malformed payload")
+    return [normalized for row in payload if (normalized := _normalize_persisted_pdf_row(row)) is not None]
+
+
+def _fetch_persisted_pdf_texts_for_sales(
+    sales: list[AuctionSale],
+    supabase_url: str,
+    api_key: str,
+) -> dict[str, list[dict[str, object]]]:
+    """Read complete persisted PDF text once per bounded URL batch.
+
+    Only sales with no usable local cache and a complete current manifest are
+    candidates.  Any validation failure leaves that sale on the normal
+    pending path; a partial persisted result is never mixed into materialized
+    rows.
+    """
+    candidates: dict[str, AuctionSale] = {}
+    for sale in sales:
+        source_url = clean_text(sale.source_url)
+        if not source_url or _has_usable_local_pdf_cache(sale):
+            continue
+        if _validated_persisted_pdf_manifest(sale) is not None:
+            candidates[source_url] = sale
+    if not candidates:
+        return {}
+
+    persisted_rows: list[dict[str, object]] = []
+    source_urls = list(candidates)
+    connection = _PUBLICATION_CONNECTION.get()
+    for offset in range(0, len(source_urls), PERSISTED_PDF_LOOKUP_BATCH_SIZE):
+        batch = source_urls[offset : offset + PERSISTED_PDF_LOOKUP_BATCH_SIZE]
+        try:
+            if connection is not None:
+                persisted_rows.extend(_read_persisted_pdf_rows_postgres(connection, batch))
+            else:
+                persisted_rows.extend(_read_persisted_pdf_rows_rest(supabase_url, api_key, batch))
+        except (RuntimeError, TypeError, ValueError, httpx.HTTPError) as exc:
+            LOGGER.warning("Persisted PDF extraction lookup failed; keeping normal pending rows: %s", exc)
+
+    rows_by_source: dict[str, list[dict[str, object]]] = {}
+    for row in persisted_rows:
+        source_url = clean_text(row.get("source_url"))
+        if source_url in candidates:
+            rows_by_source.setdefault(source_url, []).append(row)
+    validated: dict[str, list[dict[str, object]]] = {}
+    for source_url, sale in candidates.items():
+        # The SQL/REST paths order newest first.  Sorting again makes the
+        # choice deterministic for test doubles and drivers that do not retain
+        # the requested order.
+        rows = sorted(
+            rows_by_source.get(source_url, []),
+            key=lambda row: str(row.get("updated_at") or ""),
+            reverse=True,
+        )
+        for row in rows:
+            payload = _validated_persisted_pdf_texts(sale, row)
+            if payload is not None:
+                validated[source_url] = payload
+                break
+    return validated
+
+
 def upsert_documents_to_supabase(sales: list[AuctionSale]) -> int:
     sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
     if not sales:
@@ -1774,7 +2187,15 @@ def upsert_documents_to_supabase(sales: list[AuctionSale]) -> int:
     key = settings["supabase_service_role_key"]
     if not url or not key:
         return 0
-    rows = [row for sale in sales for row in _document_rows_for_sale(sale)]
+    persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales, str(url), str(key))
+    rows = [
+        row
+        for sale in sales
+        for row in _document_rows_for_sale(
+            sale,
+            pdf_texts=persisted_pdf_texts.get(sale.source_url),
+        )
+    ]
     if not rows:
         return 0
     rows = _unique_rows_by_key(rows, "document_url")
@@ -3449,11 +3870,15 @@ def _public_occurrence_row(occurrence: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
+def _document_rows_for_sale(
+    sale: AuctionSale,
+    *,
+    pdf_texts: list[dict[str, object]] | None = None,
+) -> list[dict[str, object]]:
     documents = sale.documents
     if not isinstance(documents, list) or any(not isinstance(document, dict) for document in documents):
         return []
-    pdf_texts = _load_pdf_texts(sale)
+    pdf_texts = _load_pdf_texts(sale) if pdf_texts is None else pdf_texts
     text_by_url = {item.get("url"): item for item in pdf_texts if isinstance(item, dict)}
     analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
     invalid_analysis = analysis is not None and not isinstance(analysis, dict)
@@ -3514,7 +3939,18 @@ def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
         extraction_confidence = extracted.get("confidence") if isinstance(extracted, dict) else None
         row_file_path = extracted.get("file_path") if isinstance(extracted, dict) else None
         row_sha256 = extracted.get("sha256") if isinstance(extracted, dict) else None
+        persisted_pdf_proof = isinstance(extracted, dict) and extracted.get("_persisted_pdf_proof") is True
+        persisted_verified_at = (
+            extracted.get("_persisted_verified_at")
+            if isinstance(extracted, dict) and persisted_pdf_proof
+            else None
+        )
         raw_payload = dict(document)
+        if persisted_pdf_proof:
+            # A reconstructed worker cannot reopen a local path from the
+            # original extraction host.  Keep the document URL and hashes,
+            # but do not persist that stale path in the child payload either.
+            raw_payload.pop("file_path", None)
         if isinstance(extracted, dict):
             raw_payload["extraction"] = {
                 "cache_version": extracted.get("cache_version"),
@@ -3536,6 +3972,14 @@ def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
                 "failed_pages": extracted.get("failed_pages") or [],
                 "extraction_status": extracted.get("extraction_status"),
             }
+            if persisted_pdf_proof:
+                raw_payload["extraction"].update(
+                    {
+                        "provenance": "persisted_pdf_text",
+                        "proof_version": 1,
+                        "verified_at": persisted_verified_at,
+                    }
+                )
         extraction_status = "pending" if invalid_analysis else _document_extraction_status(extracted)
         manifest_profile = current_analysis_profiles.get(str(url))
         discard_cached_evidence = invalid_analysis or (
@@ -3651,9 +4095,13 @@ def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
                     str(document.get("label") or extracted.get("label") or ""),
                     str(url),
                 ),
-                "file_path": row_file_path,
+                "file_path": None if persisted_pdf_proof else row_file_path,
                 "sha256": row_sha256,
-                "download_status": "downloaded" if row_file_path or row_sha256 else "unknown",
+                "download_status": (
+                    "verified"
+                    if persisted_pdf_proof
+                    else ("downloaded" if row_file_path or row_sha256 else "unknown")
+                ),
                 "text_chars": text_chars,
                 "extraction_status": extraction_status,
                 "docling_status": None if discard_cached_evidence else extracted.get("extraction_method"),
@@ -3707,10 +4155,10 @@ def _extraction_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
         rows.append(
             {
                 "source_url": sale.source_url,
-                "provider": "pdf_text",
-                "model": "docling+pymupdf+tesseract",
+                "provider": PDF_EXTRACTION_PROVIDER,
+                "model": PDF_EXTRACTION_MODEL,
                 "input_hash": input_hash,
-                "schema_version": "pdf_text_v2_page_level",
+                "schema_version": PDF_EXTRACTION_SCHEMA_VERSION,
                 "result": payload,
                 "confidence": _pdf_extraction_confidence(payload),
                 "updated_at": datetime.now(UTC).isoformat(),
