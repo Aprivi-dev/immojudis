@@ -1,17 +1,17 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 21 h 40 UTC
+## Synthèse actuelle — 30 septembre, 22 h 35 UTC
 
 | Chantier | État vérifié |
 | --- | --- |
-| SQL et CI | `3400eb58` : CI/CodeQL verts, 2 083 tests Python par version, 1 481 assertions pgTAP, Next.js 16.3.8 et audit production à zéro vulnérabilité. Reprises PG texte/page blanche exécutées. Correctif source partiel présent : 65 tests locaux verts, dix PG ignorés localement ; nouvelle CI exacte requise. |
+| SQL et CI | `e3deadf6` : CI/CodeQL verts, 2 091 tests Python par version, 1 481 assertions pgTAP, Next.js 16.3.8 et audit production à zéro vulnérabilité. Reprises PG texte/page blanche exécutées par stockage et collecte normale. Nouvel artefact IA v4.6 autorisé localement : 77 tests ciblés, Ruff, diff et 201 versions uniques verts ; nouvelle CI/pgTAP exacte et migration requises. |
 | Santé | À 21 h 05, quatre alertes : inbound absent, fraîcheur EImmo et Notaires, enrichissement stalled. Santé globale non qualifiée. |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Warm/cold ordinaires `3400eb58` réussis, cache réellement absent. Routage inchangé ; prochain canari de queue avec vérification indépendante de tous ses UUIDs requis. |
-| Collecte Avoventes | Warm/cold `3400eb58` : chacun 240 annonces et 241/241 requêtes réussies, zéro refus ou échec de transport ; collecte/publication complètes, enrichissement partiel. |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Warm ordinaire `e3deadf6` réussi, cache réellement absent ; nouveau cold en cours. Routage inchangé ; prochain canari de queue avec vérification indépendante de tous ses UUIDs requis. |
+| Collecte Avoventes | Warm `e3deadf6` : 240 annonces et 241/241 requêtes réussies, zéro échec de transport ; collecte/publication complètes, enrichissement partiel. Les preuves manuelles ne remplacent pas les timestamps du dernier run automatique. |
 | Autres sources | Six dernières collectes complètes sur neuf sources autorisées. AGRASC conserve 25 archives vendues sans identité ; EImmo timeout de transport, Notaires interrompu sur l’ancien worker. Nouvelle collecte Notaires qualifiée requise. |
-| Documents | Cold SQL prouvé sur trois PDF (1/21/57 pages) : verified/extracted, chemins locaux nuls, persisted_pdf_text, hashes et vérification warm conservés. Checkpoint SQL réel 75/95 pages. Le cold normal répète ces 75 pages ; reprise partielle source corrigée, nouvelle qualification requise. |
-| Capacité | À 21 h 05 : 6 237 ouverts, 6 211 dus réessayables, 2 627 anciens sous plafond, 18 épuisés, zéro running/stale. Ouverts +297 depuis 19 h 21. Résorption durable non démontrée ; dernière valorisation : zéro ouvert. |
-| Revue IA | Deux nouvelles passes aveugles : 76 captures/912 champs, 152 hashes de prompt. v4.3 : 73 désaccords, 342 citations rejetées. B corrigée : 590/590 citations strictes validées. A corrigée annoncée complète ; validation indépendante en cours. Nouveaux arbitrages et import requis. Aucune mesure d’exactitude réelle. |
+| Documents | Warm `e3deadf6` : reprise SQL réellement passée de 75/95 à 95/95 pages, même SHA de fichier, texte enrichi, zéro page échouée et manifeste des quatre documents complet. Trois PDF entiers restent strictement réutilisables. Cold courant requis avant qualification finale. |
+| Capacité | À 22 h 24 : 6 044 ouverts, 6 024 dus réessayables, 2 619 anciens sous plafond, 13 épuisés, zéro running/stale. Ouverts −193 depuis 21 h 05, sans preuve de résorption durable. À 22 h 28 : valorisation zéro ouvert ; 26 pending observés à 22 h 24 ont été traités. |
+| Revue IA | v4.6 figée : deux passes aveugles sur 76 captures/912 champs, 152 hashes de prompt, 1 181/1 181 citations strictes. Troisième lecture des 76 désaccords : 29 documentés, 47 unresolved. Onze champs relus sur modèle AGRASC lié restent incertains. Dry-run : 346 admissibles/566 bloqués ; aucun import ni mesure d’exactitude réelle. |
 | Resend/portail | Clé, domaines, webhook et canari fournisseur vérifiés. Ajout du secret portail à Vercel Production refusé par auto-review, accord précis en attente. Aucun interlocuteur réel sollicité. |
 | Inbound | Route non publiée sur l’origine canonique, cron absent. Canari canonique authentifié puis activation et récupération automatique de santé requis après déploiement. |
 | Enchères Publiques | Source désactivée, gardes qualifiées sur `3400eb58`. Accord écrit et flux promis non reçus. Aucune nouvelle collecte. |
@@ -3009,3 +3009,110 @@ et vides. Aucune clôture manuelle. Secret portail Production toujours
 bloqué par l’accord précis manquant ; autorisation/flux EP non reçus ;
 routage automatique inchangé ; aucune publication finale, suppression de
 branches ou sollicitation réelle.
+
+## Reprise source e3deadf6 prouvée et audit IA v4.6 figé
+
+La [CI 36781214866](https://github.com/Aprivi-dev/immojudis/actions/runs/36781214866)
+et [CodeQL 36781214874](https://github.com/Aprivi-dev/immojudis/actions/runs/36781214874)
+réussissent sur `e3deadf631be43f86782a32447f3bf92ddd25759` : Python 3.11 et
+3.12 chacune 2 091 succès/18 ignorés, vraie base PG disponible pour les
+quatre variantes stockage/source et préfixe texte/page blanche. 200
+migrations sans dérive, 79 fichiers pgTAP/1 481 assertions, deux intégrations,
+Web 1 336 succès, Playwright 87 succès et Next.js 16.3.8 qualifiés. CodeQL
+termine ses uploads, sans nouvelle alerte dans le code modifié.
+
+Le [warm 36782339688](https://github.com/Aprivi-dev/immojudis/actions/runs/36782339688)
+ordinaire est terminé avec succès à 22 h 21 min 51 s UTC. Le tag protégé
+`immojudis-workers-e3deadf6` et sa future référence cold étaient protégés
+avant création par le ruleset actif `24274881`, sans bypass, update ni
+deletion. Inputs : Avoventes, sans run_id/limite, automatic/enrichment_only/
+publication_check/backfill/benchmark false. Run SQL confirmé dans le log :
+`7d007242-1aef-49d1-b9f2-59fe5271cba5`. 240 annonces, 241/241 requêtes,
+zéro échec de transport, collecte/publication complètes, enrichissement
+partiel. Les deux étapes extraction et Justice disent littéralement
+« Cache not found for input keys » à 21 h 54 min 15 s ; la sauvegarde finale
+ne constitue pas un hit de restauration.
+
+Le log montre la restauration du préfixe de 75 pages à 22 h 07 min 22 s.
+La preuve de terminaison individuelle vient du relevé SQL à
+22 h 23 min 44,673419 s, et non d'un compteur agrégé du log. Le candidat
+`667664a7-8900-4d15-9abf-49049044ac53` porte maintenant un manifeste
+moderne complet : quatre documents téléchargés/extraits, zéro failed ou
+pending. Le fichier de 95 pages garde son SHA, passe de 75 à 95 pages
+extraites et de 17 130 à 18 955 caractères, avec nouveau SHA de texte et
+failed_pages vide. Cache proof v1 complète vérifiée à
+22 h 08 min 42,654021 s, linkage des quatre profils/manifeste/progress/
+extractions cohérent. Les trois PDF du candidat `979d6876-1d9a-4c93-8e11-e5d4ce504776`
+restent strictement réutilisables (1/21/57 pages, mêmes hashes) ; leur
+verified_at historique à 19 h 53 min 32,989891 s n'est pas une nouvelle
+vérification warm. Aucun texte ou contact n'est conservé dans ces relevés.
+
+Le [cold 36785646849](https://github.com/Aprivi-dev/immojudis/actions/runs/36785646849)
+est déclenché une seule fois à 22 h 27 min 11 s sur le tag protégé
+`immojudis-workers-e3deadf6-cold`, même SHA exact et mêmes inputs ordinaires.
+Sa baseline privée contient les deux candidats complets ci-dessus. Cache
+réellement absent, restauration SQL et terminaison restent à vérifier.
+Ni le pointeur automatique de source ni la santé ne sont réécrits :
+scheduler_owned=false pour les runs manuels ; les timestamps durables
+restent ceux du dernier run scheduler-owned, selon la garde d'ownership.
+Les 240 items de chaque précédent run se répartissent en 192 published,
+26 expired par rétention et 22 quarantined (17 conflits d'identité,
+cinq identités persistées ambiguës). Deux ventes amiables sont hors
+périmètre et sept items published sont des aliases canoniques. Aucune
+complétude globale de base n'est déduite du seul certificat public.
+
+L'artefact IA final privé v4.6 est figé, SHA-256
+`2f35c35b50abc9709178ae935bad4d140724c37d94c165fd11188236dc6c1af4`.
+Les deux passes corrigées indépendamment ont 1 181/1 181 citations strictes
+et 152 hashes de prompt conservés. Les 76 désaccords actuels sur 47 cas
+ont une nouvelle troisième lecture aveugle : 24 present, cinq unknown et
+47 unresolved, zéro preuve invalide et zéro arbitrage en attente. Onze
+champs de cinq captures AGRASC ont ensuite été relus avec le seul booléen
+d'acceptation du modèle structuré lié ; ils restent unresolved faute de
+valeur vérifiable. Les 65 autres labels d'arbitrage sont hérités exactement,
+avec leurs hashes de parent et de prompt, et les onze relectures conservent
+leur provenance distincte. Les originaux v4.2 à v4.5 restent immuables.
+Provider/modèle et durée sémantique non exposés sont déclarés indisponibles.
+
+Le dry-run hors ligne conserve 100 statuts de cas et 912 projections :
+57 identités exactes, 19 sans vente correspondante, 24 sans capture,
+346 champs passant la garde locale et 566 bloqués. Une capture dont
+l'endpoint diffère de l'URL source conserve son blocage de provenance.
+L'arbitre ne remplace pas le consensus de deux passes dans une projection
+publiable. Aucune exactitude statistique réelle n'est estimée ; aucune
+valeur incertaine n'est promue et aucun import n'a été exécuté. L'allowlist
+exacte de cet artefact, ses tests puis sa migration doivent être qualifiés.
+
+Le correctif local ajoute uniquement son SHA final aux allowlists Python et
+SQL, avec compatibilité explicite v4 original/v4.2. La migration
+`20261001000000_ai_review_manifest_v46_allowlist.sql` reprend exactement le
+corps de la fonction existante, sauf ce digest et son commentaire. Les
+artefacts intermédiaires v4.3/v4.4/v4.5, les hashes arbitraires et NULL ainsi
+qu'un schéma erroné restent refusés. 77 tests Python import/projection/revue
+isolés passent, Ruff et diff sont verts ; 201 versions uniques vérifiées.
+Sept nouvelles assertions pgTAP nécessitent la CI réelle. Le CLI a relu le
+fichier avec son SHA final et confirmé le dry-run ci-dessus ; export privé
+sanitisé de 11 lots/912 projections, SHA
+`4c5fedf893ddb877217a774fa6c3d8cd19b4c291451370c282cccaa74ef17a7f`.
+Ni cet export ni son allowlist locale ne constituent un import en production.
+
+Les gardes publiques sont relues individuellement à 22 h 33–22 h 34 UTC,
+en lecture seule, statement timeout 5 s/lock 1 s : app/discovery 3 003 lignes
+chacune, preview 3 259. Zéro statut quarantined ou marqueur de quarantaine
+dans chacune, zéro vente jointe manquante. Tables IA et leurs projections
+vides. RLS, ACL, wrappers et helper de visibilité live conservent les gardes
+publiques ; aucune donnée documentaire/contact/URL n'est retournée. La
+requête d'audit combinant auparavant les trois vues a atteint sa borne de
+cinq secondes ; elle n'a pas été rejouée, les lectures séparées passent.
+Ce timeout d'une agrégation d'audit n'est pas une preuve d'incident de fiche.
+
+À 22 h 24 min 17,771406 s, la file compte 6 044 ouverts, 6 024 dus
+réessayables, 2 619 anciens sous plafond, 13 épuisés, zéro running/stale.
+La baisse de 193 ouverts depuis 21 h 05 inclut les activités régulières
+et la rétention ; elle ne démontre pas une résorption durable. Quatre
+alertes restent ouvertes à 22 h 15 : inbound, EImmo, Notaires et
+enrichissement stalled. Les 26 valorisations pending observées à
+22 h 24 sont traitées à 22 h 28 : 2 451 ready/378 insufficient_data,
+zéro ouvert, cron de cinq minutes actif. Secret portail Production et
+accord/flux EP restent manquants. Aucune publication finale, promotion
+du worker automatique, suppression de branche ou sollicitation réelle.

@@ -11,6 +11,7 @@ from src.ai_review_import import (
     EXPECTED_MANIFEST_SHA256,
     EXPECTED_SAMPLE_SHA256,
     V42_APPROVED_MANIFEST_SHA256,
+    V46_APPROVED_MANIFEST_SHA256,
     AiReviewImportConflict,
     build_ai_review_export_payload,
     build_ai_review_import_plan,
@@ -455,12 +456,13 @@ def test_manifest_loader_rejects_an_unapproved_artifact(tmp_path: Path) -> None:
         load_manifest_file(path)
 
 
-def test_only_the_two_frozen_manifest_hashes_are_authorized(tmp_path: Path) -> None:
+def test_only_the_three_frozen_manifest_hashes_are_authorized(tmp_path: Path) -> None:
     captured = _case(tmp_path, "case-allowlist", "https://source.example/allowlist")
     assert APPROVED_MANIFEST_SHA256S == frozenset(
         {
             EXPECTED_MANIFEST_SHA256,
             V42_APPROVED_MANIFEST_SHA256,
+            V46_APPROVED_MANIFEST_SHA256,
         }
     )
 
@@ -470,18 +472,24 @@ def test_only_the_two_frozen_manifest_hashes_are_authorized(tmp_path: Path) -> N
     v42_plan = build_ai_review_import_plan(
         _manifest([captured]), [], manifest_sha256=V42_APPROVED_MANIFEST_SHA256
     )
+    v46_plan = build_ai_review_import_plan(
+        _manifest([captured]), [], manifest_sha256=V46_APPROVED_MANIFEST_SHA256
+    )
     assert old_plan.summary["projected_rows"] == len(FIELDS)
     assert v42_plan.summary["projected_rows"] == len(FIELDS)
+    assert v46_plan.summary["projected_rows"] == len(FIELDS)
 
-    with pytest.raises(ValueError, match="approved frozen artifact"):
-        build_ai_review_import_plan(
-            _manifest([captured]), [], manifest_sha256="f" * 64
-        )
-    with pytest.raises(ValueError, match="approved frozen artifact"):
-        build_ai_review_import_plan(
-            _manifest([captured]), [],
-            manifest_sha256="7b3173e09f3a3989700022cb5bea0a79c2af12e0a75c0ddee8d9f26365b2cbb8",
-        )
+    for rejected_sha256 in (
+        "24085f1160cfb514a62b75182d93cd8569254b2faf9347ffb19060f7b3c98a4a",
+        "945fd0634077f5ee7adf1a79183de3912cb649165ab1e827f30ee96a5c61c271",
+        "1c25823b5d79ce1a97100e8329501dd44394712c31fe3147e746c1e4643c8ae3",
+        "f" * 64,
+        "7b3173e09f3a3989700022cb5bea0a79c2af12e0a75c0ddee8d9f26365b2cbb8",
+    ):
+        with pytest.raises(ValueError, match="approved frozen artifact"):
+            build_ai_review_import_plan(
+                _manifest([captured]), [], manifest_sha256=rejected_sha256
+            )
 
 
 def test_offline_export_accepts_v42_allowlisted_manifest_hash(tmp_path: Path) -> None:
