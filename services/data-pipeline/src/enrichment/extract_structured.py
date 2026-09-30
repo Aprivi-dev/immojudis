@@ -16,6 +16,10 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
+from src.encheres_publiques_guard import (
+    EncheresPubliquesAccessNotAuthorized,
+    require_encheres_publiques_sale_access,
+)
 from src.enrichment.display_evidence import verify_display_claims
 from src.enrichment.display_quality import DISPLAY_MIN_CHARS, DISPLAY_QUALITY_VERSION, preserve_source_constraints
 from src.enrichment.llm_client import ReplicateClient, create_llm_client, repair_json_payload
@@ -530,6 +534,16 @@ def enrich_sale_with_llm(
 ) -> LLMEnrichmentStats:
     stats = LLMEnrichmentStats()
     settings = load_settings()
+    # This is the shared boundary before any PDF/text cache read or provider
+    # call.  A non-EP catalogue row may still retain an EP alias or an
+    # EP-owned document, so the source label alone cannot authorize it.
+    require_encheres_publiques_sale_access(
+        source_name=sale.source_name,
+        source_url=sale.source_url,
+        source_urls=sale.source_urls,
+        documents=sale.documents,
+        settings=settings,
+    )
     if not settings["llm_enabled"]:
         return stats
 
@@ -917,6 +931,20 @@ def apply_cached_llm_extraction_to_sale(sale: AuctionSale, *, prompt_version: st
     function is a revalidation step, not a way to certify an unversioned or
     stale generation by stamping it with the current metadata.
     """
+    settings = load_settings()
+    try:
+        require_encheres_publiques_sale_access(
+            source_name=sale.source_name,
+            source_url=sale.source_url,
+            source_urls=sale.source_urls,
+            documents=sale.documents,
+            settings=settings,
+        )
+    except EncheresPubliquesAccessNotAuthorized:
+        # Cache revalidation is deliberately boolean: an unauthorized EP row
+        # is skipped by the caller and must not break the ordinary pipeline.
+        return False
+
     raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else None
     if not isinstance(raw_payload, dict):
         return False

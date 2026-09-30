@@ -19,12 +19,14 @@ from src.cadastre import enrich_cadastre_sales
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.collection_evidence import record_items, record_sale_decisions
 from src.config import (
+    EncheresPubliquesAccessNotAuthorized,
     encheres_publiques_access_enabled,
     load_settings,
     require_encheres_publiques_access,
 )
 from src.dedupe import merge_duplicate_sales
 from src.dpe import enrich_dpe_sales
+from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.display_quality import has_current_display
 from src.enrichment.extract_structured import (
     LLMEnrichmentStats,
@@ -393,15 +395,6 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     pdf_stats = PdfEnrichmentStats()
     llm_stats = LLMEnrichmentStats()
     llm_client = None
-    # The public description is a lightweight product requirement of every
-    # scan. PDF/OCR can be disabled independently with --no-heavy-enrichment;
-    # only --no-llm explicitly disables the Replicate synthesis.
-    if options.use_llm:
-        try:
-            llm_client = create_llm_client()
-        except LLMClientUnavailable as exc:
-            LOGGER.warning("LLM client unavailable: %s", exc)
-            llm_stats.unavailable = True
 
     pdf_workers = max(1, int(settings["pipeline_pdf_workers"]))
     llm_workers = max(1, int(settings["pipeline_llm_workers"]))
@@ -461,11 +454,29 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     # consume document, AI or network enrichment before being rejected.
     expired_before_enrichment = [sale for sale in app_ready if is_expired(sale)]
     app_ready = [sale for sale in app_ready if not is_expired(sale)]
+    enrichment_sales, skipped_unauthorized = _filter_unauthorized_encheres_publiques_sales(
+        app_ready,
+        settings,
+    )
+    timings["enrichment_unauthorized_skipped"] = skipped_unauthorized
+
+    # The public description is a lightweight product requirement of every
+    # authorized scan. PDF/OCR can be disabled independently with
+    # --no-heavy-enrichment; only --no-llm explicitly disables the Replicate
+    # synthesis. Keep client creation after the source gate so a scan made up
+    # entirely of unauthorized EP rows never opens an AI client.
+    if options.use_llm and enrichment_sales:
+        try:
+            llm_client = create_llm_client()
+        except LLMClientUnavailable as exc:
+            LOGGER.warning("LLM client unavailable: %s", exc)
+            llm_stats.unavailable = True
+
     cached_llm_display_refreshed = 0
 
     prompt_version = str(settings["llm_prompt_version"])
     if options.use_llm:
-        for sale in app_ready:
+        for sale in enrichment_sales:
             if refresh_operational_display(sale):
                 cached_llm_display_refreshed += 1
                 continue
@@ -482,7 +493,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     pdf_targets = (
         [
             sale
-            for sale in app_ready
+            for sale in enrichment_sales
             if _needs_structured_heavy_enrichment(sale)
             and not _heavy_enrichment_already_current(sale, enriched_hashes, use_llm=False)
         ]
@@ -526,7 +537,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     llm_targets = (
         [
             sale
-            for sale in app_ready
+            for sale in enrichment_sales
             if _can_use_paid_llm(sale)
             and _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
             and not _llm_description_already_current(sale, current_llm_description_hashes)
@@ -803,6 +814,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         statuses=options.llm_backfill_statuses,
     )
     sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
+    sales, skipped_unauthorized = _filter_unauthorized_encheres_publiques_sales(sales, settings)
     timings["fetch_seconds"] = round(time.perf_counter() - started, 2)
     if not sales:
         summary = {
@@ -812,12 +824,14 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
             "updated": 0,
             "prompt_version": prompt_version,
             "statuses": list(options.llm_backfill_statuses),
+            "skipped_unauthorized": skipped_unauthorized,
             "timings": timings,
         }
         if options.upsert:
             finish_run_in_supabase(options.run_id, "succeeded", summary, errors)
         print("LLM description backfill summary")
         print("- selected: 0")
+        print(f"- skipped_unauthorized: {skipped_unauthorized}")
         print("- updated: 0")
         return 0
 
@@ -937,6 +951,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         "upserted": upserted,
         "prompt_version": prompt_version,
         "statuses": list(options.llm_backfill_statuses),
+        "skipped_unauthorized": skipped_unauthorized,
         "timings": timings,
         "llm_errors": llm_stats.errors,
         "llm_unavailable": llm_stats.unavailable,
@@ -952,10 +967,36 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
     print(f"- updated: {len(updated_sales)}")
     print(f"- failed_marked: {len(failed_sales)}")
     print(f"- upserted: {upserted}")
+    print(f"- skipped_unauthorized: {skipped_unauthorized}")
     for key, value in timings.items():
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
     return 1 if llm_stats.unavailable or any(errors.values()) else 0
+
+
+def _filter_unauthorized_encheres_publiques_sales(
+    sales: list[AuctionSale],
+    settings: dict[str, object],
+) -> tuple[list[AuctionSale], int]:
+    """Skip EP rows before cached or paid LLM backfill work begins."""
+
+    authorized: list[AuctionSale] = []
+    skipped = 0
+    for sale in sales:
+        try:
+            require_encheres_publiques_sale_access(
+                source_name=sale.source_name,
+                source_url=sale.source_url,
+                source_urls=sale.source_urls,
+                documents=sale.documents,
+                settings=settings,
+            )
+        except EncheresPubliquesAccessNotAuthorized as exc:
+            skipped += 1
+            LOGGER.info("Skipping unauthorized Encheres Publiques backfill sale %s: %s", sale.source_url, exc)
+            continue
+        authorized.append(sale)
+    return authorized, skipped
 
 
 def _checkpoint_enrichment(sale: AuctionSale) -> bool:

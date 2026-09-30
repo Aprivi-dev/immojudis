@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: I001
+
 import hashlib
 import importlib
 import json
@@ -33,7 +35,10 @@ from src.normalize import (
 from src.pdf_document_transport import (  # noqa: F401
     PublicDocumentTarget,  # noqa: F401
     _PinnedHTTPTransport,
-    _PinnedNetworkBackend,
+    _PinnedNetworkBackend,  # noqa: F401
+    EncheresPubliquesAccessNotAuthorized,
+    require_encheres_publiques_documents_access as require_ep_documents,
+    require_encheres_publiques_url_access as require_ep_url,
 )
 from src.pdf_document_transport import (
     is_safe_public_document_url as _is_safe_public_document_url,  # noqa: F401
@@ -60,7 +65,7 @@ from src.pdf_page_analysis import (
     VISUAL_BLANK_INK_RATIO_MAX,  # noqa: F401
     VISUAL_BLANK_INK_THRESHOLD,  # noqa: F401
     VISUAL_BLANK_RENDER_MAX_DIMENSION,  # noqa: F401
-    _is_objectively_blank_page,  # noqa: F401
+    _is_objectively_blank_page,
     _page_requires_retry,
     _page_text_confidence,
     _visual_page_profile,
@@ -289,11 +294,12 @@ def download_documents(
     output_root: Path = DOCUMENTS_DIR,
     stats: PdfEnrichmentStats | None = None,
 ) -> list[dict[str, str]]:
+    settings = load_settings()
+    require_ep_documents(sale.documents, settings)
     sale_id = _sale_storage_id(sale)
     sale_dir = output_root / sale_id
     sale_dir.mkdir(parents=True, exist_ok=True)
 
-    settings = load_settings()
     headers = {
         "User-Agent": str(settings["user_agent"]),
         "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.5",
@@ -398,7 +404,7 @@ def download_documents(
                                 "response is not a supported document "
                                 f"(content-type={content_type or 'unknown'})",
                             )
-                    except PdfDeadlineExceeded:
+                    except (PdfDeadlineExceeded, EncheresPubliquesAccessNotAuthorized):
                         raise
                     except PermanentDocumentFailure as exc:
                         permanent_failures.append(exc)
@@ -430,7 +436,7 @@ def download_documents(
                         stats.downloaded += 1
                     download_error = None
                     break
-            except PdfDeadlineExceeded:
+            except (PdfDeadlineExceeded, EncheresPubliquesAccessNotAuthorized):
                 raise
             except Exception as exc:
                 download_error = exc
@@ -558,6 +564,7 @@ def _download_document_response(
     _ensure_pdf_deadline(operation="starting document redirect chain")
     current_url = url
     for redirect_count in range(MAX_DOCUMENT_REDIRECTS + 1):
+        require_ep_url(current_url, load_settings())
         _ensure_pdf_deadline(operation="following document redirect")
         response = _send_pinned_document_request(
             current_url,
@@ -584,6 +591,7 @@ def _send_pinned_document_request(
 ) -> httpx.Response:
     requested_timeout = float(timeout_seconds)
     _ensure_pdf_deadline(operation="starting document HTTP request")
+    require_ep_url(url, load_settings())
     target = _resolve_public_document_target(url)
     timeout_seconds, deadline_bounded = _deadline_bounded_timeout(
         requested_timeout,
@@ -1446,25 +1454,17 @@ from src.pdf_document_selection import (  # noqa: E402,F401
     _unique_document_groups,
 )
 from src.pdf_fact_extraction import (  # noqa: E402,F401
-    _assign_pdf_land_surface,
-    _assign_pdf_sale_date,
-    _assign_pdf_surface,
-    _cadastral_units_to_square_meters,
-    _decimal_to_int_or_float,
-    _document_filename,
-    _document_land_surface_candidates,
-    _document_surface_candidates,
-    _energy_diagnostic_rank,
-    _energy_diagnostic_risk_note,
-    _extract_description,
-    _extract_energy_diagnostics_from_documents,
+    _assign_pdf_land_surface, _assign_pdf_sale_date,
+    _assign_pdf_surface, _cadastral_units_to_square_meters,
+    _decimal_to_int_or_float, _document_filename,
+    _document_land_surface_candidates, _document_surface_candidates,
+    _energy_diagnostic_rank, _energy_diagnostic_risk_note,
+    _extract_description, _extract_energy_diagnostics_from_documents,
     _extract_energy_diagnostics_with_evidence,
     _extract_land_surface_from_documents,
     _extract_land_surface_with_evidence,
-    _extract_occupancy_status,
-    _extract_property_type,
-    _extract_risk_notes,
-    _extract_rooms_count,
+    _extract_occupancy_status, _extract_property_type,
+    _extract_risk_notes, _extract_rooms_count,
     _extract_sale_date_from_documents,
     _extract_sale_date_with_evidence,
     _extract_starting_price_from_documents,
@@ -1474,8 +1474,7 @@ from src.pdf_fact_extraction import (  # noqa: E402,F401
     _extract_surface_with_evidence,
     _extract_visit_dates_from_documents,
     _extract_visit_dates_with_evidence,
-    _first_energy_class_match,
-    _has_land_surface_context,
+    _first_energy_class_match, _has_land_surface_context,
     _has_sale_date_signal,
     _is_land_surface_evidence,
     _is_rooms_false_positive,

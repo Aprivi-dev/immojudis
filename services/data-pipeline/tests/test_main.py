@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sys
 import types
@@ -1316,17 +1317,25 @@ def _materialize_current_pdf_proof(sale: AuctionSale, tmp_path, monkeypatch) -> 
     """Give freshness checks the same complete evidence as a real PDF pass."""
     from src.pdf_document_selection import _store_document_analysis_status
     from src.pdf_enrichment import sale_storage_id
+    from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 
     monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
+    text = "Preuve PDF stable pour la fixture."
     payload = {
         "url": sale.documents[0]["url"],
         "label": sale.documents[0].get("label"),
-        "text": "Preuve PDF stable pour la fixture.",
-        "sha256": "fixture-pdf-sha256",
+        "text": text,
+        "sha256": hashlib.sha256(b"fixture-pdf-bytes").hexdigest(),
+        "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "text_chars": len(text),
+        "text_present": True,
+        "cache_version": PDF_TEXT_CACHE_VERSION,
         "complete": True,
         "extraction_status": "extracted",
+        "extraction_method": "fixture",
         "failed_pages": [],
         "page_count": 1,
+        "http_checked_at": datetime.now(UTC).isoformat(),
     }
     _store_document_analysis_status(sale, sale.documents, [payload])
     (tmp_path / f"{sale_storage_id(sale)}.json").write_text(

@@ -285,6 +285,189 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
     assert finished == [("job-pdf", True, None), ("job-facts", True, None)]
 
 
+@pytest.mark.parametrize(
+    ("source_name", "source_url"),
+    [
+        ("encheres_publiques", "https://www.encheres-publiques.com/vente/unauthorized"),
+        ("avoventes", "https://avoventes.fr/vente/ep-document-unauthorized"),
+    ],
+)
+def test_enrichment_queue_defers_unauthorized_encheres_publiques_before_side_effects(
+    monkeypatch,
+    source_name,
+    source_url,
+) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": source_name,
+            "source_url": source_url,
+            "documents": [
+                {
+                    "label": "PV descriptif",
+                    "url": "https://www.encheres-publiques.com/documents/pv.pdf",
+                }
+            ],
+        }
+    )
+    jobs = [
+        {
+            "id": f"job-ep-{job_type}",
+            "source_url": sale.source_url,
+            "job_type": job_type,
+            "attempt_count": 2,
+            "locked_at": "2026-09-30T08:00:00+00:00",
+        }
+        for job_type in ("pdf", "fact_extraction", "display_description", "fact_claims")
+    ]
+    deferred: list[tuple[list[dict[str, object]], BaseException]] = []
+    finished: list[tuple[object, dict[str, object]]] = []
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: jobs,
+    )
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {
+        "enable_encheres_publiques_benchmark": True,
+        "encheres_publiques_access_authorized": False,
+        "llm_prompt_version": "test",
+    })
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(
+        queued_runner,
+        "defer_budget_jobs",
+        lambda claimed, exc: deferred.append((list(claimed), exc)),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+    for name in (
+        "restore_persisted_pdf_progress_for_sale",
+        "enrich_sale_from_pdfs",
+        "refresh_operational_display",
+        "create_llm_client",
+        "enrich_sale_with_llm",
+        "geocode_sale",
+        "fill_tribunal",
+        "classify_sale_procedure",
+        "normalize_asset_features",
+        "upsert_sales_to_supabase",
+        "retry_fact_claims_to_supabase",
+    ):
+        monkeypatch.setattr(
+            queued_runner,
+            name,
+            lambda *args, _name=name, **kwargs: pytest.fail(
+                f"unauthorized EP queue must not call {_name}"
+            ),
+        )
+
+    assert queued_runner.run_enrichment_queue_batch(
+        limit=len(jobs), family=queued_runner.ENRICHMENT_FAMILY
+    ) == len(jobs)
+    assert finished == []
+    assert [job["id"] for job in deferred[0][0]] == [job["id"] for job in jobs]
+    assert "access authorization required" in str(deferred[0][1]).lower()
+    assert [job["attempt_count"] for job in deferred[0][0]] == [2, 2, 2, 2]
+
+
+def test_enrichment_queue_defers_ep_redirect_without_consuming_pdf_retry(monkeypatch) -> None:
+    from src.config import EncheresPubliquesAccessNotAuthorized
+
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/vente/redirects-to-ep",
+            "documents": [
+                {
+                    "label": "PV descriptif",
+                    "url": "https://documents.example.test/pv.pdf",
+                }
+            ],
+        }
+    )
+    jobs = [
+        {
+            "id": f"job-redirect-ep-{job_type}",
+            "source_url": sale.source_url,
+            "job_type": job_type,
+            "attempt_count": 3,
+            "locked_at": "2026-09-30T08:00:00+00:00",
+        }
+        for job_type in ("pdf", "fact_extraction", "display_description")
+    ]
+    deferred: list[tuple[list[dict[str, object]], BaseException]] = []
+    finished: list[tuple[object, dict[str, object]]] = []
+    redirect_error = EncheresPubliquesAccessNotAuthorized(
+        "Encheres Publiques target discovered after redirect"
+    )
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: jobs,
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "load_settings",
+        lambda: {
+            "enable_encheres_publiques_benchmark": True,
+            "encheres_publiques_access_authorized": False,
+            "llm_prompt_version": "test",
+        },
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "restore_persisted_pdf_progress_for_sale", lambda _: None)
+    monkeypatch.setattr(queued_runner, "documents_are_current", lambda _: False)
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_from_pdfs",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(redirect_error),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "defer_budget_jobs",
+        lambda claimed, exc: deferred.append((list(claimed), exc)),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "persist_pdf_document_checkpoint_to_supabase",
+        lambda *_args, **_kwargs: pytest.fail(
+            "authorization failures must not persist a partial PDF checkpoint"
+        ),
+    )
+    for name in (
+        "refresh_operational_display",
+        "create_llm_client",
+        "enrich_sale_with_llm",
+        "upsert_sales_to_supabase",
+    ):
+        monkeypatch.setattr(
+            queued_runner,
+            name,
+            lambda *args, _name=name, **kwargs: pytest.fail(
+                f"unauthorized redirect must not call {_name}"
+            ),
+        )
+
+    assert queued_runner.run_enrichment_queue_batch(
+        limit=len(jobs), family=queued_runner.ENRICHMENT_FAMILY
+    ) == len(jobs)
+    assert finished == []
+    assert len(deferred) == 1
+    assert deferred[0][0] == jobs
+    assert isinstance(deferred[0][1], queued_runner.QueueJobDeferred)
+    assert "access authorization required" in str(deferred[0][1]).lower()
+    assert [job["attempt_count"] for job in deferred[0][0]] == [3, 3, 3]
+
+
 def test_enrichment_queue_reuses_verified_facts_when_ephemeral_pdf_cache_is_missing(monkeypatch) -> None:
     sale = normalize_sale(
         {
