@@ -10,8 +10,7 @@ const PETITES_AFFICHES_LEGACY_DETAIL_PATH =
   /^\/encheres-immobilieres\/vente\/immobiliere\/(?:judiciaire|volontaire)\/[a-z0-9-]+-\d+\.html$/;
 const PETITES_AFFICHES_CANONICAL_DETAIL_PATH =
   /^\/vente\/immobiliere\/(?:judiciaire|volontaire)\/[a-z0-9-]+-\d+\.html$/;
-const PETITES_AFFICHES_N_DETAIL_PATH =
-  /^\/vente\/immobiliere\/n\/[a-z0-9-]+-\d+\.html$/;
+const PETITES_AFFICHES_N_DETAIL_PATH = /^\/vente\/immobiliere\/n\/[a-z0-9-]+-\d+\.html$/;
 const CESSIONS_HOST = "cessions.immobilier-etat.gouv.fr";
 const hosts = new Set([PETITES_AFFICHES_HOST, CESSIONS_HOST]);
 const cessionsClient = Deno.createHttpClient({
@@ -40,8 +39,7 @@ function safeRedirectPath(host: string, path: string): string | null {
   }
   if (
     host === PETITES_AFFICHES_HOST &&
-    (PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(path) ||
-      PETITES_AFFICHES_N_DETAIL_PATH.test(path))
+    (PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(path) || PETITES_AFFICHES_N_DETAIL_PATH.test(path))
   ) {
     return "/vente/immobiliere/";
   }
@@ -176,9 +174,7 @@ export function normalizeRedirectLocation(
       return location;
     }
     const isListRedirect =
-      destination.pathname === PETITES_AFFICHES_LIST_PATH &&
-      !source.search &&
-      !source.hash;
+      destination.pathname === PETITES_AFFICHES_LIST_PATH && !source.search && !source.hash;
     const isDetailDestination =
       PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(destination.pathname) ||
       PETITES_AFFICHES_N_DETAIL_PATH.test(destination.pathname);
@@ -335,10 +331,7 @@ export async function handler(req: Request): Promise<Response> {
       for (const name of ["content-type", "location", "retry-after", "cf-mitigated"]) {
         if (response.headers.has(name)) {
           if (name === "location" && safeLocation === null) continue;
-          out.set(
-            name,
-            name === "location" ? safeLocation! : response.headers.get(name)!,
-          );
+          out.set(name, name === "location" ? safeLocation! : response.headers.get(name)!);
         }
       }
       const blocked =

@@ -1,3 +1,4 @@
+import json
 import sys
 import types
 from datetime import UTC, datetime
@@ -160,7 +161,7 @@ def test_run_scraper_keeps_other_sources_on_original_thread_path(monkeypatch) ->
     assert isolated_calls == []
 
 
-def test_document_facts_version_forces_one_time_pdf_reanalysis() -> None:
+def test_document_facts_version_forces_one_time_pdf_reanalysis(tmp_path, monkeypatch) -> None:
     sale = AuctionSale(
         source_name="info_encheres",
         source_url="https://www.info-encheres.com/vente-6008.html",
@@ -187,7 +188,7 @@ def test_document_facts_version_forces_one_time_pdf_reanalysis() -> None:
     assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
 
     sale.raw_payload["document_facts_version"] = main.DOCUMENT_FACTS_VERSION
-    sale.raw_payload["document_analysis"] = {"checked_at": datetime.now(UTC).isoformat(), "input_fingerprint": document_fingerprint(sale.documents)}
+    _materialize_current_pdf_proof(sale, tmp_path, monkeypatch)
 
     assert main._needs_structured_heavy_enrichment(sale) is False
     assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is True
@@ -829,7 +830,9 @@ def test_pipeline_enriches_dpe_after_final_geocode(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("autonomous", [False, True])
-def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatch, autonomous) -> None:
+def test_incremental_skip_only_skips_heavy_enrichment_not_publication(
+    tmp_path, monkeypatch, autonomous
+) -> None:
     if autonomous:
         monkeypatch.setenv("PIPELINE_AUTONOMOUS_RUN_ID", "test-autonomous")
     else:
@@ -838,7 +841,9 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatc
     settings = _settings()
     settings["incremental_enrichment"] = True
     raw = {**_raw_sale(), "document_facts_version": main.DOCUMENT_FACTS_VERSION, "_known_unchanged": True}
-    raw["document_analysis"] = {"checked_at": datetime.now(UTC).isoformat(), "input_fingerprint": document_fingerprint(raw.get("documents", []))}
+    fixture_sale = main.normalize_sale(raw)
+    _materialize_current_pdf_proof(fixture_sale, tmp_path, monkeypatch)
+    raw["document_analysis"] = fixture_sale.raw_payload["document_analysis"]
 
     monkeypatch.setattr(main, "load_settings", lambda: settings)
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
@@ -1267,6 +1272,29 @@ def _raw_sale() -> dict[str, object]:
         "starting_price_eur": "100 000 €",
         "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
     }
+
+
+def _materialize_current_pdf_proof(sale: AuctionSale, tmp_path, monkeypatch) -> None:
+    """Give freshness checks the same complete evidence as a real PDF pass."""
+    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_enrichment import sale_storage_id
+
+    monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
+    payload = {
+        "url": sale.documents[0]["url"],
+        "label": sale.documents[0].get("label"),
+        "text": "Preuve PDF stable pour la fixture.",
+        "sha256": "fixture-pdf-sha256",
+        "complete": True,
+        "extraction_status": "extracted",
+        "failed_pages": [],
+        "page_count": 1,
+    }
+    _store_document_analysis_status(sale, sale.documents, [payload])
+    (tmp_path / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([payload]),
+        encoding="utf-8",
+    )
 
 
 def _fake_geocode(sale: AuctionSale) -> AuctionSale:
