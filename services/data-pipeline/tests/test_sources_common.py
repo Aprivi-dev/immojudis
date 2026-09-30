@@ -3,6 +3,8 @@ import time
 import httpx
 import pytest
 
+from src import source_task_deadline
+from src.source_task_deadline import SourceTaskDeadlineExceeded, source_task_deadline_scope
 from src.sources import common
 
 
@@ -25,6 +27,9 @@ class _Response:
         if self.status_code >= 400:
             raise RuntimeError(f"HTTP {self.status_code}")
 
+    def close(self) -> None:
+        return None
+
 
 def _patch_http_client(monkeypatch, response_batches):
     clients = []
@@ -34,6 +39,7 @@ def _patch_http_client(monkeypatch, response_batches):
             del kwargs
             self.responses = list(response_batches.pop(0))
             self.calls: list[tuple[str, str]] = []
+            self.timeouts: list[object] = []
             clients.append(self)
 
         def _next(self, method: str, url: str):
@@ -45,15 +51,27 @@ def _patch_http_client(monkeypatch, response_batches):
                 raise response
             return response
 
-        def get(self, url: str):
+        def get(self, url: str, **kwargs: object):
+            self.timeouts.append(kwargs.get("timeout"))
             return self._next("GET", url)
 
         def request(self, method: str, url: str, **kwargs: object):
-            del kwargs
+            self.timeouts.append(kwargs.get("timeout"))
             return self._next(method, url)
 
     monkeypatch.setattr(common.httpx, "Client", Client)
     return clients
+
+
+def _freeze_source_clock(monkeypatch, *, now: float = 100.0) -> dict[str, float]:
+    clock = {"now": now}
+    monkeypatch.setattr(source_task_deadline.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        common.time,
+        "sleep",
+        lambda seconds: clock.__setitem__("now", clock["now"] + seconds),
+    )
+    return clock
 
 
 @pytest.mark.parametrize(
@@ -99,6 +117,220 @@ def test_polite_client_treats_absent_robots_as_empty_policy(monkeypatch, status_
         ("GET", "https://source.example/robots.txt"),
         ("GET", "https://source.example/catalogue"),
     ]
+    assert clients[0].timeouts == [None, None]
+
+
+def test_source_task_deadline_bounds_robots_and_source_http_timeouts(monkeypatch) -> None:
+    _freeze_source_clock(monkeypatch)
+    clients = _patch_http_client(
+        monkeypatch,
+        [[
+            _Response(200, text="User-agent: *\nAllow: /"),
+            _Response(200, text="catalogue"),
+        ]],
+    )
+
+    with source_task_deadline_scope(110):
+        client = common.PoliteHttpClient(
+            base_url="https://source.example",
+            user_agent="immojudis-test",
+            delay_seconds=0,
+            timeout_seconds=30,
+        )
+        assert client.get("https://source.example/catalogue") == "catalogue"
+
+    assert clients[0].timeouts == [10, 10]
+
+
+def test_source_task_deadline_recalculates_timeout_after_retry_backoff(monkeypatch) -> None:
+    clock = _freeze_source_clock(monkeypatch)
+    clients = _patch_http_client(
+        monkeypatch,
+        [[
+            _Response(200, text="User-agent: *\nAllow: /"),
+            _Response(503),
+            _Response(200, text="catalogue"),
+        ]],
+    )
+
+    with source_task_deadline_scope(110):
+        client = common.PoliteHttpClient(
+            base_url="https://source.example",
+            user_agent="immojudis-test",
+            delay_seconds=2,
+            timeout_seconds=30,
+        )
+        assert client.get("https://source.example/catalogue") == "catalogue"
+
+    assert clients[0].timeouts == [10, 10, 8]
+    assert clock["now"] == 102
+
+
+def test_source_task_deadline_stops_during_request_cadence_wait(monkeypatch) -> None:
+    clock = _freeze_source_clock(monkeypatch)
+    clients = _patch_http_client(
+        monkeypatch,
+        [[_Response(200, text="User-agent: *\nAllow: /")]],
+    )
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=5,
+        timeout_seconds=30,
+    )
+    client._last_request_at = 100
+
+    with source_task_deadline_scope(103):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="request cadence"):
+            client._request("GET", "https://source.example/catalogue")
+
+    assert clock["now"] == 103
+    assert clients[0].calls == [("GET", "https://source.example/robots.txt")]
+
+
+def test_source_task_deadline_stops_during_http_retry_backoff(monkeypatch) -> None:
+    clock = _freeze_source_clock(monkeypatch)
+    clients = _patch_http_client(
+        monkeypatch,
+        [[
+            _Response(200, text="User-agent: *\nAllow: /"),
+            _Response(503),
+        ]],
+    )
+
+    with source_task_deadline_scope(101):
+        client = common.PoliteHttpClient(
+            base_url="https://source.example",
+            user_agent="immojudis-test",
+            delay_seconds=0,
+            timeout_seconds=30,
+        )
+        with pytest.raises(SourceTaskDeadlineExceeded, match="HTTP retry"):
+            client.get("https://source.example/catalogue")
+
+    assert clock["now"] == 101
+    assert clients[0].calls == [
+        ("GET", "https://source.example/robots.txt"),
+        ("GET", "https://source.example/catalogue"),
+    ]
+
+
+def test_source_task_deadline_is_not_degraded_by_initial_robots_failure(monkeypatch) -> None:
+    _freeze_source_clock(monkeypatch)
+    clients = _patch_http_client(
+        monkeypatch,
+        [[_Response(200, text="User-agent: *\nAllow: /")]],
+    )
+
+    with source_task_deadline_scope(100):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="initial robots policy"):
+            common.PoliteHttpClient(
+                base_url="https://source.example",
+                user_agent="immojudis-test",
+                delay_seconds=0,
+                timeout_seconds=30,
+            )
+
+    assert clients[0].calls == []
+
+
+def test_source_task_deadline_is_not_degraded_when_robots_timeout_hits_cutoff(monkeypatch) -> None:
+    clock = _freeze_source_clock(monkeypatch)
+
+    class Client:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+
+        def get(self, url: str, **kwargs: object):
+            del url, kwargs
+            clock["now"] = 101
+            raise httpx.ReadTimeout("robots timeout")
+
+    monkeypatch.setattr(common.httpx, "Client", Client)
+    with source_task_deadline_scope(101):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="failed robots policy"):
+            common.PoliteHttpClient(
+                base_url="https://source.example",
+                user_agent="immojudis-test",
+                delay_seconds=0,
+                timeout_seconds=30,
+            )
+
+
+def test_source_task_deadline_is_not_hidden_by_robots_body_probe(monkeypatch) -> None:
+    class Response:
+        status_code = 200
+        headers: dict[str, str] = {}
+
+        @property
+        def text(self) -> str:
+            raise SourceTaskDeadlineExceeded(
+                "reading robots body",
+                deadline=101,
+                remaining=-1,
+            )
+
+    class Client:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+
+        def get(self, url: str, **kwargs: object) -> Response:
+            del url, kwargs
+            return Response()
+
+    monkeypatch.setattr(common.httpx, "Client", Client)
+    with source_task_deadline_scope(time.monotonic() + 10):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="reading robots body"):
+            common.PoliteHttpClient(
+                base_url="https://source.example",
+                user_agent="immojudis-test",
+                delay_seconds=0,
+                timeout_seconds=30,
+            )
+
+
+@pytest.mark.parametrize("blocked_state", ["retry", "suspended"])
+def test_source_task_deadline_precedes_deferred_or_suspended_state(monkeypatch, blocked_state) -> None:
+    _freeze_source_clock(monkeypatch)
+    clients = _patch_http_client(
+        monkeypatch,
+        [[_Response(200, text="User-agent: *\nAllow: /")]],
+    )
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=30,
+    )
+    if blocked_state == "retry":
+        client._retry_not_before = "2099-01-01T00:00:00+00:00"
+    else:
+        client._access_denials = 2
+
+    with source_task_deadline_scope(100):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="admitting source request"):
+            client._request("GET", "https://source.example/catalogue")
+
+    assert clients[0].calls == [("GET", "https://source.example/robots.txt")]
+
+
+def test_source_task_deadline_is_not_degraded_by_lazy_redirect_robots_failure(monkeypatch) -> None:
+    _freeze_source_clock(monkeypatch)
+    _patch_http_client(
+        monkeypatch,
+        [[_Response(200, text="User-agent: *\nAllow: /")]],
+    )
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        allowed_redirect_origins=("https://cdn.example",),
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=30,
+    )
+
+    with source_task_deadline_scope(100):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="robots policy lookup"):
+            client._robots_for_url("https://cdn.example/catalogue")
 
 
 @pytest.mark.parametrize("status_code", [404, 410])
@@ -409,3 +641,19 @@ def test_parse_html_interrupts_a_slow_parser(monkeypatch) -> None:
     monkeypatch.setattr(common, "BeautifulSoup", slow_parser)
     with pytest.raises(common.SourceParseTimeout):
         common.parse_html("<html></html>", timeout_seconds=0.01)
+
+
+def test_parse_html_honors_source_task_deadline_before_and_after_parser(monkeypatch) -> None:
+    clock = _freeze_source_clock(monkeypatch)
+    with source_task_deadline_scope(100):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="admitting source HTML"):
+            common.parse_html("<html></html>", timeout_seconds=0)
+
+    def parser(*_args, **_kwargs):
+        clock["now"] = 101
+        return object()
+
+    monkeypatch.setattr(common, "BeautifulSoup", parser)
+    with source_task_deadline_scope(101):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="finishing source HTML"):
+            common.parse_html("<html></html>", timeout_seconds=0)

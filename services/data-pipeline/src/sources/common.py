@@ -17,6 +17,12 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+from src.source_task_deadline import (
+    SourceTaskDeadlineExceeded,
+    ensure_source_task_deadline,
+    source_task_bounded_timeout,
+    source_task_deadline_remaining,
+)
 from src.sources.cloud_transport import configured_transport
 
 LOGGER = logging.getLogger(__name__)
@@ -120,13 +126,27 @@ def parse_html(
     ``BeautifulSoup`` directly.  Rejecting an oversized body is intentional:
     truncating a legal notice could silently produce incomplete facts.
     """
+    ensure_source_task_deadline("admitting source HTML parsing")
     size = len(html)
     if size > MAX_SOURCE_HTML_CHARS:
         raise SourceParseLimitExceeded(
             f"source HTML body has {size} units; limit is {MAX_SOURCE_HTML_CHARS}"
         )
     with _source_parse_deadline(float(timeout_seconds)):
-        return BeautifulSoup(html, parser)
+        parsed = BeautifulSoup(html, parser)
+    ensure_source_task_deadline("finishing source HTML parsing")
+    return parsed
+
+
+def _source_task_sleep(seconds: float, operation: str) -> None:
+    """Sleep without crossing an active source-detail deadline."""
+    duration = max(0.0, float(seconds))
+    remaining = ensure_source_task_deadline(operation)
+    if remaining is None:
+        time.sleep(duration)
+        return
+    time.sleep(min(duration, max(0.0, remaining)))
+    ensure_source_task_deadline(operation)
 
 
 def retry_after_seconds(value: str | None, *, now: datetime | None = None) -> float:
@@ -290,6 +310,8 @@ def _looks_like_html_challenge(response: httpx.Response) -> bool:
         return True
     try:
         body = response.text[:8192].lstrip().casefold()
+    except SourceTaskDeadlineExceeded:
+        raise
     except Exception:
         return True
     if re.search(r"<(?:(?:!doctype)\s+)?html\b", body):
@@ -354,13 +376,18 @@ class PoliteHttpClient:
         )
         self._robots = RobotsRules()
         try:
+            ensure_source_task_deadline("admitting initial robots policy request")
             response = self._fetch_robots(urljoin(self.base_url, "/robots.txt"))
+            ensure_source_task_deadline("parsing initial robots policy response")
             self._robots = _parse_robots_response(response, self.user_agent)
+            ensure_source_task_deadline("finishing initial robots policy parsing")
             base_origin = _origin(urlparse(self.base_url))
             if base_origin is not None:
                 self._robots_by_origin[base_origin] = self._robots
             if self._last_robots_origin is not None:
                 self._robots_by_origin[self._last_robots_origin] = self._robots
+        except SourceTaskDeadlineExceeded:
+            raise
         except Exception as exc:  # pragma: no cover - depends on network state
             base_origin = _origin(urlparse(self.base_url))
             self._remember_robots_unavailable(base_origin, exc)
@@ -371,6 +398,7 @@ class PoliteHttpClient:
         self._last_robots_origin = None
         allowed_origins = (self.base_url, *self.allowed_redirect_origins)
         for redirect_count in range(MAX_SAFE_REDIRECTS + 1):
+            ensure_source_task_deadline("admitting robots policy request")
             if not is_allowed_origin_url(current_url, allowed_origins):
                 raise RobotsUnavailableError(
                     f"robots.txt redirect could not be verified outside configured source origin: {current_url}",
@@ -378,13 +406,26 @@ class PoliteHttpClient:
                 )
             current_origin = _origin(urlparse(current_url))
             try:
-                response = self._client.get(current_url)
+                remaining = source_task_deadline_remaining()
+                if remaining is None:
+                    response = self._client.get(current_url)
+                else:
+                    response = self._client.get(
+                        current_url,
+                        timeout=source_task_bounded_timeout(
+                            self.timeout_seconds,
+                            "requesting robots policy",
+                        ),
+                    )
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                ensure_source_task_deadline("handling failed robots policy request")
                 raise RobotsUnavailableError(
                     f"robots.txt could not be verified for {current_url}: {exc}",
                     origin=current_origin,
                 ) from exc
+            ensure_source_task_deadline("receiving robots policy response")
             if response.status_code not in REDIRECT_STATUS_CODES:
+                ensure_source_task_deadline("parsing robots policy response")
                 if response.status_code in {404, 410}:
                     # RFC 9309 §2.3.1.3: an absent robots.txt means that no
                     # restrictions were published for this origin.
@@ -406,7 +447,9 @@ class PoliteHttpClient:
                         response=response,
                         origin=current_origin,
                     )
-                if _looks_like_html_challenge(response):
+                looks_like_challenge = _looks_like_html_challenge(response)
+                ensure_source_task_deadline("finishing robots policy response parsing")
+                if looks_like_challenge:
                     raise RobotsAccessRefusedError(
                         f"robots access refused for {current_url}: HTML challenge response",
                         response=response,
@@ -455,6 +498,7 @@ class PoliteHttpClient:
         verified.  A network or server failure is surfaced as an unavailable
         source so the caller can retry it, never as an explicit robots refusal.
         """
+        ensure_source_task_deadline("admitting robots policy lookup")
         origin = _origin(urlparse(url))
         if origin is None:
             raise RuntimeError(f"cannot determine source origin for {url}")
@@ -484,8 +528,13 @@ class PoliteHttpClient:
         parsed = urlparse(url)
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
         try:
+            ensure_source_task_deadline("admitting redirect-origin robots policy request")
             response = self._fetch_robots(robots_url)
+            ensure_source_task_deadline("parsing redirect-origin robots policy response")
             rules = _parse_robots_response(response, self.user_agent)
+            ensure_source_task_deadline("finishing redirect-origin robots policy parsing")
+        except SourceTaskDeadlineExceeded:
+            raise
         except RobotsUnavailableError as exc:
             self._remember_robots_unavailable(origin, exc)
             raise
@@ -500,14 +549,21 @@ class PoliteHttpClient:
     def get(self, url: str) -> str:
         self._guard(url)
         response = self._request("GET", url)
-        return response.text
+        ensure_source_task_deadline("reading source response")
+        text = response.text
+        ensure_source_task_deadline("finishing source response parsing")
+        return text
 
     def post_form(self, url: str, data: dict[str, Any]) -> str:
         self._guard(url)
         response = self._request("POST", url, data=data)
-        return response.text
+        ensure_source_task_deadline("reading source response")
+        text = response.text
+        ensure_source_task_deadline("finishing source response parsing")
+        return text
 
     def _guard(self, url: str) -> None:
+        ensure_source_task_deadline("admitting source request")
         allowed_origins = (self.base_url, *self.allowed_redirect_origins)
         if not is_allowed_origin_url(url, allowed_origins):
             raise RuntimeError(f"refusing URL outside configured source origin: {url}")
@@ -515,13 +571,18 @@ class PoliteHttpClient:
             raise RuntimeError(f"robots.txt does not allow fetching {url}")
 
     def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        ensure_source_task_deadline("admitting source request")
         if self._retry_not_before:
             raise RuntimeError(f"Source deferred until {self._retry_not_before}")
         if self._access_denials >= 2:
             raise RuntimeError("Source suspended after repeated access refusals")
         elapsed = time.monotonic() - self._last_request_at
         if elapsed < self.delay_seconds:
-            time.sleep(self.delay_seconds - elapsed)
+            _source_task_sleep(
+                self.delay_seconds - elapsed,
+                "waiting for source request cadence",
+            )
+        ensure_source_task_deadline("starting source request")
         LOGGER.info("Fetching %s", url)
         current_url = url
         current_method = method
@@ -530,8 +591,10 @@ class PoliteHttpClient:
             for redirect_count in range(MAX_SAFE_REDIRECTS + 1):
                 self._guard(current_url)
                 response = self._request_with_retries(current_method, current_url, **kwargs)
+                ensure_source_task_deadline("parsing source response status")
                 if response.status_code not in REDIRECT_STATUS_CODES:
                     response.raise_for_status()
+                    ensure_source_task_deadline("finishing source response")
                     self._requests_succeeded += 1
                     self._visited_urls.append(current_url)
                     return response
@@ -559,17 +622,30 @@ class PoliteHttpClient:
         # need an operator/source fix, not repeated traffic.
         for attempt in range(4):
             self._http_attempts = getattr(self, '_http_attempts', 0) + 1
+            ensure_source_task_deadline(f"admitting source HTTP attempt {attempt + 1}")
+            request_kwargs = dict(kwargs)
+            if source_task_deadline_remaining() is not None:
+                request_kwargs["timeout"] = source_task_bounded_timeout(
+                    self.timeout_seconds,
+                    f"starting source HTTP attempt {attempt + 1}",
+                )
             try:
-                response = self._client.request(method, url, **kwargs)
+                response = self._client.request(method, url, **request_kwargs)
+                ensure_source_task_deadline(f"receiving source HTTP attempt {attempt + 1}")
+            except SourceTaskDeadlineExceeded:
+                raise
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                ensure_source_task_deadline(f"handling failed source HTTP attempt {attempt + 1}")
                 if attempt == 3 or "CERTIFICATE_VERIFY_FAILED" in str(exc):
                     raise
             else:
+                ensure_source_task_deadline(f"parsing source HTTP attempt {attempt + 1}")
                 if response.status_code in {401, 403}:
                     self._access_denials = getattr(self, "_access_denials", 0) + 1
                 if response.status_code not in {408, 429, 500, 502, 503, 504}:
                     return response
                 requested_delay = retry_after_seconds(response.headers.get("retry-after"))
+                ensure_source_task_deadline("recording source retry delay")
                 if requested_delay > 60 or (attempt == 3 and requested_delay):
                     try:
                         self._retry_not_before = (datetime.now(UTC) + timedelta(seconds=requested_delay)).isoformat()
@@ -579,9 +655,15 @@ class PoliteHttpClient:
                 if attempt == 3:
                     return response
                 response.close()
-                time.sleep(max(self.delay_seconds, 2 ** attempt, requested_delay))
+                _source_task_sleep(
+                    max(self.delay_seconds, 2 ** attempt, requested_delay),
+                    "waiting for source HTTP retry",
+                )
                 continue
-            time.sleep(max(self.delay_seconds, 2 ** attempt))
+            _source_task_sleep(
+                max(self.delay_seconds, 2 ** attempt),
+                "waiting for source HTTP retry",
+            )
         raise RuntimeError("Source retry budget exhausted")
 
     def coverage_metrics(self) -> dict[str, Any]:

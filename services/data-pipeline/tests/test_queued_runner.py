@@ -1,4 +1,5 @@
 import sys
+import time
 import types
 from contextlib import nullcontext
 from datetime import UTC, datetime
@@ -11,6 +12,7 @@ from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
 from src.normalize import normalize_sale
+from src.source_task_deadline import source_task_deadline_remaining
 
 try:
     from src import queued_runner
@@ -1231,6 +1233,29 @@ def test_worker_pdf_deadline_scope_resets_when_batch_raises(monkeypatch) -> None
         queued_runner._run_enrichment_queue_worker(max_jobs=1, budget_seconds=1200)
     assert observed_remaining and observed_remaining[0] is not None
     assert pdf_enrichment.pdf_deadline_remaining() is None
+    assert source_task_deadline_remaining() is None
+
+
+def test_worker_source_detail_deadline_scope_uses_existing_finalization_margin(monkeypatch) -> None:
+    observed_remaining: list[float | None] = []
+
+    def fake_batch(**_kwargs) -> int:
+        observed_remaining.append(source_task_deadline_remaining())
+        return 0
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
+    started = time.monotonic()
+    queued_runner._run_enrichment_queue_batch_with_deadline(
+        limit=1,
+        family=queued_runner.SOURCE_DETAIL_FAMILY,
+        provider_clients={},
+        worker_deadline=started + 10,
+        finalization_margin_seconds=2,
+    )
+
+    assert observed_remaining and observed_remaining[0] is not None
+    assert 0 < observed_remaining[0] <= 8
+    assert source_task_deadline_remaining() is None
 
 
 def test_worker_does_not_claim_inside_pdf_finalization_margin(monkeypatch) -> None:
