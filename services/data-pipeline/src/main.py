@@ -52,6 +52,7 @@ from src.pdf_enrichment import (
     classify_document_type,
     enrich_sale_from_pdfs,
 )
+from src.pdf_progress import PDF_PROGRESS_SCHEMA_VERSION
 from src.quality import (
     build_extraction_gap_report,
     build_quality_report,
@@ -83,6 +84,7 @@ from src.storage.supabase_client import (
     finish_run_in_supabase,
     mark_past_sales_in_supabase,
     reconcile_duplicate_sales_in_supabase,
+    restore_persisted_pdf_progress_for_sale,
     update_run_progress_in_supabase,
     upsert_cadastre_parcels_to_supabase,
     upsert_dpe_diagnostics_to_supabase,
@@ -516,7 +518,10 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     started = time.perf_counter()
     if pdf_targets:
         with ThreadPoolExecutor(max_workers=pdf_workers) as executor:
-            futures = {executor.submit(enrich_sale_from_pdfs, sale): sale for sale in pdf_targets}
+            futures = {
+                executor.submit(_enrich_pdf_target, sale, restore_progress=options.upsert): sale
+                for sale in pdf_targets
+            }
             for future in as_completed(futures):
                 sale = futures[future]
                 try:
@@ -1557,6 +1562,32 @@ def _limit_llm_targets(
     if max_targets <= 0 or len(llm_targets) <= max_targets:
         return llm_targets
     return sorted(llm_targets, key=_llm_target_priority_key)[:max_targets]
+
+
+def _enrich_pdf_target(sale: AuctionSale, *, restore_progress: bool) -> PdfEnrichmentStats:
+    require_encheres_publiques_sale_access(
+        source_name=sale.source_name,
+        source_url=sale.source_url,
+        source_urls=sale.source_urls,
+        documents=sale.documents,
+        settings=load_settings(),
+    )
+    analysis = sale.raw_payload.get("document_analysis")
+    if (
+        restore_progress
+        and isinstance(analysis, dict)
+        and analysis.get("progress_schema_version") == PDF_PROGRESS_SCHEMA_VERSION
+        and analysis.get("manifest_complete") is False
+    ):
+        restored = restore_persisted_pdf_progress_for_sale(sale)
+        if restored:
+            LOGGER.info(
+                "Restored persisted PDF progress: source=%s documents=%s checkpointed_pages=%s",
+                sale.source_name,
+                len(restored),
+                sum(len(item.get("pages") or []) for item in restored),
+            )
+    return enrich_sale_from_pdfs(sale)
 
 
 def _limit_pdf_targets(
