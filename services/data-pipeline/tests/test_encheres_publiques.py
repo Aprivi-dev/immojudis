@@ -1,9 +1,13 @@
 import json
 from decimal import Decimal
 
+import pytest
+
 from src.asset_normalization import normalize_asset_features
+from src.config import EncheresPubliquesAccessNotAuthorized
 from src.normalize import normalize_sale
 from src.sale_procedure import classify_sale_procedure
+from src.sources import encheres_publiques as encheres_module
 from src.sources.common import is_allowed_origin_url
 from src.sources.encheres_publiques import (
     BASE_URL,
@@ -13,6 +17,25 @@ from src.sources.encheres_publiques import (
     parse_encheres_publiques_detail_html,
     parse_encheres_publiques_html,
 )
+
+
+def test_scraper_refuses_before_constructing_http_client_without_authorization(monkeypatch) -> None:
+    monkeypatch.setattr(
+        encheres_module,
+        "load_settings",
+        lambda: {
+            "enable_encheres_publiques_benchmark": False,
+            "encheres_publiques_access_authorized": False,
+        },
+    )
+    monkeypatch.setattr(
+        encheres_module,
+        "PoliteHttpClient",
+        lambda **_: pytest.fail("Encheres Publiques client must not be constructed"),
+    )
+
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        encheres_module.scrape_encheres_publiques_aquitaine_result(max_pages=1)
 
 
 def test_sale_schedule_keeps_matching_boundaries_without_mixing_lot_and_event() -> None:

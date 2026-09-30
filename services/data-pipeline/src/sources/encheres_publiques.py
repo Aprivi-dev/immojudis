@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
-from src.config import TARGET_DEPARTMENTS, load_settings
+from src.config import TARGET_DEPARTMENTS, load_settings, require_encheres_publiques_access
 from src.normalize import (
     SURFACE_VALUE_PATTERN,
     clean_text,
@@ -72,6 +72,7 @@ def scrape_encheres_publiques_aquitaine_result(
     URLs from robots.txt.
     """
     settings = load_settings()
+    require_encheres_publiques_access(settings)
     client = PoliteHttpClient(
         base_url=BASE_URL,
         allowed_redirect_origins=(CANONICAL_BASE_URL,),

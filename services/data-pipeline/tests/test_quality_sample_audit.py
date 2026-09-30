@@ -1,6 +1,25 @@
 import json
 
+import pytest
+
+from src import quality_sample_audit as audit
+from src.config import EncheresPubliquesAccessNotAuthorized
 from src.quality_sample_audit import SAMPLE, compare_fields
+
+
+def test_encheres_publiques_quality_audit_refuses_before_database_read(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        audit,
+        "load_settings",
+        lambda: {
+            "enable_encheres_publiques_benchmark": False,
+            "encheres_publiques_access_authorized": False,
+        },
+    )
+    monkeypatch.setattr(audit, "_postgres_connect", lambda *_: pytest.fail("database must not be opened"))
+
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        audit.audit_source("encheres_publiques", tmp_path / "quality.json")
 
 
 def test_sample_is_frozen_at_100_distinct_listings_across_ten_sources():

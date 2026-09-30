@@ -18,7 +18,11 @@ from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.collection_evidence import record_items, record_sale_decisions
-from src.config import load_settings
+from src.config import (
+    encheres_publiques_access_enabled,
+    load_settings,
+    require_encheres_publiques_access,
+)
 from src.dedupe import merge_duplicate_sales
 from src.dpe import enrich_dpe_sales
 from src.enrichment.display_quality import has_current_display
@@ -229,6 +233,14 @@ class CollectionIncompleteError(RuntimeError):
 def run_pipeline(options: PipelineOptions | None = None) -> int:
     options = options or PipelineOptions()
     settings = load_settings()
+    # Do this before creating a run or looking up catalogue state.  ``all``
+    # only enters this gate when its EP benchmark toggle is explicitly on;
+    # the default ``all`` run therefore continues to skip the source.
+    if options.source == "encheres_publiques" or (
+        options.source == "all"
+        and bool(settings.get("enable_encheres_publiques_benchmark"))
+    ):
+        require_encheres_publiques_access(settings)
     run_id = create_run_in_supabase(options.source, options.use_llm, run_id=options.run_id) if options.upsert else None
     register_run(run_id)
     errors: dict[str, list[str]] = {source: [] for source in SOURCE_NAMES}
@@ -1216,6 +1228,10 @@ def _enabled_scrapers(
     change-signature) lets list-based scrapers skip detail pages of unchanged
     listings; licitor exposes price/date only on detail pages, so it always
     fetches."""
+    ep_benchmark_enabled = bool(settings.get("enable_encheres_publiques_benchmark"))
+    if source == "encheres_publiques" or (source == "all" and ep_benchmark_enabled):
+        require_encheres_publiques_access(settings)
+
     candidates: list[tuple[str, bool, Callable[[], ScrapeResult]]] = [
         ("avoventes", True, lambda: scrape_avoventes_aquitaine_result(known=known)),
         (
@@ -1245,7 +1261,7 @@ def _enabled_scrapers(
         ),
         (
             "encheres_publiques",
-            bool(settings["enable_encheres_publiques_benchmark"]),
+            ep_benchmark_enabled and encheres_publiques_access_enabled(settings),
             lambda: scrape_encheres_publiques_aquitaine_result(
                 max_pages=int(settings["encheres_publiques_max_pages"]), known=known
             ),

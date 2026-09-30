@@ -13,7 +13,7 @@ from pathlib import Path
 
 from psycopg.rows import dict_row
 
-from src.config import load_settings
+from src.config import load_settings, require_encheres_publiques_access
 from src.normalize import normalize_sale
 from src.source_detail import fetch_public_detail
 from src.storage.supabase_client import _postgres_connect
@@ -42,6 +42,10 @@ def compare_fields(stored: dict, extracted: dict) -> dict:
 
 
 def audit_source(source: str, output: Path, sample: Path = SAMPLE) -> None:
+    if source == "encheres_publiques":
+        # Refuse before reading the sample or opening the read-only DB session;
+        # the source access gate belongs to the fetch boundary, not the sample.
+        require_encheres_publiques_access(load_settings())
     targets = [row for row in json.loads(sample.read_text()) if row['source_name'] == source]
     if not targets:
         raise ValueError('Source outside the frozen sample')

@@ -3,6 +3,7 @@ import json
 import pytest
 
 from src import source_detail
+from src.config import EncheresPubliquesAccessNotAuthorized
 
 SETTINGS = {'user_agent': 'Immojudis source verification'}
 
@@ -102,6 +103,17 @@ def test_detail_rejects_other_origin_before_any_request(monkeypatch, source):
     monkeypatch.setattr(source_detail, 'PoliteHttpClient', lambda **kwargs: pytest.fail('Unexpected HTTP client'))
     with pytest.raises(ValueError, match='Unsupported source endpoint'):
         source_detail.fetch_public_detail(source, 'https://example.test/annonce/1', SETTINGS, {})
+
+
+def test_encheres_publiques_detail_refuses_before_import_or_http(monkeypatch):
+    monkeypatch.setattr(source_detail, 'PoliteHttpClient', lambda **kwargs: pytest.fail('Unexpected HTTP client'))
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        source_detail.fetch_public_detail(
+            'encheres_publiques',
+            'https://www.encheres-publiques.com/encheres/immobilier/lot_1',
+            SETTINGS,
+            {},
+        )
 
 
 @pytest.mark.parametrize('body,should_succeed', [('{}',False), ('{"id":2}',False), ('{"id":1,"typeTransaction":"VAE","vae":{"descriptions":[{"langue":"fr","descCourte":"Appartement"}]}}',True)])

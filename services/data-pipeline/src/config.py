@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -21,6 +22,33 @@ DEFAULT_LLM_DISPLAY_PROMPT_VERSION = "auction_display_v9_public_summary"
 DEFAULT_LLM_EXTRACTION_MODE = "structured_then_display"
 DEFAULT_REPLICATE_WAIT_SECONDS = 60
 MAX_REPLICATE_WAIT_SECONDS = 60
+
+
+class EncheresPubliquesAccessNotAuthorized(RuntimeError):
+    """Raised before any Encheres Publiques request without an approved gate."""
+
+
+def encheres_publiques_access_enabled(settings: Mapping[str, object]) -> bool:
+    """Return whether the source toggle and the separate access gate are on.
+
+    Keeping these two switches separate prevents a benchmark toggle from being
+    interpreted as permission to use a source whose access arrangement has not
+    been configured yet.
+    """
+
+    return (
+        settings.get("enable_encheres_publiques_benchmark") is True
+        and settings.get("encheres_publiques_access_authorized") is True
+    )
+
+
+def require_encheres_publiques_access(settings: Mapping[str, object]) -> None:
+    """Fail closed before constructing a client for Encheres Publiques."""
+
+    if not encheres_publiques_access_enabled(settings):
+        raise EncheresPubliquesAccessNotAuthorized(
+            "Encheres Publiques is disabled until source access is explicitly authorized"
+        )
 
 FRANCE_DEPARTMENTS = (
     *(f"{department:02d}" for department in range(1, 96)),
@@ -274,7 +302,13 @@ def load_settings() -> dict[str, str | float | None]:
         "enable_info_encheres_benchmark": os.getenv("ENABLE_INFO_ENCHERES_BENCHMARK", "true").lower()
         in {"1", "true", "yes", "on"},
         "info_encheres_max_pages": int(os.getenv("INFO_ENCHERES_MAX_PAGES", "4")),
-        "enable_encheres_publiques_benchmark": os.getenv("ENABLE_ENCHERES_PUBLIQUES_BENCHMARK", "true").lower()
+        # Encheres Publiques stays disabled until both the benchmark and the
+        # separately configured access authorization are explicitly enabled.
+        "enable_encheres_publiques_benchmark": os.getenv("ENABLE_ENCHERES_PUBLIQUES_BENCHMARK", "false").lower()
+        in {"1", "true", "yes", "on"},
+        "encheres_publiques_access_authorized": os.getenv(
+            "ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED", "false"
+        ).lower()
         in {"1", "true", "yes", "on"},
         "encheres_publiques_max_pages": int(os.getenv("ENCHERES_PUBLIQUES_MAX_PAGES", "10")),
         "encheres_publiques_places": os.getenv("ENCHERES_PUBLIQUES_PLACES"),

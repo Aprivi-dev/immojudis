@@ -1,6 +1,28 @@
+import pytest
+
+from src import source_coverage_audit as audit
 from src.catalogue_proof import certify_catalogue
+from src.config import EncheresPubliquesAccessNotAuthorized
 from src.source_coverage_audit import _derive_catalogue_exclusions, page_evidence
 from src.sources.common import PaginationCoverage, ScrapeResult
+
+
+def test_encheres_publiques_audit_refuses_before_import_or_output(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        audit,
+        "load_settings",
+        lambda: {
+            "enable_encheres_publiques_benchmark": False,
+            "encheres_publiques_access_authorized": False,
+        },
+    )
+    monkeypatch.setattr(audit.importlib, "import_module", lambda *_: pytest.fail("collector must not import"))
+    output = tmp_path / "encheres-publiques.json"
+
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        audit.run_audit("encheres_publiques", output)
+
+    assert not output.exists()
 
 
 def test_empty_html_or_login_page_does_not_certify_inventory():

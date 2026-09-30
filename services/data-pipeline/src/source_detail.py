@@ -5,11 +5,17 @@ import importlib
 import json
 from urllib.parse import urlsplit
 
+from src.config import require_encheres_publiques_access
 from src.sources.cessions_etat import cessions_tls_context
 from src.sources.common import PoliteHttpClient, is_allowed_origin_url
 
 
 def fetch_public_detail(source: str, source_url: str, settings: dict, clients: dict):
+    if source == "encheres_publiques":
+        # This is shared by quality audits and recurring detail jobs.  Keep the
+        # source-specific gate here so neither caller can create an HTTP client
+        # and bypass the collector's guard.
+        require_encheres_publiques_access(settings)
     module = importlib.import_module('src.sources.' + source)
     endpoint = source_url
     parser = getattr(module, 'parse_' + source + '_detail_html', None)
