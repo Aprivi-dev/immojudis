@@ -2206,8 +2206,8 @@ def test_shared_pdf_and_fact_claim_defers_fact_attempt_after_pdf_failure(monkeyp
     checkpoint_calls = []
     monkeypatch.setattr(
         queued_runner,
-        "persist_pdf_document_checkpoint_to_supabase",
-        lambda current_sale, **_kwargs: checkpoint_calls.append(current_sale.source_url) or False,
+        "_persist_pdf_checkpoint_for_sale",
+        lambda current_sale, **kwargs: checkpoint_calls.append((current_sale, kwargs)) or False,
     )
     monkeypatch.setattr(
         queued_runner,
@@ -2224,7 +2224,10 @@ def test_shared_pdf_and_fact_claim_defers_fact_attempt_after_pdf_failure(monkeyp
     assert [job["id"] for job in deferred[0][0]] == [jobs[1]["id"]]
     assert [job_id for job_id, _kwargs in finished] == [jobs[0]["id"]]
     assert finished[0][1]["succeeded"] is False
-    assert checkpoint_calls == [sale.source_url]
+    assert finished[0][1]["error_message"].startswith(
+        "PDF document checkpoint was not persisted; retry required:"
+    )
+    assert checkpoint_calls == [(sale, {"pdf_job": jobs[0]})]
 
 
 def test_general_budget_does_not_defer_completed_fact_claim_job(monkeypatch) -> None:
@@ -2319,6 +2322,7 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
     }
     deferred = []
     finished = []
+    checkpoint_calls = []
     error = PdfExtractionDeferred(
         'OCR pass budget reached; 75/100 pages checkpointed; retry resumes',
         checkpointed_pages=75,
@@ -2334,6 +2338,11 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
     monkeypatch.setattr(queued_runner, 'load_settings', lambda: {'llm_prompt_version': 'test'})
     monkeypatch.setattr(queued_runner, 'fetch_sale_for_data_refresh', lambda _: sale)
     monkeypatch.setattr(queued_runner, 'enrich_sale_from_pdfs', lambda *_args, **_kwargs: (_ for _ in ()).throw(error))
+    monkeypatch.setattr(
+        queued_runner,
+        '_persist_pdf_checkpoint_for_sale',
+        lambda current_sale, **kwargs: checkpoint_calls.append((current_sale, kwargs)) or True,
+    )
     monkeypatch.setattr(queued_runner, 'defer_budget_jobs', lambda jobs, exc: deferred.append((jobs, exc)))
     monkeypatch.setattr(
         queued_runner,
@@ -2344,6 +2353,15 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
     assert queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY) == 1
     assert bool(deferred) is should_defer
     assert finished == [] if should_defer else finished[0][1]['succeeded'] is False
+    if should_defer:
+        assert len(checkpoint_calls) == 1
+        assert checkpoint_calls[0][0] is sale
+        assert checkpoint_calls[0][1]['pdf_job'] is job
+        assert checkpoint_calls[0][1]['error'] is error
+        assert deferred[0][0] == [job]
+        assert deferred[0][0][0]['id'] == job['id']
+        assert deferred[0][0][0]['attempt_count'] == 2
+        assert deferred[0][0][0]['locked_at'] == job['locked_at']
 
 
 def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) -> None:

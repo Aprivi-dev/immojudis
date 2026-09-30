@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from src.admission import is_expired
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
-from src.config import EncheresPubliquesAccessNotAuthorized, load_settings
+from src.config import PDF_TEXTS_DIR, EncheresPubliquesAccessNotAuthorized, load_settings
 from src.dpe import enrich_dpe_sales
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.extract_structured import (
@@ -44,9 +44,10 @@ from src.pdf_enrichment import (
     PdfExtractionDeferred,
     enrich_sale_from_pdfs,
     pdf_deadline_scope,
+    sale_storage_id,
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
-from src.pdf_progress import manifest_is_complete
+from src.pdf_progress import manifest_is_complete, read_modern_cache
 from src.pipeline_usage import PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
@@ -67,6 +68,7 @@ from src.storage.supabase_client import (
     mark_past_sales_in_supabase,
     pdf_enrichment_input_hash_for_sale,
     persist_pdf_document_checkpoint_to_supabase,
+    persist_pdf_progress_checkpoint_to_supabase,
     read_pdf_job_states_for_sale,
     restore_persisted_pdf_progress_for_sale,
     retry_fact_claims_to_supabase,
@@ -315,14 +317,90 @@ def _record_worker_deferred_job_ids(jobs: list[dict[str, object]]) -> None:
 
 def _pdf_finalization_margin_seconds(budget_seconds: int | float) -> float:
     """Reserve the production 60-second margin, scaled for short test runs."""
-
     budget = max(0.0, float(budget_seconds))
     return min(PDF_FINALIZATION_MARGIN_SECONDS, budget * PDF_FINALIZATION_MARGIN_FRACTION)
 
 
+def _persist_pdf_progress_before_defer(
+    sale: object,
+    sale_jobs: list[dict[str, object]],
+    error: PdfExtractionDeferred,
+) -> bool:
+    """Persist a page checkpoint before releasing a progressed PDF claim."""
+    raw_payload = getattr(sale, "raw_payload", None)
+    analysis = raw_payload.get("document_analysis") if isinstance(raw_payload, dict) else None
+    has_checkpoint = isinstance(analysis, dict) and bool(analysis.get("document_progress"))
+    has_in_memory_checkpoint = bool(getattr(error, "partial_pdf_texts", None))
+    if not error.progress_made and not has_checkpoint and not has_in_memory_checkpoint:
+        return True
+    pdf_job = next(
+        (job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"),
+        None,
+    )
+    try:
+        persisted = _persist_pdf_checkpoint_for_sale(sale, error=error, pdf_job=pdf_job)
+    except Exception as checkpoint_error:
+        LOGGER.warning("PDF documentary checkpoint failed before defer: %s", checkpoint_error)
+        return False
+    if not persisted:
+        LOGGER.warning("PDF documentary checkpoint was not durable before defer")
+    return persisted
+
+
+def _persist_pdf_checkpoint_for_sale(
+    sale: object,
+    *,
+    error: object | None = None,
+    pdf_job: dict[str, object] | None = None,
+) -> bool:
+    """Persist modern in-memory evidence, with a legacy-cache fallback."""
+    raw_payload = getattr(sale, "raw_payload", None)
+    direct_texts = getattr(error, "partial_pdf_texts", None)
+    if direct_texts is not None or getattr(error, "partial_status_error", None) is not None:
+        analysis = getattr(error, "partial_analysis", None) or (raw_payload.get("document_analysis") if isinstance(raw_payload, dict) else None)
+        return False if not isinstance(analysis, dict) or not analysis or not isinstance(direct_texts, list) or not direct_texts else persist_pdf_progress_checkpoint_to_supabase(sale, analysis=analysis, pdf_texts=direct_texts, pdf_job=pdf_job)
+    analysis = getattr(error, "partial_analysis", None) or (raw_payload.get("document_analysis") if isinstance(raw_payload, dict) else None)
+    pdf_texts = None
+    try:
+        pdf_texts = read_modern_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json")
+    except (OSError, TypeError, ValueError):
+        pdf_texts = []
+    if isinstance(analysis, dict) and pdf_texts:
+        return persist_pdf_progress_checkpoint_to_supabase(
+            sale,
+            analysis=analysis,
+            pdf_texts=pdf_texts,
+            pdf_job=pdf_job,
+        )
+    return persist_pdf_document_checkpoint_to_supabase(sale, pdf_job=pdf_job)
+
+
+def _consume_pdf_retry_after_checkpoint_failure(
+    sale_jobs: list[dict[str, object]],
+    error: BaseException,
+) -> None:
+    """Fail only PDF work when progressed evidence could not be persisted."""
+    pdf_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"]
+    dependent_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") != "pdf"]
+    checkpoint_error = getattr(error, "partial_cache_error", None)
+    detail = checkpoint_error or error
+    message = _pdf_checkpoint_failure_message(detail)
+    for job in pdf_jobs:
+        _finish_job(job, succeeded=False, error_message=message)
+    if dependent_jobs:
+        deferred = QueueJobDeferred("Dependent enrichment deferred until the PDF checkpoint is durable")
+        _record_worker_deferred_job_ids(dependent_jobs)
+        defer_budget_jobs(dependent_jobs, deferred)
+
+
+def _pdf_checkpoint_failure_message(error: object) -> str:
+    text = str(error)
+    prefix = "PDF document checkpoint was not persisted; retry required"
+    return text if text.startswith(prefix) else f"{prefix}: {text}"
+
+
 def _pdf_evidence_is_terminal_for_facts(sale: object) -> bool:
     """Return whether the current PDF pass has no extractable fact evidence.
-
     ``documents_are_current`` deliberately treats an all-terminal result as
     fresh so the worker does not redownload the same blocked/empty/skipped
     URLs forever.  That freshness signal must not be mistaken for a usable
@@ -375,7 +453,6 @@ def _pdf_failure_reached_retry_cap(
     settings: dict[str, object] | None = None,
 ) -> bool:
     """Return true only for a current revision with an observed exhausted job.
-
     A missing eligible job is ambiguous: the PDF job may not have been
     generated yet, the queue read may have failed, or a newer revision may be
     waiting. Require a concrete latest PDF row for this input revision at its
@@ -383,7 +460,6 @@ def _pdf_failure_reached_retry_cap(
     is intentionally not required: a download can fail before the per-document
     failure marker is written, while the queue row still proves exhaustion.
     """
-
     documents = getattr(sale, "documents", None)
     raw_payload = getattr(sale, "raw_payload", None)
     if not isinstance(documents, list) or not isinstance(raw_payload, dict):
@@ -450,7 +526,6 @@ def run_enrichment_queue_batch(
         enrichment_jobs = [job for job in jobs if str(job.get("job_type") or "") != SOURCE_DETAIL_FAMILY]
 
     pending_enrichment_jobs = list(enrichment_jobs)
-
     def mark_enrichment_jobs_terminal(terminal_jobs: list[dict[str, object]]) -> None:
         terminal_ids = {id(job) for job in terminal_jobs}
         pending_enrichment_jobs[:] = [
@@ -592,7 +667,7 @@ def run_enrichment_queue_batch(
                         (job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"),
                         None,
                     )
-                    checkpointed = persist_pdf_document_checkpoint_to_supabase(
+                    checkpointed = _persist_pdf_checkpoint_for_sale(
                         sale,
                         pdf_job=pdf_job,
                     )
@@ -743,6 +818,10 @@ def run_enrichment_queue_batch(
             # The worker cutoff is coordination, even when no page finished.
             # Release the claim and restore its attempt so a slow PDF cannot
             # become a false OCR failure or consume the bounded retry budget.
+            if not _persist_pdf_progress_before_defer(sale, sale_jobs, exc):
+                _consume_pdf_retry_after_checkpoint_failure(sale_jobs, exc)
+                mark_enrichment_jobs_terminal(sale_jobs)
+                continue
             _record_worker_deferred_job_ids(sale_jobs)
             defer_budget_jobs(sale_jobs, exc)
             mark_enrichment_jobs_terminal(sale_jobs)
@@ -759,6 +838,10 @@ def run_enrichment_queue_batch(
                 # completed document. Requeue without consuming this job's
                 # retry budget so the next worker continues from the page
                 # cache. Only this sale's jobs are deferred.
+                if not _persist_pdf_progress_before_defer(sale, sale_jobs, exc):
+                    _consume_pdf_retry_after_checkpoint_failure(sale_jobs, exc)
+                    mark_enrichment_jobs_terminal(sale_jobs)
+                    continue
                 _record_worker_deferred_job_ids(sale_jobs)
                 defer_budget_jobs(sale_jobs, exc)
                 mark_enrichment_jobs_terminal(sale_jobs)
@@ -774,7 +857,12 @@ def run_enrichment_queue_batch(
                 # page must consume the PDF retry; otherwise an unreadable
                 # first page would loop forever. Dependent LLM claims retain
                 # their attempts because they still have no usable evidence.
-                message = f"{exc}; no new page progress, retry budget consumed"
+                checkpointed = _persist_pdf_progress_before_defer(sale, sale_jobs, exc)
+                message = (
+                    _pdf_checkpoint_failure_message(exc)
+                    if not checkpointed
+                    else f"{exc}; no new page progress, retry budget consumed"
+                )
                 LOGGER.warning("PDF extraction made no progress for %s", source_url)
                 pdf_jobs = [job for job in sale_jobs if job.get("job_type") == "pdf"]
                 dependent_jobs = [job for job in sale_jobs if job.get("job_type") != "pdf"]
@@ -856,9 +944,10 @@ def run_enrichment_queue_batch(
             ]
             pdf_failure = "pdf" in job_types and (pdf_stage_error or pdf_failed_documents > 0)
             pdf_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"]
+            checkpoint_persisted = True
             if pdf_failure:
                 try:
-                    persisted = persist_pdf_document_checkpoint_to_supabase(
+                    persisted = _persist_pdf_checkpoint_for_sale(
                         sale,
                         pdf_job=pdf_jobs[0] if pdf_jobs else None,
                     )
@@ -870,16 +959,18 @@ def run_enrichment_queue_batch(
                         checkpoint_exc,
                     )
                 if not persisted:
+                    checkpoint_persisted = False
                     LOGGER.warning(
                         "PDF documentary checkpoint was not durable for %s; no dependent claim will be spent",
                         source_url,
                     )
             if pdf_failure and dependent_jobs:
+                pdf_error_message = _pdf_checkpoint_failure_message(exc) if not checkpoint_persisted else str(exc)
                 for job in pdf_jobs:
                     _finish_job(
                         job,
                         succeeded=False,
-                        error_message=str(exc),
+                        error_message=pdf_error_message,
                     )
                 deferred = QueueJobDeferred(
                     "Dependent enrichment deferred until the PDF retry state is resolved"
@@ -894,9 +985,14 @@ def run_enrichment_queue_batch(
                 )
                 continue
             for job in sale_jobs:
+                error_message = (
+                    _pdf_checkpoint_failure_message(exc)
+                    if not checkpoint_persisted and str(job.get("job_type") or "") == "pdf"
+                    else str(exc)
+                )
                 _finish_job(job,
                     succeeded=False,
-                    error_message=str(exc),
+                    error_message=error_message,
                 )
             mark_enrichment_jobs_terminal(sale_jobs)
             continue

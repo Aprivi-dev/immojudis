@@ -35,7 +35,7 @@ from src.asset_normalization import (
     extract_risk_occurrences_from_text,
 )
 from src.catalogue_readiness import apply_catalogue_readiness
-from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
+from src.config import LLM_EXTRACTIONS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
 from src.court_competence import tribunal_reference_rows
 from src.dedupe import merge_duplicate_sales
 from src.enrichment.display_quality import has_current_display
@@ -2165,14 +2165,15 @@ def _validated_persisted_pdf_manifest(sale: AuctionSale) -> dict[str, object] | 
 
 
 def _has_usable_local_pdf_cache(sale: AuctionSale) -> bool:
-    """Return true for any non-empty local cache, including partial payloads.
+    """Return true only for a current modern cache with documentary proof.
 
-    The persisted fallback is intentionally limited to reconstructed sales
-    without a local cache.  A local partial cache follows the existing strict
-    materializer path and must not be combined with a historical sibling.
+    Legacy or malformed files must not suppress the SQL recovery path. A
+    validated partial modern cache still blocks historical mixing, because the
+    extractor can resume from its page records locally.
     """
     payload = _read_json_file(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json")
-    return bool(payload) and isinstance(payload, list) and all(isinstance(item, dict) for item in payload)
+    analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+    return _validate_pdf_document_checkpoint_payload(sale, analysis, payload) is not None
 
 
 def _validated_persisted_pdf_texts(
@@ -2341,24 +2342,141 @@ def _read_persisted_pdf_rows_rest(
     return [normalized for row in payload if (normalized := _normalize_persisted_pdf_row(row)) is not None]
 
 
-def _prepare_pdf_document_checkpoint(
+def _valid_pdf_checkpoint_pages(
+    value: object,
+    *,
+    page_count: object,
+    require_chars: bool = False,
+) -> bool:
+    """Accept only successful page records from the modern extractor cache."""
+
+    if type(page_count) is not int or page_count < 1 or not isinstance(value, list) or not value:
+        return False
+    seen_pages: set[int] = set()
+    for page in value:
+        if not isinstance(page, dict):
+            return False
+        page_number = page.get("page")
+        page_text = clean_text(page.get("text")) or ""
+        if (
+            type(page_number) is not int
+            or page_number < 1
+            or page_number > page_count
+            or page_number in seen_pages
+            or not isinstance(page.get("text"), str)
+            or (
+                require_chars
+                and (type(page.get("chars")) is not int or page.get("chars") != len(page_text))
+            )
+            or (
+                page.get("chars") is not None
+                and (type(page.get("chars")) is not int or page.get("chars") != len(page_text))
+            )
+            or clean_text(page.get("status"))
+            not in {
+                "extracted",
+                "blank_page",
+                "blank_excluded",
+                "blank_page_excluded",
+                "visual_blank_excluded",
+                "failed",
+            }
+            or (
+                clean_text(page.get("status")) == "failed"
+                and page.get("retryable") is not True
+            )
+            or (
+                clean_text(page.get("status")) != "failed"
+                and page.get("retryable") is True
+            )
+        ):
+            return False
+        seen_pages.add(page_number)
+    return True
+
+
+def _reusable_pdf_checkpoint_pages(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [
+        page
+        for page in value
+        if isinstance(page, dict)
+        and clean_text(page.get("status")) != "failed"
+        and page.get("retryable") is not True
+    ]
+
+
+def _checkpoint_pages_match_payload(
+    payload: dict[str, object],
+    *,
+    require_chars: bool = False,
+) -> bool:
+    """Tie page text and the aggregate text hash for page based checkpoints."""
+
+    pages = payload.get("pages")
+    if not _checkpoint_page_coverage_matches(payload, require_chars=require_chars):
+        return False
+    assert isinstance(pages, list)
+    page_text = clean_text("\n".join(str(page["text"]) for page in sorted(pages, key=lambda item: item["page"]))) or ""
+    payload_text = clean_text(payload.get("text")) or ""
+    if page_text != payload_text:
+        return False
+    page_text_hash = hashlib.sha256(page_text.encode("utf-8")).hexdigest() if page_text else ""
+    payload_text_hash = clean_text(payload.get("text_sha256")) or payload_text_sha256(payload)
+    if payload_text_hash != page_text_hash:
+        return False
+    return payload_text_hash == page_text_hash
+
+
+def _checkpoint_page_coverage_matches(
+    payload: dict[str, object],
+    *,
+    require_chars: bool = False,
+) -> bool:
+    pages = payload.get("pages")
+    if not _valid_pdf_checkpoint_pages(
+        pages,
+        page_count=payload.get("page_count"),
+        require_chars=require_chars,
+    ):
+        return False
+    assert isinstance(pages, list)
+    failed_pages = payload.get("failed_pages")
+    if not isinstance(failed_pages, list):
+        return False
+    page_numbers = {int(page["page"]) for page in _reusable_pdf_checkpoint_pages(pages)}
+    page_count = int(payload["page_count"])
+    if any(type(page) is not int or page < 1 or page > page_count for page in failed_pages):
+        return False
+    if len(set(failed_pages)) != len(failed_pages):
+        return False
+    missing_pages = sorted(set(range(1, page_count + 1)) - page_numbers)
+    status = clean_text(payload.get("extraction_status")) or ""
+    if payload.get("complete") is True or status in {"extracted", "empty"}:
+        return not missing_pages and not failed_pages
+    return sorted(failed_pages) == missing_pages
+
+
+def _validate_pdf_document_checkpoint_payload(
     sale: AuctionSale,
+    analysis: object,
+    payload: object,
 ) -> tuple[dict[str, object], list[dict[str, object]]] | None:
-    """Return a strict modern checkpoint without accepting legacy cache data."""
+    """Validate a modern aggregate, including the durable page evidence."""
 
     source_url = clean_text(sale.source_url)
-    analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
     if not source_url or not isinstance(analysis, dict) or sale.updated_at is None:
         return None
     if (
         analysis.get("progress_schema_version") != PDF_PROGRESS_SCHEMA_VERSION
         or analysis.get("input_fingerprint") != document_fingerprint(sale.documents)
+        or not isinstance(analysis.get("manifest_complete"), bool)
     ):
         return None
     progress = modern_progress_entries(analysis, sale.documents)
     if not progress:
         return None
-    payload = _read_json_file(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json")
     if not isinstance(payload, list) or not payload:
         return None
     document_urls = {document_url(document) for document in sale.documents if document_url(document)}
@@ -2374,6 +2492,15 @@ def _prepare_pdf_document_checkpoint(
             or not is_modern_payload(item, expected_url=url)
         ):
             return None
+        page_based_extraction = clean_text(item.get("extraction_method")) == "pymupdf_pages"
+        if not _checkpoint_page_coverage_matches(item, require_chars=True):
+            return None
+        # PyMuPDF page extraction defines the aggregate text as the ordered
+        # page text. Docling may provide a richer aggregate while retaining
+        # the page diagnostics, so only the page based path can enforce this
+        # exact text/hash relationship.
+        if page_based_extraction and not _checkpoint_pages_match_payload(item, require_chars=True):
+            return None
         manifest_item = progress.get(url)
         if not isinstance(manifest_item, dict):
             return None
@@ -2387,6 +2514,8 @@ def _prepare_pdf_document_checkpoint(
             or item_text_hash != clean_text(manifest_item.get("text_sha256"))
         ):
             return None
+        if analysis.get("manifest_complete") is True and item.get("complete") is not True:
+            return None
         sanitized = dict(item)
         # A worker-local path is not a durable source of evidence and cannot
         # be reopened by the next worker. Keep the modern text and hashes only.
@@ -2396,6 +2525,16 @@ def _prepare_pdf_document_checkpoint(
     if not result:
         return None
     return dict(analysis), result
+
+
+def _prepare_pdf_document_checkpoint(
+    sale: AuctionSale,
+) -> tuple[dict[str, object], list[dict[str, object]]] | None:
+    """Return a strict modern checkpoint without accepting legacy cache data."""
+
+    analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+    payload = _read_json_file(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json")
+    return _validate_pdf_document_checkpoint_payload(sale, analysis, payload)
 
 
 def _persist_pdf_document_checkpoint_with_connection(
@@ -2595,8 +2734,10 @@ def _rekey_pdf_job_after_checkpoint_with_connection(
             connection.execute(cancel_sql, cancel_parameters)
 
 
-def persist_pdf_document_checkpoint_to_supabase(
+def _persist_pdf_document_checkpoint_payload_to_supabase(
     sale: AuctionSale,
+    analysis: dict[str, object],
+    result: list[dict[str, object]],
     *,
     pdf_job: dict[str, object] | None = None,
 ) -> bool:
@@ -2611,17 +2752,12 @@ def persist_pdf_document_checkpoint_to_supabase(
     psycopg's nested transaction context supplies a savepoint.
     """
 
-    prepared = _prepare_pdf_document_checkpoint(sale)
-    if prepared is None:
-        return False
     settings = load_settings()
     db_url = settings.get("supabase_db_url")
     connection = _PUBLICATION_CONNECTION.get()
     if connection is None and not db_url:
         LOGGER.warning("Skipping PDF checkpoint without a direct Postgres connection")
         return False
-
-    analysis, result = prepared
 
     def configure_dedicated_connection(current_connection: Any) -> None:
         """Keep checkpoint settings transaction-local to a new connection."""
@@ -2672,6 +2808,52 @@ def persist_pdf_document_checkpoint_to_supabase(
         retry_delays=(),
     ) as current_connection:
         return write(current_connection, dedicated=True)
+
+
+def persist_pdf_document_checkpoint_to_supabase(
+    sale: AuctionSale,
+    *,
+    pdf_job: dict[str, object] | None = None,
+) -> bool:
+    """Persist the modern aggregate cache after a bounded PDF pass."""
+
+    prepared = _prepare_pdf_document_checkpoint(sale)
+    if prepared is None:
+        return False
+    analysis, result = prepared
+    return _persist_pdf_document_checkpoint_payload_to_supabase(
+        sale,
+        analysis,
+        result,
+        pdf_job=pdf_job,
+    )
+
+
+def persist_pdf_progress_checkpoint_to_supabase(
+    sale: AuctionSale,
+    *,
+    analysis: dict[str, object],
+    pdf_texts: list[dict[str, object]],
+    pdf_job: dict[str, object] | None = None,
+) -> bool:
+    """Persist modern in-memory PDF progress before a deferred extraction.
+
+    The caller must provide the extractor's explicit manifest and page payloads.
+    This helper never reads or invents a local cache, promotes a partial
+    manifest, or spends a retry.  The same optimistic source-revision and
+    optional queue rekey guards as the normal checkpoint apply.
+    """
+
+    prepared = _validate_pdf_document_checkpoint_payload(sale, analysis, pdf_texts)
+    if prepared is None:
+        return False
+    validated_analysis, validated_texts = prepared
+    return _persist_pdf_document_checkpoint_payload_to_supabase(
+        sale,
+        validated_analysis,
+        validated_texts,
+        pdf_job=pdf_job,
+    )
 
 
 def _fetch_persisted_pdf_texts_for_sales(
@@ -2749,6 +2931,7 @@ def _validated_persisted_pdf_progress(
     if (
         analysis.get("progress_schema_version") != PDF_PROGRESS_SCHEMA_VERSION
         or analysis.get("input_fingerprint") != document_fingerprint(sale.documents)
+        or analysis.get("manifest_complete") is not False
         or not _historical_timestamp_is_valid(analysis.get("checked_at"))
     ):
         return None
@@ -2773,13 +2956,26 @@ def _validated_persisted_pdf_progress(
             return None
         if not is_modern_payload(item, expected_url=url):
             return None
+        require_chars = item.get("complete") is not True
+        if not _checkpoint_page_coverage_matches(item, require_chars=require_chars):
+            return None
+        if (
+            clean_text(item.get("extraction_method")) == "pymupdf_pages"
+            and not _checkpoint_pages_match_payload(item, require_chars=require_chars)
+        ):
+            return None
         manifest_item = progress.get(url)
         if not isinstance(manifest_item, dict):
             return None
+        item_text_hash = clean_text(item.get("text_sha256")) or payload_text_sha256(item)
+        manifest_text_hash = clean_text(manifest_item.get("text_sha256"))
         if (
             clean_text(item.get("sha256")) != clean_text(manifest_item.get("sha256"))
             or clean_text(item.get("extraction_status")) != clean_text(manifest_item.get("extraction_status"))
             or item.get("complete") is not manifest_item.get("complete")
+            or list(item.get("failed_pages") or []) != list(manifest_item.get("failed_pages") or [])
+            or not manifest_text_hash
+            or item_text_hash != manifest_text_hash
         ):
             return None
         result_by_url[url] = item
@@ -2796,7 +2992,81 @@ def _validated_persisted_pdf_progress(
     return restored
 
 
-def restore_persisted_pdf_progress_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
+def _restore_pdf_page_caches_for_documents(
+    restored: list[dict[str, object]],
+    downloaded_documents: list[dict[str, object]],
+) -> None:
+    """Restore validated page records only beside matching local PDF bytes."""
+
+    documents_by_url = {
+        document_url(document): document
+        for document in downloaded_documents
+        if isinstance(document, dict) and document_url(document)
+    }
+    if not documents_by_url:
+        return
+    settings = load_settings()
+    ocr_settings = (
+        bool(settings.get("pdf_ocr_enabled")),
+        str(settings.get("pdf_ocr_language") or "fra+eng"),
+        PDF_TEXT_CACHE_VERSION,
+    )
+    from src.pdf_enrichment import _write_document_text_cache
+
+    for payload in restored:
+        url = document_url(payload)
+        document = documents_by_url.get(url)
+        file_path_value = document.get("file_path") if isinstance(document, dict) else None
+        file_path = Path(str(file_path_value)) if file_path_value else None
+        pages = payload.get("pages") if isinstance(payload, dict) else None
+        if (
+            not isinstance(document, dict)
+            or file_path is None
+            or not file_path.is_file()
+            or not _valid_pdf_checkpoint_pages(
+                pages,
+                page_count=payload.get("page_count") if isinstance(payload, dict) else None,
+            )
+        ):
+            LOGGER.warning("Skipping local PDF page restoration without a verified file for %s", url)
+            continue
+        reusable_pages = _reusable_pdf_checkpoint_pages(pages)
+        if not reusable_pages:
+            LOGGER.warning("Skipping local PDF page restoration without reusable pages for %s", url)
+            continue
+        try:
+            file_bytes = file_path.read_bytes()
+            file_sha = hashlib.sha256(file_bytes).hexdigest()
+        except OSError as exc:
+            LOGGER.warning("Could not read local PDF for page restoration %s: %s", url, exc)
+            continue
+        expected_sha = clean_text(payload.get("sha256"))
+        if expected_sha != file_sha or clean_text(document.get("sha256")) != file_sha:
+            LOGGER.warning("Skipping PDF page restoration after SHA mismatch for %s", url)
+            continue
+        cache_key = hashlib.sha256(file_bytes + str(ocr_settings).encode()).hexdigest()
+        page_dir = PDF_DOCUMENT_TEXTS_DIR / "pages" / cache_key
+        try:
+            page_dir.mkdir(parents=True, exist_ok=True)
+            for page in reusable_pages:
+                page_path = page_dir / f"{page['page']}.json"
+                if page_path.exists():
+                    continue
+                temporary = page_path.with_suffix(".tmp")
+                temporary.write_text(json.dumps(page, ensure_ascii=False), encoding="utf-8")
+                temporary.replace(page_path)
+            local_payload = dict(payload)
+            local_payload["file_path"] = str(file_path)
+            _write_document_text_cache(document, file_path, local_payload)
+        except (OSError, TypeError, ValueError) as exc:
+            LOGGER.warning("Could not materialize persisted PDF pages for %s: %s", url, exc)
+
+
+def restore_persisted_pdf_progress_for_sale(
+    sale: AuctionSale,
+    *,
+    downloaded_documents: list[dict[str, object]] | None = None,
+) -> list[dict[str, object]]:
     """Restore modern complete or partial PDF text before a cold queue pass."""
     if not clean_text(sale.source_url) or _has_usable_local_pdf_cache(sale):
         return []
@@ -2834,6 +3104,8 @@ def restore_persisted_pdf_progress_for_sale(sale: AuctionSale) -> list[dict[str,
     except (KeyError, OSError, TypeError, ValueError) as exc:
         LOGGER.warning("Could not materialize cold PDF progress for %s: %s", source_url, exc)
         return []
+    if downloaded_documents:
+        _restore_pdf_page_caches_for_documents(restored, downloaded_documents)
     return restored
 
 
