@@ -731,6 +731,7 @@ def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]])
             "failed_pages",
             "blank_pages",
             "visual_blank_pages",
+            "text_sha256",
             "_persisted_pdf_proof",
             "_persisted_verified_at",
         ):

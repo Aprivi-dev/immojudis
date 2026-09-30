@@ -54,7 +54,6 @@ from src.pdf_progress import (
     document_url,
     is_modern_payload,
     modern_progress_entries,
-    payload_text_sha256,
 )
 from src.reviewed_aliases import (
     ReviewedAliasRegistry,
@@ -2407,6 +2406,30 @@ def _reusable_pdf_checkpoint_pages(value: object) -> list[dict[str, object]]:
     ]
 
 
+def _checkpoint_payload_text_hash(payload: dict[str, object]) -> str | None:
+    """Return the canonical hash for a validated modern payload.
+
+    A genuinely textless modern checkpoint uses an explicit empty hash.
+    ``clean_text`` turns that marker into ``None`` during comparisons, so
+    normalize it only after the payload's modern/page validation has
+    succeeded. Non-empty text must carry its explicit hash; this helper never
+    derives a replacement hash from the text.
+    """
+
+    text = clean_text(payload.get("text")) or ""
+    if not text and payload.get("text_chars") == 0:
+        return "" if payload.get("text_sha256") == "" and "text_sha256" in payload else None
+    return clean_text(payload.get("text_sha256")) if "text_sha256" in payload else None
+
+
+def _checkpoint_manifest_text_hash(entry: dict[str, object]) -> str | None:
+    """Return a manifest hash while preserving the modern empty-text marker."""
+
+    if entry.get("text_present") is False and entry.get("text_chars") == 0:
+        return "" if entry.get("text_sha256") == "" and "text_sha256" in entry else None
+    return clean_text(entry.get("text_sha256")) if "text_sha256" in entry else None
+
+
 def _checkpoint_pages_match_payload(
     payload: dict[str, object],
     *,
@@ -2423,7 +2446,7 @@ def _checkpoint_pages_match_payload(
     if page_text != payload_text:
         return False
     page_text_hash = hashlib.sha256(page_text.encode("utf-8")).hexdigest() if page_text else ""
-    payload_text_hash = clean_text(payload.get("text_sha256")) or payload_text_sha256(payload)
+    payload_text_hash = _checkpoint_payload_text_hash(payload)
     if payload_text_hash != page_text_hash:
         return False
     return payload_text_hash == page_text_hash
@@ -2504,14 +2527,17 @@ def _validate_pdf_document_checkpoint_payload(
         manifest_item = progress.get(url)
         if not isinstance(manifest_item, dict):
             return None
-        item_text_hash = clean_text(item.get("text_sha256")) or payload_text_sha256(item)
+        item_text_hash = _checkpoint_payload_text_hash(item)
+        manifest_text_hash = _checkpoint_manifest_text_hash(manifest_item)
         if (
             clean_text(item.get("sha256")) != clean_text(manifest_item.get("sha256"))
             or clean_text(item.get("extraction_status"))
             != clean_text(manifest_item.get("extraction_status"))
             or item.get("complete") is not manifest_item.get("complete")
             or list(item.get("failed_pages") or []) != list(manifest_item.get("failed_pages") or [])
-            or item_text_hash != clean_text(manifest_item.get("text_sha256"))
+            or item_text_hash is None
+            or manifest_text_hash is None
+            or item_text_hash != manifest_text_hash
         ):
             return None
         if analysis.get("manifest_complete") is True and item.get("complete") is not True:
@@ -2967,14 +2993,15 @@ def _validated_persisted_pdf_progress(
         manifest_item = progress.get(url)
         if not isinstance(manifest_item, dict):
             return None
-        item_text_hash = clean_text(item.get("text_sha256")) or payload_text_sha256(item)
-        manifest_text_hash = clean_text(manifest_item.get("text_sha256"))
+        item_text_hash = _checkpoint_payload_text_hash(item)
+        manifest_text_hash = _checkpoint_manifest_text_hash(manifest_item)
         if (
             clean_text(item.get("sha256")) != clean_text(manifest_item.get("sha256"))
             or clean_text(item.get("extraction_status")) != clean_text(manifest_item.get("extraction_status"))
             or item.get("complete") is not manifest_item.get("complete")
             or list(item.get("failed_pages") or []) != list(manifest_item.get("failed_pages") or [])
-            or not manifest_text_hash
+            or item_text_hash is None
+            or manifest_text_hash is None
             or item_text_hash != manifest_text_hash
         ):
             return None
