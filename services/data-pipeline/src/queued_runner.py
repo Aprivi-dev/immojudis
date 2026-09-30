@@ -1278,6 +1278,7 @@ def _read_worker_claim_status_counts(job_ids: set[str]) -> dict[str, int] | None
 
 def _log_worker_claim_status_snapshot(job_ids: set[str]) -> dict[str, int] | None:
     github_run_id = os.getenv("GITHUB_RUN_ID") or "local"
+    LOGGER.info("Worker claimed ids: run=%s ids=%s", github_run_id, sorted(job_ids))
     if not job_ids:
         LOGGER.info(
             "Enrichment worker claim status snapshot: github_run_id=%s "
