@@ -35,6 +35,7 @@ from src.enrichment.surface_reasoning import (
 )
 from src.llm_cache import load_cached_result, save_cached_result
 from src.llm_requests import llm_request_context
+from src.llm_task_deadline import LLMTaskDeadlineExceeded
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.pdf_enrichment import sale_storage_id
@@ -619,6 +620,8 @@ def enrich_sale_with_llm(
                 _save_display_cache(display_key, extraction, output_dir, model_name)
         except PipelineBudgetExhausted:
             raise
+        except LLMTaskDeadlineExceeded:
+            raise
         except Exception as exc:
             LOGGER.warning("LLM display synthesis failed for %s: %s", sale.source_url, exc)
             stats.errors += 1
@@ -735,6 +738,8 @@ def enrich_sale_with_llm(
             newly_cached_chunks += 1
             stats.progress_made = True
         except PipelineBudgetExhausted:
+            raise
+        except LLMTaskDeadlineExceeded:
             raise
         except Exception as exc:
             failed_chunks += 1
@@ -857,6 +862,8 @@ def enrich_sale_with_llm(
                 if incremental:
                     _save_display_cache(display_key, display_extraction, output_dir, model_name)
             except PipelineBudgetExhausted:
+                raise
+            except LLMTaskDeadlineExceeded:
                 raise
             except Exception as exc:
                 LOGGER.warning("LLM display synthesis failed for %s: %s", sale.source_url, exc)

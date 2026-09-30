@@ -55,6 +55,7 @@ from src.pdf_document_types import (
     _normalize_document_classifier_text,  # noqa: F401
     classify_document_type,  # noqa: F401
 )
+from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
 from src.pdf_page_analysis import (
     VISUAL_BLANK_INK_RATIO_MAX,  # noqa: F401
     VISUAL_BLANK_INK_THRESHOLD,  # noqa: F401
@@ -185,7 +186,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     downloaded_documents = download_documents(sale, stats=stats)
     _invalidate_replaced_document_facts(sale, downloaded_documents)
     pdf_texts: list[dict[str, object]] = []
-
+    failed_document_diagnostics: list[dict[str, object]] = []
     for document in _select_documents_for_extraction(downloaded_documents, sale=sale):
         _ensure_pdf_deadline(operation="starting document extraction")
         file_path = Path(document["file_path"])
@@ -202,7 +203,9 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         except PdfExtractionDeferred:
             raise
         except Exception as exc:
-            LOGGER.warning("PDF text extraction failed for %s: %s", file_path, exc)
+            marker = pdf_extraction_exception_marker(document.get("url"), type(exc).__name__)
+            LOGGER.warning("PDF text extraction failed for %s: %s", file_path, format_pdf_failure_diagnostics(marker))
+            failed_document_diagnostics.append(marker)
             stats.errors += 1
             continue
         payload.update(
@@ -242,6 +245,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         pdf_texts,
         blocked_document_urls=stats.blocked_document_urls,
         permanent_document_failures=stats.permanent_document_failures,
+        failed_document_diagnostics=failed_document_diagnostics,
     )
 
     return stats

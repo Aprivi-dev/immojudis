@@ -22,7 +22,10 @@ from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
 BASE_URL = "https://agrasc.gouv.fr"
-LIST_URL = f"{BASE_URL}/ventes-aux-encheres"
+# AGRASC publishes ``?page=0`` as the first page.  The bare path currently
+# serves a different view, so keep the published first-page href as the
+# traversal anchor.
+LIST_URL = f"{BASE_URL}/ventes-aux-encheres?page=0"
 LOGGER = logging.getLogger(__name__)
 SURFACE_VALUE_PATTERN = r"([0-9]+(?:[ .][0-9]{3})*(?:[,.][0-9]+)?|[0-9]+(?:[,.][0-9]+)?)"
 URL_CITY_PREFIXES = {

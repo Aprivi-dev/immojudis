@@ -10,6 +10,7 @@ import pytest
 from src import pdf_enrichment
 from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
 from src.freshness import document_fingerprint
+from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_remaining
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.source_task_deadline import source_task_deadline_remaining
@@ -1234,13 +1235,14 @@ def test_worker_pdf_deadline_scope_resets_when_batch_raises(monkeypatch) -> None
     assert observed_remaining and observed_remaining[0] is not None
     assert pdf_enrichment.pdf_deadline_remaining() is None
     assert source_task_deadline_remaining() is None
+    assert llm_task_deadline_remaining() is None
 
 
-def test_worker_source_detail_deadline_scope_uses_existing_finalization_margin(monkeypatch) -> None:
-    observed_remaining: list[float | None] = []
+def test_worker_source_and_llm_deadline_scopes_use_existing_finalization_margin(monkeypatch) -> None:
+    observed_remaining: list[tuple[float | None, float | None]] = []
 
     def fake_batch(**_kwargs) -> int:
-        observed_remaining.append(source_task_deadline_remaining())
+        observed_remaining.append((source_task_deadline_remaining(), llm_task_deadline_remaining()))
         return 0
 
     monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
@@ -1253,9 +1255,10 @@ def test_worker_source_detail_deadline_scope_uses_existing_finalization_margin(m
         finalization_margin_seconds=2,
     )
 
-    assert observed_remaining and observed_remaining[0] is not None
-    assert 0 < observed_remaining[0] <= 8
+    assert observed_remaining
+    assert all(remaining is not None and 0 < remaining <= 8 for remaining in observed_remaining[0])
     assert source_task_deadline_remaining() is None
+    assert llm_task_deadline_remaining() is None
 
 
 def test_worker_does_not_claim_inside_pdf_finalization_margin(monkeypatch) -> None:
@@ -1732,6 +1735,51 @@ def test_pdf_deadline_deferral_restores_claim_without_consuming_retry(monkeypatc
     assert finished == []
 
 
+def test_llm_deadline_defers_all_owned_claims_and_stops_the_batch(monkeypatch) -> None:
+    sales = {
+        url: normalize_sale({'source_name': 'avoventes', 'source_url': url, 'description': 'Maison'})
+        for url in ('https://example.test/llm-deadline-1', 'https://example.test/llm-deadline-2')
+    }
+    jobs = [
+        {'id': f'job-llm-deadline-{index}', 'source_url': url, 'job_type': 'display_description',
+         'attempt_count': 2, 'locked_at': '2026-09-30T08:00:00+00:00'}
+        for index, url in enumerate(sales, 1)
+    ]
+    error = LLMTaskDeadlineExceeded('polling prediction', deadline=1, remaining=-1)
+    deferred = []
+    fetched = []
+    calls = []
+    finished = []
+    monkeypatch.setattr(
+        queued_runner, 'claim_auction_enrichment_jobs_family_from_supabase',
+        lambda *, family, limit: jobs,
+    )
+    monkeypatch.setattr(queued_runner, 'load_settings', lambda: {'llm_prompt_version': 'test'})
+    monkeypatch.setattr(
+        queued_runner, 'fetch_sale_for_data_refresh',
+        lambda url: fetched.append(url) or sales[url],
+    )
+    monkeypatch.setattr(queued_runner, 'refresh_operational_display', lambda _: None)
+    monkeypatch.setattr(queued_runner, 'create_llm_client', lambda: object())
+
+    def expire(sale, **kwargs):
+        calls.append(sale.source_url)
+        raise error
+
+    monkeypatch.setattr(queued_runner, 'enrich_sale_with_llm', expire)
+    monkeypatch.setattr(queued_runner, 'defer_budget_jobs', lambda claimed, exc: deferred.append((list(claimed), exc)))
+    monkeypatch.setattr(
+        queued_runner, 'finish_auction_enrichment_job_in_supabase',
+        lambda *args, **kwargs: finished.append((args, kwargs)),
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=2, family=queued_runner.ENRICHMENT_FAMILY) == 2
+    assert calls == [jobs[0]['source_url']]
+    assert fetched == [jobs[0]['source_url']]
+    assert deferred == [(jobs, error)]
+    assert finished == []
+
+
 def test_failed_pdf_job_records_document_path_without_query_token(monkeypatch) -> None:
     sale = normalize_sale({
         "source_name": "vench",
@@ -1753,10 +1801,21 @@ def test_failed_pdf_job_records_document_path_without_query_token(monkeypatch) -
         current_sale.raw_payload["document_analysis"] = {
             "failed_documents": 1,
             "failed_document_urls": ["https://documents.test/pv.pdf?token=secret"],
+            "failed_document_diagnostics": [{
+                "url": "https://documents.test/pv.pdf?token=secret",
+                "status": "incomplete",
+                "failed_pages": [2, 4],
+                "failure_reasons": ["ocr_failed", "empty_page_not_proven_blank"],
+                "text": "private PDF text",
+            }],
         }
         return SimpleNamespace(errors=1)
 
     monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", fail_pdf_extract)
+    monkeypatch.setattr(
+        queued_runner, "upsert_sales_to_supabase",
+        lambda *args, **kwargs: pytest.fail("partial PDF facts must not be published"),
+    )
     monkeypatch.setattr(
         queued_runner,
         "finish_auction_enrichment_job_in_supabase",
@@ -1767,4 +1826,7 @@ def test_failed_pdf_job_records_document_path_without_query_token(monkeypatch) -
     message = finished[0][1]["error_message"]
     assert "1 extraction errors, 1 failed documents" in message
     assert "documents.test/pv.pdf" in message
+    assert "status=incomplete failed_pages=2,4" in message
+    assert "reasons=empty_page_not_proven_blank,ocr_failed" in message
     assert "token=secret" not in message
+    assert "private PDF text" not in message
