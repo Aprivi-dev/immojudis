@@ -1,7 +1,9 @@
 import hashlib
+import json
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -1471,7 +1473,11 @@ def test_sha256_accepts_lowercase_and_uppercase_hex(value: str) -> None:
     assert supabase_client._is_sha256(value)
 
 
-def _persisted_pdf_sale_fixture(document_count: int = 4) -> tuple[AuctionSale, list[dict[str, object]]]:
+def _persisted_pdf_sale_fixture(
+    document_count: int = 4,
+    *,
+    cache_dir: Path | None = None,
+) -> tuple[AuctionSale, list[dict[str, object]]]:
     from src.pdf_document_selection import _store_document_analysis_status
 
     labels = (
@@ -1492,7 +1498,9 @@ def _persisted_pdf_sale_fixture(document_count: int = 4) -> tuple[AuctionSale, l
         {
             "label": document["label"],
             "url": document["url"],
+            "type": "pdf",
             "document_type": document["document_type"],
+            "file_path": f"/private/tmp/persisted-{index}.pdf",
             "text": f"Texte complet du document {index} avec surface {index + 1} m2.",
             "sha256": hashlib.sha256(f"pdf-bytes-{index}".encode()).hexdigest(),
             "cache_version": supabase_client.PDF_TEXT_CACHE_VERSION,
@@ -1511,6 +1519,16 @@ def _persisted_pdf_sale_fixture(document_count: int = 4) -> tuple[AuctionSale, l
         documents=documents,
     )
     _store_document_analysis_status(sale, documents, pdf_texts)
+    if cache_dir is not None:
+        from src import pdf_fact_extraction
+
+        previous_cache_dir = pdf_fact_extraction.PDF_TEXTS_DIR
+        pdf_fact_extraction.PDF_TEXTS_DIR = cache_dir
+        try:
+            cache_path = pdf_fact_extraction._write_pdf_text_cache(sale, pdf_texts)
+            pdf_texts = json.loads(cache_path.read_text(encoding="utf-8"))
+        finally:
+            pdf_fact_extraction.PDF_TEXTS_DIR = previous_cache_dir
     return sale, pdf_texts
 
 
@@ -1530,7 +1548,7 @@ def test_upsert_documents_rehydrates_complete_persisted_pdf_text_after_reconstru
     monkeypatch,
     tmp_path,
 ) -> None:
-    sale, pdf_texts = _persisted_pdf_sale_fixture()
+    sale, pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
     extraction_row = _persisted_extraction_row(sale, pdf_texts)
     # The source sale can receive a newer whole-record hash while the
     # document manifest and persisted PDF bytes remain identical.
@@ -1558,6 +1576,12 @@ def test_upsert_documents_rehydrates_complete_persisted_pdf_text_after_reconstru
 
     assert not supabase_client.documents_are_current(reconstructed)
     assert supabase_client._load_pdf_texts(reconstructed) == []
+    assert all(
+        item["complete"] is True
+        and item["extraction_status"] == "extracted"
+        and item["failed_pages"] == []
+        for item in pdf_texts
+    )
     assert supabase_client.upsert_documents_to_supabase([reconstructed]) == 4
     assert len(reads) == 1
     assert reads[0]["provider"] == "eq.pdf_text"
@@ -1577,7 +1601,7 @@ def test_upsert_documents_rehydrates_complete_persisted_pdf_text_after_reconstru
 
 
 def test_persisted_pdf_text_corruption_fails_closed_for_every_document(monkeypatch, tmp_path) -> None:
-    sale, pdf_texts = _persisted_pdf_sale_fixture()
+    sale, pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
     corrupted = [dict(item) for item in pdf_texts]
     corrupted[0]["text"] = "Texte modifié après la preuve persistée."
     extraction_row = _persisted_extraction_row(sale, corrupted)
@@ -1610,7 +1634,7 @@ def test_persisted_pdf_text_corruption_fails_closed_for_every_document(monkeypat
 
 
 def test_persisted_pdf_rest_timeout_is_single_attempt_and_pending(monkeypatch, tmp_path) -> None:
-    sale, _pdf_texts = _persisted_pdf_sale_fixture()
+    sale, _pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
     monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
     monkeypatch.setattr(
         supabase_client,
@@ -1640,7 +1664,7 @@ def test_persisted_pdf_rest_timeout_is_single_attempt_and_pending(monkeypatch, t
 def test_mixed_pdf_manifest_never_queries_or_materializes_persisted_subset(monkeypatch, tmp_path) -> None:
     from src.pdf_document_selection import _store_document_analysis_status
 
-    sale, pdf_texts = _persisted_pdf_sale_fixture()
+    sale, pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
     _store_document_analysis_status(sale, sale.documents, pdf_texts[:3])
     monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
     monkeypatch.setattr(
@@ -1665,6 +1689,53 @@ def test_mixed_pdf_manifest_never_queries_or_materializes_persisted_subset(monke
     assert reads == []
     assert len(writes) == 1
     assert all(row["extraction_status"] != "extracted" for row in writes[0])
+
+
+@pytest.mark.parametrize("variant", ["partial", "legacy"])
+def test_persisted_pdf_roundtrip_rejects_partial_or_legacy_result_markers(
+    monkeypatch,
+    tmp_path,
+    variant: str,
+) -> None:
+    sale, pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
+    extraction_row = _persisted_extraction_row(sale, pdf_texts)
+    assert all(
+        document["complete"] is True
+        and document["extraction_status"] == "extracted"
+        and document["failed_pages"] == []
+        for document in extraction_row["result"]
+    )
+    proof_documents = sale.raw_payload["document_analysis"]["cache_proof"]["documents"]
+    assert all(document["complete"] is True for document in proof_documents)
+
+    if variant == "partial":
+        extraction_row["result"][0].update(
+            complete=False,
+            extraction_status="incomplete",
+            failed_pages=[1],
+        )
+    else:
+        for document in extraction_row["result"]:
+            document.pop("complete")
+            document.pop("extraction_status")
+            document.pop("failed_pages")
+
+    monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path / "worker-cache")
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        "get",
+        lambda endpoint, **_kwargs: httpx.Response(
+            200,
+            json=[extraction_row],
+            request=httpx.Request("GET", endpoint),
+        ),
+    )
+
+    assert supabase_client._fetch_persisted_pdf_texts_for_sales(
+        [sale],
+        "https://supabase.test",
+        "secret",
+    ) == {}
 
 
 def test_upsert_cadastre_parcels_uses_service_role_rest_upsert(monkeypatch) -> None:

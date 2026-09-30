@@ -1,3 +1,4 @@
+import json
 import socket
 import subprocess
 import time
@@ -12,6 +13,7 @@ import httpx
 import pytest
 
 from src.asset_normalization import normalize_asset_features
+from src.freshness import documents_are_current
 from src.normalize import normalize_sale
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
@@ -30,6 +32,7 @@ from src.pdf_enrichment import (
     _select_documents_for_extraction,
     _store_document_analysis_status,
     _write_document_text_cache,
+    _write_pdf_text_cache,
     classify_document_type,
     download_documents,
     enrich_sale_from_pdf_text,
@@ -2737,6 +2740,167 @@ def test_document_text_cache_reader_keeps_partial_checkpoint_pages(tmp_path, mon
     assert cached is not None
     assert cached["complete"] is False
     assert cached["pages"][0]["text"] == "Page 1 conservée"
+
+
+def test_pdf_text_cache_writer_preserves_complete_partial_and_legacy_markers(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("src.pdf_fact_extraction.PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/cache-writer",
+        }
+    )
+
+    def item(url: str, text: str, **markers: object) -> dict[str, object]:
+        return {
+            "label": "PV descriptif",
+            "url": url,
+            "type": "pdf",
+            "document_type": "pv_huissier",
+            "file_path": str(tmp_path / "document.pdf"),
+            "text": text,
+            "pages": [{"page": 1, "text": text, "status": "extracted"}] if text else [],
+            "cache_version": "pdf_text_v3_surface_calibration",
+            "sha256": f"sha-{url.rsplit('/', 1)[-1]}",
+            "page_count": 1,
+            "text_chars": len(text),
+            "page_text_chars": len(text),
+            "ocr_pages": 0,
+            "empty_pages": 0,
+            "extraction_method": "pymupdf_pages",
+            "confidence": 0.9,
+            **markers,
+        }
+
+    complete_url = "https://example.test/complete.pdf"
+    partial_url = "https://example.test/partial.pdf"
+    legacy_url = "https://example.test/legacy.pdf"
+    path = _write_pdf_text_cache(
+        sale,
+        [
+            item(
+                complete_url,
+                "Texte complet",
+                complete=True,
+                extraction_status="extracted",
+                failed_pages=[],
+                blank_pages=[2],
+                visual_blank_pages=[],
+            ),
+            item(
+                partial_url,
+                "Page conservée",
+                complete=False,
+                extraction_status="incomplete",
+                failed_pages=[3],
+                blank_pages=[2],
+                visual_blank_pages=[2],
+            ),
+            item(legacy_url, "Ancien cache"),
+        ],
+    )
+
+    persisted = {entry["url"]: entry for entry in json.loads(path.read_text(encoding="utf-8"))}
+    assert persisted[complete_url]["complete"] is True
+    assert persisted[complete_url]["extraction_status"] == "extracted"
+    assert persisted[complete_url]["failed_pages"] == []
+    assert persisted[complete_url]["blank_pages"] == [2]
+    assert persisted[complete_url]["visual_blank_pages"] == []
+    assert persisted[partial_url]["complete"] is False
+    assert persisted[partial_url]["extraction_status"] == "incomplete"
+    assert persisted[partial_url]["failed_pages"] == [3]
+    assert persisted[partial_url]["blank_pages"] == [2]
+    assert persisted[partial_url]["visual_blank_pages"] == [2]
+    assert all(marker not in persisted[legacy_url] for marker in (
+        "complete",
+        "extraction_status",
+        "failed_pages",
+        "blank_pages",
+        "visual_blank_pages",
+    ))
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+@pytest.mark.parametrize("failure_stage", ["serialize", "replace"])
+def test_pdf_text_cache_writer_preserves_previous_cache_on_failure(tmp_path, monkeypatch, failure_stage) -> None:
+    import src.pdf_fact_extraction as pdf_fact_extraction
+
+    monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale({"source_name": "avoventes", "source_url": "https://example.test/atomic-cache"})
+    item = {
+        "label": "PV descriptif",
+        "url": "https://example.test/pv.pdf",
+        "type": "pdf",
+        "document_type": "pv_huissier",
+        "file_path": str(tmp_path / "pv.pdf"),
+        "text": "Ancienne extraction conservée",
+    }
+    path = _write_pdf_text_cache(sale, [item])
+    previous_bytes = path.read_bytes()
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("cache write interrupted")
+
+    if failure_stage == "serialize":
+        monkeypatch.setattr(pdf_fact_extraction.json, "dump", fail_write)
+    else:
+        monkeypatch.setattr(pdf_fact_extraction.Path, "replace", fail_write)
+
+    with pytest.raises(OSError, match="cache write interrupted"):
+        _write_pdf_text_cache(sale, [{**item, "text": "Nouvelle extraction"}])
+
+    assert path.read_bytes() == previous_bytes
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_pdf_text_cache_writer_satisfies_freshness_only_for_complete_payload(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("src.pdf_fact_extraction.PDF_TEXTS_DIR", tmp_path)
+    monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/freshness-writer",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    text = "Surface habitable : 80 m2."
+    document = {
+        **sale.documents[0],
+        "type": "pdf",
+        "document_type": "pv_huissier",
+        "file_path": str(tmp_path / "pv.pdf"),
+    }
+    payload = {
+        **document,
+        "text": text,
+        "pages": [{"page": 1, "text": text, "status": "extracted"}],
+        "cache_version": "pdf_text_v3_surface_calibration",
+        "sha256": "pdf-complete",
+        "page_count": 1,
+        "text_chars": len(text),
+        "page_text_chars": len(text),
+        "ocr_pages": 0,
+        "empty_pages": 0,
+        "extraction_method": "pymupdf_pages",
+        "confidence": 0.9,
+        "failed_pages": [],
+        "complete": True,
+        "extraction_status": "extracted",
+    }
+
+    _store_document_analysis_status(sale, [document], [payload])
+    _write_pdf_text_cache(sale, [payload])
+    assert documents_are_current(sale)
+
+    partial_payload = {
+        **payload,
+        "complete": False,
+        "extraction_status": "incomplete",
+        "failed_pages": [1],
+    }
+    _store_document_analysis_status(sale, [document], [partial_payload])
+    _write_pdf_text_cache(sale, [partial_payload])
+    assert not documents_are_current(sale)
 
 
 def test_store_document_analysis_status_marks_partial_document_coverage() -> None:

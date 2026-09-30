@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import tempfile
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -693,11 +694,12 @@ def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> No
         sale.status = normalize_status(None, parsed)
 
 
-def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, str]]) -> Path:
+def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> Path:
     PDF_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
     path = PDF_TEXTS_DIR / f"{_sale_storage_id(sale)}.json"
-    payload = [
-        {
+    payload: list[dict[str, object]] = []
+    for item in pdf_texts:
+        serialized_item: dict[str, object] = {
             "label": item["label"],
             "url": item["url"],
             "type": item["type"],
@@ -715,9 +717,32 @@ def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, str]]) ->
             "extraction_method": item.get("extraction_method"),
             "confidence": item.get("confidence"),
         }
-        for item in pdf_texts
-    ]
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        # These fields are produced by the page extractor and are the only
+        # durable proof that a cached document is complete or can resume from
+        # a partial checkpoint.  Preserve explicit values, including None,
+        # while leaving legacy payloads without the fields unchanged.
+        for marker in ("complete", "extraction_status", "failed_pages", "blank_pages", "visual_blank_pages"):
+            if marker in item:
+                serialized_item[marker] = item[marker]
+        payload.append(serialized_item)
+
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        temporary_path.replace(path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
     return path
 
 
