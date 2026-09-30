@@ -47,7 +47,7 @@ from src.fact_claims import (
 )
 from src.freshness import document_fingerprint, documents_are_current, timestamp_is_fresh
 from src.models import AuctionSale
-from src.normalize import make_sale_signature
+from src.normalize import clean_text, make_sale_signature
 from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, classify_document_type, sale_storage_id
 from src.reviewed_aliases import (
     ReviewedAliasRegistry,
@@ -1987,7 +1987,7 @@ def _has_current_document_analysis(raw_payload: object) -> bool:
         extracted = int(analysis.get("documents_extracted") or 0)
         blocked = int(analysis.get("blocked_documents") or 0)
         failed = int(analysis.get("failed_documents") or 0)
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         return False
     if listed > 0:
         if extracted > 0:
@@ -1998,7 +1998,7 @@ def _has_current_document_analysis(raw_payload: object) -> bool:
         # heavy-current check still compares that fingerprint with the current
         # sale documents before skipping enrichment. Missing the explicit
         # fields keeps legacy/ambiguous zero-extraction rows eligible.
-        return (
+        if (
             blocked > 0
             and failed == 0
             and analysis.get("coverage_status") == "partial"
@@ -2006,7 +2006,22 @@ def _has_current_document_analysis(raw_payload: object) -> bool:
             and bool(analysis.get("blocked_document_urls"))
             and bool(analysis.get("blocked_document_reasons"))
             and timestamp_is_fresh(analysis.get("checked_at"))
-        )
+        ):
+            return True
+        terminal_urls = analysis.get("terminal_document_urls")
+        skipped_urls = analysis.get("skipped_document_urls")
+        blocked_urls = analysis.get("blocked_document_urls")
+        if (
+            failed == 0
+            and analysis.get("coverage_status") == "partial"
+            and bool(analysis.get("input_fingerprint"))
+            and timestamp_is_fresh(analysis.get("checked_at"))
+            and isinstance(terminal_urls, list)
+            and isinstance(skipped_urls, list)
+            and isinstance(blocked_urls, list)
+            and len({str(url) for url in [*terminal_urls, *skipped_urls, *blocked_urls] if url}) >= listed
+        ):
+            return True
     return analysis.get("coverage_status") == "source_only"
 
 
@@ -3435,18 +3450,70 @@ def _public_occurrence_row(occurrence: dict[str, object]) -> dict[str, object]:
 
 
 def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
+    documents = sale.documents
+    if not isinstance(documents, list) or any(not isinstance(document, dict) for document in documents):
+        return []
     pdf_texts = _load_pdf_texts(sale)
     text_by_url = {item.get("url"): item for item in pdf_texts if isinstance(item, dict)}
+    analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+    invalid_analysis = analysis is not None and not isinstance(analysis, dict)
+    current_analysis_profiles: dict[str, dict[str, object]] = {}
+    fresh_analysis = (
+        isinstance(analysis, dict)
+        and analysis.get("input_fingerprint") == document_fingerprint(documents)
+        and timestamp_is_fresh(analysis.get("checked_at"))
+    )
+    if (
+        fresh_analysis
+        and (
+            "profiles" not in analysis
+            or (
+                isinstance(analysis.get("profiles"), list)
+                and all(isinstance(profile, dict) for profile in analysis["profiles"])
+            )
+        )
+    ):
+        current_analysis_profiles = {
+            str(profile.get("url")): profile
+            for profile in analysis.get("profiles") or []
+            if isinstance(profile, dict) and profile.get("url")
+        }
+        if "profiles" in analysis:
+            profile_urls = set(current_analysis_profiles)
+            excluded_urls: set[str] = set()
+            for key in ("skipped_document_urls", "blocked_document_urls", "terminal_document_urls"):
+                values = analysis.get(key)
+                if values is not None and not isinstance(values, (list, tuple, set)):
+                    invalid_analysis = True
+                    continue
+                excluded_urls.update(clean_text(url) for url in values or [] if clean_text(url))
+            expected_profile_urls = {
+                clean_text(document.get("url"))
+                for document in documents
+            } - excluded_urls
+            if not expected_profile_urls.issubset(profile_urls):
+                invalid_analysis = True
     rows = []
-    for document in sale.documents:
+    if isinstance(analysis, dict) and "profiles" in analysis and not (
+        isinstance(analysis.get("profiles"), list)
+        and all(isinstance(profile, dict) for profile in analysis["profiles"])
+    ):
+        invalid_analysis = True
+    for document in documents:
         url = document.get("url")
         if not url:
             continue
         extracted = text_by_url.get(url, {})
         pages = extracted.get("pages") if isinstance(extracted, dict) else None
         page_count = len(pages) if isinstance(pages, list) else None
-        text_chars = int(extracted.get("text_chars") or len(str(extracted.get("text") or ""))) if extracted else 0
+        extracted_text = clean_text(extracted.get("text")) if isinstance(extracted, dict) else None
+        try:
+            text_chars = int(extracted.get("text_chars") or len(extracted_text or "")) if extracted else 0
+        except (OverflowError, TypeError, ValueError):
+            text_chars = 0
         extraction_confidence = extracted.get("confidence") if isinstance(extracted, dict) else None
+        row_file_path = extracted.get("file_path") if isinstance(extracted, dict) else None
+        row_sha256 = extracted.get("sha256") if isinstance(extracted, dict) else None
         raw_payload = dict(document)
         if isinstance(extracted, dict):
             raw_payload["extraction"] = {
@@ -3457,8 +3524,124 @@ def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
                 "empty_pages": extracted.get("empty_pages"),
                 "page_text_chars": extracted.get("page_text_chars"),
                 "confidence": extraction_confidence,
+                "sha256": extracted.get("sha256"),
+                "text_sha256": (
+                    hashlib.sha256(extracted_text.encode("utf-8")).hexdigest()
+                    if extracted_text
+                    else None
+                ),
+                "text_chars": text_chars,
+                "text_present": bool(extracted_text),
+                "complete": extracted.get("complete") is True,
+                "failed_pages": extracted.get("failed_pages") or [],
+                "extraction_status": extracted.get("extraction_status"),
             }
-        extraction_status = _document_extraction_status(extracted)
+        extraction_status = "pending" if invalid_analysis else _document_extraction_status(extracted)
+        manifest_profile = current_analysis_profiles.get(str(url))
+        discard_cached_evidence = invalid_analysis or (
+            fresh_analysis and not isinstance(manifest_profile, dict)
+        )
+        if isinstance(manifest_profile, dict):
+            manifest_status = str(manifest_profile.get("extraction_status") or "").strip().lower()
+            if manifest_profile.get("complete") is False or manifest_profile.get("failed_pages"):
+                manifest_status = "incomplete"
+            if manifest_status in {"incomplete", "failed"}:
+                # A current manifest can carry a failed-page result from the
+                # latest extraction while an older local cache still has text.
+                # Do not let that stale cache advertise a complete document.
+                extraction_status = manifest_status
+                if isinstance(raw_payload.get("extraction"), dict):
+                    raw_payload["extraction"]["manifest_status"] = manifest_status
+                    raw_payload["extraction"]["complete"] = False
+                    raw_payload["extraction"]["failed_pages"] = (
+                        manifest_profile.get("failed_pages")
+                        or raw_payload["extraction"].get("failed_pages")
+                        or []
+                    )
+            elif manifest_status == "empty":
+                # A fresh empty result is authoritative for this document.
+                # Do not let a previous cache entry with text turn it back
+                # into an extracted row, and keep the materialized metadata
+                # aligned with the current profile.
+                extraction_status = "empty"
+                manifest_sha = clean_text(manifest_profile.get("sha256"))
+                if isinstance(raw_payload.get("extraction"), dict):
+                    raw_payload["extraction"].update(
+                        {
+                            "manifest_status": "empty",
+                            "extraction_status": "empty",
+                            "sha256": manifest_sha or None,
+                            "complete": manifest_profile.get("complete") is True,
+                            "failed_pages": manifest_profile.get("failed_pages") or [],
+                            "text_chars": 0,
+                            "text_present": False,
+                            "text_sha256": None,
+                        }
+                    )
+                extracted_text = None
+                text_chars = 0
+                row_file_path = None
+                row_sha256 = manifest_sha or None
+            elif manifest_status == "extracted":
+                manifest_sha = str(manifest_profile.get("sha256") or "")
+                extracted_sha = str(extracted.get("sha256") or "")
+                if (
+                    not manifest_sha
+                    or not extracted_sha
+                    or manifest_sha != extracted_sha
+                    or manifest_profile.get("complete") is not True
+                ):
+                    extraction_status = "pending"
+                    discard_cached_evidence = True
+                    if isinstance(raw_payload.get("extraction"), dict):
+                        raw_payload["extraction"].update(
+                            {
+                                "manifest_status": "pending",
+                                "extraction_status": "pending",
+                                "complete": False,
+                            }
+                        )
+            else:
+                # Missing/unknown current status is not proof that an older
+                # local cache is still current. Keep the row visible while
+                # making the uncertainty explicit.
+                extraction_status = "pending"
+                discard_cached_evidence = True
+                if isinstance(raw_payload.get("extraction"), dict):
+                    raw_payload["extraction"].update(
+                        {
+                            "manifest_status": manifest_status or None,
+                            "extraction_status": "pending",
+                            "complete": False,
+                        }
+                    )
+        if discard_cached_evidence:
+            # A current profile that cannot prove this cache also cannot lend
+            # its old text counters, hashes or file identity to the row.
+            extraction_status = "pending"
+            extracted_text = None
+            text_chars = 0
+            row_file_path = None
+            row_sha256 = None
+            if isinstance(raw_payload.get("extraction"), dict):
+                raw_payload["extraction"].update(
+                    {
+                        "extraction_status": "pending",
+                        "complete": False,
+                        "sha256": None,
+                        "text_sha256": None,
+                        "text_chars": 0,
+                        "text_present": False,
+                        "cache_version": None,
+                        "extraction_method": None,
+                        "page_count": None,
+                        "ocr_pages": None,
+                        "empty_pages": None,
+                        "page_text_chars": None,
+                        "confidence": None,
+                        "failed_pages": [],
+                    }
+                )
         rows.append(
             {
                 "source_url": sale.source_url,
@@ -3468,12 +3651,12 @@ def _document_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
                     str(document.get("label") or extracted.get("label") or ""),
                     str(url),
                 ),
-                "file_path": extracted.get("file_path"),
-                "sha256": extracted.get("sha256"),
-                "download_status": "downloaded" if extracted.get("file_path") else "unknown",
+                "file_path": row_file_path,
+                "sha256": row_sha256,
+                "download_status": "downloaded" if row_file_path or row_sha256 else "unknown",
                 "text_chars": text_chars,
                 "extraction_status": extraction_status,
-                "docling_status": extracted.get("extraction_method"),
+                "docling_status": None if discard_cached_evidence else extracted.get("extraction_method"),
                 "raw_payload": raw_payload,
                 "updated_at": datetime.now(UTC).isoformat(),
             }
@@ -3495,7 +3678,11 @@ def _document_extraction_status(extracted: dict[str, object]) -> str:
         return "incomplete"
     if declared_status == "empty":
         return "empty"
-    if str(extracted.get("text") or "").strip():
+    if (
+        str(extracted.get("text") or "").strip()
+        and extracted.get("complete") is True
+        and str(extracted.get("sha256") or "").strip()
+    ):
         return "extracted"
     return "pending"
 
@@ -3682,11 +3869,13 @@ def _pdf_extraction_confidence(payload: Any) -> dict[str, object]:
 def _load_pdf_texts(sale: AuctionSale) -> list[dict[str, object]]:
     path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
     payload = _read_json_file(path)
-    return payload if isinstance(payload, list) else []
+    if not isinstance(payload, list) or any(not isinstance(item, dict) for item in payload):
+        return []
+    return payload
 
 
 def _read_json_file(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return None

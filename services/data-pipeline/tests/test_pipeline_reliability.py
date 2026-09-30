@@ -1,3 +1,4 @@
+import hashlib
 import json
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -15,7 +16,7 @@ from src.freshness import (
     record_source_checks,
 )
 from src.normalize import normalize_sale
-from src.pdf_enrichment import download_documents
+from src.pdf_enrichment import download_documents, sale_storage_id
 from src.sources.common import PaginationCoverage
 from src.storage import supabase_client as storage
 
@@ -89,14 +90,185 @@ def test_identity_mismatch_or_quarantine_never_counts_as_fresh_detail(marker):
     assert not detail_is_fresh(row, source_url)
 
 
-def test_document_identity_and_failures_invalidate_analysis():
+def test_document_identity_and_failures_invalidate_analysis(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
     sale = normalize_sale({"source_name": "avoventes", "source_url": "https://example.test/sale", "documents": [{"url": "https://example.test/a.pdf"}]})
-    sale.raw_payload["document_analysis"] = {"checked_at": datetime.now(UTC).isoformat(), "input_fingerprint": document_fingerprint(sale.documents)}
+    fingerprint = document_fingerprint(sale.documents)
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": datetime.now(UTC).isoformat(),
+        "input_fingerprint": fingerprint,
+        "profiles": [{
+            "url": "https://example.test/a.pdf",
+            "sha256": "pdf-a",
+            "extraction_status": "extracted",
+            "complete": True,
+        }],
+        "cache_proof": {
+            "version": 1,
+            "verified_at": datetime.now(UTC).isoformat(),
+            "input_fingerprint": fingerprint,
+            "documents": [{
+                "url": "https://example.test/a.pdf",
+                "sha256": "pdf-a",
+                "text_sha256": hashlib.sha256(b"PDF evidence").hexdigest(),
+                "text_chars": 12,
+                "text_present": True,
+                "extraction_status": "extracted",
+                "complete": True,
+                "failed_pages": [],
+            }],
+        },
+    }
+    (tmp_path / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([{
+            "url": "https://example.test/a.pdf",
+            "text": "PDF evidence",
+            "text_chars": 12,
+            "sha256": "pdf-a",
+            "complete": True,
+            "extraction_status": "extracted",
+            "failed_pages": [],
+        }]),
+        encoding="utf-8",
+    )
     assert documents_are_current(sale)
     sale.documents.append({"url": "https://example.test/b.pdf"})
     assert not documents_are_current(sale)
     sale.documents.pop()
     sale.raw_payload["document_analysis"]["failed_documents"] = 1
+    assert not documents_are_current(sale)
+
+
+def test_profile_only_document_analysis_never_skips_missing_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale({
+        "source_name": "avoventes",
+        "source_url": "https://example.test/profile-only",
+        "documents": [{"url": "https://example.test/a.pdf"}],
+    })
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": datetime.now(UTC).isoformat(),
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "documents_listed": 1,
+        "documents_extracted": 1,
+        "failed_documents": 0,
+        "profiles": [{
+            "url": "https://example.test/a.pdf",
+            "sha256": "profile-only",
+            "extraction_status": "extracted",
+            "complete": True,
+        }],
+    }
+
+    assert not documents_are_current(sale)
+
+
+def test_current_document_requires_real_complete_cache_payload(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale({
+        "source_name": "avoventes",
+        "source_url": "https://example.test/cache-proof",
+        "documents": [{"url": "https://example.test/a.pdf"}],
+    })
+    fingerprint = document_fingerprint(sale.documents)
+    now = datetime.now(UTC).isoformat()
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": now,
+        "input_fingerprint": fingerprint,
+        "failed_documents": 0,
+        "profiles": [{
+            "url": "https://example.test/a.pdf",
+            "sha256": "pdf-a",
+            "extraction_status": "extracted",
+            "complete": True,
+        }],
+        "cache_proof": {
+            "version": 1,
+            "verified_at": now,
+            "input_fingerprint": fingerprint,
+            "documents": [{
+                "url": "https://example.test/a.pdf",
+                "sha256": "pdf-a",
+                "text_sha256": hashlib.sha256(b"PDF evidence").hexdigest(),
+                "text_chars": 12,
+                "text_present": True,
+                "extraction_status": "extracted",
+                "complete": True,
+                "failed_pages": [],
+            }],
+        },
+    }
+
+    assert not documents_are_current(sale)
+    cache_path = tmp_path / f"{sale_storage_id(sale)}.json"
+    cache_path.write_text(
+        json.dumps([{
+            "url": "https://example.test/a.pdf",
+            "text": "PDF evidence",
+            "text_chars": 12,
+            "sha256": "pdf-a",
+            "complete": True,
+            "extraction_status": "extracted",
+            "failed_pages": [],
+        }]),
+        encoding="utf-8",
+    )
+    assert documents_are_current(sale)
+
+    payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    payload[0]["sha256"] = "pdf-b"
+    cache_path.write_text(json.dumps(payload), encoding="utf-8")
+    assert not documents_are_current(sale)
+
+    payload[0]["sha256"] = "pdf-a"
+    payload[0]["failed_pages"] = [4]
+    payload[0]["complete"] = False
+    payload[0]["extraction_status"] = "incomplete"
+    cache_path.write_text(json.dumps(payload), encoding="utf-8")
+    assert not documents_are_current(sale)
+
+
+def test_document_freshness_fails_closed_for_malformed_json_and_missing_profile_sha(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/malformed-pdf-cache",
+            "documents": [{"url": "https://example.test/a.pdf"}],
+        }
+    )
+    fingerprint = document_fingerprint(sale.documents)
+    now = datetime.now(UTC).isoformat()
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": now,
+        "input_fingerprint": fingerprint,
+        "failed_documents": 0,
+        "profiles": [{
+            "url": "https://example.test/a.pdf",
+            "sha256": "",
+            "extraction_status": "extracted",
+            "complete": True,
+            "failed_pages": [],
+        }],
+        "cache_proof": {
+            "version": 1,
+            "verified_at": now,
+            "input_fingerprint": fingerprint,
+            "documents": [{
+                "url": "https://example.test/a.pdf",
+                "sha256": "pdf-a",
+                "text_sha256": hashlib.sha256(b"PDF evidence").hexdigest(),
+                "text_chars": 12,
+                "text_present": True,
+                "extraction_status": "extracted",
+                "complete": True,
+                "failed_pages": [],
+            }],
+        },
+    }
+    cache_path = tmp_path / f"{sale_storage_id(sale)}.json"
+    cache_path.write_text("{malformed", encoding="utf-8")
+
     assert not documents_are_current(sale)
 
 
@@ -300,6 +472,126 @@ def test_document_rows_keep_incomplete_or_failed_pdf_status(
     rows = storage._document_rows_for_sale(sale)
 
     assert rows[0]["extraction_status"] == expected_status
+
+
+def test_document_rows_require_hash_and_complete_text_and_preserve_manifest_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale({
+        "source_name": "vench",
+        "source_url": "https://example.test/manifest-failure",
+        "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+    })
+    cache_path = tmp_path / f"{storage.sale_storage_id(sale)}.json"
+    cache_path.write_text(json.dumps([{
+        "url": "https://example.test/pv.pdf",
+        "text": "Texte réel",
+        "text_chars": 10,
+        "sha256": "pdf-a",
+        "extraction_status": "extracted",
+    }]), encoding="utf-8")
+    assert storage._document_rows_for_sale(sale)[0]["extraction_status"] == "pending"
+
+    payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    payload[0]["complete"] = True
+    cache_path.write_text(json.dumps(payload), encoding="utf-8")
+    rows = storage._document_rows_for_sale(sale)
+    assert rows[0]["extraction_status"] == "extracted"
+    assert rows[0]["raw_payload"]["extraction"]["text_present"] is True
+
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": datetime.now(UTC).isoformat(),
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "profiles": [{
+            "url": "https://example.test/pv.pdf",
+            "extraction_status": "incomplete",
+            "complete": False,
+            "failed_pages": [4],
+        }],
+    }
+    rows = storage._document_rows_for_sale(sale)
+    assert rows[0]["extraction_status"] == "incomplete"
+    assert rows[0]["raw_payload"]["extraction"]["failed_pages"] == [4]
+
+
+def test_document_rows_fail_closed_for_malformed_pdf_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale({
+        "source_name": "avoventes",
+        "source_url": "https://example.test/malformed-document-row",
+        "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+    })
+    cache_path = tmp_path / f"{storage.sale_storage_id(sale)}.json"
+    cache_path.write_text("{malformed", encoding="utf-8")
+
+    rows = storage._document_rows_for_sale(sale)
+    assert rows[0]["extraction_status"] == "pending"
+    assert rows[0]["text_chars"] == 0
+
+
+@pytest.mark.parametrize(
+    ("profile_status", "expected_status"),
+    [("empty", "empty"), (None, "pending"), ("missing_profile", "pending"), ("missing_profiles_list", "pending")],
+)
+def test_document_rows_do_not_reuse_old_cache_for_current_empty_or_unknown_profile(
+    profile_status, expected_status, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/current-profile-status",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    document_url = sale.documents[0]["url"]
+    profile = {"url": document_url, "sha256": "current-pdf", "complete": True}
+    if profile_status is not None:
+        profile["extraction_status"] = profile_status
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": datetime.now(UTC).isoformat(),
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "profiles": [profile],
+    }
+    if profile_status == "missing_profile":
+        sale.raw_payload["document_analysis"]["profiles"] = []
+    elif profile_status == "missing_profiles_list":
+        sale.raw_payload["document_analysis"].pop("profiles")
+    (tmp_path / f"{storage.sale_storage_id(sale)}.json").write_text(
+        json.dumps(
+            [
+                {
+                    "url": document_url,
+                    "text": "Ancien cache à ne pas certifier",
+                    "text_chars": 31,
+                    "sha256": "old-pdf",
+                    "file_path": "/tmp/obsolete.pdf",
+                    "complete": True,
+                    "extraction_status": "extracted",
+                    "failed_pages": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    row = storage._document_rows_for_sale(sale)[0]
+
+    assert row["extraction_status"] == expected_status
+    assert row["raw_payload"]["extraction"]["extraction_status"] == expected_status
+    if profile_status == "empty":
+        assert row["text_chars"] == 0
+        assert row["raw_payload"]["extraction"]["text_present"] is False
+        assert row["raw_payload"]["extraction"]["sha256"] == "current-pdf"
+        assert row["sha256"] == "current-pdf"
+    else:
+        assert row["raw_payload"]["extraction"]["complete"] is False
+        assert row["text_chars"] == 0
+        assert row["file_path"] is None
+        assert row["sha256"] is None
+        assert row["download_status"] == "unknown"
+        assert row["raw_payload"]["extraction"]["text_present"] is False
+        assert row["raw_payload"]["extraction"]["text_sha256"] is None
+        assert row["raw_payload"]["extraction"]["sha256"] is None
 
 
 def test_replaced_document_creates_new_fact_job_even_at_same_url(monkeypatch):

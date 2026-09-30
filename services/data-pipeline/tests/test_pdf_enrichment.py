@@ -1223,6 +1223,62 @@ def test_document_analysis_does_not_count_empty_pdf_payload_as_extracted() -> No
     assert analysis["profiles"][0]["extraction_status"] == "empty"
 
 
+def test_document_analysis_fails_closed_for_malformed_cache_payload() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/malformed-pdf-cache.html",
+        }
+    )
+
+    _store_document_analysis_status(
+        sale,
+        [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}, "malformed"],
+        [],
+    )
+
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["coverage_status"] == "documents_not_extracted"
+    assert analysis["failed_documents"] == 1
+    assert analysis["documents_extracted"] == 0
+    assert analysis["profiles"] == []
+
+
+def test_complete_empty_pdf_is_terminal_but_never_a_fact_cache() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/terminal-empty-pdf.html",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    document = {
+        "label": "PV descriptif",
+        "url": "https://example.test/pv.pdf",
+        "document_type": "pv_huissier",
+    }
+    _store_document_analysis_status(
+        sale,
+        [document],
+        [{
+            **document,
+            "text": "",
+            "sha256": "pdf-empty",
+            "complete": True,
+            "extraction_status": "extracted",
+            "failed_pages": [],
+        }],
+    )
+
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["empty_document_urls"] == [document["url"]]
+    assert analysis["terminal_document_urls"] == [document["url"]]
+    assert analysis["failed_documents"] == 0
+    assert analysis["documents_extracted"] == 0
+    assert analysis["coverage_status"] == "partial"
+    assert analysis["profiles"][0]["extraction_status"] == "empty"
+
+
 def test_enrich_sale_from_pdf_text_does_not_sum_repeated_document_surfaces() -> None:
     sale = normalize_sale(
         {
@@ -2532,11 +2588,34 @@ def test_document_text_cache_roundtrip(tmp_path, monkeypatch) -> None:
         "document_type": "pv_huissier",
         "file_path": str(file_path),
         "text": "Surface 80 m2",
+        "sha256": "pdf-a",
+        "complete": True,
+        "extraction_status": "extracted",
     }
 
     _write_document_text_cache(document, file_path, payload)
 
     assert _read_document_text_cache(document, file_path)["text"] == "Surface 80 m2"
+
+
+def test_document_text_cache_reader_keeps_partial_checkpoint_pages(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    file_path = tmp_path / "partial.pdf"
+    file_path.write_bytes(b"pdf bytes")
+    document = {"url": "https://example.test/partial.pdf", "label": "PV"}
+    payload = {
+        "text": "Page 1 conservée",
+        "pages": [{"page": 1, "text": "Page 1 conservée", "status": "extracted"}],
+        "sha256": "pdf-partial",
+        "complete": False,
+        "extraction_status": "extracted",
+    }
+    _write_document_text_cache(document, file_path, payload)
+
+    cached = _read_document_text_cache(document, file_path)
+    assert cached is not None
+    assert cached["complete"] is False
+    assert cached["pages"][0]["text"] == "Page 1 conservée"
 
 
 def test_store_document_analysis_status_marks_partial_document_coverage() -> None:

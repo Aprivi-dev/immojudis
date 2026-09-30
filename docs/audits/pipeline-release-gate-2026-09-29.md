@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 22 h 50 UTC
+## Synthèse actuelle — 30 septembre, 00 h 25 UTC
 
-| Chantier           | État vérifié                                                                                                                                                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `520abb05` vert : 200 migrations, 1 481 assertions pgTAP, CodeQL, Web, Python et navigateur. Maintenance `36641397586` réussie, sans dérive.                                                                                    |
-| Santé              | Cinq ticks successifs réussis depuis 21 h 45 ; durées de 1,6 à 6,4 secondes. La dernière optimisation nécessite encore des ticks ultérieurs.                                                                                    |
-| Worker automatique | Tag protégé `immojudis-workers-f695a739`. Redéploiement interne du même code public `05cff558`, sans publication des nouvelles fonctionnalités de la PR.                                                                        |
-| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                            |
-| Collecte AGRASC    | Huit annonces et huit PDF sans erreur ; terminal changeant pendant le scan et 25 archives sans lien. Périmètre adressable distinct du certificat public global, qui reste partiel.                                              |
-| Documents          | Noisy : 416/416 pages extraites dans le cloud, avec incertitude sémantique sur quatre cartes. Uckange : PDF de 96 pages extrait. Ris-Orangis : documents désormais extraits, couverture page par page en cours de confirmation. |
-| Capacité           | 2 764 des 2 795 jobs ouverts de plus de 48 h sont réellement claimables. Allocation temporelle et annulations répétées de révisions en cours de diagnostic ; aucune quarantaine massive.                                        |
-| Revue IA           | Export privé v4.2 conservé ; aucun import. Gardes applicatives, lecture transactionnelle fraîche et réconciliation requises avant import.                                                                                       |
-| Resend et portail  | Clé, domaines et webhook vérifiés ; canari fournisseur livré. Secret portail absent : ajout Vercel Production refusé par auto-review, accord précis pending. Aucun envoi à un interlocuteur.                                    |
-| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                        |
-| Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                         |
-| Publication finale | PR en brouillon, pas de publication applicative finale, pas de nettoyage de branches.                                                                                                                                           |
+| Chantier           | État vérifié                                                                                                                                                                                                                                                                                                                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL et CI          | `520abb05` vert : 200 migrations, 1 481 assertions pgTAP, CodeQL, Web, Python et navigateur. Maintenance `36641397586` réussie, sans dérive.                                                                                                                                                                                                          |
+| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                                                                                                                  |
+| Worker automatique | Tag protégé `immojudis-workers-f695a739`. Redéploiement interne du même code public `05cff558`, sans publication des nouvelles fonctionnalités de la PR.                                                                                                                                                                                              |
+| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                                                                                                                  |
+| Collecte AGRASC    | Huit annonces et huit PDF sans erreur ; terminal changeant pendant le scan et 25 archives sans lien. Périmètre adressable distinct du certificat public global, qui reste partiel.                                                                                                                                                                    |
+| Documents          | Noisy : 416/416 pages extraites dans le cloud, avec incertitude sémantique sur quatre cartes. Uckange : PDF de 96 pages extrait. Ris-Orangis : lignes canoniques optimistes, mais manifeste encore partiel avec deux pages échouées ; non clos. Correctif PDF validé localement : 238 tests ciblés et accord indépendant ; CI et canari cloud requis. |
+| Capacité           | 2 764 des 2 795 jobs ouverts de plus de 48 h sont réellement claimables. Circuit d'arrêt des claims généraux après épuisement LLM et retrait des compteurs Licitor des empreintes factuelles relus et commités, pas encore qualifiés dans le cloud. Aucune quarantaine massive.                                                                       |
+| Revue IA           | Export privé v4.2 conservé ; aucun import. Gardes applicatives, lecture transactionnelle fraîche et réconciliation requises avant import.                                                                                                                                                                                                             |
+| Resend et portail  | Clé, domaines et webhook vérifiés ; canari fournisseur livré. Secret portail absent : ajout Vercel Production refusé par auto-review, accord précis pending. Aucun envoi à un interlocuteur.                                                                                                                                                          |
+| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                                                                                                              |
+| Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                                                                                                                                               |
+| Publication finale | PR en brouillon, pas de publication applicative finale, pas de nettoyage de branches.                                                                                                                                                                                                                                                                 |
 
 Les sections suivantes conservent la chronologie. Leurs compteurs datés ne
 doivent pas être utilisés comme l'état courant sans lire cette synthèse et
@@ -1497,3 +1497,126 @@ de relais/authentification. La lecture de Ris indique désormais trois
 documents téléchargés et extraits, mais le manifeste page par page doit
 confirmer cette complétude avant de clore le cas. Le premier tick de santé
 après `30002000`, à 23 h, réussit en 2 864 ms.
+
+## Trois ticks SQL et correctifs de churn, 23 h 38 UTC
+
+Les trois ticks `operational-health` postérieurs à la maintenance
+`30002000` réussissent : 23 h en 2 864 ms, 23 h 15 en 2 351 ms et
+23 h 30 en 4 003 ms. Il s'agit de contrôles planifiés réels ; aucune
+invocation mutante supplémentaire n'est exécutée pour mesurer leur durée.
+
+Le commit `78a32ab5` arrête les nouveaux claims généraux lorsque le worker
+rencontre un épuisement réel du budget LLM. Les détails de source peuvent
+continuer dans les mêmes limites de 90 traitements et 1 200 secondes.
+Les checkpoints, délais de refroidissement et prérequis PDF n'activent pas
+ce circuit. Les essais sont restaurés par le mécanisme existant de report.
+Le bilan distingue les claims, les demandes de report et les statuts
+observés, dont les identifiants absents du snapshot. La suspension générale
+concerne aussi temporairement les PDF sans LLM ; aucune complétion de PDF
+n'est déduite de cette suspension. Les 40 tests ciblés passent, dont un
+scénario composé passant par le véritable chemin d'exception LLM. La
+relecture indépendante approuve le correctif.
+
+Le commit `5534db5b` retire les seules lignes de compteurs Licitor contenant
+les glyphes de vues et favoris avec des nombres, des textes publics utilisés
+pour les empreintes factuelles. Dans 585 paires de checkpoints dont les
+champs structurés sont identiques et le texte diffère, 584 différences
+proviennent exclusivement de ces compteurs. Les prix, surfaces, dates et
+numéros de lots sont conservés. Le texte des `source_lots` reste brut pour
+les preuves de catalogue et de multiplicité ; il ne fait pas partie des
+champs factuels comparés. Les 86 tests ciblés passent et la relecture
+indépendante approuve les chemins listing, lots fusionnés et détail.
+La preuve agrégée est privée dans
+`/private/tmp/immojudis-licitor-counter-proof-20260930.json`.
+
+Ces deux commits et le correctif AGRASC `646746f6` attendent encore le
+rejeu CI sur le HEAD final et leur qualification cloud. Aucun nouveau
+worker de production n'est routé sur ces commits à ce stade.
+
+Le cas Ris-Orangis reste incomplet : le manifeste réel de trois PDF compte
+deux documents extraits et un document incomplet avec deux pages échouées.
+Les lignes canoniques optimistes ne suffisent donc pas à clore le job.
+Le patch PDF en relecture exige une preuve de cache correspondant aux
+empreintes du fichier et du texte, préserve la reprise des checkpoints
+partiels et distingue la réutilisation de faits déjà vérifiés d'une
+nouvelle génération documentaire.
+
+Le nouvel échec Petites Affiches n'est pas une panne d'authentification.
+À 22 h 47 min 15 s, l'ancienne URL du job
+`1bc9baf8-a5cd-4970-997a-4761b8e0264a` reçoit une redirection puis un
+HTTP 400 du relais : sa destination utilise le chemin public
+`/vente/immobiliere/n/`, absent de l'allowlist de la version 4. La fiche
+actuelle correspondante, avec même titre et date, est récupérée en HTTP 200
+à 22 h 50 min 58 s. La variable et le secret GitHub du relais sont présents,
+et d'autres requêtes répondent HTTP 200 entre ces deux horaires. Le patch
+en relecture autorise uniquement cette forme publique sur le même hôte,
+sans query, fragment, identifiants ou port alternatif ; la garde d'identité
+des détails reste requise. Le diagnostic Python distingue désormais le
+refus de cible d'un refus d'authentification sans afficher l'URL ou le
+corps de réponse. Aucun déploiement du relais n'a encore été effectué.
+Les vérifications ciblées passent : cinq tests Deno, 30 tests Python
+et sept cas ignorés, Ruff et contrôle de whitespace. Une relecture
+indépendante est en cours avant commit et qualification cloud.
+
+## Correctifs PDF et relais figés, 30 septembre à 00 h 07 UTC
+
+Le correctif PDF passe 87 tests de fraîcheur, cache et file de tâches,
+ainsi que 94 tests PDF avec répertoires temporaires, soit 181 cas ciblés.
+Ruff, compilation et contrôle de whitespace passent. Les tests couvrent
+les checkpoints partiels, l'absence de cache, les empreintes incohérentes,
+les pages échouées, les profils mal formés et un dossier mixte avec un PDF
+complet et un PDF vide. Une preuve complète persistée peut autoriser la
+réutilisation de faits déjà vérifiés après disparition du cache éphémère ;
+elle n'autorise pas une nouvelle génération de faits sans cache complet.
+La file calcule cette réutilisation avant le contrôle du prérequis PDF.
+Le document vide reste visible comme indisponible pour l'analyse ; il ne
+certifie aucun fait documentaire. Ris-Orangis n'est pas déclaré complet
+par ce correctif local et attend sa vraie extraction cloud.
+
+La revue indépendante du relais a identifié une fuite de `Location` dans
+les erreurs persistées : une redirection externe refusée pouvait encore
+transporter des identifiants ou paramètres. Le commit `96d5c2a` refuse
+désormais ces redirections avec une réponse 502 bornée, sans le header
+ou le corps upstream. Seules les redirections publiques HTTPS de la même
+origine sont transmises ; les ports alternatifs, identifiants, queries,
+fragments et chemins non reconnus sont refusés. Le port HTTPS par défaut
+443 est normalisé par `URL` comme la même origine. Les redirections de
+liste avec query/hash sur l'URL source ne sont plus réécrites. Les tests
+finaux passent : six tests Deno et 30 tests Python avec sept cas ignorés.
+La relecture indépendante ne relève plus de blocage concret.
+
+Les commits sont préparés pour un rejeu CI/CodeQL commun sur le HEAD
+final. Le routage des workers et la version du relais de production ne
+sont pas encore changés. Le canari doit respecter l'exécution sérialisée
+existante et les mêmes limites de 90 jobs / 1 200 secondes, sans remise
+à zéro d'essais ni modification de leases ou priorités. Aucun import IA,
+envoi à un interlocuteur ou nettoyage de branche n'est exécuté.
+
+Le run Licitor `36642781639`, lié à
+`6a7ffddf-9d8c-4918-84d4-9ad33b19e7a5`, termine avec succès à
+23 h 44 min 35 s côté SQL et 23 h 45 min 42 s côté GitHub, sur le
+tag `f695a739` avec LLM désactivé. Il collecte, normalise et enrichit
+588 identités distinctes, sans erreur. Les six partitions du certificat
+porté par `summary.scrape_coverage.licitor` sont certifiées ; les trois
+étapes dans `stage_status` sont complètes. Les 588 checkpoints sont liés
+au run. Les compteurs 557 décisions publiées, 31 quarantaines et 552
+upserts restent distincts ; ils ne doivent pas être présentés comme 588
+biens publics. Le certificat Nord-Est annonce et voit 87 lignes, dont une
+répétition identique, puis conserve 86 annonces adressables et parsées,
+sans omission. La justification de ce doublon est agrégée dans le
+certificat ; il ne conserve pas l'identité détaillée des deux occurrences.
+Cette couverture décrit le catalogue public exposé au moment du scan,
+pas la complétude de chaque fiche ni un inventaire privé.
+
+La relecture finale du PDF a clos les derniers cas de file et de
+matérialisation. Un résultat vide, robots ou skipped annule désormais les
+jobs facts avec `review_required`, même quand `documents_listed=0` et dans
+un lot PDF+facts. Un PDF restant seul ne déclenche aucun display implicite ;
+un job display distinct reste traité. Un profil courant vide, inconnu ou
+absent ne peut plus exposer les anciennes métriques comme preuve : les
+compteurs texte, empreintes, chemin, pages, confiance et méthode hérités
+sont effacés lorsque le cache n'est pas prouvé. Les quatre fichiers
+queue/fraîcheur/cache/stockage passent 144 tests ; avec les 94 tests PDF,
+le total ciblé est de 238 cas. Ruff et contrôle de whitespace passent.
+La relecture indépendante donne son accord final ; les correctifs sont
+préparés pour le push et la CI du HEAD commun.
