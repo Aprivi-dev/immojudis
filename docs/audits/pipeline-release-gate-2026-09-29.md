@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 10 h 10 UTC
+## Synthèse actuelle — 30 septembre, 11 h 25 UTC
 
-| Chantier           | État vérifié                                                                                                                                                                                                                                              |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `285190e4` : CI complète et CodeQL verts, 1 985 tests Python par version, 1 336 tests Web, 200 migrations et 1 481 assertions pgTAP. Les corrections AGRASC, deadline LLM et diagnostics PDF doivent encore être qualifiées sur leur propre SHA.          |
-| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                      |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `81022c19` réussi : 38 tâches terminées, sept échouées, sept annulées et huit restituées, aucun claim running. Source et IA nécessitent encore un canari du prochain SHA.       |
-| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                      |
-| Collecte AGRASC    | Deux passages depuis `?page=0` reproduisent 12 URL parsées et 25 archives sans lien toutes vendues ; terminal stable à 6. Correction relue indépendamment, 110 tests verts, certificats stricts conservés. Aucun nettoyage sur le seul inventaire public. |
-| Documents          | Vrai writer confirmé sur six textes explicitement complets avec SHA et longueurs concordants. Le manifeste de ce dossier compte 16 PDF : récupération entière encore non qualifiée. Cinq erreurs d'extraction nécessitent des causes/pages observables.   |
-| Capacité           | Au relevé de 09 h 50 : 6 053 jobs ouverts, 6 027 dus réessayables, 2 679 anciens encore sous le plafond d'essais, un en cours et 19 épuisés. Circuit quota testé localement ; résorption durable non démontrée.                                           |
-| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                        |
-| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                |
-| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                  |
-| Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                                                   |
-| Publication finale | PR en brouillon, derniers correctifs en cours de qualification. Preview exacte `81022c19` validée en lecture seule ; pas de publication applicative finale ni import IA. Plan de branches préparé, aucune suppression.                                    |
+| Chantier           | État vérifié                                                                                                                                                                                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL et CI          | `74dd49f6` : CI et CodeQL verts, 2 005 tests Python par version, 1 336 tests Web, 87 Playwright, 200 migrations et 1 481 assertions pgTAP. Les deltas de reprise PDF et de suspension Enchères Publiques doivent passer leur propre CI.                         |
+| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                            |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `74dd49f6` réussi en 1 141,8 s : 31 claims, 26 completed, quatre failed, un queued, aucun running. Les deltas suivants restent à qualifier ; routage automatique inchangé.            |
+| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                            |
+| Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB. |
+| Documents          | Vrai writer confirmé sur six textes complets dans un manifeste de 16 PDF. Reprise facts/display relue et corrigée, y compris pièces terminales. Réutilisation cold et progression au-delà de six documents en correction ; récupération entière non qualifiée.  |
+| Capacité           | Au relevé de 09 h 50 : 6 053 jobs ouverts, 6 027 dus réessayables, 2 679 anciens encore sous le plafond d'essais, un en cours et 19 épuisés. Circuit quota testé localement ; résorption durable non démontrée.                                                 |
+| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                              |
+| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                      |
+| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                        |
+| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées : 107 tests verts, CI du delta attendue. Accord écrit et flux promis non reçus.                                         |
+| Publication finale | PR en brouillon. Preview exacte `74dd49f6` READY et canari réussi. Deltas de reprise/cold/progression PDF et suspension EP en qualification ; aucun import IA ni publication applicative finale. Plan de branches préparé, aucune suppression.                  |
 
 Les sections suivantes conservent la chronologie. Leurs compteurs datés ne
 doivent pas être utilisés comme l'état courant sans lire cette synthèse et
@@ -2176,3 +2176,152 @@ des textes recalculés et longueurs, mais aucun marqueur `complete`,
 `text_sha256` directement dans le résultat n'est pas un défaut : le writer
 et le validateur utilisent le hash recalculé comparé à la preuve.
 Aucun job n'est réclamé, réinitialisé ou forcé pour cet essai.
+
+## Qualification cloud du commit 74dd49f6 — 30 septembre, 10 h 52 UTC
+
+Le commit `74dd49f6c6649cecfe2c3b765c3811ef33536ebd`, poussé à
+10 h 11 UTC, passe la [CI complète](https://github.com/Aprivi-dev/immojudis/actions/runs/36700888184)
+et [CodeQL](https://github.com/Aprivi-dev/immojudis/actions/runs/36700888139).
+Python 3.11 et 3.12 comptent chacune 2 005 succès et 18 tests ignorés ; le
+Web compte 1 336 succès et cinq tests ignorés, avec 87 parcours Playwright.
+Les 200 migrations et les 1 481 assertions de 79 fichiers pgTAP passent,
+sans dérive. Audits, build, budgets, catalogue HTTP et intégration inbound
+sont verts. Le budget compte 1 498 lignes pour le plus grand module surveillé,
+sous le plafond inchangé de 1 500.
+
+La preview `dpl_GKMw4np3KSLTY5Qb5CC4tdF4kdPP` est READY sur ce SHA
+exact. L'accueil et le catalogue répondent 200 avec `x-robots-tag: noindex` ;
+le cron inbound sans authentification répond 401 et le webhook en GET 405.
+Aucun POST, envoi, import ou upload n'a été effectué.
+
+Le tag `immojudis-workers-74dd49f6` pointe sur ce SHA. Le ruleset actif
+`24240212`, sans bypass, interdit sa modification et sa suppression ainsi
+que celles de la future référence cold. Le [canari](https://github.com/Aprivi-dev/immojudis/actions/runs/36702119440)
+est déclenché à 10 h 23 UTC et reste en attente à 10 h 51 derrière le
+worker automatique Licitor. La référence cold n'est pas encore créée.
+Aucun worker n'est annulé ; le routage automatique reste sur `f695a739`.
+
+L'[audit public AGRASC/Notaires](https://github.com/Aprivi-dev/immojudis/actions/runs/36702398918)
+réussit sur le même tag, sans Supabase ni IA. Notaires parcourt une page VAE
+et 35 pages VNI : 832 lignes parsées et validées, toutes émises, aucune
+exclusion ou erreur. Le certificat opérationnel API du connecteur est vrai ;
+le certificat HTML générique n'est pas applicable à cet inventaire API.
+AGRASC visite toutes les pages 0 à 6, émet 12 URL valides, sans exclusion
+ni échec. Parmi 38 cartes, 25 archives vendues sans identifiant représentent
+26 occurrences. Le périmètre adressable est certifié ; les certificats
+global et toutes-annonces restent faux avec `public_cards_without_identifiers`.
+Les deux certificats DB restent faux : cet audit ne persiste pas les annonces.
+
+La relecture du delta suivant confirme qu'une génération PDF déterministe
+peut créer une seule tâche de reprise, en conservant les anciennes tentatives.
+Elle découvre aussi que les anciennes tâches facts/display épuisées peuvent
+conserver leur hash après un vrai succès PDF lorsque le SHA fichier reste
+identique. Cette reprise est en correction ; elle doit dépendre d'une preuve
+documentaire complète et rester stable entre les scans. Le scénario PostgreSQL
+doit être exécuté dans la base jetable de CI avant qualification.
+
+Une lecture des seuls noms des variables Vercel Production à 10 h 50 confirme
+que `INFORMATION_AGENT_PORTAL_SECRET` est toujours absent. Aucun ajout ni
+contournement du refus automatique d'autorisation n'a été tenté.
+
+## File pendant la collecte Licitor — 30 septembre, 10 h 54 UTC
+
+Avec les mêmes prédicats que le relevé de 09 h 50, la file compte 6 630
+tâches ouvertes, dont 6 607 dues réessayables, aucune running, 2 676 de plus
+de 48 heures encore réessayables et 19 épuisées. Les tâches dues se répartissent
+en 3 434 descriptions, 86 faits, 465 PDF et 2 622 détails source ; les anciennes
+réessayables en 600, 25, 29 et 2 022. La collecte en cours crée de nouvelles
+révisions : ce relevé ne prouve pas une résorption durable.
+
+À 10 h 55, le run automatique Licitor indique `phase=publishing` ; 527
+ventes Licitor ont été mises à jour sur les 45 dernières minutes, la dernière
+à 10 h 55 min 17 s. La collecte progresse réellement. Le canari candidat
+encore en attente n'est pas l'auteur de ces écritures.
+
+Le smoke public sur `https://immojudis.com` réussit sur les cinq endpoints,
+avec HTTP 200 et corrélation `x-request-id`. La route canonique
+`/api/cron/information-agent-inbound` répond toujours 404 et le webhook Resend
+refuse GET avec 405. Ces lectures ne déclenchent aucun traitement entrant.
+La commande locale de vérification des variables Production ne dispose pas
+des identifiants nécessaires ; son échec ne démontre pas une absence de ces
+variables dans Vercel.
+
+## Verrou Enchères Publiques — 30 septembre, 11 h 16 UTC
+
+La relecture trouve des chemins manuels encore activés par défaut malgré
+la suspension du planificateur. La configuration passe à deux paramètres
+désactivés par défaut : `ENABLE_ENCHERES_PUBLIQUES_BENCHMARK` et
+`ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED`. Collecte, détails source, audits
+qualité/couverture, refresh de procédures et probe navigateur refusent avant
+accès réseau tant que les deux ne sont pas explicitement configurés.
+L'audit global couvre neuf sources actives ; Enchères Publiques exige un
+groupe explicitement sélectionné. Les 107 tests ciblés passent, sept sont
+ignorés ; Ruff, syntaxe YAML et refus du probe avant lancement de navigateur
+sont vérifiés. Ce delta doit encore passer sa propre CI.
+
+La lecture de production à 11 h 15 montre `enabled=true`,
+`availability=access_denied`, avec une suspension expirant le 1er octobre
+à 01 h 02 UTC. Dans la maintenance interne autorisée, une mise à jour
+conditionnelle de cette seule source met `enabled=false` et conserve son
+availability ainsi que sa suspension. Elle ne supprime ni annonces ni tâches
+et ne remet aucune tentative à zéro. Les 21 détails source en attente ne
+seront plus relancés automatiquement à l'expiration de la suspension.
+
+## Complément de relecture PDF — 30 septembre, 11 h 20 UTC
+
+Une preuve complète mixte (un texte exploitable et un PDF vide terminal)
+était courante selon la freshness, mais ne faisait pas tourner le hash des
+dépendances épuisées. Le helper est corrigé pour retenir uniquement les
+pièces extractables après exclusions validées ; le manifeste entier reste
+dans la révision. Deux régressions locales passent, deux scénarios PostgreSQL
+attendent la CI ; les suites Supabase et reliability comptent 62 et 28 succès.
+
+La relecture confirme deux autres limites à corriger avant qualification :
+le fallback persisté ne restaure pas le cache local et perd ses marqueurs de
+provenance lors d'une réouverture du cache ; la sélection de six documents
+reprend les mêmes pièces sans progression sur un manifeste de 16 PDF.
+Le job PDF peut alors être completed sur ces six pièces alors que la fraîcheur
+du manifeste entier reste fausse. La restauration cold strictement complète
+et la progression bornée sont en préparation, sans augmentation des plafonds.
+
+## Canari 74dd49f6 — 30 septembre, 11 h 17 UTC
+
+Le [run 36702119440](https://github.com/Aprivi-dev/immojudis/actions/runs/36702119440)
+réussit : job GitHub de 10 h 57 min 29 s à 11 h 17 min 36 s, boucle worker
+de 1 141,8 secondes sur un budget de 1 200. L'arrêt `finalization_margin`
+respecte la marge de 60 secondes. Le plafond reste à 90 tâches ; 31 claims
+uniques sont observés, dont 16 détails source et 15 enrichissements généraux.
+Le relevé des claims compte 26 completed, quatre failed et un queued, aucun
+cancelled, running ou manquant. Aucun lease perdu ou stale n'est observé.
+Le plus long lot de deux détails source prend 40,1 secondes ; leur moyenne
+est de 11,2 secondes par tâche.
+
+Le diagnostic conserve deux échecs PDF explicites : 21 pages OCR en échec
+sur une pièce `pv_huissier`, et la page 22 sur un autre PDF, tous deux avec
+`status=incomplete` et `reason=ocr_failed`. Un timeout de `robots.txt` est
+observé pour un détail source. La quatrième tâche failed n'a pas encore une
+cause distincte établie par le log filtré ; une lecture de son vrai état reste
+requise. Aucun signal invalid JSON, quota, cooldown ou deadline LLM n'apparaît.
+Onze appels fournisseur et onze écritures de cache LLM répondent HTTP 201.
+Les checkpoints documents, textes PDF/Docling et LLM sont sauvegardés,
+pour 73 804 035 octets de cache.
+
+Le log ne fournit aucun dossier au manifeste entier de six PDF ou moins
+avec textes modernes explicitement complets. Il ne qualifie donc pas encore
+l'essai cold complet. Ce canari concerne uniquement `74dd49f6`, sans les
+deltas de génération, réchauffement cold, progression et verrou EP en cours.
+
+## Restauration du cache complet — 30 septembre, 11 h 30 UTC
+
+Le mapping de textes persistés strictement validés est récupéré une seule
+fois et transmis à l'upsert des documents. Les extractions sont écrites avant
+la restauration atomique du cache local, elle-même avant la décision de queue.
+Le JSON conserve `_persisted_pdf_proof` et `_persisted_verified_at` lorsqu'ils
+existent ; `file_path` reste nul. Le manifeste legacy ou partiel n'est pas
+accepté par ce fallback complet. Une erreur d'écriture laisse le cache précédent
+intact et ne prétend pas avoir restauré le nouveau cache.
+
+Les trois régressions cold et la suite PDF/Supabase isolée de 164 tests
+passent. La reprise de génération compte deux succès locaux et deux scénarios
+PostgreSQL en attente de CI. La relecture indépendante de ce delta cold est
+en cours ; la progression par lots reste en implémentation.

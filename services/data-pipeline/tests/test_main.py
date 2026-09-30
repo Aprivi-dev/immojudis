@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+from src.config import EncheresPubliquesAccessNotAuthorized
 from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
@@ -100,6 +101,43 @@ def test_run_scraper_uses_killable_source_worker_when_enabled(monkeypatch) -> No
         "timeout_seconds": 17.0,
         "on_batch": progressive_publisher,
     }
+
+
+@pytest.mark.parametrize("source", ["encheres_publiques", "all"])
+def test_enabled_scrapers_refuses_ep_before_returning_a_fetch_callable(source: str) -> None:
+    settings = {
+        **_settings(),
+        "enable_encheres_publiques_benchmark": source == "all",
+        "encheres_publiques_access_authorized": False,
+    }
+
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        main._enabled_scrapers(source, settings, {}, {})
+
+
+def test_enabled_scrapers_requires_both_ep_switches_before_exposing_source() -> None:
+    settings = {
+        **_settings(),
+        "enable_encheres_publiques_benchmark": True,
+        "encheres_publiques_access_authorized": True,
+    }
+
+    scrapers = main._enabled_scrapers("encheres_publiques", settings, {}, {})
+
+    assert set(scrapers) == {"encheres_publiques"}
+
+
+def test_pipeline_refuses_ep_before_creating_a_run_without_authorization(monkeypatch) -> None:
+    settings = {
+        **_settings(),
+        "enable_encheres_publiques_benchmark": False,
+        "encheres_publiques_access_authorized": False,
+    }
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: pytest.fail("run must not be created"))
+
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        main.run_pipeline(main.PipelineOptions(source="encheres_publiques", upsert=True))
 
 
 def test_run_scraper_keeps_thread_callable_when_isolation_disabled() -> None:

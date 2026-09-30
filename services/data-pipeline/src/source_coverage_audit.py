@@ -17,6 +17,7 @@ from urllib.parse import urljoin
 import httpx
 
 from src.catalogue_proof import canonical, certify_catalogue, public_page_proof, record_id
+from src.config import load_settings, require_encheres_publiques_access
 from src.sources.agrasc_urls import classify_agrasc_operator_url
 from src.sources.common import parse_html
 
@@ -72,6 +73,10 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
               max_requests: int = 300, max_seconds: int = 600, resolve_missing_locations: bool = False) -> dict:
     if source not in SOURCES or not 1 <= max_pages <= 150 or not 1 <= max_requests <= 500 or not 1 <= max_seconds <= 900:
         raise ValueError('Invalid source or audit budget')
+    if source == "encheres_publiques":
+        # Guard before importing the collector or installing the audit send
+        # hook, so an unauthorized audit cannot reach the provider at all.
+        require_encheres_publiques_access(load_settings())
     # Configuration is read after clearing credentials. No enrichment runner is imported.
     for key in ('SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_DB_URL', 'REPLICATE_API_TOKEN'):
         os.environ[key] = ''
