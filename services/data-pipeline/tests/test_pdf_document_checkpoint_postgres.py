@@ -159,6 +159,36 @@ def test_checkpoint_preparation_rejects_legacy_cache(monkeypatch, tmp_path: Path
     assert result[0]["cache_version"] == PDF_TEXT_CACHE_VERSION
 
     cache_path = tmp_path / f"{storage.sale_storage_id(sale)}.json"
+    modern_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert modern_payload[0]["text_sha256"] == result[0]["text_sha256"]
+    missing_hash_input = dict(result[0])
+    missing_hash_input.pop("text_sha256")
+    pdf_fact_extraction._write_pdf_text_cache(sale, [missing_hash_input])
+    written_without_hash = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert "text_sha256" not in written_without_hash[0]
+    assert storage._prepare_pdf_document_checkpoint(sale) is None
+
+    modern_payload[0].pop("text_sha256")
+    modern_payload[0]["text_sha256"] = ""
+    cache_path.write_text(json.dumps(modern_payload), encoding="utf-8")
+    assert storage._prepare_pdf_document_checkpoint(sale) is None
+
+    extraction_row = {
+        "source_url": sale.source_url,
+        "provider": storage.PDF_EXTRACTION_PROVIDER,
+        "model": storage.PDF_EXTRACTION_MODEL,
+        "schema_version": storage.PDF_EXTRACTION_SCHEMA_VERSION,
+        "result": [dict(result[0])],
+    }
+    for invalid_hash in (None, ""):
+        item = extraction_row["result"][0]
+        if invalid_hash is None:
+            item.pop("text_sha256", None)
+        else:
+            item["text_sha256"] = invalid_hash
+        assert storage._validated_persisted_pdf_progress(sale, extraction_row) is None
+        item["text_sha256"] = result[0]["text_sha256"]
+
     cache_path.write_text(
         json.dumps([{**result[0], "cache_version": "legacy"}]),
         encoding="utf-8",
@@ -264,6 +294,94 @@ def test_progress_checkpoint_keeps_success_pages_with_retryable_diagnostics(
     ) is not None
 
 
+def test_blank_page_checkpoint_roundtrips_empty_text_hash(monkeypatch, tmp_path: Path) -> None:
+    source_url = "https://example.test/pdf-documentary-checkpoint/blank-prefix"
+    monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
+    monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", tmp_path)
+    sale, _ = _checkpoint_fixture(tmp_path, source_url)
+    document = sale.documents[0]
+    local_pdf = tmp_path / "blank-prefix.pdf"
+    local_pdf.write_bytes(b"%PDF-1.4 blank checkpoint")
+    file_sha = hashlib.sha256(local_pdf.read_bytes()).hexdigest()
+    document["sha256"] = file_sha
+    payload = _modern_payload(document, 0)
+    payload.update(
+        {
+            "file_path": str(local_pdf),
+            "sha256": file_sha,
+            "text": "",
+            "text_sha256": "",
+            "text_chars": 0,
+            "page_text_chars": 0,
+            "page_count": 2,
+            "complete": False,
+            "extraction_status": "incomplete",
+            "failed_pages": [2],
+            "pages": [
+                {"page": 1, "text": "", "chars": 0, "status": "blank_excluded", "retryable": False},
+            ],
+        }
+    )
+    _store_document_analysis_status(
+        sale,
+        [document],
+        [payload],
+        merged_pdf_texts=[payload],
+    )
+    pdf_fact_extraction._write_pdf_text_cache(sale, [payload])
+    cache_path = tmp_path / f"{storage.sale_storage_id(sale)}.json"
+    cached_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert cached_payload[0]["text_sha256"] == ""
+    cached_payload[0].pop("text_sha256")
+    cache_path.write_text(json.dumps(cached_payload), encoding="utf-8")
+    assert storage._prepare_pdf_document_checkpoint(sale) is None
+    cached_payload[0]["text_sha256"] = hashlib.sha256(b"").hexdigest()
+    cache_path.write_text(json.dumps(cached_payload), encoding="utf-8")
+    assert storage._prepare_pdf_document_checkpoint(sale) is None
+    cached_payload[0]["text_sha256"] = ""
+    cache_path.write_text(json.dumps(cached_payload), encoding="utf-8")
+
+    prepared = storage._prepare_pdf_document_checkpoint(sale)
+    assert prepared is not None
+    _, sanitized = prepared
+    row = {
+        "source_url": sale.source_url,
+        "provider": storage.PDF_EXTRACTION_PROVIDER,
+        "model": storage.PDF_EXTRACTION_MODEL,
+        "schema_version": storage.PDF_EXTRACTION_SCHEMA_VERSION,
+        "result": sanitized,
+        "updated_at": "2026-09-30T00:00:00+00:00",
+    }
+    restored = storage._validated_persisted_pdf_progress(sale, row)
+    assert restored is not None
+    assert restored[0]["text"] == ""
+    assert restored[0].get("text_sha256", "") == ""
+
+    row_item = row["result"][0]
+    for invalid_hash in (None, hashlib.sha256(b"").hexdigest()):
+        if invalid_hash is None:
+            row_item.pop("text_sha256", None)
+        else:
+            row_item["text_sha256"] = invalid_hash
+        assert storage._validated_persisted_pdf_progress(sale, row) is None
+        row_item["text_sha256"] = ""
+
+    for invalid_hash in (None, hashlib.sha256(b"").hexdigest()):
+        invalid_analysis = sale.raw_payload["document_analysis"]
+        progress_item = invalid_analysis["document_progress"][0]
+        proof_item = invalid_analysis["cache_proof"]["documents"][0]
+        if invalid_hash is None:
+            progress_item.pop("text_sha256", None)
+            proof_item.pop("text_sha256", None)
+        else:
+            progress_item["text_sha256"] = invalid_hash
+            proof_item["text_sha256"] = invalid_hash
+        assert storage._prepare_pdf_document_checkpoint(sale) is None
+        assert storage._validated_persisted_pdf_progress(sale, row) is None
+        progress_item["text_sha256"] = ""
+        proof_item["text_sha256"] = ""
+
+
 def test_partial_restore_rejects_complete_manifest_and_legacy_local_cache(
     monkeypatch,
     tmp_path: Path,
@@ -302,7 +420,16 @@ def test_partial_restore_rejects_complete_manifest_and_legacy_local_cache(
     assert storage._validated_persisted_pdf_progress(sale, row) is None
 
 
-def test_partial_progress_checkpoint_restores_pages_after_cache_loss(monkeypatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "blank_prefix",
+    [False, True],
+    ids=["text-prefix", "blank-page-prefix"],
+)
+def test_partial_progress_checkpoint_restores_pages_after_cache_loss(
+    monkeypatch,
+    tmp_path: Path,
+    blank_prefix: bool,
+) -> None:
     """A deferred modern prefix survives aggregate-cache loss without becoming current."""
 
     db_url = os.getenv("PIPELINE_TEST_DB_URL")
@@ -355,6 +482,26 @@ def test_partial_progress_checkpoint_restores_pages_after_cache_loss(monkeypatch
             ],
         }
     )
+    if blank_prefix:
+        partial.update(
+            {
+                "text": "",
+                "text_sha256": "",
+                "text_chars": 0,
+                "page_text_chars": 0,
+                "page_count": 2,
+                "failed_pages": [2],
+                "pages": [
+                    {
+                        "page": 1,
+                        "text": "",
+                        "chars": 0,
+                        "status": "blank_excluded",
+                        "retryable": False,
+                    }
+                ],
+            }
+        )
     _store_document_analysis_status(
         sale,
         documents,
@@ -407,6 +554,7 @@ def test_partial_progress_checkpoint_restores_pages_after_cache_loss(monkeypatch
             ).fetchone()[0]
             assert extraction[0]["complete"] is False
             assert extraction[0]["pages"][0]["text"] == partial["pages"][0]["text"]
+            assert extraction[0]["pages"][0]["chars"] == partial["pages"][0]["chars"]
 
             aggregate_cache.unlink()
             page_cache_dir.mkdir(parents=True, exist_ok=True)
@@ -428,7 +576,9 @@ def test_partial_progress_checkpoint_restores_pages_after_cache_loss(monkeypatch
             ).hexdigest()
             restored_page = page_cache_dir / "pages" / cache_key / "1.json"
             assert restored_page.exists()
-            assert json.loads(restored_page.read_text(encoding="utf-8"))["text"] == partial["pages"][0]["text"]
+            restored_page_payload = json.loads(restored_page.read_text(encoding="utf-8"))
+            assert restored_page_payload["text"] == partial["pages"][0]["text"]
+            assert restored_page_payload["chars"] == partial["pages"][0]["chars"]
         finally:
             db.rollback()
 

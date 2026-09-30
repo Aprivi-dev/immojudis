@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 17 h 24 UTC
+## Synthèse actuelle — 30 septembre, 17 h 47 UTC
 
-| Chantier           | État vérifié                                                                                                                                                                                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `a7b9d2cc` : CI en échec sur trois fixtures PostgreSQL et audit Next.js critique ; CodeQL, Playwright et 1 481 assertions pgTAP passent. Fixtures corrigées ; Next.js 16.3.8 verrouillé et audit production à zéro vulnérabilité. Nouvelle CI exacte requise.   |
-| Santé              | À 17 h 15, quatre alertes ouvertes : inbound absent, fraîcheur EImmo, enrichissement stalled et import Notaires interrompu. Le contrôle de santé s’exécute ; la santé du pipeline n’est pas qualifiée.                                                          |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari `0bff122a` techniquement réussi, sans durabilité SQL des interruptions OCR. Correctif poussé en `a7b9d2cc`, non qualifié ; routage automatique inchangé.                                     |
-| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                            |
-| Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB. |
-| Documents          | Progression et revalidation 6+6+4 passent en tests. Correctif des interruptions OCR poussé, fixture de restauration PG corrigée. Tests PostgreSQL réels, nouvelle qualification et essais warm/cold requis.                                                     |
-| Capacité           | Relevé à 17 h 14 : 5 993 ouverts, 5 967 dus réessayables, 2 649 anciens sous plafond, zéro running/stale et 19 épuisés. Valorisation : zéro ouvert. Stock ouvert +18 et PDF épuisés +7 depuis 16 h 31 ; résorption durable non démontrée.                       |
-| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                              |
-| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                      |
-| Inbound            | Nouvelle route non publiée, cron absent. Cause courante de l'alerte critique `cron.stale` confirmée : `information-agent-inbound`. Canari canonique authentifié puis activation et santé requis après déploiement.                                              |
-| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                          |
-| Publication finale | PR en brouillon. Preview `a7b9d2cc` READY : accueil/catalogue 200, inbound sans auth 401, webhook GET 405. Canonique inbound 404. Mise à jour Next.js et fixtures en attente de CI exacte ; aucun import IA, publication finale ou nettoyage.                   |
+| Chantier           | État vérifié                                                                                                                                                                                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL et CI          | `b95ea5a9` : CI et CodeQL verts, 2 080 tests Python par version, 1 481 assertions pgTAP, Web Next.js 16.3.8 et audit production à zéro vulnérabilité. Nouveau correctif de checkpoint après page blanche vérifié localement ; CI exacte requise pour ce delta.         |
+| Santé              | À 17 h 15, quatre alertes ouvertes : inbound absent, fraîcheur EImmo, enrichissement stalled et import Notaires interrompu. Le contrôle de santé s’exécute ; la santé du pipeline n’est pas qualifiée.                                                                 |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari `0bff122a` techniquement réussi, sans durabilité SQL des interruptions OCR. Correctifs qualifiés en CI sur `b95ea5a9` ; nouveau delta page blanche, canari et cold encore requis. Routage inchangé. |
+| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                                   |
+| Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB.        |
+| Documents          | Progression et revalidation 6+6+4 passent en tests. Checkpoint OCR et restauration après perte de cache passent en PostgreSQL réel sur `b95ea5a9`. Nouveau cas page blanche couvert par PDF réel et variante PG ; qualification exacte et warm/cold encore requis.     |
+| Capacité           | Relevé à 17 h 14 : 5 993 ouverts, 5 967 dus réessayables, 2 649 anciens sous plafond, zéro running/stale et 19 épuisés. Valorisation : zéro ouvert. Stock ouvert +18 et PDF épuisés +7 depuis 16 h 31 ; résorption durable non démontrée.                              |
+| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                                     |
+| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                             |
+| Inbound            | Nouvelle route non publiée, cron absent. Cause courante de l'alerte critique `cron.stale` confirmée : `information-agent-inbound`. Canari canonique authentifié puis activation et santé requis après déploiement.                                                     |
+| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                                 |
+| Publication finale | PR en brouillon. Preview `b95ea5a9` READY : accueil/catalogue 200, inbound sans auth 401, webhook GET 405. Canonique inbound 404. Next.js 16.3.8 qualifié par le build CI, non publié en production ; aucun import IA, publication finale ou nettoyage.                |
 
 ### Qualification des textes stockés — 30 septembre, 12 h 01 UTC
 
@@ -2806,3 +2806,64 @@ Les tables de revue IA et information_agent restent vides et privées.
 Les claims de faits conservés sont candidate, non publiables. Aucun import
 ni contournement public de quarantaine n'est constaté. Les deux entrées
 externes et les critères de capacité/couverture restent en attente.
+
+## Qualification b95ea5a9 — 30 septembre, 17 h 47 UTC
+
+La [CI exacte](https://github.com/Aprivi-dev/immojudis/actions/runs/36751602755)
+et le [CodeQL exact](https://github.com/Aprivi-dev/immojudis/actions/runs/36751602506)
+sont verts sur `b95ea5a98afbffc0c83437c2d9d4f49f686e5382`.
+Python 3.11 et 3.12 comptent chacune 2 080 succès, 18 ignorés et un warning.
+Les scénarios PostgreSQL de reprise source, restauration documentaire et
+verrou réel sont effectivement exécutés, sans skip. Le timeout de verrou
+attendu et le checkpoint OCR sont observés dans les logs des deux versions.
+Ruff et pip-audit passent, sans vulnérabilité connue.
+
+Le Web passe audit production (zéro vulnérabilité), typecheck, lint,
+224 fichiers Vitest et 1 336 tests réussis (cinq ignorés), invariants et
+build Next.js 16.3.8 : 103/103 pages et budgets verts. PostgreSQL : 79 fichiers
+pgTAP, 1 481 assertions, deux tests d'intégration et aucune dérive.
+Playwright compte 87 succès et huit ignorés. Les journaux privés de ce SHA
+sont conservés sous immojudis-ci-36751602755 et immojudis-codeql-36751602506.
+Les dépendances locales partagées restent inchangées ; la qualification
+Next.js provient du build CI installé depuis le nouveau verrou.
+
+La [preview exacte b95ea5a9](https://immojudis-dezt-hsxl25k3n-antoine-s-projects7.vercel.app)
+est READY (`dpl_B1dKucfSL7sWy8etRGtZykpKsCuS`). Les GET sur les routes
+vérifiées `/`, `/sales`, `/api/cron/information-agent-inbound` et
+`/api/webhooks/resend/information-agent` donnent 200/200/401/405, avec noindex.
+Aucun POST, import, upload ou envoi à un interlocuteur n'est effectué.
+
+### Checkpoint après page blanche — 30 septembre, 17 h 47 UTC
+
+La relecture suivante identifie un cas distinct : un checkpoint moderne
+interrompu après une page objectivement blanche possède un texte et un hash
+vides, avec zéro caractère. clean_text transformait son hash vide en None,
+ce qui rejetait sa persistance et sa restauration malgré ses preuves de pages.
+Le hash vide est désormais conservé seulement après validation du payload
+moderne et de ses pages, et rapproché du manifeste text_present=false,
+text_chars=0. Les preuves legacy, les incohérences de texte et de couverture
+et les marqueurs contradictoires restent rejetés.
+
+Le cache agrégé conserve désormais text_sha256 seulement lorsqu'il existe
+explicitement dans le payload du writer. La garde de checkpoint ne dérive
+plus un hash de remplacement : texte non vide avec hash absent/vide et
+texte vide avec hash absent/erroné sont rejetés. Le manifeste vide exige
+aussi un marqueur text_sha256="" explicite. Les tests négatifs exercent
+writer et reader, y compris un manifeste et sa preuve altérés ensemble.
+Le prédicat général de progression et les payloads legacy restent inchangés.
+
+Un PDF PyMuPDF réel de deux pages déclenche la deadline après sa première
+page blanche et avant l'OCR de la seconde. Il exige le SHA réel du fichier,
+blank_excluded/0 caractères, failed_pages=[2], manifeste incomplet et aucun
+last_successful_check_at. Après perte du cache de pages et restauration
+de la preuve moderne, aucun OCR ne vise la page blanche et le dossier reste
+incomplet. Un roundtrip de validation du writer/reader et une variante du
+test PostgreSQL vérifient également texte/hash vides et zéro conservés dans
+JSONB après suppression des caches ; cette nouvelle variante PG reste à
+exécuter sur le prochain commit exact en CI.
+
+Suite Python locale isolée complète : 1 998 succès, 103 ignorés, sept warnings.
+Ruff et diff passent. Budgets inchangés : pdf_enrichment/queued_runner
+1 499 lignes, pdf_progress 810. Le worker automatique et l'application
+de production restent inchangés. Canari puis récupération du manifeste
+entier après perte réelle du cache restent requis après CI/CodeQL du delta.
