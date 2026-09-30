@@ -48,6 +48,7 @@ const businessModules = [
   "services/data-pipeline/src/asset_premium_analysis.py",
   "services/data-pipeline/src/asset_scoring.py",
   "services/data-pipeline/src/asset_surface_normalization.py",
+  "services/data-pipeline/src/pdf_document_types.py",
   "services/data-pipeline/src/pdf_document_selection.py",
   "services/data-pipeline/src/pdf_enrichment.py",
   "services/data-pipeline/src/pdf_page_analysis.py",
