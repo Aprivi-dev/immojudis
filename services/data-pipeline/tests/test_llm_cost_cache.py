@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -13,6 +14,7 @@ from src.enrichment.extract_structured import LLMEnrichmentDeferred, enrich_sale
 from src.enrichment.prompts import DISPLAY_DESCRIPTION_SYSTEM_PROMPT
 from src.models import AuctionSale
 from src.pdf_enrichment import sale_storage_id
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.pipeline_usage import PINNED_MODEL
 
 
@@ -306,37 +308,31 @@ def _document_sale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AuctionSa
                 "https://example.test/sale": {"evidence_fingerprint": "source-a"},
                 "https://example.test/merged": {"evidence_fingerprint": "merged-a"},
             },
-            "document_analysis": {
-                "documents_extracted": 1,
-                "failed_documents": 0,
-                "input_fingerprint": "documents-a",
-                "profiles": [
-                    {
-                        "url": "https://example.test/pv.pdf",
-                        "sha256": "pdf-a",
-                        "extraction_status": "extracted",
-                        "complete": True,
-                    }
-                ],
-            },
         },
     )
+    from src.pdf_document_selection import _store_document_analysis_status
+    text = "Surface documentée."
+    pdf_payload = {
+        "url": sale.documents[0]["url"],
+        "label": "PV",
+        "text": text,
+        "sha256": hashlib.sha256(b"fixture-pdf-bytes").hexdigest(),
+        "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "text_chars": len(text),
+        "text_present": True,
+        "cache_version": PDF_TEXT_CACHE_VERSION,
+        "complete": True,
+        "extraction_status": "extracted",
+        "extraction_method": "fixture",
+        "failed_pages": [],
+        "page_count": 1,
+        "http_checked_at": datetime.now(UTC).isoformat(),
+    }
     (tmp_path / f"{sale_storage_id(sale)}.json").write_text(
-        json.dumps(
-            [
-                {
-                    "url": "https://example.test/pv.pdf",
-                    "label": "PV",
-                    "text": "Surface documentée.",
-                    "sha256": "pdf-a",
-                    "complete": True,
-                    "extraction_status": "extracted",
-                    "failed_pages": [],
-                }
-            ]
-        ),
+        json.dumps([pdf_payload]),
         encoding="utf-8",
     )
+    _store_document_analysis_status(sale, sale.documents, [pdf_payload])
     contexts = extraction.load_llm_fact_context_chunks_for_sale(sale, chunk_chars=3000, max_chunks=0)
     settings = load_settings()
     sale.raw_payload["llm_fact_input_key"] = extraction._fact_input_cache_key(
@@ -407,12 +403,18 @@ def test_verified_facts_for_nonempty_pdf_survive_empty_pdf_and_cache_loss(tmp_pa
         "url": "https://example.test/empty.pdf",
         "label": "PDF vide",
         "text": "",
-        "sha256": "pdf-empty",
+        "sha256": hashlib.sha256(b"empty-fixture-pdf-bytes").hexdigest(),
+        "text_sha256": "",
+        "text_chars": 0,
+        "text_present": False,
+        "cache_version": PDF_TEXT_CACHE_VERSION,
         "complete": True,
-        "extraction_status": "extracted",
+        "extraction_status": "empty",
+        "extraction_method": "fixture",
         "failed_pages": [],
         "pages": [{"page": 1, "text": "", "status": "blank_excluded"}],
         "page_count": 1,
+        "http_checked_at": datetime.now(UTC).isoformat(),
     }
     sale.documents.append({"url": empty_pdf["url"], "label": empty_pdf["label"]})
     cache_path.write_text(json.dumps([valid_pdf, empty_pdf]), encoding="utf-8")

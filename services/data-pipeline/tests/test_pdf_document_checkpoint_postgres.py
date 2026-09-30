@@ -406,7 +406,7 @@ def test_documentary_checkpoint_is_guarded_and_atomic(monkeypatch, tmp_path: Pat
                 assert extraction_count == 1
                 extraction = db.execute(
                     """
-                    select provider, model, schema_version, result
+                    select provider, model, schema_version, confidence, result
                     from public.auction_extractions where source_url=%s
                     """,
                     (source_url,),
@@ -416,9 +416,10 @@ def test_documentary_checkpoint_is_guarded_and_atomic(monkeypatch, tmp_path: Pat
                     storage.PDF_EXTRACTION_MODEL,
                     storage.PDF_EXTRACTION_SCHEMA_VERSION,
                 )
-                assert extraction[3][0]["file_path"] is None
-                assert extraction[3][0]["complete"] is True
-                assert extraction[3][0]["cache_version"] == PDF_TEXT_CACHE_VERSION
+                assert extraction[3]["document_count"] == 1
+                assert extraction[4][0]["file_path"] is None
+                assert extraction[4][0]["complete"] is True
+                assert extraction[4][0]["cache_version"] == PDF_TEXT_CACHE_VERSION
                 cache_path = tmp_path / f"{storage.sale_storage_id(sale)}.json"
                 cache_path.unlink()
                 monkeypatch.setattr(

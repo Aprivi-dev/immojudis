@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 13 h 37 UTC
+## Synthèse actuelle — 30 septembre, 14 h 43 UTC
 
 | Chantier           | État vérifié                                                                                                                                                                                                                                                    |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `a73b58e7` : CI et CodeQL verts, 2 013 tests Python par version, 1 336 tests Web, 87 Playwright, 200 migrations et 1 481 assertions pgTAP. Les corrections suivantes de reprise, cache froid et progression PDF doivent passer leur propre CI.                  |
+| SQL et CI          | `aca5b069` : CodeQL, Web, Playwright et migrations verts. Python échoue sur cinq adaptations JSON PostgreSQL et quatre fixtures PDF anciennes. Correctifs ciblés appliqués ; nouvelle qualification exacte requise.                                             |
 | Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                            |
 | Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `74dd49f6` réussi en 1 141,8 s : 31 claims, 26 completed, quatre failed, un queued, aucun running. Les deltas suivants restent à qualifier ; routage automatique inchangé.            |
 | Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                            |
 | Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB. |
 | Documents          | Progression de 16 PDF et revalidation HTTP en 6+6+4, retrait du texte après 404, reprise cold et garde de génération vérifiés localement : 315 succès, 15 scénarios PostgreSQL réservés à CI. Cache froid réel encore non qualifié.                             |
-| Capacité           | Au relevé de 11 h 34 : 5 978 jobs ouverts, 5 952 dus réessayables, 2 659 anciens encore sous le plafond d'essais, un en cours et 16 épuisés. Ce différentiel inclut plusieurs workers et révisions ; résorption durable non démontrée.                          |
+| Capacité           | Au relevé de 13 h 47 : 5 952 jobs ouverts, 5 925 dus réessayables, 2 649 anciens encore sous le plafond d'essais, aucun en cours et dix épuisés. Résorption durable non démontrée ; ce relevé ne mesure pas l'effet du commit candidat.                         |
 | Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                              |
 | Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                      |
-| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                        |
+| Inbound            | Nouvelle route non publiée, cron absent. Cause courante de l'alerte critique `cron.stale` confirmée : `information-agent-inbound`. Canari canonique authentifié puis activation et santé requis après déploiement.                                              |
 | Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                          |
-| Publication finale | PR en brouillon. Preview exacte `a73b58e7` READY ; canari de son parent `74dd49f6` réussi. Deltas de reprise/cold/progression PDF en qualification ; aucun import IA ni publication applicative finale. Plan de branches préparé, aucune suppression.           |
+| Publication finale | PR en brouillon. Preview exacte `aca5b069` READY ; Python CI à corriger avant tout nouveau canari. Aucun import IA ni publication applicative finale. Plan de branches préparé, aucune suppression.                                                             |
 
 ### Qualification des textes stockés — 30 septembre, 12 h 01 UTC
 
@@ -2472,3 +2472,101 @@ surveillés. `pdf_enrichment.py` respecte les 1 500 lignes selon le comptage du
 script de CI ; le seuil n'est pas augmenté. Ces résultats locaux ne qualifient
 pas encore un canari de production ni la restauration d'un dossier entier
 après une absence de cache GitHub réellement observée.
+
+## Verdict CI et relevé de capacité — 30 septembre, 13 h 55 UTC
+
+Le commit `aca5b06927a926faa99f3240395a5bae3b6a2798` est poussé à
+13 h 40 UTC. Sa [CI](https://github.com/Aprivi-dev/immojudis/actions/runs/36723421664)
+échoue uniquement dans les deux étapes Python : chacune compte 2 045 succès,
+18 ignorés et neuf échecs. Cinq scénarios checkpoint échouent sur l'adaptation
+de dictionnaires/listes bruts vers les colonnes JSONB `confidence` et `result`.
+Quatre tests de freshness/main utilisent des fixtures PDF legacy désormais
+rejetées par le contrat moderne. Les corrections ciblées enveloppent uniquement
+ces deux paramètres avec `Jsonb` et modernisent les fixtures avec le vrai
+writer ; elles n'assouplissent pas la validation du produit ni les autres
+colonnes `confidence` numériques. La vérification du prochain commit reste
+requise.
+
+CodeQL, le Web, ses budgets, Playwright, les migrations/pgTAP, les dépendances
+et l'invariant de planification passent. La preview
+`dpl_FQeZQyfJjVsNCbbcFPSinZM417wZ` est READY sur le SHA exact. Aucun nouveau
+canari ni promotion du worker n'est lancé sur la CI en échec.
+
+Le relevé en lecture seule de 13 h 47 reprend les prédicats de 11 h 34 :
+
+| Famille        | Ouvertes | Dues réessayables | Anciennes réessayables >48 h | Épuisées |
+| -------------- | -------: | ----------------: | ---------------------------: | -------: |
+| Descriptions   |    2 879 |             2 879 |                          598 |        0 |
+| Faits          |       98 |                88 |                           23 |        6 |
+| PDF            |      374 |               363 |                           30 |        4 |
+| Détails source |    2 601 |             2 595 |                        1 998 |        0 |
+| Total          |    5 952 |             5 925 |                        2 649 |       10 |
+
+« Ouvertes » comprend queued/failed/running. « Dues réessayables » comprend
+queued/failed sous plafond, avec échéance inférieure ou égale au relevé ;
+une échéance nulle ou future est exclue. « Anciennes réessayables » comprend
+les trois états ouverts sous plafond créés depuis plus de 48 heures,
+sans filtre d'échéance. Aucun running ni lease périmé n'est observé. Ce
+snapshot ne mesure pas l'effet du candidat, encore non exécuté.
+
+Le run automatique d'enrichissement de 13 h 16 à 13 h 37 réussit techniquement
+avec `partial_success` : 41 completed, 13 failed et 21 queued. Cessions État
+termine un inventaire complet entre 12 h 46 et 13 h 02. Ces résultats ne
+démontrent pas la résorption durable des tâches anciennes.
+
+L'alerte `cron.stale` est justifiée, et non simplement non réconciliée : son
+détail courant nomme uniquement `information-agent-inbound`, attendu dans
+les dix dernières minutes. Aucun cron ni run opérationnel inbound n'est
+installé. Les crons santé et rétention exécutent régulièrement leurs cadences
+de 15 et cinq minutes. Il faut publier la route, vérifier le canari canonique,
+puis activer le cron et observer sa réussite ; l'alerte ne sera pas fermée
+manuellement.
+
+## Garde de source dans les enrichissements — 30 septembre, 14 h 23 UTC
+
+La relecture du RPC courant corrige une hypothèse précédente : l'activation
+de source est vérifiée pour les détails source, mais pas pour les tâches
+générales PDF/faits/descriptions. Le compteur théorique « claimables » du
+relevé de 12 h 27 ne doit donc pas être pris pour une exécution du RPC réel.
+Le code Python ajoute une garde Enchères Publiques avant cache, appel IA,
+rejeu factuel ou publication d'une tâche générale. Les tâches concernées
+restent différées avec un motif explicite et leur tentative est restituée.
+
+La garde partagée examine le nom de source, l'URL principale, les alias et
+les URLs de pièces jointes. Elle couvre aussi les PDF liés depuis une autre
+source et chaque cible des redirections manuelles, avant résolution réseau.
+Les reprises et revalidations de descriptions ignorent explicitement les
+ventes non autorisées ; l'entrée centrale d'extraction IA vérifie la même
+garde avant de relire un cache. Aucun accès EP n'est lancé pour ces tests.
+
+La qualification cold conserve le parcours de collecte ordinaire sur une
+source autorisée : dossier redécouvert, upsert central réellement exécuté,
+cache GitHub absent dans le journal et toutes les preuves documentaires
+rematérialisées depuis `persisted_pdf_text`. Un simple passage
+`enrichment_only`, un hash d'enrichissement déjà connu ou `pdf_targets=0`
+ne suffisent pas à certifier ce parcours.
+
+## Vérification complète du correctif — 30 septembre, 14 h 27 UTC
+
+Après correction de l'encodage JSONB et des quatre fixtures, la suite Python
+complète isolée passe avec 1 985 succès et 100 ignorés. Les scénarios ignorés
+requièrent des bases PostgreSQL jetables ou des caches locaux absents ;
+les scénarios pipeline PostgreSQL seront exécutés dans la CI du nouveau
+commit. Les gardes de source couvrent aussi l'entrée centrale IA et les
+reprises de descriptions. Une redirection découverte pendant le PDF provoque
+une restitution de la claim avec son compteur conservé, sans checkpoint
+partiel ni appel IA.
+
+Ruff est vert et aucun module métier surveillé ne dépasse 1 500 lignes :
+`pdf_enrichment.py` compte 1 499 lignes selon le script. Le helper de garde
+est inclus dans ce budget. Aucun service de production, fournisseur IA ou
+accès Enchères Publiques n'est utilisé par cette vérification locale.
+
+La dernière relecture a fermé le parcours de collecte principale : seules
+les ventes autorisées passent dans les cibles cache/PDF/LLM ; la création du
+client IA vient après ce filtre. L'application directe d'un cache IA possède
+aussi sa garde booléenne et retourne `False` sans lire ni appliquer le cache
+non autorisé. La réserve de relecture est levée. La suite complète finale
+compte 1 988 succès et 100 ignorés à 14 h 43 UTC, sans effet de production.
+Ces corrections seront vérifiées dans la CI du nouveau commit exact avant
+tout essai de worker.

@@ -2468,8 +2468,11 @@ def _persist_pdf_document_checkpoint_with_connection(
             PDF_EXTRACTION_MODEL,
             input_hash,
             PDF_EXTRACTION_SCHEMA_VERSION,
-            _postgres_value("confidence", _pdf_extraction_confidence(result)),
-            _postgres_value("result", _sanitize_postgrest_payload(result)),
+            # ``confidence`` and ``result`` are JSONB on auction_extractions,
+            # but their names cannot be added to POSTGRES_JSON_COLUMNS because
+            # other publication tables use a numeric confidence column.
+            Jsonb(_sanitize_postgrest_payload(_pdf_extraction_confidence(result))),
+            Jsonb(_sanitize_postgrest_payload(result)),
             now,
         ),
     )

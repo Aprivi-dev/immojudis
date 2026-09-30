@@ -11,8 +11,9 @@ from urllib.parse import urlsplit
 from src.admission import is_expired
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
-from src.config import load_settings
+from src.config import EncheresPubliquesAccessNotAuthorized, load_settings
 from src.dpe import enrich_dpe_sales
+from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.extract_structured import (
     LLMEnrichmentDeferred,
     enrich_sale_with_llm,
@@ -496,6 +497,27 @@ def run_enrichment_queue_batch(
                 )
             mark_enrichment_jobs_terminal(sale_jobs)
             continue
+        try:
+            # The general queue RPC does not join auction_source_state. Keep
+            # this fail-closed boundary before fact replay, PDF restoration,
+            # LLM calls, or the final catalogue upsert. QueueJobDeferred
+            # restores the claim without spending its retry attempt.
+            require_encheres_publiques_sale_access(
+                source_name=sale.source_name,
+                source_url=sale.source_url,
+                source_urls=sale.source_urls,
+                documents=sale.documents,
+                settings=settings,
+            )
+        except EncheresPubliquesAccessNotAuthorized:
+            access_deferred = QueueJobDeferred(
+                "Encheres Publiques access authorization required before general enrichment"
+            )
+            _record_worker_deferred_job_ids(sale_jobs)
+            defer_budget_jobs(sale_jobs, access_deferred)
+            mark_enrichment_jobs_terminal(sale_jobs)
+            LOGGER.info("Enrichment prerequisite deferred for %s: %s", source_url, access_deferred)
+            continue
         job_types = {str(job.get("job_type") or "") for job in sale_jobs}
         fact_claim_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "fact_claims"]
         regular_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") != "fact_claims"]
@@ -699,6 +721,24 @@ def run_enrichment_queue_batch(
             classify_sale_procedure(sale)
             normalize_asset_features(sale)
             upsert_sales_to_supabase([sale], refresh_last_seen=False)
+        except EncheresPubliquesAccessNotAuthorized as exc:
+            # A non-EP source may redirect a document to Encheres Publiques
+            # after the sale-level admission guard.  Treat that boundary as
+            # authorization coordination, never as a failed PDF attempt:
+            # release every claim and let the configured access gate be fixed
+            # before any retry is consumed.
+            access_deferred = QueueJobDeferred(
+                "Encheres Publiques access authorization required before PDF download"
+            )
+            _record_worker_deferred_job_ids(sale_jobs)
+            defer_budget_jobs(sale_jobs, access_deferred)
+            mark_enrichment_jobs_terminal(sale_jobs)
+            LOGGER.info(
+                "Enrichment deferred after an unauthorized Encheres Publiques document target for %s: %s",
+                source_url,
+                exc,
+            )
+            continue
         except PdfDeadlineExceeded as exc:
             # The worker cutoff is coordination, even when no page finished.
             # Release the claim and restore its attempt so a slow PDF cannot
