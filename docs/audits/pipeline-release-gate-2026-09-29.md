@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 17 h 47 UTC
+## Synthèse actuelle — 30 septembre, 18 h 58 UTC
 
-| Chantier           | État vérifié                                                                                                                                                                                                                                                           |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `b95ea5a9` : CI et CodeQL verts, 2 080 tests Python par version, 1 481 assertions pgTAP, Web Next.js 16.3.8 et audit production à zéro vulnérabilité. Nouveau correctif de checkpoint après page blanche vérifié localement ; CI exacte requise pour ce delta.         |
-| Santé              | À 17 h 15, quatre alertes ouvertes : inbound absent, fraîcheur EImmo, enrichissement stalled et import Notaires interrompu. Le contrôle de santé s’exécute ; la santé du pipeline n’est pas qualifiée.                                                                 |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari `0bff122a` techniquement réussi, sans durabilité SQL des interruptions OCR. Correctifs qualifiés en CI sur `b95ea5a9` ; nouveau delta page blanche, canari et cold encore requis. Routage inchangé. |
-| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                                   |
-| Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB.        |
-| Documents          | Progression et revalidation 6+6+4 passent en tests. Checkpoint OCR et restauration après perte de cache passent en PostgreSQL réel sur `b95ea5a9`. Nouveau cas page blanche couvert par PDF réel et variante PG ; qualification exacte et warm/cold encore requis.     |
-| Capacité           | Relevé à 17 h 14 : 5 993 ouverts, 5 967 dus réessayables, 2 649 anciens sous plafond, zéro running/stale et 19 épuisés. Valorisation : zéro ouvert. Stock ouvert +18 et PDF épuisés +7 depuis 16 h 31 ; résorption durable non démontrée.                              |
-| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                                     |
-| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                             |
-| Inbound            | Nouvelle route non publiée, cron absent. Cause courante de l'alerte critique `cron.stale` confirmée : `information-agent-inbound`. Canari canonique authentifié puis activation et santé requis après déploiement.                                                     |
-| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                                 |
-| Publication finale | PR en brouillon. Preview `b95ea5a9` READY : accueil/catalogue 200, inbound sans auth 401, webhook GET 405. Canonique inbound 404. Next.js 16.3.8 qualifié par le build CI, non publié en production ; aucun import IA, publication finale ou nettoyage.                |
+| Chantier           | État vérifié                                                                                                                                                                                                                                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL et CI          | `ca57cf18` : CI et CodeQL verts, 2 083 tests Python par version, 1 481 assertions pgTAP, Web Next.js 16.3.8 et audit production à zéro vulnérabilité. Reprise PG après page blanche exécutée. Nouveau log des IDs de claims : 60 tests locaux verts, CI exacte requise. |
+| Santé              | À 18 h 09, cinq alertes ouvertes : inbound absent, fraîcheur EImmo et Notaires, enrichissement stalled et import Notaires interrompu. Le contrôle de santé s’exécute ; la santé du pipeline n’est pas qualifiée.                                                        |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari `ca57cf18` réussi : 90 claims, 68 completed, zéro failed. Seulement 13 UUID visibles ; trace de tous les IDs ajoutée. Aucune preuve d'OCR/checkpoint SQL réel ni de cold entier. Routage inchangé.   |
+| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                                    |
+| Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB.         |
+| Documents          | Progression et revalidation 6+6+4 passent en tests ; reprise PG après page blanche verte sur `ca57cf18`. Canari queue : 19 faits différés pour manifeste partiel. Collecte ordinaire warm et reprise cold du manifeste entier restent requises sur version qualifiée.   |
+| Capacité           | Relevé comparable à 18 h 12 : 5 978 ouverts, 5 947 dus réessayables, 2 643 anciens sous plafond, un running, zéro stale et 20 épuisés. Valorisation : zéro ouvert. Variation depuis 17 h 14 : ouverts -15, anciens -6, épuisés +1 ; résorption durable non démontrée.   |
+| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                                      |
+| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                              |
+| Inbound            | Nouvelle route non publiée, cron absent. Cause courante de l'alerte critique `cron.stale` confirmée : `information-agent-inbound`. Canari canonique authentifié puis activation et santé requis après déploiement.                                                      |
+| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                                  |
+| Publication finale | PR en brouillon. Preview `b95ea5a9` READY : accueil/catalogue 200, inbound sans auth 401, webhook GET 405. Canonique inbound 404. Next.js 16.3.8 qualifié par le build CI, non publié en production ; aucun import IA, publication finale ou nettoyage.                 |
 
 ### Qualification des textes stockés — 30 septembre, 12 h 01 UTC
 
@@ -2867,3 +2867,69 @@ Ruff et diff passent. Budgets inchangés : pdf_enrichment/queued_runner
 1 499 lignes, pdf_progress 810. Le worker automatique et l'application
 de production restent inchangés. Canari puis récupération du manifeste
 entier après perte réelle du cache restent requis après CI/CodeQL du delta.
+
+## Canari ca57cf18 et traçabilité — 30 septembre, 18 h 58 UTC
+
+ca57cf188250fed1ffaf6ca6fff12fa0f81d6971 passe la
+[CI exacte](https://github.com/Aprivi-dev/immojudis/actions/runs/36755186510)
+et le [CodeQL exact](https://github.com/Aprivi-dev/immojudis/actions/runs/36755186662).
+Python 3.11/3.12 : 2 083 succès, 18 ignorés chacune ; les deux variantes
+PostgreSQL text-prefix/blank-page-prefix sont exécutées. Web : audit
+production zéro vulnérabilité, typecheck/lint/invariants, 1 336 tests,
+build Next.js 16.3.8 et 103/103 pages. 79 fichiers pgTAP, 1 481 assertions,
+aucune dérive ; Playwright 87 succès, huit ignorés. CodeQL passe sans alerte.
+
+Le tag immojudis-workers-ca57cf18 pointe sur ce SHA. Son ruleset actif
+24264606 protège cette référence et la future référence cold, sans bypass,
+update ni deletion. Le [canari queue](https://github.com/Aprivi-dev/immojudis/actions/runs/36757794906)
+est créé à 18 h 19 min 50 s ; job de 18 h 23 min 32 s à 18 h 37 min 52 s.
+Commande effective : python -m src.queued_runner --enrichment-only,
+sans limite de listing, run_id, publication_check, backfill ou benchmark.
+Le cache d'extraction est réellement absent, puis sauvegardé. Le worker
+traite 90 jobs en 808,6 s sur 1 200, arrêt max_jobs : 45 source_detail et
+45 enrichment. Compteurs de sa finalisation SQL : 68 completed, zéro failed,
+trois cancelled, 19 queued/deferred, zéro running/missing. Les 19 reports
+signalent un manifeste PDF encore partiel. Aucun OCR ou checkpoint SQL
+moderne n'est prouvé par ce log ; le sous-type des 45 jobs enrichment
+n'est pas visible et ne peut pas être déduit. La santé globale reste dégradée.
+
+Le log n'identifie que 13 UUID source_detail et ne dispose d'aucun artefact
+GitHub contenant les 90 IDs. Les 13 sont retrouvés SQL à 18 h 55–18 h 57 :
+completed, attempt_count=0/max_attempts=4, déverrouillés, hash source_detail_v1.
+Cette relecture ne prouve pas les 77 UUID absents. Les 19 URLs différées
+existent et sont upcoming : zéro progress_schema_version=1 et zéro
+manifest_complete=true. Leurs analyses legacy listent 85 documents et
+annoncent 72 extraits ; les 85 lignes documentaires durables n'en comptent
+que 47 téléchargées/extraites/hashées. Ces états ne sont pas des checkpoints
+modernes. Aucun texte documentaire ni contact n'est lu ou émis.
+
+La liste des IDs de claims est donc ajoutée au bilan du worker, une seule
+fois avant son snapshot agrégé. Elle contient au plus 90 UUID opaques,
+sans URL, texte, contact, token ou payload ; aucun appel SQL/fournisseur ni
+comportement de retry/lease n'est ajouté. Relecture indépendante claire,
+60 tests worker existants réussis, Ruff et diff verts. queued_runner compte
+maintenant exactement 1 500 lignes ; seuil conservé. La CI du nouveau
+commit exact reste requise avant son utilisation.
+
+À 18 h 12, la file comparable compte 5 978 ouverts, 5 947 dus réessayables,
+2 643 anciens sous plafond, 20 épuisés, un running et zéro stale. Cinq alertes
+ouvertes sont relevées à 18 h 09. Aucun candidat moderne entier à un à six
+documents n'est disponible sous les gardes publiques au snapshot 18 h 57.
+Avoventes est enabled/available, sans suspension ni échec consécutif à
+18 h 50 min 57 s ; le contrôle global et les détails source sont activés à
+18 h 53 min 55 s. Une collecte warm ordinaire bornée sur version qualifiée
+doit produire un candidat naturel avant l'essai cold de collecte entière.
+
+L'audit du vieux runtime et du SQL live à 18 h 40 confirme les gardes
+enabled/suspension pour source_detail, y compris le wrapper général.
+Enchères Publiques reste disabled/access_denied, même après expiration de
+sa suspension. Aucun run queued/running EP/all et aucun job PDF/fact EP
+ou document hôte EP n'est dû. Les 21 détails EP conservés sont bloqués par
+leur état de source ; un ancien display_description dû ne nécessite aucun
+fetch. La famille enrichment ne filtre pas globalement l'état de source :
+les gardes du nouveau runtime restent requises. Aucune nouvelle maintenance
+EP n'est justifiée par cet état, et aucun fetch EP n'est exécuté.
+
+Le worker automatique reste f695a739. Aucun import IA, activation inbound,
+publication finale ou nettoyage de branches. Accord précis pour le secret
+portail Production et autorisation écrite/accès au flux EP toujours absents.
