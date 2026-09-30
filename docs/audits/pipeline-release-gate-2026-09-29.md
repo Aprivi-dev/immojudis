@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 07 h 17 UTC
+## Synthèse actuelle — 30 septembre, 07 h 46 UTC
 
-| Chantier           | État vérifié                                                                                                                                                                                                                                                         |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `ad980898` vert : CI et CodeQL, 200 migrations, 1 481 assertions pgTAP, 1 928 tests Python par version, Web et navigateur. Correctifs deadline, textes persistés et robots approuvés en relecture ; nouveau HEAD à qualifier en CI puis cloud.                       |
-| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                                 |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Tag candidat `immojudis-workers-ad980898` immuable ; canari terminé mais deux blocages réels empêchent sa bascule.                                                                                       |
-| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                                 |
-| Collecte AGRASC    | Huit annonces et huit PDF sans erreur ; terminal changeant pendant le scan et 25 archives sans lien. Périmètre adressable distinct du certificat public global, qui reste partiel.                                                                                   |
-| Documents          | Noisy 416/416 et Uckange 96 pages extraites. Ris-Orangis reste incomplet, nouveau PDF naturellement épuisé 4/4 après supersession. Correction de perte des statuts depuis textes persistés complets, relue ; manifestes mixtes et historiques sans preuve v1 exclus. |
-| Capacité           | Au relevé de 06 h 30 : 6 012 jobs dus et 2 732 ouverts de plus de 48 h. Circuit quota testé localement mais non déclenché dans le dernier canari. Aucun gain durable extrapolé des variations ou annulations.                                                        |
-| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                                   |
-| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                           |
-| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                             |
-| Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                                                              |
-| Publication finale | PR en brouillon, nouvelles corrections en cours. Preview validée en lecture seule ; pas de publication applicative finale ni import IA. Plan de branches préparé, aucune suppression.                                                                                |
+| Chantier           | État vérifié                                                                                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL et CI          | `ad980898` vert. CI `df0904a6` rouge : ancien contrat du test robots et nouvelles alertes npm ; CodeQL vert. Test corrigé, dépendances de production sans alerte après mise à jour ciblée. Nouveau HEAD requis pour la CI et le cloud.                  |
+| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                    |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Candidat `ad980898` retenu après dépassement de deadline et perte des statuts PDF. Aucun worker actif au relevé de 07 h 42.                                                                 |
+| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                    |
+| Collecte AGRASC    | Huit annonces et huit PDF sans erreur ; terminal changeant pendant le scan et 25 archives sans lien. Périmètre adressable distinct du certificat public global, qui reste partiel.                                                                      |
+| Documents          | Défaut réel de sérialisation confirmé : les marqueurs de complétude n'étaient pas enregistrés avec les textes. Writer corrigé et relu, tests de bout en bout verts. Une nouvelle extraction réelle est requise ; aucune promotion des anciens payloads. |
+| Capacité           | Au relevé de 07 h 42 : 6 581 jobs dus, 2 731 ouverts de plus de 48 h, 17 ouverts ayant épuisé leurs essais. Circuit quota testé localement mais non déclenché dans le dernier canari. Résorption durable non démontrée.                                 |
+| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                      |
+| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                              |
+| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                |
+| Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                                                 |
+| Publication finale | PR en brouillon, nouvelles corrections en cours. Preview validée en lecture seule ; pas de publication applicative finale ni import IA. Plan de branches préparé, aucune suppression.                                                                   |
 
 Les sections suivantes conservent la chronologie. Leurs compteurs datés ne
 doivent pas être utilisés comme l'état courant sans lire cette synthèse et
@@ -1821,3 +1821,69 @@ le premier essai prévu pour le cas de cache absent : GitHub isole les caches
 de tags différents, selon sa [documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
 La présence réelle ou l'absence du cache devra être constatée dans le run,
 sans être déduite du seul nom du tag.
+
+## Défaut confirmé dans la sérialisation PDF — 30 septembre, 07 h 21 UTC
+
+La lecture scalaire du résultat réellement persisté du job
+`b5ae1461-7eb4-418d-b403-2726c808e480` révèle quatre textes de
+13 896, 4 356, 2 867 et 34 162 caractères, tous en cache v3, mais aucun champ
+`complete`, `extraction_status` ou `failed_pages`. Les profils et la preuve
+v1 sont complets à 01 h 24 ; le résultat texte de 01 h 24 min 42 s a perdu
+ces marqueurs dans `_write_pdf_text_cache`. Le validateur conservateur les
+rejette donc correctement. Le relevé de 07 h 42 retrouve cette absence dans
+les 309 résultats PDF récents observés ; une preuve de profil seule ne suffit
+pas à les rendre utilisables.
+
+Le writer conserve désormais les marqueurs explicitement produits par
+l'extracteur, y compris les valeurs nulles, sans les ajouter aux payloads
+legacy. Il écrit un temporaire dans le même dossier puis remplace le fichier
+atomiquement. Les tests d'échec de sérialisation et de remplacement prouvent
+que l'ancien fichier reste identique et que le temporaire est nettoyé.
+Le fixture de stockage utilise le vrai writer, relit son JSON, génère la
+preuve par le vrai générateur puis vérifie la matérialisation après
+reconstruction de la fiche. Un résultat partiel ou legacy reste refusé,
+même en présence d'une preuve annoncée complète. Relecture IA indépendante
+favorable ; 170 tests PDF/reprise/worker et 62 tests stockage passent.
+
+La qualification cloud commencera par un worker d'enrichissement ordinaire
+du nouveau SHA vert pour produire un résultat avec les vrais marqueurs.
+Une collecte avec cache local effectivement absent pourra ensuite vérifier
+la récupération persistée. Cette séquence remplace le premier essai
+Avoventes annoncé ci-dessus. Aucun ancien résultat n'est corrigé par
+inférence, aucun job n'est remis à zéro pour forcer l'essai.
+
+## Diagnostic de la CI `df0904a6` — 30 septembre, 07 h 44 UTC
+
+La [CI 36682996423](https://github.com/Aprivi-dev/immojudis/actions/runs/36682996423)
+échoue ; [CodeQL 36682996459](https://github.com/Aprivi-dev/immojudis/actions/runs/36682996459)
+réussit. Python 3.11 et 3.12 comptent chacun 1 959 succès, 18 ignorés et un
+test obsolète : il attendait une requête catalogue après redirection de
+`robots.txt` hors origine. Le contrat corrigé exige un seul appel au relais,
+pour les robots, et aucune collecte après le refus. Les 31 tests transport
+cloud et client commun passent sans modification de la garde.
+
+Le Web s'arrête sur l'audit npm, avant typecheck. Le lockfile identique à la
+CI antérieure est désormais signalé pour `brace-expansion`, `engine.io` et
+`fast-uri`. Une mise à jour ciblée, sans changement majeur ni script
+d'installation, sélectionne respectivement 5.0.12, 6.6.11 et 3.1.8.
+L'audit de production repasse à zéro alerte. Les avis primaires documentent
+les correctifs : [brace-expansion](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr),
+[Engine.IO](https://github.com/advisories/GHSA-2gc4-cqfq-p2gv),
+[fast-uri](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj).
+La CI complète doit confirmer le build et les budgets sur le prochain SHA.
+
+L'audit incluant le développement signalait également `undici` 7.29.0,
+utilisé par jsdom. Sa mise à jour compatible vers 7.30.0 ramène aussi l'audit
+complet à zéro alerte. L'[avis de l'éditeur](https://github.com/nodejs/undici/security/advisories/GHSA-w293-vg96-wgc3)
+confirme le correctif de vérification TLS à partir de 7.29.1. Le manifeste
+des dépendances directes est inchangé ; le lockfile conserve les versions
+majeures et les bornes imposées par leurs parents. npm 11.18 régénère en
+outre les marqueurs optional de sharp et de sa dépendance couleur, tous
+deux déjà nécessaires au projet ; aucun script d'installation n'est lancé.
+
+Le relevé de production de 07 h 42 compte 6 581 jobs dus et 2 731 ouverts
+de plus de 48 heures, dont 2 071 détails, 598 descriptions, 35 faits et
+27 PDF. Aucun job ne tourne. Le dernier worker automatique termine à
+07 h 06 en 1 203,9 secondes. Vench termine à 07 h 37 avec couverture
+d'inventaire complète ; Enchères Immobilières reste en échec fournisseur.
+Ces observations ne satisfont pas le critère de résorption durable.

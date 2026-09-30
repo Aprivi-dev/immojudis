@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -104,5 +106,8 @@ def test_relay_redirect_is_checked_by_source_guard(monkeypatch):
     client = PoliteHttpClient("https://www.petitesaffiches.fr", "test", 0, 5)
     with pytest.raises(RuntimeError, match="outside configured"):
         client.get("https://www.petitesaffiches.fr/encheres-immobilieres/")
-    assert len(calls) == 2  # robots and listing; never fetch the external destination
+    assert len(calls) == 1
+    robots_request = json.loads(calls[0].content)
+    assert robots_request["url"] == "https://www.petitesaffiches.fr/robots.txt"
+    assert robots_request["method"] == "GET"
     client._client.close()
