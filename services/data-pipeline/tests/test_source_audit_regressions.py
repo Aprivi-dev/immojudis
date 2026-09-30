@@ -132,6 +132,68 @@ def test_cessions_detail_keeps_land_area_separate_from_building_area() -> None:
     assert cessions_etat._extract_land_surface("Maison d'une superficie totale de 134 m²") is None
 
 
+def test_cessions_detail_reads_split_lot_description_for_land_and_garage() -> None:
+    html = """
+    <main>
+      <div id="panel-bien"><div class="texte"><div class="fr-text">
+        <p>Parcelle</p><p>d'une superficie de 420 m².</p><p>Un garage attenant au bien.</p>
+      </div></div></div>
+    </main>
+    """
+
+    detail = cessions_etat.parse_cessions_etat_detail_html(
+        html,
+        cessions_etat.BASE_URL + "/biens/synthetic-lot",
+    )
+
+    assert detail["land_surface_m2"] == "420"
+    assert detail["parking_count"] == 1
+    assert detail["source_blocks"]["surface_terrain"] == "420"
+    assert detail["source_blocks"]["parking_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "excluded_text",
+    (
+        "Un garage non compris dans la vente.",
+        "Un garage appartenant au lot voisin.",
+    ),
+)
+def test_cessions_detail_ignores_excluded_garage_mentions(excluded_text: str) -> None:
+    html = f"""
+    <main>
+      <div id="panel-bien"><div class="texte"><div class="fr-text">{excluded_text}</div></div></div>
+    </main>
+    """
+
+    assert cessions_etat._extract_parking_count(excluded_text) is None
+    detail = cessions_etat.parse_cessions_etat_detail_html(
+        html,
+        cessions_etat.BASE_URL + "/biens/synthetic-exclusion",
+    )
+
+    assert detail["parking_count"] is None
+
+
+def test_cessions_detail_does_not_promote_other_lot_surface_or_parking() -> None:
+    html = """
+    <main>
+      <div id="panel-bien"><div class="texte"><div class="fr-text">
+        Bien test sans mesure ni stationnement.
+      </div></div></div>
+      <footer>Autre lot : parcelle d'une superficie de 999 m². Un garage.</footer>
+    </main>
+    """
+
+    detail = cessions_etat.parse_cessions_etat_detail_html(
+        html,
+        cessions_etat.BASE_URL + "/biens/synthetic-scope",
+    )
+
+    assert detail["land_surface_m2"] is None
+    assert detail["parking_count"] is None
+
+
 def test_cessions_detail_type_overrides_conflicting_list_type() -> None:
     source_url = cessions_etat.BASE_URL + "/biens/test"
     sale = {"source_url": source_url, "property_type": "terrain"}

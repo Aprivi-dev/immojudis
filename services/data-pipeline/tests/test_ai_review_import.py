@@ -427,6 +427,68 @@ def test_offline_export_is_bounded_and_contains_no_private_capture_paths(tmp_pat
     assert all("auction_sale_id" not in row for row in projections)
 
 
+def test_offline_rpc_export_quarantines_unsupported_occupancy_and_keeps_shape(
+    tmp_path: Path,
+) -> None:
+    raw_value = "partiellement occupé"
+    captured = _case(tmp_path, "case-export-occupancy", "https://source.example/export-occupancy")
+    capture = captured["capture"]
+    assert isinstance(capture, dict)
+    capture_path = Path(capture["private_ref"])
+    capture_bytes = f"<html><body>Appartement {raw_value}</body></html>".encode()
+    capture_path.write_bytes(capture_bytes)
+    capture_sha256 = hashlib.sha256(capture_bytes).hexdigest()
+    capture["sha256"] = capture_sha256
+    for review in captured["ai_reviews"]:
+        assert isinstance(review, dict)
+        review["capture_sha256"] = capture_sha256
+        for existing_label in review["labels"].values():
+            if isinstance(existing_label, dict) and isinstance(existing_label.get("evidence"), dict):
+                existing_label["evidence"]["capture_sha256"] = capture_sha256
+        label = review["labels"]["occupancy_status"]
+        label.update(
+            {
+                "state": "present",
+                "value": raw_value,
+                "evidence": {
+                    "capture_sha256": capture_sha256,
+                    "locator": "visible occupancy field",
+                    "excerpt": raw_value,
+                },
+            }
+        )
+        review["output_sha256"] = ai_review_output_sha256(review["labels"])
+
+    payload = build_ai_review_export_payload(
+        _manifest([captured]),
+        manifest_sha256=EXPECTED_MANIFEST_SHA256,
+    )
+
+    projections = [row for batch in payload["batches"] for row in batch["projections"]]
+    occupancy = next(row for row in projections if row["field_key"] == "property.occupancy_status")
+    assert occupancy["mapping_status"] == "server_exact_required"
+    assert occupancy["review_state"] == "unresolved"
+    assert occupancy["citation_status"] == "not_required"
+    assert occupancy["value_jsonb"] is None
+    assert "not a recognized canonical value" in occupancy["block_reason"]
+    assert set(occupancy) == {
+        "schema_version",
+        "sample_sha256",
+        "case_id",
+        "source_name",
+        "source_url",
+        "capture_sha256",
+        "mapping_status",
+        "field_key",
+        "review_state",
+        "citation_status",
+        "value_jsonb",
+        "evidence_locator",
+        "block_reason",
+    }
+    assert "private_ref" not in json.dumps(payload)
+
+
 def test_offline_export_retains_endpoint_quarantine(tmp_path: Path) -> None:
     captured = _case(tmp_path, "case-export-quarantine", "https://source.example/export-quarantine")
     captured["capture"]["endpoint"] = "https://api.source.example/export-quarantine"  # type: ignore[index]

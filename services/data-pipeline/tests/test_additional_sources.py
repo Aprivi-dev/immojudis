@@ -2,6 +2,7 @@ import json
 from decimal import Decimal
 
 import httpx
+import pytest
 
 from src.extraction_corpus import project_field
 from src.normalize import normalize_sale
@@ -128,6 +129,39 @@ def test_parse_petites_affiches_detail_accepts_direct_scoped_parking_count() -> 
     detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
 
     assert detail["parking_count"] == 2
+
+
+def test_parse_petites_affiches_detail_accepts_singular_garage_count() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un lot test" />
+    <div class="row detail default"><p>Un garage attenant au bien.</p></div>
+    <footer>1 parking visiteurs</footer>
+    """
+
+    assert petites_affiches._detail_parking_count("Un garage attenant au bien") == 1
+    assert petites_affiches._detail_parking_count("1 parking visiteurs") is None
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["parking_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "excluded_text",
+    (
+        "Un garage non compris dans la vente.",
+        "Un garage appartenant au lot voisin.",
+    ),
+)
+def test_parse_petites_affiches_detail_ignores_excluded_garage_mentions(excluded_text: str) -> None:
+    html = f"""
+    <meta name="description" content="Vente aux enchères d'un lot test" />
+    <div class="row detail default"><p>{excluded_text}</p></div>
+    """
+
+    assert petites_affiches._detail_parking_count(excluded_text) is None
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["parking_count"] is None
 
 
 def test_parse_petites_affiches_detail_prefers_sale_date_over_visit_date() -> None:

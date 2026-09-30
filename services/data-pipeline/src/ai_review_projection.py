@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from src.normalize import normalize_occupancy_status, strip_accents
 from src.real_extraction_review import (
     _agrasc_structured_evidence,
     _ai_excerpt_is_verbatim,
@@ -55,6 +56,25 @@ AI_REVIEW_FIELD_KEYS: dict[str, str] = {
 
 _PRESENT_OR_UNKNOWN = frozenset({"present", "unknown"})
 _VALID_MAPPING_STATES = frozenset({"exact", "unmapped", "ambiguous"})
+_SQL_OCCUPANCY_ALIASES = frozenset(
+    {
+        "libre",
+        "libre de toute occupation",
+        "vacant",
+        "occupe",
+        "occupied",
+        "proprietaire occupant",
+        "proprietaire occupe",
+        "owner occupied",
+        "locataire",
+        "loue",
+        "rented",
+        "squat",
+        "squatte",
+        "squatted",
+        "unknown",
+    }
+)
 
 
 def build_ai_review_projection_rows(
@@ -213,6 +233,19 @@ def _project_case(
                 review_state = "unresolved"
                 citation_status = "not_required"
                 reasons.append("present AI label has no value")
+            elif field == "occupancy_status":
+                # Keep the existing canonical occupancy vocabulary at the
+                # projection boundary.  Recognized free text is reduced to
+                # the same enum used by the catalogue; an unsupported value
+                # remains quarantined instead of being guessed as ``unknown``.
+                normalized_occupancy = _normalize_sql_occupancy_alias(value)
+                if normalized_occupancy in {None, "unknown"}:
+                    review_state = "unresolved"
+                    citation_status = "not_required"
+                    value = None
+                    reasons.append("occupancy status is not a recognized canonical value")
+                else:
+                    value = normalized_occupancy
 
         if mapping_status != "exact":
             reasons.append(f"auction_sales exact mapping is {mapping_status}")
@@ -255,6 +288,24 @@ def _project_case(
             }
         )
     return projected
+
+
+def _normalize_sql_occupancy_alias(value: Any) -> str | None:
+    """Reuse the catalogue normalizer only for aliases accepted by SQL.
+
+    ``normalize_occupancy_status`` also extracts broad signals from source
+    prose (for example, a partially occupied property).  The AI projection
+    contract is narrower: only values already equivalent to the exact SQL
+    reconciliation aliases may become a resolved enum.  Compound or
+    historical phrases therefore remain quarantined.
+    """
+
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(strip_accents(value).lower().replace("_", " ").split())
+    if normalized not in _SQL_OCCUPANCY_ALIASES:
+        return None
+    return normalize_occupancy_status(value)
 
 
 def _index_sales(

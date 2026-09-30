@@ -41,6 +41,7 @@ DETAIL_FIELDS = {
     "surface_m2",
     "carrez_surface_m2",
     "land_surface_m2",
+    "parking_count",
     "city",
     "postal_code",
     "dpe_class",
@@ -159,7 +160,11 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
     dpe_class, ges_class = _detail_energy_classes(soup)
     surface = _extract_surface(raw_text)
     carrez_surface = _extract_carrez_surface(raw_text)
-    land_surface = _extract_land_surface(raw_text)
+    # Keep lot-level measurements and amenities tied to the property's own
+    # description.  The page-wide text can contain neighboring listings or
+    # site chrome with another surface/parking statement.
+    land_surface = _extract_land_surface(description or "")
+    parking_count = _extract_parking_count(description)
     postal_code = _extract_postal(raw_text)
     starting_price = _extract_after(
         raw_text,
@@ -192,6 +197,7 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
         "surface_m2": surface,
         "carrez_surface_m2": carrez_surface,
         "land_surface_m2": land_surface,
+        "parking_count": parking_count,
         "postal_code": postal_code,
         "dpe_class": dpe_class,
         "ges_class": ges_class,
@@ -214,6 +220,7 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
                 "surface": surface,
                 "surface_carrez": carrez_surface,
                 "surface_terrain": land_surface,
+                "parking_count": parking_count,
                 "code_postal": postal_code,
                 "dpe_classe": dpe_class,
                 "ges_classe": ges_class,
@@ -516,6 +523,54 @@ def _extract_land_surface(text: str) -> str | None:
         if match:
             return _normalize_surface_number(match.group(1))
     return None
+
+
+def _extract_parking_count(text: str | None) -> int | None:
+    """Extract an explicit lot-level parking or garage count."""
+
+    scoped_text = clean_text(text) or ""
+    if not scoped_text:
+        return None
+    count_token = r"[1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix"
+    patterns = (
+        rf"\b(?P<count>{count_token})\s+(?:(?:emplacements?|places?)\s+(?:de\s+)?)?"
+        rf"(?P<kind>parkings?|stationnement|garages?|box)\b",
+        rf"\b(?P<kind>parkings?|stationnement|garages?|box)\s*:\s*"
+        rf"(?P<count>{count_token})\b",
+    )
+    visitor_pattern = re.compile(r"\b(?:visiteurs?|publics?|publiques?)\b", re.I)
+    excluded_lot_pattern = re.compile(
+        r"\b(?:non|pas)\s+(?:compris(?:e|es|s)?|inclus(?:e|es|s)?)\b|"
+        r"\b(?:parkings?|stationnement|garages?|box)\b[^.;:]{0,45}"
+        r"\b(?:lot\s+)?voisin(?:e|s)?\b|"
+        r"\b(?:lot\s+)?voisin(?:e|s)?\b[^.;:]{0,45}"
+        r"\b(?:parkings?|stationnement|garages?|box)\b",
+        re.I,
+    )
+    values: list[int] = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, scoped_text, re.I):
+            context = scoped_text[max(0, match.start() - 60) : min(len(scoped_text), match.end() + 60)]
+            if visitor_pattern.search(context) or excluded_lot_pattern.search(context):
+                continue
+            token = match.group("count").lower()
+            value = int(token) if token.isdigit() else {
+                "un": 1,
+                "une": 1,
+                "deux": 2,
+                "trois": 3,
+                "quatre": 4,
+                "cinq": 5,
+                "six": 6,
+                "sept": 7,
+                "huit": 8,
+                "neuf": 9,
+                "dix": 10,
+            }.get(token)
+            if value is not None:
+                values.append(value)
+    unique_values = set(values)
+    return next(iter(unique_values)) if len(unique_values) == 1 else None
 
 
 def _extract_sale_date(text: str) -> str | None:

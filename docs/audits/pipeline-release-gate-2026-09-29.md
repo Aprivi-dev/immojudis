@@ -1,17 +1,17 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 22 h 35 UTC
+## Synthèse actuelle — 30 septembre, 23 h 12 UTC
 
 | Chantier | État vérifié |
 | --- | --- |
-| SQL et CI | `e3deadf6` : CI/CodeQL verts, 2 091 tests Python par version, 1 481 assertions pgTAP, Next.js 16.3.8 et audit production à zéro vulnérabilité. Reprises PG texte/page blanche exécutées par stockage et collecte normale. Nouvel artefact IA v4.6 autorisé localement : 77 tests ciblés, Ruff, diff et 201 versions uniques verts ; nouvelle CI/pgTAP exacte et migration requises. |
+| SQL et CI | `1780af69` : CI/CodeQL verts, 2 091 tests Python par version, 80 fichiers/1 488 assertions pgTAP et 201 migrations sans dérive. Allowlist v4.6 appliquée en maintenance interne. Nouveaux correctifs parseurs/export : 94 tests revue/import, 106 tests sources et 25 matrix/calibration verts ; nouvelle CI exacte requise. |
 | Santé | À 21 h 05, quatre alertes : inbound absent, fraîcheur EImmo et Notaires, enrichissement stalled. Santé globale non qualifiée. |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Warm ordinaire `e3deadf6` réussi, cache réellement absent ; nouveau cold en cours. Routage inchangé ; prochain canari de queue avec vérification indépendante de tous ses UUIDs requis. |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Warm/cold ordinaires `e3deadf6` réussis, caches réellement absents, reprise source/SQL démontrée. Routage inchangé ; prochain canari de queue avec vérification indépendante de tous ses UUIDs requis. |
 | Collecte Avoventes | Warm `e3deadf6` : 240 annonces et 241/241 requêtes réussies, zéro échec de transport ; collecte/publication complètes, enrichissement partiel. Les preuves manuelles ne remplacent pas les timestamps du dernier run automatique. |
 | Autres sources | Six dernières collectes complètes sur neuf sources autorisées. AGRASC conserve 25 archives vendues sans identité ; EImmo timeout de transport, Notaires interrompu sur l’ancien worker. Nouvelle collecte Notaires qualifiée requise. |
-| Documents | Warm `e3deadf6` : reprise SQL réellement passée de 75/95 à 95/95 pages, même SHA de fichier, texte enrichi, zéro page échouée et manifeste des quatre documents complet. Trois PDF entiers restent strictement réutilisables. Cold courant requis avant qualification finale. |
+| Documents | Warm : 75/95 → 95/95 pages, même fichier, texte enrichi, quatre documents complets. Cold : ces quatre PDF et trois autres sont verified/extracted, file_path NULL/persisted_pdf_text, mêmes hashes/longueurs/fingerprints, mises à jour post-start ; réutilisation SQL réelle des sept pièces qualifiée. |
 | Capacité | À 22 h 24 : 6 044 ouverts, 6 024 dus réessayables, 2 619 anciens sous plafond, 13 épuisés, zéro running/stale. Ouverts −193 depuis 21 h 05, sans preuve de résorption durable. À 22 h 28 : valorisation zéro ouvert ; 26 pending observés à 22 h 24 ont été traités. |
-| Revue IA | v4.6 figée : deux passes aveugles sur 76 captures/912 champs, 152 hashes de prompt, 1 181/1 181 citations strictes. Troisième lecture des 76 désaccords : 29 documentés, 47 unresolved. Onze champs relus sur modèle AGRASC lié restent incertains. Dry-run : 346 admissibles/566 bloqués ; aucun import ni mesure d’exactitude réelle. |
+| Revue IA | v4.6 figée, 1 181 citations strictes et arbitrage complet (29 documentés/47 unresolved). Import atomique refusé par le contrat d'occupation : rollback vérifié, tables IA vides. Export corrigé : seuls alias déjà équivalents SQL canonisés, 15 phrases composées bloquées ; 433 valeurs passent la garde SQL. Snapshot actuel : 324 admissibles/588 bloquées, 55 captures mappées/21 non mappées. Aucun import commis ni mesure d'exactitude réelle. |
 | Resend/portail | Clé, domaines, webhook et canari fournisseur vérifiés. Ajout du secret portail à Vercel Production refusé par auto-review, accord précis en attente. Aucun interlocuteur réel sollicité. |
 | Inbound | Route non publiée sur l’origine canonique, cron absent. Canari canonique authentifié puis activation et récupération automatique de santé requis après déploiement. |
 | Enchères Publiques | Source désactivée, gardes qualifiées sur `3400eb58`. Accord écrit et flux promis non reçus. Aucune nouvelle collecte. |
@@ -3116,3 +3116,79 @@ enrichissement stalled. Les 26 valorisations pending observées à
 zéro ouvert, cron de cinq minutes actif. Secret portail Production et
 accord/flux EP restent manquants. Aucune publication finale, promotion
 du worker automatique, suppression de branche ou sollicitation réelle.
+
+## Cold réel, maintenance v4.6 et refus atomique d'occupation
+
+Le [cold 36785646849](https://github.com/Aprivi-dev/immojudis/actions/runs/36785646849)
+termine success à 22 h 51 min 03 s UTC sur le même `e3deadf6`. Les étapes
+extraction/Justice montrent chacune un MISS littéral à 22 h 27 min 20 s.
+240 annonces, 241/241 requêtes, zéro erreur de transport, collecte et
+publication complètes, enrichissement partiel. Run SQL
+`6d276fd4-771a-405d-8f3d-2e48a5c8577b`, début 22 h 27 min 53,250025 s,
+fin 22 h 50 min 42,810855 s. Les warnings OCR et watchdog non fatals restent
+explicites ; aucune réussite globale d'enrichissement n'est déduite du vert.
+
+L'audit SQL cold à 22 h 56 confirme les deux candidats : quatre PDF dont
+95/95 pages, et trois PDF de 1/21/57 pages, modernes et complets, mêmes
+fichier/texte SHA, longueurs et fingerprints que la baseline warm. Sept
+documents verified/extracted, file_path NULL, persisted_pdf_text/cache proof
+v1, tous mis à jour après le start cold (22 h 50 min 15 s et
+22 h 49 min 56 s respectivement). Le verified_at historique des trois PDF
+reste 19 h 53 min 32,989891 s. Snapshot privé sans texte/contact/URL, SHA
+`88588bc3b7bf765ba92160e54ed8c911c70d20ed7a2db0d15965872b4a9adf46`.
+La complétude porte bien sur les dossiers entiers et non sur le seul PDF
+de 95 pages ; aucune relecture forcée de vente ni manipulation de cache.
+
+`1780af69961395baefc122712c20fbf9eee77a80` est qualifié par
+[CI 36786991023](https://github.com/Aprivi-dev/immojudis/actions/runs/36786991023)
+et [CodeQL 36786991027](https://github.com/Aprivi-dev/immojudis/actions/runs/36786991027).
+Logs réels : Python 3.11/3.12 chacune 2 091 passed/18 skipped, quatre
+variantes PG obligatoires exécutées, 201 migrations, aucun drift,
+Files 80/Tests 1488/Result PASS à 22 h 45 min 59 s, deux intégrations.
+CodeQL uploads terminés, aucune alerte ouverte sur le SHA exact.
+
+La [maintenance 36788041292](https://github.com/Aprivi-dev/immojudis/actions/runs/36788041292)
+applique uniquement `20261001000000` sur le tag immuable
+`immojudis-maintenance-1780af69`, protégé avant création par le ruleset
+`24277244` sans bypass. Historique 200 avant/201 après, schéma distant
+identique aux migrations, fonction avec les trois hashes approuvés et
+garde NULL, ACL conservée. Scheduler opérationnel de quinze minutes
+inchangé ; aucun secret ajouté. Les tables IA étaient toujours vides.
+
+Le preflight live à 22 h 47 min 51,764110 s compte 73 mappings exacts sur
+100 cas au total, dont 55 captures exactes/21 non mappées ; aucun ambigu.
+Le dry-run avec cette base réduit les anciennes 346 admissibles à 336,
+avec 576 bloquées. L'instantané du 29 septembre ne peut donc pas être
+utilisé comme décision d'import actuelle.
+
+L'import entier de 100 statuts/912 projections dans une transaction bornée
+à 30 s/lock 2 s a été refusé `23514` par `ai_review_value_is_bounded`.
+Rollback vérifié à 23 h 00 min 28,745253 s : zéro statut IA et zéro
+projection persistés. Diagnostic SQL lecture seule : 20 valeurs brutes
+d'occupation hors contrat parmi 448 valeurs resolved, cinq alias « loué »
+équivalents au CASE SQL et quinze formulations composées non équivalentes.
+Le normaliseur générique de collecte ne convient pas à cette frontière :
+occupation partielle, mention historique et stockage par propriétaire ne
+peuvent pas devenir une occupation confirmée par une simple sous-chaîne.
+
+Le correctif de projection limite la conversion aux alias exacts déjà
+admis par le normaliseur SQL ; il garde les formulations composées
+unresolved/value NULL avec motif explicite. Aucun label, citation, SHA
+d'artefact ou garde SQL n'est modifié. 94 tests import/projection/revue,
+Ruff et diff verts. Export normalisé privé de 912 lignes, SHA
+`4d5b1643f261366987928cd70f09820b5bae2df364dc409069a5e176665565ae`.
+Diagnostic SQL à 23 h 11 min 51,066436 s : 433 valeurs proposées,
+zéro forme invalide, aucune écriture. Dry-run live : 324 admissibles/588
+bloquées, avec les mêmes 55/21 captures. Nouvelle CI exacte puis nouvelle
+tentative atomique et vérification publique requises.
+
+Trois défauts de parseurs reproduits sur captures et fixtures synthétiques
+sont corrigés : Cessions lit la surface terrain de la description du bien
+(notamment quand le HTML coupe la phrase en paragraphes), récupère le
+parking explicitement décrit ; Petites Affiches accepte un garage/parking
+au singulier. Les deux sources écartent les mentions visiteurs/publiques,
+non comprises dans la vente et appartenant au lot voisin. Une description
+ambiguë ne crée pas de compte ; les gardes anti-lots sur les pièces sont
+conservées. 106 tests sources et 25 parser matrix/calibration passent.
+Ces corrections n'ajoutent aucune collecte et ne qualifient pas la fraîcheur
+durable ou la capacité ; un prochain canari de queue reste nécessaire.

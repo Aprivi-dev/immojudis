@@ -644,7 +644,7 @@ def _detail_parking_count(text: str | None) -> int | None:
     count_token = r"(?P<count>[1-9][0-9]?|une?|deux|trois|quatre|cinq)"
     patterns = (
         rf"\b{count_token}\s+places?\s+de\s+(?:parkings?|stationnement|garages?|box)\b",
-        r"\b(?P<count>[2-9][0-9]?|deux|trois|quatre|cinq)\s+(?:parkings?|stationnement|garages?|box)\b",
+        r"\b(?P<count>[1-9][0-9]?|une?|deux|trois|quatre|cinq)\s+(?:parkings?|stationnement|garages?|box)\b",
         r"\b(?:parkings?|stationnement|garages?|box)\s*:\s*\s*(?P<count>[1-9][0-9]?|deux|trois|quatre|cinq)\b",
     )
     visitor_parking_pattern = re.compile(
@@ -654,10 +654,18 @@ def _detail_parking_count(text: str | None) -> int | None:
         r"\b(?:parkings?|stationnement|garage|box)\b",
         re.I,
     )
+    excluded_lot_pattern = re.compile(
+        r"\b(?:non|pas)\s+(?:compris(?:e|es|s)?|inclus(?:e|es|s)?)\b|"
+        r"\b(?:parkings?|stationnement|garage|box)\b[^.;:]{0,45}"
+        r"\b(?:lot\s+)?voisin(?:e|s)?\b|"
+        r"\b(?:lot\s+)?voisin(?:e|s)?\b[^.;:]{0,45}"
+        r"\b(?:parkings?|stationnement|garage|box)\b",
+        re.I,
+    )
     for pattern in patterns:
         for match in re.finditer(pattern, normalized, re.I):
             context = normalized[max(0, match.start() - 80):min(len(normalized), match.end() + 80)]
-            if visitor_parking_pattern.search(context):
+            if visitor_parking_pattern.search(context) or excluded_lot_pattern.search(context):
                 continue
             token = match.group("count").lower()
             if token.isdigit():
