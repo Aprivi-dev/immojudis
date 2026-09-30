@@ -1,6 +1,6 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 00 h 25 UTC
+## Synthèse actuelle — 30 septembre, 00 h 38 UTC
 
 | Chantier           | État vérifié                                                                                                                                                                                                                                                                                                                                          |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1620,3 +1620,23 @@ queue/fraîcheur/cache/stockage passent 144 tests ; avec les 94 tests PDF,
 le total ciblé est de 238 cas. Ruff et contrôle de whitespace passent.
 La relecture indépendante donne son accord final ; les correctifs sont
 préparés pour le push et la CI du HEAD commun.
+
+## Premier rejeu du HEAD commun et corrections de fixtures
+
+Sur `9cfcf412`, CodeQL `36650343202` réussit. La CI `36650343247`
+réussit les migrations et pgTAP, les invariants du planificateur, la revue
+des dépendances et les parcours navigateur. Elle échoue sur le formatage
+Prettier de deux fichiers du relais et trois anciennes fixtures PDF de
+`test_main.py` ; chaque version Python compte 1 925 cas réussis et 18 ignorés.
+Les fixtures ne fournissaient que la date et l'empreinte d'entrée, désormais
+insuffisantes pour certifier un cache PDF. Elles produisent maintenant un
+cache JSON réel et sa preuve avec le helper de production, sans assouplir
+la garde de fraîcheur. Les 41 tests de `test_main.py` et les 144 cas ciblés
+queue/fraîcheur/cache/stockage passent ; Ruff et compilation passent aussi.
+Les deux fichiers du relais sont formatés et leur contrôle ESLint passe.
+Un nouveau rejeu complet est requis sur le commit de ces corrections.
+
+Le job PDF de Ris-Orangis est désormais `failed` à quatre essais sur quatre,
+sans lease active. Il ne sera pas réinitialisé pour le canari. Le worker
+automatique démarré à 00 h 31 UTC doit terminer avant tout nouvel essai
+manuel, conformément à la sérialisation des écritures.

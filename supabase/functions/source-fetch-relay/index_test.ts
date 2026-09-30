@@ -28,12 +28,7 @@ Deno.test("restrict origins and POST forms", () => {
       true,
     ],
     ["https://www.petitesaffiches.fr/vente/immobiliere/judiciaire/private", "GET", "", false],
-    [
-      "https://www.petitesaffiches.fr/vente/immobiliere/n/not-an-id.html",
-      "GET",
-      "",
-      false,
-    ],
+    ["https://www.petitesaffiches.fr/vente/immobiliere/n/not-an-id.html", "GET", "", false],
     [
       "https://www.petitesaffiches.fr/vente/immobiliere/judiciaire/une-cave-cannes-166037.html?token=secret",
       "GET",
@@ -344,19 +339,19 @@ Deno.test("normalizes only the verified Petites Affiches HTTP canonical redirect
 Deno.test("relay refuses unsafe Locations without forwarding their URL", async () => {
   const originalDigest = crypto.subtle.digest;
   const originalFetch = globalThis.fetch;
-  const digestBytes = Uint8Array.from(
-    TOKEN_SHA256.match(/.{2}/g) ?? [],
-    (pair) => Number.parseInt(pair, 16),
+  const digestBytes = Uint8Array.from(TOKEN_SHA256.match(/.{2}/g) ?? [], (pair) =>
+    Number.parseInt(pair, 16),
   );
   (crypto.subtle as unknown as { digest: () => Promise<ArrayBuffer> }).digest = async () =>
     digestBytes.slice().buffer;
 
   let upstreamLocation = "https://evil.example/collect?token=secret-value";
   let upstreamStatus = 302;
-  globalThis.fetch = async () => new Response("upstream body", {
-    status: upstreamStatus,
-    headers: { location: upstreamLocation },
-  });
+  globalThis.fetch = async () =>
+    new Response("upstream body", {
+      status: upstreamStatus,
+      headers: { location: upstreamLocation },
+    });
   try {
     for (const location of [
       "https://evil.example/collect?token=secret-value",
@@ -393,8 +388,7 @@ Deno.test("relay refuses unsafe Locations without forwarding their URL", async (
     );
     if (allowed.status !== 301) throw new Error("public redirect status was not preserved");
     if (
-      allowed.headers.get("location") !==
-      "https://www.petitesaffiches.fr/encheres-immobilieres/"
+      allowed.headers.get("location") !== "https://www.petitesaffiches.fr/encheres-immobilieres/"
     ) {
       throw new Error("public redirect was not normalized safely");
     }
