@@ -151,6 +151,23 @@ def test_agrasc_unknown_unlinked_cards_never_certify_inventory(monkeypatch) -> N
     assert result.coverage["scoped_inventory_complete"] is False
 
 
+def test_agrasc_mixed_sold_and_unlinked_non_sold_cards_stay_blocked(monkeypatch) -> None:
+    html = _agrasc_html().replace(
+        '<a class="fr-pagination__link--last" href="/ventes-aux-encheres?page=0">Dernière page</a>',
+        '<div class="card-vente-immo"><h3>Archive sans statut</h3></div>'
+        '<a class="fr-pagination__link--last" href="/ventes-aux-encheres?page=0">Dernière page</a>',
+    )
+    _patch_agrasc_client(monkeypatch, html)
+
+    result = agrasc.scrape_agrasc_aquitaine_result()
+
+    partition = result.coverage["certificate"]["partitions"][0]
+    assert partition["unlinked_public_card_count"] == 2
+    assert sorted(card["sold"] for card in partition["unlinked_public_cards"]) == [False, True]
+    assert not result.coverage["certificate"]["addressable_public_inventory_certified"]
+    assert not result.coverage["scoped_inventory_complete"]
+
+
 def test_agrasc_descriptive_sold_text_does_not_certify_unlinked_card(monkeypatch) -> None:
     _patch_agrasc_client(monkeypatch, _agrasc_html().replace(
         '<div class="fr-card__start"><p class="fr-badge fr-badge--error">Vendu</p></div>',
@@ -162,6 +179,62 @@ def test_agrasc_descriptive_sold_text_does_not_certify_unlinked_card(monkeypatch
     certificate = result.coverage["certificate"]
     assert certificate["addressable_public_inventory_certified"] is False
     assert certificate["partitions"][0]["unlinked_public_cards"][0]["sold"] is False
+
+
+def test_agrasc_uses_published_query_page_zero_when_bare_url_is_incoherent(monkeypatch) -> None:
+    bare_url = f"{agrasc.BASE_URL}/ventes-aux-encheres"
+    query_url = f"{bare_url}?page=0"
+    stale_html = """
+    <div class="view-liste-ventes-immobilieres">
+      <div class="card-vente-immo">
+        <h3 class="fr-card__title"><a href="/vente/stale">Ancienne vue</a></h3>
+        <p class="fr-card__detail">Agen (47)</p>
+      </div>
+      <a class="fr-pagination__link--last" href="?page=5">Dernière page</a>
+    </div>
+    """
+    query_html = """
+    <div class="view-liste-ventes-immobilieres">
+      <div class="card-vente-immo">
+        <h3 class="fr-card__title"><a href="/vente/query">Vue page zéro</a></h3>
+        <p class="fr-card__detail">Agen (47)</p>
+      </div>
+      <a class="fr-pagination__link--last" href="?page=0">Dernière page</a>
+    </div>
+    """
+    calls: list[str] = []
+
+    class Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def get(self, url: str) -> str:
+            calls.append(url)
+            return {bare_url: stale_html, query_url: query_html}[url]
+
+        def coverage_metrics(self) -> dict[str, object]:
+            return {}
+
+    monkeypatch.setattr(agrasc, "TARGET_DEPARTMENTS", ("47",))
+    monkeypatch.setattr(agrasc, "PoliteHttpClient", Client)
+    monkeypatch.setattr(
+        agrasc,
+        "load_settings",
+        lambda: {
+            "user_agent": "Mozilla/5.0",
+            "request_delay_seconds": 0,
+            "request_timeout_seconds": 1,
+        },
+    )
+    monkeypatch.setattr(agrasc, "enrich_agrasc_operator", lambda *args, **kwargs: None)
+    monkeypatch.setattr("src.source_checkpoint.restore_detail", lambda sale: False)
+
+    result = agrasc.scrape_agrasc_aquitaine_result(max_pages=1)
+
+    assert agrasc.LIST_URL == query_url
+    assert calls == [query_url]
+    assert result.sales[0]["source_url"] == "https://agrasc.gouv.fr/vente/query"
+    assert result.coverage["certificate"]["partitions"][0]["visited_page_indices"] == [0]
 
 
 def test_agrasc_pagination_ignores_unrelated_archive_view(monkeypatch) -> None:

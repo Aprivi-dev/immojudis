@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 08 h 45 UTC
+## Synthèse actuelle — 30 septembre, 10 h 10 UTC
 
-| Chantier           | État vérifié                                                                                                                                                                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `81022c19` : CI complète et CodeQL verts, 1 966 tests Python par version, 1 336 tests Web, 200 migrations et 1 481 assertions pgTAP. Le nouveau correctif de deadline des détails doit encore être qualifié sur son propre SHA.                         |
-| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                    |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `81022c19` démarré à 08 h 41, après la collecte automatique Petites Affiches. Aucune promotion du candidat ; correction des délais source en relecture.                       |
-| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                    |
-| Collecte AGRASC    | Audit public : huit annonces émises, un catalogue vendeur exclu et 25 archives vendues sans lien. Le HTML primaire confirme un lien terminal vers page 5 puis page 6 ; aucun certificat de complétude n'est accordé.                                    |
-| Documents          | Défaut réel de sérialisation confirmé : les marqueurs de complétude n'étaient pas enregistrés avec les textes. Writer corrigé et relu, tests de bout en bout verts. Une nouvelle extraction réelle est requise ; aucune promotion des anciens payloads. |
-| Capacité           | Au relevé de 08 h 45 : 6 091 jobs ouverts, 6 067 dus réessayables, 2 718 ouverts de plus de 48 h, un en cours et 18 ayant épuisé leurs essais. Circuit quota testé localement ; résorption durable non démontrée.                                       |
-| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                      |
-| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                              |
-| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                |
-| Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                                                 |
-| Publication finale | PR en brouillon, nouvelles corrections en relecture. Preview exacte `81022c19` validée en lecture seule ; pas de publication applicative finale ni import IA. Plan de branches préparé, aucune suppression.                                             |
+| Chantier           | État vérifié                                                                                                                                                                                                                                              |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL et CI          | `285190e4` : CI complète et CodeQL verts, 1 985 tests Python par version, 1 336 tests Web, 200 migrations et 1 481 assertions pgTAP. Les corrections AGRASC, deadline LLM et diagnostics PDF doivent encore être qualifiées sur leur propre SHA.          |
+| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                      |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `81022c19` réussi : 38 tâches terminées, sept échouées, sept annulées et huit restituées, aucun claim running. Source et IA nécessitent encore un canari du prochain SHA.       |
+| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                      |
+| Collecte AGRASC    | Deux passages depuis `?page=0` reproduisent 12 URL parsées et 25 archives sans lien toutes vendues ; terminal stable à 6. Correction relue indépendamment, 110 tests verts, certificats stricts conservés. Aucun nettoyage sur le seul inventaire public. |
+| Documents          | Vrai writer confirmé sur six textes explicitement complets avec SHA et longueurs concordants. Le manifeste de ce dossier compte 16 PDF : récupération entière encore non qualifiée. Cinq erreurs d'extraction nécessitent des causes/pages observables.   |
+| Capacité           | Au relevé de 09 h 50 : 6 053 jobs ouverts, 6 027 dus réessayables, 2 679 anciens encore sous le plafond d'essais, un en cours et 19 épuisés. Circuit quota testé localement ; résorption durable non démontrée.                                           |
+| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                        |
+| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                |
+| Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                  |
+| Enchères Publiques | Collecteur suspendu après 403 ; accord écrit et flux exploitable promis mais non reçus.                                                                                                                                                                   |
+| Publication finale | PR en brouillon, derniers correctifs en cours de qualification. Preview exacte `81022c19` validée en lecture seule ; pas de publication applicative finale ni import IA. Plan de branches préparé, aucune suppression.                                    |
 
 Les sections suivantes conservent la chronologie. Leurs compteurs datés ne
 doivent pas être utilisés comme l'état courant sans lire cette synthèse et
@@ -1953,9 +1953,10 @@ Le tag `immojudis-workers-81022c19` pointe exactement vers ce commit,
 protégé contre mise à jour et suppression par la règle 24234724 sans
 bypass. Le [canari 36688865110](https://github.com/Aprivi-dev/immojudis/actions/runs/36688865110)
 attend la fin de la collecte automatique puis démarre à 08 h 41 min 36 s.
-Il devra produire les nouveaux marqueurs PDF et vérifier l'arrêt et la
-libération des claims. Sa réussite ne qualifiera pas le correctif source
-suivant, encore non commité. La route automatique reste sur `f695a739`.
+Il réussit, avec les résultats détaillés plus bas. Il confirme le writer
+sur un dossier partiellement couvert ; la récupération du manifeste entier
+reste à qualifier. Il ne qualifie pas le correctif source suivant.
+La route automatique reste sur `f695a739`.
 
 ## Inventaires publics et pagination AGRASC — 30 septembre, 08 h 43 UTC
 
@@ -1983,14 +1984,14 @@ sans preuve pour départager pagination dynamique et autre défaut côté site.
 Le parseur ne confond pas deux widgets. Aucune fin n'est choisie par
 inférence ; aucun nettoyage ni création des archives sans identité.
 
-## Deadline coopérative des détails — 30 septembre, 08 h 45 UTC
+## Deadline coopérative des détails — 30 septembre, 09 h 02 UTC
 
 La vérification des durées montre qu'un lot source de deux détails peut
 prendre 162,6 secondes. Commencer juste avant la limite d'admission à
 1 140 secondes peut donc dépasser le budget worker de 1 200 secondes.
 Le cutoff PDF existant ne protégeait pas ces requêtes.
 
-Le patch en relecture transmet désormais le même cutoff aux détails,
+Le commit `285190e49f9956bc38fb0a3ea35f1ef7f5d1980a` transmet désormais le même cutoff aux détails,
 avec la marge de finalisation dynamique existante. Un contexte task-local
 est restauré dans `finally`. Les contrôles couvrent admission de job,
 robots, cadence, retries, réponse, préparation et début de publication.
@@ -2014,3 +2015,164 @@ sont propres. La relecture indépendante du worker confirme les leases,
 le reset du contexte et l'absence de capture large dans les parseurs du
 chemin `fetch_public_detail` ; ses 111 tests ciblés réussissent, un est
 ignoré. Nouvelle CI et canari du prochain SHA restent requis.
+
+La [CI 36693472747](https://github.com/Aprivi-dev/immojudis/actions/runs/36693472747)
+et [CodeQL 36693472822](https://github.com/Aprivi-dev/immojudis/actions/runs/36693472822)
+réussissent sur ce commit poussé. Les deux versions Python comptent chacune
+1 985 succès et 18 tests ignorés ; les audits pip sont verts. Le Web
+compte 1 336 succès et cinq ignorés, audit npm sans vulnérabilité connue,
+build et budgets verts. Les 79 fichiers pgTAP et 1 481 assertions passent,
+sans dérive SQL ; catalogue HTTP, inbound local, Playwright, dépendances
+et invariant du planificateur sont verts. Ces contrôles ne qualifient pas
+les changements AGRASC et deadline LLM suivants.
+
+## Première page AGRASC reproductible — 30 septembre, 09 h 06 UTC
+
+Une requête à l'URL publiée `?page=0` affiche le terminal 6, six cartes
+et six liens parsés. Ses cartes se recouvrent avec seulement deux des six
+cartes de l'URL sans query, et aucune de `?page=1`. Le contenu de l'URL
+sans query n'est donc pas un alias fiable de la première page publiée.
+La cause de cette différence côté fournisseur n'est pas démontrée.
+
+Deux passages avec le même client existant et sa politique robots suivent
+les sept pages publiées `?page=0` à `?page=6`. Les 14 requêtes de liste
+réussissent, sans retry ni refus. Les pages 0 à 5 annoncent toutes le
+terminal 6, puis la page 6 termine la chaîne. Les deux inventaires parsés
+contiennent exactement les mêmes 12 URL. Ce compteur ne mesure pas
+les nouvelles fiches publiées dans la base.
+
+Les pages 2 à 5 contiennent chacune six archives sans lien ; la page 6
+en contient une. Les 25 cartes uniques portent toutes `sold=True` avec
+preuve `sold_class_and_visible_status`. Aucun cas sans lien non vendu
+n'est observé. La lecture de ces captures ne crée aucune identité manquante.
+
+Le collecteur commence maintenant sur la première page explicitement
+publiée `?page=0`. Le périmètre du widget, les exclusions et tous les
+certificats restent inchangés ; aucune complétude globale n'est forcée.
+Les tests couvrent une URL sans query incohérente et le refus de certifier
+un mélange d'archives vendues et de carte sans statut. Les 28 tests
+certificat/catalogue et 76 tests parseurs/matrice source passent ; Ruff
+et le diff sont propres. La relecture indépendante valide le changement,
+avec 110 tests verts ; la CI du futur SHA reste requise.
+
+## Canari `81022c19` et vrais marqueurs PDF — 30 septembre, 09 h 14 UTC
+
+Le [run 36688865110](https://github.com/Aprivi-dev/immojudis/actions/runs/36688865110)
+réussit : job de 08 h 41 min 36 s à 09 h 01 min 39 s, worker en
+1 141,1 secondes avec arrêt `finalization_margin` et environ 58,9 secondes
+restantes sur le budget de 1 200. Les 60 claims sont uniques, répartis
+30/30 entre source et enrichissement ; le lot source maximal prend
+35,1 secondes. Les résultats sont 38 terminés, sept échoués, sept annulés
+et huit restitués, sans claim running, manquant ou autre. Le débit de
+189,3 claims par heure inclut les échecs et reports ; il ne mesure pas
+un débit de fiches complètes ni une résorption durable.
+
+Cinq erreurs PDF restent agrégées sans sous-cause exploitable dans le log,
+sur quatre documents Avoventes et un Info-Enchères. Deux longs PDF atteignent
+75/80 et 75/87 pages avec 35 et 74 pages nouvelles checkpointées. Un autre
+est arrêté à la deadline après 6/38 pages. Cinq faits attendent encore leur
+prérequis PDF. Les huit restitutions correspondent aux reports demandés.
+Aucun HTTP 4xx/5xx ou épuisement de quota Replicate n'est observé ; ce run
+ne qualifie donc pas à lui seul le déclenchement du circuit quota.
+
+La lecture SQL finale identifie l'extraction
+`ed25ca66-5b7b-4410-88b0-3e0cdc496220`, persistée à 09 h 00 min 08 s
+pour la vente `1491d595-75a0-47fe-90a1-2fddf96eb89d`. Les six textes ont
+les marqueurs explicites `complete=true`, `extraction_status=extracted`
+et aucun échec de page. Leurs six SHA fichier concordent avec la preuve v1
+de 09 h 00 min 03 s ; les six SHA des textes normalisés, recalculés sans
+exposer les textes, et les six longueurs concordent également. Cela
+confirme le vrai writer corrigé sur un résultat de production.
+
+Le manifeste courant comprend toutefois 16 PDF distincts, avec seulement
+six profils. Il ne satisfait pas la récupération persistée du manifeste
+entier ; aucun résultat partiel n'est promu. Le plafond sélectionne six
+documents par vente. L'essai cold doit donc utiliser un dossier réellement
+traité et entièrement couvert de six documents ou moins, avec cache local
+absent et provenance `persisted_pdf_text` visible après l'upsert central.
+Les écritures legacy postérieures du worker automatique ne sont pas une
+preuve du writer candidat et restent distinguées par leurs timestamps.
+
+## Deadline des requêtes IA — correction suivante, 30 septembre
+
+La relecture du chemin Replicate trouve des timeouts POST et polling
+configurés à 180 secondes et une cadence/retry indépendante du worker.
+Ces opérations peuvent commencer juste avant le cutoff et dépasser la
+marge de 60 secondes, malgré le succès du canari précédent. La correction
+propage une deadline LLM task-local à la création, aux attentes
+et au suivi des prédictions, avec restitution des claims sans tentative.
+
+Les frontières avant POST et après POST sont distinctes : une réservation
+connue non envoyée peut être libérée ; une issue réseau inconnue conserve
+sa réservation, et une prédiction acceptée conserve son ID. Aucun faux
+succès ou échec terminal n'est enregistré pour rendre le délai vert.
+Les checkpoints factuels déjà réussis restent réutilisables dans les tests.
+Les gardes SQL de réservation ambiguë empêchent un nouveau POST aveugle ;
+une réconciliation fournisseur peut rester nécessaire. Les quotas,
+retries et limites de sélection ne sont pas augmentés.
+
+Les attentes cadence, retry 429 et polling dorment jusqu'au plus petit
+des délais restant et configuré, puis contrôlent de nouveau la deadline.
+L'arrêt atteint donc le cutoff réel avant que le worker puisse admettre
+une autre vente. Le timeout POST est recalculé après préparation et
+réservation ; le timeout GET respecte le même cutoff. Un TransportError
+après POST conserve l'issue `ambiguous`, puis vérifie la deadline.
+Le chemin public de génération enregistre cette issue une seule fois,
+en conservant l'identifiant fournisseur. La télémétrie privée conserve
+également cet état lorsqu'elle est appelée directement.
+
+La réservation du quota autonome n'a pas de primitive de libération : si
+la deadline survient après celle-ci mais avant le POST, ce ledger reste
+conservateur ; seule la réservation de requête non envoyée est libérée.
+Les gardes empêchent une duplication aveugle, mais ne constituent pas une
+réconciliation automatique d'une prédiction fournisseur encore inconnue.
+La relecture indépendante finale approuve le delta : dix tests deadline,
+50 tests queue et 98 tests enrichissement/cache/budget/coûts réussissent.
+Ruff, compilation et diff sont propres. La CI du futur commit et son
+canari cloud restent requis.
+
+## Diagnostics PDF — 30 septembre, 10 h 00 UTC
+
+Le log du canari précédent montre cinq documents téléchargés avec HTTP 200,
+puis des erreurs d'extraction sans leurs sous-causes. Il ne démontre ni un
+refus d'accès ni une expiration de deadline pour ces cinq documents.
+Les payloads de pages comportent pourtant des motifs tels que `ocr_failed`
+ou `empty_page_not_proven_blank`, perdus dans le diagnostic agrégé de la file.
+
+Le nouveau helper extrait les seuls statuts, pages et causes reconnus.
+Les exceptions conservent leur classe, sans leur message. Les pages
+explicitement exclues comme vides restent exclues des échecs. Le format des
+logs filtre les statuts et raisons, borne l'affichage à 20 pages, indique
+le total au-delà et ignore textes, URL et tokens. Le profil conserve les
+causes et l'analyse contient `failed_document_diagnostics`. La queue joint
+au diagnostic trois fragments au maximum, avec les chemins déjà nettoyés
+de leur query. L'échec continue à empêcher l'upsert des faits partiels.
+Les checkpoints et règles de complétude ne sont pas assouplis.
+
+La suite intégrée isolée finale compte 199 succès sur deadline IA, queue,
+PDF, reprise documentaire et certificats AGRASC ; Ruff est vert. La relecture
+indépendante approuve les 57 tests diagnostic/queue, y compris le statut
+réel `blank_page_excluded`, le fallback `extraction_status` et le maintien
+du blocage lorsque les marqueurs de page se contredisent. Le module PDF
+reste à 1 497 lignes sous le budget de 1 500. La CI du nouveau SHA et son
+canari restent requis ; les causes des cinq anciens documents devront
+être constatées lors d'une nouvelle extraction normale.
+
+## Baseline et dossier warm — 30 septembre, 09 h 50 UTC
+
+La lecture SQL compte 6 021 queued, 31 failed et un running, soit 6 053
+tâches ouvertes. Les 6 027 dues réessayables sont uniquement queued/failed,
+avec `attempt_count < max_attempts` et `next_attempt_at` arrivé à échéance.
+Les 2 679 tâches de plus de 48 heures sont queued/failed/running encore sous
+le plafond de tentatives ; elles n'incluent pas les 19 épuisées, comptées
+séparément. Ce relevé ne démontre pas une résorption sur un cycle complet.
+
+Le dossier Avoventes `3a486846-45f4-49d8-8731-e6d0c06a7dbf` comporte quatre
+PDF, quatre profils et quatre preuves aux empreintes concordantes. Les
+quatre textes persistés à 01 h 24 min 42 s ont les bons SHA fichier, SHA
+des textes recalculés et longueurs, mais aucun marqueur `complete`,
+`extraction_status` ou `failed_pages`. Il reste un candidat warm legacy
+à extraire normalement, pas une preuve cold éligible. L'absence du champ
+`text_sha256` directement dans le résultat n'est pas un défaut : le writer
+et le validateur utilisent le hash recalculé comparé à la preuve.
+Aucun job n'est réclamé, réinitialisé ou forcé pour cet essai.

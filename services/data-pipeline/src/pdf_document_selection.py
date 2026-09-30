@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from collections import Counter
 from datetime import UTC, datetime
@@ -23,6 +24,9 @@ from src.pdf_enrichment import (
     _normalize_document_classifier_text,
     _profile_pdf_for_docling,
 )
+from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, summarize_pdf_failure
+
+LOGGER = logging.getLogger(__name__)
 
 # These hosts are useful when a person is sharing an auction listing, but they
 # never contain an official sale attachment. Keeping them out of the PDF
@@ -298,6 +302,7 @@ def _store_document_analysis_status(
     *,
     blocked_document_urls: list[str] | None = None,
     permanent_document_failures: list[dict[str, str]] | None = None,
+    failed_document_diagnostics: list[dict[str, object]] | None = None,
 ) -> None:
     raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     if not isinstance(sale.raw_payload, dict):
@@ -312,6 +317,7 @@ def _store_document_analysis_status(
         or any(not isinstance(payload, dict) for payload in pdf_texts)
         or (blocked_document_urls is not None and not isinstance(blocked_document_urls, list))
         or (permanent_document_failures is not None and not isinstance(permanent_document_failures, list))
+        or (failed_document_diagnostics is not None and not isinstance(failed_document_diagnostics, list))
     )
     if malformed_input:
         checked_at = datetime.now(UTC).isoformat()
@@ -338,6 +344,7 @@ def _store_document_analysis_status(
             "documents_downloaded": len(documents) if isinstance(documents, list) else 0,
             "documents_extracted": 0,
             "profiles": [],
+            "failed_document_diagnostics": [],
             "cache_proof": {
                 "version": 1,
                 "verified_at": checked_at,
@@ -374,6 +381,26 @@ def _store_document_analysis_status(
         for document in selected_documents
         if document.get("url")
     }
+    diagnostics_by_url: dict[str, dict[str, object]] = {}
+    for payload, profile in zip(pdf_texts, extracted_profiles, strict=False):
+        url = str(profile.get("url") or "")
+        diagnostic = summarize_pdf_failure(payload)
+        if url and diagnostic["status"] in {"incomplete", "failed"}:
+            diagnostics_by_url[url] = diagnostic
+            LOGGER.warning(
+                "PDF document extraction incomplete (%s): %s",
+                profile.get("document_type") or "unknown",
+                format_pdf_failure_diagnostics(diagnostic),
+            )
+    for marker in failed_document_diagnostics or []:
+        if not isinstance(marker, dict):
+            continue
+        url = str(marker.get("url") or "")
+        if not url or url not in selected_urls:
+            continue
+        diagnostic = summarize_pdf_failure(marker)
+        if diagnostic["status"] in {"incomplete", "failed"}:
+            diagnostics_by_url.setdefault(url, diagnostic)
     blocked_urls = list(dict.fromkeys(
         str(url)
         for url in (blocked_document_urls or [])
@@ -461,6 +488,11 @@ def _store_document_analysis_status(
         and str(document["url"]) not in set(empty_document_urls)
     ))
     failed_documents = len(failed_document_urls)
+    safe_failure_diagnostics = [
+        {"url": url, **diagnostics_by_url[url]}
+        for url in failed_document_urls
+        if url in diagnostics_by_url
+    ]
     checked_at = datetime.now(UTC).isoformat()
     cache_proof_documents = []
     for payload, profile in zip(pdf_texts, extracted_profiles, strict=False):
@@ -487,6 +519,7 @@ def _store_document_analysis_status(
         "input_fingerprint": document_fingerprint(sale_documents),
         "failed_documents": failed_documents,
         "failed_document_urls": failed_document_urls,
+        "failed_document_diagnostics": safe_failure_diagnostics,
         "empty_document_urls": empty_document_urls,
         "terminal_document_urls": terminal_document_urls,
         "blocked_documents": len(blocked_urls),
@@ -567,6 +600,7 @@ def _extracted_document_profile(payload: dict[str, object]) -> dict[str, object]
             "method": None,
             "complete": False,
             "failed_pages": [],
+            "failure_reasons": ["unknown"],
             "blank_pages": [],
             "visual_blank_pages": [],
         }
@@ -582,6 +616,9 @@ def _extracted_document_profile(payload: dict[str, object]) -> dict[str, object]
         extraction_status = "extracted" if clean_text(payload.get("text")) else "empty"
     if extraction_status == "extracted" and not clean_text(payload.get("text")):
         extraction_status = "empty"
+    diagnostics = summarize_pdf_failure(payload)
+    if diagnostics["status"] in {"incomplete", "failed"}:
+        extraction_status = str(diagnostics["status"])
     try:
         text_chars = int(payload.get("text_chars") or len(str(payload.get("text") or "")))
     except (OverflowError, TypeError, ValueError):
@@ -614,7 +651,8 @@ def _extracted_document_profile(payload: dict[str, object]) -> dict[str, object]
         # old profiles remain useful for diagnostics but cannot satisfy a
         # current PDF/fact gate.
         "complete": payload.get("complete") is True and extraction_status == "extracted",
-        "failed_pages": payload.get("failed_pages") or [],
+        "failed_pages": diagnostics["failed_pages"],
+        "failure_reasons": diagnostics["failure_reasons"],
         "blank_pages": payload.get("blank_pages") or [],
         "visual_blank_pages": payload.get("visual_blank_pages") or [],
     }

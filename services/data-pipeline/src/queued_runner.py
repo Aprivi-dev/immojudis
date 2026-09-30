@@ -29,6 +29,7 @@ from src.llm_requests import (
     LLMRequestDeterministicCooldown,
     llm_request_context,
 )
+from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_scope
 from src.main import (
     SOURCE_NAMES,
     PipelineOptions,
@@ -43,6 +44,7 @@ from src.pdf_enrichment import (
     enrich_sale_from_pdfs,
     pdf_deadline_scope,
 )
+from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
 from src.pipeline_usage import PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
@@ -482,6 +484,15 @@ def run_enrichment_queue_batch(
                     detail = f"{pdf_stats.errors} extraction errors, {analysis.get('failed_documents', 0)} failed documents"
                     if failed_paths:
                         detail += f" ({', '.join(failed_paths)})"
+                    diagnostics = analysis.get("failed_document_diagnostics")
+                    if isinstance(diagnostics, list):
+                        fragments = [
+                            format_pdf_failure_diagnostics(item)
+                            for item in diagnostics[:3]
+                            if isinstance(item, dict)
+                        ]
+                        if fragments:
+                            detail += f"; {'; '.join(fragments)}"
                     raise RuntimeError(f"Document extraction incomplete; retry required: {detail}")
             if job_types & {"fact_extraction", "display_description"}:
                 refresh_operational_display(sale)
@@ -626,6 +637,14 @@ def run_enrichment_queue_batch(
                     _finish_job(job, succeeded=False, error_message=message)
                 mark_enrichment_jobs_terminal(sale_jobs)
             continue
+        except LLMTaskDeadlineExceeded as exc:
+            # The shared worker cutoff also covers provider cadence, creation
+            # and polling. Release every still-owned claim in this batch;
+            # no following sale may start another paid request after the cutoff.
+            _record_worker_deferred_job_ids(pending_enrichment_jobs)
+            defer_budget_jobs(pending_enrichment_jobs, exc)
+            LOGGER.info("LLM worker deadline reached; remaining enrichment claims deferred: %s", exc)
+            return len(enrichment_jobs) if family == ENRICHMENT_FAMILY else handled_detail_jobs
         except QueueJobDeferred as exc:
             # Prerequisite coordination is a queue state, not a failed
             # extraction.  The helper releases the claim and restores the
@@ -694,14 +713,18 @@ def _run_enrichment_queue_batch_with_deadline(
     worker_deadline: float,
     finalization_margin_seconds: float,
 ) -> int:
-    """Run one claim with PDF and source-detail cutoffs before finalization."""
+    """Run one claim with task cutoffs that leave worker finalization time."""
 
     pdf_deadline = worker_deadline - finalization_margin_seconds
     if time.monotonic() >= pdf_deadline:
         # Recheck immediately before the claim RPC as the outer worker check
         # can race with a batch that finishes at the cutoff.
         return 0
-    with pdf_deadline_scope(pdf_deadline), source_task_deadline_scope(pdf_deadline):
+    with (
+        pdf_deadline_scope(pdf_deadline),
+        source_task_deadline_scope(pdf_deadline),
+        llm_task_deadline_scope(pdf_deadline),
+    ):
         return run_enrichment_queue_batch(
             limit=limit,
             family=family,
