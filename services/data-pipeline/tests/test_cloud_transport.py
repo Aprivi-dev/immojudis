@@ -30,8 +30,32 @@ def test_gateway_errors_are_not_catalogue_pages():
     transport = SourceRelayTransport("https://example.supabase.co/relay", "test")
     transport.client.close()
     transport.client = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(401, text="Unauthorized")))
-    with httpx.Client(transport=transport) as client, pytest.raises(httpx.TransportError):
+    with httpx.Client(transport=transport) as client, pytest.raises(
+        httpx.TransportError, match=r"authentication rejected \(HTTP 401\)"
+    ):
         client.get("https://cessions.immobilier-etat.gouv.fr/")
+
+
+def test_relay_target_errors_are_distinguished_without_exposing_target():
+    transport = SourceRelayTransport("https://example.supabase.co/relay", "test")
+    transport.client.close()
+    transport.client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(400, text="Target not allowed: secret-token")
+        )
+    )
+    target = (
+        "https://www.petitesaffiches.fr/vente/immobiliere/n/secret-token-165935.html"
+        "?session=private-secret"
+    )
+    with httpx.Client(transport=transport) as client, pytest.raises(
+        httpx.TransportError, match=r"target not allowed \(HTTP 400\)"
+    ) as raised:
+        client.get(target)
+    message = str(raised.value)
+    assert "secret-token" not in message
+    assert "private-secret" not in message
+    assert target not in message
 
 
 def test_relay_gzip_is_decoded_exactly_once():

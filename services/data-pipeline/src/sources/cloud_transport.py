@@ -41,7 +41,16 @@ class SourceRelayTransport(httpx.BaseTransport):
                   "headers": headers, "body": request.read().decode("utf-8")},
         )
         if response.headers.get("x-immojudis-source-relay") != "1":
-            raise httpx.TransportError("Source relay unavailable or authentication rejected")
+            if response.status_code == 400:
+                # Keep the relay body and target URL out of the exception.  A
+                # malformed or stale source path is actionable without
+                # exposing query tokens or upstream response text.
+                raise httpx.TransportError("Source relay target not allowed (HTTP 400)")
+            if response.status_code in {401, 403}:
+                raise httpx.TransportError(
+                    f"Source relay authentication rejected (HTTP {response.status_code})"
+                )
+            raise httpx.TransportError(f"Source relay unavailable (HTTP {response.status_code})")
         # httpx has already decompressed the relay response. Do not ask the
         # outer client to decompress those bytes a second time.
         headers = {k: v for k, v in response.headers.items()

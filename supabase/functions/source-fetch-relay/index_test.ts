@@ -4,6 +4,7 @@ import {
   normalizeRedirectLocation,
   redirectDiagnostic,
 } from "./handler.ts";
+import { TOKEN_SHA256 } from "./auth.ts";
 
 Deno.test("restrict origins and POST forms", () => {
   const cases: [string, string, string, boolean][] = [
@@ -14,9 +15,33 @@ Deno.test("restrict origins and POST forms", () => {
       "",
       true,
     ],
+    [
+      "https://www.petitesaffiches.fr/vente/immobiliere/volontaire/une-maison-antibes-166038.html",
+      "GET",
+      "",
+      true,
+    ],
+    [
+      "https://www.petitesaffiches.fr/vente/immobiliere/n/un-appartement-a-juvisy-sur-orge-165935.html",
+      "GET",
+      "",
+      true,
+    ],
     ["https://www.petitesaffiches.fr/vente/immobiliere/judiciaire/private", "GET", "", false],
     [
+      "https://www.petitesaffiches.fr/vente/immobiliere/n/not-an-id.html",
+      "GET",
+      "",
+      false,
+    ],
+    [
       "https://www.petitesaffiches.fr/vente/immobiliere/judiciaire/une-cave-cannes-166037.html?token=secret",
+      "GET",
+      "",
+      false,
+    ],
+    [
+      "https://www.petitesaffiches.fr/vente/immobiliere/n/un-appartement-a-juvisy-sur-orge-165935.html?token=secret",
       "GET",
       "",
       false,
@@ -36,9 +61,27 @@ Deno.test("restrict origins and POST forms", () => {
     ],
     ["https://www.petitesaffiches.fr/admin", "GET", "", false],
     ["http://www.petitesaffiches.fr/encheres-immobilieres/", "GET", "", false],
+    [
+      "http://www.petitesaffiches.fr/vente/immobiliere/n/un-appartement-a-juvisy-sur-orge-165935.html",
+      "GET",
+      "",
+      false,
+    ],
     ["https://evil.example/", "GET", "", false],
+    [
+      "https://evil.example/vente/immobiliere/n/un-appartement-a-juvisy-sur-orge-165935.html",
+      "GET",
+      "",
+      false,
+    ],
     ["https://www.petitesaffiches.fr.evil.example/", "GET", "", false],
     ["https://user:pass@www.petitesaffiches.fr/", "GET", "", false],
+    [
+      "https://www.petitesaffiches.fr:444/vente/immobiliere/n/un-appartement-a-juvisy-sur-orge-165935.html",
+      "GET",
+      "",
+      false,
+    ],
     ["https://cessions.immobilier-etat.gouv.fr/", "POST", "", false],
     ["http://cessions.immobilier-etat.gouv.fr/", "GET", "", false],
   ];
@@ -112,6 +155,21 @@ Deno.test("redirect diagnostics keep only status and safe host/path", () => {
     throw new Error("canonical detail identity or query leaked");
   }
 
+  const publicNDetail = redirectDiagnostic(
+    301,
+    "http://www.petitesaffiches.fr/vente/immobiliere/n/un-appartement-a-juvisy-sur-orge-165935.html?token=secret",
+    "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/judiciaire/un-appartement-a-juvisy-sur-orge-58923.html",
+  );
+  if (publicNDetail.destinationPath !== "/vente/immobiliere/") {
+    throw new Error("n detail path was not reduced to its public prefix");
+  }
+  if (
+    JSON.stringify(publicNDetail).includes("juvisy") ||
+    JSON.stringify(publicNDetail).includes("secret")
+  ) {
+    throw new Error("n detail identity or query leaked");
+  }
+
   const opaquePath = redirectDiagnostic(
     302,
     "https://www.petitesaffiches.fr/private/secret-token-value",
@@ -159,6 +217,15 @@ Deno.test("redirect diagnostics reject credentials and bound long paths", () => 
     throw new Error("redirect credentials accepted");
   }
 
+  const alternatePort = redirectDiagnostic(
+    302,
+    "https://www.petitesaffiches.fr:444/vente/immobiliere/n/une-cave-166037.html",
+    "https://www.petitesaffiches.fr/vente/immobiliere/n/une-cave-166037.html",
+  );
+  if (alternatePort.destinationHost !== null || alternatePort.destinationPath !== null) {
+    throw new Error("alternate redirect port entered diagnostics");
+  }
+
   const longPath = redirectDiagnostic(
     308,
     `https://www.petitesaffiches.fr/encheres-immobilieres/ventes-aux-encheres-immobilieres-p${"1".repeat(
@@ -201,6 +268,14 @@ Deno.test("normalizes only the verified Petites Affiches HTTP canonical redirect
   if (queryBearing !== "http://www.petitesaffiches.fr/encheres-immobilieres/?token=secret") {
     throw new Error("query-bearing redirect was rewritten");
   }
+  const sourceQuery = normalizeRedirectLocation(
+    301,
+    "http://www.petitesaffiches.fr/encheres-immobilieres/",
+    "https://www.petitesaffiches.fr/encheres-immobilieres/?session=secret",
+  );
+  if (sourceQuery !== "http://www.petitesaffiches.fr/encheres-immobilieres/") {
+    throw new Error("source query-bearing redirect was rewritten");
+  }
 
   const detailLocation =
     "http://www.petitesaffiches.fr/vente/immobiliere/judiciaire/une-cave-cannes-166037.html";
@@ -226,6 +301,32 @@ Deno.test("normalizes only the verified Petites Affiches HTTP canonical redirect
     throw new Error("query-bearing detail redirect was rewritten");
   }
 
+  const nDetailLocation =
+    "http://www.petitesaffiches.fr/vente/immobiliere/n/un-appartement-a-juvisy-sur-orge-165935.html";
+  const normalizedNDetail = normalizeRedirectLocation(
+    301,
+    nDetailLocation,
+    "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/judiciaire/un-appartement-a-juvisy-sur-orge-58923.html",
+  );
+  if (
+    normalizedNDetail !==
+    "https://www.petitesaffiches.fr/vente/immobiliere/n/un-appartement-a-juvisy-sur-orge-165935.html"
+  ) {
+    throw new Error("verified n detail redirect was not made fetchable");
+  }
+  if (!allowedTarget(normalizedNDetail, "GET", "")) {
+    throw new Error("normalized n detail redirect is not an allowed HTTPS target");
+  }
+  if (
+    normalizeRedirectLocation(
+      301,
+      `${nDetailLocation}?token=secret`,
+      "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/judiciaire/un-appartement-a-juvisy-sur-orge-58923.html",
+    ) !== `${nDetailLocation}?token=secret`
+  ) {
+    throw new Error("query-bearing n detail redirect was rewritten");
+  }
+
   for (const [status, location] of [
     [302, "http://www.petitesaffiches.fr/encheres-immobilieres/"],
     [301, "http://www.petitesaffiches.fr/other/"],
@@ -237,5 +338,68 @@ Deno.test("normalizes only the verified Petites Affiches HTTP canonical redirect
     ) {
       throw new Error("unverified redirect was rewritten");
     }
+  }
+});
+
+Deno.test("relay refuses unsafe Locations without forwarding their URL", async () => {
+  const originalDigest = crypto.subtle.digest;
+  const originalFetch = globalThis.fetch;
+  const digestBytes = Uint8Array.from(
+    TOKEN_SHA256.match(/.{2}/g) ?? [],
+    (pair) => Number.parseInt(pair, 16),
+  );
+  (crypto.subtle as unknown as { digest: () => Promise<ArrayBuffer> }).digest = async () =>
+    digestBytes.slice().buffer;
+
+  let upstreamLocation = "https://evil.example/collect?token=secret-value";
+  let upstreamStatus = 302;
+  globalThis.fetch = async () => new Response("upstream body", {
+    status: upstreamStatus,
+    headers: { location: upstreamLocation },
+  });
+  try {
+    for (const location of [
+      "https://evil.example/collect?token=secret-value",
+      "https://user:password@www.petitesaffiches.fr/vente/immobiliere/n/une-cave-166037.html?token=secret-value",
+    ]) {
+      upstreamLocation = location;
+      const response = await handler(
+        new Request("https://relay.invalid", {
+          method: "POST",
+          headers: { authorization: "Bearer test-token" },
+          body: JSON.stringify({
+            url: "https://www.petitesaffiches.fr/encheres-immobilieres/",
+          }),
+        }),
+      );
+      if (response.status !== 502) throw new Error("unsafe redirect was not rejected");
+      if (response.headers.has("location")) throw new Error("unsafe Location was forwarded");
+      const body = await response.text();
+      if (body.includes("evil.example") || body.includes("secret-value")) {
+        throw new Error("unsafe redirect leaked in the response");
+      }
+    }
+
+    upstreamLocation = "http://www.petitesaffiches.fr/encheres-immobilieres/";
+    upstreamStatus = 301;
+    const allowed = await handler(
+      new Request("https://relay.invalid", {
+        method: "POST",
+        headers: { authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          url: "https://www.petitesaffiches.fr/encheres-immobilieres/ventes-aux-encheres-immobilieres-p2.html",
+        }),
+      }),
+    );
+    if (allowed.status !== 301) throw new Error("public redirect status was not preserved");
+    if (
+      allowed.headers.get("location") !==
+      "https://www.petitesaffiches.fr/encheres-immobilieres/"
+    ) {
+      throw new Error("public redirect was not normalized safely");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    (crypto.subtle as unknown as { digest: typeof originalDigest }).digest = originalDigest;
   }
 });

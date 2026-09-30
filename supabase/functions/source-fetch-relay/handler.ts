@@ -10,6 +10,8 @@ const PETITES_AFFICHES_LEGACY_DETAIL_PATH =
   /^\/encheres-immobilieres\/vente\/immobiliere\/(?:judiciaire|volontaire)\/[a-z0-9-]+-\d+\.html$/;
 const PETITES_AFFICHES_CANONICAL_DETAIL_PATH =
   /^\/vente\/immobiliere\/(?:judiciaire|volontaire)\/[a-z0-9-]+-\d+\.html$/;
+const PETITES_AFFICHES_N_DETAIL_PATH =
+  /^\/vente\/immobiliere\/n\/[a-z0-9-]+-\d+\.html$/;
 const CESSIONS_HOST = "cessions.immobilier-etat.gouv.fr";
 const hosts = new Set([PETITES_AFFICHES_HOST, CESSIONS_HOST]);
 const cessionsClient = Deno.createHttpClient({
@@ -36,7 +38,11 @@ function safeRedirectPath(host: string, path: string): string | null {
   ) {
     return path;
   }
-  if (host === PETITES_AFFICHES_HOST && PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(path)) {
+  if (
+    host === PETITES_AFFICHES_HOST &&
+    (PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(path) ||
+      PETITES_AFFICHES_N_DETAIL_PATH.test(path))
+  ) {
     return "/vente/immobiliere/";
   }
   if (host === CESSIONS_HOST && path.startsWith("/biens/")) {
@@ -50,6 +56,44 @@ function safeRedirectPath(host: string, path: string): string | null {
 
 function safeRedirectHost(host: string): string | null {
   return hosts.has(host) ? host : null;
+}
+
+/**
+ * Return only a public, same-origin HTTPS Location that the caller may follow.
+ * A rejected Location is represented by null; its raw value never reaches a
+ * response header, error body, or persisted worker error.
+ */
+export function safeRedirectLocation(
+  status: number,
+  location: string | null,
+  currentUrl: string,
+): string | null {
+  if (!location || !REDIRECT_STATUS_CODES.has(status)) return null;
+  const normalized = normalizeRedirectLocation(status, location, currentUrl);
+  if (!normalized) return null;
+  try {
+    const source = new URL(currentUrl);
+    const destination = new URL(normalized, currentUrl);
+    if (
+      destination.protocol !== "https:" ||
+      destination.hostname !== source.hostname ||
+      destination.port ||
+      destination.username ||
+      destination.password ||
+      destination.search ||
+      destination.hash ||
+      destination.pathname.length > MAX_REDIRECT_LOG_PATH ||
+      !safeRedirectHost(destination.hostname) ||
+      !safeRedirectPath(destination.hostname, destination.pathname)
+    ) {
+      return null;
+    }
+    // URL normalizes an explicit default :443 away. This is the same HTTPS
+    // origin and is safe to emit; alternate ports remain rejected above.
+    return destination.toString();
+  } catch {
+    return null;
+  }
 }
 
 export function redirectDiagnostic(
@@ -66,6 +110,7 @@ export function redirectDiagnostic(
       !["http:", "https:"].includes(destination.protocol) ||
       destination.username ||
       destination.password ||
+      destination.port ||
       !destination.hostname
     ) {
       return { status, destinationHost: null, destinationPath: null };
@@ -130,10 +175,16 @@ export function normalizeRedirectLocation(
     ) {
       return location;
     }
-    const isListRedirect = destination.pathname === PETITES_AFFICHES_LIST_PATH;
+    const isListRedirect =
+      destination.pathname === PETITES_AFFICHES_LIST_PATH &&
+      !source.search &&
+      !source.hash;
+    const isDetailDestination =
+      PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(destination.pathname) ||
+      PETITES_AFFICHES_N_DETAIL_PATH.test(destination.pathname);
     const isDetailRedirect =
       PETITES_AFFICHES_LEGACY_DETAIL_PATH.test(source.pathname) &&
-      PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(destination.pathname) &&
+      isDetailDestination &&
       !source.search &&
       !source.hash;
     if (!isListRedirect && !isDetailRedirect) return location;
@@ -162,7 +213,8 @@ export function allowedTarget(value: string, method: string, body: string): bool
           u.pathname === "/robots.txt" ||
           u.pathname.startsWith(PETITES_AFFICHES_LIST_PATH) ||
           (u.hostname === PETITES_AFFICHES_HOST &&
-            PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(u.pathname) &&
+            (PETITES_AFFICHES_CANONICAL_DETAIL_PATH.test(u.pathname) ||
+              PETITES_AFFICHES_N_DETAIL_PATH.test(u.pathname)) &&
             !u.search &&
             !u.hash))
       );
@@ -236,8 +288,24 @@ export async function handler(req: Request): Promise<Response> {
         signal: controller.signal,
         ...(new URL(url).hostname === CESSIONS_HOST ? { client: cessionsClient } : {}),
       });
+      let safeLocation: string | null = null;
       if (REDIRECT_STATUS_CODES.has(response.status)) {
-        logRedirect(response.status, response.headers.get("location"), url);
+        const rawLocation = response.headers.get("location");
+        logRedirect(response.status, rawLocation, url);
+        if (rawLocation) {
+          safeLocation = safeRedirectLocation(response.status, rawLocation, url);
+          if (!safeLocation) {
+            await response.body?.cancel();
+            return new Response("Source redirect rejected", {
+              status: 502,
+              headers: {
+                "x-immojudis-source-relay": "1",
+                "cache-control": "no-store",
+                "content-type": "text/plain; charset=utf-8",
+              },
+            });
+          }
+        }
       }
       const reader = response.body?.getReader();
       const chunks: Uint8Array[] = [];
@@ -264,15 +332,12 @@ export async function handler(req: Request): Promise<Response> {
         "x-immojudis-source-relay": "1",
         "cache-control": "no-store",
       });
-      const location = response.headers.get("location");
-      const normalizedLocation = normalizeRedirectLocation(response.status, location, url);
       for (const name of ["content-type", "location", "retry-after", "cf-mitigated"]) {
         if (response.headers.has(name)) {
+          if (name === "location" && safeLocation === null) continue;
           out.set(
             name,
-            name === "location" && normalizedLocation !== null
-              ? normalizedLocation
-              : response.headers.get(name)!,
+            name === "location" ? safeLocation! : response.headers.get(name)!,
           );
         }
       }
