@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
+
 from src.ai_review_projection import build_ai_review_projection_rows
 
 
@@ -29,6 +31,12 @@ def _review(capture_sha256: str, reviewer: str, excerpt: str, *, field: str = "p
         "reviewer": reviewer,
         "labels": labels,
     }
+
+
+def _occupancy_review(capture_sha256: str, reviewer: str, excerpt: str, value: object) -> dict:
+    review = _review(capture_sha256, reviewer, excerpt, field="occupancy_status")
+    review["labels"]["occupancy_status"]["value"] = value
+    return review
 
 
 def _manifest(capture_path: str, capture_sha256: str, reviews: list[dict], *, field: str = "property_type") -> dict:
@@ -151,6 +159,87 @@ def test_consensus_uses_existing_property_type_normalization(tmp_path: Path) -> 
     assert row["citation_status"] == "verified"
     assert row["value_jsonb"] == "appartement"
     assert row["passes_local_gate"] is True
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected_value"),
+    (
+        ("occupé", "occupied"),
+        ("libre de toute occupation", "vacant"),
+        ("loué", "rented"),
+        ("propriétaire occupant", "owner_occupied"),
+        ("squatté", "squatted"),
+    ),
+)
+def test_occupancy_consensus_projects_existing_canonical_enum(
+    tmp_path: Path, raw_value: str, expected_value: str
+) -> None:
+    capture_path, digest = _capture(tmp_path, f"<html><body>{raw_value}</body></html>")
+    reviews = [
+        _occupancy_review(digest, "pass-a", raw_value, raw_value),
+        _occupancy_review(digest, "pass-b", raw_value, raw_value),
+    ]
+    manifest = _manifest(capture_path, digest, reviews, field="occupancy_status")
+
+    row = build_ai_review_projection_rows(
+        manifest,
+        [
+            {
+                "id": "00000000-0000-4000-8000-000000000001",
+                "source_name": "source_a",
+                "source_url": manifest["cases"][0]["source_url"],
+            }
+        ],
+    )[0]
+
+    assert row["review_state"] == "resolved"
+    assert row["citation_status"] == "verified"
+    assert row["value_jsonb"] == expected_value
+    assert row["passes_local_gate"] is True
+
+
+@pytest.mark.parametrize(
+    "raw_value",
+    (
+        "partiellement occupé",
+        "partiellement occupés",
+        "mixte : partie occupée, studio et T2 non occupés",
+        "occupé à la date du PVD",
+        "occupé sans titre",
+        "occupé par la propriétaire",
+        "sert de garde meuble aux propriétaires",
+        "libre d’occupation au jour de l’adjudication",
+        "inoccupé",
+        "occupée",
+        "résidentielle",
+    ),
+)
+def test_unsupported_occupancy_value_is_quarantined_without_unknown_fallback(
+    tmp_path: Path, raw_value: str
+) -> None:
+    capture_path, digest = _capture(tmp_path, f"<html><body>{raw_value}</body></html>")
+    reviews = [
+        _occupancy_review(digest, "pass-a", raw_value, raw_value),
+        _occupancy_review(digest, "pass-b", raw_value, raw_value),
+    ]
+    manifest = _manifest(capture_path, digest, reviews, field="occupancy_status")
+
+    row = build_ai_review_projection_rows(
+        manifest,
+        [
+            {
+                "id": "00000000-0000-4000-8000-000000000001",
+                "source_name": "source_a",
+                "source_url": manifest["cases"][0]["source_url"],
+            }
+        ],
+    )[0]
+
+    assert row["review_state"] == "unresolved"
+    assert row["citation_status"] == "not_required"
+    assert row["value_jsonb"] is None
+    assert row["passes_local_gate"] is False
+    assert "not a recognized canonical value" in row["block_reason"]
 
 
 def test_adjudicator_disagreement_cannot_change_consensus_value(tmp_path: Path) -> None:
