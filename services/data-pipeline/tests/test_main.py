@@ -383,17 +383,27 @@ def test_pdf_target_limit_prioritizes_missing_surface_with_official_documents() 
 
 def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> None:
     calls: list[str] = []
+    raw_sale = _raw_sale()
+    raw_sale["document_analysis"] = {
+        "progress_schema_version": main.PDF_PROGRESS_SCHEMA_VERSION,
+        "manifest_complete": False,
+    }
 
     monkeypatch.setattr(main, "load_settings", lambda: _settings())
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
     monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
-    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([raw_sale], []))
     _fake_geocode.calls = calls
     monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
     monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
     monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(
+        main,
+        "restore_persisted_pdf_progress_for_sale",
+        lambda sale: calls.append("restore") or [],
+    )
     monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: calls.append("pdf") or (_raise_pdf()))
     monkeypatch.setattr(main, "enrich_sale_with_llm", lambda *args, **kwargs: main.LLMEnrichmentStats())
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
@@ -418,8 +428,88 @@ def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> N
 
     assert main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=False, upsert=True)) == 0
     assert calls.index("upsert") < calls.index("pdf")
+    assert calls.index("upsert") < calls.index("restore") < calls.index("pdf")
+    assert calls.count("restore") == 1
     assert calls.index("upsert") < calls.index("geocode")
     assert calls.count("upsert") == 2
+
+
+@pytest.mark.parametrize(
+    ("restore_progress", "analysis", "expected_restores"),
+    [
+        (False, {"progress_schema_version": 1, "manifest_complete": False}, 0),
+        (True, {"manifest_complete": False}, 0),
+        (True, {"progress_schema_version": 1, "manifest_complete": True}, 0),
+        (True, {"progress_schema_version": 1, "manifest_complete": False}, 1),
+    ],
+    ids=["offline", "legacy", "complete", "modern-partial"],
+)
+def test_pdf_target_restores_only_online_modern_partial_progress(
+    monkeypatch, restore_progress, analysis, expected_restores
+) -> None:
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/partial-pdf",
+        raw_payload={"document_analysis": analysis},
+    )
+    calls: list[str] = []
+    stats = main.PdfEnrichmentStats()
+    monkeypatch.setattr(
+        main, "restore_persisted_pdf_progress_for_sale", lambda sale: calls.append("restore") or []
+    )
+    monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: calls.append("pdf") or stats)
+
+    assert main._enrich_pdf_target(sale, restore_progress=restore_progress) is stats
+    assert calls == (["restore", "pdf"] if expected_restores else ["pdf"])
+
+
+def test_pdf_target_checks_ep_access_before_restoration(monkeypatch) -> None:
+    sale = AuctionSale(
+        source_name="encheres_publiques",
+        source_url="https://www.encheres-publiques.com/ventes/immobilier/123",
+        raw_payload={"document_analysis": {"progress_schema_version": 1, "manifest_complete": False}},
+    )
+    monkeypatch.delenv("ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED", raising=False)
+    monkeypatch.delenv("ENABLE_ENCHERES_PUBLIQUES_BENCHMARK", raising=False)
+    monkeypatch.setattr(
+        main, "restore_persisted_pdf_progress_for_sale", lambda sale: pytest.fail("EP cache must not be read")
+    )
+    monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: pytest.fail("EP must not be fetched"))
+
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        main._enrich_pdf_target(sale, restore_progress=True)
+
+
+def test_pdf_target_keeps_ocr_after_bounded_persisted_lookup_timeout(monkeypatch) -> None:
+    from src.storage import supabase_client as storage
+
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/partial-pdf-timeout",
+        documents=[{"url": "https://example.test/partial-pdf-timeout/pv.pdf"}],
+        raw_payload={"document_analysis": {"progress_schema_version": 1, "manifest_complete": False}},
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(storage, "load_settings", lambda: {
+        "supabase_url": "https://supabase.test",
+        "supabase_service_role_key": "test-only",
+    })
+
+    def timed_out_lookup(*args, **kwargs):
+        calls.append("lookup")
+        assert kwargs["timeout"].connect == 5.0
+        assert kwargs["timeout"].read == 15.0
+        raise storage.httpx.ReadTimeout("test-only persisted checkpoint timeout")
+
+    monkeypatch.setattr(storage.httpx, "get", timed_out_lookup)
+    stats = main.PdfEnrichmentStats()
+    monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: calls.append("pdf") or stats)
+    token = storage._PUBLICATION_CONNECTION.set(None)
+    try:
+        assert main._enrich_pdf_target(sale, restore_progress=True) is stats
+    finally:
+        storage._PUBLICATION_CONNECTION.reset(token)
+    assert calls == ["lookup", "pdf"]
 
 
 def test_light_pipeline_geocodes_and_reupserts_when_heavy_enrichment_disabled(monkeypatch) -> None:

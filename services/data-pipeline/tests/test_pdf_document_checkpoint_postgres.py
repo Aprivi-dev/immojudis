@@ -19,7 +19,7 @@ from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
 from test_autonomy_postgres import migration, setup
 
-from src import pdf_enrichment, pdf_fact_extraction
+from src import main, pdf_enrichment, pdf_fact_extraction, pdf_progress
 from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import normalize_sale
@@ -425,10 +425,12 @@ def test_partial_restore_rejects_complete_manifest_and_legacy_local_cache(
     [False, True],
     ids=["text-prefix", "blank-page-prefix"],
 )
+@pytest.mark.parametrize("entrypoint", ["storage", "normal-source"])
 def test_partial_progress_checkpoint_restores_pages_after_cache_loss(
     monkeypatch,
     tmp_path: Path,
     blank_prefix: bool,
+    entrypoint: str,
 ) -> None:
     """A deferred modern prefix survives aggregate-cache loss without becoming current."""
 
@@ -560,10 +562,31 @@ def test_partial_progress_checkpoint_restores_pages_after_cache_loss(
             page_cache_dir.mkdir(parents=True, exist_ok=True)
             restored_token = storage._PUBLICATION_CONNECTION.set(db)
             try:
-                restored = storage.restore_persisted_pdf_progress_for_sale(
-                    sale,
-                    downloaded_documents=downloaded,
-                )
+                if entrypoint == "storage":
+                    restored = storage.restore_persisted_pdf_progress_for_sale(
+                        sale,
+                        downloaded_documents=downloaded,
+                    )
+                else:
+                    restored = []
+
+                    def resume_pdf(candidate):
+                        nonlocal restored
+                        assert candidate is sale
+                        assert candidate.raw_payload["document_analysis"]["manifest_complete"] is False
+                        assert not documents_are_current(candidate)
+                        restored = pdf_progress.read_modern_cache(aggregate_cache)
+                        assert pdf_progress.restore_pdf_page_caches_from_manifest(
+                            aggregate_cache,
+                            downloaded,
+                            cache_root=page_cache_dir,
+                            ocr_enabled=True,
+                            ocr_language="fra",
+                        ) == 1
+                        return pdf_enrichment.PdfEnrichmentStats()
+
+                    monkeypatch.setattr(main, "enrich_sale_from_pdfs", resume_pdf)
+                    main._enrich_pdf_target(sale, restore_progress=True)
             finally:
                 storage._PUBLICATION_CONNECTION.reset(restored_token)
             assert len(restored) == 1
