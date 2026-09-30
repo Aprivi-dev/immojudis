@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 16 h 31 UTC
+## Synthèse actuelle — 30 septembre, 17 h 24 UTC
 
-| Chantier           | État vérifié                                                                                                                                                                                                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `0bff122a` : CI complète et CodeQL verts. Python 3.11/3.12 : 2 070 succès et 18 ignorés chacun ; test PostgreSQL dédié exécuté. Web, Playwright, 200 migrations et 1 481 assertions pgTAP passent. Le correctif OCR découvert après canari exigera une nouvelle qualification.            |
-| Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                                                      |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `0bff122a` réussi en 1 141,3 s : 82 claims uniques, 47 completed, zéro failed, deux cancelled, 33 queued, aucun running ni missing. Durabilité OCR interrompu encore à corriger ; routage automatique inchangé. |
-| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                                                      |
-| Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB.                           |
-| Documents          | Progression et revalidation en 6+6+4 passent en tests. Le canari s'arrête à 75/93 et 30/50 pages ; ces progrès restent dans le cache du worker, sans checkpoint SQL. Correctif des interruptions OCR/deadline en cours, puis essais warm et cold réels requis.                            |
-| Capacité           | Relevé à 16 h 31 : 5 975 jobs ouverts, 5 957 dus réessayables, 2 654 anciens encore sous le plafond, zéro running et 12 épuisés. Valorisation : zéro ouvert. Quatre alertes ouvertes et couverture source incomplète ; résorption durable non démontrée.                                  |
-| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                                                        |
-| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                                                |
-| Inbound            | Nouvelle route non publiée, cron absent. Cause courante de l'alerte critique `cron.stale` confirmée : `information-agent-inbound`. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                        |
-| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                                                    |
-| Publication finale | PR en brouillon. Preview exacte `0bff122a` READY ; accueil/catalogue 200, inbound sans auth 401, webhook GET 405. Correctif OCR et conditions externes encore nécessaires. Aucun import IA ni publication applicative finale. Plan de branches préparé, aucune suppression.               |
+| Chantier           | État vérifié                                                                                                                                                                                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL et CI          | `a7b9d2cc` : CI en échec sur trois fixtures PostgreSQL et audit Next.js critique ; CodeQL, Playwright et 1 481 assertions pgTAP passent. Fixtures corrigées ; Next.js 16.3.8 verrouillé et audit production à zéro vulnérabilité. Nouvelle CI exacte requise.   |
+| Santé              | À 17 h 15, quatre alertes ouvertes : inbound absent, fraîcheur EImmo, enrichissement stalled et import Notaires interrompu. Le contrôle de santé s’exécute ; la santé du pipeline n’est pas qualifiée.                                                          |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari `0bff122a` techniquement réussi, sans durabilité SQL des interruptions OCR. Correctif poussé en `a7b9d2cc`, non qualifié ; routage automatique inchangé.                                     |
+| Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                            |
+| Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB. |
+| Documents          | Progression et revalidation 6+6+4 passent en tests. Correctif des interruptions OCR poussé, fixture de restauration PG corrigée. Tests PostgreSQL réels, nouvelle qualification et essais warm/cold requis.                                                     |
+| Capacité           | Relevé à 17 h 14 : 5 993 ouverts, 5 967 dus réessayables, 2 649 anciens sous plafond, zéro running/stale et 19 épuisés. Valorisation : zéro ouvert. Stock ouvert +18 et PDF épuisés +7 depuis 16 h 31 ; résorption durable non démontrée.                       |
+| Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                              |
+| Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                      |
+| Inbound            | Nouvelle route non publiée, cron absent. Cause courante de l'alerte critique `cron.stale` confirmée : `information-agent-inbound`. Canari canonique authentifié puis activation et santé requis après déploiement.                                              |
+| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                          |
+| Publication finale | PR en brouillon. Preview `a7b9d2cc` READY : accueil/catalogue 200, inbound sans auth 401, webhook GET 405. Canonique inbound 404. Mise à jour Next.js et fixtures en attente de CI exacte ; aucun import IA, publication finale ou nettoyage.                   |
 
 ### Qualification des textes stockés — 30 septembre, 12 h 01 UTC
 
@@ -2749,3 +2749,60 @@ LockNotAvailable sur l'UPSERT et la conservation des checkpoints antérieurs,
 sans curseur complet déclaré. Son exécution réelle est requise en CI.
 La suite locale complète de l'ensemble du correctif passe avec 1 996
 succès, 102 cas ignorés, dont les scénarios PostgreSQL, et sept warnings.
+
+## Qualification a7b9d2cc et correctifs de fixtures — 30 septembre, 17 h 24 UTC
+
+La [CI exacte](https://github.com/Aprivi-dev/immojudis/actions/runs/36748708765)
+de `a7b9d2cc3c666f195c5f3cd1b1bd05af350b8dee` échoue. Chaque version Python
+compte 2 077 succès, 18 ignorés et trois échecs. Les deux doubles de connexion
+des tests de reprise source n'acceptent pas connect_timeout/retry_delays ;
+ils sont corrigés pour accepter ces paramètres. Le test de restauration PDF
+patchait PDF_DOCUMENT_TEXTS_DIR dans pdf_fact_extraction, qui ne possède pas
+ce symbole : le patch cible désormais pdf_enrichment, propriétaire du cache.
+Aucune modification du code de production n'est nécessaire pour ces échecs.
+Le test PostgreSQL du vrai verrouillage de curseur a été exécuté et réussi
+en 3.11/3.12, avec le timeout de verrou attendu.
+
+Le [CodeQL exact](https://github.com/Aprivi-dev/immojudis/actions/runs/36748708759)
+passe. Playwright compte 87 succès et huit ignorés. Les 79 fichiers pgTAP et
+1 481 assertions passent sans dérive, ainsi que l'invariant de planification
+et la revue des dépendances. Le job Web s'arrête à l'audit npm, avant typecheck,
+lint, unités et build : Next.js 16.3.4 est concerné par
+[GHSA-vcvr-r3jv-pc5j](https://github.com/vercel/next.js/security/advisories/GHSA-vcvr-r3jv-pc5j).
+L'avis primaire annonce une correction à partir de 16.3.6. Le verrou est
+mis à jour vers la version stable signée
+[16.3.8](https://github.com/vercel/next.js/releases/tag/v16.3.8), compatible
+avec Node 24 et React 19.2.8. La seule route ImageResponse du dépôt utilise
+du contenu statique ; aucune entrée contrôlée par un attaquant n'y est
+observée. Cela ne remplace pas la correction de dépendance ni la CI.
+
+Avec npm 11.18, l'audit du nouveau verrou, production seulement, retourne
+zéro vulnérabilité à tous les niveaux. Les dépendances locales partagées
+ne sont pas modifiées. Les scénarios ciblés passent localement : huit
+succès et 17 ignorés faute de PostgreSQL ; Ruff et diff passent.
+Une nouvelle CI exacte doit exécuter les trois fixtures corrigées et le
+build avec les nouvelles dépendances. Aucun nouveau canari n'est lancé.
+
+La preview exacte a7b9d2cc est READY (`dpl_6cygAsVQnurmWogsTV9TLCuVr2ZG`).
+Les vrais GET authentifiés accueil/catalogue et les GET sans auth inbound
+et webhook donnent 200/200/401/405 avec noindex. L'origine canonique inbound
+reste 404 ; aucun POST, upload, import IA ou envoi à un contact réel.
+
+### État production au 30 septembre, 17 h 14 UTC
+
+5 993 jobs ouverts, 5 967 dus réessayables, 2 649 anciens sous le plafond,
+19 épuisés, aucun running/stale. Depuis 16 h 31 : ouverts +18, dus +10,
+anciens -5, épuisés +7 ; détails source +27. La valorisation reste sans job
+ouvert. Les mêmes quatre alertes restent ouvertes à 17 h 15. Six sources
+ont une dernière couverture complète ; AGRASC, EImmo et Notaires restent
+incomplètes. Notaires possède désormais une couverture explicitement fausse.
+
+111 statuts quarantined et 99 marqueurs publication_quarantine. Aucun job
+review_required ouvert : 70 détails source et 11 faits sont terminaux.
+Les vues app/discovery/preview exposent zéro vente quarantainée ou
+conflictuelle ; les statuts de vérification pending restent explicitement
+transmis. Les RPC publics délèguent aux filtres privés de quarantaine.
+Les tables de revue IA et information_agent restent vides et privées.
+Les claims de faits conservés sont candidate, non publiables. Aucun import
+ni contournement public de quarantaine n'est constaté. Les deux entrées
+externes et les critères de capacité/couverture restent en attente.

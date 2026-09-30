@@ -123,7 +123,7 @@ def test_interrupted_detail_collection_reuses_only_matching_checkpoint(monkeypat
             old = str(db.execute("insert into auction_runs(source,status) values('licitor','running') returning id").fetchone()[0])
             monkeypatch.setenv('PIPELINE_AUTONOMOUS_RUN_ID',old)
             monkeypatch.setattr(source_checkpoint,'load_settings',lambda: {'supabase_db_url':url})
-            monkeypatch.setattr(supabase_client,'_postgres_connect',lambda _: nullcontext(db))
+            monkeypatch.setattr(supabase_client,'_postgres_connect',lambda _, **_kwargs: nullcontext(db))
             source_checkpoint._context.cache_clear()
             listing = {'source_url':'https://example.test/1','source_name':'licitor','starting_price_eur':10000}
             raw = dict(listing)
@@ -172,7 +172,7 @@ def test_interrupted_detail_collection_reuses_checkpoint_after_nine_hours_withou
             new = str(db.execute("insert into auction_runs(source,status) values('petites_affiches','running') returning id").fetchone()[0])
             monkeypatch.setenv('PIPELINE_AUTONOMOUS_RUN_ID', new)
             monkeypatch.setattr(source_checkpoint, 'load_settings', lambda: {'supabase_db_url': url})
-            monkeypatch.setattr(supabase_client, '_postgres_connect', lambda _: nullcontext(db))
+            monkeypatch.setattr(supabase_client, '_postgres_connect', lambda _, **_kwargs: nullcontext(db))
             source_checkpoint._context.cache_clear()
             resumed = dict(listing)
             assert source_checkpoint.restore_detail(resumed) is True

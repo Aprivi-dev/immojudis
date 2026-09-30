@@ -19,7 +19,7 @@ from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
 from test_autonomy_postgres import migration, setup
 
-from src import pdf_fact_extraction
+from src import pdf_enrichment, pdf_fact_extraction
 from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import normalize_sale
@@ -315,7 +315,7 @@ def test_partial_progress_checkpoint_restores_pages_after_cache_loss(monkeypatch
     monkeypatch.setattr(storage, "PDF_TEXTS_DIR", pdf_texts_dir)
     monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", pdf_texts_dir)
     monkeypatch.setattr(storage, "PDF_DOCUMENT_TEXTS_DIR", page_cache_dir)
-    monkeypatch.setattr(pdf_fact_extraction, "PDF_DOCUMENT_TEXTS_DIR", page_cache_dir)
+    monkeypatch.setattr(pdf_enrichment, "PDF_DOCUMENT_TEXTS_DIR", page_cache_dir)
 
     documents = [
         {
