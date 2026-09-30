@@ -5,12 +5,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from contextlib import nullcontext
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
+import psycopg
 import pytest
 from psycopg import Error as PsycopgError
+from psycopg import sql
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
 from test_autonomy_postgres import migration, setup
 
@@ -114,6 +119,31 @@ def _prepare_test_db(monkeypatch, db_url: str, db) -> None:
     monkeypatch.setattr(storage, "load_settings", lambda: {"supabase_db_url": db_url})
 
 
+@pytest.fixture
+def disposable_checkpoint_database() -> str:
+    """Give the cold path a real, separate connection and an isolated database."""
+
+    root_dsn = os.getenv("PIPELINE_TEST_DB_URL")
+    if not root_dsn:
+        pytest.skip("Requires disposable PostgreSQL")
+    host = str(conninfo_to_dict(root_dsn).get("host") or "")
+    if host not in {"127.0.0.1", "localhost"}:
+        pytest.fail(f"Refusing non-local checkpoint database host: {host}")
+
+    database_name = f"immojudis_pdf_checkpoint_{os.getpid()}_{uuid4().hex[:10]}"
+    database_dsn = make_conninfo(root_dsn, dbname=database_name)
+    created = False
+    try:
+        with psycopg.connect(root_dsn, autocommit=True, prepare_threshold=None) as root_db:
+            root_db.execute(sql.SQL("create database {}").format(sql.Identifier(database_name)))
+        created = True
+        yield database_dsn
+    finally:
+        if created:
+            with psycopg.connect(root_dsn, autocommit=True, prepare_threshold=None) as root_db:
+                root_db.execute(sql.SQL("drop database if exists {} with (force)").format(sql.Identifier(database_name)))
+
+
 def test_checkpoint_preparation_rejects_legacy_cache(monkeypatch, tmp_path: Path) -> None:
     source_url = "https://example.test/pdf-documentary-checkpoint/unit"
     monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
@@ -135,13 +165,14 @@ def test_checkpoint_preparation_rejects_legacy_cache(monkeypatch, tmp_path: Path
     assert storage._prepare_pdf_document_checkpoint(sale) is None
 
 
-def test_dedicated_checkpoint_owns_queue_and_bounds_session(monkeypatch, tmp_path: Path) -> None:
+def test_dedicated_checkpoint_owns_queue_and_bounds_session(
+    monkeypatch,
+    tmp_path: Path,
+    disposable_checkpoint_database: str,
+) -> None:
     """A cold checkpoint cannot enqueue work or inherit an unbounded session."""
 
-    db_url = os.getenv("PIPELINE_TEST_DB_URL")
-    if not db_url:
-        pytest.skip("Requires disposable PostgreSQL")
-
+    db_url = disposable_checkpoint_database
     source_url = "https://example.test/pdf-documentary-checkpoint/dedicated"
     monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
     monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", tmp_path)
@@ -205,14 +236,9 @@ def test_dedicated_checkpoint_owns_queue_and_bounds_session(monkeypatch, tmp_pat
                 ),
             )
 
-            captured: dict[str, object] = {}
-
-            def dedicated_connect(url: str, **kwargs: object):
-                captured["url"] = url
-                captured.update(kwargs)
-                return nullcontext(db)
-
-            monkeypatch.setattr(storage, "_postgres_connect", dedicated_connect)
+            # Commit setup before the real dedicated connection opens. The
+            # outer connection remains open only for assertions and cleanup.
+            db.commit()
             settings_before = db.execute(
                 """
                 select current_setting('app.pipeline_queue_owner', true),
@@ -220,6 +246,40 @@ def test_dedicated_checkpoint_owns_queue_and_bounds_session(monkeypatch, tmp_pat
                        current_setting('statement_timeout')
                 """
             ).fetchone()
+            db.rollback()
+
+            captured: dict[str, object] = {}
+            original_connect = storage._postgres_connect
+
+            @contextmanager
+            def dedicated_connect(url: str, **kwargs: object):
+                captured["url"] = url
+                captured.update(kwargs)
+                dedicated_db = original_connect(url, **kwargs)
+                captured["backend_pid"] = dedicated_db.info.backend_pid
+                try:
+                    assert dedicated_db.info.backend_pid != db.info.backend_pid
+                    assert dedicated_db.info.transaction_status is TransactionStatus.IDLE
+                    yield dedicated_db
+                finally:
+                    try:
+                        captured["transaction_status"] = dedicated_db.info.transaction_status
+                        captured["settings_after"] = dedicated_db.execute(
+                            """
+                            select current_setting('app.pipeline_queue_owner', true),
+                                   current_setting('lock_timeout'),
+                                   current_setting('statement_timeout')
+                            """
+                        ).fetchone()
+                    finally:
+                        try:
+                            if not dedicated_db.closed:
+                                dedicated_db.rollback()
+                        finally:
+                            dedicated_db.close()
+                            captured["closed"] = dedicated_db.closed
+
+            monkeypatch.setattr(storage, "_postgres_connect", dedicated_connect)
 
             assert storage.persist_pdf_document_checkpoint_to_supabase(sale) is True
 
@@ -231,11 +291,13 @@ def test_dedicated_checkpoint_owns_queue_and_bounds_session(monkeypatch, tmp_pat
                 """
             ).fetchone()
             assert settings_after == settings_before
-            assert captured == {
-                "url": db_url,
-                "connect_timeout": storage.PDF_CHECKPOINT_CONNECT_TIMEOUT,
-                "retry_delays": (),
-            }
+            assert captured["transaction_status"] is TransactionStatus.IDLE
+            assert captured["settings_after"][0] in (None, "")
+            assert captured["settings_after"][1:] == ("0", "0")
+            assert captured["closed"] is True
+            assert captured["url"] == db_url
+            assert captured["connect_timeout"] == storage.PDF_CHECKPOINT_CONNECT_TIMEOUT
+            assert captured["retry_delays"] == ()
             # The reliable production trigger was deliberately made to see a
             # changed content_hash. The transaction-local owner guard must
             # still prevent both its PDF and display jobs.

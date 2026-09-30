@@ -1,10 +1,10 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 14 h 43 UTC
+## Synthèse actuelle — 30 septembre, 15 h 02 UTC
 
 | Chantier           | État vérifié                                                                                                                                                                                                                                                    |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `aca5b069` : CodeQL, Web, Playwright et migrations verts. Python échoue sur cinq adaptations JSON PostgreSQL et quatre fixtures PDF anciennes. Correctifs ciblés appliqués ; nouvelle qualification exacte requise.                                             |
+| SQL et CI          | `7eb76202` : CodeQL, Web, Playwright et migrations verts. Python 3.11/3.12 : 2 069 succès, 18 ignorés et un échec identique dans le double de connexion du test du checkpoint dédié. Test d'isolation réelle à qualifier avant nouveau canari.                  |
 | Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                            |
 | Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `74dd49f6` réussi en 1 141,8 s : 31 claims, 26 completed, quatre failed, un queued, aucun running. Les deltas suivants restent à qualifier ; routage automatique inchangé.            |
 | Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                            |
@@ -15,7 +15,7 @@
 | Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                      |
 | Inbound            | Nouvelle route non publiée, cron absent. Cause courante de l'alerte critique `cron.stale` confirmée : `information-agent-inbound`. Canari canonique authentifié puis activation et santé requis après déploiement.                                              |
 | Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                          |
-| Publication finale | PR en brouillon. Preview exacte `aca5b069` READY ; Python CI à corriger avant tout nouveau canari. Aucun import IA ni publication applicative finale. Plan de branches préparé, aucune suppression.                                                             |
+| Publication finale | PR en brouillon. Preview exacte `7eb76202` READY ; Python CI à corriger avant tout nouveau canari. Aucun import IA ni publication applicative finale. Plan de branches préparé, aucune suppression.                                                             |
 
 ### Qualification des textes stockés — 30 septembre, 12 h 01 UTC
 
@@ -2568,5 +2568,35 @@ client IA vient après ce filtre. L'application directe d'un cache IA possède
 aussi sa garde booléenne et retourne `False` sans lire ni appliquer le cache
 non autorisé. La réserve de relecture est levée. La suite complète finale
 compte 1 988 succès et 100 ignorés à 14 h 43 UTC, sans effet de production.
+
+## Connexion dédiée du checkpoint — 30 septembre, 15 h 02 UTC
+
+La [CI `7eb76202`](https://github.com/Aprivi-dev/immojudis/actions/runs/36731520565)
+est terminée : Web, Playwright, migrations, invariant de planification et
+dependency review réussissent ; CodeQL réussit aussi. Les deux versions
+Python comptent chacune 2 069 succès, 18 cas ignorés et un échec dans
+`test_dedicated_checkpoint_owns_queue_and_bounds_session`.
+
+La relecture indépendante confirme que ce test remplace une nouvelle
+connexion PostgreSQL par une connexion déjà en transaction : le contexte
+devient un savepoint, où les réglages `SET LOCAL` restent visibles jusqu'à
+la fin de la transaction externe. Le chemin dédié réel ouvre une nouvelle
+connexion et configure les limites à l'intérieur de sa transaction. Une
+vraie séparation de connexion et une transaction terminée doivent donc être
+vérifiées dans une base jetable ; aucune restauration supplémentaire des
+réglages de production n'est justifiée par ce seul double de test.
+
+Le test corrigé prépare une base PostgreSQL locale jetable, committe ses
+données, puis ouvre le checkpoint sur une connexion distincte. Il exige un
+PID différent, un état `IDLE` avant et après l'écriture, la fermeture de la
+connexion, les limites vues par le trigger et zéro tâche indirecte. La base
+est supprimée à la fin du test. Le code de production reste identique.
+Ruff et le scénario local passent ; six cas PostgreSQL sont ignorés
+localement et doivent être exécutés par la prochaine CI.
+
+La [preview exacte](https://immojudis-dezt-7cwpv6ty9-antoine-s-projects7.vercel.app)
+est READY (`dpl_H5ohfus8cAHiU9Q5dZ6Uv5JieTY7`). Aucun canari, routage
+automatique, import IA, envoi à un interlocuteur ou nettoyage de branche n'a
+été lancé sur cette CI en échec. Les deux entrées externes restent en attente.
 Ces corrections seront vérifiées dans la CI du nouveau commit exact avant
 tout essai de worker.
