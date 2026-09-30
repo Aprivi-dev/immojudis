@@ -54,6 +54,7 @@ const businessModules = [
   "services/data-pipeline/src/pdf_page_analysis.py",
   "services/data-pipeline/src/pdf_fact_extraction.py",
   "services/data-pipeline/src/pdf_failure_diagnostics.py",
+  "services/data-pipeline/src/pdf_progress.py",
   "services/data-pipeline/src/source_task_deadline.py",
   "services/data-pipeline/src/llm_task_deadline.py",
 ];

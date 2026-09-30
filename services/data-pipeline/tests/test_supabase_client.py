@@ -1502,6 +1502,7 @@ def _persisted_pdf_sale_fixture(
             "document_type": document["document_type"],
             "file_path": f"/private/tmp/persisted-{index}.pdf",
             "text": f"Texte complet du document {index} avec surface {index + 1} m2.",
+            "text_chars": len(f"Texte complet du document {index} avec surface {index + 1} m2."),
             "sha256": hashlib.sha256(f"pdf-bytes-{index}".encode()).hexdigest(),
             "cache_version": supabase_client.PDF_TEXT_CACHE_VERSION,
             "complete": True,

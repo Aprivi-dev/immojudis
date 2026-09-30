@@ -43,6 +43,10 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     texts = [str(item.get("text") or "") if isinstance(item, dict) else item for item in pdf_texts]
     combined = "\n\n".join(text for text in texts if text)
     if not combined:
+        enriched_marker = "\n\n--- PDF TEXT ENRICHMENT ---\n"
+        current_raw = sale.raw_text or ""
+        if enriched_marker.strip() in current_raw:
+            sale.raw_text = clean_text(current_raw.split(enriched_marker.strip(), 1)[0])
         return sale
 
     if sale.land_surface_m2 is None:
@@ -721,7 +725,15 @@ def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]])
         # durable proof that a cached document is complete or can resume from
         # a partial checkpoint.  Preserve explicit values, including None,
         # while leaving legacy payloads without the fields unchanged.
-        for marker in ("complete", "extraction_status", "failed_pages", "blank_pages", "visual_blank_pages"):
+        for marker in (
+            "complete",
+            "extraction_status",
+            "failed_pages",
+            "blank_pages",
+            "visual_blank_pages",
+            "_persisted_pdf_proof",
+            "_persisted_verified_at",
+        ):
             if marker in item:
                 serialized_item[marker] = item[marker]
         payload.append(serialized_item)

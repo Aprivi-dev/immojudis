@@ -49,6 +49,13 @@ from src.freshness import document_fingerprint, documents_are_current, timestamp
 from src.models import AuctionSale
 from src.normalize import clean_text, make_sale_signature
 from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, classify_document_type, sale_storage_id
+from src.pdf_progress import (
+    PDF_PROGRESS_SCHEMA_VERSION,
+    document_url,
+    is_modern_payload,
+    modern_progress_entries,
+    payload_text_sha256,
+)
 from src.reviewed_aliases import (
     ReviewedAliasRegistry,
     ReviewedAliasRegistryError,
@@ -78,6 +85,13 @@ PDF_EXTRACTION_SCHEMA_VERSION = "pdf_text_v2_page_level"
 # lookup per sale).
 PERSISTED_PDF_LOOKUP_BATCH_SIZE = 5
 PERSISTED_PDF_LOOKUP_TIMEOUT = httpx.Timeout(15.0, connect=5.0)
+# A documentary checkpoint is a bounded recovery write.  It must not inherit
+# the publication connection's longer retry and lock budget: a row lock held
+# by another worker must leave enough time for the caller's deadline.
+PDF_CHECKPOINT_CONNECT_TIMEOUT = 5
+PDF_CHECKPOINT_LOCK_TIMEOUT = "5s"
+PDF_CHECKPOINT_STATEMENT_TIMEOUT = "15s"
+PDF_CHECKPOINT_QUEUE_OWNER = "python"
 EXPIRED_SALE_DELETE_TABLES = (
     "auction_observations",
     "auction_enrichment_jobs",
@@ -97,11 +111,11 @@ EXPIRED_SALE_DELETE_TABLES = (
     "properties",
     "auction_sales",
 )
-# A narrowly revised blank-page rule must retry incomplete documents without
-# invalidating complete text caches for unrelated PDFs. The distinct queue
-# identity preserves exhausted attempts as an audit record; failed page caches
-# remain retryable under the same text cache version.
-PDF_RETRY_GENERATION = f"{PDF_TEXT_CACHE_VERSION}:decorative_edge_v1"
+# The blank-page correction and the writer marker correction each require one
+# bounded replay of incomplete/legacy documents. The writer now preserves the
+# extractor's explicit markers; old rows without them must pass normal
+# extraction again. Keep this deterministic so later scans remain idempotent.
+PDF_RETRY_GENERATION = f"{PDF_TEXT_CACHE_VERSION}:decorative_edge_v1:writer_markers_v1"
 POSTGRES_JSON_COLUMNS = {
     "source_urls",
     "visit_dates",
@@ -340,6 +354,190 @@ def _transaction_write(table: str, payload: list[dict[str, object]], on_conflict
     connection.execute(statement, (Jsonb(_sanitize_postgrest_payload(payload)),))
 
 
+def _fresh_complete_pdf_fingerprint(sale: AuctionSale, *, documents_current: bool) -> str | None:
+    """Hash only stable proof fields after a fresh complete PDF result."""
+
+    if not documents_current or not sale.documents:
+        return None
+    analysis = sale.raw_payload.get("document_analysis") or {}
+    if not isinstance(analysis, dict):
+        return None
+    try:
+        extracted_documents = int(analysis.get("documents_extracted") or 0)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    if extracted_documents <= 0:
+        # A robots/terminal-only result can be current without proving a PDF
+        # extraction; it must not rotate dependent LLM work.
+        return None
+    document_urls = {
+        clean_text(document.get("url"))
+        for document in sale.documents
+        if isinstance(document, dict) and clean_text(document.get("url"))
+    }
+    if not document_urls:
+        return None
+    excluded_urls: set[str] = set()
+    for key in ("blocked_document_urls", "skipped_document_urls", "terminal_document_urls"):
+        values = analysis.get(key)
+        if values is None:
+            continue
+        if not isinstance(values, (list, tuple, set)):
+            return None
+        normalized_values = {clean_text(value) for value in values if clean_text(value)}
+        if not normalized_values.issubset(document_urls):
+            return None
+        excluded_urls.update(normalized_values)
+    expected_urls = document_urls - excluded_urls
+    # ``documents_are_current`` can legitimately be true when every listed
+    # document is terminal. That state still provides no PDF evidence for a
+    # dependent fact/display revision.
+    if not expected_urls:
+        return None
+    proof = analysis.get("cache_proof")
+    proof_documents = proof.get("documents") if isinstance(proof, dict) else None
+    if (
+        not isinstance(proof, dict)
+        or proof.get("version") != 1
+        or proof.get("input_fingerprint") != document_fingerprint(sale.documents)
+        or not isinstance(proof_documents, list)
+        or not proof_documents
+    ):
+        return None
+    proof_by_url: dict[str, dict[str, object]] = {}
+    for item in proof_documents:
+        if not isinstance(item, dict):
+            return None
+        item_url = clean_text(item.get("url"))
+        if not item_url or item_url in proof_by_url:
+            return None
+        if item_url not in document_urls or item_url not in expected_urls:
+            if item_url not in excluded_urls:
+                return None
+            continue
+        proof_by_url[item_url] = item
+    if set(proof_by_url) != expected_urls:
+        return None
+    stable_documents: list[dict[str, object]] = []
+    for item_url in sorted(expected_urls):
+        item = proof_by_url[item_url]
+        if not (
+            item.get("extraction_status") == "extracted"
+            and item.get("complete") is True
+            and not item.get("failed_pages")
+            and clean_text(item.get("sha256"))
+            and clean_text(item.get("text_sha256"))
+            and _is_sha256(item.get("sha256"))
+            and _is_sha256(item.get("text_sha256"))
+            and item.get("text_present") is True
+        ):
+            return None
+        stable_documents.append(
+            {
+                "url": item_url,
+                "sha256": clean_text(item.get("sha256")),
+                "text_sha256": clean_text(item.get("text_sha256")),
+                "text_chars": item.get("text_chars"),
+                "text_present": item.get("text_present") is True,
+                "extraction_status": clean_text(item.get("extraction_status")),
+                "complete": item.get("complete") is True,
+                "failed_pages": item.get("failed_pages") or [],
+            }
+        )
+    try:
+        serialized = json.dumps(
+            sorted(stable_documents, key=lambda item: str(item["url"])),
+            sort_keys=True,
+        ).encode()
+    except (TypeError, ValueError):
+        return None
+    return hashlib.sha256(serialized).hexdigest()
+
+
+def _enrichment_revision_for_sale(
+    sale: AuctionSale,
+    settings: dict[str, object],
+    *,
+    documents_current: bool,
+) -> str:
+    """Build the revision shared by enqueueing and prerequisite checks."""
+
+    complete_pdf_fingerprint = _fresh_complete_pdf_fingerprint(
+        sale,
+        documents_current=documents_current,
+    )
+    checks = sale.raw_payload.get("source_checks") or {}
+    analysis = sale.raw_payload.get("document_analysis") or {}
+    revision_parts: list[object] = [
+        document_fingerprint(sale.documents),
+        sorted(
+            (str(profile.get("url") or ""), str(profile.get("sha256") or ""))
+            for profile in analysis.get("profiles", [])
+            if isinstance(profile, dict)
+        ),
+        str(settings.get("llm_prompt_version") or ""),
+        str(settings.get("replicate_model") or ""),
+        settings.get("llm_fact_prompt_version"),
+        settings.get("llm_display_prompt_version"),
+        sorted(
+            (url, check.get("fingerprint"))
+            for url, check in checks.items()
+            if isinstance(check, dict)
+        ),
+    ]
+    if complete_pdf_fingerprint is not None:
+        # ``checked_at`` and proof timestamps are operational metadata.
+        # Stable proof content rotates dependants once without creating a
+        # new revision on every ordinary scan.
+        revision_parts.append(["complete_pdf_fingerprint", complete_pdf_fingerprint])
+    return hashlib.sha256(json.dumps(revision_parts, sort_keys=True).encode()).hexdigest()
+
+
+def pdf_enrichment_input_hash_for_sale(
+    sale: AuctionSale,
+    settings: dict[str, object] | None = None,
+) -> str:
+    """Return the current queue generation for a sale's PDF prerequisite.
+
+    ``settings`` remains in the signature for callers that also build the
+    fact/display revisions. PDF extraction is independent of source checks
+    and LLM prompt/model settings, so none of those values may rotate the
+    PDF retry budget.
+    """
+
+    del settings
+    analysis = sale.raw_payload.get("document_analysis") or {}
+    if isinstance(analysis, dict):
+        profiles = analysis.get("profiles", [])
+        last_success = analysis.get("last_successful_check_at") or "initial"
+    else:
+        profiles = []
+        last_success = "initial"
+    if not isinstance(profiles, (list, tuple)):
+        profiles = []
+    profile_fingerprints = sorted(
+        (str(profile.get("url") or ""), str(profile.get("sha256") or ""))
+        for profile in profiles
+        if isinstance(profile, dict)
+    )
+    document_sha_fingerprints = sorted(
+        (str(document.get("url") or ""), str(document.get("sha256") or ""))
+        for document in sale.documents
+        if isinstance(document, dict)
+    )
+    revision_parts: list[object] = [
+        "pdf_enrichment_v2",
+        PDF_TEXT_CACHE_VERSION,
+        PDF_RETRY_GENERATION,
+        document_fingerprint(sale.documents),
+        document_sha_fingerprints,
+        profile_fingerprints,
+        str(last_success),
+    ]
+    revision = hashlib.sha256(json.dumps(revision_parts, sort_keys=True).encode()).hexdigest()
+    return "pipeline_v2:" + revision
+
+
 def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> None:
     from src.enrichment.extract_structured import needs_fact_extraction
 
@@ -349,28 +547,23 @@ def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> Non
     for sale in sales:
         if sale.status not in {"active", "unknown", "upcoming", "postponed"} or quarantine_reason(sale):
             continue
-        checks = sale.raw_payload.get("source_checks") or {}
-        analysis = sale.raw_payload.get("document_analysis") or {}
-        revision = hashlib.sha256(json.dumps([
-            document_fingerprint(sale.documents),
-            sorted((str(profile.get("url") or ""), str(profile.get("sha256") or "")) for profile in analysis.get("profiles", []) if isinstance(profile, dict)),
-            prompt_version, str(settings.get("replicate_model") or ""),
-            settings.get("llm_fact_prompt_version"), settings.get("llm_display_prompt_version"),
-            sorted((url, check.get("fingerprint")) for url, check in checks.items()),
-        ], sort_keys=True).encode()).hexdigest()
+        documents_current = bool(sale.documents and documents_are_current(sale))
+        revision = _enrichment_revision_for_sale(
+            sale,
+            settings,
+            documents_current=documents_current,
+        )
         kinds = []
-        if sale.documents and not documents_are_current(sale):
-            analysis = sale.raw_payload.get("document_analysis") or {}
+        if sale.documents and not documents_current:
             # A failed document keeps the same retry budget across daily scans.
-            last_success = analysis.get("last_successful_check_at") or "initial"
-            kinds.append(("pdf", revision + str(last_success) + PDF_RETRY_GENERATION, 30))
+            kinds.append(("pdf", pdf_enrichment_input_hash_for_sale(sale, settings), 30))
         if not _has_current_llm_description(sale.raw_payload, prompt_version) or sale.raw_payload.get("source_content_changed"):
             kinds.append(("display_description", revision, 20))
         if needs_fact_extraction(sale):
             kinds.append(("fact_extraction", revision, 25))
         for kind, fingerprint, priority in kinds:
             jobs.append({"source_url": sale.source_url, "job_type": kind,
-                         "input_hash": "pipeline_v2:" + fingerprint,
+                         "input_hash": fingerprint if kind == "pdf" else "pipeline_v2:" + fingerprint,
                          # Queue ordering applies age and urgency to every generation.
                          "priority": priority})
     if jobs:
@@ -1221,29 +1414,48 @@ def claim_auction_enrichment_jobs_from_supabase(
 def has_eligible_pdf_job_for_sale(source_url: str) -> bool:
     """Check whether a PDF prerequisite can still advance for this sale."""
 
+    return any(
+        row.get("status") == "running"
+        or int(row.get("attempt_count") or 0) < int(row.get("max_attempts") or 0)
+        for row in read_pdf_job_states_for_sale(source_url)
+    )
+
+
+def read_pdf_job_states_for_sale(
+    source_url: str,
+    *,
+    include_terminal: bool = False,
+) -> list[dict[str, object]]:
+    """Read current PDF retry states without changing queue state.
+
+    The fact worker uses this only to distinguish a genuinely exhausted PDF
+    revision from a missing/stale queue row. An empty result deliberately
+    remains inconclusive and must not cancel the fact job.
+    """
+
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
     if not url or not key:
         raise RuntimeError("Supabase credentials are required to inspect PDF prerequisites")
+    params = {
+        "select": "id,status,attempt_count,max_attempts,input_hash,created_at,updated_at",
+        "source_url": f"eq.{source_url}",
+        "job_type": "eq.pdf",
+        "order": "created_at.desc",
+        "limit": "100",
+    }
+    if not include_terminal:
+        params["status"] = "in.(queued,running,failed)"
     response = httpx.get(
         f"{str(url).rstrip('/')}/rest/v1/auction_enrichment_jobs",
-        params={
-            "select": "status,attempt_count,max_attempts",
-            "source_url": f"eq.{source_url}",
-            "job_type": "eq.pdf",
-            "status": "in.(queued,running,failed)",
-            "order": "created_at.desc",
-            "limit": "100",
-        },
+        params=params,
         headers=_rest_headers(str(key), prefer="return=representation"),
         timeout=30,
     )
     response.raise_for_status()
-    return any(
-        row["status"] == "running" or int(row["attempt_count"]) < int(row["max_attempts"])
-        for row in response.json()
-    )
+    payload = response.json()
+    return [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
 
 
 def claim_auction_enrichment_jobs_family_from_supabase(
@@ -1830,6 +2042,14 @@ def _validated_persisted_pdf_manifest(sale: AuctionSale) -> dict[str, object] | 
         return None
     if analysis.get("input_fingerprint") != document_fingerprint(documents):
         return None
+    if (
+        analysis.get("progress_schema_version") != PDF_PROGRESS_SCHEMA_VERSION
+        or analysis.get("manifest_complete") is not True
+    ):
+        return None
+    pending_http = analysis.get("http_revalidation_pending_urls")
+    if not isinstance(pending_http, list) or pending_http:
+        return None
     if not _historical_timestamp_is_valid(analysis.get("checked_at")):
         return None
     try:
@@ -1930,6 +2150,7 @@ def _validated_persisted_pdf_manifest(sale: AuctionSale) -> dict[str, object] | 
             or not _is_sha256(profile.get("sha256"))
             or clean_text(profile.get("sha256")) != clean_text(proof_item.get("sha256"))
             or profile_text_chars != proof_text_chars
+            or not timestamp_is_fresh(proof_item.get("http_checked_at"))
         ):
             return None
 
@@ -2120,6 +2341,336 @@ def _read_persisted_pdf_rows_rest(
     return [normalized for row in payload if (normalized := _normalize_persisted_pdf_row(row)) is not None]
 
 
+def _prepare_pdf_document_checkpoint(
+    sale: AuctionSale,
+) -> tuple[dict[str, object], list[dict[str, object]]] | None:
+    """Return a strict modern checkpoint without accepting legacy cache data."""
+
+    source_url = clean_text(sale.source_url)
+    analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+    if not source_url or not isinstance(analysis, dict) or sale.updated_at is None:
+        return None
+    if (
+        analysis.get("progress_schema_version") != PDF_PROGRESS_SCHEMA_VERSION
+        or analysis.get("input_fingerprint") != document_fingerprint(sale.documents)
+    ):
+        return None
+    progress = modern_progress_entries(analysis, sale.documents)
+    if not progress:
+        return None
+    payload = _read_json_file(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json")
+    if not isinstance(payload, list) or not payload:
+        return None
+    document_urls = {document_url(document) for document in sale.documents if document_url(document)}
+    result: list[dict[str, object]] = []
+    seen_urls: set[str] = set()
+    for item in payload:
+        url = document_url(item)
+        if (
+            not isinstance(item, dict)
+            or not url
+            or url in seen_urls
+            or url not in document_urls
+            or not is_modern_payload(item, expected_url=url)
+        ):
+            return None
+        manifest_item = progress.get(url)
+        if not isinstance(manifest_item, dict):
+            return None
+        item_text_hash = clean_text(item.get("text_sha256")) or payload_text_sha256(item)
+        if (
+            clean_text(item.get("sha256")) != clean_text(manifest_item.get("sha256"))
+            or clean_text(item.get("extraction_status"))
+            != clean_text(manifest_item.get("extraction_status"))
+            or item.get("complete") is not manifest_item.get("complete")
+            or list(item.get("failed_pages") or []) != list(manifest_item.get("failed_pages") or [])
+            or item_text_hash != clean_text(manifest_item.get("text_sha256"))
+        ):
+            return None
+        sanitized = dict(item)
+        # A worker-local path is not a durable source of evidence and cannot
+        # be reopened by the next worker. Keep the modern text and hashes only.
+        sanitized["file_path"] = None
+        result.append(sanitized)
+        seen_urls.add(url)
+    if not result:
+        return None
+    return dict(analysis), result
+
+
+def _persist_pdf_document_checkpoint_with_connection(
+    connection: Any,
+    sale: AuctionSale,
+    analysis: dict[str, object],
+    result: list[dict[str, object]],
+    *,
+    pdf_job: dict[str, object] | None = None,
+) -> bool:
+    """Write the documentary checkpoint inside the caller's transaction."""
+
+    source_url = clean_text(sale.source_url)
+    expected_updated_at = sale.updated_at
+    current = connection.execute(
+        "select updated_at from public.auction_sales where source_url=%s for update",
+        (source_url,),
+    ).fetchone()
+    if current is None or current[0] != expected_updated_at:
+        LOGGER.warning("Discarding obsolete PDF checkpoint for %s", source_url)
+        return False
+
+    updated = connection.execute(
+        """
+        update public.auction_sales
+           set raw_payload = jsonb_set(
+                 coalesce(raw_payload, '{}'::jsonb),
+                 '{document_analysis}',
+                 %s,
+                 true
+               )
+         where source_url=%s
+           and updated_at=%s
+           and (
+                 raw_payload is null
+                 or jsonb_typeof(raw_payload) = 'object'
+               )
+         returning updated_at
+        """,
+        (
+            _postgres_value("raw_payload", _sanitize_postgrest_payload(analysis)),
+            source_url,
+            expected_updated_at,
+        ),
+    ).fetchone()
+    if updated is None:
+        return False
+    if updated[0] != expected_updated_at:
+        raise RuntimeError("PDF checkpoint changed the source sale revision")
+
+    input_hash = "pdf_checkpoint:" + pdf_enrichment_input_hash_for_sale(sale)
+    now = datetime.now(UTC)
+    connection.execute(
+        """
+        insert into public.auction_extractions (
+            source_url, provider, model, input_hash, schema_version,
+            confidence, result, updated_at
+        )
+        values (%s, %s, %s, %s, %s, %s, %s, %s)
+        on conflict (source_url, provider, input_hash) do update set
+            model = excluded.model,
+            schema_version = excluded.schema_version,
+            confidence = excluded.confidence,
+            result = excluded.result,
+            updated_at = excluded.updated_at
+        """,
+        (
+            source_url,
+            PDF_EXTRACTION_PROVIDER,
+            PDF_EXTRACTION_MODEL,
+            input_hash,
+            PDF_EXTRACTION_SCHEMA_VERSION,
+            _postgres_value("confidence", _pdf_extraction_confidence(result)),
+            _postgres_value("result", _sanitize_postgrest_payload(result)),
+            now,
+        ),
+    )
+    if pdf_job is not None:
+        _rekey_pdf_job_after_checkpoint_with_connection(
+            connection,
+            sale,
+            pdf_job,
+            input_hash=pdf_enrichment_input_hash_for_sale(sale),
+        )
+    return True
+
+
+def _rekey_pdf_job_after_checkpoint_with_connection(
+    connection: Any,
+    sale: AuctionSale,
+    pdf_job: dict[str, object],
+    *,
+    input_hash: str,
+) -> None:
+    """Move one claimed PDF retry to the hash made durable by its checkpoint.
+
+    A partial pass can update document profiles and file SHA values before the
+    claimed queue row is released.  Rekey that same row only after the
+    checkpoint and extraction proof have been written, so the retry budget
+    continues to describe the generation that actually processed the sale.
+    """
+
+    if str(pdf_job.get("job_type") or "") != "pdf":
+        return
+    job_id = clean_text(pdf_job.get("id"))
+    old_hash = clean_text(pdf_job.get("input_hash"))
+    source_url = clean_text(sale.source_url)
+    if not job_id or not old_hash or not source_url or old_hash == input_hash:
+        return
+    try:
+        attempt_count = int(pdf_job.get("attempt_count") or 0)
+    except (OverflowError, TypeError, ValueError):
+        return
+    locked_at = pdf_job.get("locked_at")
+    lease_clause = ""
+    lease_parameters: tuple[object, ...] = ()
+    if locked_at is not None:
+        lease_clause = " and locked_at=%s"
+        lease_parameters = (locked_at,)
+
+    cancel_sql = """
+        update public.auction_enrichment_jobs
+           set status='cancelled', locked_at=null,
+               last_error='superseded after durable PDF checkpoint', updated_at=now()
+         where id=%s
+           and source_url=%s
+           and job_type='pdf'
+           and status='running'
+           and input_hash=%s
+           and attempt_count=%s
+        """ + lease_clause
+    cancel_parameters = (job_id, source_url, old_hash, attempt_count, *lease_parameters)
+
+    def find_existing_generation() -> Any:
+        return connection.execute(
+            """
+            select id
+              from public.auction_enrichment_jobs
+             where source_url=%s
+               and job_type='pdf'
+               and input_hash=%s
+               and id<>%s
+             order by created_at desc, id desc
+             limit 1
+             for update
+            """,
+            (source_url, input_hash, job_id),
+        ).fetchone()
+
+    # A source refresh may already have materialized this post-checkpoint
+    # generation. Inspect it before changing the predecessor's unique key;
+    # otherwise the update can fail on the queue uniqueness constraint.
+    existing = find_existing_generation()
+    if existing is not None:
+        connection.execute(cancel_sql, cancel_parameters)
+        return
+
+    # No current row exists, so move the unique key without creating a second
+    # PDF generation. The sale row is already locked by the durable
+    # checkpoint transaction, which serializes the normal enqueue path.
+    update_sql = """
+        update public.auction_enrichment_jobs
+           set input_hash=%s, updated_at=now()
+         where id=%s
+           and source_url=%s
+           and job_type='pdf'
+           and status='running'
+           and input_hash=%s
+           and attempt_count=%s
+        """ + lease_clause + " returning id"
+    update_parameters = (input_hash, job_id, source_url, old_hash, attempt_count, *lease_parameters)
+    try:
+        transaction = getattr(connection, "transaction", None)
+        if callable(transaction):
+            # A concurrent source refresh can insert the new unique key after
+            # the pre-check. Keep that 23505 inside a savepoint so the durable
+            # documentary checkpoint can still commit and retire our claim.
+            with transaction():
+                updated = connection.execute(update_sql, update_parameters).fetchone()
+        else:
+            updated = connection.execute(update_sql, update_parameters).fetchone()
+    except Exception as exc:
+        if getattr(exc, "sqlstate", None) != "23505" or not callable(transaction):
+            raise
+        if find_existing_generation() is None:
+            raise
+        connection.execute(cancel_sql, cancel_parameters)
+        return
+    if updated is None:
+        # A lost lease is never rekeyed. The conditional cancellation still
+        # preserves the same lease and attempt guards if a new generation is
+        # already present.
+        if find_existing_generation() is not None:
+            connection.execute(cancel_sql, cancel_parameters)
+
+
+def persist_pdf_document_checkpoint_to_supabase(
+    sale: AuctionSale,
+    *,
+    pdf_job: dict[str, object] | None = None,
+) -> bool:
+    """Persist only modern PDF evidence after an incomplete extraction.
+
+    The source revision is fenced by ``auction_sales.updated_at``.  The helper
+    updates only the nested documentary analysis and writes one PDF extraction
+    row. When a currently claimed ``pdf_job`` is supplied, that same queue row
+    is rekeyed after the checkpoint so its retry budget follows the durable
+    generation. A direct Postgres connection is required so these writes share
+    one transaction. When called from an existing publication transaction,
+    psycopg's nested transaction context supplies a savepoint.
+    """
+
+    prepared = _prepare_pdf_document_checkpoint(sale)
+    if prepared is None:
+        return False
+    settings = load_settings()
+    db_url = settings.get("supabase_db_url")
+    connection = _PUBLICATION_CONNECTION.get()
+    if connection is None and not db_url:
+        LOGGER.warning("Skipping PDF checkpoint without a direct Postgres connection")
+        return False
+
+    analysis, result = prepared
+
+    def configure_dedicated_connection(current_connection: Any) -> None:
+        """Keep checkpoint settings transaction-local to a new connection."""
+
+        current_connection.execute(
+            """
+            select set_config('app.pipeline_queue_owner', %s, true),
+                   set_config('lock_timeout', %s, true),
+                   set_config('statement_timeout', %s, true)
+            """,
+            (
+                PDF_CHECKPOINT_QUEUE_OWNER,
+                PDF_CHECKPOINT_LOCK_TIMEOUT,
+                PDF_CHECKPOINT_STATEMENT_TIMEOUT,
+            ),
+        )
+
+    def write(current_connection: Any, *, dedicated: bool) -> bool:
+        transaction = getattr(current_connection, "transaction", None)
+        if callable(transaction):
+            with transaction():
+                if dedicated:
+                    configure_dedicated_connection(current_connection)
+                return _persist_pdf_document_checkpoint_with_connection(
+                    current_connection,
+                    sale,
+                    analysis,
+                    result,
+                    pdf_job=pdf_job,
+                )
+        if dedicated:
+            configure_dedicated_connection(current_connection)
+        return _persist_pdf_document_checkpoint_with_connection(
+            current_connection,
+            sale,
+            analysis,
+            result,
+            pdf_job=pdf_job,
+        )
+
+    if connection is not None:
+        # A publication transaction owns its session settings.  In
+        # particular, do not overwrite its queue owner or timeout policy.
+        return write(connection, dedicated=False)
+    with _postgres_connect(
+        str(db_url),
+        connect_timeout=PDF_CHECKPOINT_CONNECT_TIMEOUT,
+        retry_delays=(),
+    ) as current_connection:
+        return write(current_connection, dedicated=True)
+
+
 def _fetch_persisted_pdf_texts_for_sales(
     sales: list[AuctionSale],
     supabase_url: str,
@@ -2178,7 +2729,116 @@ def _fetch_persisted_pdf_texts_for_sales(
     return validated
 
 
-def upsert_documents_to_supabase(sales: list[AuctionSale]) -> int:
+def _validated_persisted_pdf_progress(
+    sale: AuctionSale,
+    extraction_row: dict[str, object],
+) -> list[dict[str, object]] | None:
+    """Validate a partial modern PDF checkpoint for a cold worker.
+
+    This path is intentionally separate from ``_validated_persisted_pdf_texts``:
+    it can restore only the modern per-document entries represented by the
+    current progress manifest. It never makes a partial manifest current and
+    never feeds the strict complete fallback.
+    """
+    analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+    if not isinstance(analysis, dict):
+        return None
+    if (
+        analysis.get("progress_schema_version") != PDF_PROGRESS_SCHEMA_VERSION
+        or analysis.get("input_fingerprint") != document_fingerprint(sale.documents)
+        or not _historical_timestamp_is_valid(analysis.get("checked_at"))
+    ):
+        return None
+    if (
+        clean_text(extraction_row.get("source_url")) != sale.source_url
+        or extraction_row.get("provider") != PDF_EXTRACTION_PROVIDER
+        or extraction_row.get("model") != PDF_EXTRACTION_MODEL
+        or extraction_row.get("schema_version") != PDF_EXTRACTION_SCHEMA_VERSION
+    ):
+        return None
+    result = extraction_row.get("result")
+    if not isinstance(result, list) or any(not isinstance(item, dict) for item in result):
+        return None
+    document_urls = {document_url(document) for document in sale.documents if document_url(document)}
+    progress = modern_progress_entries(analysis, sale.documents)
+    if not progress:
+        return None
+    result_by_url: dict[str, dict[str, object]] = {}
+    for item in result:
+        url = document_url(item)
+        if not url or url in result_by_url or url not in document_urls:
+            return None
+        if not is_modern_payload(item, expected_url=url):
+            return None
+        manifest_item = progress.get(url)
+        if not isinstance(manifest_item, dict):
+            return None
+        if (
+            clean_text(item.get("sha256")) != clean_text(manifest_item.get("sha256"))
+            or clean_text(item.get("extraction_status")) != clean_text(manifest_item.get("extraction_status"))
+            or item.get("complete") is not manifest_item.get("complete")
+        ):
+            return None
+        result_by_url[url] = item
+    if not result_by_url:
+        return None
+    verified_at = (analysis.get("cache_proof") or {}).get("verified_at") if isinstance(analysis.get("cache_proof"), dict) else None
+    restored: list[dict[str, object]] = []
+    for url in sorted(result_by_url):
+        sanitized = dict(result_by_url[url])
+        sanitized["file_path"] = None
+        sanitized["_persisted_pdf_proof"] = True
+        sanitized["_persisted_verified_at"] = verified_at or analysis.get("checked_at")
+        restored.append(sanitized)
+    return restored
+
+
+def restore_persisted_pdf_progress_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
+    """Restore modern complete or partial PDF text before a cold queue pass."""
+    if not clean_text(sale.source_url) or _has_usable_local_pdf_cache(sale):
+        return []
+    settings = load_settings()
+    supabase_url = settings.get("supabase_url")
+    api_key = settings.get("supabase_service_role_key")
+    if not supabase_url or not api_key:
+        return []
+    source_url = clean_text(sale.source_url)
+    rows: list[dict[str, object]] = []
+    connection = _PUBLICATION_CONNECTION.get()
+    try:
+        if connection is not None:
+            rows = _read_persisted_pdf_rows_postgres(connection, [source_url])
+        else:
+            rows = _read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
+    except (RuntimeError, TypeError, ValueError, httpx.HTTPError) as exc:
+        LOGGER.warning("Cold PDF progress lookup failed; keeping pending documents: %s", exc)
+        return []
+    rows = sorted(rows, key=lambda row: str(row.get("updated_at") or ""), reverse=True)
+    restored: list[dict[str, object]] | None = None
+    for row in rows:
+        restored = _validated_persisted_pdf_texts(sale, row)
+        if restored is not None:
+            break
+        restored = _validated_persisted_pdf_progress(sale, row)
+        if restored is not None:
+            break
+    if not restored:
+        return []
+    from src.pdf_fact_extraction import _write_pdf_text_cache
+
+    try:
+        _write_pdf_text_cache(sale, restored)
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        LOGGER.warning("Could not materialize cold PDF progress for %s: %s", source_url, exc)
+        return []
+    return restored
+
+
+def upsert_documents_to_supabase(
+    sales: list[AuctionSale],
+    *,
+    persisted_pdf_texts: dict[str, list[dict[str, object]]] | None = None,
+) -> int:
     sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
     if not sales:
         return 0
@@ -2187,7 +2847,8 @@ def upsert_documents_to_supabase(sales: list[AuctionSale]) -> int:
     key = settings["supabase_service_role_key"]
     if not url or not key:
         return 0
-    persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales, str(url), str(key))
+    if persisted_pdf_texts is None:
+        persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales, str(url), str(key))
     rows = [
         row
         for sale in sales
@@ -2201,6 +2862,33 @@ def upsert_documents_to_supabase(sales: list[AuctionSale]) -> int:
     rows = _unique_rows_by_key(rows, "document_url")
     _postgrest_upsert(str(url), str(key), "auction_documents", rows, on_conflict="document_url")
     return len(rows)
+
+
+def _restore_persisted_pdf_text_caches(
+    sales: list[AuctionSale],
+    persisted_pdf_texts: dict[str, list[dict[str, object]]],
+) -> None:
+    """Materialize validated historical PDF text after extraction upsert.
+
+    The validated payload is already used for the document rows.  Delaying the
+    local write until after ``auction_extractions`` is upserted keeps this
+    recovery path from manufacturing a second current extraction row in the
+    same publication.  The writer is atomic; a cache failure is an
+    optimization failure and leaves the publication on its normal queue path.
+    """
+    if not persisted_pdf_texts:
+        return
+    from src.pdf_fact_extraction import _write_pdf_text_cache
+
+    for sale in sales:
+        source_url = clean_text(sale.source_url)
+        payload = persisted_pdf_texts.get(source_url)
+        if not payload:
+            continue
+        try:
+            _write_pdf_text_cache(sale, payload)
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            LOGGER.warning("Could not restore persisted PDF cache for %s: %s", source_url, exc)
 
 
 def upsert_extractions_to_supabase(sales: list[AuctionSale]) -> int:
@@ -3535,8 +4223,13 @@ def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[
     ]
     if score_factors:
         _postgrest_insert(supabase_url, api_key, "auction_score_factors", score_factors)
-    upsert_documents_to_supabase(sales)
+    # Read the strict historical recovery map once.  The document rows and
+    # the post-extraction cache writer must consume this exact map so a cold
+    # worker cannot perform two reads or materialize a partial sibling.
+    persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales, supabase_url, api_key)
+    upsert_documents_to_supabase(sales, persisted_pdf_texts=persisted_pdf_texts)
     upsert_extractions_to_supabase(sales)
+    _restore_persisted_pdf_text_caches(sales, persisted_pdf_texts)
 
 
 def _postgrest_upsert(

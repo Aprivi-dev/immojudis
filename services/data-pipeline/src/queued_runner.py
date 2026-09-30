@@ -21,7 +21,7 @@ from src.enrichment.extract_structured import (
 )
 from src.enrichment.llm_client import create_llm_client
 from src.enrichment.operational_display import refresh_operational_display
-from src.freshness import documents_are_current
+from src.freshness import document_fingerprint, documents_are_current
 from src.geocode import geocode_sale
 from src.information_agent_evidence import run_information_agent_evidence_batch
 from src.llm_requests import (
@@ -45,6 +45,7 @@ from src.pdf_enrichment import (
     pdf_deadline_scope,
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
+from src.pdf_progress import manifest_is_complete
 from src.pipeline_usage import PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
@@ -63,6 +64,10 @@ from src.storage.supabase_client import (
     has_active_running_run_in_supabase,
     has_eligible_pdf_job_for_sale,
     mark_past_sales_in_supabase,
+    pdf_enrichment_input_hash_for_sale,
+    persist_pdf_document_checkpoint_to_supabase,
+    read_pdf_job_states_for_sale,
+    restore_persisted_pdf_progress_for_sale,
     retry_fact_claims_to_supabase,
     upsert_cadastre_parcels_to_supabase,
     upsert_dpe_diagnostics_to_supabase,
@@ -362,6 +367,60 @@ def _pdf_evidence_is_terminal_for_facts(sale: object) -> bool:
     return document_urls.issubset(excluded_urls)
 
 
+def _pdf_failure_reached_retry_cap(
+    sale: object,
+    source_url: str,
+    *,
+    settings: dict[str, object] | None = None,
+) -> bool:
+    """Return true only for a current revision with an observed exhausted job.
+
+    A missing eligible job is ambiguous: the PDF job may not have been
+    generated yet, the queue read may have failed, or a newer revision may be
+    waiting. Require a concrete latest PDF row for this input revision at its
+    attempt cap before cancelling a fact claim. The persisted analysis marker
+    is intentionally not required: a download can fail before the per-document
+    failure marker is written, while the queue row still proves exhaustion.
+    """
+
+    documents = getattr(sale, "documents", None)
+    raw_payload = getattr(sale, "raw_payload", None)
+    if not isinstance(documents, list) or not isinstance(raw_payload, dict):
+        return False
+    analysis = raw_payload.get("document_analysis")
+    if not isinstance(analysis, dict) or analysis.get("input_fingerprint") != document_fingerprint(documents):
+        return False
+    try:
+        current_input_hash = pdf_enrichment_input_hash_for_sale(sale, settings)
+        states = read_pdf_job_states_for_sale(source_url, include_terminal=True)
+    except Exception as exc:
+        LOGGER.info("Could not inspect PDF retry state for %s: %s", source_url, exc)
+        return False
+    current_states = [
+        row for row in states
+        if str(row.get("input_hash") or "") == current_input_hash
+    ]
+    if not current_states:
+        return False
+    latest = max(
+        current_states,
+        key=lambda row: (
+            str(row.get("created_at") or ""),
+            str(row.get("updated_at") or ""),
+        ),
+    )
+    try:
+        attempt_count = int(latest.get("attempt_count") or 0)
+        max_attempts = int(latest.get("max_attempts") or 0)
+    except (OverflowError, TypeError, ValueError):
+        return False
+    if latest.get("status") != "failed" or max_attempts <= 0 or attempt_count < max_attempts:
+        return False
+    checked_at = str(analysis.get("checked_at") or "")
+    latest_at = str(latest.get("updated_at") or latest.get("created_at") or "")
+    return not checked_at or not latest_at or latest_at >= checked_at
+
+
 def _is_llm_budget_exhausted(error: PipelineBudgetExhausted) -> bool:
     if isinstance(error, LLMRequestBudgetExhausted):
         return True
@@ -400,10 +459,14 @@ def run_enrichment_queue_batch(
     # Source details are deliberately completed before grouping the remaining
     # enrichment work.  Each regular group fetches its sale again below, so a
     # PDF/LLM job never writes a stale pre-detail catalogue snapshot.
+    def record_detail_deferred(job_ids: list[str]) -> None:
+        _record_worker_deferred_job_ids([{"id": job_id} for job_id in job_ids])
+
     handled_detail_jobs = run_source_detail_jobs(
         detail_jobs,
         settings=settings,
         clients=provider_clients,
+        on_deferred=record_detail_deferred,
     )
     if not enrichment_jobs:
         return handled_detail_jobs
@@ -471,8 +534,12 @@ def run_enrichment_queue_batch(
                 )
             mark_enrichment_jobs_terminal(sale_jobs)
             continue
+        pdf_stage_error = False
         try:
+            if sale.documents:
+                restore_persisted_pdf_progress_for_sale(sale)
             if "pdf" in job_types and sale.documents and not documents_are_current(sale):
+                pdf_stage_error = True
                 pdf_stats = enrich_sale_from_pdfs(sale)
                 analysis = sale.raw_payload.get("document_analysis") or {}
                 if pdf_stats.errors or analysis.get("failed_documents"):
@@ -494,6 +561,27 @@ def run_enrichment_queue_batch(
                         if fragments:
                             detail += f"; {'; '.join(fragments)}"
                     raise RuntimeError(f"Document extraction incomplete; retry required: {detail}")
+                if not manifest_is_complete(analysis, sale.documents):
+                    # Persist the merged document checkpoint before releasing
+                    # the claim. The PDF budget is per pass, so this durable
+                    # row is what lets the next worker select the next URLs
+                    # instead of repeating the same first six documents.
+                    pdf_job = next(
+                        (job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"),
+                        None,
+                    )
+                    checkpointed = persist_pdf_document_checkpoint_to_supabase(
+                        sale,
+                        pdf_job=pdf_job,
+                    )
+                    if not checkpointed:
+                        raise RuntimeError(
+                            "PDF document checkpoint was not persisted; retry required"
+                        )
+                    raise QueueJobDeferred(
+                        "PDF document manifest is partial; continue the next bounded pass"
+                    )
+                pdf_stage_error = False
             if job_types & {"fact_extraction", "display_description"}:
                 refresh_operational_display(sale)
                 # The early scan upsert enqueues a safety-net job before the
@@ -530,10 +618,20 @@ def run_enrichment_queue_batch(
                     and "pdf" not in job_types
                     and not documents_are_current(sale)
                 )
+                pdf_retry_exhausted = (
+                    missing_pdf_prerequisite
+                    and _pdf_failure_reached_retry_cap(sale, source_url, settings=settings)
+                )
                 if terminal_pdf_evidence or missing_pdf_prerequisite:
-                    if missing_pdf_prerequisite and has_eligible_pdf_job_for_sale(source_url):
+                    if missing_pdf_prerequisite and not pdf_retry_exhausted and has_eligible_pdf_job_for_sale(source_url):
                         raise QueueJobDeferred(
                             "Fact extraction deferred: PDF text cache is missing or incomplete"
+                        )
+                    if missing_pdf_prerequisite and not pdf_retry_exhausted and not manifest_is_complete(
+                        sale.raw_payload.get("document_analysis"), sale.documents
+                    ):
+                        raise QueueJobDeferred(
+                            "Fact extraction deferred: PDF document manifest is still partial"
                         )
                     # A terminal/missing PDF prerequisite cannot advance on
                     # the next wake-up. Keep that fact pass visible for review
@@ -545,9 +643,13 @@ def run_enrichment_queue_batch(
                             succeeded=False,
                             cancelled=True,
                             error_message=(
+                                "review_required: PDF extraction retry budget exhausted"
+                                if pdf_retry_exhausted
+                                else (
                                 "review_required: no extractable PDF evidence"
                                 if terminal_pdf_evidence
                                 else "review_required: PDF prerequisite unavailable"
+                                )
                             ),
                         )
                     mark_enrichment_jobs_terminal(fact_jobs)
@@ -629,12 +731,24 @@ def run_enrichment_queue_batch(
                 )
             else:
                 # A budget stop with no newly successful or explicitly blank
-                # page must consume a normal bounded retry; otherwise a
-                # permanently unreadable first page would loop forever.
+                # page must consume the PDF retry; otherwise an unreadable
+                # first page would loop forever. Dependent LLM claims retain
+                # their attempts because they still have no usable evidence.
                 message = f"{exc}; no new page progress, retry budget consumed"
                 LOGGER.warning("PDF extraction made no progress for %s", source_url)
-                for job in sale_jobs:
+                pdf_jobs = [job for job in sale_jobs if job.get("job_type") == "pdf"]
+                dependent_jobs = [job for job in sale_jobs if job.get("job_type") != "pdf"]
+                for job in pdf_jobs:
                     _finish_job(job, succeeded=False, error_message=message)
+                if dependent_jobs and pdf_jobs:
+                    deferred = QueueJobDeferred(
+                        "Dependent enrichment deferred until the PDF retry state is resolved"
+                    )
+                    _record_worker_deferred_job_ids(dependent_jobs)
+                    defer_budget_jobs(dependent_jobs, deferred)
+                elif not pdf_jobs:
+                    for job in dependent_jobs:
+                        _finish_job(job, succeeded=False, error_message=message)
                 mark_enrichment_jobs_terminal(sale_jobs)
             continue
         except LLMTaskDeadlineExceeded as exc:
@@ -690,6 +804,55 @@ def run_enrichment_queue_batch(
             return len(enrichment_jobs) if family == ENRICHMENT_FAMILY else handled_detail_jobs
         except Exception as exc:
             LOGGER.exception("Enrichment queue failed for %s: %s", source_url, exc)
+            analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+            try:
+                pdf_failed_documents = int(analysis.get("failed_documents") or 0) if isinstance(analysis, dict) else 0
+            except (OverflowError, TypeError, ValueError):
+                pdf_failed_documents = 0
+            dependent_jobs = [
+                job
+                for job in sale_jobs
+                if str(job.get("job_type") or "") != "pdf"
+            ]
+            pdf_failure = "pdf" in job_types and (pdf_stage_error or pdf_failed_documents > 0)
+            pdf_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"]
+            if pdf_failure:
+                try:
+                    persisted = persist_pdf_document_checkpoint_to_supabase(
+                        sale,
+                        pdf_job=pdf_jobs[0] if pdf_jobs else None,
+                    )
+                except Exception as checkpoint_exc:
+                    persisted = False
+                    LOGGER.warning(
+                        "PDF documentary checkpoint failed for %s; keeping the PDF retry authoritative: %s",
+                        source_url,
+                        checkpoint_exc,
+                    )
+                if not persisted:
+                    LOGGER.warning(
+                        "PDF documentary checkpoint was not durable for %s; no dependent claim will be spent",
+                        source_url,
+                    )
+            if pdf_failure and dependent_jobs:
+                for job in pdf_jobs:
+                    _finish_job(
+                        job,
+                        succeeded=False,
+                        error_message=str(exc),
+                    )
+                deferred = QueueJobDeferred(
+                    "Dependent enrichment deferred until the PDF retry state is resolved"
+                )
+                _record_worker_deferred_job_ids(dependent_jobs)
+                defer_budget_jobs(dependent_jobs, deferred)
+                mark_enrichment_jobs_terminal(sale_jobs)
+                LOGGER.info(
+                    "Deferred dependent enrichment after PDF failure for %s: %s",
+                    source_url,
+                    exc,
+                )
+                continue
             for job in sale_jobs:
                 _finish_job(job,
                     succeeded=False,

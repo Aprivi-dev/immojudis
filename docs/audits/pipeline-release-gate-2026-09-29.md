@@ -1,21 +1,39 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 11 h 25 UTC
+## Synthèse actuelle — 30 septembre, 13 h 37 UTC
 
 | Chantier           | État vérifié                                                                                                                                                                                                                                                    |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL et CI          | `74dd49f6` : CI et CodeQL verts, 2 005 tests Python par version, 1 336 tests Web, 87 Playwright, 200 migrations et 1 481 assertions pgTAP. Les deltas de reprise PDF et de suspension Enchères Publiques doivent passer leur propre CI.                         |
+| SQL et CI          | `a73b58e7` : CI et CodeQL verts, 2 013 tests Python par version, 1 336 tests Web, 87 Playwright, 200 migrations et 1 481 assertions pgTAP. Les corrections suivantes de reprise, cache froid et progression PDF doivent passer leur propre CI.                  |
 | Santé              | Trois ticks après la dernière optimisation SQL : 23 h, 23 h 15 et 23 h 30, tous réussis en 2 864, 2 351 et 4 003 ms.                                                                                                                                            |
 | Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Canari manuel `74dd49f6` réussi en 1 141,8 s : 31 claims, 26 completed, quatre failed, un queued, aucun running. Les deltas suivants restent à qualifier ; routage automatique inchangé.            |
 | Collecte Avoventes | 235 annonces, couverture complète, 136/136 requêtes réussies sur le worker qualifié.                                                                                                                                                                            |
 | Collecte AGRASC    | Audit public `74dd49f6` réussi : pages 0 à 6, 12 URL émises et valides, 25 archives vendues sans lien (26 occurrences). Certificat adressable vrai ; certificats global et DB faux. Notaires émet 832/832 URL avec certificat API complet, sans persistance DB. |
-| Documents          | Vrai writer confirmé sur six textes complets dans un manifeste de 16 PDF. Reprise facts/display relue et corrigée, y compris pièces terminales. Réutilisation cold et progression au-delà de six documents en correction ; récupération entière non qualifiée.  |
-| Capacité           | Au relevé de 09 h 50 : 6 053 jobs ouverts, 6 027 dus réessayables, 2 679 anciens encore sous le plafond d'essais, un en cours et 19 épuisés. Circuit quota testé localement ; résorption durable non démontrée.                                                 |
+| Documents          | Progression de 16 PDF et revalidation HTTP en 6+6+4, retrait du texte après 404, reprise cold et garde de génération vérifiés localement : 315 succès, 15 scénarios PostgreSQL réservés à CI. Cache froid réel encore non qualifié.                             |
+| Capacité           | Au relevé de 11 h 34 : 5 978 jobs ouverts, 5 952 dus réessayables, 2 659 anciens encore sous le plafond d'essais, un en cours et 16 épuisés. Ce différentiel inclut plusieurs workers et révisions ; résorption durable non démontrée.                          |
 | Revue IA           | Export privé v4.2 conservé ; adjudication aveugle AGRASC à quatre pièces conservée séparément, identité toujours non vérifiée. Aucun import ; gardes, lecture transactionnelle fraîche et réconciliation requises.                                              |
 | Resend et portail  | Clé, domaines, webhook et canari fournisseur vérifiés. Secret portail absent : ajout à Vercel Production refusé par auto-review, accord précis en attente. Aucun envoi à un interlocuteur.                                                                      |
 | Inbound            | Nouvelle route non publiée, cron absent. Canari canonique authentifié puis activation et santé requis après déploiement.                                                                                                                                        |
-| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées : 107 tests verts, CI du delta attendue. Accord écrit et flux promis non reçus.                                         |
-| Publication finale | PR en brouillon. Preview exacte `74dd49f6` READY et canari réussi. Deltas de reprise/cold/progression PDF et suspension EP en qualification ; aucun import IA ni publication applicative finale. Plan de branches préparé, aucune suppression.                  |
+| Enchères Publiques | Source désactivée dans le planificateur à 11 h 16, au lieu d'une simple suspension temporaire. Gardes collectes/audits/probes corrigées et CI du commit exact `a73b58e7` verte. Accord écrit et flux promis non reçus.                                          |
+| Publication finale | PR en brouillon. Preview exacte `a73b58e7` READY ; canari de son parent `74dd49f6` réussi. Deltas de reprise/cold/progression PDF en qualification ; aucun import IA ni publication applicative finale. Plan de branches préparé, aucune suppression.           |
+
+### Qualification des textes stockés — 30 septembre, 12 h 01 UTC
+
+Le candidat Avoventes `85ee013a-ebd4-40fd-9f78-d1b073b1550b` possède bien
+quatre PDF, sur une source active et disponible. Ses quatre lignes documentaires
+sont `downloaded/extracted`, mais la dernière extraction `pdf_text` de
+11 h 58 min 55 s ne comporte ni `complete`, ni `extraction_status`, ni clé
+`failed_pages`, ni hash de texte, ni preuve de cache datée. Les longueurs des
+profils et des textes de cette extraction ne concordent pas non plus. Il ne
+qualifie donc pas une reprise à froid moderne. Le run Avoventes observé de
+11 h 46 à 12 h 01 ne fournit pas de SHA du writer dans son résumé : la proximité
+temporelle ne permet pas d'en attribuer un.
+
+La même relecture distingue les échecs de faits anciens des échecs PDF : le job
+`5810e89f-d8f4-4f96-aa74-f452cfb45409`, sans document, porte un rejet de qualité
+du résumé daté du 23 septembre. Son état courant ne prouve pas un incident de
+budget ou de cooldown. Aucun job n'a été réinitialisé ou clôturé pour cette
+qualification.
 
 Les sections suivantes conservent la chronologie. Leurs compteurs datés ne
 doivent pas être utilisés comme l'état courant sans lire cette synthèse et
@@ -2325,3 +2343,132 @@ Les trois régressions cold et la suite PDF/Supabase isolée de 164 tests
 passent. La reprise de génération compte deux succès locaux et deux scénarios
 PostgreSQL en attente de CI. La relecture indépendante de ce delta cold est
 en cours ; la progression par lots reste en implémentation.
+
+## CI du verrou de source et précision des diagnostics — 30 septembre, 11 h 39 UTC
+
+Le commit `a73b58e76b9c035f1869a10bb5cd9b987249d974`, poussé à
+11 h 31 UTC, passe la [CI](https://github.com/Aprivi-dev/immojudis/actions/runs/36709094637)
+et [CodeQL](https://github.com/Aprivi-dev/immojudis/actions/runs/36709094620),
+sans relance. Python 3.11 et 3.12 comptent chacune 2 013 succès et 18 tests
+ignorés. Le Web conserve 1 336 succès et cinq ignorés ; Playwright compte
+87 succès et huit ignorés, aucun échec. Les 200 migrations et 1 481 assertions
+de 79 fichiers pgTAP passent sans dérive. Audits, build, catalogue HTTP,
+inbound local, budgets et invariants sont verts. La preview
+`dpl_AghBZPy5WZjGq2te159aaw7nbF7b` est READY sur ce SHA exact.
+
+Le log historique du canari établit les quatre causes failed : deux erreurs
+OCR et deux expirations de vérification robots. Le premier PDF a 21 pages en
+échec (`total=21`) à 11 h 00 min 38 s ; le second a une seule page en échec,
+la page 22, à 11 h 13 min 05 s. Le premier job est ensuite réécrit par un
+worker ultérieur à 11 h 30 min 43 s : son erreur SQL courante ne décrit plus
+le canari. La tâche queued finale correspond à une deadline source-detail
+avec restitution de la claim et de sa tentative ; le compteur
+`deferred_requested=0` ne suit pas ce chemin source-detail.
+
+Le run Licitor précédent réussit en 2 417,8 secondes : 588 annonces collectées,
+713 requêtes réussies sur 713, aucune erreur ; discovery, inventaire adressable
+et émissions certifiés. La publication compte 553 annonces, aucune en attente
+ou en échec. Ce sont des compteurs de périmètres différents, pas 35 pertes
+de publication inférées. La dégradation globale reste celle de l'enrichissement.
+
+Le relevé de 11 h 34, avec les mêmes prédicats de file, compte 5 978 tâches
+ouvertes, 5 952 dues réessayables, 2 659 anciennes réessayables et 16 épuisées.
+Un job est running, aucun stale. La baisse par rapport à 10 h 54 inclut les
+effets de la collecte et de workers successifs ; elle ne doit pas être attribuée
+au seul canari et ne suffit pas au critère de résorption durable. Petites
+Affiches compte 418 des 1 021 annonces futures non vues depuis plus de sept
+jours ; cette dette de fraîcheur reste à traiter.
+
+La relecture indépendante du cache complet approuve 65 tests cold/Supabase,
+ainsi que le cas mixte texte exploitable + pièce terminale. Les tests PostgreSQL
+de génération ne peuvent pas tourner localement : Docker est installé mais
+arrêté, aucun PostgreSQL de test n'est actif. Aucun runtime n'est démarré ;
+ces scénarios restent requis dans la base jetable de CI du futur commit.
+
+## Relecture de la progression et suivi des délais — 30 septembre, 12 h 24 UTC
+
+Le callback de deadline source-detail est raccordé au suivi du worker. Un test
+isolé traverse le vrai worker et le vrai batch source avec une deadline
+simulée : la tâche libérée apparaît dans `deferred_requested=1`, reste
+`observed_queued=1`, ne compte pas comme terminée et les contextes de suivi
+sont réinitialisés. Les suites source-detail passent aussi localement. Aucun
+appel HTTP, LLM ou production n'est nécessaire à cette vérification.
+
+La première relecture intégrée de la reprise PDF compte 93 succès et deux
+scénarios PostgreSQL ignorés localement. Elle confirme la corrélation de la
+génération PDF, le fallback complet strict et la protection des tâches
+dépendantes après une erreur générique. Elle conserve deux blocages : la
+revalidation HTTP après expiration du TTL doit vérifier réellement les octets,
+et une extraction différée sans progrès doit consommer uniquement la tentative
+PDF. La progression par le vrai traitement de 16 pièces et ces corrections
+restent en cours de validation ; ce delta n'est pas encore publié ni qualifié
+par sa propre CI.
+
+## Révisions de queue et fingerprint PDF — 30 septembre, 12 h 42 UTC
+
+La relecture du RPC confirme que les anciennes révisions sont annulées dans
+la transaction de claim avant de retourner les tâches au worker. Elles ne
+consomment donc pas un slot de traitement ou un appel LLM. Au relevé de
+12 h 23 min 50 s, aucune ligne non terminale n'est un doublon selon la vraie
+clé de claim `(source_url, job_type, detail_source_name, detail_source_url)`.
+Un regroupement limité à `(source_url, job_type)` fusionnerait à tort 55
+détails de source distincts. Aucune migration de coalescence n'est ajoutée.
+
+Le hash PDF précédent utilisait la révision commune de facts/display, qui
+inclut les empreintes source et les paramètres LLM. Le constructeur PDF
+partagé utilise maintenant le manifeste URL/label, les SHA explicites des
+documents et profils, `last_successful_check_at`, la version du cache et la
+génération du writer. Une variation de `source_checks` ou de prompt LLM ne
+renouvelle plus le budget PDF ; un document ou un SHA différent le renouvelle.
+Les quatre tests spécifiques passent, ainsi que les tests ciblés de
+fiabilité. La relecture et la CI du commit exact restent nécessaires.
+
+Le snapshot distinct de 12 h 27 min 07 s compte 5 934 tâches ouvertes,
+5 913 dues réessayables et 5 891 claimables selon les conditions de vente,
+rétention, lease et activation de source. Les 2 657 ouvertes de plus de
+48 heures incluent les tâches au plafond et les échéances de reprise futures ;
+2 652 sont dues réessayables de plus de 48 heures. Ces définitions diffèrent
+du compteur ancien sous plafond sans condition d'échéance : elles sont
+conservées séparément. Un worker est actif pendant ces observations ; aucune
+baisse n'est attribuée à cette correction encore locale.
+
+## Qualification locale intégrée des documents — 30 septembre, 13 h 39 UTC
+
+La suite intégrée des PDF, de la queue, du stockage, des délais source-detail
+et de la fiabilité passe avec 315 succès. Les 15 scénarios ignorés nécessitent
+la base PostgreSQL jetable : six pour le checkpoint, deux pour la génération,
+un pour le worker source-detail et six pour sa réutilisation. Ils restent
+obligatoires dans la CI du prochain commit ; aucun test n'utilise ici la base
+ou les services de production. Ruff et le contrôle des espaces sont verts.
+
+Le vrai traitement local de 16 fichiers conserve les six premiers textes,
+puis six autres, puis les quatre derniers. Le dossier ne devient complet
+qu'après le dernier lot. Après expiration HTTP, les URLs effectivement
+revérifiées sont suivies séparément : un lot de six ne peut pas rafraîchir
+artificiellement les 16 preuves. Un 403, 404 ou refus robots retire le texte
+actif et l'extrait périmé ; seule une récupération ultérieure réussie les
+réintroduit. Les exclusions temporaires sont revérifiées après leur TTL,
+tandis que les liens sociaux restent exclus.
+
+Le checkpoint écrit uniquement l'analyse documentaire et une extraction PDF
+moderne, sous garde de révision de la vente et dans une même transaction.
+Une connexion dédiée possède des délais bornés et n'active pas le fallback
+SQL de création de tâches. Un appel avec le job PDF actuellement claimé
+raccorde sa clé au hash sauvegardé, sans remettre son compteur à zéro.
+Lorsqu'une génération existe déjà, l'ancien job est annulé sous garde du
+lease. La contrainte unique est protégée par lecture verrouillée et savepoint
+en cas de course. Aucun job de faits ou de description n'est créé par ce
+checkpoint.
+
+La relecture a retiré un marqueur de génération de secours : il pouvait
+reconnaître à tort un ancien plafond de quatre essais après un changement
+de contenu ou de writer. Le contrôle final exige exclusivement le hash PDF
+courant. Une erreur PDF ou un passage sans progrès consomme uniquement le
+budget PDF ; les tâches dépendantes restent différées avant tout appel LLM.
+Les générations historiques épuisées sont conservées, sans réinitialisation.
+
+Le nouveau module de progression est inclus dans le budget des modules métier
+surveillés. `pdf_enrichment.py` respecte les 1 500 lignes selon le comptage du
+script de CI ; le seuil n'est pas augmenté. Ces résultats locaux ne qualifient
+pas encore un canari de production ni la restauration d'un dossier entier
+après une absence de cache GitHub réellement observée.

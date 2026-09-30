@@ -8,7 +8,7 @@ It must not invoke PDF extraction, geocoding, or an LLM.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -70,6 +70,7 @@ def run_source_detail_jobs(
     settings: dict[str, Any] | None = None,
     clients: dict[str, Any] | None = None,
     deadline: float | None = None,
+    on_deferred: Callable[[list[str]], None] | None = None,
 ) -> int:
     """Run claimed source-detail jobs in claim order.
 
@@ -79,25 +80,47 @@ def run_source_detail_jobs(
     at a time: each following job re-reads its sale after the preceding detail
     has been published.  ``deadline`` is an absolute monotonic cutoff for
     direct callers; the queue worker normally provides the same cutoff through
-    the inherited task-local scope.
+    the inherited task-local scope.  ``on_deferred`` receives each unique
+    claimed job ID released because of that cutoff.
     """
     batch = [job for job in jobs if str(job.get("job_type") or "") == "source_detail"]
     if not batch:
         return 0
     active_settings = settings if settings is not None else load_settings()
     provider_clients = clients if clients is not None else {}
+    reported_deferred_ids: set[str] = set()
+
+    def report_deferred(job_ids: Iterable[str]) -> None:
+        if on_deferred is None:
+            return
+        fresh_ids = [
+            job_id
+            for job_id in (str(value).strip() for value in job_ids)
+            if job_id and job_id not in reported_deferred_ids
+        ]
+        if not fresh_ids:
+            return
+        reported_deferred_ids.update(fresh_ids)
+        on_deferred(fresh_ids)
+
     deadline_scope = source_task_deadline_scope(deadline) if deadline is not None else nullcontext()
     with deadline_scope:
         for index, job in enumerate(batch):
             try:
                 ensure_source_task_deadline("starting source-detail job")
-                process_source_detail_job(job, settings=active_settings, clients=provider_clients)
+                process_source_detail_job(
+                    job,
+                    settings=active_settings,
+                    clients=provider_clients,
+                    on_deferred=report_deferred,
+                )
             except SourceTaskDeadlineExceeded as exc:
-                _release_deadline_claims(
+                released_ids = _release_deadline_claims(
                     batch[index:],
                     settings=active_settings,
                     operation=exc.operation,
                 )
+                report_deferred(released_ids)
                 LOGGER.info(
                     "Source-detail worker deadline reached; released %s claimed job(s)",
                     len(batch) - index,
@@ -117,7 +140,7 @@ def _release_deadline_claims(
     *,
     settings: dict[str, Any],
     operation: str,
-) -> None:
+) -> list[str]:
     """Return unstarted deadline claims without consuming an attempt.
 
     The guarded release is intentionally safe to repeat: a claim that was
@@ -125,12 +148,17 @@ def _release_deadline_claims(
     """
 
     reason = f"Source-detail task deadline reached during {operation}"
+    released_ids: list[str] = []
     for job in jobs:
         release_source_detail_job_without_attempt(
             job,
             reason=reason,
             settings=settings,
         )
+        job_id = str(job.get("id") or "").strip()
+        if job_id:
+            released_ids.append(job_id)
+    return released_ids
 
 
 def _release_deadline_claim(
@@ -138,6 +166,7 @@ def _release_deadline_claim(
     *,
     settings: dict[str, Any],
     exc: SourceTaskDeadlineExceeded,
+    on_deferred: Callable[[list[str]], None] | None = None,
 ) -> None:
     """Release one claim after a cooperative source-task cutoff."""
 
@@ -146,6 +175,9 @@ def _release_deadline_claim(
         reason=f"Source-detail task deadline reached during {exc.operation}",
         settings=settings,
     )
+    job_id = str(job.get("id") or "").strip()
+    if job_id and on_deferred is not None:
+        on_deferred([job_id])
 
 
 def process_source_detail_job(
@@ -153,6 +185,7 @@ def process_source_detail_job(
     *,
     settings: dict[str, Any] | None = None,
     clients: dict[str, Any] | None = None,
+    on_deferred: Callable[[list[str]], None] | None = None,
 ) -> bool:
     """Process one claimed detail job and return whether it was published.
 
@@ -165,7 +198,7 @@ def process_source_detail_job(
     try:
         ensure_source_task_deadline("starting source-detail job")
     except SourceTaskDeadlineExceeded as exc:
-        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     source_name = str(job.get("detail_source_name") or "").strip()
     canonical_url = str(job.get("source_url") or "").strip()
@@ -181,7 +214,7 @@ def process_source_detail_job(
         source_enabled = source_detail_source_enabled(source_name, active_settings)
         ensure_source_task_deadline("finishing source-detail source gate")
     except SourceTaskDeadlineExceeded as exc:
-        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     if not source_enabled:
         release_source_detail_job_without_attempt(
@@ -197,7 +230,7 @@ def process_source_detail_job(
         retry_not_before = _client_retry_not_before(source_name, detail_url, provider_clients)
         ensure_source_task_deadline("finishing source-detail provider retry check")
     except SourceTaskDeadlineExceeded as exc:
-        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     if retry_not_before is not None and retry_not_before > datetime.now(UTC):
         release_source_detail_job_without_attempt(
@@ -212,7 +245,7 @@ def process_source_detail_job(
         existing = fetch_sale_for_data_refresh(canonical_url)
         ensure_source_task_deadline("finishing source-detail sale lookup")
     except SourceTaskDeadlineExceeded as exc:
-        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     except Exception as exc:
         _finish_job(job, succeeded=False, error_message=str(exc))
@@ -226,7 +259,7 @@ def process_source_detail_job(
         satisfied = complete_already_verified_detail_job(existing, job, active_settings)
         ensure_source_task_deadline("finishing verified source-detail reuse")
     except SourceTaskDeadlineExceeded as exc:
-        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     if satisfied is not None:
         return satisfied
@@ -237,7 +270,7 @@ def process_source_detail_job(
         source_enabled = source_detail_source_enabled(source_name, active_settings)
         ensure_source_task_deadline("finishing source-detail source gate")
     except SourceTaskDeadlineExceeded as exc:
-        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     if not source_enabled:
         release_source_detail_job_without_attempt(
@@ -264,7 +297,7 @@ def process_source_detail_job(
         raw.setdefault("source_url", detail_url)
         raw.setdefault("source_name", source_name)
     except SourceTaskDeadlineExceeded as exc:
-        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     except Exception as exc:
         metrics = _client_metrics(_client_for_job(source_name, detail_url, provider_clients))
@@ -304,7 +337,7 @@ def process_source_detail_job(
         # won the race; finishing it here would be unsafe.
         return bool(publish_source_revision(revision, job, active_settings))
     except SourceTaskDeadlineExceeded as exc:
-        _release_deadline_claim(job, settings=active_settings, exc=exc)
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     except Exception as exc:
         LOGGER.exception("Source-detail publication failed for %s", canonical_url)

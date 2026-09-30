@@ -16,7 +16,7 @@ from src.freshness import (
     record_source_checks,
 )
 from src.normalize import normalize_sale
-from src.pdf_enrichment import download_documents, sale_storage_id
+from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, download_documents, sale_storage_id
 from src.sources.common import PaginationCoverage
 from src.storage import supabase_client as storage
 
@@ -323,6 +323,91 @@ def test_pdf_revalidation_archives_replacement_and_handles_304(tmp_path, monkeyp
     download_documents(sale, output_root=tmp_path)
     assert b"new" in file.read_bytes()
     assert len(requests) == 3
+
+
+def test_stale_complete_progress_revalidates_and_tracks_new_sha(tmp_path, monkeypatch):
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/stale-complete",
+            "documents": [{"url": "https://example.test/pv.pdf", "label": "PV descriptif"}],
+        }
+    )
+    old_content = b"%PDF-1.4\nold\n%%EOF"
+    new_content = b"%PDF-1.4\nnew\n%%EOF"
+    bodies = [old_content, new_content]
+    requests = []
+
+    def fetch(url, *, headers, **kwargs):
+        requests.append(headers)
+        if bodies:
+            return httpx.Response(200, content=bodies.pop(0), headers={"etag": "v2"}, request=httpx.Request("GET", url))
+        return httpx.Response(304, headers={"etag": "v2"}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr("src.pdf_enrichment._download_document_response", fetch)
+    first = download_documents(sale, output_root=tmp_path)
+    file = Path(first[0]["file_path"])
+    metadata = file.with_suffix(file.suffix + ".http.json")
+    old_sha = hashlib.sha256(old_content).hexdigest()
+    text_sha = hashlib.sha256(b"cached text").hexdigest()
+    fingerprint = document_fingerprint(sale.documents)
+    sale.raw_payload["document_analysis"] = {
+        "progress_schema_version": 1,
+        "input_fingerprint": fingerprint,
+        "document_progress": [{
+            "url": sale.documents[0]["url"],
+            "cache_version": PDF_TEXT_CACHE_VERSION,
+            "sha256": old_sha,
+            "text_sha256": text_sha,
+            "text_chars": 11,
+            "text_present": True,
+            "complete": True,
+            "extraction_status": "extracted",
+            "failed_pages": [],
+        }],
+        "cache_proof": {
+            "version": 1,
+            "verified_at": datetime.now(UTC).isoformat(),
+            "input_fingerprint": fingerprint,
+            "documents": [{
+                "url": sale.documents[0]["url"],
+                "sha256": old_sha,
+                "text_sha256": text_sha,
+                "text_chars": 11,
+                "text_present": True,
+                "complete": True,
+                "extraction_status": "extracted",
+                "failed_pages": [],
+            }],
+        },
+    }
+    metadata_payload = json.loads(metadata.read_text())
+    metadata_payload["checked_at"] = "2020-01-01T00:00:00+00:00"
+    metadata.write_text(json.dumps(metadata_payload))
+
+    refreshed = download_documents(sale, output_root=tmp_path)
+    new_sha = hashlib.sha256(new_content).hexdigest()
+    assert refreshed[0]["sha256"] == new_sha
+    assert sale.documents[0]["sha256"] == new_sha
+    assert requests[-1]["If-None-Match"] == "v2"
+
+    progress = sale.raw_payload["document_analysis"]["document_progress"][0]
+    proof = sale.raw_payload["document_analysis"]["cache_proof"]["documents"][0]
+    progress["sha256"] = new_sha
+    proof["sha256"] = new_sha
+    metadata_payload = json.loads(metadata.read_text())
+    metadata_payload["checked_at"] = "2020-01-01T00:00:00+00:00"
+    metadata.write_text(json.dumps(metadata_payload))
+    before_304 = len(requests)
+    unchanged = download_documents(sale, output_root=tmp_path)
+    assert unchanged[0]["sha256"] == new_sha
+    assert len(requests) == before_304 + 1
+    assert file.read_bytes() == new_content
+
+    # The 304 refresh made the HTTP marker fresh; a following pass skips the
+    # complete URL instead of issuing another conditional request.
+    download_documents(sale, output_root=tmp_path)
+    assert len(requests) == before_304 + 1
 
 
 def test_pagination_reports_limit_repeat_and_exhaustion():

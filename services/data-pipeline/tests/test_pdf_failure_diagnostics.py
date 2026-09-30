@@ -206,7 +206,7 @@ def test_enrichment_exception_logs_safe_marker_and_forwards_it(monkeypatch, tmp_
     monkeypatch.setattr(
         pdf_enrichment,
         "_select_documents_for_extraction",
-        lambda documents, sale=None: documents,
+        lambda documents, sale=None, **kwargs: documents,
     )
     monkeypatch.setattr(pdf_enrichment, "_invalidate_replaced_document_facts", lambda *_args: None)
     monkeypatch.setattr(pdf_enrichment, "extract_attached_document", lambda *_args, **_kwargs: (_ for _ in ()).throw(
