@@ -1,3 +1,5 @@
+import hashlib
+import json
 import sys
 import types
 from datetime import UTC, datetime
@@ -5,6 +7,7 @@ from decimal import Decimal
 
 import pytest
 
+from src.config import EncheresPubliquesAccessNotAuthorized
 from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
@@ -62,7 +65,142 @@ def test_needs_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
     assert main._needs_heavy_enrichment(sale, use_llm=True) is False
 
 
-def test_document_facts_version_forces_one_time_pdf_reanalysis() -> None:
+def test_run_scraper_uses_killable_source_worker_when_enabled(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+    expected = ScrapeResult([], [], {"coverage_complete": True})
+
+    def fake_isolated(source, **kwargs):
+        calls["source"] = source
+        calls.update(kwargs)
+        return expected, 0.2
+
+    monkeypatch.setattr(main, "run_source_in_subprocess", fake_isolated)
+    settings = {
+        **_settings(),
+        "source_process_isolation": True,
+        "source_scrape_timeout_seconds": 17,
+    }
+    def progressive_publisher(rows):
+        del rows
+
+    result = main._run_scraper(
+        "vench",
+        lambda: (_ for _ in ()).throw(AssertionError("thread fallback must not run")),
+        settings,
+        {"https://example.test/vente": "sig"},
+        {"https://example.test/vente": {"title": "Known"}},
+        progressive_publisher,
+    )
+
+    assert result == (expected, 0.2)
+    assert calls == {
+        "source": "vench",
+        "known": {"https://example.test/vente": "sig"},
+        "known_details": {"https://example.test/vente": {"title": "Known"}},
+        "max_pages": 1,
+        "fetch_detail_heavy": True,
+        "timeout_seconds": 17.0,
+        "on_batch": progressive_publisher,
+    }
+
+
+@pytest.mark.parametrize("source", ["encheres_publiques", "all"])
+def test_enabled_scrapers_refuses_ep_before_returning_a_fetch_callable(source: str) -> None:
+    settings = {
+        **_settings(),
+        "enable_encheres_publiques_benchmark": source == "all",
+        "encheres_publiques_access_authorized": False,
+    }
+
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        main._enabled_scrapers(source, settings, {}, {})
+
+
+def test_enabled_scrapers_requires_both_ep_switches_before_exposing_source() -> None:
+    settings = {
+        **_settings(),
+        "enable_encheres_publiques_benchmark": True,
+        "encheres_publiques_access_authorized": True,
+    }
+
+    scrapers = main._enabled_scrapers("encheres_publiques", settings, {}, {})
+
+    assert set(scrapers) == {"encheres_publiques"}
+
+
+def test_pipeline_refuses_ep_before_creating_a_run_without_authorization(monkeypatch) -> None:
+    settings = {
+        **_settings(),
+        "enable_encheres_publiques_benchmark": False,
+        "encheres_publiques_access_authorized": False,
+    }
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: pytest.fail("run must not be created"))
+
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        main.run_pipeline(main.PipelineOptions(source="encheres_publiques", upsert=True))
+
+
+def test_run_scraper_keeps_thread_callable_when_isolation_disabled() -> None:
+    expected = ScrapeResult([], [], {"coverage_complete": True})
+
+    result = main._run_scraper(
+        "vench",
+        lambda: expected,
+        {**_settings(), "source_process_isolation": False},
+        {},
+        {},
+    )
+
+    assert result[0] == expected
+    assert result[1] >= 0
+
+
+def test_run_scraper_isolates_avoventes_by_default(monkeypatch) -> None:
+    expected = ScrapeResult([], [], {"coverage_complete": True})
+    isolated_calls: list[str] = []
+
+    monkeypatch.setattr(
+        main,
+        "run_source_in_subprocess",
+        lambda source, **kwargs: isolated_calls.append(source) or (expected, 0.1),
+    )
+
+    result = main._run_scraper(
+        "avoventes",
+        lambda: (_ for _ in ()).throw(AssertionError("thread fallback must not run")),
+        {**_settings(), "source_process_isolation": True, "source_scrape_timeout_seconds": 17},
+        {},
+        {},
+    )
+
+    assert result[0] == expected
+    assert isolated_calls == ["avoventes"]
+
+
+def test_run_scraper_keeps_other_sources_on_original_thread_path(monkeypatch) -> None:
+    expected = ScrapeResult([], [], {"coverage_complete": True})
+    isolated_calls: list[str] = []
+
+    monkeypatch.setattr(
+        main,
+        "run_source_in_subprocess",
+        lambda source, **kwargs: isolated_calls.append(source) or (expected, 0.1),
+    )
+
+    result = main._run_scraper(
+        "notaires",
+        lambda: expected,
+        {**_settings(), "source_process_isolation": True},
+        {},
+        {},
+    )
+
+    assert result[0] == expected
+    assert isolated_calls == []
+
+
+def test_document_facts_version_forces_one_time_pdf_reanalysis(tmp_path, monkeypatch) -> None:
     sale = AuctionSale(
         source_name="info_encheres",
         source_url="https://www.info-encheres.com/vente-6008.html",
@@ -89,10 +227,44 @@ def test_document_facts_version_forces_one_time_pdf_reanalysis() -> None:
     assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
 
     sale.raw_payload["document_facts_version"] = main.DOCUMENT_FACTS_VERSION
-    sale.raw_payload["document_analysis"] = {"checked_at": datetime.now(UTC).isoformat(), "input_fingerprint": document_fingerprint(sale.documents)}
+    _materialize_current_pdf_proof(sale, tmp_path, monkeypatch)
 
     assert main._needs_structured_heavy_enrichment(sale) is False
     assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is True
+
+
+def test_heavy_current_rechecks_documents_after_policy_blocked_incremental_hit() -> None:
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://www.licitor.com/annonce/policy-blocked-current",
+        documents=[{"label": "PV", "url": "https://www.licitor.com/data/pub/media/pv.pdf"}],
+        content_hash="known-content",
+        raw_payload={
+            "document_facts_version": main.DOCUMENT_FACTS_VERSION,
+            "document_analysis": {
+                "coverage_status": "partial",
+                "documents_listed": 1,
+                "documents_extracted": 0,
+                "failed_documents": 0,
+                "blocked_documents": 1,
+                "blocked_document_urls": ["https://www.licitor.com/data/pub/media/pv.pdf"],
+                "blocked_document_reasons": [{
+                    "url": "https://www.licitor.com/data/pub/media/pv.pdf",
+                    "reason": "robots.txt disallows fetching this Licitor document",
+                }],
+                "input_fingerprint": document_fingerprint([
+                    {"label": "PV", "url": "https://www.licitor.com/data/pub/media/pv.pdf"}
+                ]),
+                "checked_at": datetime.now(UTC).isoformat(),
+            },
+        },
+    )
+
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is True
+
+    sale.documents.append({"label": "CCV", "url": "https://www.licitor.com/data/pub/media/ccv.pdf"})
+
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
 
 
 def test_heavy_enrichment_does_not_skip_stale_llm_description(monkeypatch) -> None:
@@ -119,6 +291,47 @@ def test_heavy_enrichment_does_not_skip_stale_llm_description(monkeypatch) -> No
     sale.raw_payload["llm_display_status"] = "accepted"
     sale.raw_payload["llm_prompt_version"] = "auction_llm_v5"
     assert main._heavy_enrichment_already_current(sale, {"same-content"}, use_llm=True) is True
+
+
+def test_merge_pdf_stats_deduplicates_policy_blocked_urls() -> None:
+    total = main.PdfEnrichmentStats(
+        blocked_document_urls=["https://www.licitor.com/data/pub/media/pv.pdf"]
+    )
+    item = main.PdfEnrichmentStats(
+        blocked_document_urls=[
+            "https://www.licitor.com/data/pub/media/pv.pdf",
+            "https://www.licitor.com/data/pub/media/conditions.pdf",
+            "https://www.licitor.com/data/pub/media/conditions.pdf",
+        ]
+    )
+
+    main._merge_pdf_stats(total, item)
+
+    assert total.blocked_document_urls == [
+        "https://www.licitor.com/data/pub/media/pv.pdf",
+        "https://www.licitor.com/data/pub/media/conditions.pdf",
+    ]
+
+
+def test_merge_pdf_stats_deduplicates_permanent_document_failures() -> None:
+    total = main.PdfEnrichmentStats(
+        permanent_document_failures=[
+            {"url": "https://documents.example/missing.pdf", "reason": "not_found"}
+        ]
+    )
+    item = main.PdfEnrichmentStats(
+        permanent_document_failures=[
+            {"url": "https://documents.example/missing.pdf", "reason": "not_found"},
+            {"url": "https://documents.example/html.pdf", "reason": "unsupported_response"},
+        ]
+    )
+
+    main._merge_pdf_stats(total, item)
+
+    assert total.permanent_document_failures == [
+        {"url": "https://documents.example/missing.pdf", "reason": "not_found"},
+        {"url": "https://documents.example/html.pdf", "reason": "unsupported_response"},
+    ]
 
 
 def test_needs_heavy_enrichment_keeps_incomplete_sale() -> None:
@@ -170,17 +383,27 @@ def test_pdf_target_limit_prioritizes_missing_surface_with_official_documents() 
 
 def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> None:
     calls: list[str] = []
+    raw_sale = _raw_sale()
+    raw_sale["document_analysis"] = {
+        "progress_schema_version": main.PDF_PROGRESS_SCHEMA_VERSION,
+        "manifest_complete": False,
+    }
 
     monkeypatch.setattr(main, "load_settings", lambda: _settings())
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
     monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
-    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
+    monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([raw_sale], []))
     _fake_geocode.calls = calls
     monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
     monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
     monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(
+        main,
+        "restore_persisted_pdf_progress_for_sale",
+        lambda sale: calls.append("restore") or [],
+    )
     monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: calls.append("pdf") or (_raise_pdf()))
     monkeypatch.setattr(main, "enrich_sale_with_llm", lambda *args, **kwargs: main.LLMEnrichmentStats())
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
@@ -205,8 +428,88 @@ def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> N
 
     assert main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=False, upsert=True)) == 0
     assert calls.index("upsert") < calls.index("pdf")
+    assert calls.index("upsert") < calls.index("restore") < calls.index("pdf")
+    assert calls.count("restore") == 1
     assert calls.index("upsert") < calls.index("geocode")
     assert calls.count("upsert") == 2
+
+
+@pytest.mark.parametrize(
+    ("restore_progress", "analysis", "expected_restores"),
+    [
+        (False, {"progress_schema_version": 1, "manifest_complete": False}, 0),
+        (True, {"manifest_complete": False}, 0),
+        (True, {"progress_schema_version": 1, "manifest_complete": True}, 0),
+        (True, {"progress_schema_version": 1, "manifest_complete": False}, 1),
+    ],
+    ids=["offline", "legacy", "complete", "modern-partial"],
+)
+def test_pdf_target_restores_only_online_modern_partial_progress(
+    monkeypatch, restore_progress, analysis, expected_restores
+) -> None:
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/partial-pdf",
+        raw_payload={"document_analysis": analysis},
+    )
+    calls: list[str] = []
+    stats = main.PdfEnrichmentStats()
+    monkeypatch.setattr(
+        main, "restore_persisted_pdf_progress_for_sale", lambda sale: calls.append("restore") or []
+    )
+    monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: calls.append("pdf") or stats)
+
+    assert main._enrich_pdf_target(sale, restore_progress=restore_progress) is stats
+    assert calls == (["restore", "pdf"] if expected_restores else ["pdf"])
+
+
+def test_pdf_target_checks_ep_access_before_restoration(monkeypatch) -> None:
+    sale = AuctionSale(
+        source_name="encheres_publiques",
+        source_url="https://www.encheres-publiques.com/ventes/immobilier/123",
+        raw_payload={"document_analysis": {"progress_schema_version": 1, "manifest_complete": False}},
+    )
+    monkeypatch.delenv("ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED", raising=False)
+    monkeypatch.delenv("ENABLE_ENCHERES_PUBLIQUES_BENCHMARK", raising=False)
+    monkeypatch.setattr(
+        main, "restore_persisted_pdf_progress_for_sale", lambda sale: pytest.fail("EP cache must not be read")
+    )
+    monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: pytest.fail("EP must not be fetched"))
+
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        main._enrich_pdf_target(sale, restore_progress=True)
+
+
+def test_pdf_target_keeps_ocr_after_bounded_persisted_lookup_timeout(monkeypatch) -> None:
+    from src.storage import supabase_client as storage
+
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/partial-pdf-timeout",
+        documents=[{"url": "https://example.test/partial-pdf-timeout/pv.pdf"}],
+        raw_payload={"document_analysis": {"progress_schema_version": 1, "manifest_complete": False}},
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(storage, "load_settings", lambda: {
+        "supabase_url": "https://supabase.test",
+        "supabase_service_role_key": "test-only",
+    })
+
+    def timed_out_lookup(*args, **kwargs):
+        calls.append("lookup")
+        assert kwargs["timeout"].connect == 5.0
+        assert kwargs["timeout"].read == 15.0
+        raise storage.httpx.ReadTimeout("test-only persisted checkpoint timeout")
+
+    monkeypatch.setattr(storage.httpx, "get", timed_out_lookup)
+    stats = main.PdfEnrichmentStats()
+    monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: calls.append("pdf") or stats)
+    token = storage._PUBLICATION_CONNECTION.set(None)
+    try:
+        assert main._enrich_pdf_target(sale, restore_progress=True) is stats
+    finally:
+        storage._PUBLICATION_CONNECTION.reset(token)
+    assert calls == ["lookup", "pdf"]
 
 
 def test_light_pipeline_geocodes_and_reupserts_when_heavy_enrichment_disabled(monkeypatch) -> None:
@@ -656,7 +959,9 @@ def test_pipeline_enriches_dpe_after_final_geocode(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("autonomous", [False, True])
-def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatch, autonomous) -> None:
+def test_incremental_skip_only_skips_heavy_enrichment_not_publication(
+    tmp_path, monkeypatch, autonomous
+) -> None:
     if autonomous:
         monkeypatch.setenv("PIPELINE_AUTONOMOUS_RUN_ID", "test-autonomous")
     else:
@@ -665,7 +970,9 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(monkeypatc
     settings = _settings()
     settings["incremental_enrichment"] = True
     raw = {**_raw_sale(), "document_facts_version": main.DOCUMENT_FACTS_VERSION, "_known_unchanged": True}
-    raw["document_analysis"] = {"checked_at": datetime.now(UTC).isoformat(), "input_fingerprint": document_fingerprint(raw.get("documents", []))}
+    fixture_sale = main.normalize_sale(raw)
+    _materialize_current_pdf_proof(fixture_sale, tmp_path, monkeypatch)
+    raw["document_analysis"] = fixture_sale.raw_payload["document_analysis"]
 
     monkeypatch.setattr(main, "load_settings", lambda: settings)
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
@@ -1094,6 +1401,37 @@ def _raw_sale() -> dict[str, object]:
         "starting_price_eur": "100 000 €",
         "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
     }
+
+
+def _materialize_current_pdf_proof(sale: AuctionSale, tmp_path, monkeypatch) -> None:
+    """Give freshness checks the same complete evidence as a real PDF pass."""
+    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_enrichment import sale_storage_id
+    from src.pdf_progress import PDF_TEXT_CACHE_VERSION
+
+    monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
+    text = "Preuve PDF stable pour la fixture."
+    payload = {
+        "url": sale.documents[0]["url"],
+        "label": sale.documents[0].get("label"),
+        "text": text,
+        "sha256": hashlib.sha256(b"fixture-pdf-bytes").hexdigest(),
+        "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "text_chars": len(text),
+        "text_present": True,
+        "cache_version": PDF_TEXT_CACHE_VERSION,
+        "complete": True,
+        "extraction_status": "extracted",
+        "extraction_method": "fixture",
+        "failed_pages": [],
+        "page_count": 1,
+        "http_checked_at": datetime.now(UTC).isoformat(),
+    }
+    _store_document_analysis_status(sale, sale.documents, [payload])
+    (tmp_path / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps([payload]),
+        encoding="utf-8",
+    )
 
 
 def _fake_geocode(sale: AuctionSale) -> AuctionSale:

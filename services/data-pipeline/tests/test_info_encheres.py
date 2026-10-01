@@ -215,6 +215,28 @@ def test_parse_info_encheres_detail_html_keeps_thousands_surface() -> None:
     assert sale.surface_m2 == Decimal("2464.70")
 
 
+def test_parse_info_encheres_detail_keeps_sole_cadastral_surface() -> None:
+    html = """
+    <html>
+      <body>
+        <table>
+          <tr><td><b>Nature du bien : </b></td><td>Terrain</td></tr>
+          <tr><td><b>Adresse : </b></td><td>33000 TESTVILLE</td></tr>
+        </table>
+        <div class="cadre"><div class="titre">Description</div><div class="int2">
+          Terrain cadastré section AB n°1 pour une contenance de 2 464,70 m².
+        </div></div>
+      </body>
+    </html>
+    """
+
+    raw = parse_info_encheres_detail_html(html, info_encheres.BASE_URL)
+    sale = normalize_sale(raw)
+
+    assert raw["surface_m2"] == "2464.70"
+    assert sale.surface_m2 == Decimal("2464.70")
+
+
 def test_parse_info_encheres_detail_html_does_not_treat_no_lease_as_rented() -> None:
     html = """
     <html>
@@ -241,3 +263,125 @@ def test_parse_info_encheres_detail_html_does_not_treat_no_lease_as_rented() -> 
 
     assert raw["occupancy_status"] == "occupied"
     assert sale.occupancy_status == "occupied"
+
+
+def test_info_encheres_detail_scopes_surface_land_and_parking_to_description() -> None:
+    html = """
+    <html>
+      <body>
+        <table>
+          <tr><td>Référence :</td><td>fixture-1</td></tr>
+          <tr><td>Nature du bien :</td><td>Appartement avec cave</td></tr>
+          <tr><td>Adresse :</td><td>33000 TESTVILLE</td></tr>
+          <tr><td>Superficie :</td><td>48,50 m²</td></tr>
+        </table>
+        <div class="cadre"><div class="titre">Description</div><div class="int2">
+          Dans un ensemble immobilier cadastré section AB n°1 pour une contenance de 12a 34ca.
+          Un appartement d'une superficie de 48,50 m² avec un emplacement de parking.
+          BIENS OCCUPES.
+        </div></div>
+        <nav>Appartement Studio Terrain Parking</nav>
+      </body>
+    </html>
+    """
+
+    raw = parse_info_encheres_detail_html(html, info_encheres.BASE_URL)
+    sale = normalize_sale(raw)
+
+    assert raw["surface_m2"] == "48.50"
+    assert raw["habitable_surface_m2"] == "48.50"
+    assert raw["land_surface_m2"] == "1234"
+    assert raw["parking_count"] == 1
+    assert "page_text" not in raw["source_blocks"]
+    assert sale.habitable_surface_m2 == Decimal("48.50")
+    assert sale.land_surface_m2 == Decimal("1234")
+    assert sale.parking_count == 1
+    assert sale.occupancy_status == "occupied"
+
+
+def test_info_encheres_detail_keeps_compound_lot_facts_unknown() -> None:
+    html = """
+    <html>
+      <body>
+        <table>
+          <tr><td>Référence :</td><td>fixture-2</td></tr>
+          <tr><td>Nature du bien :</td><td>Immeuble comprenant 2 appartements et des bureaux</td></tr>
+          <tr><td>Adresse :</td><td>33000 TESTVILLE</td></tr>
+        </table>
+        <div class="cadre"><div class="titre">Description</div><div class="int2">
+          Une propriété composée d'un appartement de 23 m² BIEN OCCUPE,
+          d'un appartement de 31 m² BIEN INOCCUPE et de bureaux d'une surface
+          habitable de 90 m². Cadastré section AB n°2 pour 2a 00ca.
+        </div></div>
+      </body>
+    </html>
+    """
+
+    raw = parse_info_encheres_detail_html(html, info_encheres.BASE_URL)
+    sale = normalize_sale(raw)
+
+    assert raw["property_type"] == "mixed"
+    assert raw["habitable_surface_m2"] is None
+    assert raw["land_surface_m2"] == "200"
+    assert raw["occupancy_status"] == "unknown"
+    assert sale.property_type == "mixed"
+    assert sale.habitable_surface_m2 is None
+    assert sale.rooms_count is None
+    assert sale.occupancy_status == "unknown"
+    assert info_encheres._extract_parking_count("LOT NUMERO SEPT (7) : Un garage en sous-sol") == 1
+    assert info_encheres._extract_occupancy_status("Le bien est occupée par la propriétaire.") == "owner_occupied"
+
+
+def test_info_encheres_does_not_mark_a_single_office_building_as_mixed() -> None:
+    assert info_encheres._is_mixed_asset("Immeuble de bureaux") is False
+    assert info_encheres._detail_property_type("Immeuble de bureaux") == "Immeuble de bureaux"
+
+
+def test_info_encheres_parses_explicit_parking_emplacement_counts() -> None:
+    assert info_encheres._extract_parking_count("Deux emplacements de parking") == 2
+    assert info_encheres._extract_parking_count("2 emplacements de parking") == 2
+    assert info_encheres._extract_parking_count("Deux emplacements de stationnement") == 2
+
+
+def test_info_encheres_detail_recovers_piece_unique_and_plural_free_occupancy() -> None:
+    html = """
+    <html>
+      <body>
+        <table>
+          <tr><td>Référence :</td><td>fixture-3</td></tr>
+          <tr><td>Nature du bien :</td><td>Une pièce unique</td></tr>
+          <tr><td>Adresse :</td><td>33000 TESTVILLE</td></tr>
+        </table>
+        <div class="cadre"><div class="titre">Description</div><div class="int2">
+          UNE PIECE UNIQUE d'une superficie de 21,25 m². LIBRES DE TOUT OCCUPATION.
+        </div></div>
+      </body>
+    </html>
+    """
+
+    raw = parse_info_encheres_detail_html(html, info_encheres.BASE_URL)
+    sale = normalize_sale(raw)
+
+    assert raw["property_type"] == "apartment"
+    assert raw["rooms_count"] == 1
+    assert raw["habitable_surface_m2"] == "21.25"
+    assert raw["occupancy_status"] == "vacant"
+    assert sale.rooms_count == 1
+    assert sale.occupancy_status == "vacant"
+
+
+def test_info_encheres_mixed_sale_does_not_infer_one_studios_rooms_or_area() -> None:
+    raw = {
+        "source_name": "info_encheres",
+        "source_url": "https://www.info-encheres.com/vente-encheres-immobilieres-fixture.html",
+        "property_type": "mixed",
+        "title": "Ensemble immobilier mixte",
+        "description": "Un studio de 28 m² et un local commercial de 90 m². Surface habitable de 28 m² pour le studio.",
+        "source_blocks": {"description": "Un studio de 28 m² et un local commercial de 90 m²."},
+    }
+
+    sale = normalize_sale(raw)
+
+    assert sale.property_type == "mixed"
+    assert sale.rooms_count is None
+    assert sale.habitable_surface_m2 is None

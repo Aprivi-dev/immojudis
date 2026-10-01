@@ -44,6 +44,7 @@ import {
   fetchDpeExplorer,
   exportSalesCsv,
   fetchFeatureEntitlements,
+  fetchSalesAiReviewProjections,
   fetchSalesStatistics,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
@@ -67,6 +68,7 @@ import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/fre
 import type { AuctionSale } from "@/lib/types";
 import type { WatchedZoneInput } from "@/lib/watched-zones";
 import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
+import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
 import {
   DEFAULT_SEARCH_LIMIT,
   HOME_TYPE_OPTIONS,
@@ -97,8 +99,9 @@ import {
   fetchSearchResults,
 } from "@/lib/search/search-service";
 import type { MapViewportChange } from "./MapPanel";
+import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
-import { Footer, MapPanelSkeleton, MobileMapToggle, MoreFiltersModal } from "./SearchFilters";
+import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
 import {
   ResultsSummary,
   SearchHeader,
@@ -106,7 +109,7 @@ import {
   SaveSearchButton,
   CsvExportButton,
 } from "./SearchHeader";
-import { SearchResultsList, SearchStatisticsPanel } from "./SearchResults";
+import { SearchResultsList } from "./SearchResults";
 import { SaleComparisonBar } from "./SaleComparisonBar";
 import {
   SearchDraft,
@@ -127,6 +130,29 @@ const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPan
   loading: () => <MapPanelSkeleton />,
 });
 
+function SearchStatisticsLoading() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Chargement des repères"
+      className="border-b border-[#132238]/10 bg-white px-4 py-4 text-sm font-semibold text-[#667482] sm:px-5"
+    >
+      Chargement des repères…
+    </div>
+  );
+}
+
+const LazyMoreFiltersModal = dynamic(
+  () => import("./AdvancedFiltersPanel").then((mod) => mod.MoreFiltersModal),
+  { loading: () => <FiltersLoadingFallback /> },
+);
+
+const LazySearchStatisticsPanel = dynamic(
+  () => import("./SearchStatisticsPanel").then((mod) => mod.SearchStatisticsPanel),
+  { loading: () => <SearchStatisticsLoading /> },
+);
+
 export function SearchPage({ search }: { search: SalesSearchParams }) {
   const navigate = useNavigate({ from: "/sales" });
   const currentLocation = useLocation();
@@ -144,6 +170,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const [savingAlert, setSavingAlert] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [dpeExplorerOpen, setDpeExplorerOpen] = useState(false);
+  const [statisticsOpen, setStatisticsOpen] = useState(false);
   const [draft, setDraft] = useState<SearchDraft>(() => searchToDraft(search));
   const latestSearchDraftRef = useRef<SearchDraft>(searchToDraft(search));
   const firstSearchDraftSync = useRef(true);
@@ -334,7 +361,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           )
       )
         .filter(hasCoordinates)
-        .slice(0, 300),
+        .slice(0, 500),
     [center, isPreview, rawMapSales, rawSales, search],
   );
 
@@ -345,6 +372,33 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   const mapListFollowsViewport = false;
   const displayedSales = mapListFollowsViewport ? mapViewportResults.sales : filteredSales;
+  const aiReviewSaleIds = useMemo(
+    () => [...new Set([...displayedSales, ...mapSales].map((sale) => sale.id).filter(Boolean))],
+    [displayedSales, mapSales],
+  );
+  const { data: aiReviewData, isError: aiReviewError } = useQuery({
+    queryKey: ["sales-ai-review", user?.id ?? "anonymous", aiReviewSaleIds],
+    queryFn: () => fetchSalesAiReviewProjections(aiReviewSaleIds),
+    enabled: Boolean(user && !authLoading && !isPreview && aiReviewSaleIds.length),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const aiReviewBySaleId = useMemo(() => {
+    const grouped: Record<string, AiReviewProjectionReadModel[]> = {};
+    for (const projection of aiReviewData?.projections ?? []) {
+      if (!projection.auction_sale_id) continue;
+      (grouped[projection.auction_sale_id] ??= []).push(projection);
+    }
+    return grouped;
+  }, [aiReviewData]);
+  const aiReviewStatus: AiReviewRequestStatus =
+    !user || isPreview || aiReviewSaleIds.length === 0
+      ? "disabled"
+      : aiReviewError
+        ? "error"
+        : aiReviewData
+          ? "ready"
+          : "loading";
   const hasLocalFilters = false;
   const isInitialLoading = authLoading || entitlementsLoading || isLoading;
   const activeFiltersCount = countActiveSearchFilters(search);
@@ -641,24 +695,31 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
               />
             </div>
           </div>
-          <details className="mx-4 mb-2 rounded-md border border-[#dce3eb] sm:mx-5">
+          <details
+            className="mx-4 mb-2 rounded-md border border-[#dce3eb] sm:mx-5"
+            onToggle={(event) => setStatisticsOpen(event.currentTarget.open)}
+          >
             <summary className="cursor-pointer px-4 py-2 text-sm font-medium">
               Repères sur cette recherche
             </summary>
-            <SearchStatisticsPanel
-              statistics={searchStatistics}
-              locked={statisticsLocked}
-              dpeLocked={dpeLocked}
-              loading={entitlementsLoading || statisticsLoading}
-              dpeExplorer={dpeExplorerData}
-              dpeExplorerLoading={dpeExplorerLoading}
-              dpeExplorerError={dpeExplorerError instanceof Error ? dpeExplorerError.message : null}
-              dpeExplorerRequested={dpeExplorerOpen}
-              onLoadDpeExplorer={() => {
-                setDpeExplorerOpen(true);
-                if (dpeExplorerOpen) void refetchDpeExplorer();
-              }}
-            />
+            {statisticsOpen ? (
+              <LazySearchStatisticsPanel
+                statistics={searchStatistics}
+                locked={statisticsLocked}
+                dpeLocked={dpeLocked}
+                loading={entitlementsLoading || statisticsLoading}
+                dpeExplorer={dpeExplorerData}
+                dpeExplorerLoading={dpeExplorerLoading}
+                dpeExplorerError={
+                  dpeExplorerError instanceof Error ? dpeExplorerError.message : null
+                }
+                dpeExplorerRequested={dpeExplorerOpen}
+                onLoadDpeExplorer={() => {
+                  setDpeExplorerOpen(true);
+                  if (dpeExplorerOpen) void refetchDpeExplorer();
+                }}
+              />
+            ) : null}
           </details>
           <SaleComparisonBar
             key={comparisonScope ?? "loading"}
@@ -685,6 +746,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
             comparedSaleIds={comparison.items.map((item) => item.id)}
             comparisonDisabled={!catalogReady}
             onToggleComparison={comparison.toggle}
+            aiReviewBySaleId={aiReviewBySaleId}
+            aiReviewStatus={aiReviewStatus}
           />
 
           <SearchPagination
@@ -716,6 +779,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
                 searchAsMove={!isPreview && Boolean(search.searchAsMove)}
                 preview={isPreview}
                 showDpeLegend={!dpeLocked}
+                aiReviewBySaleId={aiReviewBySaleId}
+                aiReviewStatus={aiReviewStatus}
                 onHover={setHoveredSaleId}
                 onSelect={handleMapSelect}
                 onViewportChange={handleViewportChange}
@@ -731,16 +796,18 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         ) : null}
       </div>
 
-      <MoreFiltersModal
-        open={filtersOpen}
-        analysisLocked={isPreview || isDiscovery}
-        preview={isPreview}
-        draft={draft}
-        setDraft={setDraft}
-        activeFiltersCount={activeFiltersCount}
-        onClose={() => setFiltersOpen(false)}
-        onReset={resetFilters}
-      />
+      {filtersOpen ? (
+        <LazyMoreFiltersModal
+          open={filtersOpen}
+          analysisLocked={isPreview || isDiscovery}
+          preview={isPreview}
+          draft={draft}
+          setDraft={setDraft}
+          activeFiltersCount={activeFiltersCount}
+          onClose={() => setFiltersOpen(false)}
+          onReset={resetFilters}
+        />
+      ) : null}
 
       <MobileMapToggle
         activeFiltersCount={activeFiltersCount}
@@ -791,6 +858,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
                 searchAsMove={!isPreview && Boolean(search.searchAsMove)}
                 preview={isPreview}
                 showDpeLegend={!dpeLocked}
+                aiReviewBySaleId={aiReviewBySaleId}
+                aiReviewStatus={aiReviewStatus}
                 onHover={setHoveredSaleId}
                 onSelect={handleMapSelect}
                 onViewportChange={handleViewportChange}

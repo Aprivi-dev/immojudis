@@ -18,7 +18,7 @@ from bs4 import BeautifulSoup, Tag
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.normalize import clean_text, normalize_property_type
 from src.raw_models import validate_raw_sales
-from src.sources.common import ScrapeResult, is_allowed_origin_url
+from src.sources.common import ScrapeResult, is_allowed_origin_url, parse_html
 from src.sources.licitor import (
     ALLOWED_ORIGINS,
     LICITOR_ZONE_URLS,
@@ -71,7 +71,7 @@ def parse_licitor_history_list_html(
 ) -> LicitorHistoryIndexPage:
     """Parse one public Licitor results page without following any link."""
 
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     entries: list[LicitorHistoryIndexEntry] = []
     for position, link in enumerate(soup.select("#zone-list a.Ad.Archives[href]"), start=1):
         href = str(link.get("href") or "")
@@ -131,7 +131,7 @@ def parse_licitor_historical_detail_html(
 
     canonical_url = _without_fragment(source_url)
     base = parse_licitor_detail_html(html, canonical_url)
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     base["tribunal"] = _node_text(soup.select_one(".LegalAd .Court"))
     page_external_id = str(base.get("external_id") or _external_id(canonical_url) or "unknown")
     result_date = _detail_result_date(soup)

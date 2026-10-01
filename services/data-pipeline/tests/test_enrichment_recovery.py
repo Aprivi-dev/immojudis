@@ -1,3 +1,7 @@
+import hashlib
+import json
+import shutil
+import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -169,6 +173,417 @@ def test_ocr_budget_without_new_page_progress_is_bounded(tmp_path, monkeypatch):
     assert error.value.checkpointed_pages == 1
 
 
+def test_deadline_checkpoint_is_reused_on_next_pdf_pass(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf_enrichment, 'PDF_DOCUMENT_TEXTS_DIR', tmp_path / 'cache')
+    monkeypatch.setenv('PDF_MAX_EXTRACT_PAGES', '2')
+    monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
+    path = tmp_path / 'deadline-checkpoint.pdf'
+    with fitz.open() as document:
+        for _ in range(2):
+            page = document.new_page()
+            page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        document.save(path)
+
+    calls = []
+
+    def checkpoint_then_expire(page, **_kwargs):
+        calls.append(page.number)
+        if len(calls) == 1:
+            # The page is returned and atomically checkpointed before the
+            # extraction loop notices that its bounded pass has expired.
+            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() - 1)
+        return {'text': f'OCR page {page.number + 1}', 'method': 'ocr_test', 'confidence': .8}
+
+    monkeypatch.setattr(pdf_enrichment, '_extract_page_text_with_ocr_result', checkpoint_then_expire)
+
+    with pytest.raises(pdf_enrichment.PdfDeadlineExceeded) as error:
+        with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 5):
+            pdf_enrichment.extract_pdf_pages(path)
+    assert error.value.checkpointed_pages == 1
+    assert calls == [0]
+    assert pdf_enrichment.pdf_deadline_remaining() is None
+
+    pages = pdf_enrichment.extract_pdf_pages(path)
+    assert calls == [0, 1]
+    assert len(pages) == 2
+    assert all(page['status'] == 'extracted' for page in pages)
+
+
+def test_enrich_sale_materializes_partial_manifest_before_deferred_ocr_and_cold_restores_pages(
+    tmp_path,
+    monkeypatch,
+):
+    from src import pdf_document_selection, pdf_fact_extraction
+
+    pdf_texts_dir = tmp_path / "pdf-texts"
+    page_cache_dir = tmp_path / "page-cache"
+    documents_dir = tmp_path / "documents"
+    for directory in (pdf_texts_dir, page_cache_dir, documents_dir):
+        directory.mkdir()
+    pdf_path = documents_dir / "long.pdf"
+    with fitz.open() as document:
+        for _ in range(3):
+            page = document.new_page()
+            page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        document.save(pdf_path)
+    url = "https://example.test/partial-checkpoint.pdf"
+    document = {
+        "label": "PV",
+        "url": url,
+        "type": "pdf",
+        "file_format": "pdf",
+        "document_type": "pv_huissier",
+        "file_path": str(pdf_path),
+        "sha256": hashlib.sha256(pdf_path.read_bytes()).hexdigest(),
+        "http_checked_at": "2026-09-30T12:00:00+00:00",
+    }
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/partial-sale",
+        documents=[{key: value for key, value in document.items() if key not in {"file_path", "sha256", "http_checked_at"}}],
+    )
+    settings = {
+        "user_agent": "immojudis-test",
+        "request_timeout_seconds": 5,
+        "incremental_enrichment": True,
+        "pdf_ocr_enabled": True,
+        "pdf_ocr_language": "fra",
+        "pdf_ocr_tessdata": None,
+        "pdf_max_download_mb": 25,
+        "pdf_max_extract_pages": 1,
+        "pdf_max_total_pages": 10,
+        "pdf_max_documents_per_sale": 6,
+        "pdf_extractor": "pymupdf",
+        "pdf_docling_enabled": False,
+        "pdf_docling_threshold_chars": 1000,
+        "pdf_docling_timeout_seconds": 5,
+        "pdf_docling_ocr_max_pages": 0,
+        "pdf_docling_ocr_max_size_mb": 0,
+        "pdf_docling_ocr_mode": "disabled",
+        "pdf_docling_chunk_pages": 10,
+        "pdf_docling_ocr_chunk_pages": 10,
+    }
+    monkeypatch.setattr(pdf_enrichment, "load_settings", lambda: settings)
+    monkeypatch.setattr(pdf_document_selection, "load_settings", lambda: settings)
+    monkeypatch.setattr(pdf_enrichment, "PDF_TEXTS_DIR", pdf_texts_dir)
+    monkeypatch.setattr(pdf_enrichment, "PDF_DOCUMENT_TEXTS_DIR", page_cache_dir)
+    monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", pdf_texts_dir)
+    monkeypatch.setattr(
+        pdf_enrichment,
+        "download_documents",
+        lambda _sale, *, stats=None: [dict(document)],
+    )
+    ocr_pages = []
+    monkeypatch.setattr(
+        pdf_enrichment,
+        "_extract_page_text_with_ocr_result",
+        lambda page, **_kwargs: ocr_pages.append(page.number) or {
+            "text": f"OCR page {page.number + 1}",
+            "method": "ocr_test",
+            "confidence": 0.8,
+        },
+    )
+
+    with pytest.raises(pdf_enrichment.PdfExtractionDeferred) as first_error:
+        pdf_enrichment.enrich_sale_from_pdfs(sale)
+
+    aggregate_path = pdf_texts_dir / f"{pdf_enrichment.sale_storage_id(sale)}.json"
+    aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+    assert len(aggregate) == 1
+    assert aggregate[0]["complete"] is False
+    assert aggregate[0]["extraction_status"] == "incomplete"
+    assert aggregate[0]["failed_pages"] == [2, 3]
+    assert (aggregate[0].get("text_sha256") or hashlib.sha256(
+        aggregate[0]["text"].encode()
+    ).hexdigest()) == hashlib.sha256(aggregate[0]["text"].encode()).hexdigest()
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["manifest_complete"] is False
+    assert analysis["document_progress"][0]["complete"] is False
+    assert analysis["last_successful_check_at"] is None
+    assert ocr_pages == [0]
+    assert first_error.value.partial_payload["sha256"] == document["sha256"]
+    assert first_error.value.partial_payload["text_sha256"] == hashlib.sha256(
+        first_error.value.partial_payload["text"].encode()
+    ).hexdigest()
+
+    aggregate[0]["_persisted_pdf_proof"] = True
+    aggregate_path.write_text(json.dumps(aggregate), encoding="utf-8")
+    shutil.rmtree(page_cache_dir / "pages")
+    with pytest.raises(pdf_enrichment.PdfExtractionDeferred):
+        pdf_enrichment.enrich_sale_from_pdfs(sale)
+
+    assert ocr_pages == [0, 1]
+    aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+    assert aggregate[0]["failed_pages"] == [3]
+    assert aggregate[0]["complete"] is False
+
+
+def test_blank_page_checkpoint_survives_modern_proof_recovery_without_completion(
+    tmp_path,
+    monkeypatch,
+):
+    from src import pdf_document_selection, pdf_fact_extraction
+    from src.storage import supabase_client as storage
+
+    pdf_texts_dir = tmp_path / "pdf-texts"
+    page_cache_dir = tmp_path / "page-cache"
+    documents_dir = tmp_path / "documents"
+    for directory in (pdf_texts_dir, page_cache_dir, documents_dir):
+        directory.mkdir()
+    pdf_path = documents_dir / "blank-prefix.pdf"
+    with fitz.open() as document:
+        document.new_page()
+        page = document.new_page()
+        page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        document.save(pdf_path)
+
+    with fitz.open(pdf_path) as document:
+        assert pdf_enrichment._is_objectively_blank_page(document[0], "") is True
+        assert pdf_enrichment._is_objectively_blank_page(document[1], "") is False
+        assert document[1].get_text("text") == ""
+        assert document[1].get_drawings()
+
+    url = "https://example.test/blank-prefix.pdf"
+    document = {
+        "label": "PV",
+        "url": url,
+        "type": "pdf",
+        "file_format": "pdf",
+        "document_type": "pv_huissier",
+        "file_path": str(pdf_path),
+        "sha256": hashlib.sha256(pdf_path.read_bytes()).hexdigest(),
+        "http_checked_at": "2026-09-30T12:00:00+00:00",
+    }
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/blank-prefix-sale",
+        documents=[
+            {
+                key: value
+                for key, value in document.items()
+                if key not in {"file_path", "sha256", "http_checked_at"}
+            }
+        ],
+    )
+    settings = {
+        "user_agent": "immojudis-test",
+        "request_timeout_seconds": 5,
+        "incremental_enrichment": True,
+        "pdf_ocr_enabled": True,
+        "pdf_ocr_language": "fra",
+        "pdf_ocr_tessdata": None,
+        "pdf_max_download_mb": 25,
+        "pdf_max_extract_pages": 1,
+        "pdf_max_total_pages": 10,
+        "pdf_max_documents_per_sale": 6,
+        "pdf_extractor": "pymupdf",
+        "pdf_docling_enabled": False,
+        "pdf_docling_threshold_chars": 1000,
+        "pdf_docling_timeout_seconds": 5,
+        "pdf_docling_ocr_max_pages": 0,
+        "pdf_docling_ocr_max_size_mb": 0,
+        "pdf_docling_ocr_mode": "disabled",
+        "pdf_docling_chunk_pages": 10,
+        "pdf_docling_ocr_chunk_pages": 10,
+    }
+    monkeypatch.setattr(pdf_enrichment, "load_settings", lambda: settings)
+    monkeypatch.setattr(pdf_document_selection, "load_settings", lambda: settings)
+    assert pdf_enrichment._should_try_ocr("") is True
+    monkeypatch.setattr(pdf_enrichment, "PDF_TEXTS_DIR", pdf_texts_dir)
+    monkeypatch.setattr(pdf_enrichment, "PDF_DOCUMENT_TEXTS_DIR", page_cache_dir)
+    monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", pdf_texts_dir)
+    monkeypatch.setattr(
+        pdf_enrichment,
+        "download_documents",
+        lambda _sale, *, stats=None: [dict(document)],
+    )
+    ocr_pages = []
+    monkeypatch.setattr(
+        pdf_enrichment,
+        "_extract_page_text_with_ocr_result",
+        lambda page, **_kwargs: ocr_pages.append(page.number + 1)
+        or {"text": "OCR page 2", "method": "ocr_test", "confidence": 0.8},
+    )
+    original_ensure_deadline = pdf_enrichment._ensure_pdf_deadline
+
+    def expire_before_second_page(*, operation, **kwargs):
+        if operation == "starting PDF page 2":
+            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() - 1)
+        return original_ensure_deadline(operation=operation, **kwargs)
+
+    monkeypatch.setattr(pdf_enrichment, "_ensure_pdf_deadline", expire_before_second_page)
+
+    with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 30):
+        with pytest.raises(pdf_enrichment.PdfDeadlineExceeded) as first_error:
+            pdf_enrichment.enrich_sale_from_pdfs(sale)
+
+    file_sha = document["sha256"]
+    partial_payload = first_error.value.partial_payload
+    assert partial_payload["text"] == ""
+    assert partial_payload["text_sha256"] == ""
+    assert partial_payload["sha256"] == file_sha
+    assert partial_payload["complete"] is False
+    assert partial_payload["failed_pages"] == [2]
+    assert partial_payload["pages"] == [
+        {
+            "page": 1,
+            "text": "",
+            "chars": 0,
+            "raw_text_chars": 0,
+            "method": "blank_page",
+            "confidence": 1.0,
+            "status": "blank_excluded",
+            "retryable": False,
+        }
+    ]
+    assert first_error.value.partial_analysis["manifest_complete"] is False
+    assert first_error.value.partial_analysis["last_successful_check_at"] is None
+    assert first_error.value.partial_pdf_texts == [partial_payload]
+    assert ocr_pages == []
+
+    aggregate_path = pdf_texts_dir / f"{pdf_enrichment.sale_storage_id(sale)}.json"
+    aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+    assert aggregate[0]["sha256"] == file_sha
+    assert aggregate[0]["text"] == ""
+    assert aggregate[0]["complete"] is False
+    assert aggregate[0]["failed_pages"] == [2]
+    assert aggregate[0]["pages"][0]["status"] == "blank_excluded"
+    assert sale.raw_payload["document_analysis"]["manifest_complete"] is False
+    assert sale.raw_payload["document_analysis"]["last_successful_check_at"] is None
+
+    persisted_row = {
+        "source_url": sale.source_url,
+        "provider": storage.PDF_EXTRACTION_PROVIDER,
+        "model": storage.PDF_EXTRACTION_MODEL,
+        "schema_version": storage.PDF_EXTRACTION_SCHEMA_VERSION,
+        "result": [partial_payload],
+        "updated_at": "2026-09-30T12:00:00+00:00",
+    }
+    restored = storage._validated_persisted_pdf_progress(sale, persisted_row)
+    assert restored is not None
+    assert restored[0]["text"] == ""
+    assert restored[0].get("text_sha256", "") == ""
+    assert restored[0]["_persisted_pdf_proof"] is True
+    aggregate_path.write_text(json.dumps(restored), encoding="utf-8")
+    shutil.rmtree(page_cache_dir / "pages")
+
+    with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 30):
+        with pytest.raises(pdf_enrichment.PdfDeadlineExceeded) as recovered_error:
+            pdf_enrichment.enrich_sale_from_pdfs(sale)
+
+    assert recovered_error.value.partial_payload["pages"][0]["status"] == "blank_excluded"
+    assert recovered_error.value.partial_payload["text"] == ""
+    assert recovered_error.value.partial_payload["text_sha256"] == ""
+    assert recovered_error.value.partial_payload["failed_pages"] == [2]
+    assert recovered_error.value.partial_analysis["manifest_complete"] is False
+    assert recovered_error.value.partial_analysis["last_successful_check_at"] is None
+    assert recovered_error.value.partial_pdf_texts[0]["complete"] is False
+    assert ocr_pages == []
+
+    aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+    assert aggregate[0]["complete"] is False
+    assert aggregate[0]["failed_pages"] == [2]
+
+
+def test_partial_checkpoint_keeps_memory_evidence_when_local_cache_write_fails(
+    tmp_path,
+    monkeypatch,
+):
+    from src import pdf_progress
+
+    url = "https://example.test/memory-checkpoint.pdf"
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/memory-checkpoint-sale",
+        documents=[{"label": "PV", "url": url, "document_type": "pv_huissier"}],
+    )
+    error = pdf_enrichment.PdfExtractionDeferred(
+        "OCR pass budget reached; retry resumes",
+        checkpointed_pages=1,
+        total_pages=2,
+        new_progress_pages=1,
+    )
+    payload = {
+        "cache_version": pdf_progress.PDF_TEXT_CACHE_VERSION,
+        "label": "PV",
+        "url": url,
+        "type": "pdf",
+        "document_type": "pv_huissier",
+        "file_path": str(tmp_path / "pv.pdf"),
+        "text": "Page 1",
+        "pages": [{"page": 1, "text": "Page 1", "status": "extracted"}],
+        "sha256": "a" * 64,
+        "page_count": 2,
+        "text_chars": 6,
+        "failed_pages": [2],
+        "complete": False,
+        "extraction_status": "incomplete",
+        "text_sha256": "b" * 64,
+    }
+    merged = [dict(payload)]
+    status_payloads = []
+
+    monkeypatch.setattr(
+        pdf_progress,
+        "partial_pdf_payload_from_page_cache",
+        lambda *_args, **_kwargs: dict(payload),
+    )
+
+    def write_cache(*_args, **_kwargs):
+        raise OSError("local cache is read-only")
+
+    def store_status(current_sale, *_args, **kwargs):
+        current_sale.raw_payload["document_analysis"] = {"checkpoint": "memory"}
+        status_payloads.append(kwargs["merged_pdf_texts"])
+
+    assert pdf_progress.checkpoint_partial_pdf_progress(
+        tmp_path / "pv.pdf",
+        sale.documents[0],
+        error=error,
+        total_pages=2,
+        cache_root=tmp_path / "pages",
+        manifest_path=tmp_path / "manifest.json",
+        current_texts=[],
+        sale=sale,
+        analysis={},
+        documents=sale.documents,
+        downloaded_documents=sale.documents,
+        ocr_enabled=True,
+        ocr_language="fra",
+        merge_cache=lambda *_args, **_kwargs: merged,
+        write_cache=write_cache,
+        store_status=store_status,
+    )
+    assert error.partial_payload == payload
+    assert error.partial_pdf_texts == merged
+    assert error.partial_analysis == {"checkpoint": "memory"}
+    assert isinstance(error.partial_cache_error, OSError)
+    assert status_payloads == [merged]
+
+    persisted = {}
+    monkeypatch.setattr(
+        queued_runner,
+        "read_modern_cache",
+        lambda *_args: pytest.fail("the queue must use the in-memory checkpoint"),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "persist_pdf_progress_checkpoint_to_supabase",
+        lambda current_sale, **kwargs: persisted.update(kwargs) or True,
+    )
+    job = {"id": "pdf-memory", "job_type": "pdf", "attempt_count": 2, "locked_at": "lease"}
+    assert queued_runner._persist_pdf_checkpoint_for_sale(sale, error=error, pdf_job=job)
+    assert persisted["analysis"] == {"checkpoint": "memory"}
+    assert persisted["pdf_texts"] == merged
+    assert persisted["pdf_job"] is job
+    status_failed = SimpleNamespace(partial_status_error=RuntimeError("status write failed"))
+    assert not queued_runner._persist_pdf_checkpoint_for_sale(
+        sale,
+        error=status_failed,
+        pdf_job=job,
+    )
+
+
 def test_health_fails_for_old_queue_stalled_runs_and_stale_sources():
     base = {'queue': [], 'sources': [], 'latest_collection': {}}
     assert not pipeline_health.health_failed(base)
@@ -261,7 +676,7 @@ def test_expired_attempt_cannot_finish_new_claim(monkeypatch):
     monkeypatch.setattr(storage, 'load_settings', lambda: {'supabase_url': 'https://example.test', 'supabase_service_role_key': 'test'})
     monkeypatch.setattr(storage.httpx, 'patch', lambda *a, **kw: captured.append(kw) or SimpleNamespace(is_error=False))
     storage.finish_auction_enrichment_job_in_supabase('job', succeeded=True, attempt_count=2)
-    assert captured[0]['params'] == {'id': 'eq.job', 'status': 'eq.running', 'attempt_count': 'eq.2'}
+    assert captured[0]['params'] == {'select': 'id', 'id': 'eq.job', 'status': 'eq.running', 'attempt_count': 'eq.2'}
 
 
 def test_register_run_exports_only_valid_uuid(tmp_path, monkeypatch):

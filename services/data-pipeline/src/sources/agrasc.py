@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import certifi
-from bs4 import BeautifulSoup, Tag
+from bs4 import Tag
 
 from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
@@ -16,12 +16,16 @@ from src.normalize import clean_text, extract_department, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.agrasc_operators import enrich_agrasc_operator
-from src.sources.common import PoliteHttpClient, ScrapeResult, unique_dicts
+from src.sources.agrasc_urls import classify_agrasc_operator_url
+from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, unique_dicts
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
 BASE_URL = "https://agrasc.gouv.fr"
-LIST_URL = f"{BASE_URL}/ventes-aux-encheres"
+# AGRASC publishes ``?page=0`` as the first page.  The bare path currently
+# serves a different view, so keep the published first-page href as the
+# traversal anchor.
+LIST_URL = f"{BASE_URL}/ventes-aux-encheres?page=0"
 LOGGER = logging.getLogger(__name__)
 SURFACE_VALUE_PATTERN = r"([0-9]+(?:[ .][0-9]{3})*(?:[,.][0-9]+)?|[0-9]+(?:[,.][0-9]+)?)"
 URL_CITY_PREFIXES = {
@@ -73,17 +77,39 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
             LOGGER.error("AGRASC list fetch failed: %s", exc)
             errors.append(f"{page_url}: {exc}")
             break
-        pages.observe(html, page_url)
+        # The archive page contains separate paginated views for general
+        # auctions and real estate.  They share the ``page`` query parameter,
+        # so following every link in the full document would make the
+        # real-estate traversal fetch unrelated pages and invalidate the
+        # catalogue proof.  Keep pagination scoped to the view parsed below.
+        pages.observe(_real_estate_view_html(html), page_url)
         page_sales = parse_agrasc_html(html, page_url=page_url)
         # Keep the public-card proof independent from the department filter.
         # Cards without a public URL remain counted by CatalogueEvidence; only
         # explicitly sold/unlinked cards can receive an addressable-only result.
-        catalogue.observe(html, page_url, page_sales)
+        catalogue_proof = catalogue.observe(html, page_url, page_sales)
+        # Some AGRASC archive cards expose the Agorastore seller catalogue via
+        # ``data-url`` without the title/link structure consumed by
+        # ``parse_agrasc_html``.  The independent public-card proof still sees
+        # that URL, so classify it there and close the inventory proof with an
+        # explicit exclusion.  Never turn a seller catalogue into a property
+        # row merely to make the parser and certificate agree.
+        for public_url in catalogue_proof.get("public_urls", []):
+            if classify_agrasc_operator_url(public_url) == "agorastore_seller":
+                exclusions.setdefault(
+                    canonical(str(public_url)),
+                    "operator_seller_catalogue_without_listing_identity",
+                )
         for sale in page_sales:
             url = canonical(str(sale.get("source_url") or ""))
             if url in seen_sales:
                 continue
             seen_sales.add(url)
+            if classify_agrasc_operator_url(url) == "agorastore_seller":
+                # Keep this public catalogue card in CatalogueEvidence, but
+                # never publish it as a property without a listing identity.
+                exclusions[url] = "operator_seller_catalogue_without_listing_identity"
+                continue
             if sale.get("department") in TARGET_DEPARTMENTS:
                 from src.source_checkpoint import restore_detail
                 if not restore_detail(sale):
@@ -113,8 +139,15 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
     )
 
 
+def _real_estate_view_html(html: str) -> str:
+    """Return only AGRASC's real-estate view for pagination traversal."""
+
+    view = parse_html(html, "html.parser").select_one(".view-liste-ventes-immobilieres")
+    return str(view) if view is not None else html
+
+
 def parse_agrasc_html(html: str, page_url: str = LIST_URL) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     sales: list[dict[str, Any]] = []
     inventory = soup.select_one(".view-liste-ventes-immobilieres") or soup
     for card in inventory.select(".card-vente-immo"):

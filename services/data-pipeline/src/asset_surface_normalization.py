@@ -24,10 +24,28 @@ from src.asset_normalization_helpers import (
     _validate_app_surface_scope,
 )
 from src.models import AuctionSale
-from src.normalize import clean_text, parse_surface
+from src.normalize import (
+    _is_ambiguous_mixed_lot_surface,
+    _is_coproperty_scoped_land_surface,
+    _preferred_surface_evidence_value,
+    _surface_evidence_for_value,
+    _surface_evidence_matches_value,
+    clean_text,
+    parse_surface,
+)
 
 
 def _fill_surfaces(sale: AuctionSale, text: str) -> None:
+    ambiguous_mixed_lot_surface = _is_ambiguous_mixed_lot_surface(sale.property_type or "", text)
+    if ambiguous_mixed_lot_surface:
+        # A generic structured value can be the first lot's area. Keep the
+        # typed measurements for audit, but do not expose one as the sale-wide
+        # application surface while the total remains unknown.
+        sale.surface_m2 = None
+        sale.app_surface_m2 = None
+        sale.app_surface_kind = None
+        sale.surface_scope = "unknown"
+        _add_quality_flag(sale, "ambiguous_surface")
     if sale.habitable_surface_m2 is None:
         sale.habitable_surface_m2 = _extract_surface_kind(text, "habitable_surface_m2", sale)
     text_carrez_surface = _extract_surface_kind(text, "carrez_surface_m2", sale)
@@ -46,7 +64,15 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
             "basis": "explicit_decimal_carrez_text",
         }
         _add_quality_flag(sale, "surface_conflict_resolved")
-    text_land_surface = _extract_surface_kind(text, "land_surface_m2", sale)
+    coproperty_scoped_land_surface = _is_coproperty_scoped_land_surface(sale.raw_payload, text)
+    text_land_surface = (
+        None
+        if coproperty_scoped_land_surface
+        else _extract_surface_kind(text, "land_surface_m2", sale)
+    )
+    if coproperty_scoped_land_surface and sale.land_surface_m2 is not None:
+        sale.land_surface_m2 = None
+        _add_quality_flag(sale, "parcel_surface_scope_unverified")
     if sale.land_surface_m2 is None:
         sale.land_surface_m2 = text_land_surface
     elif _should_prefer_text_land_surface(sale, text_land_surface):
@@ -101,7 +127,12 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
     }:
         sale.land_surface_m2 = None
     _set_app_surface(sale)
+    if ambiguous_mixed_lot_surface:
+        sale.app_surface_m2 = None
+        sale.app_surface_kind = None
+        sale.surface_scope = "unknown"
     _validate_app_surface_scope(sale)
+    _reconcile_surface_evidence(sale, text, ambiguous_mixed_lot_surface=ambiguous_mixed_lot_surface)
     _flag_ambiguous_surface(sale)
     if (
         sale.surface_scope is None
@@ -110,6 +141,43 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         and sale.property_type in {"house", "building"}
     ):
         sale.surface_scope = "land"
+
+
+def _reconcile_surface_evidence(
+    sale: AuctionSale,
+    text: str,
+    *,
+    ambiguous_mixed_lot_surface: bool,
+) -> None:
+    """Keep the displayed evidence aligned with the retained surface value."""
+
+    if ambiguous_mixed_lot_surface:
+        # A typed lot measurement is retained in its own field, but there is no
+        # sale-level surface for the generic evidence trail to cite.
+        sale.surface_evidence = None
+        sale.surface_source = None
+        sale.surface_confidence = None
+        return
+
+    value = _preferred_surface_evidence_value(
+        sale.property_type or "",
+        surface_m2=sale.surface_m2,
+        habitable_surface_m2=sale.habitable_surface_m2,
+        carrez_surface_m2=sale.carrez_surface_m2,
+        land_surface_m2=sale.land_surface_m2,
+    )
+    if value is None:
+        return
+    if sale.surface_evidence and _surface_evidence_matches_value(sale.surface_evidence, value):
+        return
+    evidence = _surface_evidence_for_value(text, value)
+    if evidence:
+        sale.surface_evidence = evidence
+        sale.surface_source = sale.surface_source or "source_text"
+    elif sale.surface_evidence:
+        # A stale excerpt is worse than an absent citation. It can otherwise
+        # make the fiche appear to support a different numeric value.
+        sale.surface_evidence = None
 
 
 def _discard_placeholder_built_surface(sale: AuctionSale) -> None:
@@ -481,10 +549,9 @@ def _fill_counts(sale: AuctionSale, text: str) -> None:
             (
                 r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+(?:places?\s+de\s+)?parkings?\b",
                 r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+places?\s+de\s+stationnement\b",
-                r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+garages?\b",
             ),
         )
-        if sale.parking_count is None and re.search(r"\bparking\b|\bgarage\b", text, re.I):
+        if sale.parking_count is None and re.search(r"\bparking\b|\bstationnement\b", text, re.I):
             sale.parking_count = 1
 
 

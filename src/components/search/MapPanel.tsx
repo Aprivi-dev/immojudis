@@ -39,6 +39,14 @@ import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { hasCoordinates } from "@/lib/search/search-filters";
 import type { ViewportBounds } from "@/lib/search/search-url-state";
 import type { AuctionSale } from "@/lib/types";
+import {
+  AI_REVIEW_ENERGY_FIELD_KEYS,
+  AI_REVIEW_FIELD_KEYS,
+  AI_REVIEW_SURFACE_FIELD_KEYS,
+  getAiReviewFieldResult,
+  type AiReviewProjectionReadModel,
+  type AiReviewRequestStatus,
+} from "@/lib/ai-review-guard";
 
 const SALES_SOURCE_ID = "immojudis-sales";
 const CLUSTER_LAYER_ID = "immojudis-sales-clusters";
@@ -72,6 +80,8 @@ export type MapPanelProps = {
   selectedSaleId: string | null;
   isLoading: boolean;
   searchAsMove: boolean;
+  aiReviewBySaleId?: Readonly<Record<string, readonly AiReviewProjectionReadModel[]>>;
+  aiReviewStatus?: AiReviewRequestStatus;
   onHover: (saleId: string | null) => void;
   onSelect: (saleId: string) => void;
   onViewportChange: (viewport: MapViewportChange) => void;
@@ -96,6 +106,83 @@ type QueriedMapFeature = {
 
 type PopupAccess = { preview: boolean; analysisLocked: boolean };
 
+function saleForMapReview(
+  sale: AuctionSale,
+  projections: readonly AiReviewProjectionReadModel[] | undefined,
+  requestStatus: AiReviewRequestStatus,
+  preview: boolean,
+): AuctionSale {
+  // Public preview has its existing display contract. Authenticated map data
+  // follows the same fail-closed guard as cards and fiches.
+  if (preview || requestStatus === "disabled") return sale;
+
+  const review = (fieldKey: (typeof AI_REVIEW_FIELD_KEYS)[number]) =>
+    getAiReviewFieldResult(projections, fieldKey, requestStatus);
+  const typeBlocked = review("property.property_type").blocked;
+  const cityBlocked = review("property.city").blocked;
+  const dateBlocked = review("sale.sale_date").blocked;
+  const priceBlocked = review("sale.starting_price_eur").blocked;
+  const surfaceBlocked = AI_REVIEW_SURFACE_FIELD_KEYS.some((fieldKey) => review(fieldKey).blocked);
+  const occupancyBlocked = review("property.occupancy_status").blocked;
+  const roomsBlocked = review("property.rooms_count").blocked;
+  const parkingBlocked = review("property.parking_count").blocked;
+  const energyBlocked = AI_REVIEW_ENERGY_FIELD_KEYS.some((fieldKey) => review(fieldKey).blocked);
+  const anyReviewedFieldBlocked = AI_REVIEW_FIELD_KEYS.some((fieldKey) => review(fieldKey).blocked);
+
+  if (
+    !typeBlocked &&
+    !cityBlocked &&
+    !dateBlocked &&
+    !priceBlocked &&
+    !surfaceBlocked &&
+    !occupancyBlocked &&
+    !roomsBlocked &&
+    !parkingBlocked &&
+    !energyBlocked
+  ) {
+    return sale;
+  }
+
+  return {
+    ...sale,
+    title: anyReviewedFieldBlocked ? "Vente à confirmer" : sale.title,
+    property_type: typeBlocked ? null : sale.property_type,
+    city: cityBlocked ? null : sale.city,
+    department: cityBlocked ? null : sale.department,
+    postal_code: cityBlocked ? null : sale.postal_code,
+    address: cityBlocked ? null : sale.address,
+    tribunal_city: cityBlocked ? null : sale.tribunal_city,
+    latitude: cityBlocked ? null : sale.latitude,
+    longitude: cityBlocked ? null : sale.longitude,
+    sale_date: dateBlocked ? null : sale.sale_date,
+    starting_price_eur: priceBlocked ? null : sale.starting_price_eur,
+    occupancy_status: occupancyBlocked ? null : sale.occupancy_status,
+    rooms_count: roomsBlocked ? null : sale.rooms_count,
+    bedrooms_count: roomsBlocked ? null : sale.bedrooms_count,
+    parking_count: parkingBlocked ? null : sale.parking_count,
+    ...(surfaceBlocked
+      ? {
+          habitable_surface_m2: null,
+          carrez_surface_m2: null,
+          land_surface_m2: null,
+          app_surface_m2: null,
+          app_surface_kind: null,
+          surface_scope: null,
+          surface_source: null,
+          surface_confidence: null,
+          surface_evidence: null,
+        }
+      : {}),
+    ...(energyBlocked
+      ? {
+          source_blocks: null,
+          source_blocks_by_source: null,
+          documents_rich: null,
+        }
+      : {}),
+  };
+}
+
 export function MapPanel({
   locationCenter,
   totalCount,
@@ -106,6 +193,8 @@ export function MapPanel({
   selectedSaleId,
   isLoading,
   searchAsMove,
+  aiReviewBySaleId,
+  aiReviewStatus = "disabled",
   onHover,
   onSelect,
   onViewportChange,
@@ -124,8 +213,18 @@ export function MapPanel({
   const [mapError, setMapError] = useState<string | null>(null);
   const accessToken = useMemo(() => getMapboxAccessToken(), []);
   const mapStyle = useMemo(() => "mapbox://styles/mapbox/streets-v12", []);
-  const featureCollection = useMemo(() => buildMapboxSaleFeatureCollection(sales), [sales]);
-  const geocodedSales = useMemo(() => sales.filter(hasCoordinates), [sales]);
+  const displaySales = useMemo(
+    () =>
+      sales.map((sale) =>
+        saleForMapReview(sale, aiReviewBySaleId?.[sale.id], aiReviewStatus, preview),
+      ),
+    [aiReviewBySaleId, aiReviewStatus, preview, sales],
+  );
+  const featureCollection = useMemo(
+    () => buildMapboxSaleFeatureCollection(displaySales),
+    [displaySales],
+  );
+  const geocodedSales = useMemo(() => displaySales.filter(hasCoordinates), [displaySales]);
   const canToggleSearchAsMove = !preview && mapReady && (geocodedSales.length > 0 || searchAsMove);
   const activeId = hoveredSaleId ?? selectedSaleId;
 
@@ -146,14 +245,14 @@ export function MapPanel({
   }, [onViewportChange]);
 
   useEffect(() => {
-    salesByIdRef.current = new Map(sales.map((sale) => [sale.id, sale]));
-  }, [sales]);
+    salesByIdRef.current = new Map(displaySales.map((sale) => [sale.id, sale]));
+  }, [displaySales]);
 
   useEffect(() => {
     popupAccessRef.current = { preview, analysisLocked: !showDpeLegend };
     popupRef.current?.remove();
     popupRef.current = null;
-  }, [preview, showDpeLegend]);
+  }, [aiReviewBySaleId, aiReviewStatus, preview, showDpeLegend]);
 
   useEffect(() => {
     if (!containerRef.current || !accessToken) return;
@@ -322,7 +421,7 @@ export function MapPanel({
       duration: 360,
     });
     popupRef.current = showSalePopup(map, sale, popupRef.current, popupAccessRef.current);
-  }, [mapReady, selectedSaleId, preview, showDpeLegend]);
+  }, [aiReviewBySaleId, aiReviewStatus, mapReady, preview, selectedSaleId, showDpeLegend]);
 
   useEffect(() => {
     const map = mapRef.current;

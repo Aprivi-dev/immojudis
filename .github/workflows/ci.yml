@@ -146,6 +146,29 @@ jobs:
           trap 'rm -f "$status_path"' EXIT
           npx --yes supabase@2.110.0 status --output json > "$status_path"
           node scripts/check-local-catalogue.mjs "$status_path"
+      - name: Export local Supabase integration environment
+        run: |
+          status_path="$(mktemp)"
+          trap 'rm -f "$status_path"' EXIT
+          npx --yes supabase@2.110.0 status --output json > "$status_path"
+          api_url="$(jq -r '.API_URL // empty' "$status_path")"
+          database_url="$(jq -r '.DB_URL // empty' "$status_path")"
+          service_role_key="$(jq -r '.SERVICE_ROLE_KEY // .SECRET_KEY // empty' "$status_path")"
+          publishable_key="$(jq -r '.PUBLISHABLE_KEY // .ANON_KEY // empty' "$status_path")"
+          test -n "$api_url"
+          test -n "$database_url"
+          test -n "$service_role_key"
+          test -n "$publishable_key"
+          {
+            echo "SUPABASE_URL=$api_url"
+            echo "SUPABASE_DB_URL=$database_url"
+            echo "NEXT_PUBLIC_SUPABASE_URL=$api_url"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$service_role_key"
+            echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$publishable_key"
+            echo "IMMOJUDIS_LOCAL_INTEGRATION=true"
+          } >> "$GITHUB_ENV"
+      - name: Run information-agent local integration
+        run: npx vitest run src/lib/information-agent-local.integration.test.ts --reporter=verbose
       - name: Stop local Supabase
         if: always()
         run: npx --yes supabase@2.110.0 stop --no-backup

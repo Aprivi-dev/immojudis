@@ -5,6 +5,10 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
+import {
+  getPublicationVisibleSaleIds,
+  SalePublicationUnavailableError,
+} from "@/lib/sale-publication-guard";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
@@ -162,7 +166,13 @@ export async function listSaleChangeEvents({
   const { data, error } = await query;
   if (error) throw error;
 
-  return { events: (data ?? []).map(saleChangeEventRowToSummary) };
+  const visibleSaleIds = await getPublicationVisibleSaleIds((data ?? []).map((row) => row.sale_id));
+
+  return {
+    events: (data ?? [])
+      .filter((row) => visibleSaleIds.has(row.sale_id))
+      .map(saleChangeEventRowToSummary),
+  };
 }
 
 export async function updateSaleChangeEventState({
@@ -186,6 +196,18 @@ export async function updateSaleChangeEventState({
           ? { dismissed_at: now }
           : { dismissed_at: null };
 
+  const { data: existingEvent, error: existingEventError } = await auth.supabase
+    .from("user_sale_change_events")
+    .select("sale_id")
+    .eq("id", eventId)
+    .eq("user_id", auth.userId)
+    .single();
+  if (existingEventError) throw existingEventError;
+  const existingVisibleSaleIds = await getPublicationVisibleSaleIds([existingEvent.sale_id]);
+  if (!existingVisibleSaleIds.has(existingEvent.sale_id)) {
+    throw new SalePublicationUnavailableError();
+  }
+
   const { data, error } = await auth.supabase
     .from("user_sale_change_events")
     .update(patch)
@@ -195,6 +217,8 @@ export async function updateSaleChangeEventState({
     .single();
 
   if (error) throw error;
+  const visibleSaleIds = await getPublicationVisibleSaleIds([data.sale_id]);
+  if (!visibleSaleIds.has(data.sale_id)) throw new SalePublicationUnavailableError();
   return { event: saleChangeEventRowToSummary(data) };
 }
 
@@ -626,7 +650,9 @@ async function loadSalesByIds(
     .in("id", ids);
 
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  const rows = (data ?? []) as unknown as AuctionSale[];
+  const visibleSaleIds = await getPublicationVisibleSaleIds(rows.map((sale) => sale.id));
+  return rows.filter((sale) => visibleSaleIds.has(sale.id));
 }
 
 async function upsertWatchSnapshots(auth: SupabaseAuthContext, rows: SaleWatchSnapshotInsert[]) {

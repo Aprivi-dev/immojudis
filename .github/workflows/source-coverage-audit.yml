@@ -11,7 +11,7 @@ on:
         description: "Sources to audit (read-only)"
         type: choice
         default: all
-        options: [all, cloud, followup, notarial, vench]
+        options: [all, cloud, followup, notarial, vench, encheres_publiques]
 permissions:
   contents: read
 jobs:
@@ -20,14 +20,28 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        source: ${{ fromJSON(inputs.audit_kind == 'absent_details' && (inputs.source_group == 'vench' && '["vench"]' || '["licitor"]') || inputs.audit_kind == 'reconciliation' && '["agrasc","avoventes","cessions_etat","info_encheres"]' || inputs.source_group == 'notarial' && '["notaires","agrasc"]' || inputs.source_group == 'followup' && '["avoventes","vench","encheres_immobilieres"]' || inputs.source_group == 'cloud' && '["petites_affiches","cessions_etat"]' || '["avoventes","licitor","vench","info_encheres","encheres_publiques","petites_affiches","cessions_etat","agrasc","encheres_immobilieres","notaires"]') }}
+        # ``all`` deliberately covers the nine active sources. Encheres
+        # Publiques remains an explicit opt-in so this audit cannot silently
+        # imply that its unconfigured access has been certified.
+        source: ${{ fromJSON(inputs.audit_kind == 'absent_details' && (inputs.source_group == 'vench' && '["vench"]' || '["licitor"]') || inputs.audit_kind == 'reconciliation' && '["agrasc","avoventes","cessions_etat","info_encheres"]' || inputs.source_group == 'encheres_publiques' && '["encheres_publiques"]' || inputs.source_group == 'notarial' && '["notaires","agrasc"]' || inputs.source_group == 'followup' && '["avoventes","vench","encheres_immobilieres"]' || inputs.source_group == 'cloud' && '["petites_affiches","cessions_etat"]' || '["avoventes","licitor","vench","info_encheres","petites_affiches","cessions_etat","agrasc","encheres_immobilieres","notaires"]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: ${{ vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED || 'false' }}
+      ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED: ${{ vars.ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Enforce Encheres Publiques access gate
+        if: matrix.source == 'encheres_publiques'
+        run: |
+          set -euo pipefail
+          if [ "$ENABLE_ENCHERES_PUBLIQUES_BENCHMARK" != "true" ] || [ "$ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED" != "true" ]; then
+            echo "Encheres Publiques audit refused until benchmark and access authorization are explicitly configured" >&2
+            exit 1
+          fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: '3.11'
+          python-version: "3.11"
           cache: pip
           cache-dependency-path: services/data-pipeline/requirements.txt
       - name: Install collector dependencies

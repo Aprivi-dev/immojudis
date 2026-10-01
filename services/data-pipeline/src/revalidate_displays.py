@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 
-from src.config import load_settings
+from src.config import EncheresPubliquesAccessNotAuthorized, load_settings
+from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.display_quality import has_current_display
 from src.enrichment.extract_structured import apply_cached_llm_extraction_to_sale
 from src.storage.supabase_client import fetch_sales_needing_llm_descriptions, upsert_sales_to_supabase
+
+LOGGER = logging.getLogger(__name__)
 
 
 def revalidate_cached_displays(limit: int = 1000) -> dict[str, int]:
@@ -16,15 +20,39 @@ def revalidate_cached_displays(limit: int = 1000) -> dict[str, int]:
     settings = load_settings()
     version = str(settings['llm_prompt_version'])
     display_version = str(settings['llm_display_prompt_version'])
+    model_version = str(settings.get('replicate_model') or '') or None
     sales = fetch_sales_needing_llm_descriptions(limit=limit, prompt_version=version)
-    report = {'selected': len(sales), 'revalidated': 0, 'rejected': 0, 'without_cache': 0, 'persisted': 0}
+    report = {
+        'selected': len(sales),
+        'revalidated': 0,
+        'rejected': 0,
+        'without_cache': 0,
+        'persisted': 0,
+        'skipped_unauthorized': 0,
+    }
     for sale in sales:
+        try:
+            require_encheres_publiques_sale_access(
+                source_name=sale.source_name,
+                source_url=sale.source_url,
+                source_urls=sale.source_urls,
+                documents=sale.documents,
+                settings=settings,
+            )
+        except EncheresPubliquesAccessNotAuthorized as exc:
+            report['skipped_unauthorized'] += 1
+            LOGGER.info(
+                'Skipping unauthorized Encheres Publiques cached display %s: %s',
+                sale.source_url,
+                exc,
+            )
+            continue
         if not isinstance(sale.raw_payload.get('llm_extraction'), dict):
             report['without_cache'] += 1
             continue
         before = json.dumps(sale.to_storage_dict(), sort_keys=True, default=str)
         apply_cached_llm_extraction_to_sale(sale, prompt_version=version)
-        valid = has_current_display(sale.raw_payload, version, display_version)
+        valid = has_current_display(sale.raw_payload, version, display_version, model_version)
         report['revalidated' if valid else 'rejected'] += 1
         if before != json.dumps(sale.to_storage_dict(), sort_keys=True, default=str):
             count = upsert_sales_to_supabase([sale], refresh_last_seen=False)

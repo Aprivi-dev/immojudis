@@ -68,6 +68,231 @@ def test_same_url_cross_source_keeps_newer_canonical_check_when_incoming_is_old(
     assert result.raw_payload['source_checks_by_source']['notaires']['https://example.test/shared-old']['source_name'] == 'notaires'
 
 
+def test_cross_source_operational_revision_preserves_facts_and_refresh_metadata():
+    existing = sale('https://example.test/canonical-operational')
+    existing.raw_payload.update(
+        llm_display_description='Ancienne synthèse suffisamment longue pour être remplacée.',
+        llm_fact_extraction={'rooms_count': 3, 'display_description': 'Ancien texte'},
+        llm_fact_coverage={'complete': True},
+        investment_analysis={'price': 100000},
+    )
+    incoming = sale(
+        'https://example.test/secondary-operational',
+        price=125000,
+        checked='2026-09-12T12:00:00Z',
+    )
+    incoming.source_name = 'notaires'
+    marker = {
+        'description': 'Ancienne synthèse suffisamment longue pour être remplacée.',
+        'reason': 'source_operational_changed',
+        'operational_refreshable': True,
+    }
+    incoming.raw_payload.update(
+        source_content_changed=True,
+        source_operational_changed=True,
+        source_content_change_reason='source_operational_changed',
+        superseded_analysis=marker,
+    )
+
+    result = merge_revision(existing, incoming)
+
+    assert result.raw_payload['source_content_changed'] is True
+    assert result.raw_payload['source_operational_changed'] is True
+    assert result.raw_payload['source_content_change_reason'] == 'source_operational_changed'
+    assert result.raw_payload['superseded_analysis'] == marker
+    assert result.raw_payload['llm_fact_extraction']['rooms_count'] == 3
+    assert result.raw_payload['llm_fact_extraction']['display_description'] is None
+    assert result.raw_payload['llm_fact_extraction']['summary'] is None
+    assert result.raw_payload['llm_fact_extraction']['investor_notes'] is None
+    assert result.raw_payload['llm_fact_coverage'] == {'complete': True}
+    assert 'llm_display_description' not in result.raw_payload
+
+
+def test_cross_source_operational_revision_does_not_certify_unknown_pending_flag():
+    existing = sale('https://example.test/canonical-unknown')
+    existing.raw_payload.update(
+        source_content_changed=True,
+        superseded_analysis={'reason': 'legacy_unknown'},
+        llm_fact_extraction={'rooms_count': 3},
+    )
+    incoming = sale(
+        'https://example.test/secondary-unknown',
+        checked='2026-09-12T12:00:00Z',
+    )
+    incoming.source_name = 'notaires'
+    incoming.raw_payload.update(
+        source_content_changed=True,
+        source_operational_changed=True,
+        source_content_change_reason='source_operational_changed',
+        superseded_analysis={'reason': 'source_operational_changed', 'operational_refreshable': True},
+    )
+
+    result = merge_revision(existing, incoming)
+
+    assert result.raw_payload['source_operational_changed'] is True
+    assert result.raw_payload['source_content_change_reason'] != 'source_operational_changed'
+    assert result.raw_payload['superseded_analysis'] == {'reason': 'legacy_unknown'}
+    assert 'llm_fact_extraction' not in result.raw_payload
+
+
+def test_source_detail_revision_keeps_documentary_invalidation_through_write_and_enqueue(monkeypatch):
+    from copy import deepcopy
+
+    from src import main, source_detail
+    from src.freshness import record_source_checks
+    from src.normalize import normalize_sale
+    from src.storage import supabase_client as storage
+
+    source_url = 'https://example.test/documentary-pending'
+    base = {
+        'source_name': 'avoventes',
+        'source_url': source_url,
+        'raw_text': 'Appartement documenté à Bordeaux.',
+        'address': '12 rue Victor Hugo',
+        'postal_code': '33000',
+        'city': 'Bordeaux',
+        'starting_price_eur': 100000,
+        'sale_date': '2099-11-01',
+        'status': 'upcoming',
+        'documents': [],
+    }
+    record_source_checks([base], {})
+    base.pop('source_content_changed', None)
+    base.pop('source_content_change_reason', None)
+    base.pop('source_operational_changed', None)
+    base.pop('llm_display_status', None)
+    existing = normalize_sale(base)
+    marker = {
+        'description': 'Ancienne synthèse fondée sur les documents.',
+        'reason': 'source_content_changed',
+        'operational_refreshable': False,
+    }
+    existing.raw_payload.update(
+        source_content_changed=True,
+        source_content_change_reason='source_content_changed',
+        superseded_analysis=marker,
+        llm_display_status='pending',
+    )
+
+    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    revised = source_detail.prepare_source_revision(existing, {
+        **base,
+        'starting_price_eur': 90000,
+    })
+
+    assert revised.starting_price_eur == 90000
+    assert revised.raw_payload['source_content_changed'] is True
+    assert revised.raw_payload['source_operational_changed'] is True
+    assert revised.raw_payload['source_content_change_reason'] == 'source_content_changed'
+    assert revised.raw_payload['superseded_analysis'] == marker
+
+    events = []
+    monkeypatch.setattr(storage, 'tribunal_reference_rows', lambda _: [])
+    monkeypatch.setattr(
+        storage,
+        '_upsert_with_rest',
+        lambda _url, _key, rows: events.append(('write', deepcopy(rows[0]['raw_payload']))),
+    )
+    monkeypatch.setattr(storage, '_write_fact_claims_rest', lambda *args, **kwargs: 0)
+    monkeypatch.setattr(storage, '_sync_normalized_sale_tables_with_rest', lambda *args, **kwargs: None)
+    monkeypatch.setattr(storage, '_upsert_asset_tables_with_rest', lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        storage,
+        '_enqueue_due_enrichment',
+        lambda rows, *_args: events.append(('enqueue', deepcopy(rows[0].raw_payload)),),
+    )
+
+    from src.config import load_settings
+
+    assert storage._write_sale_revisions([revised], load_settings(), refresh_last_seen=False) == 1
+    assert [kind for kind, _payload in events] == ['write', 'enqueue']
+    for _kind, payload in events:
+        assert payload['source_content_changed'] is True
+        assert payload['source_operational_changed'] is True
+        assert payload['source_content_change_reason'] == 'source_content_changed'
+        assert payload['superseded_analysis'] == marker
+        assert payload['llm_display_status'] == 'pending'
+
+
+def test_source_detail_operational_revision_refreshes_before_enqueue(monkeypatch):
+    from copy import deepcopy
+
+    from src import main, source_detail
+    from src.config import load_settings
+    from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
+    from src.freshness import record_source_checks
+    from src.normalize import normalize_sale
+    from src.storage import supabase_client as storage
+
+    settings = load_settings()
+    source_url = 'https://example.test/operational-revision'
+    base = {
+        'source_name': 'avoventes',
+        'source_url': source_url,
+        'raw_text': 'Appartement de trois pièces à Bordeaux.',
+        'address': '12 rue Victor Hugo',
+        'postal_code': '33000',
+        'city': 'Bordeaux',
+        'property_type': 'apartment',
+        'starting_price_eur': 100000,
+        'sale_date': '2099-11-01',
+        'status': 'upcoming',
+        'documents': [],
+    }
+    record_source_checks([base], {})
+    base.pop('source_content_changed', None)
+    base.pop('source_content_change_reason', None)
+    base.pop('source_operational_changed', None)
+    base.pop('llm_display_status', None)
+    existing = normalize_sale(base)
+    existing.raw_payload.update(
+        llm_display_description='Synthèse courante fondée sur les informations vérifiées du dossier. ' * 3,
+        llm_fact_extraction={'rooms_count': 3, 'display_description': 'Ancien texte'},
+        llm_fact_coverage={'complete': True},
+        llm_fact_input_key='proof',
+        document_facts_version='current',
+        investment_analysis={'price': 100000},
+        llm_display_quality_version=DISPLAY_QUALITY_VERSION,
+        llm_display_status='accepted',
+        llm_prompt_version=settings['llm_prompt_version'],
+        llm_display_prompt_version=settings['llm_display_prompt_version'],
+        llm_display_model=settings['replicate_model'],
+    )
+
+    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    revised = source_detail.prepare_source_revision(existing, {
+        **base,
+        'starting_price_eur': 90000,
+    })
+
+    assert revised.raw_payload['source_operational_changed'] is True
+    assert revised.raw_payload['source_content_change_reason'] == 'source_operational_changed'
+    assert revised.raw_payload['superseded_analysis']['operational_refreshable'] is True
+
+    events = []
+    monkeypatch.setattr(storage, 'tribunal_reference_rows', lambda _: [])
+    monkeypatch.setattr(
+        storage,
+        '_upsert_with_rest',
+        lambda _url, _key, rows: events.append(('write', deepcopy(rows[0]['raw_payload']))),
+    )
+    monkeypatch.setattr(storage, '_write_fact_claims_rest', lambda *args, **kwargs: 0)
+    monkeypatch.setattr(storage, '_sync_normalized_sale_tables_with_rest', lambda *args, **kwargs: None)
+    monkeypatch.setattr(storage, '_upsert_asset_tables_with_rest', lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        storage,
+        '_enqueue_due_enrichment',
+        lambda rows, *_args: events.append(('enqueue', deepcopy(rows[0].raw_payload)),),
+    )
+
+    assert storage._write_sale_revisions([revised], settings, refresh_last_seen=False) == 1
+    assert [kind for kind, _payload in events] == ['write', 'enqueue']
+    for _kind, payload in events:
+        assert payload['llm_display_origin'] == 'operational_refresh'
+        assert 'source_content_changed' not in payload
+        assert 'source_operational_changed' not in payload
+
+
 def test_same_source_refresh_can_remove_a_fact_from_the_source():
     existing = sale('https://example.test/revision')
     existing.address = '12 rue Victor Hugo'

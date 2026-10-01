@@ -3131,6 +3131,146 @@ export type Database = {
         };
         Relationships: [];
       };
+      information_agent_inbound_jobs: {
+        Row: {
+          attachment_link_expires_at: string;
+          attempts: number;
+          available_at: string;
+          case_id: string;
+          created_at: string;
+          id: string;
+          last_error: string | null;
+          lease_id: string | null;
+          locked_at: string | null;
+          message_id: string;
+          provider_email_id: string;
+          status: "queued" | "processing" | "completed" | "failed" | "review" | "ignored";
+          updated_at: string;
+        };
+        Insert: {
+          attachment_link_expires_at: string;
+          attempts?: number;
+          available_at?: string;
+          case_id: string;
+          created_at?: string;
+          id?: string;
+          last_error?: string | null;
+          lease_id?: string | null;
+          locked_at?: string | null;
+          message_id: string;
+          provider_email_id: string;
+          status?: "queued" | "processing" | "completed" | "failed" | "review" | "ignored";
+          updated_at?: string;
+        };
+        Update: {
+          attachment_link_expires_at?: string;
+          attempts?: number;
+          available_at?: string;
+          case_id?: string;
+          created_at?: string;
+          id?: string;
+          last_error?: string | null;
+          lease_id?: string | null;
+          locked_at?: string | null;
+          message_id?: string;
+          provider_email_id?: string;
+          status?: "queued" | "processing" | "completed" | "failed" | "review" | "ignored";
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_inbound_jobs_case_id_fkey";
+            columns: ["case_id"];
+            isOneToOne: false;
+            referencedRelation: "information_agent_cases";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_inbound_jobs_message_id_fkey";
+            columns: ["message_id"];
+            isOneToOne: true;
+            referencedRelation: "information_agent_messages";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      information_agent_contacts: {
+        Row: {
+          bounce_status: "none" | "temporary" | "permanent";
+          bounced_at: string | null;
+          created_at: string;
+          display_name: string | null;
+          email: string;
+          id: string;
+          last_seen_at: string | null;
+          last_verified_at: string | null;
+          metadata: Json;
+          normalized_email: string;
+          opposition_status: "unknown" | "none" | "opposed";
+          opposed_at: string | null;
+          provenance: Json;
+          role: "lawyer" | "notary" | "organizer" | "source_contact" | "manual_professional";
+          sale_id: string | null;
+          scope_sale_id: string | null;
+          source_name: string | null;
+          source_url: string | null;
+          updated_at: string;
+          verification_status: "unverified" | "source_observed" | "verified" | "rejected";
+        };
+        Insert: {
+          bounce_status?: "none" | "temporary" | "permanent";
+          bounced_at?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          email: string;
+          id?: string;
+          last_seen_at?: string | null;
+          last_verified_at?: string | null;
+          metadata?: Json;
+          normalized_email?: never;
+          opposition_status?: "unknown" | "none" | "opposed";
+          opposed_at?: string | null;
+          provenance?: Json;
+          role?: "lawyer" | "notary" | "organizer" | "source_contact" | "manual_professional";
+          sale_id?: string | null;
+          scope_sale_id?: string | null;
+          source_name?: string | null;
+          source_url?: string | null;
+          updated_at?: string;
+          verification_status?: "unverified" | "source_observed" | "verified" | "rejected";
+        };
+        Update: {
+          bounce_status?: "none" | "temporary" | "permanent";
+          bounced_at?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          email?: string;
+          id?: string;
+          last_seen_at?: string | null;
+          last_verified_at?: string | null;
+          metadata?: Json;
+          normalized_email?: never;
+          opposition_status?: "unknown" | "none" | "opposed";
+          opposed_at?: string | null;
+          provenance?: Json;
+          role?: "lawyer" | "notary" | "organizer" | "source_contact" | "manual_professional";
+          sale_id?: string | null;
+          scope_sale_id?: string | null;
+          source_name?: string | null;
+          source_url?: string | null;
+          updated_at?: string;
+          verification_status?: "unverified" | "source_observed" | "verified" | "rejected";
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_contacts_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       information_agent_case_subscribers: {
         Row: {
           case_id: string;
@@ -3481,6 +3621,7 @@ export type Database = {
           body_text: string;
           case_id: string | null;
           completed_at: string | null;
+          contribution_token_version: number;
           created_at: string;
           failure_reason: string | null;
           followup_count: number;
@@ -3521,6 +3662,7 @@ export type Database = {
           body_text: string;
           case_id?: string | null;
           completed_at?: string | null;
+          contribution_token_version?: number;
           created_at?: string;
           failure_reason?: string | null;
           followup_count?: number;
@@ -3561,6 +3703,7 @@ export type Database = {
           body_text?: string;
           case_id?: string | null;
           completed_at?: string | null;
+          contribution_token_version?: number;
           created_at?: string;
           failure_reason?: string | null;
           followup_count?: number;
@@ -4040,6 +4183,17 @@ export type Database = {
         Args: { p_metadata: Json; p_items: Json; p_set_id?: string };
         Returns: Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
       };
+      enqueue_admin_source_detail_bounded: {
+        Args: {
+          p_admin_id: string;
+          p_force?: boolean;
+          p_sale_id: string;
+        };
+        Returns: {
+          job_id: string;
+          reused: boolean;
+        }[];
+      };
       approve_information_agent_mission_bounded: {
         Args: { p_message_sha256: string; p_mission_id: string; p_user_id: string };
         Returns: {
@@ -4064,6 +4218,10 @@ export type Database = {
       claim_information_agent_evidence_extractions: {
         Args: { p_limit?: number };
         Returns: Database["public"]["Tables"]["information_agent_evidence_extractions"]["Row"][];
+      };
+      claim_information_agent_inbound_jobs: {
+        Args: { p_limit?: number; p_now?: string };
+        Returns: Database["public"]["Tables"]["information_agent_inbound_jobs"]["Row"][];
       };
       publish_information_agent_email_template: {
         Args: { p_admin_id: string; p_template_id: string };

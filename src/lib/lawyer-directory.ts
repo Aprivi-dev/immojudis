@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { findCnbBarAssociation } from "@/lib/cnb-directory";
 import { CNB_DATASET_PAGE_URL, normalizeBarKey, OPEN_LICENSE_URL } from "@/lib/cnb-open-data";
+import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
 
 type LawyerRow = Pick<
   Database["public"]["Tables"]["referenced_lawyers"]["Row"],
@@ -277,12 +278,14 @@ function demoLawyerDirectory(
 async function getSaleSector(saleId: string): Promise<SaleSector> {
   const { data, error } = await supabaseAdmin
     .from("auction_sales")
-    .select("id,city,department,postal_code,tribunal,tribunal_code")
+    .select("id,city,department,postal_code,tribunal,tribunal_code,status,raw_payload")
     .eq("id", saleId)
     .maybeSingle();
 
   if (error) throw error;
-  if (!data?.id) throw new Error("Vente introuvable.");
+  if (!data?.id || isPublicationQuarantined(data.raw_payload, data.status)) {
+    throw new Error("Vente introuvable.");
+  }
   return data as SaleSector;
 }
 

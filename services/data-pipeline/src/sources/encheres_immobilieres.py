@@ -15,7 +15,14 @@ from src.enrichment.surface_reasoning import extract_surface_facts_from_text
 from src.normalize import clean_text, has_rented_occupancy_signal, no_lease_occupancy_status, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PaginationCoverage, PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.common import (
+    PaginationCoverage,
+    PoliteHttpClient,
+    ScrapeResult,
+    parse_html,
+    should_fetch_detail,
+    unique_dicts,
+)
 from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://encheresimmobilieres.fr"
@@ -154,7 +161,7 @@ def parse_encheres_immobilieres_html(html: str) -> list[dict[str, Any]]:
 
 
 def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     lines = _text_lines(soup)
     page_text = "\n".join(lines)
     compact_text = clean_text(page_text) or ""
@@ -285,6 +292,10 @@ def _enrich_sale_from_detail(
             detail_external_id,
         )
         return
+    if (detail.get('title') or detail.get('description')) and any(
+        detail.get(key) for key in ('address', 'city', 'starting_price_eur', 'surface_m2', 'documents')
+    ):
+        sale['source_detail_status'] = 'complete'
     for key in DETAIL_OVERRIDE_FIELDS:
         value = detail.get(key)
         if value in (None, "", []):
@@ -317,7 +328,7 @@ def _identity_value(value: object) -> str | None:
 
 
 def _rendered_listing_sales(html: str) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     sales: list[dict[str, Any]] = []
     for link in soup.find_all("a", href=True):
         href = str(link.get("href") or "")
@@ -936,7 +947,7 @@ def _html_text(value: Any) -> str | None:
     text = clean_text(value)
     if not text:
         return None
-    return clean_text(BeautifulSoup(text, "html.parser").get_text(" ", strip=True))
+    return clean_text(parse_html(text, "html.parser").get_text(" ", strip=True))
 
 
 def _without_template_placeholder(value: str | None) -> str | None:

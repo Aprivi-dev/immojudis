@@ -5,6 +5,7 @@ import {
   AdminCatalogueReadinessPanel,
   type InformationRequestSelection,
 } from "@/components/admin/AdminCatalogueReadinessPanel";
+import { AdminAuctionFactClaimReviewPanel } from "@/components/admin/AdminAuctionFactClaimReviewPanel";
 import { AdminInformationAgentMissionsPanel } from "@/components/admin/AdminInformationAgentMissionsPanel";
 import { AdminInformationAgentReviewPanel } from "@/components/admin/AdminInformationAgentReviewPanel";
 import { AdminInformationAgentTemplatePanel } from "@/components/admin/AdminInformationAgentTemplatePanel";
@@ -14,6 +15,7 @@ export function AdminInformationAgentWorkspace() {
   return (
     <div className="space-y-6">
       <AdminCatalogueReadinessPanel onPrepareInformationRequest={setSelection} />
+      <AdminAuctionFactClaimReviewPanel />
       <AdminInformationAgentMissionsPanel
         selection={selection}
         onClose={() => setSelection(null)}

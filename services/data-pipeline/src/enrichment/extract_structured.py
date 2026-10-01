@@ -16,11 +16,21 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
+from src.encheres_publiques_guard import (
+    EncheresPubliquesAccessNotAuthorized,
+    require_encheres_publiques_sale_access,
+)
 from src.enrichment.display_evidence import verify_display_claims
 from src.enrichment.display_quality import DISPLAY_MIN_CHARS, DISPLAY_QUALITY_VERSION, preserve_source_constraints
-from src.enrichment.llm_client import ReplicateClient, create_llm_client, repair_json_payload
+from src.enrichment.llm_client import (
+    LLMProviderOutputRefused,
+    ReplicateClient,
+    create_llm_client,
+    repair_json_payload,
+)
 from src.enrichment.prompts import (
     DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
+    PROMPT_SAFETY_VERSION,
     SYSTEM_PROMPT,
     build_display_description_prompt,
     build_user_prompt,
@@ -34,6 +44,7 @@ from src.enrichment.surface_reasoning import (
 )
 from src.llm_cache import load_cached_result, save_cached_result
 from src.llm_requests import llm_request_context
+from src.llm_task_deadline import LLMTaskDeadlineExceeded
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.pdf_enrichment import sale_storage_id
@@ -528,6 +539,16 @@ def enrich_sale_with_llm(
 ) -> LLMEnrichmentStats:
     stats = LLMEnrichmentStats()
     settings = load_settings()
+    # This is the shared boundary before any PDF/text cache read or provider
+    # call.  A non-EP catalogue row may still retain an EP alias or an
+    # EP-owned document, so the source label alone cannot authorize it.
+    require_encheres_publiques_sale_access(
+        source_name=sale.source_name,
+        source_url=sale.source_url,
+        source_urls=sale.source_urls,
+        documents=sale.documents,
+        settings=settings,
+    )
     if not settings["llm_enabled"]:
         return stats
 
@@ -594,6 +615,7 @@ def enrich_sale_with_llm(
                 stats,
                 display_context,
                 prompt_version=prompt_version,
+                model_name=model_name,
             )
             sale.raw_payload["llm_extraction"] = display_extraction.model_dump(mode="json")
             sale.raw_payload["llm_cache_hit"] = True
@@ -617,6 +639,10 @@ def enrich_sale_with_llm(
                 _save_display_cache(display_key, extraction, output_dir, model_name)
         except PipelineBudgetExhausted:
             raise
+        except LLMTaskDeadlineExceeded:
+            raise
+        except LLMProviderOutputRefused:
+            raise
         except Exception as exc:
             LOGGER.warning("LLM display synthesis failed for %s: %s", sale.source_url, exc)
             stats.errors += 1
@@ -624,7 +650,14 @@ def enrich_sale_with_llm(
             return stats
 
         stats.valid_json += 1
-        _apply_extraction_to_sale(sale, extraction, stats, display_context, prompt_version=prompt_version)
+        _apply_extraction_to_sale(
+            sale,
+            extraction,
+            stats,
+            display_context,
+            prompt_version=prompt_version,
+            model_name=model_name,
+        )
         if not stats.errors:
             _save_extraction(
                 sale,
@@ -726,6 +759,10 @@ def enrich_sale_with_llm(
             newly_cached_chunks += 1
             stats.progress_made = True
         except PipelineBudgetExhausted:
+            raise
+        except LLMTaskDeadlineExceeded:
+            raise
+        except LLMProviderOutputRefused:
             raise
         except Exception as exc:
             failed_chunks += 1
@@ -849,13 +886,24 @@ def enrich_sale_with_llm(
                     _save_display_cache(display_key, display_extraction, output_dir, model_name)
             except PipelineBudgetExhausted:
                 raise
+            except LLMTaskDeadlineExceeded:
+                raise
+            except LLMProviderOutputRefused:
+                raise
             except Exception as exc:
                 LOGGER.warning("LLM display synthesis failed for %s: %s", sale.source_url, exc)
                 stats.errors += 1
                 stats.error_messages.append(_llm_error_message(sale, exc))
 
     stats.valid_json += 1
-    _apply_extraction_to_sale(sale, extraction, stats, full_evidence_context, prompt_version=prompt_version)
+    _apply_extraction_to_sale(
+        sale,
+        extraction,
+        stats,
+        full_evidence_context,
+        prompt_version=prompt_version,
+        model_name=model_name,
+    )
     sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
     sale.raw_payload["llm_fact_extraction"] = extraction.model_dump(mode="json")
     sale.raw_payload["llm_cache_hit"] = bool(cache_hits == len(fact_contexts) and display_cache_hit)
@@ -889,11 +937,33 @@ def apply_cached_llm_extraction_to_sale(sale: AuctionSale, *, prompt_version: st
 
     This is intentionally network-free. It lets a pipeline version that adds a
     new public display field populate it from a previously validated extraction
-    without re-downloading PDFs or calling Replicate again.
+    without re-downloading PDFs or calling Replicate again. The stored
+    extraction must already carry the current prompt/display contract. This
+    function is a revalidation step, not a way to certify an unversioned or
+    stale generation by stamping it with the current metadata.
     """
-    if sale.raw_payload.get("source_content_changed") or (sale.raw_payload.get("llm_fact_coverage") or {}).get("complete") is False:
+    settings = load_settings()
+    try:
+        require_encheres_publiques_sale_access(
+            source_name=sale.source_name,
+            source_url=sale.source_url,
+            source_urls=sale.source_urls,
+            documents=sale.documents,
+            settings=settings,
+        )
+    except EncheresPubliquesAccessNotAuthorized:
+        # Cache revalidation is deliberately boolean: an unauthorized EP row
+        # is skipped by the caller and must not break the ordinary pipeline.
         return False
-    payload = sale.raw_payload.get("llm_extraction") if isinstance(sale.raw_payload, dict) else None
+
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else None
+    if not isinstance(raw_payload, dict):
+        return False
+    if raw_payload.get("source_content_changed") or (raw_payload.get("llm_fact_coverage") or {}).get("complete") is False:
+        return False
+    if not _cached_extraction_matches_current_contract(raw_payload, prompt_version):
+        return False
+    payload = raw_payload.get("llm_extraction")
     if not isinstance(payload, dict):
         return False
     try:
@@ -906,6 +976,32 @@ def apply_cached_llm_extraction_to_sale(sale: AuctionSale, *, prompt_version: st
     _apply_extraction_to_sale(sale, extraction, stats, context=load_llm_context_for_sale(sale) or "", prompt_version=prompt_version)
     after = clean_text(sale.raw_payload.get("llm_display_description"))
     return bool(after and after != before)
+
+
+def _cached_extraction_matches_current_contract(
+    raw_payload: dict[str, Any], prompt_version: str | None,
+) -> bool:
+    """Check cache provenance before any cached extraction can mutate a sale."""
+    settings = load_settings()
+    expected_prompt_version = str(
+        prompt_version if prompt_version is not None else settings.get("llm_prompt_version") or ""
+    )
+    expected_display_prompt_version = str(
+        settings.get("llm_display_prompt_version") or expected_prompt_version
+    )
+    if expected_prompt_version and raw_payload.get("llm_prompt_version") != expected_prompt_version:
+        return False
+    if expected_display_prompt_version and raw_payload.get("llm_display_prompt_version") != expected_display_prompt_version:
+        return False
+
+    # Model provenance was added after the first display generations. Preserve
+    # those rows for compatibility, but never reuse a row that explicitly says
+    # it was produced by a different configured provider model.
+    current_model = str(settings.get("replicate_model") or "")
+    cached_model = raw_payload.get("llm_display_model")
+    if current_model and cached_model not in (None, "") and cached_model != current_model:
+        return False
+    return True
 
 
 def load_pdf_text_for_sale(sale: AuctionSale, max_chars: int = 12000) -> str | None:
@@ -969,34 +1065,47 @@ def load_llm_fact_context_chunks_for_sale(
     return chunks
 
 
-def has_current_fact_analysis(sale: AuctionSale) -> bool:
+def has_current_fact_analysis(
+    sale: AuctionSale,
+    *,
+    settings: dict[str, Any] | None = None,
+) -> bool:
     """Return whether the sale has complete facts for its current evidence.
 
-    The comparison is content-addressed and excludes the display stage.  When
-    a worker has no local PDF text cache, a persisted document/source manifest
-    is accepted only when it still matches the current document identities and
-    source evidence fingerprint.  A source-only fallback therefore cannot
-    accidentally certify a previously document-backed analysis.
+    The comparison is content-addressed and excludes the display stage. A
+    new document-backed fact pass needs the complete, provenance-bearing local
+    PDF cache; only a verified fact manifest can support reuse after an
+    ephemeral cache loss.
     """
+    settings = load_settings() if settings is None else settings
+    if not isinstance(sale.documents, list):
+        return False
     raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     coverage = raw_payload.get("llm_fact_coverage") or {}
+    if not isinstance(coverage, dict):
+        return False
     input_key = clean_text(raw_payload.get("llm_fact_input_key"))
     if not input_key or coverage.get("complete") is not True:
         return False
     manifest = raw_payload.get("llm_fact_context_manifest")
     if not isinstance(manifest, dict):
         manifest = None
-    if manifest is not None and not _manifest_matches_current(sale, manifest):
+    if manifest is not None and not _manifest_matches_current(sale, manifest, settings=settings):
         return False
     document_path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
     if sale.documents and not document_path.exists():
-        return bool(manifest and manifest.get("documents") and _manifest_matches_current(sale, manifest))
+        # A verified fact manifest can be reused when a worker lost its
+        # ephemeral text cache.  New fact extraction still calls
+        # ``_has_pdf_fact_cache`` and therefore cannot use this fallback.
+        return bool(manifest and manifest.get("documents"))
+    if sale.documents and not _has_pdf_fact_cache(sale):
+        return False
 
     previous_context_coverage = raw_payload.get("llm_fact_context_coverage", _MISSING)
     try:
         contexts = load_llm_fact_context_chunks_for_sale(
             sale,
-            chunk_chars=int(load_settings().get("llm_fact_chunk_chars") or 12000),
+            chunk_chars=int(settings.get("llm_fact_chunk_chars") or 12000),
             max_chunks=0,
         )
     finally:
@@ -1009,13 +1118,12 @@ def has_current_fact_analysis(sale: AuctionSale) -> bool:
             raw_payload["llm_fact_context_coverage"] = previous_context_coverage
     if not contexts or (sale.documents and not (raw_payload.get("document_analysis") or {}).get("documents_extracted")):
         return False
-    settings = load_settings()
     model = str(settings.get("replicate_model") or "")
     prompt_version = str(settings.get("llm_fact_prompt_version") or settings.get("llm_prompt_version") or "")
     expected = _fact_input_cache_key("\n\n".join(contexts), model, prompt_version)
     if expected == input_key and not raw_payload.get("source_content_changed"):
         return True
-    if manifest is not None and _manifest_matches_current(sale, manifest):
+    if manifest is not None and _manifest_matches_current(sale, manifest, settings=settings):
         return True
     return False
 
@@ -1035,7 +1143,7 @@ def needs_fact_extraction(sale: AuctionSale) -> bool:
         return False
     try:
         documents_extracted = int(analysis.get("documents_extracted") or 0)
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         return False
     if documents_extracted <= 0 or has_current_fact_analysis(sale):
         return False
@@ -1384,7 +1492,7 @@ def _same_int(left: Any, right: int | None) -> bool:
         return False
     try:
         return int(left) == right
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         return False
 
 
@@ -1557,6 +1665,8 @@ def _load_legacy_extraction(
 def _llm_cache_key(context: str, model: str, prompt_version: str = "auction_llm_v1") -> str:
     digest = hashlib.sha256()
     digest.update(model.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(PROMPT_SAFETY_VERSION.encode("utf-8"))
     digest.update(b"\0")
     digest.update(prompt_version.encode("utf-8"))
     digest.update(b"\0")
@@ -1795,10 +1905,10 @@ def _document_identity_key(documents: list[dict[str, Any]]) -> str:
 
 
 def _load_pdf_fact_cache_items(sale: AuctionSale) -> list[dict[str, Any]]:
-    path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
     try:
+        path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
         payload = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
-    except (OSError, json.JSONDecodeError):
+    except (OSError, TypeError, ValueError, UnicodeError, json.JSONDecodeError):
         return []
     if isinstance(payload, dict):
         payload = [payload]
@@ -1872,16 +1982,29 @@ def _fact_context_manifest(
     analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
     if isinstance(analysis, dict):
         manifest["document_input_fingerprint"] = analysis.get("input_fingerprint")
+        excluded_urls: set[str] = set()
+        for key in ("skipped_document_urls", "blocked_document_urls", "terminal_document_urls"):
+            values = analysis.get(key)
+            if isinstance(values, (list, tuple, set)):
+                excluded_urls.update(clean_text(url) for url in values if clean_text(url))
+        manifest["documents"] = _pdf_fact_manifest_documents(
+            [
+                item
+                for item in _load_pdf_fact_cache_items(sale)
+                if clean_text(item.get("url")) not in excluded_urls
+            ]
+        )
+        profiles_payload = analysis.get("profiles")
         profiles = []
-        for profile in analysis.get("profiles") or []:
-            if not isinstance(profile, dict):
+        for profile in profiles_payload if isinstance(profiles_payload, list) else []:
+            if not isinstance(profile, dict) or clean_text(profile.get("url")) in excluded_urls:
                 continue
             profiles.append(
                 {
                     "url": clean_text(profile.get("url")),
                     "sha256": clean_text(profile.get("sha256")),
                     "extraction_status": clean_text(profile.get("extraction_status")),
-                    "complete": profile.get("complete") is not False,
+                    "complete": profile.get("complete") is True,
                 }
             )
         manifest["document_profiles"] = sorted(
@@ -1923,26 +2046,108 @@ def _source_evidence_fingerprint(sale: AuctionSale) -> str:
 
 
 def _has_pdf_fact_cache(sale: AuctionSale) -> bool:
-    """Require extracted PDF text before a document-backed fact pass."""
-    if not sale.documents:
+    """Require complete, provenance-bearing PDF text before reusing facts."""
+    documents = sale.documents
+    if not isinstance(documents, list):
+        return False
+    if not documents:
         return True
-    path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
-    if not path.exists():
+    if any(not isinstance(document, dict) or not clean_text(document.get("url")) for document in documents):
         return False
     try:
+        path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
+        if not path.exists():
+            return False
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, TypeError, ValueError, UnicodeError, json.JSONDecodeError):
         return False
     if not isinstance(payload, list) or not payload:
         return False
-    return any(
-        isinstance(item, dict)
-        and (
-            bool(clean_text(item.get("text")))
-            or any(bool(clean_text(page.get("text"))) for page in item.get("pages") or [] if isinstance(page, dict))
+    if any(not isinstance(item, dict) or not clean_text(item.get("url")) for item in payload):
+        return False
+    analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+    if not isinstance(analysis, dict):
+        return False
+    try:
+        failed_documents = int(analysis.get("failed_documents") or 0)
+    except (OverflowError, TypeError, ValueError):
+        return False
+    if failed_documents != 0:
+        return False
+    blocked_raw = analysis.get("blocked_document_urls")
+    skipped_raw = analysis.get("skipped_document_urls")
+    terminal_raw = analysis.get("terminal_document_urls")
+    if blocked_raw is not None and not isinstance(blocked_raw, (list, tuple, set)):
+        return False
+    if skipped_raw is not None and not isinstance(skipped_raw, (list, tuple, set)):
+        return False
+    if terminal_raw is not None and not isinstance(terminal_raw, (list, tuple, set)):
+        return False
+    blocked = {clean_text(url) for url in blocked_raw or [] if clean_text(url)}
+    skipped = {clean_text(url) for url in skipped_raw or [] if clean_text(url)}
+    terminal = {clean_text(url) for url in terminal_raw or [] if clean_text(url)}
+    expected = {
+        clean_text(document.get("url"))
+        for document in documents
+    }
+    document_urls = {
+        clean_text(document.get("url"))
+        for document in documents
+    }
+    if (
+        not blocked.issubset(document_urls)
+        or not skipped.issubset(document_urls)
+        or not terminal.issubset(document_urls)
+    ):
+        return False
+    expected -= blocked | skipped | terminal
+    if not expected:
+        return False
+    by_url = {clean_text(item.get("url")): item for item in payload}
+    cache_urls = set(by_url)
+    if (
+        len(by_url) != len(payload)
+        or not expected.issubset(cache_urls)
+        or not (cache_urls - expected).issubset(terminal)
+    ):
+        return False
+    profiles_payload = analysis.get("profiles")
+    if not isinstance(profiles_payload, list):
+        return False
+    if any(not isinstance(item, dict) or not clean_text(item.get("url")) for item in profiles_payload):
+        return False
+    profiles = {clean_text(item.get("url")): item for item in profiles_payload}
+    profile_urls = set(profiles)
+    if (
+        len(profiles) != len(profiles_payload)
+        or not expected.issubset(profile_urls)
+        or not (profile_urls - expected).issubset(blocked | skipped | terminal)
+    ):
+        return False
+    for url in expected:
+        item = by_url[url]
+        profile = profiles.get(url)
+        profile_sha = clean_text(profile.get("sha256")) if isinstance(profile, dict) else ""
+        profile_status = (
+            (clean_text(profile.get("extraction_status")) or "").casefold()
+            if isinstance(profile, dict)
+            else ""
         )
-        for item in payload
-    )
+        cache_sha = clean_text(item.get("sha256"))
+        if not (
+            bool(clean_text(item.get("text")))
+            and bool(cache_sha)
+            and item.get("complete") is True
+            and not item.get("failed_pages")
+            and str(item.get("extraction_status") or "").strip().lower() == "extracted"
+            and bool(profile_sha)
+            and profile_sha == cache_sha
+            and profile_status == "extracted"
+            and profile.get("complete") is True
+            and not profile.get("failed_pages")
+        ):
+            return False
+    return True
 
 
 def _current_source_checks(sale: AuctionSale) -> list[dict[str, str]]:
@@ -1964,8 +2169,19 @@ def _current_source_checks(sale: AuctionSale) -> list[dict[str, str]]:
     )
 
 
-def _manifest_matches_current(sale: AuctionSale, manifest: dict[str, Any]) -> bool:
-    settings = load_settings()
+def _manifest_matches_current(
+    sale: AuctionSale,
+    manifest: dict[str, Any],
+    *,
+    settings: dict[str, Any] | None = None,
+) -> bool:
+    if not isinstance(manifest, dict) or not isinstance(sale.documents, list):
+        return False
+    if any(not isinstance(document, dict) or not clean_text(document.get("url")) for document in sale.documents):
+        return False
+    settings = load_settings() if settings is None else settings
+    if not isinstance(settings, dict):
+        return False
     current_model = str(settings.get("replicate_model") or "")
     manifest_model = manifest.get("model")
     if manifest_model != current_model and not (
@@ -1991,9 +2207,16 @@ def _manifest_matches_current(sale: AuctionSale, manifest: dict[str, Any]) -> bo
 
     analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
     if sale.documents:
-        if not isinstance(analysis, dict) or int(analysis.get("documents_extracted") or 0) <= 0:
+        if not isinstance(analysis, dict):
             return False
-        if int(analysis.get("failed_documents") or 0) > 0:
+        try:
+            documents_extracted = int(analysis.get("documents_extracted") or 0)
+            failed_documents = int(analysis.get("failed_documents") or 0)
+        except (OverflowError, TypeError, ValueError):
+            return False
+        if documents_extracted <= 0:
+            return False
+        if failed_documents != 0:
             return False
         manifest_input_fingerprint = manifest.get("document_input_fingerprint")
         current_input_fingerprint = analysis.get("input_fingerprint")
@@ -2002,42 +2225,107 @@ def _manifest_matches_current(sale: AuctionSale, manifest: dict[str, Any]) -> bo
             or current_input_fingerprint
         ) and manifest_input_fingerprint != current_input_fingerprint:
             return False
+        excluded_document_urls: set[str] = set()
+        for key in ("skipped_document_urls", "blocked_document_urls", "terminal_document_urls"):
+            values = analysis.get(key)
+            if values is not None and not isinstance(values, (list, tuple, set)):
+                return False
+            excluded_document_urls.update(clean_text(url) for url in values or [] if clean_text(url))
+        document_url_set = {clean_text(document.get("url")) for document in sale.documents}
+        if not excluded_document_urls.issubset(document_url_set):
+            return False
+        document_urls = document_url_set - excluded_document_urls
+        profiles_payload = analysis.get("profiles")
+        if not isinstance(profiles_payload, list):
+            return False
+        if any(not isinstance(profile, dict) or not clean_text(profile.get("url")) for profile in profiles_payload):
+            return False
         current_profiles = []
-        for profile in analysis.get("profiles") or []:
-            if not isinstance(profile, dict):
+        for profile in profiles_payload:
+            if clean_text(profile.get("url")) in excluded_document_urls:
                 continue
             sha256 = clean_text(profile.get("sha256"))
             if not sha256:
+                return False
+            extraction_status = (clean_text(profile.get("extraction_status")) or "").casefold()
+            if (
+                extraction_status != "extracted"
+                or profile.get("complete") is not True
+                or profile.get("failed_pages")
+            ):
                 return False
             current_profiles.append(
                 {
                     "url": clean_text(profile.get("url")),
                     "sha256": sha256,
-                    "extraction_status": clean_text(profile.get("extraction_status")),
-                    "complete": profile.get("complete") is not False,
+                    "extraction_status": extraction_status,
+                    "complete": True,
                 }
             )
+        if len({item["url"] for item in current_profiles}) != len(current_profiles):
+            return False
         current_profiles.sort(key=lambda item: (str(item.get("url") or ""), str(item.get("sha256") or "")))
         manifest_profiles = manifest.get("document_profiles")
-        document_urls = {clean_text(document.get("url")) for document in sale.documents if isinstance(document, dict)}
+        if not isinstance(manifest_profiles, list):
+            return False
+        if any(
+            not isinstance(item, dict)
+            or not clean_text(item.get("url"))
+            or not clean_text(item.get("sha256"))
+            or (clean_text(item.get("extraction_status")) or "").casefold() != "extracted"
+            or item.get("complete") is not True
+            for item in manifest_profiles
+        ):
+            return False
+        if len({clean_text(item.get("url")) for item in manifest_profiles}) != len(manifest_profiles):
+            return False
         if (
             not current_profiles
-            or not isinstance(manifest_profiles, list)
             or not manifest_profiles
             or len(current_profiles) != len(manifest_profiles)
             or any(not item.get("sha256") for item in current_profiles)
-            or not document_urls.issubset({clean_text(item.get("url")) for item in current_profiles})
+            or {clean_text(item.get("url")) for item in current_profiles} != document_urls
             or current_profiles != manifest_profiles
         ):
             return False
+        manifest_documents = manifest.get("documents")
+        if not isinstance(manifest_documents, list):
+            return False
+        if any(not isinstance(item, dict) or not clean_text(item.get("url")) for item in manifest_documents):
+            return False
+        if len({clean_text(item.get("url")) for item in manifest_documents}) != len(manifest_documents):
+            return False
+        manifest_document_urls = {
+            clean_text(item.get("url"))
+            for item in manifest_documents
+        }
+        if manifest_document_urls != document_urls or any(
+            not clean_text(item.get("sha256")) or not clean_text(item.get("text_sha256"))
+            for item in manifest_documents
+        ):
+            return False
+        manifest_document_hashes = {
+            clean_text(item.get("url")): clean_text(item.get("sha256"))
+            for item in manifest_documents
+        }
+        current_profile_hashes = {
+            clean_text(item.get("url")): clean_text(item.get("sha256"))
+            for item in current_profiles
+        }
+        if manifest_document_hashes != {
+            url: current_profile_hashes.get(url)
+            for url in manifest_document_hashes
+        }:
+            return False
         # A document byte profile alone cannot detect an OCR/parser refresh
-        # that keeps the source PDF unchanged.  When the local extracted text
-        # is available, require the persisted content hash as well.  Workers
-        # without local files rely on the byte/profile hashes above.
+        # that keeps the source PDF unchanged. Require the current extracted
+        # text cache as well as the persisted byte/profile hashes.
         pdf_path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
         if pdf_path.exists():
-            current_documents = _pdf_fact_manifest_documents(_load_pdf_fact_cache_items(sale))
-            manifest_documents = manifest.get("documents")
+            cache_items = _load_pdf_fact_cache_items(sale)
+            if not _has_pdf_fact_cache(sale):
+                return False
+            current_documents = _pdf_fact_manifest_documents(cache_items)
             if not isinstance(manifest_documents, list) or current_documents != manifest_documents:
                 return False
     return True
@@ -2164,6 +2452,7 @@ def _apply_extraction_to_sale(
     stats: LLMEnrichmentStats,
     context: str = "",
     prompt_version: str | None = None,
+    model_name: str | None = None,
 ) -> None:
     reference_sale = sale.model_copy()
     confidence = extraction.confidence
@@ -2282,14 +2571,35 @@ def _apply_extraction_to_sale(
     sale.raw_payload["llm_display_source_constraints"] = source_quotes
     sale.raw_payload.pop("llm_display_quality_version", None)
     if checked_display:
+        final_display_check = verify_display_claims(
+            checked_display,
+            "\n".join(filter(None, (extract_source_description(sale), context))),
+            sale.model_dump(),
+        )
+        if final_display_check["issues"]:
+            # Source quotations are appended after the first display check. A
+            # hostile quote must not turn an otherwise safe fallback into
+            # public prose containing a link, contact detail or instruction.
+            sale.raw_payload["llm_display_evidence_check"] = final_display_check
+            sale.raw_payload["llm_display_status"] = "rejected"
+            checked_display = None
+    if checked_display:
         sale.raw_payload["llm_display_description"] = checked_display
         sale.raw_payload["llm_display_description_word_count"] = len(checked_display.split())
         if len(checked_display.strip()) >= DISPLAY_MIN_CHARS:
             sale.raw_payload["llm_display_quality_version"] = DISPLAY_QUALITY_VERSION
+            if model_name:
+                # Persist the exact model used by a paid or cache-backed
+                # synthesis. Operational refreshes may reuse this result only
+                # while the configured model remains unchanged.
+                sale.raw_payload["llm_display_model"] = model_name
+        else:
+            sale.raw_payload.pop("llm_display_model", None)
     else:
         sale.raw_payload["llm_display_status"] = "rejected"
         sale.raw_payload.pop("llm_display_description", None)
         sale.raw_payload.pop("llm_display_description_word_count", None)
+        sale.raw_payload.pop("llm_display_model", None)
         stats.errors += 1
         stats.error_messages.append("Display quality rejected: no summary preserving source constraints within budget")
 
@@ -2299,7 +2609,17 @@ def _apply_extraction_to_sale(
         stats.risks_detected += 1
 
     if extraction.summary and _is_better_summary(sale.description, extraction.summary):
-        sale.description = extraction.summary
+        # The legacy summary also reaches the public fiche when the dedicated
+        # display description is absent. Apply the same evidence and public
+        # content checks before replacing the source description.
+        summary_check = verify_display_claims(
+            extraction.summary,
+            "\n".join(filter(None, (extract_source_description(reference_sale), context))),
+            reference_sale.model_dump(),
+        )
+        sale.raw_payload["llm_summary_evidence_check"] = summary_check
+        if not summary_check["issues"]:
+            sale.description = extraction.summary
 
     due_diligence = _due_diligence_payload(extraction)
     if due_diligence:

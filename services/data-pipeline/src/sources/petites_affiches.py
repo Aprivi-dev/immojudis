@@ -4,8 +4,9 @@ import logging
 import os
 import re
 import time
+from datetime import datetime
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup, Tag
@@ -13,10 +14,10 @@ from bs4 import BeautifulSoup, Tag
 from src import source_checkpoint
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
-from src.normalize import SURFACE_VALUE_PATTERN, clean_text
+from src.normalize import SURFACE_VALUE_PATTERN, clean_text, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
@@ -26,9 +27,14 @@ LOGGER = logging.getLogger(__name__)
 DETAIL_FIELDS = {
     "description",
     "address",
+    "city",
     "postal_code",
     "surface_m2",
     "starting_price_eur",
+    "sale_date",
+    "property_type",
+    "occupancy_status",
+    "parking_count",
     "lawyer_name",
     "lawyer_contact",
     "tribunal",
@@ -341,7 +347,7 @@ def parse_petites_affiches_html(
     page_url: str = LIST_URL,
     fallback_department: str | None = None,
 ) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     sales: list[dict[str, Any]] = []
     for card in soup.select("div[class*='annonce_lot_']"):
         sale = _parse_card(card, page_url, fallback_department)
@@ -390,7 +396,7 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
 
 
 def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     page_text = "\n".join(
         line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line
     )
@@ -398,6 +404,8 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
     contact_text = _scoped_text(soup.select_one(".contact-container")) or page_text
     address = _detail_address(soup)
     description = _meta_description(soup)
+    title = _detail_title(soup)
+    city = _detail_city(address, title=title, description=description)
     price = _extract_price(detail_text)
     tribunal = _detail_tribunal(soup)
     lawyer_name = _extract_lawyer(contact_text)
@@ -405,10 +413,18 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
     visit_dates = _detail_visits(page_text)
     documents = _detail_documents(soup, source_url)
     source_images = _detail_images(soup, source_url)
+    sale_date = _detail_sale_date(description)
+    property_type = _property_type_from_title(description) or _property_type_from_title(title)
+    occupancy_status = _detail_occupancy_status(soup)
+    parking_count = _detail_parking_count("\n".join(filter(None, (description, detail_text))))
     blocks = [
         description,
         f"Adresse: {address}" if address else None,
         f"Mise a prix: {price}" if price else None,
+        f"Date de vente: {sale_date}" if sale_date else None,
+        f"Type: {property_type}" if property_type else None,
+        f"Occupation: {occupancy_status}" if occupancy_status else None,
+        f"Parking: {parking_count}" if parking_count is not None else None,
         f"Tribunal: {tribunal}" if tribunal else None,
         f"Avocat: {lawyer_name}" if lawyer_name else None,
         f"Contact: {lawyer_contact}" if lawyer_contact else None,
@@ -418,11 +434,17 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
     return {
         "source_name": "petites_affiches",
         "source_url": source_url,
+        "title": title,
         "description": description,
         "address": address,
+        "city": city,
         "postal_code": _extract_postal(address or ""),
         "surface_m2": _extract_surface(detail_text),
         "starting_price_eur": price,
+        "sale_date": sale_date,
+        "property_type": property_type,
+        "occupancy_status": occupancy_status,
+        "parking_count": parking_count,
         "lawyer_name": lawyer_name,
         "lawyer_contact": lawyer_contact,
         "tribunal": tribunal,
@@ -435,8 +457,14 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
             key: value
             for key, value in {
                 "description": description,
+                "titre_detail": title,
                 "adresse": address,
+                "ville": city,
                 "mise_a_prix": price,
+                "date_vente": sale_date,
+                "type_bien": property_type,
+                "occupation": occupancy_status,
+                "parking_count": parking_count,
                 "tribunal": tribunal,
                 "avocat": lawyer_name,
                 "contact_avocat": lawyer_contact,
@@ -462,12 +490,28 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
         sale["_detail_fetch_failed"] = True
         sale["source_detail_status"] = "failed"
         return
-    access_text = BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
+    access_text = parse_html(html, "html.parser").get_text(" ", strip=True)
     restricted = re.search(
         r"(?:r[ée]serv[ée]e?\s+aux\s+abonn[ée]s|vous\s+devez\s+[êe]tre\s+abonn[ée])", access_text, re.I,
     )
     sale["source_detail_status"] = "restricted" if restricted else "complete"
     detail = parse_petites_affiches_detail_html(html, source_url)
+    mismatch = _detail_identity_mismatch(source_url, detail)
+    if mismatch:
+        sale["_detail_fetch_failed"] = True
+        sale["source_detail_status"] = "failed"
+        sale["source_detail_failure_reason"] = "identity_mismatch"
+        sale["source_identity_mismatch"] = mismatch
+        quality_flags = sale.get("quality_flags") if isinstance(sale.get("quality_flags"), list) else []
+        if "source_identity_mismatch" not in quality_flags:
+            sale["quality_flags"] = [*quality_flags, "source_identity_mismatch"]
+        LOGGER.warning(
+            "Petites Affiches detail identity mismatch for %s: requested_city=%s detail_city=%s",
+            source_url,
+            mismatch["requested_city"],
+            mismatch["detail_city"],
+        )
+        return
     for key in DETAIL_FIELDS:
         value = detail.get(key)
         if value in (None, "", []):
@@ -489,7 +533,7 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
             continue
         if key == "raw_text" and sale.get("raw_text"):
             sale[key] = f"{sale['raw_text']}\n{value}"
-        elif not sale.get(key):
+        elif key == "city" or not sale.get(key):
             sale[key] = value
 
 
@@ -522,6 +566,118 @@ def _property_type_from_title(title: str | None) -> str | None:
         return "Magasin"
     if re.search(r"\b(?:emplacement\s+de\s+)?(?:stationnement|parking|garage)\b", text):
         return "Stationnement"
+    return None
+
+
+def _detail_sale_date(description: str | None) -> str | None:
+    """Extract the sale date while preferring auction context over visits."""
+    text = clean_text(description)
+    if not text:
+        return None
+    date_pattern = r"(?P<value>\d{1,2}[/-]\d{1,2}[/-]\d{4})"
+
+    event_marker = re.compile(
+        r"\b(?:visites?|vente|audience|adjudication|vendu|vendue|tribunal)\b", re.I
+    )
+
+    def valid_value(match: re.Match[str]) -> str | None:
+        context = text[max(0, match.start() - 120):match.start("value")]
+        markers = list(event_marker.finditer(context))
+        if markers and markers[-1].group(0).lower().startswith("visite"):
+            return None
+        value = match.group("value")
+        try:
+            parsed = datetime.strptime(value.replace("-", "/"), "%d/%m/%Y")
+        except ValueError:
+            return None
+        if parsed == datetime(1970, 1, 1):
+            return None
+        return value
+
+    # These forms carry an explicit auction/sale meaning and must win over a
+    # preceding visit date in the same meta description.
+    for pattern in (
+        rf"\bdate\s+(?:de\s+la\s+)?(?:vente|audience)\s*:?\s*{date_pattern}\b",
+        rf"\b(?:vendu|vendue)\b[^.;\n]{{0,120}}?\ble\s+{date_pattern}\b",
+        rf"\b(?:audience|adjudication)\b[^.;\n]{{0,120}}?\ble\s+{date_pattern}\b",
+    ):
+        for match in re.finditer(pattern, text, re.I):
+            value = valid_value(match)
+            if value is not None:
+                return value
+
+    # Keep the generic form as a fallback for the site's shorter descriptions,
+    # but discard a date whose nearest event marker is a visit.
+    for match in re.finditer(rf"\ble\s+{date_pattern}\b", text, re.I):
+        value = valid_value(match)
+        if value is not None:
+            return value
+    return None
+
+
+def _detail_occupancy_status(soup: BeautifulSoup) -> str | None:
+    """Read the source's occupancy badge while ignoring footer/navigation text."""
+    for node in soup.select(".lo-box-content label, .row.detail label"):
+        text = _normalized_text(_node_text(node))
+        if not text:
+            continue
+        if re.search(r"\b(?:visite|visites|photo|photos)\b", text):
+            continue
+        if re.search(r"\bsquat", text):
+            return "squatted"
+        if re.search(r"\b(?:proprietaire|owner)\b", text):
+            return "owner_occupied"
+        if re.search(r"\b(?:locataire|lou[eé]|rented|leased|tenant|bail)\b", text):
+            return "rented"
+        if re.search(r"\b(?:libre|vacant|inoccup)\b", text):
+            return "vacant"
+        if re.search(r"\boccup", text):
+            return "occupied"
+    return None
+
+
+def _detail_parking_count(text: str | None) -> int | None:
+    """Extract parking spaces tied to the sale lot, excluding visitor parking."""
+    normalized = _normalized_text(text)
+    if not normalized:
+        return None
+    count_token = r"(?P<count>[1-9][0-9]?|une?|deux|trois|quatre|cinq)"
+    patterns = (
+        rf"\b{count_token}\s+places?\s+de\s+(?:parkings?|stationnement|garages?|box)\b",
+        r"\b(?P<count>[1-9][0-9]?|une?|deux|trois|quatre|cinq)\s+(?:parkings?|stationnement|garages?|box)\b",
+        r"\b(?:parkings?|stationnement|garages?|box)\s*:\s*\s*(?P<count>[1-9][0-9]?|deux|trois|quatre|cinq)\b",
+    )
+    visitor_parking_pattern = re.compile(
+        r"\b(?:parkings?|stationnement|garage|box)\b[^.;:]{0,45}"
+        r"\b(?:visiteur|visiteurs|publics?|publiques?|proximite|proche)\b|"
+        r"\b(?:visiteur|visiteurs|publics?|publiques?|proximite|proche)\b[^.;:]{0,45}"
+        r"\b(?:parkings?|stationnement|garage|box)\b",
+        re.I,
+    )
+    excluded_lot_pattern = re.compile(
+        r"\b(?:non|pas)\s+(?:compris(?:e|es|s)?|inclus(?:e|es|s)?)\b|"
+        r"\b(?:parkings?|stationnement|garage|box)\b[^.;:]{0,45}"
+        r"\b(?:lot\s+)?voisin(?:e|s)?\b|"
+        r"\b(?:lot\s+)?voisin(?:e|s)?\b[^.;:]{0,45}"
+        r"\b(?:parkings?|stationnement|garage|box)\b",
+        re.I,
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, normalized, re.I):
+            context = normalized[max(0, match.start() - 80):min(len(normalized), match.end() + 80)]
+            if visitor_parking_pattern.search(context) or excluded_lot_pattern.search(context):
+                continue
+            token = match.group("count").lower()
+            if token.isdigit():
+                return int(token)
+            return {
+                "une": 1,
+                "un": 1,
+                "deux": 2,
+                "trois": 3,
+                "quatre": 4,
+                "cinq": 5,
+            }.get(token)
     return None
 
 
@@ -558,7 +714,10 @@ def _extract_price(text: str) -> str | None:
 
 def _extract_postal(text: str) -> str | None:
     match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b", text)
-    return match.group(1) if match else None
+    if match:
+        return match.group(1)
+    spaced = re.search(r"(?<!\d)(\d{2})\s+(\d{3})(?!\d)", text)
+    return f"{spaced.group(1)}{spaced.group(2)}" if spaced else None
 
 
 def _extract_lawyer(text: str) -> str | None:
@@ -691,6 +850,113 @@ def _detail_address(soup: BeautifulSoup) -> str | None:
     if not text:
         return None
     return clean_text(re.sub(r"^Adresse\s*:\s*", "", text, flags=re.I))
+
+
+def _detail_title(soup: BeautifulSoup) -> str | None:
+    for node in (soup.select_one("h1"), soup.select_one("meta[property='og:title']")):
+        if node is None:
+            continue
+        value = node.get("content") if node.name == "meta" else node.get_text(" ", strip=True)
+        title = clean_text(value)
+        if title:
+            title = clean_text(re.split(r"\bRef\.?\s*:", title, maxsplit=1, flags=re.I)[0])
+        if title:
+            return title
+    return None
+
+
+def _detail_city(
+    address: str | None,
+    *,
+    title: str | None,
+    description: str | None,
+) -> str | None:
+    city = _city_from_address(address)
+    if city:
+        return city
+    city = _city_from_title(title)
+    if city:
+        return city
+    if description:
+        match = re.search(r"\b(?:à|a)\s+([^.;\n]+?)\s+vendu(?:e)?\b", description, flags=re.I)
+        if match:
+            return clean_text(match.group(1))
+    return None
+
+
+def _city_from_address(address: str | None) -> str | None:
+    text = clean_text(address)
+    if not text:
+        return None
+    match = re.search(r"\b(?:\d{5}|\d{2}\s?\d{3})\s+([^,\n]+)$", text)
+    return clean_text(match.group(1)) if match else None
+
+
+def _city_from_title(title: str | None) -> str | None:
+    text = clean_text(title)
+    if not text:
+        return None
+    match = re.search(r"\b(?:à|a)\s+(.+?)\s*$", text, flags=re.I)
+    return clean_text(match.group(1).strip(" ,.;")) if match else None
+
+
+def _detail_identity_mismatch(source_url: str, detail: dict[str, Any]) -> dict[str, str] | None:
+    """Reject a detail page that is mismatched or lacks a usable identity.
+
+    Petites Affiches has served a different lot for stale legacy URLs. The
+    city slug is the stable identity signal available on the listing URL. A
+    page that has facts but no matching city/title/address is also unsafe to
+    merge: it can be a stale redirect or a partially served old listing.
+    """
+    requested_city = _requested_city_from_url(source_url)
+    detail_city = clean_text(detail.get("city"))
+    if not requested_city:
+        return None
+    if detail_city:
+        if _city_key(requested_city) == _city_key(detail_city):
+            return None
+        return {
+            "kind": "identity_mismatch",
+            "source_url": source_url,
+            "requested_city": requested_city,
+            "detail_city": detail_city,
+        }
+
+    identity_text = " ".join(
+        clean_text(detail.get(field)) or ""
+        for field in ("title", "address", "description")
+    )
+    requested_key = _city_key(requested_city)
+    if requested_key and f" {requested_key} " in f" {_city_key(identity_text)} ":
+        return None
+    factual_fields = (
+        "title",
+        "address",
+        "description",
+        "starting_price_eur",
+        "sale_date",
+        "property_type",
+        "documents",
+        "raw_text",
+    )
+    if any(detail.get(field) not in (None, "", []) for field in factual_fields):
+        return {
+            "kind": "identity_unverified",
+            "source_url": source_url,
+            "requested_city": requested_city,
+            "detail_city": "",
+        }
+    return None
+
+
+def _requested_city_from_url(source_url: str) -> str | None:
+    slug = unquote(urlparse(source_url).path.rsplit("/", 1)[-1])
+    match = re.search(r"-a-([a-z0-9-]+)-\d+\.html$", slug, flags=re.I)
+    return match.group(1).replace("-", " ") if match else None
+
+
+def _city_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", strip_accents(value).lower()).strip()
 
 
 def _detail_tribunal(soup: BeautifulSoup) -> str | None:

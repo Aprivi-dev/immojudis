@@ -3,6 +3,7 @@ import { buildStructuredDescription } from "@/lib/sale-description";
 import { cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
+import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import {
   ListingActions,
@@ -125,6 +126,102 @@ describe("readable listing sections", () => {
     expect(screen.getByRole("link", { name: /rendez-vous/i }).getAttribute("href")).toBe(
       "#rendez-vous",
     );
+  });
+  it("shows a provenance status beside each key value without upgrading an unverified value", () => {
+    render(
+      <ListingOverview
+        sale={item({
+          occupancy_status: "vacant",
+          source_checks: { canonical: { checked_at: "2026-09-12T10:00:00Z" } },
+          source_conflicts: [
+            { field: "occupancy_status", selected: "vacant", alternative: "rented" },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("note", { name: /Date de vente : À confirmer/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Mise à prix : À confirmer/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Surface : Observé/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Occupation : Conflit/ })).toBeTruthy();
+  });
+
+  it("labels a provisional surface as inferred in the real listing summary", () => {
+    render(
+      <ListingOverview
+        sale={item({
+          app_surface_m2: null,
+          habitable_surface_m2: null,
+          carrez_surface_m2: null,
+          surface_evidence: null,
+          rooms_count: 1,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Surface estimée")).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Surface : Inféré/ })).toBeTruthy();
+  });
+
+  it("suppresses AI-blocked type and rooms while retaining source provenance", () => {
+    const projections: AiReviewProjectionReadModel[] = [
+      {
+        auction_sale_id: "sale-1",
+        field_key: "property.property_type",
+        review_state: "unresolved",
+        citation_status: "not_required",
+        is_publishable: false,
+        source_name: "Avoventes",
+        source_url: "https://avoventes.fr/vente/1",
+      },
+      {
+        auction_sale_id: "sale-1",
+        field_key: "property.rooms_count",
+        review_state: "unverified",
+        citation_status: "unverified",
+        is_publishable: false,
+        source_name: "Avoventes",
+        source_url: "https://avoventes.fr/vente/1",
+      },
+    ];
+
+    render(
+      <ListingOverview
+        sale={item({ property_type: "apartment", rooms_count: 4 })}
+        aiReviewProjections={projections}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
+      "Type de bien à confirmer",
+    );
+    expect(screen.getAllByText("À confirmer").length).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getAllByRole("link", { name: /Source : Avoventes/ }).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("4", { exact: true })).toBeNull();
+  });
+  it("suppresses a blocked surface even when another raw surface field is present", () => {
+    const projection: AiReviewProjectionReadModel = {
+      auction_sale_id: "sale-1",
+      field_key: "property.carrez_surface_m2",
+      review_state: "unresolved",
+      citation_status: "not_required",
+      is_publishable: false,
+      source_name: "Avoventes",
+      source_url: "https://avoventes.fr/vente/1",
+    };
+
+    render(
+      <ListingOverview
+        sale={item({ app_surface_m2: null, habitable_surface_m2: null, carrez_surface_m2: 42.6 })}
+        aiReviewProjections={[projection]}
+      />,
+    );
+
+    expect(screen.getAllByText("À confirmer").length).toBeGreaterThan(0);
+    expect(screen.queryByText("42,6 m²")).toBeNull();
+    expect(screen.getByText(/Source : Avoventes/)).toBeTruthy();
   });
   it("does not show zero or invalid amounts as known property facts", () => {
     const { container } = render(

@@ -10,7 +10,7 @@ from src.asset_normalization import (
     ScoreComponent,
 )
 from src.models import AuctionSale
-from src.normalize import SURFACE_VALUE_PATTERN, clean_text, parse_surface
+from src.normalize import SURFACE_VALUE_PATTERN, _is_ambiguous_mixed_lot_surface, clean_text, parse_surface
 
 
 def _set_app_surface(sale: AuctionSale) -> None:
@@ -133,6 +133,8 @@ def _extract_count(text: str, patterns: tuple[str, ...]) -> int | None:
 
 
 def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decimal | None:
+    if sale is not None and _is_ambiguous_mixed_lot_surface(sale.property_type or "", text):
+        return None
     patterns = (
         rf"superficie\s+au\s+sol\s+(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"d['’]une\s+superficie\s+au\s+sol\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
@@ -143,6 +145,7 @@ def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decima
         rf"d['’]une\s+superficie\s+d['’]environ\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"surface\s+au\s+sol\s+(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
         rf"\btotal\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)",
+        rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+(?:de\s+)?(?:surface\s+)?superficie\b",
     )
     if sale is not None and sale.source_name == "licitor":
         patterns = (*patterns, rf"\bde\s+{SURFACE_VALUE_PATTERN}\s*²\b")

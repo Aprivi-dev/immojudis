@@ -22,6 +22,27 @@ from src.config import load_settings
 CHECKPOINT_RETENTION = "24 hours"
 MAX_CHECKPOINT_REUSE_AGE = timedelta(hours=24)
 CURSOR_PREFIX = "__source_cursor__:"
+CHECKPOINT_CONNECT_TIMEOUT = 5
+CHECKPOINT_RETRY_DELAYS: tuple[float, ...] = ()
+CHECKPOINT_LOCK_TIMEOUT = "5s"
+CHECKPOINT_STATEMENT_TIMEOUT = "15s"
+
+
+def _checkpoint_connect(db_url: str):
+    """Open a short-lived checkpoint connection with no long retry tail."""
+    from src.storage.supabase_client import _postgres_connect
+
+    return _postgres_connect(
+        str(db_url),
+        connect_timeout=CHECKPOINT_CONNECT_TIMEOUT,
+        retry_delays=CHECKPOINT_RETRY_DELAYS,
+    )
+
+
+def _configure_checkpoint_transaction(db) -> None:
+    """Bound checkpoint SQL and lock waits for the surrounding transaction."""
+    db.execute(f"set local lock_timeout = '{CHECKPOINT_LOCK_TIMEOUT}'")
+    db.execute(f"set local statement_timeout = '{CHECKPOINT_STATEMENT_TIMEOUT}'")
 
 
 @lru_cache(maxsize=1)
@@ -30,13 +51,14 @@ def _context():
     db_url = load_settings().get('supabase_db_url') if run_id else None
     if not run_id or not db_url:
         return None
-    from src.storage.supabase_client import _postgres_connect
-    with _postgres_connect(str(db_url)) as db:
-        rows = db.execute("""select distinct on(c.source_url) c.source_url,c.signature,c.payload,c.observed_at
-          from public.auction_collection_checkpoints c join public.auction_runs r on r.id=c.run_id
-          where r.status='failed' and c.observed_at>now()-interval '24 hours'
-            and r.source=(select source from public.auction_runs where id=%s)
-          order by c.source_url,c.observed_at desc""", (run_id,)).fetchall()
+    with _checkpoint_connect(str(db_url)) as db:
+        with db.transaction():
+            _configure_checkpoint_transaction(db)
+            rows = db.execute("""select distinct on(c.source_url) c.source_url,c.signature,c.payload,c.observed_at
+              from public.auction_collection_checkpoints c join public.auction_runs r on r.id=c.run_id
+              where r.status='failed' and c.observed_at>now()-interval '24 hours'
+                and r.source=(select source from public.auction_runs where id=%s)
+              order by c.source_url,c.observed_at desc""", (run_id,)).fetchall()
     details = {}
     cursors = {}
     for url, signature, payload, observed in rows:
@@ -73,10 +95,9 @@ def save_source_cursor(partition: str, payload: dict[str, Any]) -> bool:
     cursor.setdefault("schema_version", "petites_affiches_cursor_v1")
     cursor["cursor_retained_at"] = retained_at.isoformat()
     source_url = f"{CURSOR_PREFIX}{partition}"
-    from src.storage.supabase_client import _postgres_connect
-
-    with _postgres_connect(context[0]) as db:
+    with _checkpoint_connect(context[0]) as db:
         with db.transaction():
+            _configure_checkpoint_transaction(db)
             db.execute("""insert into public.auction_collection_checkpoints
                 (run_id,source_url,signature,payload,observed_at)
                 values(%s,%s,%s,%s,%s) on conflict(run_id,source_url) do update set
@@ -164,18 +185,18 @@ class CheckpointSales(list):
         if (context and sale.get('_checkpoint_signature') and not sale.get('_checkpoint_restored')
                 and not (sale.get('_detail_fetch_failed') or sale.get('_known_unchanged')
                          or sale.get('operator_detail_status') == 'failed')):
-            from src.storage.supabase_client import _postgres_connect
             sale.setdefault('_checkpoint_checked_at', datetime.now(UTC).isoformat())
             # Retention is refreshed when a checkpoint is committed, but the
             # source-check timestamp above is intentionally left untouched.
             observed = datetime.now(UTC)
             payload = json.loads(json.dumps(sale, default=str))
             if self._db is None:
-                connection_context = _postgres_connect(context[0])
+                connection_context = _checkpoint_connect(context[0])
                 self._db = connection_context.__enter__()
                 _connections.append(connection_context)
             with self._db.transaction():
                 db = self._db
+                _configure_checkpoint_transaction(db)
                 db.execute("""insert into public.auction_collection_checkpoints(run_id,source_url,signature,payload,observed_at)
                   values(%s,%s,%s,%s,%s) on conflict(run_id,source_url) do update set
                     signature=excluded.signature,payload=excluded.payload,observed_at=excluded.observed_at""",

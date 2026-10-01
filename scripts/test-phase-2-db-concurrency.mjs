@@ -124,6 +124,10 @@ async function seedFixtures() {
     // This local/admin-only transaction bypasses the production deletion guard
     // for the four deterministic fixture IDs, then restores normal triggers
     // before any invariant under test is exercised.
+    await sql`
+      delete from app_private.auction_sale_source_checks
+      where sale_id in ${sql(saleIds)}
+    `;
     await sql.unsafe("set local session_replication_role = replica");
     await sql`delete from public.auction_sales where id in ${sql(saleIds)}`;
     await sql.unsafe("set local session_replication_role = origin");
@@ -288,6 +292,10 @@ async function cleanupFixtures() {
   );
   await admin
     .begin(async (sql) => {
+      await sql`
+        delete from app_private.auction_sale_source_checks
+        where sale_id in ${sql(saleIds)}
+      `;
       await sql.unsafe("set local session_replication_role = replica");
       await sql`delete from public.auction_sales where id in ${sql(saleIds)}`;
     })

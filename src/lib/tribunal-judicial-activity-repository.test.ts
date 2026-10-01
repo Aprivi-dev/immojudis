@@ -71,9 +71,47 @@ describe("tribunal judicial activity repository", () => {
       ]),
     );
     expect(salesQuery.state.selected).not.toMatch(
-      /address|raw|description|lawyer|document|source_url/i,
+      /address|description|lawyer|document|source_url/i,
     );
     expect(salesQuery.state.ranges).toEqual([[0, 999]]);
+    expect(salesQuery.state.selected).toContain(
+      "publication_quarantine:raw_payload->>publication_quarantine",
+    );
+  });
+
+  it("continue après une page pleine même si une vente de cette page est quarantainée", async () => {
+    const courtQuery = fakeQuery({
+      data: { code: "justice_tj_1_59", name: "TJ Marseille", judicial_region: null },
+      error: null,
+    });
+    const saleRow = (index: number) => ({
+      id: `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`,
+      sale_date: "2026-09-10T09:00:00.000Z",
+      status: "upcoming",
+      starting_price_eur: 50_000,
+      property_type: "apartment",
+      visit_dates: [],
+      first_seen_at: "2026-08-01T09:00:00.000Z",
+      publication_quarantine: index === 0 ? "operator_hold" : null,
+    });
+    const firstPage = fakeQuery({
+      data: Array.from({ length: 1_000 }, (_, index) => saleRow(index)),
+      error: null,
+    });
+    const secondPage = fakeQuery({ data: [saleRow(1_000)], error: null });
+    serverFrom
+      .mockReturnValueOnce(courtQuery.query)
+      .mockReturnValueOnce(firstPage.query)
+      .mockReturnValueOnce(secondPage.query);
+
+    const result = await getTribunalJudicialActivity(
+      { courtCode: "justice_tj_1_59", historyMonths: 36 },
+      { asOf: AS_OF },
+    );
+
+    expect(result.activity.upcomingSales).toBe(1_000);
+    expect(firstPage.state.ranges).toEqual([[0, 999]]);
+    expect(secondPage.state.ranges).toEqual([[1_000, 1_999]]);
   });
 
   it("échoue fermé sans correspondance exacte dans le référentiel Justice", async () => {
@@ -121,9 +159,9 @@ describe("tribunal judicial activity repository", () => {
     expect(result.court.code).toBe("justice_tj_1_59");
     expect(serverFrom).toHaveBeenNthCalledWith(1, "auction_sales");
     expect(saleLookup.state.selected).toBe(
-      "tribunal_code,tribunal,sale_venue_type,sale_verification_status",
+      "tribunal_code,tribunal,sale_venue_type,sale_verification_status,status,publication_quarantine:raw_payload->>publication_quarantine",
     );
-    expect(saleLookup.state.selected).not.toMatch(/address|description|lawyer|raw|document/i);
+    expect(saleLookup.state.selected).not.toMatch(/address|description|lawyer|document/i);
     expect(saleLookup.state.filters).toContainEqual([
       "eq",
       "id",
@@ -359,7 +397,7 @@ describe("tribunal judicial activity repository", () => {
     expect(serverFrom).toHaveBeenNthCalledWith(1, "outcome_courts");
     expect(serverFrom).toHaveBeenNthCalledWith(2, "auction_sales");
     expect(salesQuery.state.selected).toContain("tribunal_code");
-    expect(salesQuery.state.selected).not.toMatch(/address|description|lawyer|raw|document|url/i);
+    expect(salesQuery.state.selected).not.toMatch(/address|description|lawyer|document|url/i);
     expect(salesQuery.state.filters).toContainEqual(["not", "tribunal_code", "is", null]);
     expect(courtsQuery.state.ranges).toEqual([[0, 250]]);
     expect(salesQuery.state.ranges).toEqual([[0, 999]]);

@@ -20,6 +20,7 @@ import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/sea
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 
 const EXPORT_SOURCE_LIMIT = 1_000;
 const EXPORT_ROW_LIMIT = 500;
@@ -296,9 +297,14 @@ async function resolveFilteredSales({
     0,
     { client: auth.supabase },
   );
+  // API-key requests use the service-role client so the key can be resolved
+  // without a user JWT. Apply the publication gate after that privileged
+  // read and before filtering, pagination, or serialization.
+  const visibleSaleIds = await getPublicationVisibleSaleIds(sourceSales.map((sale) => sale.id));
+  const visibleSourceSales = sourceSales.filter((sale) => visibleSaleIds.has(sale.id));
 
   return sortClientSearchResults(
-    applyClientSearchFilters(sourceSales, search, center),
+    applyClientSearchFilters(visibleSourceSales, search, center),
     search,
     center,
   );

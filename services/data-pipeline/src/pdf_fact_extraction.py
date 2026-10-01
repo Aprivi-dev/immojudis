@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import tempfile
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -42,6 +43,10 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     texts = [str(item.get("text") or "") if isinstance(item, dict) else item for item in pdf_texts]
     combined = "\n\n".join(text for text in texts if text)
     if not combined:
+        enriched_marker = "\n\n--- PDF TEXT ENRICHMENT ---\n"
+        current_raw = sale.raw_text or ""
+        if enriched_marker.strip() in current_raw:
+            sale.raw_text = clean_text(current_raw.split(enriched_marker.strip(), 1)[0])
         return sale
 
     if sale.land_surface_m2 is None:
@@ -693,11 +698,12 @@ def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> No
         sale.status = normalize_status(None, parsed)
 
 
-def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, str]]) -> Path:
+def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> Path:
     PDF_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
     path = PDF_TEXTS_DIR / f"{_sale_storage_id(sale)}.json"
-    payload = [
-        {
+    payload: list[dict[str, object]] = []
+    for item in pdf_texts:
+        serialized_item: dict[str, object] = {
             "label": item["label"],
             "url": item["url"],
             "type": item["type"],
@@ -715,9 +721,41 @@ def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, str]]) ->
             "extraction_method": item.get("extraction_method"),
             "confidence": item.get("confidence"),
         }
-        for item in pdf_texts
-    ]
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        # These fields are produced by the page extractor and are the only
+        # durable proof that a cached document is complete or can resume from
+        # a partial checkpoint.  Preserve explicit values, including None,
+        # while leaving legacy payloads without the fields unchanged.
+        for marker in (
+            "complete",
+            "extraction_status",
+            "failed_pages",
+            "blank_pages",
+            "visual_blank_pages",
+            "text_sha256",
+            "_persisted_pdf_proof",
+            "_persisted_verified_at",
+        ):
+            if marker in item:
+                serialized_item[marker] = item[marker]
+        payload.append(serialized_item)
+
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        temporary_path.replace(path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
     return path
 
 
@@ -1192,7 +1230,7 @@ def _extract_occupancy_status(text: str) -> str | None:
         r"\bloyer\s+mensuel\b",
         lowered,
     ) and not re.search(
-        r"\blibre\s+de\s+toute\s+occupation\b|"
+        r"\blibre(?:s)?\s+de\s+toute\s+occupation\b|"
         r"\ba\s+quitte\s+les\s+lieux\b|"
         r"\bdepart\s+effectif\b|"
         r"\bconstate(?:e?s?|s)?\s+libre\b",
@@ -1201,7 +1239,19 @@ def _extract_occupancy_status(text: str) -> str | None:
         if no_lease_status:
             return no_lease_status
         return "rented" if has_rented_occupancy_signal(lowered) else "occupied"
-    if re.search(r"\b(libre|inoccupe(?:e?s?|s)?)\b", lowered):
+    if re.search(
+        r"\blibre(?:s)?\s+(?:de\s+toute\s+occupation|d['’]occupation)\b|"
+        r"\b(?:bien|biens|appartement|appartements|maison|maisons|immeuble|immeubles|local|locaux|"
+        r"logement|logements|terrain|terrains|studio|studios|propriete|proprietes|lieux)\b\s+(?:"
+        r"libre(?:s)?|"
+        r"(?:est|sont|sera|seront)\s+(?:actuellement\s+)?libre(?:s)?|"
+        r"(?:a|ont)\s+ete\s+(?:constate(?:e|es)?\s+)?libre(?:s)?|"
+        r"constate(?:e|es)?\s+libre(?:s)?)\b(?!\s+de\s+droit)|"
+        r"\binoccupe(?:e?s?|s?)\b|"
+        r"\bvacant(?:e?s?)?\b",
+        lowered,
+    ):
+        # A free viewing slot or a rights-free photo says nothing about the property's occupancy.
         return "vacant"
     if no_lease_status:
         return no_lease_status

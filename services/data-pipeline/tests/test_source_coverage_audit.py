@@ -1,5 +1,28 @@
-from src.source_coverage_audit import page_evidence
+import pytest
+
+from src import source_coverage_audit as audit
+from src.catalogue_proof import certify_catalogue
+from src.config import EncheresPubliquesAccessNotAuthorized
+from src.source_coverage_audit import _derive_catalogue_exclusions, page_evidence
 from src.sources.common import PaginationCoverage, ScrapeResult
+
+
+def test_encheres_publiques_audit_refuses_before_import_or_output(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        audit,
+        "load_settings",
+        lambda: {
+            "enable_encheres_publiques_benchmark": False,
+            "encheres_publiques_access_authorized": False,
+        },
+    )
+    monkeypatch.setattr(audit.importlib, "import_module", lambda *_: pytest.fail("collector must not import"))
+    output = tmp_path / "encheres-publiques.json"
+
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized):
+        audit.run_audit("encheres_publiques", output)
+
+    assert not output.exists()
 
 
 def test_empty_html_or_login_page_does_not_certify_inventory():
@@ -36,3 +59,39 @@ def test_audit_records_provider_totals_and_public_next_links():
     assert evidence['advertised_total'] == 48 and evidence['raw_rows'] == 1
     evidence = page_evidence('<a rel="next" href="?page=2">Suivant</a>', 'https://example.test/list')
     assert evidence['pagination_links'] == ['https://example.test/list?page=2']
+
+
+def test_audit_rederives_agrasc_seller_exclusion_from_traced_public_urls():
+    seller = 'https://www.agorastore.fr/ventes-occasions/vendeur/agrascimmo'
+    product = 'https://www.agorastore-immo.fr/vente-occasion/maison-430647.aspx'
+    proof = {
+        'partition': 'agrasc',
+        'page_index': 0,
+        'advertised_totals': [],
+        'advertised_last_pages': [0],
+        'public_urls': [seller, product],
+        'outside_scope_urls': [],
+        'unlinked_cards': 0,
+    }
+
+    exclusions = _derive_catalogue_exclusions('agrasc', [proof])
+    assert exclusions == {
+        seller: 'operator_seller_catalogue_without_listing_identity',
+    }
+
+    certificate = certify_catalogue(
+        'agrasc',
+        [proof],
+        {'agrasc': {product}},
+        {product},
+        [],
+        False,
+        {},
+        exclusions=exclusions,
+    )
+    assert certificate['excluded_urls'] == [{
+        'url': seller,
+        'reason': 'operator_seller_catalogue_without_listing_identity',
+    }]
+    assert certificate['unhandled_public_urls'] == []
+    assert certificate['public_discovery_certified'] is True

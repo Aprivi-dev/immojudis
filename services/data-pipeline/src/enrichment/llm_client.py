@@ -7,6 +7,7 @@ import math
 import re
 import threading
 import time
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
@@ -22,17 +23,119 @@ from src.llm_requests import (
     release_llm_request,
     reserve_llm_request,
 )
-from src.pipeline_usage import record_prediction, reserve_prediction
+from src.llm_task_deadline import (
+    LLMTaskDeadlineExceeded,
+    ensure_llm_task_deadline,
+    llm_task_bounded_timeout,
+)
+from src.pipeline_usage import QueueJobDeferred, defer_budget_jobs, record_prediction, reserve_prediction
 
 LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 _LAST_REPLICATE_REQUEST_AT = 0.0
 _REPLICATE_REQUEST_LOCK = threading.Lock()
 _REQUEST_METADATA: ContextVar[dict[str, Any] | None] = ContextVar("replicate_request_metadata", default=None)
+_GENERATE_JSON_OWNS_DEADLINE_TELEMETRY: ContextVar[bool] = ContextVar(
+    "generate_json_owns_deadline_telemetry",
+    default=False,
+)
 
 
 class LLMClientUnavailable(RuntimeError):
     pass
+
+
+class LLMProviderOutputRefused(RuntimeError):
+    """A provider rejected the generated output under its safety policy.
+
+    This is deliberately separate from transport and model-format failures:
+    the queue requires review before automatically submitting the same input
+    again. The exception message is fixed so provider response bodies never
+    enter queue state or worker telemetry.
+    """
+
+    def __init__(self, *, request_kind: str | None = None) -> None:
+        super().__init__("Replicate refused generated output for provider safety review")
+        self.request_kind = request_kind
+
+
+_PROVIDER_OUTPUT_REFUSAL_MARKER = (
+    "InternalError.Algo.DataInspectionFailed: Output data may contain inappropriate content"
+)
+PROVIDER_OUTPUT_REFUSAL_REVIEW_MESSAGE = "review_required: provider output policy refusal"
+
+
+def _is_provider_output_refusal(error: object) -> bool:
+    """Recognize only Replicate's exact terminal output-policy marker."""
+    return _PROVIDER_OUTPUT_REFUSAL_MARKER.casefold() in str(error or "").casefold()
+
+
+def _raise_terminal_prediction_error(status: object, error: object) -> None:
+    if _is_provider_output_refusal(error):
+        raise LLMProviderOutputRefused()
+    raise RuntimeError(f"Replicate prediction {status}: {error}")
+
+
+def cancel_provider_output_refusal_jobs(
+    error: BaseException,
+    jobs: list[dict[str, object]],
+    *,
+    finish_job: Callable[..., bool | None],
+    mark_terminal: Callable[[list[dict[str, object]]], None],
+    defer_jobs: Callable[[list[dict[str, object]]], None] | None = None,
+) -> bool:
+    """Handle a provider policy refusal without changing the sale payload.
+
+    Only an owned LLM claim may be cancelled.  A non-LLM claim is deferred so
+    a PDF or other checkpoint is never declared complete merely because a
+    later display request was refused.  A lost lease or finish error remains
+    pending for its owner/finalizer; it is never converted into a retryable
+    failure by this handler.
+    """
+    if not isinstance(error, LLMProviderOutputRefused):
+        return False
+    deferred_jobs: list[dict[str, object]] = []
+    for job in jobs:
+        job_type = str(job.get("job_type") or "")
+        if job_type not in {"fact_extraction", "display_description"}:
+            deferred_jobs.append(job)
+            continue
+        try:
+            confirmed = finish_job(
+                job,
+                succeeded=False,
+                cancelled=True,
+                error_message=PROVIDER_OUTPUT_REFUSAL_REVIEW_MESSAGE,
+            )
+        except Exception:
+            confirmed = False
+        if confirmed is True:
+            mark_terminal([job])
+        else:
+            LOGGER.warning(
+                "Provider refusal cancellation CAS was not confirmed for job %s",
+                str(job.get("id") or "<missing>"),
+            )
+    if deferred_jobs and defer_jobs is not None:
+        try:
+            defer_jobs(deferred_jobs)
+        except Exception:
+            LOGGER.warning(
+                "Provider refusal dependency deferral failed for jobs %s",
+                ",".join(str(job.get("id") or "<missing>") for job in deferred_jobs),
+            )
+    elif deferred_jobs:
+        try:
+            defer_budget_jobs(
+                deferred_jobs,
+                QueueJobDeferred("Provider output refusal requires dependent enrichment review"),
+            )
+        except Exception:
+            LOGGER.warning(
+                "Provider refusal dependency deferral failed for jobs %s",
+                ",".join(str(job.get("id") or "<missing>") for job in deferred_jobs),
+            )
+    return True
 
 
 @dataclass
@@ -100,12 +203,18 @@ class ReplicateClient:
         last_error: Exception | None = None
         prompt = _user_prompt_for_model(str(self.model), system_prompt, user_prompt)
         attempts = 1 if _is_display_description_prompt(system_prompt) else 2
+        request_kind = "display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction"
         for attempt in range(attempts):
+            ensure_llm_task_deadline("starting LLM generation")
             prediction: dict[str, Any] | None = None
             raw_response: str | None = None
             try:
                 prediction = self._create_prediction(prompt, system_prompt=system_prompt)
-                output = self._wait_for_output(prediction)
+                deadline_telemetry_token = _GENERATE_JSON_OWNS_DEADLINE_TELEMETRY.set(True)
+                try:
+                    output = self._wait_for_output(prediction)
+                finally:
+                    _GENERATE_JSON_OWNS_DEADLINE_TELEMETRY.reset(deadline_telemetry_token)
                 raw_response = _stringify_output(output)
                 parsed = parse_json_response(raw_response)
                 self._record_usage(
@@ -125,7 +234,7 @@ class ReplicateClient:
                 if prediction is not None:
                     self._record_usage(
                         prediction,
-                        request_kind="display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction",
+                        request_kind=request_kind,
                         attempt_number=attempt + 1,
                         prompt_chars=len(prompt),
                         system_prompt_chars=len(system_prompt),
@@ -134,6 +243,9 @@ class ReplicateClient:
                         error_message=str(exc),
                         exception=exc,
                     )
+                if isinstance(exc, LLMProviderOutputRefused):
+                    exc.request_kind = request_kind
+                    raise
                 if not isinstance(exc, ValueError):
                     raise
                 fallback = (
@@ -233,6 +345,7 @@ class ReplicateClient:
         record_llm_usage_event(event)
 
     def _create_prediction(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
+        ensure_llm_task_deadline("preparing Replicate prediction")
         owner, model_name = _split_replicate_model(str(self.model))
         model_reference = str(self.model)
         versioned_model = _replicate_model_version(model_reference)
@@ -253,6 +366,7 @@ class ReplicateClient:
             # endpoint. Pinning the version also protects the scan output from
             # an upstream model image changing without notice.
             payload["version"] = model_reference
+        ensure_llm_task_deadline("creating Replicate prediction")
         metadata_token = _REQUEST_METADATA.set(
             {
                 "request_kind": "display_description"
@@ -305,7 +419,9 @@ class ReplicateClient:
         prompt_chars = int(metadata.get("prompt_chars") or 0)
         system_prompt_chars = int(metadata.get("system_prompt_chars") or 0)
         for attempt in range(1, attempts + 1):
+            ensure_llm_task_deadline("starting Replicate request attempt")
             self._respect_min_interval()
+            ensure_llm_task_deadline("reserving Replicate request")
             reservation_id = reserve_llm_request(
                 provider="replicate",
                 model=str(self.model),
@@ -321,6 +437,10 @@ class ReplicateClient:
                 # sent and therefore no external call was consumed.
                 # UTF-8 bytes bound the prompt's token count conservatively;
                 # leave room for the provider's chat template as well.
+                # The autonomous usage reservation has no release primitive;
+                # if the cutoff lands after it, leave that ledger conservative
+                # while releasing only the request reservation below.
+                ensure_llm_task_deadline("reserving autonomous prediction")
                 model_input = payload.get("input") or {}
                 prompt_text = str(model_input.get("prompt") or "")
                 system_text = str(
@@ -340,15 +460,25 @@ class ReplicateClient:
                     + 256,
                     output_token_ceiling=output_cap,
                 )
+                request_timeout = llm_task_bounded_timeout(
+                    float(self.timeout_seconds or 180),
+                    "sending Replicate prediction",
+                )
             except Exception as exc:
-                release_llm_request(reservation_id, reason=f"autonomous reservation rejected: {exc}")
+                if isinstance(exc, LLMTaskDeadlineExceeded):
+                    release_llm_request(
+                        reservation_id,
+                        reason=f"LLM task deadline reached before Replicate POST: {exc}",
+                    )
+                else:
+                    release_llm_request(reservation_id, reason=f"autonomous reservation rejected: {exc}")
                 raise
             try:
                 response = httpx.post(
                     endpoint,
                     headers=headers,
                     json=payload,
-                    timeout=float(self.timeout_seconds or 180),
+                    timeout=request_timeout,
                 )
                 self._mark_request_finished()
             except httpx.TransportError as exc:
@@ -360,6 +490,7 @@ class ReplicateClient:
                     system_prompt_chars=system_prompt_chars,
                     error_message=str(exc),
                 )
+                ensure_llm_task_deadline("finishing Replicate POST transport handling")
                 raise LLMRequestTransportAmbiguous(
                     "Replicate POST transport outcome is ambiguous; manual/provider reconciliation is required"
                 ) from exc
@@ -431,13 +562,16 @@ class ReplicateClient:
                 record_prediction(response_payload, reservation=reservation, model=str(self.model))
                 return response
             if attempt < attempts:
-                time.sleep(sleep_seconds)
+                remaining = ensure_llm_task_deadline("waiting before Replicate retry")
+                time.sleep(min(sleep_seconds, remaining) if remaining is not None else sleep_seconds)
+                ensure_llm_task_deadline("starting next Replicate retry")
         if last_response is not None:
             last_response.raise_for_status()
         raise RuntimeError("Replicate request failed without response")
 
     def _respect_min_interval(self) -> None:
         global _LAST_REPLICATE_REQUEST_AT
+        ensure_llm_task_deadline("waiting for Replicate request cadence")
         min_interval = float(self.min_interval_seconds or 0)
         if min_interval <= 0:
             return
@@ -445,8 +579,10 @@ class ReplicateClient:
             now = time.monotonic()
             wait_for = _LAST_REPLICATE_REQUEST_AT + min_interval - now
             if wait_for > 0:
-                time.sleep(wait_for)
+                remaining = ensure_llm_task_deadline("waiting for Replicate request cadence")
+                time.sleep(min(wait_for, remaining) if remaining is not None else wait_for)
                 now = time.monotonic()
+                ensure_llm_task_deadline("starting Replicate request after cadence")
             _LAST_REPLICATE_REQUEST_AT = now
 
     def _mark_request_finished(self) -> None:
@@ -513,52 +649,80 @@ class ReplicateClient:
         return int(self.max_tokens or 512)
 
     def _wait_for_output(self, prediction: dict[str, Any]) -> Any:
-        record_prediction(prediction, model=str(self.model))
-        status = prediction.get("status")
-        if status == "succeeded":
-            return prediction.get("output")
-        if status in {"failed", "canceled", "aborted"}:
-            raise RuntimeError(f"Replicate prediction {status}: {prediction.get('error')}")
+        try:
+            record_prediction(prediction, model=str(self.model))
+            status = prediction.get("status")
+            if status == "succeeded":
+                return prediction.get("output")
+            if status in {"failed", "canceled", "aborted"}:
+                _raise_terminal_prediction_error(status, prediction.get("error"))
 
-        get_url = prediction.get("urls", {}).get("get")
-        if not get_url:
-            raise RuntimeError("Replicate prediction did not include a polling URL")
-        timeout_at = time.monotonic() + float(self.timeout_seconds or 180)
-        with httpx.Client(timeout=20) as client:
-            while status not in {"succeeded", "failed", "canceled", "aborted"}:
-                if time.monotonic() > timeout_at:
+            get_url = prediction.get("urls", {}).get("get")
+            if not get_url:
+                raise RuntimeError("Replicate prediction did not include a polling URL")
+            timeout_seconds = float(self.timeout_seconds or 180)
+            deadline_remaining = ensure_llm_task_deadline("starting Replicate prediction polling")
+            timeout_at = time.monotonic() + timeout_seconds
+            if deadline_remaining is not None:
+                timeout_at = min(timeout_at, time.monotonic() + deadline_remaining)
+            with httpx.Client(timeout=20) as client:
+                while status not in {"succeeded", "failed", "canceled", "aborted"}:
+                    ensure_llm_task_deadline("polling Replicate prediction")
+                    if time.monotonic() > timeout_at:
+                        raise LLMRequestTransportAmbiguous(
+                            "Replicate prediction polling timed out; provider reconciliation is required"
+                        )
+                    remaining = ensure_llm_task_deadline("waiting before Replicate prediction poll")
+                    time.sleep(min(2, remaining) if remaining is not None else 2)
+                    ensure_llm_task_deadline("sending Replicate prediction poll")
+                    try:
+                        poll_timeout = llm_task_bounded_timeout(
+                            20,
+                            "sending Replicate prediction poll",
+                        )
+                        response = client.get(
+                            get_url,
+                            headers={"Authorization": f"Bearer {self.api_token}"},
+                            timeout=poll_timeout,
+                        )
+                        response.raise_for_status()
+                        polled_prediction = response.json()
+                    except LLMTaskDeadlineExceeded:
+                        raise
+                    except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+                        raise LLMRequestTransportAmbiguous(
+                            "Replicate prediction polling outcome is ambiguous; provider reconciliation is required"
+                        ) from exc
+                    if not isinstance(polled_prediction, dict):
+                        raise LLMRequestTransportAmbiguous(
+                            "Replicate prediction polling response is incomplete; provider reconciliation is required"
+                        )
+                    # Keep the reservation id and expose a confirmed terminal
+                    # status to generate_json, while retaining the original
+                    # prediction object used by its telemetry finalizer.
+                    prediction.update(polled_prediction)
+                    if prediction.get("status") in {"succeeded", "failed", "canceled", "aborted"}:
+                        record_prediction(prediction, model=str(self.model))
+                    status = prediction.get("status")
+                if status != "succeeded":
+                    _raise_terminal_prediction_error(status, prediction.get("error"))
+                if "output" not in prediction:
                     raise LLMRequestTransportAmbiguous(
-                        "Replicate prediction polling timed out; provider reconciliation is required"
+                        "Replicate prediction succeeded without an output; provider reconciliation is required"
                     )
-                time.sleep(2)
-                try:
-                    response = client.get(get_url, headers={"Authorization": f"Bearer {self.api_token}"})
-                    response.raise_for_status()
-                    polled_prediction = response.json()
-                except LLMRequestTransportAmbiguous:
-                    raise
-                except (httpx.HTTPError, TimeoutError, ValueError) as exc:
-                    raise LLMRequestTransportAmbiguous(
-                        "Replicate prediction polling outcome is ambiguous; provider reconciliation is required"
-                    ) from exc
-                if not isinstance(polled_prediction, dict):
-                    raise LLMRequestTransportAmbiguous(
-                        "Replicate prediction polling response is incomplete; provider reconciliation is required"
-                    )
-                # Keep the reservation id and expose a confirmed terminal
-                # status to generate_json, while retaining the original
-                # prediction object used by its telemetry finalizer.
-                prediction.update(polled_prediction)
-                if prediction.get("status") in {"succeeded", "failed", "canceled", "aborted"}:
-                    record_prediction(prediction, model=str(self.model))
-                status = prediction.get("status")
-            if status != "succeeded":
-                raise RuntimeError(f"Replicate prediction {status}: {prediction.get('error')}")
-            if "output" not in prediction:
-                raise LLMRequestTransportAmbiguous(
-                    "Replicate prediction succeeded without an output; provider reconciliation is required"
+                return prediction.get("output")
+        except LLMTaskDeadlineExceeded as exc:
+            # A prediction id proves that the provider accepted the POST. Keep
+            # the reservation ambiguous so a later queue attempt reconciles the
+            # same request key instead of creating a duplicate prediction.
+            if not _GENERATE_JSON_OWNS_DEADLINE_TELEMETRY.get():
+                record_llm_request(
+                    prediction.get(RESERVATION_KEY),
+                    status="ambiguous",
+                    prediction_id=prediction.get("id"),
+                    error_message=str(exc),
                 )
-            return prediction.get("output")
+            raise
 
 
 def create_llm_client() -> ReplicateClient:

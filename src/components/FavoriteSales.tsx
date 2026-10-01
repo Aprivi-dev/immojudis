@@ -1,10 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { fetchFavoriteSales } from "@/lib/client-api";
+import { fetchFavoriteSales, fetchSalesAiReviewProjections } from "@/lib/client-api";
 import { formatPrice, formatDate } from "@/lib/format";
+import {
+  type AiReviewProjectionReadModel,
+  type AiReviewRequestStatus,
+} from "@/lib/ai-review-guard";
+import { AiReviewField } from "@/components/sale-detail/AiReviewField";
 import { FavoriteButton } from "./FavoriteButton";
 
 export function FavoriteSales() {
@@ -15,6 +21,33 @@ export function FavoriteSales() {
     enabled: Boolean(user) && !loading,
   });
   const data = user && !loading ? query.data : undefined;
+  const favoriteSaleIds = useMemo(
+    () => data?.favorites.map(({ saleId }) => saleId) ?? [],
+    [data?.favorites],
+  );
+  const aiReviewQuery = useQuery({
+    queryKey: ["favorites-ai-review", user?.id, favoriteSaleIds],
+    queryFn: () => fetchSalesAiReviewProjections(favoriteSaleIds),
+    enabled: Boolean(user && !loading && favoriteSaleIds.length),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const aiReviewBySaleId = useMemo(() => {
+    const grouped: Record<string, AiReviewProjectionReadModel[]> = {};
+    for (const projection of aiReviewQuery.data?.projections ?? []) {
+      if (!projection.auction_sale_id) continue;
+      (grouped[projection.auction_sale_id] ??= []).push(projection);
+    }
+    return grouped;
+  }, [aiReviewQuery.data]);
+  const aiReviewStatus: AiReviewRequestStatus =
+    !user || loading || favoriteSaleIds.length === 0
+      ? "disabled"
+      : aiReviewQuery.isError
+        ? "error"
+        : aiReviewQuery.data
+          ? "ready"
+          : "loading";
   return (
     <main className="mx-auto min-h-screen max-w-5xl px-4 pb-16 pt-28">
       <h1 className="text-3xl font-bold">Mes ventes suivies</h1>
@@ -49,13 +82,49 @@ export function FavoriteSales() {
             <li key={saleId} className="rounded-xl border p-5">
               <div className="flex items-start justify-between gap-3">
                 <Link href={`/sales/${saleId}`} className="font-bold underline">
-                  {sale.city || "Commune non renseignée"}
-                  {sale.department ? ` (${sale.department})` : ""}
+                  <AiReviewField
+                    fieldKey="property.city"
+                    projections={aiReviewBySaleId[saleId]}
+                    reviewStatus={aiReviewStatus}
+                    fallback="Localisation à confirmer"
+                    sourceName={sale.source_name}
+                    sourceUrl={sale.source_url}
+                    showSourceLink={false}
+                  >
+                    {[sale.city, sale.department].filter(Boolean).join(" · ") ||
+                      "Commune non renseignée"}
+                  </AiReviewField>
                 </Link>
                 <FavoriteButton saleId={saleId} compact />
               </div>
-              <p className="mt-3">Mise à prix : {formatPrice(sale.starting_price_eur)}</p>
-              <p>Date : {formatDate(sale.sale_date)}</p>
+              <p className="mt-3">
+                Mise à prix :{" "}
+                <AiReviewField
+                  fieldKey="sale.starting_price_eur"
+                  projections={aiReviewBySaleId[saleId]}
+                  reviewStatus={aiReviewStatus}
+                  fallback="Prix à confirmer"
+                  sourceName={sale.source_name}
+                  sourceUrl={sale.source_url}
+                  showSourceLink={false}
+                >
+                  {formatPrice(sale.starting_price_eur)}
+                </AiReviewField>
+              </p>
+              <p>
+                Date :{" "}
+                <AiReviewField
+                  fieldKey="sale.sale_date"
+                  projections={aiReviewBySaleId[saleId]}
+                  reviewStatus={aiReviewStatus}
+                  fallback="Date à confirmer"
+                  sourceName={sale.source_name}
+                  sourceUrl={sale.source_url}
+                  showSourceLink={false}
+                >
+                  {formatDate(sale.sale_date)}
+                </AiReviewField>
+              </p>
             </li>
           ))}
         </ul>

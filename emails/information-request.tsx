@@ -19,9 +19,10 @@ export type InformationRequestEmailProps = {
   replyTo: string;
   caseReference: string;
   appUrl?: string;
+  contributionUrl?: string;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v2";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v3";
 
 type BodyBlock =
   | { kind: "paragraph"; lines: string[] }
@@ -44,6 +45,7 @@ export function InformationRequestEmail({
   replyTo,
   caseReference,
   appUrl = "https://immojudis.com",
+  contributionUrl,
 }: InformationRequestEmailProps) {
   const blocks = parseBodyBlocks(bodyText);
   const replyHref = `mailto:${replyTo}`;
@@ -72,6 +74,20 @@ export function InformationRequestEmail({
             {blocks.map((block, blockIndex) => (
               <BodyBlockView key={`${block.kind}-${blockIndex}`} block={block} />
             ))}
+            {contributionUrl ? (
+              <Section style={styles.salePanel}>
+                <Text style={styles.paragraph}>
+                  Vous pouvez aussi déposer vos pièces dans notre espace privé, sans créer de
+                  compte.
+                </Text>
+                <Text style={styles.paragraph}>
+                  <Link href={contributionUrl}>Ouvrir le dépôt sécurisé du dossier</Link>
+                </Text>
+                <Text style={styles.footerText}>
+                  Le dépôt reste soumis à une vérification avant toute publication.
+                </Text>
+              </Section>
+            ) : null}
           </Section>
 
           <Section style={styles.footer}>
@@ -107,7 +123,12 @@ export async function renderInformationRequestEmail(
     render(email, { pretty: false }),
     render(email, { plainText: true }),
   ]);
-  return { html, text: renderedText };
+  return {
+    html,
+    text: props.contributionUrl
+      ? `${renderedText}\n\nDéposer des pièces sans compte : ${props.contributionUrl}\n`
+      : renderedText,
+  };
 }
 
 function BodyBlockView({ block }: { block: BodyBlock }) {

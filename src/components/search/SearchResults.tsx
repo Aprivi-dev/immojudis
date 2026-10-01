@@ -1,4 +1,3 @@
-import dynamic from "next/dynamic";
 import { SaleProcedureBadge } from "@/components/SaleProcedurePanel";
 import { getSaleProcedure, saleEventLabel } from "@/lib/sale-procedure";
 import type * as React from "react";
@@ -6,10 +5,8 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import entryMotion from "@/components/ui/entry-motion.module.css";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
-import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
 import BedDouble from "lucide-react/dist/esm/icons/bed-double.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
-import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import Download from "lucide-react/dist/esm/icons/download.js";
@@ -22,10 +19,8 @@ import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import Map from "lucide-react/dist/esm/icons/map.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
-import Ruler from "lucide-react/dist/esm/icons/ruler.js";
 import SearchIcon from "lucide-react/dist/esm/icons/search.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "sonner";
@@ -38,22 +33,12 @@ import { Link, useLocation, useNavigate } from "@/lib/router-compat";
 import {
   createWatchedZone as createWatchedZoneRequest,
   addFavoriteSale as addFavoriteSaleRequest,
-  fetchDpeExplorer,
   exportSalesCsv,
-  fetchFeatureEntitlements,
-  fetchSalesStatistics,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
 import { createAlert } from "@/lib/queries";
 import { DPE_CLASSES, dpeColor, extractDpe, type DpeClass } from "@/lib/dpe";
-import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
-import {
-  formatDate,
-  formatPrice,
-  formatPricePerM2,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
+import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { geocodeAddress, pricePerM2, type GeoPoint } from "@/lib/geo";
 import { SaleVisual } from "@/components/SaleVisual";
 import { cleanSaleTitle, saleDisplayTitle } from "@/lib/sale-title";
@@ -62,7 +47,6 @@ import { isNew } from "@/lib/dates";
 import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
 import type { WatchedZoneInput } from "@/lib/watched-zones";
-import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
 import {
   DEFAULT_SEARCH_LIMIT,
   HOME_TYPE_OPTIONS,
@@ -95,195 +79,15 @@ import {
 import type { MapViewportChange } from "./MapPanel";
 import { SearchPagination } from "./SearchPagination";
 import { ErrorState, ListingCardSkeleton, NoResultsState } from "./SearchFilters";
-import { SearchStatistics } from "./search-page-state";
-export function SearchStatisticsPanel({
-  statistics,
-  locked,
-  dpeLocked,
-  loading,
-  dpeExplorer,
-  dpeExplorerLoading,
-  dpeExplorerError,
-  dpeExplorerRequested,
-  onLoadDpeExplorer,
-}: {
-  statistics: SearchStatistics;
-  locked: boolean;
-  dpeLocked: boolean;
-  loading: boolean;
-  dpeExplorer?: DpeExplorerResponse;
-  dpeExplorerLoading: boolean;
-  dpeExplorerError: string | null;
-  dpeExplorerRequested: boolean;
-  onLoadDpeExplorer: () => void;
-}) {
-  if (locked) {
-    return (
-      <div className="border-b border-[#132238]/10 bg-white px-4 py-4 sm:px-5">
-        <h2 className="text-sm font-bold text-[#132238]">
-          Repérez un bien, puis préparez votre analyse
-        </h2>
-        <p className="mt-1 text-sm leading-relaxed text-[#667482]">
-          Le compte gratuit ouvre la fiche et la localisation complète. Analyse ajoute les
-          comparables, les risques et le calcul de votre mise plafond.
-        </p>
-        <Link
-          to="/annonce-exemple"
-          className="mt-2 inline-flex min-h-10 items-center text-sm font-bold text-[#0f766e] underline underline-offset-4"
-        >
-          Essayer une analyse complète sans compte
-        </Link>
-      </div>
-    );
-  }
-
-  const items = [
-    {
-      label: "Prix médian",
-      value: formatPrice(statistics.medianPrice),
-      icon: <Building2 className="h-4 w-4" />,
-    },
-    {
-      label: "Prix médian / m²",
-      value: formatPricePerM2(statistics.medianPricePerM2),
-      icon: <Ruler className="h-4 w-4" />,
-    },
-    {
-      label: "Score moyen",
-      value: statistics.averageScore == null ? "—" : `${Math.round(statistics.averageScore)}/100`,
-      icon: <ShieldCheck className="h-4 w-4" />,
-    },
-    {
-      label: "DPE repérés",
-      value: statistics.dpeKnownCount.toLocaleString("fr-FR"),
-      icon: <CalendarDays className="h-4 w-4" />,
-      locked: dpeLocked,
-    },
-  ];
-
-  return (
-    <div className="border-b border-[#132238]/10 bg-white px-4 py-3 sm:px-5">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#132238]">
-          <BarChart3 className="h-4 w-4" />
-          Repères sur votre recherche
-        </div>
-        {locked ? (
-          <span className="inline-flex items-center gap-1 rounded-md border border-[#ead8c5] bg-[#fffaf2] px-2 py-1 text-[10px] font-bold text-[#8a5b24]">
-            <LockKeyhole className="h-3 w-3" />
-            Analyse
-          </span>
-        ) : null}
-      </div>
-      <dl className="grid grid-cols-2 gap-2">
-        {items.map((item) => (
-          <div
-            key={item.label}
-            className="min-w-0 rounded-md border border-[#dce7ee] bg-[#f8fbfd] px-3 py-2"
-          >
-            <dt className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#667482]">
-              <span className="text-[#0f766e]">{item.icon}</span>
-              {item.label}
-            </dt>
-            <dd className="mt-0.5 text-sm font-extrabold tabular-nums text-[#132238]">
-              {loading ? "…" : item.locked ? "Réservé à Analyse" : item.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      {!dpeLocked && !loading ? (
-        <>
-          <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            {DPE_CLASSES.map((dpeClass) => {
-              const color = dpeColor(dpeClass);
-              return (
-                <span
-                  key={dpeClass}
-                  className="inline-flex min-h-7 items-center gap-1 rounded-md border px-2 text-xs font-bold"
-                  style={{
-                    backgroundColor: color?.background,
-                    borderColor: color?.border,
-                    color: color?.foreground,
-                  }}
-                >
-                  {dpeClass}
-                  <span className="tabular-nums">{statistics.dpeCounts[dpeClass]}</span>
-                </span>
-              );
-            })}
-            <button
-              type="button"
-              onClick={onLoadDpeExplorer}
-              disabled={dpeExplorerLoading}
-              className="ml-auto inline-flex min-h-7 items-center rounded-md border border-[#cbded8] bg-white px-2.5 text-xs font-extrabold text-[#0f766e] hover:border-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {dpeExplorerLoading
-                ? "Chargement DPE..."
-                : dpeExplorerRequested
-                  ? "Actualiser DPE"
-                  : "Explorer DPE"}
-            </button>
-          </div>
-          {dpeExplorer ? (
-            <div className="mt-3 rounded-md border border-[#dce7ee] bg-white p-3">
-              <div className="grid gap-2 text-xs sm:grid-cols-3">
-                <DpeExplorerMetric label="DPE trouvés" value={dpeExplorer.summary.total} />
-                <DpeExplorerMetric
-                  label="Classes connues"
-                  value={dpeExplorer.summary.knownClassCount}
-                />
-                <DpeExplorerMetric label="Points carte" value={dpeExplorer.summary.mapPointCount} />
-              </div>
-              {dpeExplorer.items.length ? (
-                <div className="mt-3 divide-y divide-[#132238]/10 border-t border-[#132238]/10">
-                  {dpeExplorer.items.slice(0, 3).map((item) => (
-                    <div key={item.id} className="grid gap-1 py-2 text-xs sm:grid-cols-[1fr_auto]">
-                      <div className="min-w-0">
-                        <Link
-                          className="font-bold text-[#132238] hover:text-[#0f766e]"
-                          to={`/sales/${item.id}`}
-                        >
-                          {cleanSaleTitle(item.title) ?? "Vente judiciaire"}
-                        </Link>
-                        <div className="mt-0.5 text-[#667482]">
-                          {[item.city, item.department, propertyTypeLabel(item.propertyType)]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </div>
-                      </div>
-                      <span className="font-extrabold text-[#0f766e]">
-                        {item.dpeLabel ?? "DPE repéré"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-3 border-t border-[#132238]/10 pt-3 text-xs text-[#667482]">
-                  Aucun DPE repéré avec ces filtres.
-                </p>
-              )}
-            </div>
-          ) : null}
-          {dpeExplorerError ? (
-            <p className="mt-2 text-xs font-bold text-red-700">{dpeExplorerError}</p>
-          ) : null}
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-export function DpeExplorerMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#667482]">{label}</div>
-      <div className="mt-1 text-sm font-extrabold tabular-nums text-[#132238]">
-        {value.toLocaleString("fr-FR")}
-      </div>
-    </div>
-  );
-}
-
+import { AiReviewField } from "@/components/sale-detail/AiReviewField";
+import {
+  AI_REVIEW_ENERGY_FIELD_KEYS,
+  AI_REVIEW_SURFACE_FIELD_KEYS,
+  firstBlockedAiReviewField,
+  getAiReviewFieldResult,
+  type AiReviewProjectionReadModel,
+  type AiReviewRequestStatus,
+} from "@/lib/ai-review-guard";
 export function SearchResultsList({
   sales,
   returnTo,
@@ -298,6 +102,8 @@ export function SearchResultsList({
   comparedSaleIds,
   comparisonDisabled,
   onToggleComparison,
+  aiReviewBySaleId,
+  aiReviewStatus = "disabled",
 }: {
   sales: AuctionSale[];
   returnTo: string;
@@ -312,6 +118,8 @@ export function SearchResultsList({
   comparedSaleIds: string[];
   comparisonDisabled: boolean;
   onToggleComparison: (sale: AuctionSale) => void;
+  aiReviewBySaleId?: Readonly<Record<string, readonly AiReviewProjectionReadModel[]>>;
+  aiReviewStatus?: AiReviewRequestStatus;
 }) {
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
@@ -340,13 +148,14 @@ export function SearchResultsList({
                     !comparedSaleIds.includes(sale.id))
                 }
                 onToggleComparison={onToggleComparison}
+                aiReviewProjections={aiReviewBySaleId?.[sale.id]}
+                aiReviewStatus={aiReviewStatus}
               />
             ))}
       </div>
     </div>
   );
 }
-
 export function ListingCard({
   sale,
   returnTo,
@@ -359,6 +168,8 @@ export function ListingCard({
   comparisonSelected = false,
   comparisonDisabled = false,
   onToggleComparison,
+  aiReviewProjections,
+  aiReviewStatus = "ready",
 }: {
   sale: AuctionSale;
   returnTo: string;
@@ -371,6 +182,8 @@ export function ListingCard({
   comparisonSelected?: boolean;
   comparisonDisabled?: boolean;
   onToggleComparison?: (sale: AuctionSale) => void;
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  aiReviewStatus?: AiReviewRequestStatus;
 }) {
   const displaySurface = getDisplaySurface(sale);
   const surface = getSaleSurface(sale).value;
@@ -378,19 +191,47 @@ export function ListingCard({
   const premiumLocked = locked || analysisLocked;
   const viewed = !locked && isViewed(sale.id);
   const fresh = !locked && isNew(sale.created_at);
+  const propertyTypeReview = getAiReviewFieldResult(
+    aiReviewProjections,
+    "property.property_type",
+    aiReviewStatus,
+  );
+  const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
+  const roomsReview = getAiReviewFieldResult(
+    aiReviewProjections,
+    "property.rooms_count",
+    aiReviewStatus,
+  );
+  const surfaceReviewField = firstBlockedAiReviewField(
+    aiReviewProjections,
+    AI_REVIEW_SURFACE_FIELD_KEYS,
+    aiReviewStatus,
+  );
+  const energyReviewField = firstBlockedAiReviewField(
+    aiReviewProjections,
+    AI_REVIEW_ENERGY_FIELD_KEYS,
+    aiReviewStatus,
+  );
+  const guardedPropertyType = propertyTypeReview.blocked
+    ? "À confirmer"
+    : propertyTypeLabel(sale.property_type);
+  const guardedCity = cityReview.blocked ? null : sale.city;
   const title = locked
-    ? `${propertyTypeLabel(sale.property_type)}${sale.city ? ` à ${sale.city}` : ""}`
-    : saleDisplayTitle(sale);
+    ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
+    : propertyTypeReview.blocked || cityReview.blocked
+      ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
+      : saleDisplayTitle(sale);
   const location = locked
     ? [sale.city, sale.department].filter(Boolean).join(" · ")
     : [sale.address, sale.city, sale.department ? `(${sale.department})` : null]
         .filter(Boolean)
         .join(", ");
-  const beds = sale.bedrooms_count ?? sale.rooms_count;
+  const beds = roomsReview.blocked ? null : (sale.bedrooms_count ?? sale.rooms_count);
   const baths = sale.bathrooms_count;
   const riskCount = premiumLocked ? 0 : (sale.risks?.length ?? 0);
-  const ppm = premiumLocked ? null : pricePerM2(sale.starting_price_eur, surface);
-  const dpe = premiumLocked ? null : extractDpe(sale);
+  const ppm =
+    premiumLocked || surfaceReviewField ? null : pricePerM2(sale.starting_price_eur, surface);
+  const dpe = premiumLocked || energyReviewField ? null : extractDpe(sale);
   const dpeTheme = dpeColor(dpe?.class);
   const procedure = getSaleProcedure(sale);
   const organizerLabel = locked
@@ -445,30 +286,93 @@ export function ListingCard({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3 className="font-display text-xl font-semibold leading-tight sm:text-2xl">
-              {[sale.city, sale.department].filter(Boolean).join(" · ") ||
-                "Localisation à préciser"}
+              <AiReviewField
+                fieldKey="property.city"
+                projections={aiReviewProjections}
+                reviewStatus={aiReviewStatus}
+                fallback="Localisation à préciser"
+                sourceName={sale.source_name}
+                sourceUrl={sale.source_url}
+                showSourceLink={false}
+              >
+                {[sale.city, sale.department].filter(Boolean).join(" · ") ||
+                  "Localisation à préciser"}
+              </AiReviewField>
             </h3>
             <p className="mt-1 text-sm text-[#526170]">
-              {propertyTypeLabel(sale.property_type)} ·{" "}
-              {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
-              {sale.bedrooms_count != null ? ` · ${sale.bedrooms_count} ch.` : ""}
+              <AiReviewField
+                fieldKey="property.property_type"
+                projections={aiReviewProjections}
+                reviewStatus={aiReviewStatus}
+                sourceName={sale.source_name}
+                sourceUrl={sale.source_url}
+                showSourceLink={false}
+              >
+                {propertyTypeLabel(sale.property_type)}
+              </AiReviewField>{" "}
+              ·{" "}
+              {surfaceReviewField ? (
+                <AiReviewField
+                  fieldKey={surfaceReviewField}
+                  projections={aiReviewProjections}
+                  reviewStatus={aiReviewStatus}
+                  fallback="Surface à confirmer"
+                  sourceName={sale.source_name}
+                  sourceUrl={sale.source_url}
+                  showSourceLink={false}
+                >
+                  {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
+                </AiReviewField>
+              ) : displaySurface.value != null ? (
+                displaySurface.label
+              ) : (
+                "Surface n.c."
+              )}
+              {beds != null ? ` · ${beds} ch.` : ""}
             </p>
           </div>
           <CompactFavoriteButton saleId={sale.id} locked={premiumLocked} />
         </div>
         <p className="mt-2 text-xl font-bold leading-tight text-[#9c642b] sm:text-2xl">
-          {formatPrice(sale.starting_price_eur)}
+          <AiReviewField
+            fieldKey="sale.starting_price_eur"
+            projections={aiReviewProjections}
+            reviewStatus={aiReviewStatus}
+            sourceName={sale.source_name}
+            sourceUrl={sale.source_url}
+            showSourceLink={false}
+          >
+            {formatPrice(sale.starting_price_eur)}
+          </AiReviewField>
         </p>
         <p className="text-xs text-[#526170]">Mise à prix</p>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#526170]">
           <span className="inline-flex items-center gap-1">
             <CalendarDays className="h-3.5 w-3.5" />
-            {formatDate(sale.sale_date)}
+            <AiReviewField
+              fieldKey="sale.sale_date"
+              projections={aiReviewProjections}
+              reviewStatus={aiReviewStatus}
+              sourceName={sale.source_name}
+              sourceUrl={sale.source_url}
+              showSourceLink={false}
+            >
+              {formatDate(sale.sale_date)}
+            </AiReviewField>
           </span>
           <SaleProcedureBadge sale={sale} />
           {!premiumLocked && sale.occupancy_status && (
             <span className="rounded bg-[#f0f5f3] px-2 py-1">
-              {occupancyLabel(sale.occupancy_status)}
+              <AiReviewField
+                fieldKey="property.occupancy_status"
+                projections={aiReviewProjections}
+                reviewStatus={aiReviewStatus}
+                sourceName={sale.source_name}
+                sourceUrl={sale.source_url}
+                showSourceLink={false}
+              >
+                {occupancyLabel(sale.occupancy_status)}
+              </AiReviewField>
             </span>
           )}
         </div>
@@ -481,7 +385,7 @@ export function ListingCard({
                 : "Voir le détail"}
           </span>
           <div className="flex items-center">
-            <ShareButton sale={sale} />
+            <ShareButton sale={sale} title={title} />
             {onToggleComparison && (
               <button
                 type="button"
@@ -586,7 +490,7 @@ export function ListingSignal({
   );
 }
 
-export function ShareButton({ sale }: { sale: AuctionSale }) {
+export function ShareButton({ sale, title }: { sale: AuctionSale; title: string }) {
   async function share(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -598,7 +502,7 @@ export function ShareButton({ sale }: { sale: AuctionSale }) {
 
     try {
       if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ title: saleDisplayTitle(sale, "Vente Immojudis"), url });
+        await navigator.share({ title, url });
       } else if (typeof navigator !== "undefined" && navigator.clipboard) {
         await navigator.clipboard.writeText(url);
         toast.success("Lien copié");

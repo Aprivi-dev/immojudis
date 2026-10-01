@@ -14,6 +14,45 @@ QUANTITIES = {
     'bedrooms': re.compile(r"(?P<value>\d+|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*chambres?\b", re.I),
 }
 PROMOTIONAL = re.compile(r"\b(?:exceptionnell?e?s?|id[ée]al(?:e)? pour investir|rentabilit[ée] garantie|sans aucun risque)\b", re.I)
+PROMPT_INJECTION = re.compile(
+    r"(?:"
+    r"\b(?:ignorez?|ignorer|ignore|disregard|forget)\b[^.!?\n]{0,100}"
+    r"\b(?:instructions?|consignes?|r[èe]gles?|prompt|message\s+(?:syst[eè]me|system|developer|d[ée]veloppeur))\b"
+    r"|\b(?:suivez?|follow)\b[^.!?\n]{0,80}\b(?:instructions?|consignes?|prompt)\b"
+    r"|\b(?:reveal|show|print|r[ée]v[ée]le[rz]?|affiche[rz]?)\b[^.!?\n]{0,80}"
+    r"\b(?:prompt|instructions?|consignes?|r[èe]gles?)\b"
+    r"|\b(?:jailbreak|system\s+prompt|developer\s+message|message\s+syst[eè]me)\b"
+    r")",
+    re.I,
+)
+PUBLIC_LINK = re.compile(
+    r"(?:\bhttps?://[^\s<>()]+|\bwww\.[^\s<>()]+|\bmailto:[^\s<>()]+|"
+    r"<\s*(?:a|script|iframe)\b|\bjavascript:)",
+    re.I,
+)
+PUBLIC_EMAIL = re.compile(r"\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b", re.I)
+PUBLIC_CALL_TO_ACTION = re.compile(
+    r"(?:"
+    r"\b(?:contactez|appelez|écrivez|envoyez|cliquez|inscrivez[- ]vous|"
+    r"abonnez[- ]vous|connectez[- ]vous|réservez|achetez|vendez|postulez|"
+    r"rejoignez|visitez)\b"
+    r"|\bconsultez\s+(?:notre|le|la)\s+(?:site|lien|page|formulaire)\b"
+    r"|\bpour\s+plus\s+d['’]informations?\b[^.!?\n]{0,80}"
+    r"\b(?:contactez|appelez|cliquez|consultez)\b"
+    r")",
+    re.I,
+)
+PUBLIC_ROLE_OVERRIDE = re.compile(
+    r"\b(?:tu|vous)\s+(?:es|êtes|deviens|devenez|agis|agissez|joue|jouez)\b"
+    r"[^.!?\n]{0,60}\b(?:administrateur|assistant|développeur|developer|"
+    r"système|system|modérateur|moderator|root|superuser)\b",
+    re.I,
+)
+PUBLIC_SECRET = re.compile(
+    r"\b(?:api[_ -]?key|clé[s]?\s+d['’]api|secret\s+key|mot\s+de\s+passe|"
+    r"password|access\s+token|jeton\s+d['’]accès|credentials?)\b",
+    re.I,
+)
 
 MONTHS = {'janvier': 1, 'février': 2, 'mars': 3, 'avril': 4, 'mai': 5, 'juin': 6,
           'juillet': 7, 'août': 8, 'septembre': 9, 'octobre': 10, 'novembre': 11, 'décembre': 12}
@@ -106,6 +145,18 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
         issues.append({'code': 'works_conflict', 'claim': text})
     for match in PROMOTIONAL.finditer(text):
         issues.append({'code': 'promotional_claim', 'claim': match.group()})
+    for match in PROMPT_INJECTION.finditer(text):
+        issues.append({'code': 'prompt_injection_claim', 'claim': match.group()})
+    for match in PUBLIC_LINK.finditer(text):
+        issues.append({'code': 'public_link', 'claim': match.group()})
+    for match in PUBLIC_EMAIL.finditer(text):
+        issues.append({'code': 'public_contact_detail', 'claim': match.group()})
+    for match in PUBLIC_CALL_TO_ACTION.finditer(text):
+        issues.append({'code': 'public_call_to_action', 'claim': match.group()})
+    for match in PUBLIC_ROLE_OVERRIDE.finditer(text):
+        issues.append({'code': 'public_role_override', 'claim': match.group()})
+    for match in PUBLIC_SECRET.finditer(text):
+        issues.append({'code': 'public_secret_reference', 'claim': match.group()})
     return {'status': 'issues_detected' if issues else 'checks_passed',
-            'scope': 'typed_numbers_dates_occupancy_works_and_promotional_language',
+            'scope': 'typed_numbers_dates_occupancy_works_promotional_language_prompt_injection_and_public_content',
             'semantic_completeness_certified': False, 'claims': claims, 'issues': issues}

@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
-from src.config import TARGET_DEPARTMENTS, load_settings
+from src.config import TARGET_DEPARTMENTS, load_settings, require_encheres_publiques_access
 from src.normalize import (
     SURFACE_VALUE_PATTERN,
     clean_text,
@@ -21,7 +21,7 @@ from src.normalize import (
 )
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
 
 BASE_URL = "https://www.encheres-publiques.com"
 CANONICAL_BASE_URL = "https://encheres-publiques.com"
@@ -72,6 +72,7 @@ def scrape_encheres_publiques_aquitaine_result(
     URLs from robots.txt.
     """
     settings = load_settings()
+    require_encheres_publiques_access(settings)
     client = PoliteHttpClient(
         base_url=BASE_URL,
         allowed_redirect_origins=(CANONICAL_BASE_URL,),
@@ -108,7 +109,7 @@ def scrape_encheres_publiques_aquitaine_result(
 
 
 def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     state = _extract_apollo_state(soup)
     if not state:
         return []
@@ -160,16 +161,24 @@ def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, An
 
 
 def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     state = _extract_apollo_state(soup)
     if not state:
         return {}
 
     lot_id = _lot_id_from_url(source_url)
-    lot = state.get(f"Lot:{lot_id}") if lot_id else None
+    # A detail URL is the identity boundary for the requested lot.  Apollo
+    # state can contain several lots (for example when a page is rendered from
+    # a cached route), so falling back to the first immobilier lot can silently
+    # attach another property's facts to this URL.  Fail closed until the URL
+    # identifies a lot and that exact lot exists in the payload.
+    if not lot_id:
+        return {}
+    lot = state.get(f"Lot:{lot_id}")
     if not isinstance(lot, dict):
-        lot = _first_relevant_lot(state)
-    if not lot:
+        return {}
+    payload_lot_id = lot.get("id")
+    if payload_lot_id not in (None, "") and str(payload_lot_id) != lot_id:
         return {}
 
     address = _resolve_address(state, lot)
@@ -261,14 +270,15 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
         return
     try:
         html = client.get(source_url)
+        details = parse_encheres_publiques_detail_html(html, source_url)
+        if not details:
+            raise ValueError("Requested detail did not contain the lot identified by its URL")
     except Exception as exc:
         LOGGER.warning("Encheres-Publiques detail fetch failed for %s: %s", source_url, exc)
         errors.append(f"detail {source_url}: {exc}")
         sale["_detail_fetch_failed"] = True
         sale["source_detail_status"] = "failed"
         return
-
-    details = parse_encheres_publiques_detail_html(html, source_url)
     for key, value in details.items():
         if key == "source_sale_schedule":
             # The detail page supersedes the list, including an incomplete interval.
@@ -296,13 +306,6 @@ def _resolve_ref(state: dict[str, Any], value: object) -> dict[str, Any]:
     ref = value.get("__ref")
     resolved = state.get(ref) if isinstance(ref, str) else None
     return resolved if isinstance(resolved, dict) else {}
-
-
-def _first_relevant_lot(state: dict[str, Any]) -> dict[str, Any]:
-    for key, lot in state.items():
-        if key.startswith("Lot:") and isinstance(lot, dict) and lot.get("categorie") == "immobilier":
-            return lot
-    return {}
 
 
 def _lot_id_from_url(source_url: str) -> str | None:
@@ -557,7 +560,7 @@ def _parking_count(lot: dict[str, Any], description: object) -> int | None:
         return count
     parking_kind = _plain_text(lot.get("critere_type_de_parking"))
     text = " ".join(part for part in (parking_kind, _plain_text(description)) if part)
-    if re.search(r"\b(?:parking|stationnement|garage|place de parking)\b", text, re.I):
+    if re.search(r"\b(?:parking|stationnement|place de parking)\b", text, re.I):
         return 1
     return None
 
@@ -589,7 +592,7 @@ def _plain_text(value: object | None) -> str | None:
         return None
     text = str(value)
     if "<" in text and ">" in text:
-        text = BeautifulSoup(text, "html.parser").get_text(" ", strip=True)
+        text = parse_html(text, "html.parser").get_text(" ", strip=True)
     return clean_text(text)
 
 

@@ -1,6 +1,9 @@
+import hashlib
+import json
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -12,7 +15,11 @@ from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.reviewed_aliases import registry_from_rows
 from src.storage import supabase_client
-from src.storage.supabase_client import _sanitize_postgrest_payload, _secondary_source_urls
+from src.storage.supabase_client import (
+    POSTGREST_MAX_PAYLOAD_DEPTH,
+    _sanitize_postgrest_payload,
+    _secondary_source_urls,
+)
 
 _REAL_FETCH_REVIEWED_ALIAS_REGISTRY = supabase_client._fetch_reviewed_alias_registry
 
@@ -20,6 +27,9 @@ _REAL_FETCH_REVIEWED_ALIAS_REGISTRY = supabase_client._fetch_reviewed_alias_regi
 @pytest.fixture(autouse=True)
 def isolate_enrichment_queue(monkeypatch):
     monkeypatch.setattr(supabase_client, "_enqueue_due_enrichment", lambda *args: None)
+    # Claim persistence has its own focused tests below; catalogue publication
+    # tests should not make network calls for the additive evidence table.
+    monkeypatch.setattr(supabase_client, "_write_fact_claims_rest", lambda *args: 0)
     monkeypatch.setattr(
         supabase_client,
         "_fetch_reviewed_alias_registry",
@@ -32,16 +42,82 @@ def test_finish_enrichment_respects_retry_after_and_exact_lease(monkeypatch):
 
     def patch(url, **kwargs):
         captured.update(kwargs)
-        return httpx.Response(204, request=httpx.Request('PATCH', url))
+        return httpx.Response(200, json=[{"id": "job"}], request=httpx.Request('PATCH', url))
 
     monkeypatch.setattr(supabase_client, 'load_settings', lambda: {'supabase_url':'https://supabase.test','supabase_service_role_key':'test-only'})
     monkeypatch.setattr(supabase_client.httpx, 'patch', patch)
     lease = datetime(2026, 9, 13, tzinfo=UTC)
     retry_at = datetime(2099, 1, 1, tzinfo=UTC)
-    supabase_client.finish_auction_enrichment_job_in_supabase('job', succeeded=False,
-        attempt_count=1, locked_at=lease, retry_not_before=retry_at.isoformat())
-    assert captured['params'] == {'id':'eq.job','status':'eq.running','attempt_count':'eq.1','locked_at':f'eq.{lease.isoformat()}'}
+    assert supabase_client.finish_auction_enrichment_job_in_supabase(
+        'job', succeeded=False, attempt_count=1, locked_at=lease, retry_not_before=retry_at.isoformat()
+    ) is True
+    assert captured['params'] == {'select': 'id', 'id':'eq.job','status':'eq.running','attempt_count':'eq.1','locked_at':f'eq.{lease.isoformat()}'}
+    assert captured['headers']['Prefer'] == 'return=representation'
     assert captured['json']['next_attempt_at'] == retry_at.isoformat()
+
+
+def test_finish_enrichment_reports_lost_lease(monkeypatch):
+    monkeypatch.setattr(
+        supabase_client,
+        'load_settings',
+        lambda: {'supabase_url': 'https://supabase.test', 'supabase_service_role_key': 'test-only'},
+    )
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        'patch',
+        lambda url, **kwargs: httpx.Response(200, json=[], request=httpx.Request('PATCH', url)),
+    )
+
+    assert supabase_client.finish_auction_enrichment_job_in_supabase(
+        'job', succeeded=False, cancelled=True, attempt_count=2, locked_at='2026-09-13T08:00:00+00:00'
+    ) is False
+
+
+@pytest.mark.parametrize("response_body", [[{}], [{"id": "other-job"}], [{"id": "job"}, {"id": "job"}], "malformed"])
+def test_finish_enrichment_requires_exact_cas_receipt(monkeypatch, response_body):
+    monkeypatch.setattr(
+        supabase_client,
+        'load_settings',
+        lambda: {'supabase_url': 'https://supabase.test', 'supabase_service_role_key': 'test-only'},
+    )
+
+    def patch(url, **kwargs):
+        if response_body == "malformed":
+            return httpx.Response(200, content=b"not-json", request=httpx.Request('PATCH', url))
+        return httpx.Response(200, json=response_body, request=httpx.Request('PATCH', url))
+
+    monkeypatch.setattr(supabase_client.httpx, 'patch', patch)
+    assert supabase_client.finish_auction_enrichment_job_in_supabase('job', succeeded=True) is (
+        response_body == [{"id": "job"}]
+    )
+
+
+def test_pdf_prerequisite_lookup_ignores_exhausted_jobs(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "test-only",
+        },
+    )
+    seen = []
+    rows = [
+        {"status": "failed", "attempt_count": 4, "max_attempts": 4},
+        {"status": "queued", "attempt_count": 1, "max_attempts": 4},
+    ]
+
+    def fake_get(url, **kwargs):
+        seen.append(kwargs["params"])
+        return httpx.Response(200, json=rows, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    assert supabase_client.has_eligible_pdf_job_for_sale("https://example.test/sale")
+    rows.pop()
+    assert not supabase_client.has_eligible_pdf_job_for_sale("https://example.test/sale")
+    rows[0]["status"] = "running"
+    assert supabase_client.has_eligible_pdf_job_for_sale("https://example.test/sale")
+    assert seen[0]["source_url"] == "eq.https://example.test/sale"
 
 
 def test_postgrest_upsert_batch_retries_cloudflare_520(monkeypatch) -> None:
@@ -172,6 +248,123 @@ def test_run_lifecycle_uses_postgres_after_cloudflare_521(monkeypatch) -> None:
     assert calls[1][1][-1] == "run-1"
 
 
+def test_run_start_payloads_use_one_deterministic_updated_at(monkeypatch) -> None:
+    frozen = datetime(2026, 10, 1, 9, 30, tzinfo=UTC)
+    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    requests: list[tuple[str, dict[str, object]]] = []
+
+    def fake_request(method, endpoint, table, **kwargs):
+        requests.append((method, kwargs["json"]))
+        if method == "POST":
+            return httpx.Response(201, json=[{"id": "run-new"}], request=httpx.Request(method, endpoint))
+        return httpx.Response(204, request=httpx.Request(method, endpoint))
+
+    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+
+    assert supabase_client.create_run_in_supabase("all", True) == "run-new"
+    assert supabase_client.start_existing_run_in_supabase("run-existing", "all", True) == "run-existing"
+
+    expected = frozen.isoformat()
+    assert requests == [
+        (
+            "POST",
+            {
+                "status": "running",
+                "source": "all",
+                "use_llm": True,
+                "started_at": expected,
+                "updated_at": expected,
+            },
+        ),
+        (
+            "PATCH",
+            {
+                "status": "running",
+                "source": "all",
+                "use_llm": True,
+                "started_at": expected,
+                "finished_at": None,
+                "updated_at": expected,
+            },
+        ),
+    ]
+
+
+def test_run_progress_payload_includes_deterministic_updated_at(monkeypatch) -> None:
+    frozen = datetime(2026, 10, 1, 9, 31, tzinfo=UTC)
+    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_request(method, endpoint, table, **kwargs):
+        captured.update(kwargs)
+        return httpx.Response(204, request=httpx.Request(method, endpoint))
+
+    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+
+    supabase_client.update_run_progress_in_supabase(
+        "run-progress",
+        {"mode": "llm_description_backfill", "completed": 1},
+        {"llm_backfill": []},
+    )
+
+    assert captured["json"] == {
+        "summary": {"mode": "llm_description_backfill", "completed": 1},
+        "errors": {"llm_backfill": []},
+        "updated_at": frozen.isoformat(),
+    }
+
+
+def test_run_finish_payload_includes_deterministic_updated_at(monkeypatch) -> None:
+    frozen = datetime(2026, 10, 1, 9, 32, tzinfo=UTC)
+    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_request(method, endpoint, table, **kwargs):
+        captured.update(kwargs)
+        return httpx.Response(204, request=httpx.Request(method, endpoint))
+
+    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+
+    supabase_client.finish_run_in_supabase(
+        "run-finish",
+        "succeeded",
+        {"stage": "complete"},
+        {"runner": []},
+    )
+
+    assert captured["json"] == {
+        "status": "succeeded",
+        "finished_at": frozen.isoformat(),
+        "updated_at": frozen.isoformat(),
+        "summary": {"stage": "complete"},
+        "errors": {"runner": []},
+    }
+
+
 def test_sanitize_postgrest_payload_removes_null_characters_recursively() -> None:
     payload = {
         "result": [
@@ -194,6 +387,36 @@ def test_sanitize_postgrest_payload_removes_null_characters_recursively() -> Non
         "untouched": None,
         "decimal_values": [187, 39.67],
     }
+
+
+def test_sanitize_postgrest_payload_allows_finite_aliases() -> None:
+    shared = {"value": "same object"}
+    payload = {"first": shared, "second": [shared]}
+
+    assert _sanitize_postgrest_payload(payload) == {
+        "first": {"value": "same object"},
+        "second": [{"value": "same object"}],
+    }
+
+
+def test_sanitize_postgrest_payload_rejects_cycles_with_json_path() -> None:
+    payload: dict[str, object] = {}
+    payload["self"] = payload
+
+    with pytest.raises(ValueError, match=r"cycle detected at root\['self'\].*root"):
+        _sanitize_postgrest_payload(payload)
+
+
+def test_sanitize_postgrest_payload_rejects_excessive_nesting() -> None:
+    payload: dict[str, object] = {}
+    cursor = payload
+    for _ in range(POSTGREST_MAX_PAYLOAD_DEPTH + 1):
+        child: dict[str, object] = {}
+        cursor["next"] = child
+        cursor = child
+
+    with pytest.raises(ValueError, match="maximum nesting depth"):
+        _sanitize_postgrest_payload(payload)
 
 
 def test_secondary_source_urls_excludes_batch_primary_urls() -> None:
@@ -484,15 +707,79 @@ def test_enriched_hashes_require_successful_document_analysis_when_requested(mon
                         }
                     },
                 },
+                {
+                    "content_hash": "hash-policy-blocked-current",
+                    "raw_payload": {
+                        "document_analysis": {
+                            "coverage_status": "partial",
+                            "documents_listed": 1,
+                            "documents_extracted": 0,
+                            "failed_documents": 0,
+                            "blocked_documents": 1,
+                            "blocked_document_urls": ["https://www.licitor.com/data/pub/media/pv.pdf"],
+                            "blocked_document_reasons": [{
+                                "url": "https://www.licitor.com/data/pub/media/pv.pdf",
+                                "reason": "robots.txt disallows fetching this Licitor document",
+                            }],
+                            "input_fingerprint": "document-fingerprint-current",
+                            "checked_at": datetime.now(UTC).isoformat(),
+                        }
+                    },
+                },
+                {
+                    "content_hash": "hash-policy-blocked-stale",
+                    "raw_payload": {
+                        "document_analysis": {
+                            "coverage_status": "partial",
+                            "documents_listed": 1,
+                            "documents_extracted": 0,
+                            "failed_documents": 0,
+                            "blocked_documents": 1,
+                            "blocked_document_urls": ["https://www.licitor.com/data/pub/media/pv.pdf"],
+                            "blocked_document_reasons": [{
+                                "url": "https://www.licitor.com/data/pub/media/pv.pdf",
+                                "reason": "robots.txt disallows fetching this Licitor document",
+                            }],
+                            "input_fingerprint": "document-fingerprint-stale",
+                            "checked_at": "2026-01-01T00:00:00+00:00",
+                        }
+                    },
+                },
+                {
+                    "content_hash": "hash-policy-blocked-without-fingerprint",
+                    "raw_payload": {
+                        "document_analysis": {
+                            "coverage_status": "partial",
+                            "documents_listed": 1,
+                            "documents_extracted": 0,
+                            "failed_documents": 0,
+                            "blocked_documents": 1,
+                            "blocked_document_urls": ["https://www.licitor.com/data/pub/media/pv.pdf"],
+                            "blocked_document_reasons": [{
+                                "url": "https://www.licitor.com/data/pub/media/pv.pdf",
+                                "reason": "robots.txt disallows fetching this Licitor document",
+                            }],
+                            "checked_at": datetime.now(UTC).isoformat(),
+                        }
+                    },
+                },
                 {"content_hash": "hash-never-analyzed", "raw_payload": {}},
             ]
 
     monkeypatch.setattr(supabase_client.httpx, "get", lambda *args, **kwargs: Response())
 
     assert supabase_client.fetch_enriched_content_hashes(
-        ["hash-extracted", "hash-source-only", "hash-not-extracted", "hash-never-analyzed"],
+        [
+            "hash-extracted",
+            "hash-source-only",
+            "hash-not-extracted",
+            "hash-policy-blocked-current",
+            "hash-policy-blocked-stale",
+            "hash-policy-blocked-without-fingerprint",
+            "hash-never-analyzed",
+        ],
         require_document_analysis=True,
-    ) == {"hash-extracted", "hash-source-only"}
+    ) == {"hash-extracted", "hash-source-only", "hash-policy-blocked-current"}
 
 
 def test_fetch_sales_needing_llm_descriptions_filters_current_rows(monkeypatch) -> None:
@@ -1328,6 +1615,285 @@ def test_upsert_documents_deduplicates_document_urls(monkeypatch) -> None:
     assert calls[0][1][0]["label"] == "PV descriptif duplicate"
 
 
+@pytest.mark.parametrize(
+    "value",
+    ["+" + "a" * 63, "-" + "a" * 63, "0x" + "a" * 62],
+)
+def test_sha256_rejects_non_hex_prefixes(value: str) -> None:
+    assert not supabase_client._is_sha256(value)
+
+
+@pytest.mark.parametrize("value", ["a" * 64, "A" * 64])
+def test_sha256_accepts_lowercase_and_uppercase_hex(value: str) -> None:
+    assert supabase_client._is_sha256(value)
+
+
+def _persisted_pdf_sale_fixture(
+    document_count: int = 4,
+    *,
+    cache_dir: Path | None = None,
+) -> tuple[AuctionSale, list[dict[str, object]]]:
+    from src.pdf_document_selection import _store_document_analysis_status
+
+    labels = (
+        "PV descriptif",
+        "Cahier des conditions de vente",
+        "Diagnostic de performance énergétique",
+        "Annonce de vente",
+    )
+    documents = [
+        {
+            "label": labels[index],
+            "url": f"https://example.test/persisted-{index}.pdf",
+            "document_type": "pv_huissier" if index == 0 else "other",
+        }
+        for index in range(document_count)
+    ]
+    pdf_texts = [
+        {
+            "label": document["label"],
+            "url": document["url"],
+            "type": "pdf",
+            "document_type": document["document_type"],
+            "file_path": f"/private/tmp/persisted-{index}.pdf",
+            "text": f"Texte complet du document {index} avec surface {index + 1} m2.",
+            "text_chars": len(f"Texte complet du document {index} avec surface {index + 1} m2."),
+            "sha256": hashlib.sha256(f"pdf-bytes-{index}".encode()).hexdigest(),
+            "cache_version": supabase_client.PDF_TEXT_CACHE_VERSION,
+            "complete": True,
+            "failed_pages": [],
+            "extraction_status": "extracted",
+            "extraction_method": "pymupdf_pages",
+            "page_count": 1,
+        }
+        for index, document in enumerate(documents)
+    ]
+    sale = AuctionSale(
+        source_name="avoventes",
+        source_url="https://example.test/persisted-sale",
+        starting_price_eur=Decimal("100000"),
+        documents=documents,
+    )
+    _store_document_analysis_status(sale, documents, pdf_texts)
+    if cache_dir is not None:
+        from src import pdf_fact_extraction
+
+        previous_cache_dir = pdf_fact_extraction.PDF_TEXTS_DIR
+        pdf_fact_extraction.PDF_TEXTS_DIR = cache_dir
+        try:
+            cache_path = pdf_fact_extraction._write_pdf_text_cache(sale, pdf_texts)
+            pdf_texts = json.loads(cache_path.read_text(encoding="utf-8"))
+        finally:
+            pdf_fact_extraction.PDF_TEXTS_DIR = previous_cache_dir
+    return sale, pdf_texts
+
+
+def _persisted_extraction_row(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "source_url": sale.source_url,
+        "provider": supabase_client.PDF_EXTRACTION_PROVIDER,
+        "model": supabase_client.PDF_EXTRACTION_MODEL,
+        "input_hash": sale.content_hash or sale.source_url,
+        "schema_version": supabase_client.PDF_EXTRACTION_SCHEMA_VERSION,
+        "result": [dict(item) for item in pdf_texts],
+        "updated_at": "2026-09-29T01:24:38+00:00",
+    }
+
+
+def test_upsert_documents_rehydrates_complete_persisted_pdf_text_after_reconstruction(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    sale, pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
+    extraction_row = _persisted_extraction_row(sale, pdf_texts)
+    # The source sale can receive a newer whole-record hash while the
+    # document manifest and persisted PDF bytes remain identical.
+    sale.content_hash = "newer-source-record-hash"
+    reconstructed = AuctionSale(**sale.model_dump())
+    monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    reads: list[dict[str, object]] = []
+    writes: list[list[dict[str, object]]] = []
+
+    def fake_get(endpoint, **kwargs):
+        reads.append(kwargs["params"])
+        return httpx.Response(200, json=[extraction_row], request=httpx.Request("GET", endpoint))
+
+    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda _url, _key, _table, payload, on_conflict: writes.append(payload),
+    )
+
+    assert not supabase_client.documents_are_current(reconstructed)
+    assert supabase_client._load_pdf_texts(reconstructed) == []
+    assert all(
+        item["complete"] is True
+        and item["extraction_status"] == "extracted"
+        and item["failed_pages"] == []
+        for item in pdf_texts
+    )
+    assert supabase_client.upsert_documents_to_supabase([reconstructed]) == 4
+    assert len(reads) == 1
+    assert reads[0]["provider"] == "eq.pdf_text"
+    assert reads[0]["model"] == f"eq.{supabase_client.PDF_EXTRACTION_MODEL}"
+    assert reads[0]["schema_version"] == f"eq.{supabase_client.PDF_EXTRACTION_SCHEMA_VERSION}"
+    assert len(writes) == 1
+    assert all(row["extraction_status"] == "extracted" for row in writes[0])
+    assert all(row["file_path"] is None for row in writes[0])
+    assert all(row["download_status"] == "verified" for row in writes[0])
+    assert all(
+        row["raw_payload"]["extraction"]["provenance"] == "persisted_pdf_text"
+        and row["raw_payload"]["extraction"]["proof_version"] == 1
+        and row["raw_payload"]["extraction"]["verified_at"]
+        == reconstructed.raw_payload["document_analysis"]["cache_proof"]["verified_at"]
+        for row in writes[0]
+    )
+
+
+def test_persisted_pdf_text_corruption_fails_closed_for_every_document(monkeypatch, tmp_path) -> None:
+    sale, pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
+    corrupted = [dict(item) for item in pdf_texts]
+    corrupted[0]["text"] = "Texte modifié après la preuve persistée."
+    extraction_row = _persisted_extraction_row(sale, corrupted)
+    monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    writes: list[list[dict[str, object]]] = []
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        "get",
+        lambda endpoint, **_kwargs: httpx.Response(
+            200,
+            json=[extraction_row],
+            request=httpx.Request("GET", endpoint),
+        ),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda _url, _key, _table, payload, on_conflict: writes.append(payload),
+    )
+
+    assert supabase_client.upsert_documents_to_supabase([sale]) == 4
+    assert len(writes) == 1
+    assert all(row["extraction_status"] != "extracted" for row in writes[0])
+    assert all(row["raw_payload"]["extraction"]["text_present"] is False for row in writes[0])
+
+
+def test_persisted_pdf_rest_timeout_is_single_attempt_and_pending(monkeypatch, tmp_path) -> None:
+    sale, _pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
+    monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    calls: list[object] = []
+    writes: list[list[dict[str, object]]] = []
+
+    def timeout_once(endpoint, **_kwargs):
+        calls.append(endpoint)
+        raise httpx.ReadTimeout("optional persisted PDF lookup timed out")
+
+    monkeypatch.setattr(supabase_client.httpx, "get", timeout_once)
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda _url, _key, _table, payload, on_conflict: writes.append(payload),
+    )
+
+    assert supabase_client.upsert_documents_to_supabase([sale]) == 4
+    assert len(calls) == 1
+    assert len(writes) == 1
+    assert all(row["extraction_status"] != "extracted" for row in writes[0])
+
+
+def test_mixed_pdf_manifest_never_queries_or_materializes_persisted_subset(monkeypatch, tmp_path) -> None:
+    from src.pdf_document_selection import _store_document_analysis_status
+
+    sale, pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
+    _store_document_analysis_status(sale, sale.documents, pdf_texts[:3])
+    monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    reads: list[object] = []
+    writes: list[list[dict[str, object]]] = []
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        "get",
+        lambda endpoint, **_kwargs: reads.append(endpoint) or pytest.fail("partial manifest queried"),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgrest_upsert",
+        lambda _url, _key, _table, payload, on_conflict: writes.append(payload),
+    )
+
+    assert supabase_client.upsert_documents_to_supabase([sale]) == 4
+    assert reads == []
+    assert len(writes) == 1
+    assert all(row["extraction_status"] != "extracted" for row in writes[0])
+
+
+@pytest.mark.parametrize("variant", ["partial", "legacy"])
+def test_persisted_pdf_roundtrip_rejects_partial_or_legacy_result_markers(
+    monkeypatch,
+    tmp_path,
+    variant: str,
+) -> None:
+    sale, pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
+    extraction_row = _persisted_extraction_row(sale, pdf_texts)
+    assert all(
+        document["complete"] is True
+        and document["extraction_status"] == "extracted"
+        and document["failed_pages"] == []
+        for document in extraction_row["result"]
+    )
+    proof_documents = sale.raw_payload["document_analysis"]["cache_proof"]["documents"]
+    assert all(document["complete"] is True for document in proof_documents)
+
+    if variant == "partial":
+        extraction_row["result"][0].update(
+            complete=False,
+            extraction_status="incomplete",
+            failed_pages=[1],
+        )
+    else:
+        for document in extraction_row["result"]:
+            document.pop("complete")
+            document.pop("extraction_status")
+            document.pop("failed_pages")
+
+    monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path / "worker-cache")
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        "get",
+        lambda endpoint, **_kwargs: httpx.Response(
+            200,
+            json=[extraction_row],
+            request=httpx.Request("GET", endpoint),
+        ),
+    )
+
+    assert supabase_client._fetch_persisted_pdf_texts_for_sales(
+        [sale],
+        "https://supabase.test",
+        "secret",
+    ) == {}
+
+
 def test_upsert_cadastre_parcels_uses_service_role_rest_upsert(monkeypatch) -> None:
     calls = []
     monkeypatch.setattr(
@@ -1449,6 +2015,24 @@ def test_postgres_connect_retries_transient_pool_checkout(monkeypatch) -> None:
 
     assert supabase_client._postgres_connect("postgresql://example") is connection
     assert calls == 3
+
+
+def test_postgres_connect_can_skip_retries_for_optional_telemetry(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    class Psycopg:
+        def connect(self, *_args, **kwargs):
+            calls.append(kwargs)
+            raise RuntimeError("connection timeout")
+
+    monkeypatch.setattr(supabase_client, "psycopg", Psycopg())
+
+    with pytest.raises(RuntimeError, match="connection timeout"):
+        supabase_client._postgres_connect(
+            "postgresql://example", connect_timeout=3, retry_delays=()
+        )
+
+    assert calls == [{"connect_timeout": 3, "prepare_threshold": None}]
 
 
 def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
@@ -1621,6 +2205,8 @@ def test_has_active_running_run_checks_recent_running_rows(monkeypatch) -> None:
 
 
 def test_update_run_progress_in_supabase_patches_running_row(monkeypatch) -> None:
+    frozen = datetime(2026, 10, 1, 9, 33, tzinfo=UTC)
+    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
     monkeypatch.setattr(
         supabase_client,
         "load_settings",
@@ -1651,6 +2237,7 @@ def test_update_run_progress_in_supabase_patches_running_row(monkeypatch) -> Non
     assert captured["json"] == {
         "summary": {"mode": "llm_description_backfill", "completed": 1},
         "errors": {"llm_backfill": []},
+        "updated_at": frozen.isoformat(),
     }
 
 

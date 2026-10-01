@@ -46,6 +46,17 @@ import { saleDisplayTitle } from "@/lib/sale-title";
 import { saleSession, saleWindow } from "@/lib/sale-window";
 import type { AuctionSale } from "@/lib/types";
 import styles from "./SaleListing.module.css";
+import { FactReliabilityBadge } from "./FactReliabilityBadge";
+import { getFactReliabilityForDisplay, type FactReliabilityMap } from "@/lib/fact-reliability";
+import { AiReviewField } from "./AiReviewField";
+import {
+  AI_REVIEW_ENERGY_FIELD_KEYS,
+  AI_REVIEW_SURFACE_FIELD_KEYS,
+  firstBlockedAiReviewField,
+  getAiReviewFieldResult,
+  type AiReviewProjectionReadModel,
+  type AiReviewRequestStatus,
+} from "@/lib/ai-review-guard";
 
 export function ListingActions({
   sale,
@@ -102,11 +113,17 @@ export function ListingOverview({
   publicDemo = false,
   premiumCeiling = null,
   showPremiumTeaser = false,
+  factReliabilities = null,
+  aiReviewProjections = null,
+  aiReviewStatus = "ready",
 }: {
   sale: AuctionSale;
   publicDemo?: boolean;
   premiumCeiling?: number | null;
   showPremiumTeaser?: boolean;
+  factReliabilities?: FactReliabilityMap | null;
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  aiReviewStatus?: AiReviewRequestStatus;
 }) {
   const surface = listingSurface(sale);
   const valuationConflict = listingValuationConflict(sale);
@@ -127,17 +144,90 @@ export function ListingOverview({
       : procedure.venueType === "tribunal"
         ? "Audience annoncée"
         : "Date annoncée";
-  const hasVisibleEvent = Boolean(!saleStatus && eventDate && !saleTimeConflict(sale));
+  const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
+  const dateReview = getAiReviewFieldResult(aiReviewProjections, "sale.sale_date", aiReviewStatus);
+  const surfaceReviewField = firstBlockedAiReviewField(
+    aiReviewProjections,
+    AI_REVIEW_SURFACE_FIELD_KEYS,
+    aiReviewStatus,
+  );
+  const surfaceReview = surfaceReviewField
+    ? getAiReviewFieldResult(aiReviewProjections, surfaceReviewField, aiReviewStatus)
+    : null;
+  const hasVisibleEvent = Boolean(
+    !saleStatus && !dateReview.blocked && eventDate && !saleTimeConflict(sale),
+  );
+  const dateReliability = getFactReliabilityForDisplay(
+    sale,
+    "sale_date",
+    eventDate,
+    factReliabilities,
+  );
+  const showDateFact = Boolean(eventDate || saleStatus || dateReliability.status !== "observed");
   const rooms = positiveListingNumber(sale.rooms_count);
+  const propertyTypeReview = getAiReviewFieldResult(
+    aiReviewProjections,
+    "property.property_type",
+    aiReviewStatus,
+  );
+  const guardedSurface = surfaceReviewField
+    ? { ...surface, label: "Surface à confirmer", formatted: "À confirmer", helperText: null }
+    : surface;
+  const title = propertyTypeReview.blocked
+    ? "Type de bien à confirmer"
+    : valuationConflict
+      ? "Type de bien à confirmer"
+      : cityReview.blocked
+        ? `${propertyTypeLabel(sale.property_type)} · Localisation à confirmer`
+        : saleDisplayTitle(sale, propertyTypeLabel(sale.property_type));
   const facts = [
     {
-      label: valuationConflict ? "Surface enregistrée · à vérifier" : surface.label,
-      value: surface.formatted,
+      label: valuationConflict ? "Surface enregistrée · à vérifier" : guardedSurface.label,
+      value: surfaceReview ? (
+        <AiReviewField
+          fieldKey={surfaceReviewField!}
+          projections={aiReviewProjections}
+          reviewStatus={aiReviewStatus}
+          fallback="À confirmer"
+          sourceName={sale.source_name}
+          sourceUrl={sale.source_url}
+        >
+          {surface.formatted}
+        </AiReviewField>
+      ) : (
+        guardedSurface.formatted
+      ),
+      field: "surface" as const,
     },
-    { label: "Pièces", value: rooms == null ? "À confirmer" : String(rooms) },
+    {
+      label: "Pièces",
+      value: (
+        <AiReviewField
+          fieldKey="property.rooms_count"
+          projections={aiReviewProjections}
+          reviewStatus={aiReviewStatus}
+          sourceName={sale.source_name}
+          sourceUrl={sale.source_url}
+        >
+          {rooms == null ? "À confirmer" : String(rooms)}
+        </AiReviewField>
+      ),
+      field: null,
+    },
     {
       label: "Occupation",
-      value: listingOccupation(sale),
+      value: (
+        <AiReviewField
+          fieldKey="property.occupancy_status"
+          projections={aiReviewProjections}
+          reviewStatus={aiReviewStatus}
+          sourceName={sale.source_name}
+          sourceUrl={sale.source_url}
+        >
+          {listingOccupation(sale)}
+        </AiReviewField>
+      ),
+      field: "occupancy_status" as const,
     },
   ];
   return (
@@ -155,12 +245,32 @@ export function ListingOverview({
         <p className="mt-3 text-xs text-slate-600">Annonce exemple · données fictives</p>
       ) : null}
       <h1 className={styles.title}>
-        {valuationConflict
-          ? "Type de bien à confirmer"
-          : saleDisplayTitle(sale, propertyTypeLabel(sale.property_type))}
+        {propertyTypeReview.blocked ? (
+          <AiReviewField
+            fieldKey="property.property_type"
+            projections={aiReviewProjections}
+            reviewStatus={aiReviewStatus}
+            fallback="Type de bien à confirmer"
+            sourceName={sale.source_name}
+            sourceUrl={sale.source_url}
+          >
+            {title}
+          </AiReviewField>
+        ) : (
+          title
+        )}
       </h1>
       <p className={`${styles.muted} mt-2`}>
-        {[sale.city, sale.postal_code].filter(Boolean).join(" · ") || "Localisation à confirmer"}
+        <AiReviewField
+          fieldKey="property.city"
+          projections={aiReviewProjections}
+          reviewStatus={aiReviewStatus}
+          fallback="Localisation à confirmer"
+          sourceName={sale.source_name}
+          sourceUrl={sale.source_url}
+        >
+          {[sale.city, sale.postal_code].filter(Boolean).join(" · ") || "Localisation à confirmer"}
+        </AiReviewField>
       </p>
       {notary || state ? (
         <div className={styles.procedureLead}>
@@ -184,8 +294,26 @@ export function ListingOverview({
       {price != null || !state ? (
         <div className={styles.heroPrices}>
           <div>
-            <p className={styles.priceLabel}>{state ? "Prix publié" : "Mise à prix"}</p>
-            <p className={styles.price}>{price == null ? "À confirmer" : formatPrice(price)}</p>
+            <p className={styles.priceLabel}>
+              {state ? "Prix publié" : "Mise à prix"}
+              <FactReliabilityBadge
+                sale={sale}
+                field="starting_price_eur"
+                facts={factReliabilities}
+              />
+            </p>
+            <p className={styles.price}>
+              <AiReviewField
+                fieldKey="sale.starting_price_eur"
+                projections={aiReviewProjections}
+                reviewStatus={aiReviewStatus}
+                fallback="À confirmer"
+                sourceName={sale.source_name}
+                sourceUrl={sale.source_url}
+              >
+                {price == null ? "À confirmer" : formatPrice(price)}
+              </AiReviewField>
+            </p>
             <p className={styles.muted}>
               {state
                 ? "Conditions et frais à vérifier dans l'annonce officielle"
@@ -213,16 +341,34 @@ export function ListingOverview({
       ) : (
         <p className={`${styles.muted} mt-5`}>
           Prix non publié : consultez les conditions de cession.
+          <FactReliabilityBadge sale={sale} field="starting_price_eur" facts={factReliabilities} />
         </p>
       )}
-      {hasVisibleEvent ? (
+      {showDateFact ? (
         <div className={styles.heroEvent}>
           <CalendarDays aria-hidden />
           <div>
             <span>{eventLabel}</span>
-            <strong>{listingDate(eventDate)}</strong>
+            <strong>
+              <AiReviewField
+                fieldKey="sale.sale_date"
+                projections={aiReviewProjections}
+                reviewStatus={aiReviewStatus}
+                fallback="Date à confirmer"
+                sourceName={sale.source_name}
+                sourceUrl={sale.source_url}
+              >
+                {listingDate(eventDate)}
+              </AiReviewField>
+              <FactReliabilityBadge
+                sale={sale}
+                field="sale_date"
+                displayedValue={eventDate}
+                facts={factReliabilities}
+              />
+            </strong>
           </div>
-          <a href="#rendez-vous">Rendez-vous</a>
+          {hasVisibleEvent ? <a href="#rendez-vous">Rendez-vous</a> : null}
         </div>
       ) : null}
       {sourceLink || !hasVisibleEvent ? (
@@ -246,19 +392,34 @@ export function ListingOverview({
         </div>
       ) : null}
       <dl className={styles.facts}>
-        {facts.map(({ label, value }) => (
+        {facts.map(({ label, value, field }) => (
           <div key={label} className={styles.fact}>
             <dt className={styles.factLabel}>{label}</dt>
-            <dd className={styles.factValue}>{value}</dd>
+            <dd className={styles.factValue}>
+              {value}
+              {field ? (
+                <FactReliabilityBadge sale={sale} field={field} facts={factReliabilities} />
+              ) : null}
+            </dd>
           </div>
         ))}
       </dl>
-      {surface.estimated ? <p className={`${styles.muted} mt-3`}>{surface.helperText}</p> : null}
+      {guardedSurface.estimated ? (
+        <p className={`${styles.muted} mt-3`}>{guardedSurface.helperText}</p>
+      ) : null}
     </div>
   );
 }
 
-export function ListingPracticalDetails({ sale }: { sale: AuctionSale }) {
+export function ListingPracticalDetails({
+  sale,
+  aiReviewProjections = null,
+  aiReviewStatus = "ready",
+}: {
+  sale: AuctionSale;
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  aiReviewStatus?: AiReviewRequestStatus;
+}) {
   const status = listingSaleStatus(sale);
   const interrupted = ["cancelled", "canceled", "postponed"].includes(sale.status ?? "");
   const window = saleWindow(sale);
@@ -313,7 +474,15 @@ export function ListingPracticalDetails({ sale }: { sale: AuctionSale }) {
                     : "Date annoncée"}
             </dt>
             <dd>
-              {listingDate(schedule?.opens_at ?? sale.sale_date)}
+              <AiReviewField
+                fieldKey="sale.sale_date"
+                projections={aiReviewProjections}
+                reviewStatus={aiReviewStatus}
+                sourceName={sale.source_name}
+                sourceUrl={sale.source_url}
+              >
+                {listingDate(schedule?.opens_at ?? sale.sale_date)}
+              </AiReviewField>
               {timeConflict ? (
                 <p role="status" className="mt-2 text-sm font-medium text-amber-900">
                   {timeConflict}
@@ -331,7 +500,17 @@ export function ListingPracticalDetails({ sale }: { sale: AuctionSale }) {
                     ? "Fin de séance annoncée"
                     : "Fin annoncée"}
               </dt>
-              <dd>{listingDate(schedule.closes_at)}</dd>
+              <dd>
+                <AiReviewField
+                  fieldKey="sale.sale_date"
+                  projections={aiReviewProjections}
+                  reviewStatus={aiReviewStatus}
+                  sourceName={sale.source_name}
+                  sourceUrl={sale.source_url}
+                >
+                  {listingDate(schedule.closes_at)}
+                </AiReviewField>
+              </dd>
             </div>
           ) : null}
           <div className={styles.row}>
@@ -433,11 +612,37 @@ function ListingVisit({ text }: { text: string }) {
   );
 }
 
-export function ListingDescription({ sale }: { sale: AuctionSale }) {
-  const description = buildStructuredDescription(sale);
+export function ListingDescription({
+  sale,
+  aiReviewProjections = null,
+  aiReviewStatus = "ready",
+}: {
+  sale: AuctionSale;
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  aiReviewStatus?: AiReviewRequestStatus;
+}) {
+  const guardedFields = [
+    "property.property_type",
+    "property.city",
+    "sale.sale_date",
+    "sale.starting_price_eur",
+    ...AI_REVIEW_SURFACE_FIELD_KEYS,
+    "property.occupancy_status",
+    "property.rooms_count",
+    "property.parking_count",
+    ...AI_REVIEW_ENERGY_FIELD_KEYS,
+  ] as const;
+  const hasBlockedField = guardedFields.some(
+    (fieldKey) => getAiReviewFieldResult(aiReviewProjections, fieldKey, aiReviewStatus).blocked,
+  );
+  const description = hasBlockedField
+    ? "La synthèse est à confirmer dans les pièces et la source officielle de l’annonce."
+    : buildStructuredDescription(sale);
   const original = sale.source_description?.trim() || sale.description?.trim();
   const originalDiffers =
-    !!original && original.replace(/\s+/g, " ") !== description.replace(/\s+/g, " ");
+    !hasBlockedField &&
+    !!original &&
+    original.replace(/\s+/g, " ") !== description.replace(/\s+/g, " ");
   const sourceUrl = safeExternalHttpUrl(sale.source_url);
   return (
     <section className={styles.section} aria-labelledby="listing-description-title">
@@ -450,7 +655,9 @@ export function ListingDescription({ sale }: { sale: AuctionSale }) {
         </summary>
         <div className={styles.card}>
           <p className={`${styles.muted} mb-3`}>
-            Synthèse issue des données de la fiche. Elle ne remplace pas le texte source.
+            {hasBlockedField
+              ? "Certaines valeurs sont momentanément masquées jusqu’à vérification de la relecture IA."
+              : "Synthèse issue des données de la fiche. Elle ne remplace pas le texte source."}
           </p>
           <p className={styles.body}>{description}</p>
         </div>
@@ -483,17 +690,31 @@ export function ListingDescription({ sale }: { sale: AuctionSale }) {
   );
 }
 
-export function ListingLocation({ sale }: { sale: AuctionSale }) {
+export function ListingLocation({
+  sale,
+  aiReviewProjections = null,
+  aiReviewStatus = "ready",
+}: {
+  sale: AuctionSale;
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  aiReviewStatus?: AiReviewRequestStatus;
+}) {
   const coordinates = listingCoordinates(sale);
-  const address = listingAddress(sale);
+  const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
+  const address = cityReview.blocked ? null : listingAddress(sale);
   const price = positiveListingNumber(sale.starting_price_eur);
+  const priceReview = getAiReviewFieldResult(
+    aiReviewProjections,
+    "sale.starting_price_eur",
+    aiReviewStatus,
+  );
   return (
     <section id="localisation" className={styles.section} aria-labelledby="listing-location-title">
       <h2 id="listing-location-title" className={styles.heading}>
         Localisation
       </h2>
       <div className={styles.card}>
-        {coordinates ? (
+        {coordinates && !cityReview.blocked ? (
           <div className={styles.map}>
             <MapThumbnail
               lat={coordinates.lat}
@@ -501,7 +722,7 @@ export function ListingLocation({ sale }: { sale: AuctionSale }) {
               zoom={14}
               className="h-[230px] w-full sm:h-[300px]"
               alt={`Localisation indicative du bien${sale.city ? ` à ${sale.city}` : ""}`}
-              markerLabel={price != null ? formatPrice(price) : undefined}
+              markerLabel={!priceReview.blocked && price != null ? formatPrice(price) : undefined}
             />
           </div>
         ) : (
@@ -511,12 +732,21 @@ export function ListingLocation({ sale }: { sale: AuctionSale }) {
         )}
         <p className={styles.address}>
           <MapPin className="mt-1 h-4 w-4 shrink-0" aria-hidden />
-          {address || "Adresse à confirmer"}
+          <AiReviewField
+            fieldKey="property.city"
+            projections={aiReviewProjections}
+            reviewStatus={aiReviewStatus}
+            fallback="Localisation à confirmer"
+            sourceName={sale.source_name}
+            sourceUrl={sale.source_url}
+          >
+            {address || "Adresse à confirmer"}
+          </AiReviewField>
         </p>
         <p className={styles.muted}>
           Localisation indicative. À vérifier dans les pièces du dossier.
         </p>
-        {coordinates ? (
+        {coordinates && !cityReview.blocked ? (
           <MapboxPreviewButton
             mode="streetLevel"
             lat={coordinates.lat}

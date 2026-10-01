@@ -15,6 +15,7 @@ import {
   TribunalJudicialActivityUnavailableError,
 } from "@/lib/tribunal-judicial-activity-repository";
 import { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
+import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
 
 const STORED_COLUMNS = [
   "build_id",
@@ -71,6 +72,8 @@ const storedSaleSchema = z
   .object({
     tribunal_code: z.string().min(1).nullable(),
     sale_venue_type: z.string().min(1),
+    status: z.string().nullable().optional(),
+    raw_payload: z.unknown().nullable().optional(),
   })
   .strict();
 
@@ -115,7 +118,7 @@ export async function getAdjudicationPriceStatisticsForSale(
   const [saleResult, nationalResult] = await Promise.all([
     statisticsAdmin
       .from("auction_sales")
-      .select("tribunal_code,sale_venue_type")
+      .select("tribunal_code,sale_venue_type,status,raw_payload")
       .eq("id", saleId)
       .limit(1)
       .maybeSingle(),
@@ -127,6 +130,9 @@ export async function getAdjudicationPriceStatisticsForSale(
   }
   if (!saleResult.data) throw unavailable("No judicial sale is available.");
   const sale = parseStoredSale(saleResult.data);
+  if (isPublicationQuarantined(sale.raw_payload, sale.status)) {
+    throw unavailable("No judicial sale is available.");
+  }
   if (sale.sale_venue_type !== "tribunal") {
     throw unavailable("The sale is not identified as a tribunal sale.");
   }

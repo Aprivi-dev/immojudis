@@ -122,6 +122,137 @@ def test_observation_batch_does_not_regress_when_stale_retry_follows_newer_versi
     assert row["observed_at"] == "2026-09-13T12:00:00+00:00"
 
 
+def test_postgres_observation_batches_bound_large_run_and_keep_aliases_canonical(monkeypatch) -> None:
+    payload: list[dict[str, object]] = []
+    for index in range(639):
+        canonical = f"https://sale.test/{index:04d}"
+        payload.append({
+            "source_url": canonical,
+            "canonical_source_url": canonical,
+            "source_name": "vench",
+        })
+        if index < 9:
+            payload.append({
+                "source_url": f"https://alias.test/{index:04d}",
+                "canonical_source_url": canonical,
+                "source_name": "vench",
+            })
+
+    writes: list[list[dict[str, object]]] = []
+    connection = object()
+    monkeypatch.setattr(
+        supabase_client,
+        "_parented_observation_payload",
+        lambda _connection, batch: batch,
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_transaction_write",
+        lambda _table, batch, _on_conflict: writes.append(list(batch)),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgres_connect",
+        lambda _db_url: nullcontext(connection),
+    )
+
+    assert supabase_client._postgres_upsert_observations_with_parent_guard(
+        "postgresql://example",
+        payload,
+        "source_url",
+    ) == len(payload)
+
+    assert len(writes) >= 26
+    assert all(len(batch) <= supabase_client.POSTGRES_OBSERVATION_BATCH_SIZE for batch in writes)
+    flattened = [row for batch in writes for row in batch]
+    assert {row["source_url"] for row in flattened} == {row["source_url"] for row in payload}
+    assert len(flattened) == len({row["source_url"] for row in flattened}) == 648
+
+    batches_by_canonical: dict[str, set[int]] = {}
+    for batch_index, batch in enumerate(writes):
+        for row in batch:
+            batches_by_canonical.setdefault(str(row["canonical_source_url"]), set()).add(batch_index)
+    assert all(len(batch_indexes) == 1 for batch_indexes in batches_by_canonical.values())
+    assert all(
+        row["canonical_source_url"] == f"https://sale.test/{index:04d}"
+        for index in range(9)
+        for row in flattened
+        if row["source_url"] == f"https://alias.test/{index:04d}"
+    )
+
+
+def test_postgres_observation_batch_timeout_replays_idempotently(monkeypatch) -> None:
+    payload: list[dict[str, object]] = []
+    for index in range(639):
+        canonical = f"https://sale.test/{index:04d}"
+        payload.append({"source_url": canonical, "canonical_source_url": canonical})
+        if index < 9:
+            payload.append({
+                "source_url": f"https://alias.test/{index:04d}",
+                "canonical_source_url": canonical,
+            })
+
+    class ConnectionContext:
+        def __init__(self, connection, outcomes: list[bool]) -> None:
+            self.connection = connection
+            self.outcomes = outcomes
+
+        def __enter__(self):
+            return self.connection
+
+        def __exit__(self, exception_type, _exception, _traceback):
+            self.outcomes.append(exception_type is None)
+            return False
+
+    monkeypatch.setattr(
+        supabase_client,
+        "_parented_observation_payload",
+        lambda _connection, batch: batch,
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgres_connect",
+        lambda _db_url: ConnectionContext(object(), transaction_outcomes),
+    )
+
+    persisted: dict[str, dict[str, object]] = {}
+    transaction_outcomes: list[bool] = []
+    attempts = 0
+
+    def write_transaction(_table, batch, _on_conflict):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 3:
+            raise TimeoutError("simulated statement timeout")
+        for row in batch:
+            # Model the database's source_url primary key and ON CONFLICT
+            # update: a replay updates the same key instead of duplicating it.
+            persisted[str(row["source_url"])] = row
+
+    monkeypatch.setattr(supabase_client, "_transaction_write", write_transaction)
+
+    with pytest.raises(TimeoutError, match="simulated statement timeout"):
+        supabase_client._postgres_upsert_observations_with_parent_guard(
+            "postgresql://example",
+            payload,
+            "source_url",
+        )
+    assert transaction_outcomes == [True, True, False]
+    assert len(persisted) == 50
+
+    assert supabase_client._postgres_upsert_observations_with_parent_guard(
+        "postgresql://example",
+        payload,
+        "source_url",
+    ) == len(payload)
+    assert len(persisted) == 648
+    assert all(
+        persisted[f"https://alias.test/{index:04d}"]["canonical_source_url"]
+        == f"https://sale.test/{index:04d}"
+        for index in range(9)
+    )
+
+
 def test_observation_batch_fails_closed_when_direct_parent_guard_fails(monkeypatch) -> None:
     postgres_calls: list[list[dict[str, object]]] = []
     rest_calls: list[list[dict[str, object]]] = []
