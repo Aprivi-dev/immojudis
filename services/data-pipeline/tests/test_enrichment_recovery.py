@@ -676,7 +676,7 @@ def test_expired_attempt_cannot_finish_new_claim(monkeypatch):
     monkeypatch.setattr(storage, 'load_settings', lambda: {'supabase_url': 'https://example.test', 'supabase_service_role_key': 'test'})
     monkeypatch.setattr(storage.httpx, 'patch', lambda *a, **kw: captured.append(kw) or SimpleNamespace(is_error=False))
     storage.finish_auction_enrichment_job_in_supabase('job', succeeded=True, attempt_count=2)
-    assert captured[0]['params'] == {'id': 'eq.job', 'status': 'eq.running', 'attempt_count': 'eq.2'}
+    assert captured[0]['params'] == {'select': 'id', 'id': 'eq.job', 'status': 'eq.running', 'attempt_count': 'eq.2'}
 
 
 def test_register_run_exports_only_valid_uuid(tmp_path, monkeypatch):
