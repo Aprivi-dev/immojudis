@@ -1,16 +1,16 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 1er octobre, 07 h 40 UTC
+## Synthèse actuelle — 1er octobre, 08 h 05 UTC
 
 | Chantier | État vérifié |
 | --- | --- |
-| SQL et CI | `8e3d522e463b400e3ca1b77cbe70d65cf6ba8e90` : CI/CodeQL verts, 2 127 tests Python par version, 82 fichiers/1 544 assertions pgTAP et 203 migrations sans dérive. Reçu privé transactionnel de suppression appliqué et audité. Nouveau correctif des métriques d'admission en qualification ; aucune application avant sa CI PostgreSQL réelle. |
+| SQL et CI | Dernier commit de code `dff2b2876ee9b1822a4a83d2b8c525d5e9157978` : CI/CodeQL verts, 2 130 tests Python par version, 83 fichiers/1 570 assertions pgTAP et 204 migrations sans dérive. Reçus DELETE et correctif d'admission appliqués puis audités. Le nouveau split de file est produit par le contrôle naturel de 08 h. |
 | Santé | À 05 h 45, deux alertes ouvertes : cron.stale et enrichment.stalled. Les notifications sont livrées ; les contrôles de santé exécutés réussissent, mais le cron inbound reste absent. Santé globale non qualifiée. |
-| Worker automatique | Pointeur interne basculé vers le tag protégé `immojudis-workers-8e3d522e` après canari qualifié : 22 claims tous expliqués, aucun missing. Redéploiement READY sur le même code public main `05cff558`. Cycle automatique complet sur ce nouveau pointeur encore requis. Le canari 85 conserve son UUID absent non prouvé et reste non qualifié. |
+| Worker automatique | Pointeur interne `immojudis-workers-8e3d522e`, canari qualifié : 22 claims tous expliqués. Redéploiement READY sur le même code public main `05cff558`. Cycle naturel AGRASC de 07 h 45 vérifié automatic=true sur le tag exact ; collecte scoped_complete/publication bornée complète, couverture globale false. Nouveau cycle naturel de 08 h en cours, capacité non qualifiée. Le canari 85 reste non qualifié. |
 | Collecte Avoventes | Warm `e3deadf6` : 240 annonces et 241/241 requêtes réussies, zéro échec de transport ; collecte/publication complètes, enrichissement partiel. Les preuves manuelles ne remplacent pas les timestamps du dernier run automatique. |
 | Autres sources | Neuf sources autorisées actives : huit couvertures complètes, sept publications complètes, six pointeurs automatiques réussis à 05 h 45. AGRASC partielle/22 échecs ; Notaires automatique échoué, publication pending. Notaires manuel `85b990b9` qualifié : 834 biens, 870 requêtes réussies, collecte/publication complètes. Le run manuel ne remplace pas le pointeur automatique. |
 | Documents | Warm/cold : reprise 75/95 → 95/95 pages et réutilisation SQL de sept PDF qualifiées. Dans le canari 85, trois erreurs OCR initiales : une récupérée naturellement ; deux restent incomplètes (page 6 et pages 14/16), avec hashes/checkpoints persistés et sans succès documentaire fictif. |
-| Capacité | À 05 h 45 : 6 079 ouverts, 6 066 dus réessayables, 2 483 anciens sous plafond ; 1 090 completed sur 24 h. À 06 h 55, 2 568 détails dus dont 21 exclus car EP désactivée ; ils restent dans le backlog brut. Correctif proposé pour distinguer claimable_due/excluded_due et éviter les workers vides. Aucune preuve de résorption nette durable. Valorisation : 2 465 ready/394 insufficient_data sur 2 860, deux dus (ancienneté 63 s). |
+| Capacité | Observation naturelle à 08 h 00 min 04 s : 5 988 ouverts, 3 282 de plus de 24 h, 5 916 claimable_due/64 excluded_due. Les exclusions agrégées ne sont pas toutes attribuées à EP ; le brut et son âge sont conservés. Aucune preuve de résorption nette durable. Valorisation à 05 h 45 : 2 465 ready/394 insufficient_data sur 2 860, deux dus (ancienneté 63 s). |
 | Revue IA | Import atomique v4.6 commis à 01 h 43 : 100 cas/912 projections, non réimportés. Relecture courante : 324 resolved/verified, 299 absent, 79 unknown, 198 unresolved, 12 unverified ; 225 resolved/match, zéro projection finalement publiable. Tables/RLS, vues invoker et gardes des vues/RPC publics vérifiées ; aucun champ IA ajouté aux projections catalogue. Aucun résultat d'exactitude statistique réelle. |
 | Resend/portail | Clé, domaines, webhook et canari fournisseur vérifiés. Ajout du secret portail à Vercel Production refusé par auto-review, accord précis en attente. Aucun interlocuteur réel sollicité. |
 | Inbound | Route non publiée sur l’origine canonique, cron absent. Canari canonique authentifié puis activation et récupération automatique de santé requis après déploiement. |
@@ -3585,3 +3585,72 @@ reste un coût à surveiller avec l'augmentation de la file.
 Les autres critères ouverts de la synthèse restent à satisfaire avant la
 publication finale, notamment capacité/fraîcheur/couverture/santé, accord
 précis du secret portail Production et accord écrit avec accès réel au flux EP.
+
+## Admission qualifiée et appliquée, premiers cycles automatiques — 1er octobre, 08 h 10 UTC
+
+Le dernier commit de code `dff2b2876ee9b1822a4a83d2b8c525d5e9157978` passe
+la [CI 36831842400](https://github.com/Aprivi-dev/immojudis/actions/runs/36831842400)
+et [CodeQL 36831842339](https://github.com/Aprivi-dev/immojudis/actions/runs/36831842339).
+Le merge réellement testé `2304221960ee812bfca1c31e692275ee094a5b7a` a
+les parents main `05cff558` et dff. Replay de 204 migrations sans dérive,
+83 fichiers/1 570 assertions pgTAP PASS, dont les 26 du test 410 ;
+Python 3.11/3.12 chacun 2 130 passed/18 skipped avec PostgreSQL 17.11
+healthy et intégrations DB réelles. Inbound : deux tests passés ; build
+103/103, Playwright 87 passed/8 skipped. Uploads CodeQL terminés, zéro
+alerte ouverte sur le SHA, la branche et la ref de PR. Logs privés SHA CI
+`e6d27d4e29c9779b9750c2139ac17146c5a479a093d64b88dfe7815016bed79b`
+et CodeQL `d5e420184a16a4fcea7fcbbf05859bd6133c28557ddca978d4d6f7de4079611f`.
+
+Le ruleset `24295370` protège les deux tags exacts dff avant leur création,
+enforcement active, sans bypass/update/deletion. La
+[maintenance 36833025830](https://github.com/Aprivi-dev/immojudis/actions/runs/36833025830)
+est dispatchée une fois sur `immojudis-maintenance-dff2b287` et réussit à
+07 h 56 min 41 s. Elle applique uniquement la migration pending
+`20261001070853`, configure le scheduler santé existant et confirme la
+dérive distante absente. Log privé SHA
+`d21b65d4cc0292fda64f793d8bfa10cada0ee4e564b3d6950f811c6b0729dede`.
+
+L'audit indépendant vérifie les corps, gardes et ACL des deux fonctions.
+Son snapshot agrégé privé porte le SHA
+`e0c47ff39663e2a38f420cb12de211ff4d5662ebfab63dddef5bae1fa54c303d` ;
+le timestamp structural et le total des versions n'étaient pas projetés,
+ce qui est conservé comme limite. La relecture root, un SELECT unique
+à 08 h 04 min 43,555549 s, confirme **204 versions**, dernière migration
+`20261001070853` une seule fois. Scheduler invoker/observer definer,
+search_path vide, service EXECUTE, anon/authenticated sans EXECUTE,
+ranking/winner et gardes rétention/pause/lease/advisory/enqueue conformes.
+EP demeure désactivée et le cron inbound absent.
+
+Le contrôle de santé **naturel** à 08 h passe, démarrage
+08 h 00 min 04,559296 s et fin 08 h 00 min 07,814686 s.
+L'observation à 08 h 00 min 04,590 s expose le split appliqué :
+5 988 backlog/3 282 older_than_24h/5 916 claimable_due/64 excluded_due.
+Ces 64 exclusions ne sont pas toutes attribuées à EP et les compteurs
+ne représentent pas la seule performance du nouveau worker. Aucun RPC
+observer mutateur n'a été forcé pour obtenir cette preuve.
+
+Le [premier cycle naturel 36832148514](https://github.com/Aprivi-dev/immojudis/actions/runs/36832148514)
+sur le pointeur 8e se termine success à 07 h 48 min 01 s. Log :
+automatic=true, SQL `09e27e27-7e95-47f0-9ba1-27242d558f40`, source AGRASC,
+limit vide et autres modes false. SQL indépendante à 07 h 55 min 43,548681 s :
+scheduler_owned=true, succeeded, collection scoped_complete/publication
+complete/enrichment complete, mais completion_status=partial_success et
+coverage_complete=false. Huit items émis/sept publiés/un exclu ; 7/7
+requêtes réussies, zéro erreur/refus. L'arrêt published_links_exhausted
+ne constitue pas un certificat global : les timestamps globaux de source
+restent NULL. Ce run n'exécute aucun job d'enrichissement, en admet trois PDF
+et une description, avec qualité documentaire partielle. Log privé SHA
+`95db5846c180616f9e28458589166f3b10344f4ce213205884fd686fe01ce3a9`.
+
+Le [cycle naturel suivant 36833642374](https://github.com/Aprivi-dev/immojudis/actions/runs/36833642374)
+est créé à 08 h 00 min 07 s sur le même tag/head 8e. Le contrôle santé
+confirme le dispatch enrichment/enrichment-queue du run SQL
+`f2378aa9-8e85-4392-8271-2705b1eea3fd`, tentative 1. Il est encore en cours ;
+aucun résultat terminal, débit réussi ni capacité durable n'en est déduit.
+Le tag candidat dff n'est pas promu au worker automatique.
+
+Le code public reste main `05cff558`. Les corrections de données et la
+maintenance du worker sont appliquées ; la publication applicative finale
+reste suspendue aux critères métier de couverture, fraîcheur, capacité,
+santé, compléments IA et inbound, ainsi qu'aux deux prérequis externes.
+Aucun contact réel n'est sollicité et aucune branche n'est supprimée.
