@@ -1,17 +1,17 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 1er octobre, 08 h 45 UTC
+## Synthèse actuelle — 1er octobre, 09 h 10 UTC
 
 | Chantier | État vérifié |
 | --- | --- |
-| SQL et CI | Dernier code qualifié `dff2b2876ee9b1822a4a83d2b8c525d5e9157978` et documentation `3611b7d0b86742370921f754baab7650e8faf37d` : CI/CodeQL verts, 2 130 tests Python par version, 83 fichiers/1 570 assertions pgTAP et 204 migrations sans dérive. Reçus DELETE et correctif d'admission appliqués puis audités. Migration 205 de priorité générale finie préparée avec 17 assertions supplémentaires ; qualification CI et application encore attendues. |
+| SQL et CI | Dernier code qualifié `4bb8f9dff1fa7d4d2cc389266444ad0d92df7b2e` : CI/CodeQL verts, 2 130 tests Python par version, 84 fichiers/1 587 assertions pgTAP et 205 migrations sans dérive. Priorité générale finie appliquée et auditée à 09 h 05. Correctif supplémentaire de la policy anon en préparation ; qualification et application encore requises. |
 | Santé | À 08 h 10, cron.stale critique et enrichment.stalled warning restent ouverts et notifiés. Le dernier contrôle naturel de 08 h réussit ; les runs HTTP santé sur 24 h comptent 93 succès et trois échecs, mesure distincte des exécutions SQL du cron. Le cron inbound reste absent. Santé globale non qualifiée. |
 | Worker automatique | Pointeur interne `immojudis-workers-8e3d522e`, canari qualifié : 22 claims tous expliqués. Redéploiement READY sur le même code public main `05cff558`. Cycle naturel AGRASC de 07 h 45 vérifié automatic=true sur le tag exact ; collecte scoped_complete/publication bornée complète, couverture globale false. Cycle naturel de 08 h terminé : 90 claims tous expliqués, sans lease restante ni ligne manquante. Capacité durable non qualifiée. Le canari 85 reste non qualifié. |
 | Collecte Avoventes | Warm `e3deadf6` : 240 annonces et 241/241 requêtes réussies, zéro échec de transport ; collecte/publication complètes, enrichissement partiel. Les preuves manuelles ne remplacent pas les timestamps du dernier run automatique. |
-| Autres sources | Neuf sources actives à 08 h 10, EP désactivée. Huit timestamps historiques de couverture globale et huit de publication globale sont présents ; ils ne qualifient pas huit derniers cycles automatiques. Dernier Notaires automatique échoué, dernier AGRASC partiel avec couverture globale false. Notaires manuel `85b990b9` qualifié : 834 biens, 870 requêtes réussies, collecte/publication complètes. Le run manuel ne remplace pas le pointeur automatique. |
+| Autres sources | Neuf sources actives à 08 h 10, EP désactivée. Huit timestamps historiques de couverture globale et huit de publication globale sont présents ; ils ne qualifient pas huit derniers cycles automatiques. Enchères Immobilières automatique 08 h 30 qualifié : 198 annonces, 81/81 requêtes, 189 publications, couverture complète. Dernier Notaires automatique échoué, dernier AGRASC partiel avec couverture globale false. Notaires manuel `85b990b9` qualifié : 834 biens, 870 requêtes réussies, collecte/publication complètes. Le run manuel ne remplace pas le pointeur automatique. |
 | Documents | Warm/cold : reprise 75/95 → 95/95 pages et réutilisation SQL de sept PDF qualifiées. Dans le canari 85, trois erreurs OCR initiales : une récupérée naturellement ; deux restent incomplètes (page 6 et pages 14/16), avec hashes/checkpoints persistés et sans succès documentaire fictif. |
-| Capacité | À 08 h 10 : 5 917 ouverts, 5 877 dus sous plafond, 2 448 dus de plus de 48 h, zéro lease stale. Plus ancien candidat général : environ 42 jours, jamais tenté ; priorité absolue des ventes proches identifiée comme cause d'attente. Aucun résultat de résorption nette durable. Valorisation : 2 457 ready/403 insufficient_data, 2 860 processed, 714 actionable, zéro dû. Les volumes de file ne mesurent pas seuls les succès métier. |
-| Revue IA | Import atomique v4.6 commis à 01 h 43 : 100 cas/912 projections, non réimportés. À 08 h 10 : 324 resolved/verified, zéro projection finalement publiable ; 172 annonces canoniques en quarantaine. Corps/ACL des vues/RPC publics revérifiés statiquement ; le relevé ne fournit pas de nouveau comptage ligne par ligne des fuites. Aucun résultat d'exactitude statistique réelle. |
+| Capacité | À 08 h 10 : 5 917 ouverts, 5 877 dus sous plafond, 2 448 dus de plus de 48 h, zéro lease stale. Le candidat ancien d'environ 42 jours est admis naturellement à 09 h 04 après le correctif, puis reporté queued/tentative 0 sans reset humain. Cycle naturel de 08 h 45 : 58 claims tous expliqués, 32 complétés/sept échoués/trois annulés/16 queued. Aucun résultat de résorption nette durable. Valorisation : 2 457 ready/403 insufficient_data, 2 860 processed, 714 actionable, zéro dû. Les volumes de file ne mesurent pas seuls les succès métier. |
+| Revue IA et visibilité | Import atomique v4.6 commis à 01 h 43 : 100 cas/912 projections, non réimportés. À 08 h 10 : 324 resolved/verified, zéro projection finalement publiable ; 172 annonces canoniques en quarantaine. Contrôle effectif anon à 09 h 03 : zéro annonce bloquée dans le preview, mais 37 identifiants/prix lisibles directement sur auction_sales malgré un marqueur de quarantaine. Policy anon à corriger. Le statut quarantined est déjà exclu par son allowlist ; la policy premium possède les deux gardes. Aucun résultat d'exactitude statistique réelle. |
 | Resend/portail | Clé, domaines, webhook et canari fournisseur vérifiés. Ajout du secret portail à Vercel Production refusé par auto-review, accord précis en attente. Aucun interlocuteur réel sollicité. |
 | Inbound | Route non publiée sur l’origine canonique, cron absent. Canari canonique authentifié puis activation et récupération automatique de santé requis après déploiement. |
 | Enchères Publiques | Source désactivée, gardes qualifiées sur `3400eb58`. Accord écrit et flux promis non reçus. Aucune nouvelle collecte. |
@@ -3734,3 +3734,86 @@ une définition inattendue et ne crée ni index ni tâche. Le test 411 ajoute
 CI réelle, qualification du commit exact et maintenance restent requises
 avant application. Aucune résorption ni exécution de la tâche ancienne
 n'est encore attribuée à ce changement.
+
+## Priorité appliquée et contrôle anonyme réel — 1er octobre, 09 h 10 UTC
+
+Le commit `4bb8f9dff1fa7d4d2cc389266444ad0d92df7b2e` est qualifié par
+[CI 36839079919](https://github.com/Aprivi-dev/immojudis/actions/runs/36839079919)
+et [CodeQL 36839079979](https://github.com/Aprivi-dev/immojudis/actions/runs/36839079979).
+Le merge testé `f4b3972cb8e16cfdaf73dd65da9f7d06044685d8` a les parents
+main `05cff558` et 4bb. Replay de 205 migrations, schéma conforme,
+84 fichiers/1 587 assertions pgTAP PASS, test 411 ok ; Python 3.11/3.12
+chacun 2 130 passed/18 skipped avec PostgreSQL 17.11 healthy. Build 103/103,
+Playwright 87 passed/8 skipped. Deux analyses CodeQL effectivement publiées
+sur ce merge, uploads terminés, zéro alerte ouverte sur la tête de PR.
+SHA privés CI
+`63bd873d6936d37647b3e01fe78529cba2232c4dc513ae3f639a7efaf9b7623c`
+et CodeQL
+`31aaa7262f406052792db3aafa38c8f9fcc4f48180b4f3cf5c989094297f4bbd`.
+
+Ruleset `24298307` actif, sans bypass/update/deletion, avant création des
+tags immuables maintenance/workers 4bb. Le candidat workers n'est pas
+promu : le worker automatique conserve 8e et utilise le RPC SQL vivant.
+[Maintenance 36840043773](https://github.com/Aprivi-dev/immojudis/actions/runs/36840043773)
+dispatchée une seule fois sur `immojudis-maintenance-4bb8f9df`, success
+à 09 h 04 min 33 s. Seule migration pending `20261001083619`, appliquée
+à 09 h 02 min 03 s ; le scheduler santé existant est configuré, la dérive
+Production absente à 09 h 04 min 27 s. Log privé SHA
+`f780aea4c73b943027a4fce6c49f1bc0c633c59680265e256839d04ca4d83a03`.
+
+Audit indépendant root READ ONLY à 09 h 05 min 04,575132 s : 205 versions,
+205 une seule fois, ancien ordre absent et bonus présent une fois,
+invoker/search_path/ACL/advisory/révision/rétention/lease/SKIP LOCKED
+conformes. Source détail spécialisée préservée, EP disabled/access_denied,
+un seul cron santé actif et aucun inbound, une lease fraîche/zéro stale.
+La tâche fact_extraction ancienne passe naturellement à running,
+attempt_count=1, updated_at=09 h 04 min 33,621537 s ; aucune mutation de
+tâche ou remise à zéro manuelle, aucun claim forcé. Cela qualifie son admission.
+Le relevé terminal suivant la retrouve reportée queued/tentative 0 : la
+remise en file automatique d'un report n'est pas une extraction réussie.
+La capacité durable reste à vérifier.
+Audit privé SHA
+`b3fdd88b1d8a95f1e1f86615deeb2533d1cfc060bf31190ff32a0f490f569360`.
+
+Le [cycle automatique Enchères Immobilières 36836695499](https://github.com/Aprivi-dev/immojudis/actions/runs/36836695499)
+sur 8e est succeeded/scheduler-owned, SQL
+`d6e1241c-3bd8-425a-bd27-70fac4bd2e6b`, terminé à 08 h 40 min 06 s.
+Sans limite : 198 annonces, 81/81 requêtes, 14 pages, couverture complète,
+arrêt exhausted, zéro erreur/refus/mismatch, 189 publications et aucune
+publication pending/failed. Inventaire/publication de source complétés à
+08 h 40 min 09 s, available/zéro échec consécutif. Les 25 écritures de jobs
+ne sont pas des claims ; pdf_coverage=source_only, aucun PDF ni LLM exécuté.
+updated_at du run reste antérieur à finished_at : les compteurs terminal et
+finished_at sont utilisés, sans prétendre cette date de modification fraîche.
+SHA privés log
+`0f4e7cef7f28c99209230af4cb09bf50b2063b7aa191e56c4beffae58bc4ad3d`
+et audit
+`81db8b60e4b04683ec17b56b02b961fb0b8235eda6ba8939ea25b370304786e9`.
+
+La relecture de visibilité distingue désormais clairement le rôle de
+service qui contourne RLS et le rôle client. Sous postgres, les vues brutes
+contenant des lignes en quarantaine ne prouvent pas une fuite client.
+Sous SET LOCAL ROLE anon, row_security=on, à 09 h 03 min 11,388492 s,
+le preview comporte 1 055 lignes/zéro bloquée. La lecture directe des
+colonnes autorisées id/starting_price_eur de auction_sales comporte en
+revanche 1 092 lignes, dont 37 rejetées par le helper de visibilité.
+La policy auction_sales_public_preview_read impose déjà les statuts
+upcoming/unknown et les coordonnées : elle exclut implicitement le statut
+quarantined. Il lui manque le filtre publication_quarantine non vide.
+La policy premium possède ce filtre et le filtre de statut, avec son
+bypass administrateur ; aucune identité premium réelle n'est simulée.
+Les cinq autres vues auditées ne sont pas accessibles à anon. Les anciens
+zéros de fuite sur vues/RPC ne qualifiaient pas ces lectures directes.
+SHA privé du relevé de rôle réel
+`d5905e8dfed6f7a928d7fa1b94292f1ae468e467dd830d7d5a9d915d4dff340b`.
+
+La migration CLI `20261001090817_anon_public_quarantine_policy.sql`, avec
+lock_timeout 5 s, ajoute uniquement le filtre du marqueur,
+conserve les statuts/coordonnées/ACL et n'altère pas le premium ou son bypass.
+Le test 412 comporte 14 assertions sous le vrai rôle anon, dont marqueur
+non vide, statut quarantined, coordonnées absentes, payload SQL NULL,
+marqueur JSON null, colonnes autorisées et preview. Relecture indépendante
+sans défaut bloquant et vérification locale des 206 versions uniques passées.
+Il doit encore passer la CI PostgreSQL exacte et une maintenance, puis un
+nouveau contrôle de rôle effectif. PostgreSQL local demeure indisponible.
+La publication applicative finale reste bloquée ; les branches sont conservées.
