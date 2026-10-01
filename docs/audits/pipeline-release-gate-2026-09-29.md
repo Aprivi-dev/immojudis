@@ -1,17 +1,17 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 1er octobre, 08 h 05 UTC
+## Synthèse actuelle — 1er octobre, 08 h 45 UTC
 
 | Chantier | État vérifié |
 | --- | --- |
-| SQL et CI | Dernier commit de code `dff2b2876ee9b1822a4a83d2b8c525d5e9157978` : CI/CodeQL verts, 2 130 tests Python par version, 83 fichiers/1 570 assertions pgTAP et 204 migrations sans dérive. Reçus DELETE et correctif d'admission appliqués puis audités. Le nouveau split de file est produit par le contrôle naturel de 08 h. |
-| Santé | À 05 h 45, deux alertes ouvertes : cron.stale et enrichment.stalled. Les notifications sont livrées ; les contrôles de santé exécutés réussissent, mais le cron inbound reste absent. Santé globale non qualifiée. |
-| Worker automatique | Pointeur interne `immojudis-workers-8e3d522e`, canari qualifié : 22 claims tous expliqués. Redéploiement READY sur le même code public main `05cff558`. Cycle naturel AGRASC de 07 h 45 vérifié automatic=true sur le tag exact ; collecte scoped_complete/publication bornée complète, couverture globale false. Nouveau cycle naturel de 08 h en cours, capacité non qualifiée. Le canari 85 reste non qualifié. |
+| SQL et CI | Dernier code qualifié `dff2b2876ee9b1822a4a83d2b8c525d5e9157978` et documentation `3611b7d0b86742370921f754baab7650e8faf37d` : CI/CodeQL verts, 2 130 tests Python par version, 83 fichiers/1 570 assertions pgTAP et 204 migrations sans dérive. Reçus DELETE et correctif d'admission appliqués puis audités. Migration 205 de priorité générale finie préparée avec 17 assertions supplémentaires ; qualification CI et application encore attendues. |
+| Santé | À 08 h 10, cron.stale critique et enrichment.stalled warning restent ouverts et notifiés. Le dernier contrôle naturel de 08 h réussit ; les runs HTTP santé sur 24 h comptent 93 succès et trois échecs, mesure distincte des exécutions SQL du cron. Le cron inbound reste absent. Santé globale non qualifiée. |
+| Worker automatique | Pointeur interne `immojudis-workers-8e3d522e`, canari qualifié : 22 claims tous expliqués. Redéploiement READY sur le même code public main `05cff558`. Cycle naturel AGRASC de 07 h 45 vérifié automatic=true sur le tag exact ; collecte scoped_complete/publication bornée complète, couverture globale false. Cycle naturel de 08 h terminé : 90 claims tous expliqués, sans lease restante ni ligne manquante. Capacité durable non qualifiée. Le canari 85 reste non qualifié. |
 | Collecte Avoventes | Warm `e3deadf6` : 240 annonces et 241/241 requêtes réussies, zéro échec de transport ; collecte/publication complètes, enrichissement partiel. Les preuves manuelles ne remplacent pas les timestamps du dernier run automatique. |
-| Autres sources | Neuf sources autorisées actives : huit couvertures complètes, sept publications complètes, six pointeurs automatiques réussis à 05 h 45. AGRASC partielle/22 échecs ; Notaires automatique échoué, publication pending. Notaires manuel `85b990b9` qualifié : 834 biens, 870 requêtes réussies, collecte/publication complètes. Le run manuel ne remplace pas le pointeur automatique. |
+| Autres sources | Neuf sources actives à 08 h 10, EP désactivée. Huit timestamps historiques de couverture globale et huit de publication globale sont présents ; ils ne qualifient pas huit derniers cycles automatiques. Dernier Notaires automatique échoué, dernier AGRASC partiel avec couverture globale false. Notaires manuel `85b990b9` qualifié : 834 biens, 870 requêtes réussies, collecte/publication complètes. Le run manuel ne remplace pas le pointeur automatique. |
 | Documents | Warm/cold : reprise 75/95 → 95/95 pages et réutilisation SQL de sept PDF qualifiées. Dans le canari 85, trois erreurs OCR initiales : une récupérée naturellement ; deux restent incomplètes (page 6 et pages 14/16), avec hashes/checkpoints persistés et sans succès documentaire fictif. |
-| Capacité | Observation naturelle à 08 h 00 min 04 s : 5 988 ouverts, 3 282 de plus de 24 h, 5 916 claimable_due/64 excluded_due. Les exclusions agrégées ne sont pas toutes attribuées à EP ; le brut et son âge sont conservés. Aucune preuve de résorption nette durable. Valorisation à 05 h 45 : 2 465 ready/394 insufficient_data sur 2 860, deux dus (ancienneté 63 s). |
-| Revue IA | Import atomique v4.6 commis à 01 h 43 : 100 cas/912 projections, non réimportés. Relecture courante : 324 resolved/verified, 299 absent, 79 unknown, 198 unresolved, 12 unverified ; 225 resolved/match, zéro projection finalement publiable. Tables/RLS, vues invoker et gardes des vues/RPC publics vérifiées ; aucun champ IA ajouté aux projections catalogue. Aucun résultat d'exactitude statistique réelle. |
+| Capacité | À 08 h 10 : 5 917 ouverts, 5 877 dus sous plafond, 2 448 dus de plus de 48 h, zéro lease stale. Plus ancien candidat général : environ 42 jours, jamais tenté ; priorité absolue des ventes proches identifiée comme cause d'attente. Aucun résultat de résorption nette durable. Valorisation : 2 457 ready/403 insufficient_data, 2 860 processed, 714 actionable, zéro dû. Les volumes de file ne mesurent pas seuls les succès métier. |
+| Revue IA | Import atomique v4.6 commis à 01 h 43 : 100 cas/912 projections, non réimportés. À 08 h 10 : 324 resolved/verified, zéro projection finalement publiable ; 172 annonces canoniques en quarantaine. Corps/ACL des vues/RPC publics revérifiés statiquement ; le relevé ne fournit pas de nouveau comptage ligne par ligne des fuites. Aucun résultat d'exactitude statistique réelle. |
 | Resend/portail | Clé, domaines, webhook et canari fournisseur vérifiés. Ajout du secret portail à Vercel Production refusé par auto-review, accord précis en attente. Aucun interlocuteur réel sollicité. |
 | Inbound | Route non publiée sur l’origine canonique, cron absent. Canari canonique authentifié puis activation et récupération automatique de santé requis après déploiement. |
 | Enchères Publiques | Source désactivée, gardes qualifiées sur `3400eb58`. Accord écrit et flux promis non reçus. Aucune nouvelle collecte. |
@@ -3654,3 +3654,83 @@ maintenance du worker sont appliquées ; la publication applicative finale
 reste suspendue aux critères métier de couverture, fraîcheur, capacité,
 santé, compléments IA et inbound, ainsi qu'aux deux prérequis externes.
 Aucun contact réel n'est sollicité et aucune branche n'est supprimée.
+
+## Cycle naturel terminé et attente des tâches anciennes — 1er octobre, 08 h 45 UTC
+
+La documentation `3611b7d0b86742370921f754baab7650e8faf37d` est également
+qualifiée par [CI 36834849032](https://github.com/Aprivi-dev/immojudis/actions/runs/36834849032)
+et [CodeQL 36834849100](https://github.com/Aprivi-dev/immojudis/actions/runs/36834849100).
+Le merge testé est `fd727b24f2ab143c393cc5516cfb6fada5af30d3` ; mêmes
+83 fichiers/1 570 assertions pgTAP et 2 130 passed/18 skipped par version
+Python. Les deux uploads CodeQL sont terminés, zéro alerte ouverte sur la PR.
+SHA privés des logs CI et CodeQL :
+`b925e8a7b28cd2fffce49421df19eff08c300d6722c29cc11047b91d55a7f3c8`
+et `9c8c93d22b6bc3cb938b5110cc52844cf370ade592be7c3d766f8a35bee6dcdf`.
+
+Le [cycle naturel 36833642374](https://github.com/Aprivi-dev/immojudis/actions/runs/36833642374)
+termine à 08 h 20 min 49 s, sur le tag/head 8e. Ses 90 claims uniques
+comprennent 45 détails et 45 autres enrichissements. Le relevé SQL indépendant
+à 08 h 23 min 04,802715 s retrouve les 90 lignes : 44 completed, 11 failed,
+12 cancelled, 23 queued, zéro running, manquante ou incohérente. Les 90 RPC
+de claim et les 34 PATCH terminaux sont HTTP 200 ; les PATCH portent les
+gardes id/status running/locked_at/attempt_count, sans avertissement CAS ou
+lease. Le cycle utilise 1 140,7 s de son budget natif de 1 200 s et s'arrête
+sur max_jobs. Environ 284 dispositions/h n'est pas un débit de succès métier.
+Les échecs comprennent sept transports robots/délai et quatre PDF/OCR ;
+les annulations comprennent les contrôles d'identité/revue. Vingt-cinq
+demandes de report ne sont pas assimilées aux 23 lignes actuellement queued.
+
+Le relevé PDF de 08 h 27 min 42,830321 s distingue les 16 claims PDF,
+14 extractions récentes pdf_text_v2_page_level, huit checkpoints complets
+et six partiels. Sur 33 éléments, 26 sont extraits et sept incomplets ;
+183 pages en échec sont encore agrégées. Les 33 ont des hashes de fichier
+et de texte, six marqueurs de preuve persistés. Aucun succès PDF fictif.
+SHA privés : log
+`348324bfd07705e1671c0992b780a9b8600492cdf4600e187b80b6795b456f2c`,
+manifest des claims
+`6b22c5f06ee6436d40d0b33b99716206af485cd7c64cda705183a0acf59056f5`,
+audit SQL
+`f7c74bebdc94b2bfc0acb5c9b5f66957b724eb05ad678f74c704e0e01f6a01eb`.
+La capacité durable reste à qualifier.
+
+Le relevé READ ONLY borné à 08 h 10 min 54 s confirme les compteurs de la
+synthèse. La file due comprend queued/failed ou running stale, next_attempt_at
+échu et attempt_count sous plafond ; l'âge porte sur created_at. Les ouverts
+comprennent aussi retries futurs et leases fraîches. Les huit timestamps
+globaux de source sont historiques, sans certificat du dernier cycle.
+Les 93 succès/trois échecs de santé sur 24 h sont ceux des runs HTTP de
+public.operational_job_runs : ils ne sont pas les 96 exécutions SQL du cron
+précédemment mesurées. Sans catégorie d'erreur projetée, aucun timeout SQL
+n'est déduit des trois échecs HTTP. La vérification récente des vues/RPC
+publics est structurelle ; zéro publication finale IA est bien mesuré,
+mais aucun nouveau comptage exhaustif des fuites catalogue n'est revendiqué.
+Les tables inbound, missions, messages, preuves et réservations sont vides,
+le cron inbound absent. SHA privé du relevé :
+`72b109756842fbb468375007ea63f857fef85799aa9a6a35214231bca6f975dc`.
+
+Le job fact_extraction `9fbdd6f6-0ef6-43a7-902a-2ebce31d1081`, créé le
+19 août, reste queued avec zéro tentative sur quatre, sans lease ni erreur.
+Il est seul dans sa révision, sur une vente upcoming dans la rétention,
+avec détail source terminé. Un ancien hash sans pipeline_v2 ne prouve pas
+une tâche obsolète : le handler relit la vente courante et ses prérequis.
+Il n'est ni réinitialisé, ni réécrit, ni annulé. Dans le relevé, 560 candidats
+généraux de ventes à sept jours passent avant lui du fait de l'ordre absolu
+is_near, malgré son score âge/priorité d'environ 1 048. Le relevé d'ordre
+n'avait pas de timestamp DB projeté ; SHA privé
+`7c586633ecf09318c9cccdb12f26a0925487f1598f38c61a1fc05d635a4c90fa`.
+
+La migration CLI `20261001083619_enrichment_general_finite_urgency_bonus.sql`
+remplace seulement cette priorité absolue générale par un bonus fini de
+168 heures, sur le score existant priorité + âge en heures. À priorité
+égale, une vente proche garde sept jours d'avance ; une tâche assez ancienne
+peut donc dépasser un flux continu de tâches récentes. La simulation de ce
+relevé ne laisse aucune des 560 ventes proches devant ce candidat ancien.
+L'ordre spécialisé source_detail et son round-robin restent le contrat
+intentionnel déjà testé ; le changement préserve l'ordre détail-first de la
+famille all, les gardes rétention/quarantaine/révision/pause/lease, le verrou
+advisory, SKIP LOCKED et les ACL invoker/service-only. Le patch du corps refuse
+une définition inattendue et ne crée ni index ni tâche. Le test 411 ajoute
+17 assertions comportementales et structurelles, avec fixtures rollback.
+CI réelle, qualification du commit exact et maintenance restent requises
+avant application. Aucune résorption ni exécution de la tâche ancienne
+n'est encore attribuée à ce changement.
