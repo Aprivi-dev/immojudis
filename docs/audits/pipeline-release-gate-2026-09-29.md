@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 1er octobre, 06 h 20 UTC
+## Synthèse actuelle — 1er octobre, 07 h 40 UTC
 
 | Chantier | État vérifié |
 | --- | --- |
-| SQL et CI | `85b990b9eefadadce28c0b7e53a20091f7e0ed19` : CI/CodeQL verts, 2 127 tests Python par version, 81 fichiers/1 513 assertions pgTAP et 202 migrations sans dérive. Correction des équivalences de type appliquée. Nouveau reçu privé de suppression de job en qualification ; aucune application avant les tests PostgreSQL du nouveau commit. |
+| SQL et CI | `8e3d522e463b400e3ca1b77cbe70d65cf6ba8e90` : CI/CodeQL verts, 2 127 tests Python par version, 82 fichiers/1 544 assertions pgTAP et 203 migrations sans dérive. Reçu privé transactionnel de suppression appliqué et audité. Nouveau correctif des métriques d'admission en qualification ; aucune application avant sa CI PostgreSQL réelle. |
 | Santé | À 05 h 45, deux alertes ouvertes : cron.stale et enrichment.stalled. Les notifications sont livrées ; les contrôles de santé exécutés réussissent, mais le cron inbound reste absent. Santé globale non qualifiée. |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`, référencé par `GITHUB_SCROLL_REF`. Canari `85b990b9` : workflow réussi, 30 claims uniques ; un UUID absent sans preuve terminale. Qualification exhaustive refusée, aucune promotion. Le nouveau reçu permettra de vérifier les suppressions futures, sans requalifier ce canari. |
+| Worker automatique | Pointeur interne basculé vers le tag protégé `immojudis-workers-8e3d522e` après canari qualifié : 22 claims tous expliqués, aucun missing. Redéploiement READY sur le même code public main `05cff558`. Cycle automatique complet sur ce nouveau pointeur encore requis. Le canari 85 conserve son UUID absent non prouvé et reste non qualifié. |
 | Collecte Avoventes | Warm `e3deadf6` : 240 annonces et 241/241 requêtes réussies, zéro échec de transport ; collecte/publication complètes, enrichissement partiel. Les preuves manuelles ne remplacent pas les timestamps du dernier run automatique. |
 | Autres sources | Neuf sources autorisées actives : huit couvertures complètes, sept publications complètes, six pointeurs automatiques réussis à 05 h 45. AGRASC partielle/22 échecs ; Notaires automatique échoué, publication pending. Notaires manuel `85b990b9` qualifié : 834 biens, 870 requêtes réussies, collecte/publication complètes. Le run manuel ne remplace pas le pointeur automatique. |
 | Documents | Warm/cold : reprise 75/95 → 95/95 pages et réutilisation SQL de sept PDF qualifiées. Dans le canari 85, trois erreurs OCR initiales : une récupérée naturellement ; deux restent incomplètes (page 6 et pages 14/16), avec hashes/checkpoints persistés et sans succès documentaire fictif. |
-| Capacité | À 05 h 45 : 6 079 ouverts, 6 066 dus réessayables, 2 483 anciens sous plafond, dix épuisés, zéro running/stale ; 1 090 completed sur 24 h. Aucune preuve de résorption nette durable. Valorisation : 2 465 ready/394 insufficient_data sur 2 860, deux dus (ancienneté 63 s), 895 ready/184 insufficient_data sur 24 h. |
+| Capacité | À 05 h 45 : 6 079 ouverts, 6 066 dus réessayables, 2 483 anciens sous plafond ; 1 090 completed sur 24 h. À 06 h 55, 2 568 détails dus dont 21 exclus car EP désactivée ; ils restent dans le backlog brut. Correctif proposé pour distinguer claimable_due/excluded_due et éviter les workers vides. Aucune preuve de résorption nette durable. Valorisation : 2 465 ready/394 insufficient_data sur 2 860, deux dus (ancienneté 63 s). |
 | Revue IA | Import atomique v4.6 commis à 01 h 43 : 100 cas/912 projections, non réimportés. Relecture courante : 324 resolved/verified, 299 absent, 79 unknown, 198 unresolved, 12 unverified ; 225 resolved/match, zéro projection finalement publiable. Tables/RLS, vues invoker et gardes des vues/RPC publics vérifiées ; aucun champ IA ajouté aux projections catalogue. Aucun résultat d'exactitude statistique réelle. |
 | Resend/portail | Clé, domaines, webhook et canari fournisseur vérifiés. Ajout du secret portail à Vercel Production refusé par auto-review, accord précis en attente. Aucun interlocuteur réel sollicité. |
 | Inbound | Route non publiée sur l’origine canonique, cron absent. Canari canonique authentifié puis activation et récupération automatique de santé requis après déploiement. |
 | Enchères Publiques | Source désactivée, gardes qualifiées sur `3400eb58`. Accord écrit et flux promis non reçus. Aucune nouvelle collecte. |
-| Publication finale | PR en brouillon. Canonique inbound 404 ; secret portail et flux EP manquants, santé/capacité/couverture non qualifiées. Import IA effectué, aucune publication finale, promotion du worker automatique ni suppression de branche. |
+| Publication finale | PR en brouillon. Canonique inbound 404 ; secret portail et flux EP manquants, santé/capacité/couverture non qualifiées. Import IA et maintenance du worker interne effectués, aucune publication applicative finale ni suppression de branche. |
 
 ### Qualification des textes stockés — 30 septembre, 12 h 01 UTC
 
@@ -3460,3 +3460,128 @@ précis pour le secret portail Production, l'autorisation écrite et le flux EP,
 le canari inbound canonique et la récupération automatique de santé restent
 requis pour la publication finale. La PR reste en brouillon ; aucune publication
 applicative finale, suppression de branche ou sollicitation réelle n'a eu lieu.
+
+## Qualification des reçus et promotion du worker interne — 1er octobre, 07 h 40 UTC
+
+Le commit exact `8e3d522e463b400e3ca1b77cbe70d65cf6ba8e90` passe la
+[CI 36824264954](https://github.com/Aprivi-dev/immojudis/actions/runs/36824264954)
+et [CodeQL 36824264916](https://github.com/Aprivi-dev/immojudis/actions/runs/36824264916).
+Le merge testé `e10dffb24d794f37e24ee0d8460f680a05252feb` a pour parents
+main `05cff558` et ce commit 8e. PostgreSQL 17.11 est réellement healthy,
+203 migrations sont rejouées sans dérive ; 82 fichiers pgTAP/1 544 assertions
+PASS, dont les 31 assertions du reçu DELETE. Python 3.11/3.12 : chacun
+2 127 passed/18 skipped ; inbound : deux tests ; Web : 1 336 passed/5 skipped ;
+Playwright : 87 passed/8 skipped. Les uploads CodeQL sont terminés, zéro
+alerte ouverte sur ce commit. Logs privés : SHA CI
+`5e1ae082253045873bde3d9894ecef41e1bd646fa6d0a1d2d2c39a8427317c4d`
+et CodeQL `fcb778f6e5145825e62311ad1e40928891c89f4087cf9727637607952978d24a`.
+
+Les tags `immojudis-maintenance-8e3d522e` et `immojudis-workers-8e3d522e`
+sont protégés avant création par le ruleset actif `24292294`, sans bypass,
+update ni deletion. La
+[maintenance 36825075782](https://github.com/Aprivi-dev/immojudis/actions/runs/36825075782)
+applique uniquement `20261001060625` et réussit à 06 h 33 min 03 s.
+La relecture SQL indépendante à 06 h 36 min 18 s vérifie : 203 migrations,
+dernière version unique, table privée vide sans backfill, RLS, aucune FK,
+aucune colonne URL/hash/payload/erreur/contact/document, service SELECT seul,
+triggers AFTER DELETE et BEFORE TRUNCATE actifs, fonctions privées definer
+avec search_path vide, hook de purge unique dans le cron existant.
+Advisors : aucun finding nouveau sur ces objets ; l'index vide inutilisé est
+un INFO attendu. Log privé SHA
+`3d04872b03af468d3758334f9b1319e5e0824148dbd958d0434c504d39e92862`.
+
+### Canari 8e : dispositions exhaustives qualifiées
+
+Le [canari 36827356794](https://github.com/Aprivi-dev/immojudis/actions/runs/36827356794)
+est dispatché une seule fois à 06 h 55 min 04 s sur le tag protégé exact,
+après fin naturelle du writer précédent. Preflight à 06 h 54 min 50 s :
+zéro run SQL actif, zéro job running/stale, EP désactivée. Inputs ordinaires
+enrichment_only=true, automatic=false, source=all, limit/run_id vides ;
+limites natives 90 jobs/1 200 s et concurrence inchangées. Il réussit à
+07 h 15 min 08 s, après 1 140,9 secondes et arrêt finalization_margin.
+22 claims uniques : 11 détails/11 autres. Le taux 69,4/h porte sur les
+dispositions, pas sur les seuls enrichissements réussis.
+
+Le relevé final à 07 h 14 min 50 s donne neuf completed/six failed/
+deux cancelled/cinq queued, zéro running/missing. Tous les UUIDs sont
+recoupés en SQL avec leurs états ; aucun reçu DELETE n'est nécessaire pour
+ce run. Neuf confirmations CAS terminales restent clôturées par état,
+tentative et lease et répondent HTTP 200 avec select=id. Aucun warning
+de confirmation perdue, DataInspectionFailed ou watchdog.
+Log privé SHA `51870ecfdab3cd8323e7877e771408811f24a49d6bee681b3b9a5df22afa9ceb` ;
+manifeste privé des claims SHA
+`a9ea9dd5fe70cc75a99c7393933146dccbf51072b38bcac3eda397261a029283`.
+
+La classification indépendante à 07 h 31 min 58 s, confirmée à
+07 h 32 min 16 s, distingue cinq PDF incomplets après OCR, conservant leurs
+checkpoints, et un timeout transport lors de la vérification robots d'un
+détail. Aucun SQLSTATE ni erreur PostgreSQL lock/deadlock/constraint n'est
+démontré. Les deux annulations sont review_required : corps HTML au-delà
+du plafond de 4 000 000 octets et mismatch d'identité du détail fournisseur.
+Ces refus restent terminaux sans succès métier fictif. Une nouvelle lease
+observée après la fin du canari appartient à un writer ultérieur.
+Le canari 8e qualifie la maintenance interne ; il ne prouve ni tous les PDF
+complets, ni la capacité durable, ni la publication finale. Le canari 85
+reste non qualifié : aucun reçu historique de sa disparition n'est inventé.
+
+### Promotion interne autorisée, code public main conservé
+
+Seul `GITHUB_SCROLL_REF` Production du projet `immojudis-dezt` est mis à jour
+vers `immojudis-workers-8e3d522e` après ces preuves.
+`OPERATIONS_ALERT_GITHUB_REF` reste sur main. Le déploiement existant est
+redéployé, sans upload du checkout local ; le nouveau
+`dpl_4zv5N9oRW8cSrb8PeosowTvDeBTd` est READY, toujours main
+`05cff558ada55ef4e0e99ab2e733f3a12adda49e`. L'origine canonique répond 200.
+Le prochain cycle automatique doit confirmer ce SHA effectivement exécuté
+et permettre la mesure de capacité. Aucune application publique de la PR,
+activation inbound, suppression de branche ni email à un interlocuteur réel.
+
+### Admission réelle des files : correctif suivant à qualifier
+
+La lecture seule de 06 h 55 min 24 s trouve 2 568 détails dus sous plafond :
+2 547 admissibles et 21 exclus car EP désactivée. Sur les détails dus,
+1 857 dépassent 48 heures et 1 045 sept jours, ancienneté maximale 14,66 jours.
+Les 1 857 ont tentative zéro, sans update récente ni completed_at ; leur
+created_at mesure bien une attente d'admission. L'ancienneté n'est pas
+remplacée par updated_at et les 21 lignes en pause restent conservées.
+
+Le scheduler et l'observer comptaient aussi les lignes exclues comme dues,
+avec un risque de worker vide si elles restaient seules. La migration CLI
+`20261001070853_scheduler_claimable_queue_metrics.sql` reprend le prédicat
+du claim all-family, y compris la révision gagnante selon identité,
+created_at, préférence pipeline_v2 puis UUID. Rétention, état de fiche,
+sources désactivées/suspendues, contrôle global et leases de 30 minutes
+restent autoritaires. Les gardes advisory/run actif et l'ordre d'enqueue,
+les signatures et ACL sont conservés ; le claim mutateur n'est pas appelé
+par l'observer. La registry d'exclusions URL, absente du claim actuel,
+n'est pas prétendue couverte par cette nouvelle métrique.
+
+Le backlog brut et older_than_24h restent inchangés. claimable_due/excluded_due
+répartissent uniquement les lignes queued/failed ou running stale, dues et
+sous plafond ; ils ne doivent pas être additionnés comme le total brut qui
+comprend aussi les leases fraîches et retries futurs. Les anciennes révisions
+restent dans le brut et deviennent excluded_due. La santé Python expose
+seulement les deux compteurs avec observed_at/age_seconds, sans URL privée ;
+une observation ancienne ou incomplète n'est jamais inventée comme zéro.
+Six tests Python ciblés et Ruff passent. Le test pgTAP 410 comporte
+26 assertions, dont les sources exclues, leases, révisions complétées et
+égalités NULL/pipeline_v2/UUID. Relecture indépendante sans défaut bloquant.
+Cette migration attend la CI PostgreSQL réelle du nouveau commit ; elle
+n'est pas appliquée par la maintenance 203 déjà qualifiée.
+
+La mesure EXPLAIN ANALYZE en production, transaction READ ONLY bornée à
+5 s/lock 1 s puis rollback, du SELECT candidat seul prend 4,159 ms de
+planification et 214,655 ms d'exécution sur un instantané chaud. 80 518 lignes
+sont lues, 14 211 révisions non annulées classées ; le tri global déborde
+sur disque (environ 3,7 MiB, 946/947 blocs temporaires lus/écrits).
+Le snapshot donne 5 930 ouverts, 5 907 candidats dus, 5 886 admissibles,
+21 exclus et zéro lease stale/fraîche. Ces compteurs ne sont pas attribués
+au nouveau worker, dont le cycle automatique reste attendu. Le timestamp
+DB n'a pas été projeté et aucun plan privé haché n'est revendiqué.
+Le SELECT n'atteint pas le timeout ; la mesure ne qualifie pas la latence de
+la fonction scheduler/observer complète sous concurrence. Le tri entier
+reste un coût à surveiller avec l'augmentation de la file.
+
+Les autres critères ouverts de la synthèse restent à satisfaire avant la
+publication finale, notamment capacité/fraîcheur/couverture/santé, accord
+précis du secret portail Production et accord écrit avec accès réel au flux EP.

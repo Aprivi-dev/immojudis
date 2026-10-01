@@ -57,6 +57,22 @@ def main(*, report_only: bool = False) -> int:
             ],
             "queue_activity_24h": summarize_queue_activity(queue_rows),
         }
+        claimability = connection.execute("""
+            select observed_at, metrics,
+                   greatest(extract(epoch from (statement_timestamp() - observed_at)), 0)::bigint
+            from public.auction_pipeline_observations
+            where source_name = 'enrichment-queue'
+            order by observed_at desc limit 1
+        """).fetchone()
+        if claimability:
+            observed_at, metrics, age_seconds = claimability
+            counts = compact_queue_claimability(metrics)
+            if counts is not None:
+                report["queue_claimability"] = {
+                    "observed_at": observed_at,
+                    "age_seconds": age_seconds,
+                    **counts,
+                }
         latest = connection.execute("""
             select status, summary->'scrape_coverage', summary->'stage_status'
             from public.auction_runs where source <> 'llm-description-backfill'
@@ -92,6 +108,20 @@ def main(*, report_only: bool = False) -> int:
     if failed and report_only:
         print("::warning::Global pipeline health is degraded; see the backlog report and operational incidents. Collection status is reported separately.")
     return int(failed and not report_only)
+
+
+def compact_queue_claimability(metrics: object) -> dict[str, int] | None:
+    """Expose the latest observer snapshot separately from the raw backlog.
+
+    Older SQL observers do not emit this split. Missing or malformed evidence
+    must remain absent rather than being reported as zero admissible work.
+    """
+    if not isinstance(metrics, dict):
+        return None
+    fields = ("claimable_due", "excluded_due")
+    if any(type(metrics.get(field)) is not int or metrics[field] < 0 for field in fields):
+        return None
+    return {field: metrics[field] for field in fields}
 
 
 def compact_coverage(coverage: object) -> dict:
