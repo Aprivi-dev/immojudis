@@ -1,6 +1,37 @@
 import json
 
-from src.pipeline_health import summarize_queue_activity
+from src.pipeline_health import compact_queue_claimability, summarize_queue_activity
+
+
+def test_claimability_snapshot_whitelists_counts_without_replacing_raw_backlog() -> None:
+    metrics = {
+        "backlog": 40,
+        "older_than_24h": 32,
+        "claimable_due": 14,
+        "excluded_due": 21,
+        "source_url": "https://private.example/receipt",
+        "contact": "private@example.test",
+    }
+
+    assert compact_queue_claimability(metrics) == {"claimable_due": 14, "excluded_due": 21}
+    assert metrics["backlog"] == 40
+    assert metrics["older_than_24h"] == 32
+
+
+def test_claimability_legacy_or_partial_observation_is_not_invented_as_zero() -> None:
+    assert compact_queue_claimability(None) is None
+    assert compact_queue_claimability({"backlog": 40, "older_than_24h": 32}) is None
+    assert compact_queue_claimability({"claimable_due": 0}) is None
+    assert compact_queue_claimability({"claimable_due": 0, "excluded_due": 0}) == {
+        "claimable_due": 0,
+        "excluded_due": 0,
+    }
+
+
+def test_claimability_snapshot_rejects_invalid_count_evidence() -> None:
+    for value in (-1, True, "21", None):
+        assert compact_queue_claimability({"claimable_due": value, "excluded_due": 0}) is None
+        assert compact_queue_claimability({"claimable_due": 0, "excluded_due": value}) is None
 
 
 def test_queue_activity_aggregates_families_without_listing_identifiers() -> None:
