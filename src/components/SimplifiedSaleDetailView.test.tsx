@@ -8,10 +8,13 @@ import { axe } from "vitest-axe";
 import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
 import type { MarketEstimate } from "@/lib/market.functions";
+import { AI_REVIEW_FIELD_KEYS, type AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDetailView";
 
 const mocks = vi.hoisted(() => ({
   fetchMarket: vi.fn(),
+  fetchAiReviewProjections: vi.fn(),
+  fetchFactReliabilities: vi.fn(),
   fetchUrbanism: vi.fn(),
   forecast: vi.fn(),
   authUser: null as { id: string } | null,
@@ -22,6 +25,8 @@ vi.mock("@/hooks/use-auth", () => ({
 }));
 vi.mock("@/lib/client-api", () => ({
   fetchPrecomputedMarketEstimate: mocks.fetchMarket,
+  fetchSaleAiReviewProjections: mocks.fetchAiReviewProjections,
+  fetchSaleFactReliabilities: mocks.fetchFactReliabilities,
   fetchSaleUrbanismeCadastre: mocks.fetchUrbanism,
 }));
 vi.mock("@/lib/router-compat", () => ({
@@ -109,7 +114,9 @@ function renderDetail(
   publicDemo = true,
   adjudicationStatisticsEnabled = false,
   marketEstimate: MarketEstimate = EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
+  aiReviewProjections: { projections: AiReviewProjectionReadModel[] } = { projections: [] },
 ) {
+  mocks.fetchAiReviewProjections.mockResolvedValue(aiReviewProjections);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -388,6 +395,100 @@ describe("integrated listing", () => {
     mocks.fetchUrbanism.mockClear();
     renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, true);
     expect(mocks.fetchUrbanism).not.toHaveBeenCalled();
+  });
+
+  it("loads the authorized AI review projection and masks blocked listing fields", async () => {
+    mocks.authUser = { id: "user-1" };
+    mocks.fetchFactReliabilities.mockResolvedValue({ facts: {}, source: "legacy" });
+
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false, false, undefined, {
+      projections: [
+        {
+          auction_sale_id: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
+          field_key: "property.property_type",
+          review_state: "unverified",
+          citation_status: "unverified",
+          is_publishable: false,
+          source_name: "AGRASC",
+          source_url: "https://example.test/source/1",
+        },
+      ],
+    });
+
+    expect(await screen.findAllByText("Type de bien à confirmer")).not.toHaveLength(0);
+    expect(mocks.fetchAiReviewProjections).toHaveBeenCalledWith(
+      EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
+    );
+  });
+
+  it("does not reuse a blocked city in the property title or photo alt text", () => {
+    const projections: AiReviewProjectionReadModel[] = AI_REVIEW_FIELD_KEYS.map((fieldKey) => ({
+      auction_sale_id: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
+      field_key: fieldKey,
+      review_state: fieldKey === "property.city" ? "unresolved" : "resolved",
+      citation_status: fieldKey === "property.city" ? "not_required" : "verified",
+      is_publishable: fieldKey !== "property.city",
+      source_name: "AGRASC",
+      source_url: "https://example.test/source/1",
+    }));
+
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AnalysisSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
+          marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+          publicDemo={false}
+          aiReviewProjections={projections}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
+      "Localisation à confirmer",
+    );
+    expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("Bordeaux");
+    expect(
+      [...container.querySelectorAll<HTMLImageElement>("img")].every(
+        (image) => !image.alt.includes("Bordeaux"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not reinsert source-block visit dates when the sale date review is blocked", () => {
+    const sale = {
+      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      visit_dates: null,
+      source_description: "Visite le 2 octobre 2026 à 14 heures.",
+      description: "Visite le 2 octobre 2026 à 14 heures.",
+      source_blocks: {
+        ...(EXAMPLE_SALE_RECORDS.bordeaux.sale.source_blocks ?? {}),
+        visites: "2026-10-02 à 14:00",
+      },
+    } as AuctionSale;
+    const projections: AiReviewProjectionReadModel[] = AI_REVIEW_FIELD_KEYS.map((fieldKey) => ({
+      auction_sale_id: sale.id,
+      field_key: fieldKey,
+      review_state: fieldKey === "sale.sale_date" ? "unresolved" : "resolved",
+      citation_status: fieldKey === "sale.sale_date" ? "not_required" : "verified",
+      is_publishable: fieldKey !== "sale.sale_date",
+      source_name: "AGRASC",
+      source_url: "https://example.test/source/1",
+    }));
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AnalysisSaleDetailView
+          sale={sale}
+          marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+          publicDemo={false}
+          aiReviewProjections={projections}
+        />
+      </QueryClientProvider>,
+    );
+    selectTab("Démarches");
+
+    expect(screen.queryByText(/2 octobre 2026/)).toBeNull();
+    expect(screen.getByText("Dates à confirmer auprès de l’organisateur")).toBeTruthy();
   });
 
   it("keeps address-history caveats inside the Estimation detail", () => {

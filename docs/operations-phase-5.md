@@ -20,8 +20,9 @@ Les succès comme les erreurs sont journalisés une seule fois avec leur durée 
 
 ## Santé opérationnelle
 
-Supabase Cron appelle `/api/cron/operational-health` toutes les 15 minutes et Vercel conserve un
-passage quotidien de secours compatible Hobby. L'accès exige `CRON_SECRET`.
+Supabase Cron appelle `/api/cron/operational-health` toutes les 15 minutes. Le traitement des
+réponses de l'agent utilise un autre job Supabase toutes les deux minutes. Les deux routes exigent
+`CRON_SECRET`.
 La fonction `public.evaluate_operational_health` est exécutable uniquement par `service_role` et
 maintient des alertes dédupliquées dans `public.operational_alerts`.
 

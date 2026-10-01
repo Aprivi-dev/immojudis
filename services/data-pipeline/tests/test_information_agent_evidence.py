@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 
 import fitz
 import httpx
@@ -25,6 +29,16 @@ def _pdf_bytes(text: str) -> bytes:
     return content
 
 
+def _png_header(width: int, height: int) -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00\x00\x00\rIHDR"
+        + width.to_bytes(4, "big")
+        + height.to_bytes(4, "big")
+        + b"\x08\x02\x00\x00\x00"
+    )
+
+
 def test_detects_real_file_signature_instead_of_trusting_extension() -> None:
     assert detect_mime_type(b"%PDF-1.7\n") == "application/pdf"
     assert detect_mime_type(b"\x89PNG\r\n\x1a\nrest") == "image/png"
@@ -40,6 +54,126 @@ def test_rejects_declared_mime_mismatch() -> None:
     )
     assert analysis.status == "unsupported"
     assert analysis.error_code == "MIME_MISMATCH"
+
+
+def test_rejects_image_dimensions_before_decoder_allocation() -> None:
+    analysis = analyze_evidence_bytes(
+        _png_header(100_000, 100_000),
+        filename="photo.png",
+        declared_mime_type="image/png",
+        ocr_enabled=False,
+    )
+
+    assert analysis.status == "unsupported"
+    assert analysis.error_code == "IMAGE_DIMENSIONS_EXCEEDED"
+
+
+def test_rejects_image_when_dimensions_cannot_be_verified() -> None:
+    analysis = analyze_evidence_bytes(
+        b"\xff\xd8\xff\xe0\x00\x02",
+        filename="photo.jpg",
+        declared_mime_type="image/jpeg",
+        ocr_enabled=False,
+    )
+
+    assert analysis.status == "unsupported"
+    assert analysis.error_code == "IMAGE_DIMENSIONS_UNREADABLE"
+
+
+def test_rejects_compressed_image_that_would_exceed_decoded_memory_limit() -> None:
+    analysis = analyze_evidence_bytes(
+        _png_header(5_000, 4_000),
+        filename="photo.png",
+        declared_mime_type="image/png",
+        ocr_enabled=False,
+    )
+
+    assert analysis.status == "unsupported"
+    assert analysis.error_code == "IMAGE_DECOMPRESSION_LIMIT"
+
+
+def test_skips_ocr_for_an_oversized_pdf_page_without_decoding_it(monkeypatch) -> None:
+    document = fitz.open()
+    document.new_page(width=6_000, height=6_000)
+    content = document.tobytes()
+    document.close()
+    monkeypatch.setattr(
+        evidence,
+        "_ocr_pdf_page",
+        lambda *args, **kwargs: pytest.fail("oversized page must not reach OCR"),
+    )
+
+    analysis = analyze_evidence_bytes(
+        content,
+        filename="plan-grand-format.pdf",
+        declared_mime_type="application/pdf",
+        ocr_enabled=True,
+    )
+
+    assert analysis.status == "completed"
+    assert analysis.pages[0]["method"] == "ocr_skipped_dimensions"
+
+
+def test_pdf_ocr_timeout_kills_the_isolated_process(monkeypatch, tmp_path) -> None:
+    class HangingProcess:
+        pid = 1234
+        returncode = None
+
+        def __init__(self) -> None:
+            self.killed = False
+
+        def poll(self):
+            return None if not self.killed else -9
+
+        def communicate(self, timeout=None):
+            if not self.killed:
+                raise subprocess.TimeoutExpired("ocr", timeout)
+            return "", ""
+
+        def kill(self):
+            self.killed = True
+
+    process = HangingProcess()
+    killed_groups: list[tuple[int, int]] = []
+    monkeypatch.setattr(evidence.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(evidence.os, "killpg", lambda pid, signum: killed_groups.append((pid, signum)))
+
+    text, method, confidence = evidence._ocr_pdf_page(
+        SimpleNamespace(number=0),
+        "Fallback text",
+        source_path=tmp_path / "evidence.pdf",
+        timeout_seconds=0.01,
+    )
+
+    assert (text, method, confidence) == ("Fallback text", "ocr_timeout", 0.45)
+    assert killed_groups == [(1234, evidence.signal.SIGKILL)]
+
+
+def test_pdf_ocr_child_can_import_the_module_from_the_service_root(tmp_path) -> None:
+    source_path = tmp_path / "evidence.pdf"
+    source_path.write_bytes(_pdf_bytes("Texte de contrôle"))
+    service_root = Path(evidence.__file__).resolve().parents[1]
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "src.information_agent_evidence",
+            "--ocr-pdf-page",
+            str(source_path),
+            "0",
+        ],
+        cwd=service_root,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, dict)
+    assert "text" in payload or "error" in payload
 
 
 def test_password_protected_pdf_remains_unpublished() -> None:
@@ -79,7 +213,7 @@ def test_scanned_pdf_requires_ocr_to_extract_facts(monkeypatch) -> None:
     monkeypatch.setattr(
         evidence,
         "_ocr_pdf_page",
-        lambda page, fallback: ("Surface habitable : 82 m2", "ocr_fixture", 0.74),
+        lambda page, fallback, **kwargs: ("Surface habitable : 82 m2", "ocr_fixture", 0.74),
     )
     with_ocr = analyze_evidence_bytes(
         content,

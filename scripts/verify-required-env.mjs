@@ -39,6 +39,30 @@ if (configuredSiteUrl && !isValidHttpOrigin(configuredSiteUrl)) {
   process.exit(1);
 }
 
+if (
+  process.env.INFORMATION_AGENT_OUTBOUND_ENABLED === "true" &&
+  Buffer.byteLength(process.env.INFORMATION_AGENT_PORTAL_SECRET?.trim() || "", "utf8") < 32
+) {
+  console.error(
+    "[env] INFORMATION_AGENT_PORTAL_SECRET must contain at least 32 bytes when outbound information requests are enabled.",
+  );
+  process.exit(1);
+}
+
+const productionBuild = [process.env.VERCEL_ENV, process.env.VERCEL_TARGET_ENV].includes(
+  "production",
+);
+if (
+  productionBuild &&
+  process.env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim() &&
+  !/^whsec_[A-Za-z0-9+/=_-]{16,}$/.test(process.env.RESEND_WEBHOOK_SECRET?.trim() || "")
+) {
+  console.error(
+    "[env] RESEND_WEBHOOK_SECRET must be configured for the production information-agent inbound webhook.",
+  );
+  process.exit(1);
+}
+
 function unquote(value) {
   return value.replace(/^(['"])(.*)\1$/, "$2");
 }

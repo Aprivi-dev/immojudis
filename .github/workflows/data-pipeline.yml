@@ -100,6 +100,11 @@ jobs:
       REPLICATE_MAX_CALLS_PER_HOUR: 60
       REPLICATE_RETRY_BACKOFF_SECONDS: 30
       REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
+      # Claim two source-detail jobs per RPC, then process them sequentially.
+      # Raise to 3 only after three comparable runs show
+      # source_detail_max_batch_seconds < 900, zero expired claims, and no
+      # provider Retry-After deferrals. The queue lease is 1,800 seconds.
+      PIPELINE_ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE: 2
       REPLICATE_TEMPERATURE: 0.1
       REPLICATE_MAX_TOKENS: 512
       # Structured evidence needs room for valid JSON; summaries remain short.
@@ -122,11 +127,16 @@ jobs:
       PDF_OCR_ENABLED: true
       PDF_MAX_DOCUMENTS_PER_SALE: 6
       PDF_MAX_DOWNLOAD_MB: 50
-      PDF_MAX_TOTAL_PAGES: 300
+      # Vench publishes a 416-page, 9.6 MB descriptive report. OCR remains
+      # limited per pass and document downloads stay capped at 50 MB.
+      PDF_MAX_TOTAL_PAGES: 500
       ENABLE_LICITOR_BENCHMARK: true
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
-      ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: true
+      # A repository variable is required for each half of the future source
+      # activation. Undefined variables resolve to the disabled default.
+      ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: ${{ vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED || 'false' }}
+      ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED: ${{ vars.ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED || 'false' }}
       ENABLE_PETITES_AFFICHES_BENCHMARK: true
       ENABLE_CESSIONS_ETAT_BENCHMARK: true
       ENABLE_AGRASC_BENCHMARK: true
@@ -141,6 +151,18 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enforce Encheres Publiques access gate
+        if: inputs.source == 'encheres_publiques' || (inputs.source == 'all' && vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED == 'true')
+        env:
+          EP_BENCHMARK_ENABLED: ${{ vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED || 'false' }}
+          EP_ACCESS_AUTHORIZED: ${{ vars.ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ "$EP_BENCHMARK_ENABLED" != "true" ] || [ "$EP_ACCESS_AUTHORIZED" != "true" ]; then
+            echo "Encheres Publiques is disabled: benchmark and access authorization must both be explicitly configured" >&2
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

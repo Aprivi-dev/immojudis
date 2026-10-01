@@ -8,10 +8,12 @@ It must not invoke PDF extraction, geocoding, or an LLM.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
+import httpx
 from psycopg.types.json import Jsonb
 
 from src.config import load_settings
@@ -19,6 +21,12 @@ from src.source_detail import (
     fetch_public_detail,
     prepare_source_revision,
     publish_source_revision,
+)
+from src.source_detail_reuse import complete_already_verified_detail_job
+from src.source_task_deadline import (
+    SourceTaskDeadlineExceeded,
+    ensure_source_task_deadline,
+    source_task_deadline_scope,
 )
 from src.sources.common import is_allowed_origin_url
 from src.storage import supabase_client as storage
@@ -34,6 +42,26 @@ LOGGER = logging.getLogger(__name__)
 # client itself owns the bounded retry loop; the worker only classifies the
 # final exception and carries its retry deadline to the queue finish operation.
 _ACCESS_STATUS_CODES = {401, 403}
+_TRANSIENT_STATUS_CODES = {408, 425, 429, *range(500, 600)}
+_TRANSIENT_MARKERS = (
+    "timed out",
+    "timeout",
+    "connection reset",
+    "connection refused",
+    "network error",
+    "remote protocol",
+    "relay unavailable",
+    "temporarily unavailable",
+    "deferred until retry deadline",
+)
+_REVIEW_MARKERS = (
+    "authentication rejected",
+    "catalogue/search page",
+    "identity unverified",
+    "unsupported operator",
+    "not found",
+)
+_MAX_TRANSIENT_RETRY_DELAY = timedelta(hours=6)
 
 
 def run_source_detail_jobs(
@@ -41,6 +69,8 @@ def run_source_detail_jobs(
     *,
     settings: dict[str, Any] | None = None,
     clients: dict[str, Any] | None = None,
+    deadline: float | None = None,
+    on_deferred: Callable[[list[str]], None] | None = None,
 ) -> int:
     """Run claimed source-detail jobs in claim order.
 
@@ -48,23 +78,106 @@ def run_source_detail_jobs(
     keys that map by provider origin, so this also gives aliases of the same
     provider one polite request cadence.  Jobs are intentionally processed one
     at a time: each following job re-reads its sale after the preceding detail
-    has been published.
+    has been published.  ``deadline`` is an absolute monotonic cutoff for
+    direct callers; the queue worker normally provides the same cutoff through
+    the inherited task-local scope.  ``on_deferred`` receives each unique
+    claimed job ID released because of that cutoff.
     """
     batch = [job for job in jobs if str(job.get("job_type") or "") == "source_detail"]
     if not batch:
         return 0
     active_settings = settings if settings is not None else load_settings()
     provider_clients = clients if clients is not None else {}
-    for job in batch:
-        try:
-            process_source_detail_job(job, settings=active_settings, clients=provider_clients)
-        except Exception:
-            # A malformed queue row or an unexpected adapter failure must not
-            # prevent the remaining providers in the claimed bounded batch
-            # from being attempted.  The job itself is finished by the
-            # per-job error path whenever possible.
-            LOGGER.exception("Source-detail worker failed for job %s", job.get("id"))
+    reported_deferred_ids: set[str] = set()
+
+    def report_deferred(job_ids: Iterable[str]) -> None:
+        if on_deferred is None:
+            return
+        fresh_ids = [
+            job_id
+            for job_id in (str(value).strip() for value in job_ids)
+            if job_id and job_id not in reported_deferred_ids
+        ]
+        if not fresh_ids:
+            return
+        reported_deferred_ids.update(fresh_ids)
+        on_deferred(fresh_ids)
+
+    deadline_scope = source_task_deadline_scope(deadline) if deadline is not None else nullcontext()
+    with deadline_scope:
+        for index, job in enumerate(batch):
+            try:
+                ensure_source_task_deadline("starting source-detail job")
+                process_source_detail_job(
+                    job,
+                    settings=active_settings,
+                    clients=provider_clients,
+                    on_deferred=report_deferred,
+                )
+            except SourceTaskDeadlineExceeded as exc:
+                released_ids = _release_deadline_claims(
+                    batch[index:],
+                    settings=active_settings,
+                    operation=exc.operation,
+                )
+                report_deferred(released_ids)
+                LOGGER.info(
+                    "Source-detail worker deadline reached; released %s claimed job(s)",
+                    len(batch) - index,
+                )
+                break
+            except Exception:
+                # A malformed queue row or an unexpected adapter failure must not
+                # prevent the remaining providers in the claimed bounded batch
+                # from being attempted.  The job itself is finished by the
+                # per-job error path whenever possible.
+                LOGGER.exception("Source-detail worker failed for job %s", job.get("id"))
     return len(batch)
+
+
+def _release_deadline_claims(
+    jobs: Iterable[dict[str, Any]],
+    *,
+    settings: dict[str, Any],
+    operation: str,
+) -> list[str]:
+    """Return unstarted deadline claims without consuming an attempt.
+
+    The guarded release is intentionally safe to repeat: a claim that was
+    already released, completed, or reclaimed by another worker is a no-op.
+    """
+
+    reason = f"Source-detail task deadline reached during {operation}"
+    released_ids: list[str] = []
+    for job in jobs:
+        release_source_detail_job_without_attempt(
+            job,
+            reason=reason,
+            settings=settings,
+        )
+        job_id = str(job.get("id") or "").strip()
+        if job_id:
+            released_ids.append(job_id)
+    return released_ids
+
+
+def _release_deadline_claim(
+    job: dict[str, Any],
+    *,
+    settings: dict[str, Any],
+    exc: SourceTaskDeadlineExceeded,
+    on_deferred: Callable[[list[str]], None] | None = None,
+) -> None:
+    """Release one claim after a cooperative source-task cutoff."""
+
+    release_source_detail_job_without_attempt(
+        job,
+        reason=f"Source-detail task deadline reached during {exc.operation}",
+        settings=settings,
+    )
+    job_id = str(job.get("id") or "").strip()
+    if job_id and on_deferred is not None:
+        on_deferred([job_id])
 
 
 def process_source_detail_job(
@@ -72,6 +185,7 @@ def process_source_detail_job(
     *,
     settings: dict[str, Any] | None = None,
     clients: dict[str, Any] | None = None,
+    on_deferred: Callable[[list[str]], None] | None = None,
 ) -> bool:
     """Process one claimed detail job and return whether it was published.
 
@@ -81,6 +195,11 @@ def process_source_detail_job(
     """
     active_settings = settings if settings is not None else load_settings()
     provider_clients = clients if clients is not None else {}
+    try:
+        ensure_source_task_deadline("starting source-detail job")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
+        return False
     source_name = str(job.get("detail_source_name") or "").strip()
     canonical_url = str(job.get("source_url") or "").strip()
     detail_url = str(job.get("detail_source_url") or "").strip()
@@ -91,7 +210,13 @@ def process_source_detail_job(
     # The SQL claim checks these switches, but they can change while a worker
     # is fetching another row.  Check immediately before any client creation
     # or HTTP request so a pause never starts a new network call.
-    if not source_detail_source_enabled(source_name, active_settings):
+    try:
+        source_enabled = source_detail_source_enabled(source_name, active_settings)
+        ensure_source_task_deadline("finishing source-detail source gate")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
+        return False
+    if not source_enabled:
         release_source_detail_job_without_attempt(
             job, reason="Source-detail source is paused before fetch", settings=active_settings
         )
@@ -100,7 +225,13 @@ def process_source_detail_job(
     # A shared provider client can already carry a future Retry-After from a
     # previous job. Releasing this claim before the adapter is called prevents
     # a second task from consuming an attempt without issuing HTTP.
-    retry_not_before = _client_retry_not_before(source_name, detail_url, provider_clients)
+    try:
+        ensure_source_task_deadline("checking source-detail provider retry deadline")
+        retry_not_before = _client_retry_not_before(source_name, detail_url, provider_clients)
+        ensure_source_task_deadline("finishing source-detail provider retry check")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
+        return False
     if retry_not_before is not None and retry_not_before > datetime.now(UTC):
         release_source_detail_job_without_attempt(
             job,
@@ -112,6 +243,10 @@ def process_source_detail_job(
 
     try:
         existing = fetch_sale_for_data_refresh(canonical_url)
+        ensure_source_task_deadline("finishing source-detail sale lookup")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
+        return False
     except Exception as exc:
         _finish_job(job, succeeded=False, error_message=str(exc))
         return False
@@ -119,15 +254,32 @@ def process_source_detail_job(
         _finish_job(job, succeeded=False, error_message="sale not found")
         return False
 
+    try:
+        ensure_source_task_deadline("checking verified source-detail reuse")
+        satisfied = complete_already_verified_detail_job(existing, job, active_settings)
+        ensure_source_task_deadline("finishing verified source-detail reuse")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
+        return False
+    if satisfied is not None:
+        return satisfied
+
     # The sale lookup can race an administrative pause.  Repeat the gate at
     # the actual network boundary, after all local work for this item.
-    if not source_detail_source_enabled(source_name, active_settings):
+    try:
+        source_enabled = source_detail_source_enabled(source_name, active_settings)
+        ensure_source_task_deadline("finishing source-detail source gate")
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
+        return False
+    if not source_enabled:
         release_source_detail_job_without_attempt(
             job, reason="Source-detail source is paused before fetch", settings=active_settings
         )
         return False
 
     try:
+        ensure_source_task_deadline("starting source-detail fetch")
         _endpoint, _body, raw = fetch_public_detail(
             source_name,
             detail_url,
@@ -138,15 +290,20 @@ def process_source_detail_job(
             raise ValueError("Source detail parser returned no mapping")
         if not raw:
             raise ValueError("Source detail parser returned no verified data")
+        ensure_source_task_deadline("finishing source-detail fetch")
         # All existing adapters normally emit this identity themselves.  The
         # fallback is needed for a small provider alias parser that only emits
         # facts, and keeps freshness keyed to the URL that was actually read.
         raw.setdefault("source_url", detail_url)
         raw.setdefault("source_name", source_name)
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
+        return False
     except Exception as exc:
         metrics = _client_metrics(_client_for_job(source_name, detail_url, provider_clients))
-        retry_not_before = metrics.get("retry_not_before")
         status_code = _http_status_code(exc)
+        failure_kind = _classify_detail_failure(exc, status_code)
+        retry_not_before = _retry_not_before_for_failure(job, metrics, failure_kind)
         if _is_access_refusal(exc, status_code):
             report_source_detail_refusal(
                 source_name,
@@ -154,23 +311,34 @@ def process_source_detail_job(
                 coverage=metrics,
                 settings=active_settings,
             )
-        # 404s and timeouts deliberately use this same queue retry path.  They
-        # do not mutate source presence, source freshness, or source status.
+        error_message = f"{failure_kind}: {str(exc)}"
+        # A transient provider/network failure remains retryable, with an
+        # exponential deadline bounded at six hours and by the queue's own
+        # max_attempts.  A deterministic identity/access failure is a review
+        # item and is terminal for this claimed URL, so it cannot burn the
+        # backlog one identical attempt at a time.
         _finish_job(
             job,
             succeeded=False,
-            error_message=str(exc),
-            retry_not_before=retry_not_before,
+            cancelled=failure_kind == "review_required",
+            error_message=error_message,
+            retry_not_before=retry_not_before if failure_kind == "transient" else None,
         )
         return False
 
     try:
+        ensure_source_task_deadline("preparing source-detail publication")
         revision = prepare_source_revision(existing, raw)
+        ensure_source_task_deadline("finishing source-detail publication preparation")
+        ensure_source_task_deadline("publishing source-detail revision")
         # This operation owns the lease check, catalogue revision check, table
         # writes, and terminal job update in one transaction.  A false result
         # means another worker reclaimed the lease or a newer catalogue row
         # won the race; finishing it here would be unsafe.
         return bool(publish_source_revision(revision, job, active_settings))
+    except SourceTaskDeadlineExceeded as exc:
+        _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
+        return False
     except Exception as exc:
         LOGGER.exception("Source-detail publication failed for %s", canonical_url)
         _finish_job(job, succeeded=False, error_message=str(exc))
@@ -370,12 +538,14 @@ def _finish_job(
     job: dict[str, Any],
     *,
     succeeded: bool,
+    cancelled: bool = False,
     error_message: str | None = None,
     retry_not_before: str | None = None,
 ) -> None:
     """Finish only the claimed attempt, carrying Polite's retry deadline."""
     kwargs: dict[str, Any] = {
         "succeeded": succeeded,
+        "cancelled": cancelled,
         "error_message": error_message,
     }
     if job.get("attempt_count") is not None:
@@ -453,6 +623,54 @@ def _http_status_code(exc: BaseException) -> int | None:
     if isinstance(status_code, int):
         return status_code
     return None
+
+
+def _classify_detail_failure(
+    exc: BaseException,
+    status_code: int | None = None,
+) -> Literal["transient", "review_required"]:
+    """Classify the final adapter failure before it reaches the queue.
+
+    The adapter already retries individual requests.  This second boundary
+    only decides whether the claimed job should receive a bounded queue retry
+    or be surfaced as a deterministic review item.
+    """
+    status_code = status_code if status_code is not None else _http_status_code(exc)
+    if status_code in _TRANSIENT_STATUS_CODES:
+        return "transient"
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, TimeoutError, ConnectionError)):
+        return "transient"
+    message = str(exc).casefold()
+    if any(marker in message for marker in _TRANSIENT_MARKERS):
+        return "transient"
+    if status_code in _ACCESS_STATUS_CODES or any(marker in message for marker in _REVIEW_MARKERS):
+        return "review_required"
+    return "review_required"
+
+
+def _retry_not_before_for_failure(
+    job: dict[str, Any],
+    metrics: dict[str, Any],
+    failure_kind: Literal["transient", "review_required"],
+) -> str | None:
+    """Return a bounded retry deadline for transient detail failures."""
+    if failure_kind != "transient":
+        return None
+    now = datetime.now(UTC)
+    retry_deadline = _aware_timestamp(metrics.get("retry_not_before"))
+    # Preserve an already-recorded provider deadline when it is in the past;
+    # the queue finish function still applies its normal thirty-minute floor.
+    if retry_deadline is not None and retry_deadline <= now:
+        return retry_deadline.isoformat()
+    try:
+        attempt = max(1, int(job.get("attempt_count") or 1))
+    except (TypeError, ValueError, OverflowError):
+        attempt = 1
+    delay = min(_MAX_TRANSIENT_RETRY_DELAY, timedelta(minutes=30 * (2 ** min(attempt - 1, 4))))
+    candidate = now + delay
+    if retry_deadline is not None:
+        candidate = max(candidate, retry_deadline)
+    return candidate.isoformat()
 
 
 def _is_access_refusal(exc: BaseException, status_code: int | None) -> bool:

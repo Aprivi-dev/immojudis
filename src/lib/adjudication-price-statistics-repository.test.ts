@@ -64,6 +64,25 @@ describe("adjudication price statistics repository", () => {
     expect(serverFrom).toHaveBeenCalledTimes(2);
   });
 
+  it("refuse les statistiques d’une vente marquée publication_quarantine", async () => {
+    const saleQuery = fakeQuery({
+      data: {
+        tribunal_code: "justice_tj_1_59",
+        sale_venue_type: "tribunal",
+        status: "quarantined",
+        raw_payload: {},
+      },
+      error: null,
+    });
+    const nationalQuery = fakeQuery({ data: null, error: null });
+    serverFrom.mockReturnValueOnce(saleQuery.query).mockReturnValueOnce(nationalQuery.query);
+
+    await expect(getAdjudicationPriceStatisticsForSale(SALE_ID)).rejects.toThrow(
+      "No judicial sale is available",
+    );
+    expect(serverFrom).toHaveBeenCalledTimes(2);
+  });
+
   it("refuse une réponse qui ne correspond pas au calcul épinglé", async () => {
     process.env.ADJUDICATION_PRICE_STATISTICS_BUILD_ID = "33333333-3333-4333-8333-333333333333";
     const saleQuery = fakeQuery({

@@ -68,6 +68,8 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: ${{ vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED || 'false' }}
+      ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED: ${{ vars.ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED || 'false' }}
     steps:
       - name: Check target confirmation
         working-directory: ${{ github.workspace }}
@@ -90,6 +92,15 @@ jobs:
 
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enforce Encheres Publiques refresh gate
+        if: inputs.source == 'encheres_publiques' || (inputs.refresh_unknown_only && inputs.source == 'all')
+        run: |
+          set -euo pipefail
+          if [ "$ENABLE_ENCHERES_PUBLIQUES_BENCHMARK" != "true" ] || [ "$ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED" != "true" ]; then
+            echo "Encheres Publiques refresh refused until benchmark and access authorization are explicitly configured" >&2
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

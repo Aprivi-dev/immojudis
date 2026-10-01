@@ -19,7 +19,7 @@ from src.normalize import (
 )
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
@@ -27,11 +27,16 @@ BASE_URL = "https://www.info-encheres.com"
 LIST_URL = f"{BASE_URL}/vente-encheres-immobilieres-annonces.html"
 LOGGER = logging.getLogger(__name__)
 DETAIL_OVERRIDE_FIELDS = {
+    "property_type",
     "title",
     "description",
     "address",
     "postal_code",
     "surface_m2",
+    "habitable_surface_m2",
+    "land_surface_m2",
+    "rooms_count",
+    "parking_count",
     "starting_price_eur",
     "sale_date",
     "visit_dates",
@@ -110,7 +115,7 @@ def scrape_info_encheres_aquitaine_result(
 
 
 def parse_info_encheres_list_html(html: str, page_url: str = LIST_URL) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     sales: list[dict[str, Any]] = []
     for row in soup.select("tr"):
         cells = [_text(cell.get_text(" ", strip=True)) for cell in row.find_all("td")]
@@ -160,7 +165,7 @@ def parse_info_encheres_list_html(html: str, page_url: str = LIST_URL) -> list[d
 
 
 def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse_html(html, "html.parser")
     page_text = "\n".join(
         line for line in (_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line
     )
@@ -178,6 +183,15 @@ def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any
     source_images = _extract_images(soup, source_url)
     source_blocks = _extract_source_blocks(details, description, lawyer_name, lawyer_contact, documents, page_text)
     raw_text = _build_detail_raw_text(source_blocks)
+    property_type = _detail_property_type(details.get("nature du bien"))
+    habitable_surface_m2 = _extract_habitable_surface(
+        description,
+        property_type=property_type,
+        detail_surface=details.get("superficie"),
+    )
+    land_surface_m2 = _extract_land_surface(description)
+    rooms_count = _extract_rooms_count(description)
+    parking_count = _extract_parking_count(description)
 
     return {
         "source_name": "info_encheres",
@@ -187,10 +201,14 @@ def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any
         "city": city,
         "address": address,
         "postal_code": postal_code,
-        "property_type": details.get("nature du bien"),
+        "property_type": property_type,
         "title": title,
         "description": description,
         "surface_m2": _extract_surface(description, page_text),
+        "habitable_surface_m2": habitable_surface_m2,
+        "land_surface_m2": land_surface_m2,
+        "rooms_count": rooms_count,
+        "parking_count": parking_count,
         "starting_price_eur": details.get("mise a prix") or details.get("mise à prix"),
         "sale_date": _sale_date_with_audience_time(details.get("vente le"), description or page_text),
         "visit_dates": [details["date de visite"]] if details.get("date de visite") else [],
@@ -335,7 +353,11 @@ def _extract_source_blocks(
             "avocat": lawyer_name,
             "contact_avocat": lawyer_contact,
             "documents": "; ".join(document["label"] for document in documents if document.get("label")) or None,
-            "page_text": page_text,
+            # The detail and description blocks contain the sale facts. Keeping
+            # the full page here when a description exists also keeps the site's
+            # navigation filters in normalization input (for example, a
+            # navigation "Parking" followed by an address number).
+            "page_text": page_text if not description else None,
         }
     )
     return {key: value for key, value in blocks.items() if value}
@@ -405,9 +427,191 @@ def _looks_like_property_image(url: str) -> bool:
 
 
 def _extract_surface(*values: object) -> str | None:
-    text = " ".join(str(value) for value in values if value)
-    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
-    return _normalize_surface_number(match.group(1)) if match else None
+    matches: list[tuple[str, re.Match[str], bool]] = []
+    for value in values:
+        text = str(value or "")
+        for match in re.finditer(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I):
+            matches.append((text, match, _is_cadastral_surface_match(text, match.start(), match.end())))
+    has_non_cadastral_match = any(not is_cadastral for _, _, is_cadastral in matches)
+    for _, match, is_cadastral in matches:
+        if is_cadastral and has_non_cadastral_match:
+            continue
+        return _normalize_surface_number(match.group(1))
+    return None
+
+
+def _is_cadastral_surface_match(text: str, start: int, end: int) -> bool:
+    context = text[max(0, start - 100) : end]
+    return bool(
+        re.search(
+            r"\b(?:cadastr\w*|section\s+[A-Z]{1,4}\b|contenance)\b.{0,80}$",
+            context,
+            re.I | re.S,
+        )
+    )
+
+
+def _detail_property_type(property_type: str | None) -> str | None:
+    """Keep a semantic type for compound detail pages while retaining raw text in blocks."""
+    raw_type = _text(property_type)
+    if _is_mixed_asset(raw_type):
+        return "mixed"
+    if re.search(r"\b(?:un[e]?\s+)?pi[eè]ce\s+unique\b", raw_type or "", re.I):
+        return "apartment"
+    return raw_type
+
+
+def _is_mixed_asset(text: str) -> bool:
+    if not text:
+        return False
+    if re.search(r"\bensemble\s+immobilier\b", text, re.I):
+        return True
+    # An ordinary office or commercial building is still one building. Mark
+    # an ``immeuble`` as mixed only when its wording combines residential and
+    # commercial assets; otherwise ``normalize_property_type`` can retain the
+    # more precise building classification.
+    residential_asset = re.search(r"\b(?:habitation|appartements?|maisons?|studios?)\b", text, re.I)
+    commercial_asset = re.search(
+        r"\b(?:locaux?|bureaux|hangars?|industriels?|commerciaux?)\b", text, re.I
+    )
+    if re.search(r"\bimmeuble\b", text, re.I) and residential_asset and commercial_asset:
+        return True
+    return bool(residential_asset and commercial_asset)
+
+
+def _extract_habitable_surface(
+    description: str | None,
+    *,
+    property_type: str | None,
+    detail_surface: str | None,
+) -> str | None:
+    """Extract one unambiguous dwelling area from the lot description.
+
+    A page can describe several assets and several areas. In that case the
+    generic ``surface_m2`` remains source evidence, but no single dwelling
+    area is assigned to ``habitable_surface_m2``.
+    """
+    text = _text(description)
+    if not text:
+        return None
+    asset = r"(?:un[e]?\s+)?(?:appartement|maison|villa|studio|logement|local\s+d['’]habitation|pi[eè]ce\s+unique)"
+    number = rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b"
+    candidates: list[str] = []
+    asset_matches = list(re.finditer(rf"\b{asset}\b", text, re.I))
+    surface_pattern = rf"\b(?:surface|superficie)\s+(?:habitable\s+)?(?:de\s+)?{number}"
+    generic_pattern = rf"\bde\s+{number}"
+    for index, asset_match in enumerate(asset_matches):
+        segment_end = asset_matches[index + 1].start() if index + 1 < len(asset_matches) else asset_match.end() + 260
+        segment = text[asset_match.end() : segment_end]
+        match = re.search(surface_pattern, segment, re.I | re.S) or re.search(generic_pattern, segment, re.I)
+        if match and match.group(0).lower().startswith("de ") and _is_auxiliary_surface_context(segment, match.start()):
+            match = None
+        if not match:
+            continue
+        value_match = re.search(number, match.group(0), re.I)
+        value = _normalize_surface_number(value_match.group(1)) if value_match else None
+        if value and value not in candidates:
+            candidates.append(value)
+    if len(candidates) != 1:
+        return None
+    candidate = candidates[0]
+    detail_value = _extract_surface(detail_surface)
+    if detail_value and detail_value != candidate and not _is_mixed_asset(
+        " ".join(part for part in (property_type, text) if part)
+    ):
+        # A single dwelling with two different page/detail areas is ambiguous.
+        return None
+    return candidate
+
+
+def _is_auxiliary_surface_context(text: str, start: int) -> bool:
+    context = text[max(0, start - 90) : start]
+    return bool(
+        re.search(
+            r"\b(?:hauteur|plafond|faitage|mezzanine|terrasse|v[eé]randa|balcon|box(?:es)?|garage|parking|stationnement|cave|lot)\b",
+            context,
+            re.I,
+        )
+    )
+
+
+def _extract_land_surface(description: str | None) -> str | None:
+    """Return one unambiguous cadastral area, excluding coproperty lots."""
+    text = _text(description)
+    if not text:
+        return None
+    matches = list(
+        re.finditer(
+            r"\b(?:(\d+)\s*ha\s*)?(\d+)\s*a\s*(\d+)\s*ca\b",
+            text,
+            re.I,
+        )
+    )
+    if len(matches) != 1 or re.search(
+        r"\blots?\s+(?:de\s+copropri[ée]t|n[°o]|num[ée]ro|\d)",
+        text,
+        re.I,
+    ):
+        return None
+    match = matches[0]
+    hectares = int(match.group(1) or 0)
+    ares = int(match.group(2))
+    centiares = int(match.group(3))
+    return str(hectares * 10000 + ares * 100 + centiares)
+
+
+def _extract_rooms_count(description: str | None) -> int | None:
+    text = _text(description)
+    if not text:
+        return None
+    if re.search(r"\b(?:un[e]?\s+)?pi[eè]ce\s+unique\b", text, re.I):
+        return 1
+    return None
+
+
+def _extract_parking_count(description: str | None) -> int | None:
+    text = _text(description)
+    if not text:
+        return None
+    token = r"(?:une?|deux|trois|quatre|cinq|[1-9][0-9]?)"
+    match = re.search(
+        rf"\b({token})\s+(?:places?\s+de\s+)?(?:parking|stationnement)\b",
+        text,
+        re.I,
+    )
+    if match:
+        return _parse_count_token(match.group(1))
+    emplacement_match = re.search(
+        rf"\b({token})\s+emplacements?\s+de\s+(?:parking|stationnement)\b",
+        text,
+        re.I,
+    )
+    if emplacement_match:
+        return _parse_count_token(emplacement_match.group(1))
+    emplacement_count = len(
+        re.findall(r"\bemplacements?\s+de\s+(?:parking|stationnement)\b", text, re.I)
+    )
+    if emplacement_count:
+        return emplacement_count
+    if re.search(r"\blot\b[^.;]{0,80}\bun\s+garage\b", text, re.I):
+        return 1
+    if re.search(r"\b(?:place\s+de\s+parking|stationnement)\b", text, re.I):
+        return 1
+    return None
+
+
+def _parse_count_token(value: str) -> int | None:
+    lowered = value.lower()
+    if lowered.isdigit():
+        return int(lowered) if int(lowered) > 0 else None
+    return {
+        "un": 1,
+        "une": 1,
+        "deux": 2,
+        "trois": 3,
+        "quatre": 4,
+        "cinq": 5,
+    }.get(lowered)
 
 
 def _normalize_surface_number(value: str) -> str | None:
@@ -426,15 +630,34 @@ def _extract_occupancy_status(raw_text: str) -> str | None:
     lowered = raw_text.lower()
     if re.search(r"sans\s+droit\s+ni\s+titre|squat", lowered):
         return "squatted"
-    if re.search(r"propri[ée]taires?\s+occupants?|occup[ée]s?\s+par\s+les?\s+propri[ée]taires?", lowered):
+    owner_signal = bool(
+        re.search(
+            r"propri[ée]taires?\s+occupant(?:e|es|s)?|"
+            r"occup[ée]e?s?\s+par\s+(?:(?:le|la|les|un|une|son|sa)\s+)?propri[ée]taires?",
+            lowered,
+        )
+    )
+    vacant_signal = bool(
+        re.search(
+            r"libres?\s+(?:de\s+tout(?:e)?\s+occupation|d[\s’\x27]*occupation)|"
+            r"biens?\s+libres?|inoccup[ée]s?|vacants?",
+            lowered,
+        )
+    )
+    occupied_signal = bool(re.search(r"\boccup[ée]e?s?\b", lowered))
+    rented_signal = has_rented_occupancy_signal(lowered)
+    partial_signal = bool(re.search(r"partiellement\s+occup", lowered))
+    if partial_signal or (occupied_signal and (vacant_signal or rented_signal)) or (owner_signal and rented_signal):
+        return "unknown"
+    if owner_signal:
         return "owner_occupied"
-    if re.search(r"libres?\s+(?:de\s+toute\s+occupation|d[\s’\x27]*occupation)|biens?\s+libres?|inoccup[ée]s?|vacants?", lowered):
+    if vacant_signal:
         return "vacant"
     if no_lease_status := no_lease_occupancy_status(lowered):
         return no_lease_status
-    if has_rented_occupancy_signal(lowered):
+    if rented_signal:
         return "rented"
-    if re.search(r"occup[ée]", lowered):
+    if occupied_signal:
         return "occupied"
     return None
 

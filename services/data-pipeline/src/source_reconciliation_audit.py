@@ -8,10 +8,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
-from bs4 import BeautifulSoup
 
 from src.sources.cessions_etat import cessions_tls_context
-from src.sources.common import PoliteHttpClient, is_allowed_origin_url
+from src.sources.common import PoliteHttpClient, is_allowed_origin_url, parse_html
 
 TARGETS = Path(__file__).resolve().parents[1] / 'config/reconciliation-remaining-20260912.json'
 ORIGINS = {'avoventes':'https://avoventes.fr', 'cessions_etat':'https://cessions.immobilier-etat.gouv.fr',
@@ -49,7 +48,7 @@ def audit(source: str, output: Path) -> None:
             if source == 'agrasc':
                 from src.sources.agrasc_operators import parse_agora_operator_detail
                 row['operator_details'] = parse_agora_operator_detail(body, row['source_url'])
-            soup = BeautifulSoup(body,'html.parser')
+            soup = parse_html(body,'html.parser')
             for node in soup(['script','style','select','nav','footer']):
                 node.decompose()
             row.update(status='review_required',response_sha256=hashlib.sha256(body.encode()).hexdigest(),

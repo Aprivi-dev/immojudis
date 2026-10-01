@@ -36,6 +36,18 @@ describe("getDisplaySurface", () => {
     expect(surface.metricLabel).toBe("Terrain");
     expect(surface.kind).toBe("land");
   });
+
+  it("keeps a normalized land application surface typed as land", () => {
+    const surface = getDisplaySurface({
+      property_type: "land",
+      app_surface_m2: 720,
+      app_surface_kind: "land",
+      surface_scope: "land",
+      land_surface_m2: 720,
+    });
+
+    expect(surface).toMatchObject({ value: 720, metricLabel: "Terrain", kind: "land" });
+  });
 });
 
 describe("getMarketValuationSurfaces", () => {

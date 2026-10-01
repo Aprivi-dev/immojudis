@@ -53,7 +53,12 @@ import { UrbanismeCadastrePanel } from "@/components/sale-detail/UrbanismeCadast
 import { SaleDetailTabNav, type SaleDetailTab } from "@/components/sale-detail/SaleDetailTabNav";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
-import { fetchPrecomputedMarketEstimate, fetchSaleUrbanismeCadastre } from "@/lib/client-api";
+import {
+  fetchPrecomputedMarketEstimate,
+  fetchSaleAiReviewProjections,
+  fetchSaleFactReliabilities,
+  fetchSaleUrbanismeCadastre,
+} from "@/lib/client-api";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.functions";
 import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
@@ -80,6 +85,14 @@ import {
   stateSaleMethodLabel,
 } from "@/lib/sale-procedure";
 import { getMarketValuationSurfaces } from "@/lib/surface";
+import {
+  AI_REVIEW_ENERGY_FIELD_KEYS,
+  AI_REVIEW_SURFACE_FIELD_KEYS,
+  getAiReviewFieldResult,
+  type AiReviewFieldKey,
+  type AiReviewProjectionReadModel,
+  type AiReviewRequestStatus,
+} from "@/lib/ai-review-guard";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 
 const SaleTribunalHistory = dynamic(
@@ -117,6 +130,7 @@ type SaleDetailProps = {
   backLabel?: string;
   publicDemo?: boolean;
   adjudicationStatisticsEnabled?: boolean;
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
 };
 
 export function AnalysisSaleDetailView({
@@ -126,6 +140,7 @@ export function AnalysisSaleDetailView({
   backLabel = "Retour aux ventes",
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
+  aiReviewProjections = null,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
@@ -136,14 +151,25 @@ export function AnalysisSaleDetailView({
       backLabel={backLabel}
       publicDemo={publicDemo}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+      aiReviewProjections={aiReviewProjections}
       access="analysis"
     />
   );
 }
 
-export function FreeSaleDetailView({ sale, returnTo = "/sales" }: SaleDetailProps) {
+export function FreeSaleDetailView({
+  sale,
+  returnTo = "/sales",
+  aiReviewProjections = null,
+}: SaleDetailProps) {
   return (
-    <SimplifiedSaleDetailView key={sale.id} sale={sale} returnTo={returnTo} access="discovery" />
+    <SimplifiedSaleDetailView
+      key={sale.id}
+      sale={sale}
+      returnTo={returnTo}
+      aiReviewProjections={aiReviewProjections}
+      access="discovery"
+    />
   );
 }
 
@@ -154,14 +180,68 @@ function SimplifiedSaleDetailView({
   backLabel = "Retour aux ventes",
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
+  aiReviewProjections = null,
   access,
 }: SaleDetailProps & { access: "discovery" | "analysis" }) {
   const [calculationOpen, setCalculationOpen] = useState(false);
   const [simulation, setSimulation] = useState<BidSimulationSnapshot | null>(null);
   const { user, loading: authLoading } = useAuth();
+  const aiReviewQuery = useQuery({
+    queryKey: ["sale-ai-review", sale.id, user?.id ?? "anonymous"],
+    queryFn: () => fetchSaleAiReviewProjections(sale.id),
+    enabled: Boolean(user && !publicDemo && !authLoading && aiReviewProjections == null),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const aiReviewStatus: AiReviewRequestStatus =
+    aiReviewProjections !== null
+      ? "ready"
+      : !user || publicDemo || authLoading
+        ? "disabled"
+        : aiReviewQuery.isError
+          ? "error"
+          : aiReviewQuery.data
+            ? "ready"
+            : "loading";
+  const resolvedAiReviewProjections =
+    aiReviewProjections ?? aiReviewQuery.data?.projections ?? null;
+  const displaySale = useMemo(
+    () => saleForAiReviewDisplay(sale, resolvedAiReviewProjections, aiReviewStatus),
+    [aiReviewStatus, resolvedAiReviewProjections, sale],
+  );
+  const factReliabilityQuery = useQuery({
+    queryKey: ["sale-fact-reliability", sale.id, user?.id ?? "anonymous"],
+    queryFn: () => fetchSaleFactReliabilities(sale.id),
+    enabled: Boolean(user && !publicDemo && !authLoading),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const factReliabilities = factReliabilityQuery.data?.facts ?? null;
   const valuationConflict = listingValuationConflict(sale);
+  const priceReview = getAiReviewFieldResult(
+    resolvedAiReviewProjections,
+    "sale.starting_price_eur",
+    aiReviewStatus,
+  );
+  const surfaceBlocked = AI_REVIEW_SURFACE_FIELD_KEYS.some(
+    (fieldKey) =>
+      getAiReviewFieldResult(resolvedAiReviewProjections, fieldKey, aiReviewStatus).blocked,
+  );
+  const propertyTypeReview = getAiReviewFieldResult(
+    resolvedAiReviewProjections,
+    "property.property_type",
+    aiReviewStatus,
+  );
+  const roomsReview = getAiReviewFieldResult(
+    resolvedAiReviewProjections,
+    "property.rooms_count",
+    aiReviewStatus,
+  );
+  const criticalAnalysisInputsBlocked =
+    priceReview.blocked || surfaceBlocked || propertyTypeReview.blocked || roomsReview.blocked;
   const activeSimulation =
     !valuationConflict &&
+    !criticalAnalysisInputsBlocked &&
     !authLoading &&
     simulation?.saleId === sale.id &&
     simulation.ownerId === (user?.id ?? "guest-demo")
@@ -176,24 +256,29 @@ function SimplifiedSaleDetailView({
       : "summary";
   const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
   const venueType = getSaleProcedure(sale).venueType;
-  const marketSurfaces = getMarketValuationSurfaces(sale);
-  const surface = marketSurfaces.builtSurfaceM2;
+  const marketSurfaces = getMarketValuationSurfaces(displaySale);
+  const surface = criticalAnalysisInputsBlocked ? null : marketSurfaces.builtSurfaceM2;
   const marketQuery = useQuery({
     queryKey: ["precomputed-market-estimate", sale.id],
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
-    enabled: access === "analysis" && marketEstimateOverride == null && !valuationConflict,
+    enabled:
+      access === "analysis" &&
+      marketEstimateOverride == null &&
+      !valuationConflict &&
+      !criticalAnalysisInputsBlocked,
     staleTime: 24 * 60 * 60_000,
     refetchInterval: (query) =>
       query.state.data?.status === "queued" && !query.state.data.estimate ? 15_000 : false,
   });
-  const marketEstimate = valuationConflict
-    ? null
-    : (marketEstimateOverride ?? marketQuery.data?.estimate ?? null);
+  const marketEstimate =
+    valuationConflict || criticalAnalysisInputsBlocked
+      ? null
+      : (marketEstimateOverride ?? marketQuery.data?.estimate ?? null);
   const recommendations = useMemo(
     () =>
       computeRecommendedCeilings({
         surface,
-        price: Math.max(0, sale.starting_price_eur ?? 0),
+        price: Math.max(0, displaySale.starting_price_eur ?? 0),
         fpt: DEFAULTS.fpt,
         scenario: DEFAULT_MARKET_CEILING_SCENARIO,
         medianPricePerM2:
@@ -209,12 +294,16 @@ function SimplifiedSaleDetailView({
             ? marketEstimate.p75PricePerM2
             : null,
       }),
-    [isTribunalSale, marketEstimate, sale.starting_price_eur, surface],
+    [displaySale.starting_price_eur, isTribunalSale, marketEstimate, surface],
   );
   const worksBudget = estimateWorksBudget(surface, "rafraichissement");
   const heroCeilingResult = activeSimulation?.result ?? recommendations.withRefreshWorks;
   const heroCeiling =
-    access === "analysis" && isTribunalSale && !valuationConflict && heroCeilingResult.available
+    access === "analysis" &&
+    isTribunalSale &&
+    !valuationConflict &&
+    !criticalAnalysisInputsBlocked &&
+    heroCeilingResult.available
       ? heroCeilingResult.maxBid
       : null;
 
@@ -298,16 +387,25 @@ function SimplifiedSaleDetailView({
             <ArrowLeft className="h-4 w-4" aria-hidden />
             {backLabel}
           </Link>
-          <ListingActions sale={sale} publicDemo={publicDemo} />
+          <ListingActions sale={displaySale} publicDemo={publicDemo} />
         </div>
         <div className={listingStyles.upper}>
-          <PropertyIdentity key={sale.id} sale={sale} publicDemo={publicDemo} />
+          <PropertyIdentity
+            key={sale.id}
+            sale={displaySale}
+            publicDemo={publicDemo}
+            aiReviewProjections={resolvedAiReviewProjections}
+            aiReviewStatus={aiReviewStatus}
+          />
           <div className={listingStyles.heroSummary}>
             <ListingOverview
-              sale={sale}
+              sale={displaySale}
               publicDemo={publicDemo}
               premiumCeiling={heroCeiling}
               showPremiumTeaser={access === "discovery" && isTribunalSale}
+              factReliabilities={factReliabilities}
+              aiReviewProjections={resolvedAiReviewProjections}
+              aiReviewStatus={aiReviewStatus}
             />
           </div>
         </div>
@@ -326,11 +424,19 @@ function SimplifiedSaleDetailView({
             <>
               <PanelIntro eyebrow="01 / Le bien" title="L’essentiel sur le bien" />
               <div className={panelStyles.twoColumns}>
-                <ListingDescription sale={sale} />
-                <ListingLocation sale={sale} />
+                <ListingDescription
+                  sale={displaySale}
+                  aiReviewProjections={resolvedAiReviewProjections}
+                  aiReviewStatus={aiReviewStatus}
+                />
+                <ListingLocation
+                  sale={displaySale}
+                  aiReviewProjections={resolvedAiReviewProjections}
+                  aiReviewStatus={aiReviewStatus}
+                />
               </div>
               {access === "analysis" ? (
-                <RisksAndDocuments sale={sale} />
+                <RisksAndDocuments sale={displaySale} />
               ) : (
                 <div id="risks" className={panelStyles.riskCard}>
                   <h2>Points à vérifier</h2>
@@ -339,15 +445,15 @@ function SimplifiedSaleDetailView({
                 </div>
               )}
               <UrbanismeSection
-                sale={sale}
+                sale={displaySale}
                 loadStructuredUrbanism={
                   access === "analysis" && !publicDemo && !authLoading && Boolean(user)
                 }
               />
               <details className={panelStyles.disclosure}>
                 <summary>Qualité des informations du dossier</summary>
-                <ListingDataCoverage sale={sale} />
-                <ListingQualityNotice sale={sale} />
+                <ListingDataCoverage sale={displaySale} />
+                <ListingQualityNotice sale={displaySale} />
               </details>
             </>
           ) : null}
@@ -404,7 +510,7 @@ function SimplifiedSaleDetailView({
                   </div>
                 ) : access === "analysis" && isTribunalSale ? (
                   <AnalysisDecisionPanel
-                    sale={sale}
+                    sale={displaySale}
                     marketEstimate={marketEstimate}
                     marketLoading={marketQuery.isLoading && marketEstimate == null}
                     worksBudget={
@@ -418,12 +524,12 @@ function SimplifiedSaleDetailView({
                   />
                 ) : access === "analysis" ? (
                   <NonJudicialDecisionPanel
-                    sale={sale}
+                    sale={displaySale}
                     marketEstimate={marketEstimate}
                     marketLoading={marketQuery.isLoading && marketEstimate == null}
                   />
                 ) : (
-                  <DiscoveryDecisionPanel sale={sale} />
+                  <DiscoveryDecisionPanel sale={displaySale} />
                 )}
               </section>
               {access === "analysis" && isTribunalSale && !valuationConflict ? (
@@ -451,7 +557,7 @@ function SimplifiedSaleDetailView({
                     <summary>Ajuster les hypothèses</summary>
                     {calculationOpen ? (
                       <BidCeilingAssistant
-                        sale={sale}
+                        sale={displaySale}
                         marketEstimateOverride={marketEstimate}
                         onSimulationChange={setSimulation}
                       />
@@ -468,7 +574,11 @@ function SimplifiedSaleDetailView({
                   >
                     Frais et hypothèses
                   </summary>
-                  <ListingBudget sale={sale} />
+                  <ListingBudget
+                    sale={displaySale}
+                    aiReviewProjections={resolvedAiReviewProjections}
+                    aiReviewStatus={aiReviewStatus}
+                  />
                 </details>
               ) : null}
               {access === "analysis" ? (
@@ -496,7 +606,7 @@ function SimplifiedSaleDetailView({
               ) : null}
               {access === "analysis" && !publicDemo && hasVerifiedTribunal ? (
                 <TribunalEstimationEvidence
-                  sale={sale}
+                  sale={displaySale}
                   valuationConflict={Boolean(valuationConflict)}
                   adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
                   open={Boolean(expandedDetails["tribunal-history"])}
@@ -509,7 +619,7 @@ function SimplifiedSaleDetailView({
           {activeTab === "travaux" ? (
             <>
               <ListingWorks
-                sale={sale}
+                sale={displaySale}
                 estimatedBudget={
                   access === "analysis" && isTribunalSale && activeSimulation?.worksKnown === false
                     ? null
@@ -522,7 +632,11 @@ function SimplifiedSaleDetailView({
           {activeTab === "financement" ? (
             <>
               <div id="financing" className="scroll-mt-36">
-                <FinancingSimulator sale={sale} />
+                <FinancingSimulator
+                  sale={displaySale}
+                  aiReviewProjections={resolvedAiReviewProjections}
+                  aiReviewStatus={aiReviewStatus}
+                />
               </div>
             </>
           ) : null}
@@ -535,7 +649,11 @@ function SimplifiedSaleDetailView({
                 description="Date, interlocuteur, pièces et étapes à suivre."
               />
               <div className={panelStyles.practical}>
-                <ListingPracticalDetails sale={sale} />
+                <ListingPracticalDetails
+                  sale={displaySale}
+                  aiReviewProjections={resolvedAiReviewProjections}
+                  aiReviewStatus={aiReviewStatus}
+                />
               </div>
               <div className={panelStyles.steps}>
                 <h2>Vos prochaines étapes</h2>
@@ -550,11 +668,11 @@ function SimplifiedSaleDetailView({
                 </ol>
               </div>
               <SaleDocumentsSection
-                sale={sale}
+                sale={displaySale}
                 open={Boolean(expandedDetails.documents)}
                 onOpenChange={(open) => setDetailOpen("documents", open)}
               />
-              <LawyerSection sale={sale} />
+              <LawyerSection sale={displaySale} />
               <details
                 className={panelStyles.disclosure}
                 open={Boolean(expandedDetails.participation)}
@@ -567,7 +685,7 @@ function SimplifiedSaleDetailView({
                 >
                   Voir toutes les conditions de la vente
                 </summary>
-                <SaleProcedurePanel sale={sale} />
+                <SaleProcedurePanel sale={displaySale} />
               </details>
               {access === "analysis" && !publicDemo && isTribunalSale && !valuationConflict ? (
                 <section
@@ -600,13 +718,13 @@ function SimplifiedSaleDetailView({
                     Préparer le dossier de travail
                   </summary>
                   <ProfessionalPilotLauncher
-                    sale={sale}
+                    sale={displaySale}
                     definition={
                       isTribunalSale
-                        ? buildTribunalPilot(sale)
+                        ? buildTribunalPilot(displaySale)
                         : venueType === "notary"
-                          ? buildNotaryPilot(sale)
-                          : buildStatePilot(sale)
+                          ? buildNotaryPilot(displaySale)
+                          : buildStatePilot(displaySale)
                     }
                     publicDemo={publicDemo}
                   />
@@ -756,7 +874,7 @@ function UrbanismeSection({
   const urbanismQuery = useQuery({
     queryKey: ["sale-urbanisme-cadastre", sale.id, sale.source_url],
     queryFn: () => fetchSaleUrbanismeCadastre(sale.id),
-    enabled: loadStructuredUrbanism && Boolean(sale.source_url),
+    enabled: loadStructuredUrbanism && Boolean(sale.source_url) && Boolean(sale.city),
     staleTime: 10 * 60_000,
   });
 
@@ -786,11 +904,17 @@ function UrbanismeSection({
             </button>
           </div>
         ) : null}
-        <UrbanismeCadastrePanel
-          sale={sale}
-          cadastralParcels={urbanismQuery.data?.cadastralParcels}
-          urbanPlanningSignals={urbanismQuery.data?.urbanPlanningSignals}
-        />
+        {loadStructuredUrbanism && !sale.city ? (
+          <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
+            Localisation à confirmer avant de charger les données cadastrales.
+          </p>
+        ) : (
+          <UrbanismeCadastrePanel
+            sale={sale}
+            cadastralParcels={urbanismQuery.data?.cadastralParcels}
+            urbanPlanningSignals={urbanismQuery.data?.urbanPlanningSignals}
+          />
+        )}
       </div>
     </div>
   );
@@ -799,17 +923,32 @@ function UrbanismeSection({
 function PropertyIdentity({
   sale,
   publicDemo = false,
+  aiReviewProjections = null,
+  aiReviewStatus = "ready",
 }: {
   sale: AuctionSale;
   publicDemo?: boolean;
+  aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  aiReviewStatus?: AiReviewRequestStatus;
 }) {
   const images = propertyImages(sale.media);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
   const mobileCarouselRef = useRef<HTMLDivElement>(null);
-  const title = saleDisplayTitle(sale, propertyTypeLabel(sale.property_type));
+  const propertyTypeReview = getAiReviewFieldResult(
+    aiReviewProjections,
+    "property.property_type",
+    aiReviewStatus,
+  );
+  const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
+  const title =
+    propertyTypeReview.blocked || cityReview.blocked
+      ? propertyTypeReview.blocked
+        ? "Type de bien à confirmer"
+        : `${propertyTypeLabel(sale.property_type)} · Localisation à confirmer`
+      : saleDisplayTitle(sale, propertyTypeLabel(sale.property_type));
   const address = [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
-  const mapLocation = listingCoordinates(sale);
+  const mapLocation = cityReview.blocked ? null : listingCoordinates(sale);
 
   const handleMobileCarouselScroll = (event: UIEvent<HTMLDivElement>) => {
     const carousel = event.currentTarget;
@@ -977,6 +1116,183 @@ function PropertyIdentity({
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Builds the value object passed to authenticated display components. The API
+ * deliberately returns review status without a value; clearing a blocked
+ * source field here prevents a secondary child component from bypassing the
+ * guard while the request is loading or unavailable.
+ */
+function saleForAiReviewDisplay(
+  sale: AuctionSale,
+  projections: readonly AiReviewProjectionReadModel[] | null,
+  requestStatus: AiReviewRequestStatus,
+): AuctionSale {
+  if (requestStatus === "disabled") return sale;
+
+  const guarded = { ...sale };
+  const blocked = (fieldKey: Parameters<typeof getAiReviewFieldResult>[1]) =>
+    getAiReviewFieldResult(projections, fieldKey, requestStatus).blocked;
+
+  const propertyTypeBlocked = blocked("property.property_type");
+  const cityBlocked = blocked("property.city");
+  if (propertyTypeBlocked) guarded.property_type = null;
+  if (cityBlocked) {
+    guarded.city = null;
+    guarded.postal_code = null;
+    guarded.address = null;
+    guarded.tribunal_city = null;
+    guarded.title = propertyTypeBlocked
+      ? "Type de bien à confirmer"
+      : `${propertyTypeLabel(sale.property_type)} · Localisation à confirmer`;
+  }
+  if (blocked("sale.sale_date")) {
+    guarded.sale_date = null;
+    guarded.visit_dates = null;
+    guarded.sale_procedure = stripSaleDateFields(guarded.sale_procedure);
+    guarded.source_blocks = stripSaleDateFields(guarded.source_blocks);
+    guarded.source_blocks_by_source = stripSaleDateFieldsBySource(guarded.source_blocks_by_source);
+    // `listingVisits` also derives a compact visit excerpt from the source
+    // description when structured slots are absent. Keep that fallback from
+    // bypassing the blocked sale-date field while retaining the raw data in
+    // the server-side dossier.
+    guarded.source_description = null;
+    guarded.description = null;
+    guarded.llm_display_description = null;
+    guarded.about_description = null;
+  }
+  if (blocked("sale.starting_price_eur")) {
+    guarded.starting_price_eur = null;
+    guarded.adjudication_price_eur = null;
+  }
+  if (blocked("property.rooms_count")) {
+    guarded.rooms_count = null;
+    guarded.bedrooms_count = null;
+  }
+  if (blocked("property.occupancy_status")) guarded.occupancy_status = null;
+  if (blocked("property.parking_count")) guarded.parking_count = null;
+
+  const blockedConflictFields = new Set(
+    (
+      [
+        "property.property_type",
+        "property.city",
+        "sale.sale_date",
+        "sale.starting_price_eur",
+        ...AI_REVIEW_SURFACE_FIELD_KEYS,
+        "property.occupancy_status",
+        "property.rooms_count",
+        "property.parking_count",
+        "property.source_energy_dpe_class",
+        "property.source_energy_ges_class",
+      ] as const satisfies readonly AiReviewFieldKey[]
+    )
+      .filter((fieldKey) => blocked(fieldKey))
+      .flatMap((fieldKey) => [fieldKey, fieldKey.replace(/^property\.|^sale\./, "")]),
+  );
+  if (guarded.source_conflicts) {
+    guarded.source_conflicts = guarded.source_conflicts.filter(
+      (conflict) => !conflict.field || !blockedConflictFields.has(conflict.field),
+    );
+  }
+
+  if (AI_REVIEW_SURFACE_FIELD_KEYS.some((fieldKey) => blocked(fieldKey))) {
+    guarded.app_surface_m2 = null;
+    guarded.habitable_surface_m2 = null;
+    guarded.carrez_surface_m2 = null;
+    guarded.land_surface_m2 = null;
+    guarded.app_surface_kind = null;
+    guarded.surface_scope = null;
+    guarded.surface_source = null;
+    guarded.surface_confidence = null;
+    guarded.surface_evidence = null;
+  }
+
+  if (AI_REVIEW_ENERGY_FIELD_KEYS.some((fieldKey) => blocked(fieldKey))) {
+    guarded.source_blocks = stripEnergyFields(guarded.source_blocks);
+    guarded.source_blocks_by_source = stripEnergyFieldsBySource(guarded.source_blocks_by_source);
+  }
+
+  return guarded;
+}
+
+const ENERGY_SOURCE_KEYS = new Set([
+  "dpe",
+  "dpe_classe",
+  "dpe_class",
+  "ges",
+  "ges_classe",
+  "ges_class",
+  "energy_dpe_class",
+  "energy_ges_class",
+  "source_energy_dpe_class",
+  "source_energy_ges_class",
+]);
+
+function stripEnergyFields(value: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!value) return null;
+  const sanitized = stripFields(value, ENERGY_SOURCE_KEYS);
+  return sanitized && typeof sanitized === "object" && !Array.isArray(sanitized)
+    ? (sanitized as Record<string, unknown>)
+    : null;
+}
+
+function stripEnergyFieldsBySource(
+  value: Record<string, Record<string, unknown>> | null,
+): Record<string, Record<string, unknown>> | null {
+  if (!value) return null;
+  return Object.fromEntries(
+    Object.entries(value).map(([source, blocks]) => [source, stripEnergyFields(blocks) ?? {}]),
+  );
+}
+
+function stripSaleDateFields(
+  value: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!value) return null;
+  const dateKeys = new Set([
+    "sale_date",
+    "opens_at",
+    "closes_at",
+    "starts_at",
+    "ends_at",
+    "start_at",
+    "end_at",
+    "visit",
+    "visite",
+    "visites",
+    "visits",
+    "date_visite",
+    "date_de_visite",
+    "detail_date_de_visite",
+    "visit_date",
+    "visit_dates",
+    "visits_dates",
+  ]);
+  const sanitized = stripFields(value, dateKeys);
+  return sanitized && typeof sanitized === "object" && !Array.isArray(sanitized)
+    ? (sanitized as Record<string, unknown>)
+    : null;
+}
+
+function stripSaleDateFieldsBySource(
+  value: Record<string, Record<string, unknown>> | null,
+): Record<string, Record<string, unknown>> | null {
+  if (!value) return null;
+  return Object.fromEntries(
+    Object.entries(value).map(([source, blocks]) => [source, stripSaleDateFields(blocks) ?? {}]),
+  );
+}
+
+function stripFields(value: unknown, blockedKeys: ReadonlySet<string>): unknown {
+  if (Array.isArray(value)) return value.map((item) => stripFields(item, blockedKeys));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !blockedKeys.has(key.toLocaleLowerCase("fr-FR")))
+      .map(([key, entry]) => [key, stripFields(entry, blockedKeys)]),
   );
 }
 

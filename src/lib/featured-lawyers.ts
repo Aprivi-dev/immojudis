@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
+import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
 
 type SaleSectorSource = Pick<
   Database["public"]["Tables"]["auction_sales"]["Row"],
@@ -50,7 +51,8 @@ export type FeaturedReferencedLawyerResponse = {
   lawyer: FeaturedReferencedLawyer | null;
 };
 
-const SALE_SECTOR_COLUMNS = "id,city,department,postal_code,tribunal,tribunal_code";
+const SALE_SECTOR_COLUMNS =
+  "id,city,department,postal_code,tribunal,tribunal_code,status,raw_payload";
 const FEATURED_LAWYER_COLUMNS =
   "id,display_name,firm_name,bar_association,city,department,profile_summary,practice_tags,priority_weight,paid_placement_starts_at,paid_placement_ends_at";
 
@@ -69,6 +71,9 @@ export async function getFeaturedReferencedLawyerForSale({
 
   if (error) throw error;
   if (!sale?.id) throw new Error("Vente introuvable.");
+  if (isPublicationQuarantined(sale.raw_payload, sale.status)) {
+    throw new Error("Vente introuvable.");
+  }
 
   return {
     lawyer: await findFeaturedReferencedLawyerForSector(sale as SaleSectorSource, now),

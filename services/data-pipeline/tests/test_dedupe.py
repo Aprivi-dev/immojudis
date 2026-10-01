@@ -1,3 +1,5 @@
+import json
+
 from src.dedupe import compute_content_hash, dedupe_sales
 from src.normalize import normalize_sale
 
@@ -93,6 +95,54 @@ def test_dedupe_merges_same_address_across_sources_when_price_differs() -> None:
     assert "https://www.licitor.com/annonce/9.html" in result[0].source_urls
     assert len(result[0].observations) == 2
     assert result[0].raw_payload["merged_sources"][0]["source_name"] == "licitor"
+
+
+def test_dedupe_breaks_shared_raw_payload_alias_before_recording_merged_source() -> None:
+    first = _make("https://avoventes.fr/enchere/shared-1")
+    second = _make("https://licitor.com/annonce/shared-1", source_name="licitor")
+    shared_payload = {"source": "shared"}
+    first.raw_payload = shared_payload
+    second.raw_payload = shared_payload
+
+    result = dedupe_sales([first, second])
+
+    assert len(result) == 1
+    merged_payload = result[0].raw_payload["merged_sources"][0]["raw_payload"]
+    assert merged_payload["source"] == "shared"
+    assert merged_payload["merged_sources"] == []
+    assert merged_payload is not result[0].raw_payload
+    json.dumps(result[0].raw_payload)
+
+
+def test_dedupe_preserves_invalidation_markers_from_secondary_source() -> None:
+    primary = _make("https://avoventes.fr/enchere/invalidation")
+    secondary = _make(
+        "https://licitor.com/annonce/invalidation",
+        source_name="licitor",
+    )
+    primary.raw_payload["llm_display_description"] = "Ancienne synthèse à remplacer."
+    marker = {
+        "description": "Ancienne synthèse à remplacer.",
+        "reason": "source_operational_changed",
+        "operational_refreshable": True,
+    }
+    secondary.raw_payload.update(
+        source_content_changed=True,
+        source_operational_changed=True,
+        source_content_change_reason="source_operational_changed",
+        superseded_analysis=marker,
+    )
+
+    result = dedupe_sales([primary, secondary])
+
+    assert len(result) == 1
+    payload = result[0].raw_payload
+    assert payload["source_content_changed"] is True
+    assert payload["source_operational_changed"] is True
+    assert payload["source_content_change_reason"] == "source_operational_changed"
+    assert payload["superseded_analysis"] == marker
+    assert "llm_display_description" not in payload
+    assert payload["llm_display_status"] == "pending"
 
 
 def test_dedupe_merges_same_address_with_abbreviated_street_and_missing_postal_code() -> None:

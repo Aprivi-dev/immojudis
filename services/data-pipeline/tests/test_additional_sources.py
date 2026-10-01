@@ -2,7 +2,9 @@ import json
 from decimal import Decimal
 
 import httpx
+import pytest
 
+from src.extraction_corpus import project_field
 from src.normalize import normalize_sale
 from src.raw_models import validate_raw_sales
 from src.sources import cessions_etat, notaires, petites_affiches
@@ -78,6 +80,8 @@ def test_parse_petites_affiches_public_detail() -> None:
     assert detail["address"] == "33000 Bordeaux"
     assert detail["postal_code"] == "33000"
     assert detail["starting_price_eur"] == "15 300"
+    assert detail["sale_date"] == "18/06/2026"
+    assert detail["property_type"] == "Appartement"
     assert detail["lawyer_name"] == "Maître MERLIN-LABRE"
     assert detail["lawyer_contact"] == "0422140871"
     assert detail["tribunal"] == "TJ DE BORDEAUX"
@@ -86,6 +90,243 @@ def test_parse_petites_affiches_public_detail() -> None:
     assert detail["source_blocks"]["mise_a_prix"] == "15 300"
     assert detail["source_blocks"]["contact_avocat"] == "0422140871"
     assert detail["source_blocks"]["visites"] == "Visite finie Jeudi 25 Juin 2026 à 11:00"
+
+
+def test_parse_petites_affiches_detail_extracts_status_and_parking_from_scoped_badges() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un garage à Bordeaux vendu au tribunal judiciaire le 14/10/2099" />
+    <div class="row detail default">
+      <div class="lo-box-content">
+        <p><label class="label label-success"><strong>Libre</strong></label></p>
+        <p>Deux places de stationnement sont comprises dans le lot.</p>
+      </div>
+    </div>
+    <footer><a>Parking visiteurs libre</a></footer>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["sale_date"] == "14/10/2099"
+    assert detail["property_type"] == "Stationnement"
+    assert detail["occupancy_status"] == "vacant"
+    assert detail["parking_count"] == 2
+    assert normalize_sale(detail).parking_count == 2
+    assert normalize_sale(detail).occupancy_status == "vacant"
+
+
+def test_parse_petites_affiches_detail_accepts_direct_scoped_parking_count() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un appartement à Bordeaux vendu au tribunal judiciaire le 14/10/2099" />
+    <div class="row detail default">
+      <p>Deux places de parking.</p>
+    </div>
+    <footer><a>Parking visiteurs libre</a></footer>
+    """
+
+    assert petites_affiches._detail_parking_count("2 parkings") == 2
+    assert petites_affiches._detail_parking_count("2 parkings visiteurs") is None
+    assert petites_affiches._detail_parking_count("2 parkings publics") is None
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["parking_count"] == 2
+
+
+def test_parse_petites_affiches_detail_accepts_singular_garage_count() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un lot test" />
+    <div class="row detail default"><p>Un garage attenant au bien.</p></div>
+    <footer>1 parking visiteurs</footer>
+    """
+
+    assert petites_affiches._detail_parking_count("Un garage attenant au bien") == 1
+    assert petites_affiches._detail_parking_count("1 parking visiteurs") is None
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["parking_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "excluded_text",
+    (
+        "Un garage non compris dans la vente.",
+        "Un garage appartenant au lot voisin.",
+    ),
+)
+def test_parse_petites_affiches_detail_ignores_excluded_garage_mentions(excluded_text: str) -> None:
+    html = f"""
+    <meta name="description" content="Vente aux enchères d'un lot test" />
+    <div class="row detail default"><p>{excluded_text}</p></div>
+    """
+
+    assert petites_affiches._detail_parking_count(excluded_text) is None
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["parking_count"] is None
+
+
+def test_parse_petites_affiches_detail_prefers_sale_date_over_visit_date() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères, visite le 17/06/2026, vendu au tribunal judiciaire le 18/06/2026" />
+    <div class="row detail default"><p>Appartement.</p></div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["sale_date"] == "18/06/2026"
+
+
+def test_parse_petites_affiches_detail_extracts_city_from_title_and_spaced_postal() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un appartement vendu au tribunal judiciaire le 18/06/2026" />
+    <h1>STUDIO à LETHUIN</h1>
+    <div class="row detail default">
+      <div class="lot-adresse"><h4>Adresse : 6 rue du Château d'Eau, 28 700 LETHUIN</h4></div>
+    </div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["city"] == "LETHUIN"
+    assert detail["postal_code"] == "28700"
+
+
+def test_parse_petites_affiches_detail_extracts_city_from_title_only() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un lot : UNE CAVE à Cannes vendu au tribunal judiciaire de GRASSE le 08/10/2026" />
+    <h1>UNE CAVE à Cannes</h1>
+    <div class="row detail default">
+      <div class="lot-adresse"><h4>Adresse : Cannes</h4></div>
+    </div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["city"] == "Cannes"
+
+
+def test_petites_affiches_detail_identity_mismatch_does_not_overwrite_listing() -> None:
+    source_url = (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/"
+        "judiciaire/un-appartement-a-villefranche-sur-saone-59195.html"
+    )
+
+    class Client:
+        def get(self, url: str) -> str:
+            assert url == source_url
+            return """
+            <h1>MAISON D'HABITATION à Pineuilh</h1>
+            <meta name="description" content="Vente aux enchères d'un lot : MAISON à Pineuilh vendu le 05/06/2026" />
+            <div class="lot-adresse"><h4>Adresse : 4 rue du Test, 33220 Pineuilh</h4></div>
+            <div class="row detail default"><p>Maison de la page servie par erreur.</p></div>
+            """
+
+    sale = {
+        "source_url": source_url,
+        "city": "Villefranche-sur-Saône",
+        "description": "Description de la carte",
+        "source_blocks": {"titre": "Appartement de la carte"},
+    }
+    errors: list[str] = []
+
+    petites_affiches._enrich_sale_from_detail(Client(), sale, errors)
+
+    assert errors == []
+    assert sale["city"] == "Villefranche-sur-Saône"
+    assert sale["description"] == "Description de la carte"
+    assert sale["source_detail_status"] == "failed"
+    assert sale["source_detail_failure_reason"] == "identity_mismatch"
+    assert sale["source_identity_mismatch"]["detail_city"] == "Pineuilh"
+    assert sale["quality_flags"] == ["source_identity_mismatch"]
+
+
+def test_petites_affiches_detail_identity_accepts_slug_without_city_accents() -> None:
+    source_url = (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/"
+        "judiciaire/un-appartement-a-villefranche-sur-saone-59195.html"
+    )
+
+    assert petites_affiches._detail_identity_mismatch(
+        source_url,
+        {"city": "Villefranche-sur-Saône"},
+    ) is None
+
+
+def test_petites_affiches_detail_identity_rejects_facts_without_city_anchor() -> None:
+    source_url = (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/"
+        "judiciaire/un-appartement-a-juvisy-sur-orge-58923.html"
+    )
+
+    assert petites_affiches._detail_identity_mismatch(
+        source_url,
+        {
+            "description": "Vente aux enchères d'un lot vendu le 01/01/1970",
+            "starting_price_eur": "290 000",
+        },
+    ) == {
+        "kind": "identity_unverified",
+        "source_url": source_url,
+        "requested_city": "juvisy sur orge",
+        "detail_city": "",
+    }
+
+
+def test_petites_affiches_detail_identity_accepts_city_in_description_without_city_field() -> None:
+    source_url = (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/"
+        "judiciaire/un-appartement-a-juvisy-sur-orge-58923.html"
+    )
+
+    assert petites_affiches._detail_identity_mismatch(
+        source_url,
+        {
+            "description": "Vente aux enchères d'un appartement à Juvisy-sur-Orge",
+            "starting_price_eur": "30 000",
+        },
+    ) is None
+
+
+def test_petites_affiches_detail_identity_requires_whole_city_words() -> None:
+    source_url = (
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/"
+        "judiciaire/un-appartement-a-paris-58923.html"
+    )
+
+    mismatch = petites_affiches._detail_identity_mismatch(
+        source_url,
+        {"description": "Vente aux enchères à Parisis", "starting_price_eur": 30000},
+    )
+    assert mismatch is not None
+    assert mismatch["kind"] == "identity_unverified"
+
+
+def test_parse_petites_affiches_detail_ignores_visit_labels_and_visitor_parking() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un appartement vendu au tribunal judiciaire le 18/06/2026" />
+    <div class="row detail default">
+      <div class="lo-box-content">
+        <p><label>Visite libre</label></p>
+        <p><label>Photos libres de droits</label></p>
+        <p>Deux places de parking visiteurs sont disponibles.</p>
+      </div>
+    </div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["occupancy_status"] is None
+    assert detail["parking_count"] is None
+
+
+def test_parse_petites_affiches_detail_ignores_epoch_sale_date_placeholder() -> None:
+    html = """
+    <meta name="description" content="Vente aux enchères d'un appartement vendu au tribunal judiciaire le 01/01/1970" />
+    <div class="row detail default"><p>Appartement.</p></div>
+    """
+
+    detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
+
+    assert detail["sale_date"] is None
 
 
 def test_parse_petites_affiches_detail_keeps_thousands_surface() -> None:
@@ -359,6 +600,42 @@ def test_parse_cessions_etat_public_detail_keeps_source_blocks() -> None:
     assert detail["documents"][0]["label"] == "Cahier des charges"
     assert detail["source_blocks"]["mise_a_prix"] == "210 000"
     assert detail["source_blocks"]["documents"] == "Cahier des charges"
+
+
+def test_cessions_detail_title_prevents_unrelated_page_text_from_changing_property_type() -> None:
+    html = """
+    <title>Maison forestière à vendre | Cessions immobilières</title>
+    <h1>Partager la page</h1><h1>Maison forestière à vendre</h1>
+    <div class="location-info"><span class="location-text">Bû</span></div>
+    <div id="panel-bien"><div class="texte"><div class="fr-text">
+      Maison avec jardin et deux pièces.
+    </div></div></div>
+    <footer>Autres annonces : locaux agricoles et terrains à céder</footer>
+    """
+    raw = parse_cessions_etat_detail_html(html, "https://cessions.immobilier-etat.gouv.fr/biens/test")
+
+    assert raw["title"] == "Maison forestière à vendre"
+    assert raw["city"] == "Bû"
+    assert raw["property_type"] == "house"
+    assert normalize_sale(raw).property_type == "house"
+
+
+def test_cessions_detail_reads_energy_letters_only_from_the_property_panel() -> None:
+    html = """
+    <h1>Maison à vendre</h1>
+    <div id="details-tab">
+      <p>Performance énergétique : E</p>
+      <p>Gaz à effet de serre : D</p>
+    </div>
+    <footer>Autre annonce : Performance énergétique : A, Gaz à effet de serre : B</footer>
+    """
+    raw = parse_cessions_etat_detail_html(html, "https://cessions.immobilier-etat.gouv.fr/biens/test")
+
+    assert raw["dpe_class"] == "E"
+    assert raw["ges_class"] == "D"
+    sale = normalize_sale(raw)
+    assert project_field(sale, "source_energy_dpe_class") == "E"
+    assert project_field(sale, "source_energy_ges_class") == "D"
 
 
 def test_parse_cessions_etat_detail_extracts_property_images_without_site_assets() -> None:
@@ -976,6 +1253,37 @@ def test_parse_notaires_public_api_payload() -> None:
     assert validate_raw_sales("notaires", sales, []) == sales
 
 
+def test_notaires_imm_alias_selects_immeuble_block_and_preserves_zero_parking() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VNI",
+            "bien": {
+                "typeBien": "IMM",
+                "immeuble": {
+                    "typeBien": "IMM",
+                    "codePostal": "33000",
+                    "communeNom": "TESTVILLE",
+                    "nbStationnements": 0,
+                },
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+    sale = normalize_sale(
+        {
+            **detail,
+            "source_name": "notaires",
+            "source_url": "https://www.immobilier.notaires.fr/fr/annonce-immo/synthetic-imm",
+        }
+    )
+
+    assert detail["property_type"] == "immeuble"
+    assert detail["parking_count"] == 0
+    assert sale.property_type == "building"
+    assert sale.parking_count == 0
+
+
 def test_notaires_uses_national_api_when_all_departments_are_targeted(monkeypatch) -> None:
     monkeypatch.setattr(notaires, "TARGET_DEPARTMENTS", notaires.FRANCE_DEPARTMENTS)
 
@@ -1482,6 +1790,66 @@ def test_parse_notaires_detail_keeps_thousands_cadastral_surface_as_land() -> No
     assert detail["land_surface_m2"] == 2464.7
     assert detail["surface_source"] == "notaires.description.cadastre"
     assert "2 464,70 m²" in detail["surface_evidence"]
+
+
+def test_parse_notaires_detail_extracts_one_global_descriptive_park_surface() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VAE",
+            "vae": {
+                "descriptions": [
+                    {
+                        "langue": "fr",
+                        "descLongue": (
+                            "Domaine familial avec parc arboré de 4 800 m². "
+                        ),
+                    }
+                ]
+            },
+            "bien": {
+                "typeBien": "MAI",
+                "maison": {"typeBien": "MAI"},
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["land_surface_m2"] == 4800
+    assert detail["surface_source"] == "notaires.description.land_surface"
+    assert "parc arboré de 4 800 m²" in detail["surface_evidence"]
+    assert "ambiguous_land_surface" not in detail["quality_flags"]
+
+
+def test_parse_notaires_detail_quarantines_competing_descriptive_land_surfaces() -> None:
+    payload = json.dumps(
+        {
+            "typeTransaction": "VNI",
+            "vni": {
+                "descriptions": [
+                    {
+                        "langue": "fr",
+                        "descLongue": (
+                            "Terrain à bâtir formant le lot B. Superficie constructible : environ 537 m² "
+                            "de terrain à bâtir. Parcelle complémentaire : environ 71 m² en zone naturelle."
+                        ),
+                    }
+                ]
+            },
+            "bien": {
+                "typeBien": "TER",
+                "terrain": {"typeBien": "TER"},
+            },
+        }
+    )
+
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["land_surface_m2"] is None
+    assert "ambiguous_land_surface" in detail["quality_flags"]
+    assert detail["source_blocks"]["land_surface_quarantine_reason"] == (
+        "multiple_explicit_land_measurements"
+    )
 
 
 def test_notarial_generic_area_is_not_promoted_to_habitable():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -13,6 +14,7 @@ from src.enrichment.extract_structured import LLMEnrichmentDeferred, enrich_sale
 from src.enrichment.prompts import DISPLAY_DESCRIPTION_SYSTEM_PROMPT
 from src.models import AuctionSale
 from src.pdf_enrichment import sale_storage_id
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.pipeline_usage import PINNED_MODEL
 
 
@@ -249,6 +251,29 @@ def test_display_cache_version_does_not_invalidate_fact_chunks(tmp_path: Path, m
     assert len([call for call in client.calls if call[0] == DISPLAY_DESCRIPTION_SYSTEM_PROMPT]) == 2
 
 
+def test_display_extraction_persists_provider_model_not_settings_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
+    monkeypatch.setenv("REPLICATE_MODEL", "settings/model-alias")
+    _patch_contexts(monkeypatch, ["chunk-A"])
+    sale = _sale()
+    client = FakeClient()  # The provider client reports the model it will use.
+
+    stats = enrich_sale_with_llm(
+        sale,
+        client=client,
+        output_dir=tmp_path,
+        extraction_mode="display_description",
+    )
+
+    assert stats.errors == 0
+    assert sale.raw_payload["llm_display_model"] == client.model
+    artifact = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
+    assert artifact["_cache"]["model"] == client.model
+
+
 def test_durable_empty_fact_result_is_reused_without_provider_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -283,34 +308,31 @@ def _document_sale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AuctionSa
                 "https://example.test/sale": {"evidence_fingerprint": "source-a"},
                 "https://example.test/merged": {"evidence_fingerprint": "merged-a"},
             },
-            "document_analysis": {
-                "documents_extracted": 1,
-                "failed_documents": 0,
-                "input_fingerprint": "documents-a",
-                "profiles": [
-                    {
-                        "url": "https://example.test/pv.pdf",
-                        "sha256": "pdf-a",
-                        "extraction_status": "extracted",
-                        "complete": True,
-                    }
-                ],
-            },
         },
     )
+    from src.pdf_document_selection import _store_document_analysis_status
+    text = "Surface documentée."
+    pdf_payload = {
+        "url": sale.documents[0]["url"],
+        "label": "PV",
+        "text": text,
+        "sha256": hashlib.sha256(b"fixture-pdf-bytes").hexdigest(),
+        "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "text_chars": len(text),
+        "text_present": True,
+        "cache_version": PDF_TEXT_CACHE_VERSION,
+        "complete": True,
+        "extraction_status": "extracted",
+        "extraction_method": "fixture",
+        "failed_pages": [],
+        "page_count": 1,
+        "http_checked_at": datetime.now(UTC).isoformat(),
+    }
     (tmp_path / f"{sale_storage_id(sale)}.json").write_text(
-        json.dumps(
-            [
-                {
-                    "url": "https://example.test/pv.pdf",
-                    "label": "PV",
-                    "text": "Surface documentée.",
-                    "sha256": "pdf-a",
-                }
-            ]
-        ),
+        json.dumps([pdf_payload]),
         encoding="utf-8",
     )
+    _store_document_analysis_status(sale, sale.documents, [pdf_payload])
     contexts = extraction.load_llm_fact_context_chunks_for_sale(sale, chunk_chars=3000, max_chunks=0)
     settings = load_settings()
     sale.raw_payload["llm_fact_input_key"] = extraction._fact_input_cache_key(
@@ -335,6 +357,9 @@ def _document_sale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AuctionSa
         "model",
         "fact_prompt",
         "merged_source",
+        "manifest_document_sha_without_cache",
+        "failed_pages_without_cache",
+        "profile_status_missing",
     ],
 )
 def test_fact_manifest_rejects_changed_evidence_or_versions(
@@ -352,10 +377,60 @@ def test_fact_manifest_rejects_changed_evidence_or_versions(
         monkeypatch.setenv("REPLICATE_MODEL", "different-model")
     elif mutation == "fact_prompt":
         monkeypatch.setenv("LLM_FACT_PROMPT_VERSION", "facts-next")
+    elif mutation == "manifest_document_sha_without_cache":
+        sale.raw_payload["llm_fact_context_manifest"]["documents"][0]["sha256"] = "pdf-b"
+        (tmp_path / f"{sale_storage_id(sale)}.json").unlink()
+    elif mutation == "failed_pages_without_cache":
+        sale.raw_payload["document_analysis"]["profiles"][0]["failed_pages"] = [4]
+        (tmp_path / f"{sale_storage_id(sale)}.json").unlink()
+    elif mutation == "profile_status_missing":
+        sale.raw_payload["document_analysis"]["profiles"][0]["extraction_status"] = None
     else:
         sale.raw_payload["source_checks"]["https://example.test/merged"]["evidence_fingerprint"] = "merged-b"
 
     assert extraction.has_current_fact_analysis(sale) is False
+
+
+def test_verified_facts_for_nonempty_pdf_survive_empty_pdf_and_cache_loss(tmp_path, monkeypatch):
+    from src.freshness import documents_are_current
+    from src.pdf_document_selection import _store_document_analysis_status
+
+    sale = _document_sale(tmp_path, monkeypatch)
+    monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
+    cache_path = tmp_path / f"{sale_storage_id(sale)}.json"
+    valid_pdf = json.loads(cache_path.read_text(encoding="utf-8"))[0]
+    empty_pdf = {
+        "url": "https://example.test/empty.pdf",
+        "label": "PDF vide",
+        "text": "",
+        "sha256": hashlib.sha256(b"empty-fixture-pdf-bytes").hexdigest(),
+        "text_sha256": "",
+        "text_chars": 0,
+        "text_present": False,
+        "cache_version": PDF_TEXT_CACHE_VERSION,
+        "complete": True,
+        "extraction_status": "empty",
+        "extraction_method": "fixture",
+        "failed_pages": [],
+        "pages": [{"page": 1, "text": "", "status": "blank_excluded"}],
+        "page_count": 1,
+        "http_checked_at": datetime.now(UTC).isoformat(),
+    }
+    sale.documents.append({"url": empty_pdf["url"], "label": empty_pdf["label"]})
+    cache_path.write_text(json.dumps([valid_pdf, empty_pdf]), encoding="utf-8")
+    _store_document_analysis_status(sale, sale.documents, [valid_pdf, empty_pdf])
+    sale.raw_payload["llm_fact_context_manifest"] = extraction._fact_context_manifest(sale)
+
+    assert documents_are_current(sale)
+    assert extraction._has_pdf_fact_cache(sale)
+    assert extraction.has_current_fact_analysis(sale)
+    assert {item["url"] for item in sale.raw_payload["llm_fact_context_manifest"]["documents"]} == {
+        valid_pdf["url"]
+    }
+
+    cache_path.unlink()
+    assert extraction.has_current_fact_analysis(sale)
+    assert not extraction._has_pdf_fact_cache(sale)
 
 
 def test_qwen_rollout_reuses_unchanged_qwen2_facts(
@@ -440,7 +515,7 @@ def test_cached_chunk_is_merged_in_original_input_order(
     assert sale.raw_payload["llm_fact_extraction"]["summary"] == "first"
 
 
-def test_display_only_keeps_current_pdf_facts_after_local_cache_loss(tmp_path, monkeypatch):
+def test_display_only_keeps_verified_pdf_facts_after_local_cache_loss(tmp_path, monkeypatch):
     sale = _document_sale(tmp_path, monkeypatch)
     sale.raw_payload["llm_fact_extraction"] = {
         "servitudes": ["Passage imposé par le document"],

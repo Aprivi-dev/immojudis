@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { processInformationAgentInboundWebhook } from "@/lib/information-agent-inbound";
+import {
+  InformationAgentWebhookPayloadTooLargeError,
+  processInformationAgentInboundWebhook,
+} from "@/lib/information-agent-inbound";
 
 const mocks = vi.hoisted(() => ({
   verify: vi.fn(),
@@ -35,7 +38,15 @@ const address = (token: string) => `enquete+${token}@${DOMAIN}`;
 
 type Row = Record<string, unknown>;
 
-function fixture({ concurrentAssetLookup = false }: { concurrentAssetLookup?: boolean } = {}) {
+function fixture({
+  concurrentAssetLookup = false,
+  closeCaseBeforeFinalUpdate = false,
+  moveCaseToReviewBeforeFinalUpdate = false,
+}: {
+  concurrentAssetLookup?: boolean;
+  closeCaseBeforeFinalUpdate?: boolean;
+  moveCaseToReviewBeforeFinalUpdate?: boolean;
+} = {}) {
   const cases: Row[] = [
     {
       id: CASE_A,
@@ -65,8 +76,12 @@ function fixture({ concurrentAssetLookup = false }: { concurrentAssetLookup?: bo
   const messages: Row[] = [];
   const assets: Row[] = [];
   const facts: Row[] = [];
+  const jobs: Row[] = [];
   const uploads: Array<{ path: string; bytes: Uint8Array }> = [];
+  let messageMetadataWrites = 0;
   let assetLookupCount = 0;
+  let closeCaseBeforeNextUpdate = closeCaseBeforeFinalUpdate;
+  let moveCaseToReviewBeforeNextUpdate = moveCaseToReviewBeforeFinalUpdate;
   let releaseAssetLookups: () => void = () => {};
   const assetLookupsReady = new Promise<void>((resolve) => {
     releaseAssetLookups = resolve;
@@ -77,6 +92,7 @@ function fixture({ concurrentAssetLookup = false }: { concurrentAssetLookup?: bo
     information_agent_messages: messages,
     information_agent_evidence_assets: assets,
     information_agent_fact_candidates: facts,
+    information_agent_inbound_jobs: jobs,
     auction_sales: [
       {
         id: SALE_A,
@@ -127,19 +143,26 @@ function fixture({ concurrentAssetLookup = false }: { concurrentAssetLookup?: bo
       this.values = values;
       return this;
     }
-    upsert(values: Row[]) {
-      for (const row of values) {
-        if (
-          !facts.some(
-            (fact) =>
-              fact.message_id === row.message_id &&
-              fact.fact_key === row.fact_key &&
-              fact.evidence_asset_id === row.evidence_asset_id &&
-              fact.source_page === row.source_page &&
-              fact.display_value === row.display_value,
+    upsert(values: Row | Row[]) {
+      for (const row of Array.isArray(values) ? values : [values]) {
+        if (this.table === "information_agent_fact_candidates") {
+          if (
+            !facts.some(
+              (fact) =>
+                fact.message_id === row.message_id &&
+                fact.fact_key === row.fact_key &&
+                fact.evidence_asset_id === row.evidence_asset_id &&
+                fact.source_page === row.source_page &&
+                fact.display_value === row.display_value,
+            )
           )
-        )
-          facts.push(row);
+            facts.push(row);
+        } else if (
+          this.table === "information_agent_inbound_jobs" &&
+          !jobs.some((job) => job.provider_email_id === row.provider_email_id)
+        ) {
+          jobs.push({ ...row, id: row.id ?? `job-${jobs.length + 1}` });
+        }
       }
       return Promise.resolve({ data: null, error: null });
     }
@@ -197,8 +220,29 @@ function fixture({ concurrentAssetLookup = false }: { concurrentAssetLookup?: bo
           error: null,
         };
       }
+      if (
+        closeCaseBeforeNextUpdate &&
+        this.table === "information_agent_cases" &&
+        this.operation === "update"
+      ) {
+        closeCaseBeforeNextUpdate = false;
+        const target = cases.find((row) => row.id === CASE_A);
+        if (target) target.status = "completed";
+      }
+      if (
+        moveCaseToReviewBeforeNextUpdate &&
+        this.table === "information_agent_cases" &&
+        this.operation === "update"
+      ) {
+        moveCaseToReviewBeforeNextUpdate = false;
+        const target = cases.find((row) => row.id === CASE_A);
+        if (target) target.status = "review";
+      }
       const selected = rows.filter((row) => this.conditions.every((condition) => condition(row)));
-      if (this.operation === "update") selected.forEach((row) => Object.assign(row, this.values));
+      if (this.operation === "update") {
+        if (this.table === "information_agent_messages") messageMetadataWrites += 1;
+        selected.forEach((row) => Object.assign(row, this.values));
+      }
       return { data: selected, error: null };
     }
   }
@@ -210,14 +254,29 @@ function fixture({ concurrentAssetLookup = false }: { concurrentAssetLookup?: bo
       return { error: null };
     }),
   });
-  return { cases, missions, messages, assets, facts, uploads };
+  return {
+    cases,
+    missions,
+    messages,
+    assets,
+    facts,
+    jobs,
+    uploads,
+    messageMetadataWrites: () => messageMetadataWrites,
+  };
 }
 
 function receivedEmail({
   token = TOKEN_A,
   from = "Contact <contact@example.test>",
   text = "La surface habitable est de 84 m². Il y a 4 pièces.",
-}: { token?: string; from?: string; text?: string } = {}) {
+  authentication = { spf: "pass", dkim: "pass", dmarc: "pass" },
+}: {
+  token?: string;
+  from?: string;
+  text?: string;
+  authentication?: { spf?: string; dkim?: string; dmarc?: string } | null;
+} = {}) {
   mocks.verify.mockReturnValue({
     type: "email.received",
     created_at: "2026-09-23T10:00:00.000Z",
@@ -231,6 +290,7 @@ function receivedEmail({
       text,
       html: null,
       created_at: "2026-09-23T10:00:00.000Z",
+      authentication,
     },
     error: null,
   });
@@ -239,11 +299,20 @@ function receivedEmail({
 
 function webhook(
   fetchImpl = vi.fn(),
+  body = "signed local fixture",
+  additionalHeaders: HeadersInit = {},
+  deferProcessing = false,
+  envOverrides: Partial<Omit<NodeJS.ProcessEnv, "NODE_ENV">> = {},
 ): Promise<Awaited<ReturnType<typeof processInformationAgentInboundWebhook>>> {
   const request = new Request("https://example.test/api/webhooks/resend/information-agent", {
     method: "POST",
-    headers: { "svix-id": "id", "svix-timestamp": "timestamp", "svix-signature": "signature" },
-    body: "signed local fixture",
+    headers: {
+      "svix-id": "id",
+      "svix-timestamp": "timestamp",
+      "svix-signature": "signature",
+      ...additionalHeaders,
+    },
+    body,
   });
   return processInformationAgentInboundWebhook({
     request,
@@ -252,14 +321,60 @@ function webhook(
       RESEND_API_KEY: "fixture-key",
       RESEND_WEBHOOK_SECRET: "fixture-secret",
       INFORMATION_AGENT_INBOUND_DOMAIN: DOMAIN,
+      ...envOverrides,
     },
     fetchImpl: fetchImpl as typeof fetch,
+    deferProcessing,
   });
 }
 
 beforeEach(() => vi.resetAllMocks());
 
 describe("information-agent offline inbound scenarios", () => {
+  it("rejects an oversized declared body before signature verification", async () => {
+    await expect(
+      webhook(vi.fn(), "fixture", { "content-length": "300000" }),
+    ).rejects.toBeInstanceOf(InformationAgentWebhookPayloadTooLargeError);
+    expect(mocks.verify).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized streamed body without buffering it in full", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("x".repeat(200_000)));
+        controller.enqueue(new TextEncoder().encode("x".repeat(100_000)));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const request = new Request("https://example.test/api/webhooks/resend/information-agent", {
+      method: "POST",
+      headers: {
+        "svix-id": "id",
+        "svix-timestamp": "timestamp",
+        "svix-signature": "signature",
+      },
+      body: stream,
+      duplex: "half",
+    } as RequestInit);
+
+    await expect(
+      processInformationAgentInboundWebhook({
+        request,
+        env: {
+          NODE_ENV: "test",
+          RESEND_API_KEY: "fixture-key",
+          RESEND_WEBHOOK_SECRET: "fixture-secret",
+          INFORMATION_AGENT_INBOUND_DOMAIN: DOMAIN,
+        },
+      }),
+    ).rejects.toBeInstanceOf(InformationAgentWebhookPayloadTooLargeError);
+    expect(cancelled).toBe(true);
+    expect(mocks.verify).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid signature before reading a case", async () => {
     fixture();
     receivedEmail();
@@ -314,6 +429,123 @@ describe("information-agent offline inbound scenarios", () => {
     expect(state.cases[1]?.status).toBe("sent");
     expect(state.uploads).toHaveLength(1);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists a verified receipt before attachment processing when deferred", async () => {
+    const state = fixture();
+    receivedEmail();
+    const fetchImpl = vi.fn();
+
+    expect(await webhook(fetchImpl, "fixture", {}, true)).toMatchObject({
+      accepted: true,
+      caseId: CASE_A,
+      processingStatus: "queued",
+      attachmentCount: 0,
+    });
+    expect(state.messages).toHaveLength(1);
+    expect(state.jobs).toHaveLength(1);
+    expect(state.messages[0]?.metadata).toMatchObject({
+      inbound_processing: { status: "queued", attempts: 0 },
+    });
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("reviews a deferred receipt with unverified authentication before creating a job", async () => {
+    const state = fixture();
+    receivedEmail({ authentication: { spf: "pass", dkim: "pass", dmarc: "gray" } });
+    const fetchImpl = vi.fn();
+
+    expect(
+      await webhook(fetchImpl, "fixture", {}, true, {
+        INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION: "true",
+      }),
+    ).toMatchObject({
+      caseId: CASE_A,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(state.jobs).toHaveLength(0);
+    expect(state.messages[0]?.metadata).toMatchObject({
+      sender_authentication: {
+        status: "unverified",
+        spf: "pass",
+        dkim: "pass",
+        dmarc: "gray",
+      },
+      inbound_processing: { status: "review", reason: "sender_authentication_unverified" },
+    });
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("persists a completed processing checkpoint and skips attachment work on a replay", async () => {
+    const state = fixture();
+    receivedEmail({ text: "Merci pour votre retour." });
+    mocks.list.mockResolvedValue({ data: { data: [] }, error: null });
+    const fetchImpl = vi.fn();
+
+    const first = await webhook(fetchImpl);
+    const writesAfterFirstDelivery = state.messageMetadataWrites();
+    const second = await webhook(fetchImpl);
+
+    expect(first).toMatchObject({ processingStatus: "completed" });
+    expect(second).toMatchObject({ processingStatus: "completed", duplicate: true });
+    expect(state.messages[0]?.metadata).toMatchObject({
+      inbound_processing: {
+        version: "inbound-v2",
+        status: "completed",
+        attempts: 1,
+        provider_email_id: "provider-email-1",
+      },
+    });
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(state.messageMetadataWrites()).toBe(writesAfterFirstDelivery);
+  });
+
+  it("keeps a case in review when a later inbound reply has no new fact", async () => {
+    const state = fixture();
+    state.cases[0]!.status = "review";
+    receivedEmail({ text: "Merci pour votre retour, nous vérifions le dossier." });
+    mocks.list.mockResolvedValue({ data: { data: [] }, error: null });
+
+    expect(await webhook()).toMatchObject({ processingStatus: "completed", factCount: 0 });
+    expect(state.cases[0]?.status).toBe("review");
+  });
+
+  it("preserves review when a concurrent reply changes the case after the snapshot", async () => {
+    const state = fixture({ moveCaseToReviewBeforeFinalUpdate: true });
+    receivedEmail({ text: "Merci pour votre retour, nous vérifions le dossier." });
+
+    expect(await webhook()).toMatchObject({ processingStatus: "completed", factCount: 0 });
+    expect(state.cases[0]?.status).toBe("review");
+    expect(state.missions[0]?.status).toBe("replied");
+  });
+
+  it("keeps a failed checkpoint retryable and advances the attempt on the next delivery", async () => {
+    const state = fixture();
+    receivedEmail({ text: "Merci." });
+    mocks.list
+      .mockRejectedValueOnce(new Error("temporary Resend failure"))
+      .mockResolvedValueOnce({ data: { data: [] }, error: null });
+
+    await expect(webhook()).rejects.toThrow("temporary Resend failure");
+    expect(state.messages[0]?.metadata).toMatchObject({
+      inbound_processing: {
+        status: "failed",
+        attempts: 1,
+        last_error: "temporary Resend failure",
+      },
+    });
+
+    const retry = await webhook();
+    expect(retry).toMatchObject({ processingStatus: "completed" });
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]?.metadata).toMatchObject({
+      inbound_processing: { status: "completed", attempts: 2 },
+    });
   });
 
   it("handles two concurrent deliveries without duplicate messages, assets, or facts", async () => {
@@ -403,6 +635,64 @@ describe("information-agent offline inbound scenarios", () => {
     expect(state.cases[0]?.status).toBe("review");
   });
 
+  it("rejects malformed attachment metadata before downloading it", async () => {
+    const state = fixture();
+    receivedEmail({ text: "Pièce jointe." });
+    mocks.list.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: "malformed-size",
+            filename: "document.pdf",
+            content_type: "application/pdf",
+            size: Number.NaN,
+            download_url: "https://example.test/document.pdf",
+            content_disposition: "attachment",
+          },
+        ],
+      },
+      error: null,
+    });
+    const fetchImpl = vi.fn();
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(state.messages[0]?.metadata).toMatchObject({
+      rejected_attachment_count: 1,
+      rejected_attachments: [{ filename: "document.pdf", reason: "Taille hors limite" }],
+    });
+  });
+
+  it("asks Resend to retry a transient attachment failure so its link can be refreshed", async () => {
+    const state = fixture();
+    receivedEmail({ text: "Pièce jointe à récupérer." });
+    mocks.list.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: "temporary",
+            filename: "pv.pdf",
+            content_type: "application/pdf",
+            size: 16,
+            download_url: "https://example.test/pv.pdf",
+            content_disposition: "attachment",
+          },
+        ],
+      },
+      error: null,
+    });
+    const fetchImpl = vi.fn(async () => new Response("", { status: 503 }));
+
+    await expect(webhook(fetchImpl)).rejects.toThrow("nouvelle tentative");
+    expect(state.messages[0]?.metadata).toMatchObject({
+      inbound_processing: { status: "failed", attempts: 1 },
+    });
+    expect(state.cases[0]?.status).toBe("sent");
+  });
+
   it("does not create candidates if the case closes during attachment processing", async () => {
     const state = fixture();
     receivedEmail({ text: "Le bien est loué." });
@@ -434,6 +724,44 @@ describe("information-agent offline inbound scenarios", () => {
     expect(state.cases[0]?.status).toBe("completed");
   });
 
+  it("fails closed when the case closes at the final compare-and-set update", async () => {
+    const state = fixture({ closeCaseBeforeFinalUpdate: true });
+    receivedEmail();
+    mocks.list.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: "cas-race-document",
+            filename: "document.pdf",
+            content_type: "application/pdf",
+            size: 16,
+            download_url: "https://example.test/document.pdf",
+            content_disposition: "attachment",
+          },
+        ],
+      },
+      error: null,
+    });
+    const fetchImpl = vi.fn(async () => new Response("%PDF-1.7\nfixture", { status: 200 }));
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      accepted: true,
+      processingStatus: "review",
+      factCount: 3,
+      attachmentCount: 1,
+    });
+    expect(state.cases[0]?.status).toBe("completed");
+    expect(state.missions[0]?.status).toBe("sent");
+    expect(state.messages[0]?.metadata).toMatchObject({
+      inbound_processing: {
+        status: "review",
+        reason: "case_closed_during_processing",
+      },
+    });
+    expect(state.assets).toHaveLength(1);
+    expect(state.facts).toHaveLength(3);
+  });
+
   it("keeps an unexpected sender for review without creating facts or downloading attachments", async () => {
     const state = fixture();
     receivedEmail({ from: "Other <other@example.test>" });
@@ -446,6 +774,133 @@ describe("information-agent offline inbound scenarios", () => {
     });
     expect(state.messages).toHaveLength(1);
     expect(state.messages[0]?.metadata).toMatchObject({ sender_matches_recipient: false });
+    expect(state.cases[0]?.status).toBe("review");
+    expect(state.facts).toHaveLength(0);
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    receivedEmail({
+      authentication: { spf: "pass", dkim: "pass", dmarc: "fail" },
+    });
+    expect(await webhook(fetchImpl)).toMatchObject({
+      duplicate: true,
+      processingStatus: "review",
+    });
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("uses the actual From address when the display name contains another email", async () => {
+    const state = fixture();
+    receivedEmail({ from: "Expected contact@example.test <attacker@example.test>" });
+    const fetchImpl = vi.fn();
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      caseId: CASE_A,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(state.cases[0]?.status).toBe("review");
+    expect(state.messages[0]?.metadata).toMatchObject({ sender_matches_recipient: false });
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("keeps an explicit Resend authentication failure in review even in relaxed mode", async () => {
+    const state = fixture();
+    receivedEmail({
+      authentication: { spf: "pass", dkim: "pass", dmarc: "fail" },
+    });
+    const fetchImpl = vi.fn();
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      caseId: CASE_A,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(state.messages[0]?.metadata).toMatchObject({
+      sender_matches_recipient: true,
+      sender_authentication: {
+        status: "fail",
+        spf: "pass",
+        dkim: "pass",
+        dmarc: "fail",
+      },
+      inbound_processing: { status: "review", reason: "sender_authentication_failed" },
+    });
+    expect(state.cases[0]?.status).toBe("review");
+    expect(state.facts).toHaveLength(0);
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("requires DMARC and one aligned mechanism in strict mode without requiring both", async () => {
+    const state = fixture();
+    receivedEmail({
+      authentication: { spf: "pass", dkim: "unknown", dmarc: "pass" },
+    });
+
+    expect(
+      await webhook(vi.fn(), "fixture", {}, false, {
+        INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION: "true",
+      }),
+    ).toMatchObject({ caseId: CASE_A, factCount: 2, processingStatus: "review" });
+    expect(state.messages[0]?.metadata).toMatchObject({
+      sender_authentication: {
+        status: "pass",
+        spf: "pass",
+        dkim: "unknown",
+        dmarc: "pass",
+      },
+    });
+    expect(state.facts).toHaveLength(2);
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["SPF", { spf: "fail", dkim: "pass", dmarc: "pass" }],
+    ["DKIM", { spf: "pass", dkim: "fail", dmarc: "pass" }],
+  ] as const)(
+    "admits a DMARC pass through the other aligned mechanism when %s fails",
+    async (_mechanism, authentication) => {
+      const state = fixture();
+      receivedEmail({ authentication });
+
+      expect(
+        await webhook(vi.fn(), "fixture", {}, false, {
+          INFORMATION_AGENT_REQUIRE_EMAIL_AUTHENTICATION: "true",
+        }),
+      ).toMatchObject({ caseId: CASE_A, factCount: 2, processingStatus: "review" });
+      expect(state.messages[0]?.metadata).toMatchObject({
+        sender_authentication: { status: "pass", ...authentication },
+      });
+      expect(state.facts).toHaveLength(2);
+      expect(mocks.list).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("reviews missing authentication by default before extraction", async () => {
+    const state = fixture();
+    receivedEmail({ authentication: null });
+    const fetchImpl = vi.fn();
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      caseId: CASE_A,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(state.messages[0]?.metadata).toMatchObject({
+      sender_authentication: {
+        status: "unverified",
+        spf: "missing",
+        dkim: "missing",
+        dmarc: "missing",
+      },
+      inbound_processing: { status: "review", reason: "sender_authentication_unverified" },
+    });
     expect(state.cases[0]?.status).toBe("review");
     expect(state.facts).toHaveLength(0);
     expect(mocks.list).not.toHaveBeenCalled();

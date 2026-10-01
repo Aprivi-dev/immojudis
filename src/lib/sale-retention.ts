@@ -2,11 +2,12 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 type Result<T> = { data: T | null; error: { message?: string } | null };
 type StorageItem = { id: string; bucket: string; object_path: string };
+type SalePurgeResult = { deleted: number; remaining: number | null; busy: boolean };
 type RetentionClient = {
   rpc(
-    name: string,
+    name: "purge_expired_auction_sales" | "enqueue_orphan_information_agent_portal_uploads",
     args: Record<string, unknown>,
-  ): Promise<Result<{ deleted: number; remaining: number | null; busy: boolean }>>;
+  ): Promise<Result<SalePurgeResult | number>>;
   from(name: string): {
     select(columns: string): {
       order(column: string): { limit(count: number): Promise<Result<StorageItem[]>> };
@@ -30,12 +31,19 @@ export async function runSaleRetention(
       p_now: now.toISOString(),
       p_limit: 25,
     });
-    if (result.error || !result.data)
+    if (result.error || !result.data || typeof result.data === "number")
       throw new Error(result.error?.message || "Missing retention result");
     deleted += result.data.deleted;
     remaining = result.data.remaining;
     busy = result.data.busy;
     if (busy || !remaining || !result.data.deleted) break;
+  }
+  const orphanQueue = await client.rpc("enqueue_orphan_information_agent_portal_uploads", {
+    p_now: now.toISOString(),
+    p_limit: 100,
+  });
+  if (orphanQueue.error || typeof orphanQueue.data !== "number") {
+    throw new Error(orphanQueue.error?.message || "Portal upload cleanup unavailable");
   }
   const queue = await client
     .from("sale_retention_storage_queue")
@@ -54,5 +62,5 @@ export async function runSaleRetention(
     if (ack.error) throw new Error(ack.error.message || "Storage retention acknowledgement failed");
     filesDeleted++;
   }
-  return { deleted, remaining, busy, filesDeleted };
+  return { deleted, remaining, busy, orphanUploadsQueued: orphanQueue.data, filesDeleted };
 }

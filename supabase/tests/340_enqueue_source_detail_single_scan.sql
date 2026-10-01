@@ -124,6 +124,16 @@ values (
   '{}'::jsonb
 );
 
+-- The ingestion writer persists observation aliases in the compact relation;
+-- the embedded observations payload is retained as source evidence.
+insert into public.auction_observations (
+  source_url, source_name, canonical_source_url
+) values (
+  'https://example.test/pgtap/enqueue/observed',
+  'pgtap-enqueue-observed',
+  'https://example.test/pgtap/enqueue/canonical'
+);
+
 select is(
   public.enqueue_due_source_details('2026-09-13 12:00:00+00', 100),
   5,

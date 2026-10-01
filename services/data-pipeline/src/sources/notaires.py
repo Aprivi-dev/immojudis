@@ -24,6 +24,8 @@ PROPERTY_TYPE_LABELS = {
     "MAI": "maison",
     "TER": "terrain",
     "IMB": "immeuble",
+    # The detail API uses both ``IMB`` and ``IMM`` for an immeuble.
+    "IMM": "immeuble",
     "LOC": "local commercial",
     "COM": "local commercial",
     "GAR": "parking",
@@ -34,6 +36,7 @@ PROPERTY_BLOCK_KEYS = {
     "MAI": "maison",
     "TER": "terrain",
     "IMB": "immeuble",
+    "IMM": "immeuble",
     "LOC": "local",
     "COM": "local",
 }
@@ -639,7 +642,10 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
     )
     source_land_surface = _surface_value(property_block.get("surfaceTerrain"))
     cadastral_surface, cadastral_evidence = _cadastral_surface_from_text(description_text)
-    land_surface = source_land_surface or cadastral_surface
+    descriptive_land_surface, descriptive_land_evidence, land_surface_quarantine_reason = (
+        _descriptive_land_surface_from_text(description_text)
+    )
+    land_surface = source_land_surface or cadastral_surface or descriptive_land_surface
     generic_surface = _usable_generic_surface(property_block.get("surface"), land_surface)
     generic_from_text = generic_surface is None and generic_text_surface is not None
     if generic_from_text:
@@ -650,6 +656,9 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
     elif cadastral_surface is not None:
         land_surface_source = "notaires.description.cadastre"
         land_surface_evidence = cadastral_evidence
+    elif descriptive_land_surface is not None:
+        land_surface_source = "notaires.description.land_surface"
+        land_surface_evidence = descriptive_land_evidence
     else:
         land_surface_source = None
         land_surface_evidence = None
@@ -691,6 +700,32 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
             "selected_source": source_url, "alternative_source": source_url,
             "evidence": {"api_surfaceHabitable": api_habitable_surface, "description": text_surface_evidence}})
     latitude, longitude = _coordinates(property_block)
+    source_blocks = {
+        "type_transaction": transaction_type,
+        "reference": clean_text(transaction.get("reference")),
+        "source_updated_at": clean_text(transaction.get("dateMaj") or data.get("dateMaj")),
+        "type_adjudication": clean_text(transaction.get("typeAdjudication")),
+        "origine_judiciaire": clean_text(transaction.get("origineJudiciaire")),
+        "consignation": transaction.get("consignation"),
+        "auction_location": _address(transaction, clean_text(transaction.get("codePostal")), clean_text(transaction.get("ville"))),
+        "mode_vente": clean_text(transaction.get("modeVente")),
+        "surenchere": clean_text(transaction.get("surenchere")),
+        "seance_heure_depot": clean_text(transaction.get("seanceHeureDepot")),
+        "seance_paiement": clean_text(transaction.get("seancePaiement")),
+        "notary_name": _notary_from_text(description_text),
+        "usage": clean_text(property_block.get("sousType")),
+        "etat": clean_text(property_block.get("etat")),
+        "ancien_neuf": clean_text(property_block.get("ancienNeuf")),
+        "sous_type": clean_text(property_block.get("sousType")),
+        "dpe_classe": clean_text(property_block.get("consommationClasse")),
+        "ges_classe": clean_text(property_block.get("emissionGesClasse")),
+        "nb_etages": property_block.get("nbEtages"),
+        "detail_enriched": True,
+    }
+    quality_flags = []
+    if land_surface_quarantine_reason:
+        quality_flags.append("ambiguous_land_surface")
+        source_blocks["land_surface_quarantine_reason"] = land_surface_quarantine_reason
     return {
         "source_conflicts": conflicts,
         "department": clean_text(property_block.get("inseeDepartement")),
@@ -741,28 +776,8 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         "raw_text": raw_text,
         "raw_image_url": source_images[0] if source_images else None,
         "source_images": source_images,
-        "source_blocks": {
-            "type_transaction": transaction_type,
-            "reference": clean_text(transaction.get("reference")),
-            "source_updated_at": clean_text(transaction.get("dateMaj") or data.get("dateMaj")),
-            "type_adjudication": clean_text(transaction.get("typeAdjudication")),
-            "origine_judiciaire": clean_text(transaction.get("origineJudiciaire")),
-            "consignation": transaction.get("consignation"),
-            "auction_location": _address(transaction, clean_text(transaction.get("codePostal")), clean_text(transaction.get("ville"))),
-            "mode_vente": clean_text(transaction.get("modeVente")),
-            "surenchere": clean_text(transaction.get("surenchere")),
-            "seance_heure_depot": clean_text(transaction.get("seanceHeureDepot")),
-            "seance_paiement": clean_text(transaction.get("seancePaiement")),
-            "notary_name": _notary_from_text(description_text),
-            "usage": clean_text(property_block.get("sousType")),
-            "etat": clean_text(property_block.get("etat")),
-            "ancien_neuf": clean_text(property_block.get("ancienNeuf")),
-            "sous_type": clean_text(property_block.get("sousType")),
-            "dpe_classe": clean_text(property_block.get("consommationClasse")),
-            "ges_classe": clean_text(property_block.get("emissionGesClasse")),
-            "nb_etages": property_block.get("nbEtages"),
-            "detail_enriched": True,
-        },
+        "quality_flags": quality_flags,
+        "source_blocks": source_blocks,
     }
 
 
@@ -826,6 +841,11 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
 def _merge_detail(sale: dict[str, Any], detail: dict[str, Any]) -> None:
     for key, value in detail.items():
         if value in (None, "", [], {}):
+            continue
+        if key == "quality_flags" and isinstance(value, list):
+            existing = sale.get(key)
+            existing_flags = existing if isinstance(existing, list) else []
+            sale[key] = list(dict.fromkeys([*existing_flags, *value]))
             continue
         if key == "source_blocks" and isinstance(sale.get(key), dict) and isinstance(value, dict):
             sale[key].update({k: v for k, v in value.items() if v not in (None, "")})
@@ -1082,6 +1102,38 @@ def _cadastral_surface_from_text(value: str | None) -> tuple[int | float | None,
         if match:
             return _surface_value(match.group(1)), _evidence_sentence(text, match.start(), match.end())
     return None, None
+
+
+def _descriptive_land_surface_from_text(
+    value: str | None,
+) -> tuple[int | float | None, str | None, str | None]:
+    """Keep one explicitly global park/terrain area and quarantine competing areas."""
+
+    text = clean_text(value)
+    if not text:
+        return None, None, None
+    patterns = (
+        rf"\bparc\s+(?:arbor[ée]e?|paysager)\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+        rf"\b(?:surface|superficie)\s+(?:du|de la)\s+terrain\s*:?\s*(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+        rf"\b(?:surface|superficie)\s+de terrain\s*:?\s*(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+        rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+de\s+terrain\b",
+        rf"\bparcelle\b[^.;\n]{{0,80}}?(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+    )
+    matches = []
+    for pattern in patterns:
+        matches.extend(
+            (match, _surface_value(match.group(1)))
+            for match in re.finditer(pattern, text, re.I)
+        )
+    candidates = [(match, surface) for match, surface in matches if surface is not None]
+    unique = {surface for _, surface in candidates}
+    if len(unique) > 1:
+        return None, None, "multiple_explicit_land_measurements"
+    if not candidates:
+        return None, None, None
+    surface = next(iter(unique))
+    match = candidates[0][0]
+    return surface, _evidence_sentence(text, match.start(), match.end()), None
 
 
 def _evidence_sentence(text: str, start: int, end: int) -> str:

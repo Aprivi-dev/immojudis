@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -9,6 +10,12 @@ import pytest
 
 from src import source_detail_worker as worker
 from src.models import AuctionSale
+from src.source_task_deadline import (
+    SourceTaskDeadlineExceeded,
+    source_task_bounded_timeout,
+    source_task_deadline_remaining,
+    source_task_deadline_scope,
+)
 
 
 def _job(**overrides):
@@ -35,6 +42,119 @@ def _sale():
 
 def _settings():
     return {"user_agent": "test", "supabase_db_url": None}
+
+
+def test_source_task_deadline_api_is_bounded_and_resets() -> None:
+    assert source_task_deadline_remaining() is None
+    deadline = time.monotonic() + 5
+    with source_task_deadline_scope(deadline):
+        remaining = source_task_deadline_remaining()
+        assert remaining is not None and 0 < remaining <= 5
+        assert 0 < source_task_bounded_timeout(30, "test HTTP") <= remaining
+    assert source_task_deadline_remaining() is None
+
+    with source_task_deadline_scope(time.monotonic() - 1):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="test HTTP"):
+            source_task_bounded_timeout(30, "test HTTP")
+
+
+def test_source_detail_deadline_releases_all_unstarted_claims(monkeypatch) -> None:
+    jobs = [_job(id="job-1"), _job(id="job-2")]
+    released: list[tuple[str, str]] = []
+    deferred: list[str] = []
+    monkeypatch.setattr(
+        worker,
+        "release_source_detail_job_without_attempt",
+        lambda job, *, reason, settings=None, retry_not_before=None: released.append((job["id"], reason)),
+    )
+    monkeypatch.setattr(
+        worker,
+        "process_source_detail_job",
+        lambda *args, **kwargs: pytest.fail("expired source-detail work must not start"),
+    )
+
+    assert (
+        worker.run_source_detail_jobs(
+            jobs,
+            settings=_settings(),
+            deadline=time.monotonic() - 1,
+            on_deferred=deferred.extend,
+        )
+        == len(jobs)
+    )
+    assert [job_id for job_id, _reason in released] == ["job-1", "job-2"]
+    assert deferred == ["job-1", "job-2"]
+    assert all("deadline" in reason.lower() for _job_id, reason in released)
+
+
+def test_source_detail_deadline_before_publication_releases_without_finish(monkeypatch) -> None:
+    sale = _sale()
+    released = []
+    deferred: list[str] = []
+    finished = []
+    published = []
+
+    def ensure(operation: str):
+        if operation == "publishing source-detail revision":
+            raise SourceTaskDeadlineExceeded(operation, deadline=1, remaining=-1)
+        return 10.0
+
+    monkeypatch.setattr(worker, "ensure_source_task_deadline", ensure)
+    monkeypatch.setattr(worker, "source_detail_source_enabled", lambda source, settings: True)
+    monkeypatch.setattr(worker, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(
+        worker,
+        "fetch_public_detail",
+        lambda *args: (args[1], "body", {"source_url": args[1], "source_name": "licitor"}),
+    )
+    monkeypatch.setattr(worker, "prepare_source_revision", lambda existing, raw: existing)
+    monkeypatch.setattr(
+        worker,
+        "publish_source_revision",
+        lambda *args: published.append(args) or pytest.fail("deadline must prevent publication"),
+    )
+    monkeypatch.setattr(
+        worker,
+        "release_source_detail_job_without_attempt",
+        lambda job, *, reason, settings=None, retry_not_before=None: released.append((job["id"], reason)),
+    )
+    monkeypatch.setattr(
+        worker,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda *args, **kwargs: finished.append((args, kwargs)),
+    )
+
+    assert worker.process_source_detail_job(_job(), settings=_settings(), on_deferred=deferred.extend) is False
+    assert published == []
+    assert finished == []
+    assert len(released) == 1
+    assert deferred == ["job-1"]
+    assert "publishing source-detail revision" in released[0][1]
+
+
+def test_source_detail_batch_deadline_release_is_safe_when_repeated(monkeypatch) -> None:
+    jobs = [_job(id="job-1"), _job(id="job-2")]
+    released = []
+    deferred: list[str] = []
+    error = SourceTaskDeadlineExceeded("starting source-detail fetch", deadline=1, remaining=-1)
+    monkeypatch.setattr(
+        worker,
+        "process_source_detail_job",
+        lambda *args, **kwargs: (_ for _ in ()).throw(error),
+    )
+    monkeypatch.setattr(
+        worker,
+        "release_source_detail_job_without_attempt",
+        lambda job, *, reason, settings=None, retry_not_before=None: released.append(job["id"]),
+    )
+
+    assert worker.run_source_detail_jobs(
+        jobs,
+        settings=_settings(),
+        on_deferred=deferred.extend,
+    ) == len(jobs)
+    assert released == ["job-1", "job-2"]
+    assert deferred == ["job-1", "job-2"]
 
 
 def test_source_detail_gate_fails_closed_without_database():
@@ -144,6 +264,7 @@ def test_404_failure_does_not_publish_or_change_source_state(monkeypatch):
     assert worker.process_source_detail_job(_job(), settings=_settings()) is False
     assert len(finished) == 1
     assert finished[0][1]["succeeded"] is False
+    assert finished[0][1]["cancelled"] is True
     assert refusals == []
 
 
@@ -184,7 +305,25 @@ def test_timeout_failure_does_not_publish_or_change_source_state(monkeypatch):
 
     assert worker.process_source_detail_job(_job(), settings=_settings()) is False
     assert finished[0]["succeeded"] is False
+    assert finished[0]["cancelled"] is False
     assert refusals == []
+
+
+def test_detail_failure_classification_marks_transient_network_errors_retryable() -> None:
+    assert worker._classify_detail_failure(httpx.ReadTimeout("timed out")) == "transient"
+    assert worker._classify_detail_failure(RuntimeError("source relay unavailable")) == "transient"
+    assert worker._classify_detail_failure(RuntimeError("catalogue/search page; identity unverified")) == "review_required"
+
+
+def test_transient_detail_retry_deadline_is_bounded_and_backed_off() -> None:
+    now = datetime.now(UTC)
+    deadline = datetime.fromisoformat(
+        worker._retry_not_before_for_failure(
+            _job(attempt_count=3), {}, "transient"
+        ).replace("Z", "+00:00")
+    )
+    assert timedelta(minutes=119) < deadline - now <= timedelta(hours=2, seconds=2)
+    assert worker._retry_not_before_for_failure(_job(), {}, "review_required") is None
 
 
 def test_paused_source_releases_claim_without_http_or_attempt_consumption(monkeypatch):

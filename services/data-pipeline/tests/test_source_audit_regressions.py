@@ -49,6 +49,166 @@ def test_cessions_current_dom_recovers_description_sale_time_and_open_visits():
     assert cessions_etat._extract_sale_date("Date d'adjudication : 05/11/2026\nCommentaire : Visite le 04 novembre 2026 à 10h30") == "05/11/2026"
 
 
+def test_cessions_detail_recognizes_explicit_offer_closing_date() -> None:
+    for text, expected in (
+        ("Fin de l'appel d'offre le 30/09/2026.", "30/09/2026"),
+        ("Date de fin de vente : 30/09/2026", "30/09/2026"),
+        ("La procédure d'appel d'offre prend fin au 30 juin 2026.", "30 juin 2026"),
+    ):
+        assert cessions_etat._extract_sale_date(text) == expected
+
+
+def test_cessions_detail_ignores_another_sales_closing_date_in_footer() -> None:
+    html = """
+    <div id="panel-bien"><p>Maison disponible, modalités à venir.</p></div>
+    <footer>Autre annonce : Date de fin de vente : 30/09/2026</footer>
+    """
+    raw = cessions_etat.parse_cessions_etat_detail_html(html, cessions_etat.BASE_URL + "/biens/test")
+    assert raw["sale_date"] is None
+
+
+def test_cessions_detail_reads_explicit_sale_date_beside_property_panel() -> None:
+    html = """
+    <main><div id="panel-bien"><p>Maison disponible.</p></div>
+    <section><p>Date d'adjudication : 05/11/2026</p></section></main>
+    <footer>Date de fin de vente : 30/09/2026</footer>
+    """
+    raw = cessions_etat.parse_cessions_etat_detail_html(html, cessions_etat.BASE_URL + "/biens/test")
+    assert raw["sale_date"] == "05/11/2026"
+
+
+def test_cessions_detail_keeps_explicit_carrez_surface() -> None:
+    html = """
+    <main><div id="panel-bien">
+      <p>Locaux de bureaux pour une surface loi Carrez d'environ 230 m².</p>
+    </div></main>
+    """
+
+    raw = cessions_etat.parse_cessions_etat_detail_html(
+        html,
+        cessions_etat.BASE_URL + "/biens/bureaux-test",
+    )
+
+    assert raw["carrez_surface_m2"] == "230"
+    assert raw["source_blocks"]["surface_carrez"] == "230"
+    assert normalize_sale(raw).carrez_surface_m2 == 230
+
+
+def test_cessions_detail_preserves_online_sale_window_and_date_semantics() -> None:
+    html = """
+    <main><div id="panel-bien"><p>Maison à vendre.</p>
+      <p>Début de vente : 28/09/2026 à 14:00</p>
+      <p>Date de fin de vente : 30/09/2026 à 15:30</p>
+    </div></main>
+    """
+
+    raw = cessions_etat.parse_cessions_etat_detail_html(
+        html,
+        cessions_etat.BASE_URL + "/biens/maison-test",
+    )
+
+    assert raw["sale_date"] == "30/09/2026"
+    assert raw["sale_date_kind"] == "sale_window_close"
+    assert raw["source_sale_schedule"] == {
+        "opens_at": "2026-09-28T12:00:00+00:00",
+        "closes_at": "2026-09-30T13:30:00+00:00",
+        "schedule_type": "sale_window",
+    }
+
+
+def test_cessions_detail_labels_offer_deadline_separately_from_adjudication() -> None:
+    assert cessions_etat._sale_date_kind(
+        "La procédure d'appel d'offre prend fin au 30 juin 2026.", None
+    ) == "offer_deadline"
+
+
+def test_cessions_detail_keeps_land_area_separate_from_building_area() -> None:
+    for text, expected in (
+        ("Superficie du terrain 2499 Surface en m² 134", "2499"),
+        ("Maison implantée sur son terrain clos et arboré de 439 m².", "439"),
+        ("L'immeuble est situé par la parcelle CK 34, d’une superficie de 491 m².", "491"),
+    ):
+        assert cessions_etat._extract_land_surface(text) == expected
+    assert cessions_etat._extract_land_surface("Maison d'une superficie totale de 134 m²") is None
+
+
+def test_cessions_detail_reads_split_lot_description_for_land_and_garage() -> None:
+    html = """
+    <main>
+      <div id="panel-bien"><div class="texte"><div class="fr-text">
+        <p>Parcelle</p><p>d'une superficie de 420 m².</p><p>Un garage attenant au bien.</p>
+      </div></div></div>
+    </main>
+    """
+
+    detail = cessions_etat.parse_cessions_etat_detail_html(
+        html,
+        cessions_etat.BASE_URL + "/biens/synthetic-lot",
+    )
+
+    assert detail["land_surface_m2"] == "420"
+    assert detail["parking_count"] == 1
+    assert detail["source_blocks"]["surface_terrain"] == "420"
+    assert detail["source_blocks"]["parking_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "excluded_text",
+    (
+        "Un garage non compris dans la vente.",
+        "Un garage appartenant au lot voisin.",
+    ),
+)
+def test_cessions_detail_ignores_excluded_garage_mentions(excluded_text: str) -> None:
+    html = f"""
+    <main>
+      <div id="panel-bien"><div class="texte"><div class="fr-text">{excluded_text}</div></div></div>
+    </main>
+    """
+
+    assert cessions_etat._extract_parking_count(excluded_text) is None
+    detail = cessions_etat.parse_cessions_etat_detail_html(
+        html,
+        cessions_etat.BASE_URL + "/biens/synthetic-exclusion",
+    )
+
+    assert detail["parking_count"] is None
+
+
+def test_cessions_detail_does_not_promote_other_lot_surface_or_parking() -> None:
+    html = """
+    <main>
+      <div id="panel-bien"><div class="texte"><div class="fr-text">
+        Bien test sans mesure ni stationnement.
+      </div></div></div>
+      <footer>Autre lot : parcelle d'une superficie de 999 m². Un garage.</footer>
+    </main>
+    """
+
+    detail = cessions_etat.parse_cessions_etat_detail_html(
+        html,
+        cessions_etat.BASE_URL + "/biens/synthetic-scope",
+    )
+
+    assert detail["land_surface_m2"] is None
+    assert detail["parking_count"] is None
+
+
+def test_cessions_detail_type_overrides_conflicting_list_type() -> None:
+    source_url = cessions_etat.BASE_URL + "/biens/test"
+    sale = {"source_url": source_url, "property_type": "terrain"}
+
+    class Client:
+        def get(self, url: str) -> str:
+            assert url == source_url
+            return "<main><h1>Pavillon avec jardin</h1><div id='panel-bien'>Pavillon.</div></main>"
+
+    errors: list[str] = []
+    cessions_etat._enrich_sale_from_detail(Client(), sale, errors)
+    assert errors == []
+    assert sale["property_type"] == "house"
+
+
 def test_avoventes_description_is_the_lot_not_nearby_comparables():
     html = """<h1>Appartement</h1><p>Vente aux enchères</p><p>Mise à prix : 80 000 €</p>
     <h2>À propos du bien</h2><div>Appartement T2. Superficie loi Carrez : 51,10 m². Loué 780 €/mois.</div>

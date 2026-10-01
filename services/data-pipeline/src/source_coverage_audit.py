@@ -15,12 +15,38 @@ from unittest.mock import patch
 from urllib.parse import urljoin
 
 import httpx
-from bs4 import BeautifulSoup
 
 from src.catalogue_proof import canonical, certify_catalogue, public_page_proof, record_id
+from src.config import load_settings, require_encheres_publiques_access
+from src.sources.agrasc_urls import classify_agrasc_operator_url
+from src.sources.common import parse_html
 
 SOURCES = ('avoventes', 'licitor', 'vench', 'info_encheres', 'encheres_publiques',
            'petites_affiches', 'cessions_etat', 'agrasc', 'encheres_immobilieres', 'notaires')
+
+
+def _derive_catalogue_exclusions(source: str, proofs: list[dict]) -> dict[str, str]:
+    """Derive only safe source-specific exclusions from traced public URLs.
+
+    The audit recalculates its certificate independently from the collector's
+    coverage output.  In particular, an AGRASC seller catalogue can be visible
+    to the public-card proof while the source parser intentionally emits no
+    property row for it.  Keep that URL handled without trusting a collector
+    supplied exclusion list.
+    """
+    if source != "agrasc":
+        return {}
+    public_urls = {
+        canonical(str(url))
+        for proof in proofs
+        for url in proof.get("public_urls", [])
+        if url
+    }
+    return {
+        url: "operator_seller_catalogue_without_listing_identity"
+        for url in sorted(public_urls)
+        if classify_agrasc_operator_url(url) == "agorastore_seller"
+    }
 
 
 def page_evidence(body: str, url: str) -> dict:
@@ -32,7 +58,7 @@ def page_evidence(body: str, url: str) -> dict:
         return {'kind': 'api', 'advertised_total': data.get('nbTotalAnnonces'),
                 'advertised_pages': data.get('nbPages'), 'page': data.get('page'),
                 'raw_rows': len(data.get('annonceResumeDto') or [])}
-    soup = BeautifulSoup(body, 'html.parser')
+    soup = parse_html(body, 'html.parser')
     pagination = []
     for a in soup.select('a[href]'):
         href = str(a['href'])
@@ -47,6 +73,10 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
               max_requests: int = 300, max_seconds: int = 600, resolve_missing_locations: bool = False) -> dict:
     if source not in SOURCES or not 1 <= max_pages <= 150 or not 1 <= max_requests <= 500 or not 1 <= max_seconds <= 900:
         raise ValueError('Invalid source or audit budget')
+    if source == "encheres_publiques":
+        # Guard before importing the collector or installing the audit send
+        # hook, so an unauthorized audit cannot reach the provider at all.
+        require_encheres_publiques_access(load_settings())
     # Configuration is read after clearing credentials. No enrichment runner is imported.
     for key in ('SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_DB_URL', 'REPLICATE_API_TOKEN'):
         os.environ[key] = ''
@@ -82,15 +112,19 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
             entry['response_headers'] = {key: response.headers[key] for key in
                                          ('server', 'cf-mitigated', 'content-type', 'retry-after', 'x-sb-edge-region') if key in response.headers}
             if response.status_code in {401, 403, 429} and not kwargs.get('stream'):
-                block = BeautifulSoup(response.text, 'html.parser')
+                block = parse_html(response.text, 'html.parser')
                 entry['refusal_title'] = block.title.get_text(' ', strip=True) if block.title else None
                 entry['refusal_text'] = block.get_text(' ', strip=True)[:350]
             if not kwargs.get('stream'):
                 entry['sha256'] = hashlib.sha256(response.content).hexdigest()
                 entry['bytes'] = len(response.content)
                 if response.status_code == 200 and not request.url.path.endswith('/robots.txt') and not in_detail:
-                    entry['evidence'] = page_evidence(response.text, str(request.url))
-                    proof = public_page_proof(source, response.text, str(request.url))
+                    evidence_html = response.text
+                    if source == 'avoventes':
+                        evidence_html = module.compact_avoventes_catalogue_html(evidence_html)
+                        entry['evidence_html_chars'] = len(evidence_html)
+                    entry['evidence'] = page_evidence(evidence_html, str(request.url))
+                    proof = public_page_proof(source, evidence_html, str(request.url))
                     entry['catalogue_proof'] = proof
                     proofs.append(proof)
             return response
@@ -148,9 +182,11 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
     sales = result.sales if result else []
     coverage = result.coverage if result else {}
     errors = result.errors if result else [fatal]
+    exclusions = _derive_catalogue_exclusions(source, proofs)
     certificate = certify_catalogue(source, proofs, parsed,
                                     {canonical(str(s['source_url'])) for s in sales},
-                                    errors, budget_exhausted, coverage, parsed_records)
+                                    errors, budget_exhausted, coverage, parsed_records,
+                                    exclusions=exclusions)
     report = {
         'certificate': certificate,
         'parser_record_ids': {key: sorted(value) for key, value in parsed_records.items()},

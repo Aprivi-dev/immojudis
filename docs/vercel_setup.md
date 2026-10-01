@@ -121,9 +121,10 @@ pour se rapprocher du temps réel. Les routes refusent toute requête sans
 
 ### Contrôle de santé opérationnelle
 
-Le plan Vercel Hobby ne permettant qu'une exécution quotidienne, `vercel.json` conserve le passage
-de secours à `07:00 UTC`. Le contrôle primaire est lancé toutes les 15 minutes par Supabase Cron ;
-son URL et son Bearer token sont chiffrés dans Supabase Vault par :
+Le plan Vercel Hobby ne permettant qu'une exécution quotidienne, le contrôle de santé est lancé
+toutes les 15 minutes par Supabase Cron. Le même planificateur traite les réponses de l'agent
+toutes les deux minutes par un job distinct. Ces jobs appellent des routes protégées avec l'URL
+et le Bearer token chiffrés dans Supabase Vault par :
 
 ```bash
 npm run ops:health-scheduler:configure

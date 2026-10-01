@@ -18,9 +18,15 @@ from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.collection_evidence import record_items, record_sale_decisions
-from src.config import load_settings
+from src.config import (
+    EncheresPubliquesAccessNotAuthorized,
+    encheres_publiques_access_enabled,
+    load_settings,
+    require_encheres_publiques_access,
+)
 from src.dedupe import merge_duplicate_sales
 from src.dpe import enrich_dpe_sales
+from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.display_quality import has_current_display
 from src.enrichment.extract_structured import (
     LLMEnrichmentStats,
@@ -46,6 +52,7 @@ from src.pdf_enrichment import (
     classify_document_type,
     enrich_sale_from_pdfs,
 )
+from src.pdf_progress import PDF_PROGRESS_SCHEMA_VERSION
 from src.quality import (
     build_extraction_gap_report,
     build_quality_report,
@@ -54,6 +61,7 @@ from src.quality import (
 )
 from src.run_finalizer import register_run
 from src.sale_procedure import classify_sale_procedure
+from src.source_process import run_source_in_subprocess
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.cessions_etat import scrape_cessions_etat_aquitaine_result
@@ -76,6 +84,7 @@ from src.storage.supabase_client import (
     finish_run_in_supabase,
     mark_past_sales_in_supabase,
     reconcile_duplicate_sales_in_supabase,
+    restore_persisted_pdf_progress_for_sale,
     update_run_progress_in_supabase,
     upsert_cadastre_parcels_to_supabase,
     upsert_dpe_diagnostics_to_supabase,
@@ -175,12 +184,16 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_display_description",
     "llm_display_description_word_count",
     "llm_display_status",
+    "llm_display_model",
     "llm_display_origin",
     "source_operational_changed",
     "llm_display_quality_version",
     "llm_display_source_constraints",
     "llm_display_evidence_check",
     "llm_prompt_version",
+    "source_content_changed",
+    "source_content_change_reason",
+    "superseded_analysis",
     "document_analysis",
     "surface_extraction",
     "surface_analysis",
@@ -224,6 +237,14 @@ class CollectionIncompleteError(RuntimeError):
 def run_pipeline(options: PipelineOptions | None = None) -> int:
     options = options or PipelineOptions()
     settings = load_settings()
+    # Do this before creating a run or looking up catalogue state.  ``all``
+    # only enters this gate when its EP benchmark toggle is explicitly on;
+    # the default ``all`` run therefore continues to skip the source.
+    if options.source == "encheres_publiques" or (
+        options.source == "all"
+        and bool(settings.get("enable_encheres_publiques_benchmark"))
+    ):
+        require_encheres_publiques_access(settings)
     run_id = create_run_in_supabase(options.source, options.use_llm, run_id=options.run_id) if options.upsert else None
     register_run(run_id)
     errors: dict[str, list[str]] = {source: [] for source in SOURCE_NAMES}
@@ -253,8 +274,9 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
     # ── Scraping des sources en parallèle ────────────────────────────────────
     # Chaque source est indépendante (domaine + client HTTP + délai propres), donc
-    # on les lance en threads : le temps total ≈ la source la plus lente au lieu
-    # de la somme. Indispensable avant de passer à toute la France.
+    # on lance un slot parallèle par source. Les slots démarrent chacun un
+    # collecteur isolé afin qu'un parseur bloqué puisse être tué sans attendre
+    # la fin d'un thread Python.
     scrapers = _enabled_scrapers(
         options.source,
         settings,
@@ -263,13 +285,26 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         fetch_detail_heavy=True,
     )
     from src.source_checkpoint import configure_publisher, flush_publications
-    configure_publisher(
+    progressive_publisher = (
         (lambda rows: publish_factual_batch(run_id, rows, known_details, errors))
-        if os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") and options.upsert else None
+        if os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") and options.upsert
+        else None
     )
+    configure_publisher(progressive_publisher)
     scrape_overall_started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, len(scrapers))) as executor:
-        futures = {executor.submit(_timed_scrape, name, fn): name for name, fn in scrapers.items()}
+        futures = {
+            executor.submit(
+                _run_scraper,
+                name,
+                fn,
+                settings,
+                known_signatures,
+                known_details,
+                progressive_publisher,
+            ): name
+            for name, fn in scrapers.items()
+        }
         for future in as_completed(futures):
             name = futures[future]
             try:
@@ -362,15 +397,6 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     pdf_stats = PdfEnrichmentStats()
     llm_stats = LLMEnrichmentStats()
     llm_client = None
-    # The public description is a lightweight product requirement of every
-    # scan. PDF/OCR can be disabled independently with --no-heavy-enrichment;
-    # only --no-llm explicitly disables the Replicate synthesis.
-    if options.use_llm:
-        try:
-            llm_client = create_llm_client()
-        except LLMClientUnavailable as exc:
-            LOGGER.warning("LLM client unavailable: %s", exc)
-            llm_stats.unavailable = True
 
     pdf_workers = max(1, int(settings["pipeline_pdf_workers"]))
     llm_workers = max(1, int(settings["pipeline_llm_workers"]))
@@ -430,11 +456,29 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     # consume document, AI or network enrichment before being rejected.
     expired_before_enrichment = [sale for sale in app_ready if is_expired(sale)]
     app_ready = [sale for sale in app_ready if not is_expired(sale)]
+    enrichment_sales, skipped_unauthorized = _filter_unauthorized_encheres_publiques_sales(
+        app_ready,
+        settings,
+    )
+    timings["enrichment_unauthorized_skipped"] = skipped_unauthorized
+
+    # The public description is a lightweight product requirement of every
+    # authorized scan. PDF/OCR can be disabled independently with
+    # --no-heavy-enrichment; only --no-llm explicitly disables the Replicate
+    # synthesis. Keep client creation after the source gate so a scan made up
+    # entirely of unauthorized EP rows never opens an AI client.
+    if options.use_llm and enrichment_sales:
+        try:
+            llm_client = create_llm_client()
+        except LLMClientUnavailable as exc:
+            LOGGER.warning("LLM client unavailable: %s", exc)
+            llm_stats.unavailable = True
+
     cached_llm_display_refreshed = 0
 
     prompt_version = str(settings["llm_prompt_version"])
     if options.use_llm:
-        for sale in app_ready:
+        for sale in enrichment_sales:
             if refresh_operational_display(sale):
                 cached_llm_display_refreshed += 1
                 continue
@@ -451,7 +495,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     pdf_targets = (
         [
             sale
-            for sale in app_ready
+            for sale in enrichment_sales
             if _needs_structured_heavy_enrichment(sale)
             and not _heavy_enrichment_already_current(sale, enriched_hashes, use_llm=False)
         ]
@@ -474,7 +518,10 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     started = time.perf_counter()
     if pdf_targets:
         with ThreadPoolExecutor(max_workers=pdf_workers) as executor:
-            futures = {executor.submit(enrich_sale_from_pdfs, sale): sale for sale in pdf_targets}
+            futures = {
+                executor.submit(_enrich_pdf_target, sale, restore_progress=options.upsert): sale
+                for sale in pdf_targets
+            }
             for future in as_completed(futures):
                 sale = futures[future]
                 try:
@@ -495,7 +542,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     llm_targets = (
         [
             sale
-            for sale in app_ready
+            for sale in enrichment_sales
             if _can_use_paid_llm(sale)
             and _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
             and not _llm_description_already_current(sale, current_llm_description_hashes)
@@ -537,6 +584,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                     _mark_llm_description_failure(sale, sale_llm_stats, prompt_version=prompt_version)
                 elif not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
                     sale.raw_payload.pop("source_content_changed", None)
+                    sale.raw_payload.pop("source_content_change_reason", None)
                     sale.raw_payload.pop("source_operational_changed", None)
                     _clear_llm_description_failure(sale)
                 if options.upsert:
@@ -771,6 +819,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         statuses=options.llm_backfill_statuses,
     )
     sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
+    sales, skipped_unauthorized = _filter_unauthorized_encheres_publiques_sales(sales, settings)
     timings["fetch_seconds"] = round(time.perf_counter() - started, 2)
     if not sales:
         summary = {
@@ -780,12 +829,14 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
             "updated": 0,
             "prompt_version": prompt_version,
             "statuses": list(options.llm_backfill_statuses),
+            "skipped_unauthorized": skipped_unauthorized,
             "timings": timings,
         }
         if options.upsert:
             finish_run_in_supabase(options.run_id, "succeeded", summary, errors)
         print("LLM description backfill summary")
         print("- selected: 0")
+        print(f"- skipped_unauthorized: {skipped_unauthorized}")
         print("- updated: 0")
         return 0
 
@@ -905,6 +956,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         "upserted": upserted,
         "prompt_version": prompt_version,
         "statuses": list(options.llm_backfill_statuses),
+        "skipped_unauthorized": skipped_unauthorized,
         "timings": timings,
         "llm_errors": llm_stats.errors,
         "llm_unavailable": llm_stats.unavailable,
@@ -920,10 +972,36 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
     print(f"- updated: {len(updated_sales)}")
     print(f"- failed_marked: {len(failed_sales)}")
     print(f"- upserted: {upserted}")
+    print(f"- skipped_unauthorized: {skipped_unauthorized}")
     for key, value in timings.items():
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
     return 1 if llm_stats.unavailable or any(errors.values()) else 0
+
+
+def _filter_unauthorized_encheres_publiques_sales(
+    sales: list[AuctionSale],
+    settings: dict[str, object],
+) -> tuple[list[AuctionSale], int]:
+    """Skip EP rows before cached or paid LLM backfill work begins."""
+
+    authorized: list[AuctionSale] = []
+    skipped = 0
+    for sale in sales:
+        try:
+            require_encheres_publiques_sale_access(
+                source_name=sale.source_name,
+                source_url=sale.source_url,
+                source_urls=sale.source_urls,
+                documents=sale.documents,
+                settings=settings,
+            )
+        except EncheresPubliquesAccessNotAuthorized as exc:
+            skipped += 1
+            LOGGER.info("Skipping unauthorized Encheres Publiques backfill sale %s: %s", sale.source_url, exc)
+            continue
+        authorized.append(sale)
+    return authorized, skipped
 
 
 def _checkpoint_enrichment(sale: AuctionSale) -> bool:
@@ -1196,6 +1274,10 @@ def _enabled_scrapers(
     change-signature) lets list-based scrapers skip detail pages of unchanged
     listings; licitor exposes price/date only on detail pages, so it always
     fetches."""
+    ep_benchmark_enabled = bool(settings.get("enable_encheres_publiques_benchmark"))
+    if source == "encheres_publiques" or (source == "all" and ep_benchmark_enabled):
+        require_encheres_publiques_access(settings)
+
     candidates: list[tuple[str, bool, Callable[[], ScrapeResult]]] = [
         ("avoventes", True, lambda: scrape_avoventes_aquitaine_result(known=known)),
         (
@@ -1225,7 +1307,7 @@ def _enabled_scrapers(
         ),
         (
             "encheres_publiques",
-            bool(settings["enable_encheres_publiques_benchmark"]),
+            ep_benchmark_enabled and encheres_publiques_access_enabled(settings),
             lambda: scrape_encheres_publiques_aquitaine_result(
                 max_pages=int(settings["encheres_publiques_max_pages"]), known=known
             ),
@@ -1291,6 +1373,45 @@ def _timed_scrape(name: str, fn: Callable[[], ScrapeResult]) -> tuple[ScrapeResu
     started = time.perf_counter()
     result = fn()
     return result, round(time.perf_counter() - started, 2)
+
+
+def _run_scraper(
+    name: str,
+    fn: Callable[[], ScrapeResult],
+    settings: dict[str, object],
+    known: dict[str, str],
+    known_details: dict[str, dict[str, object]],
+    progressive_publisher: Callable[[list[dict[str, object]]], None] | None = None,
+) -> tuple[ScrapeResult, float]:
+    """Run one source with a hard wall-clock boundary when configured.
+
+    The regular executor remains useful for scheduling independent sources, but
+    the source body itself runs in a child process.  A future timeout alone
+    cannot interrupt a worker thread and would make the executor wait forever
+    during malformed HTML parsing.  The fallback is kept for tests and for
+    explicitly disabled or non-allowlisted isolation; production settings
+    enable the process boundary for Vench and Avoventes by default.
+    """
+
+    isolated_sources = settings.get("source_process_isolation_sources", ("vench", "avoventes"))
+    if isinstance(isolated_sources, str):
+        isolated_sources = tuple(
+            source.strip().lower() for source in isolated_sources.split(",") if source.strip()
+        )
+    if not settings.get("source_process_isolation", False) or name.lower() not in isolated_sources:
+        return _timed_scrape(name, fn)
+    timeout_seconds = settings.get("source_scrape_timeout_seconds")
+    if timeout_seconds is None:
+        return _timed_scrape(name, fn)
+    return run_source_in_subprocess(
+        name,
+        known=known,
+        known_details=known_details if name == "vench" else None,
+        max_pages=_configured_page_limit(name, settings),
+        fetch_detail_heavy=True,
+        timeout_seconds=float(timeout_seconds),
+        on_batch=progressive_publisher,
+    )
 
 
 def _report_collection_progress(run_id, phase, counts, coverage, timings, errors, **progress):
@@ -1443,6 +1564,32 @@ def _limit_llm_targets(
     return sorted(llm_targets, key=_llm_target_priority_key)[:max_targets]
 
 
+def _enrich_pdf_target(sale: AuctionSale, *, restore_progress: bool) -> PdfEnrichmentStats:
+    require_encheres_publiques_sale_access(
+        source_name=sale.source_name,
+        source_url=sale.source_url,
+        source_urls=sale.source_urls,
+        documents=sale.documents,
+        settings=load_settings(),
+    )
+    analysis = sale.raw_payload.get("document_analysis")
+    if (
+        restore_progress
+        and isinstance(analysis, dict)
+        and analysis.get("progress_schema_version") == PDF_PROGRESS_SCHEMA_VERSION
+        and analysis.get("manifest_complete") is False
+    ):
+        restored = restore_persisted_pdf_progress_for_sale(sale)
+        if restored:
+            LOGGER.info(
+                "Restored persisted PDF progress: source=%s documents=%s checkpointed_pages=%s",
+                sale.source_name,
+                len(restored),
+                sum(len(item.get("pages") or []) for item in restored),
+            )
+    return enrich_sale_from_pdfs(sale)
+
+
 def _limit_pdf_targets(
     pdf_targets: list[AuctionSale],
     settings: dict[str, object],
@@ -1524,16 +1671,17 @@ def _needs_llm_display_description_refresh(
     display_description = clean_payload_text(sale.raw_payload.get("llm_display_description"))
     if not display_description:
         return True
+    settings = load_settings()
     current_prompt_version = clean_payload_text(
-        prompt_version if prompt_version is not None else load_settings().get("llm_prompt_version")
+        prompt_version if prompt_version is not None else settings.get("llm_prompt_version")
     )
-    current_display_prompt_version = clean_payload_text(
-        load_settings().get("llm_display_prompt_version")
-    )
+    current_display_prompt_version = clean_payload_text(settings.get("llm_display_prompt_version"))
+    current_model = clean_payload_text(settings.get("replicate_model"))
     return not has_current_display(
         sale.raw_payload,
         current_prompt_version,
         current_display_prompt_version,
+        current_model,
     )
 
 
@@ -1573,6 +1721,25 @@ def _merge_pdf_stats(total: PdfEnrichmentStats, item: PdfEnrichmentStats) -> Non
     total.document_cache_hits += item.document_cache_hits
     total.document_cache_misses += item.document_cache_misses
     total.documents_processed += item.documents_processed
+    blocked_urls = set(total.blocked_document_urls)
+    for url in item.blocked_document_urls:
+        if url in blocked_urls:
+            continue
+        total.blocked_document_urls.append(url)
+        blocked_urls.add(url)
+    permanent_failures = {
+        (entry.get("url"), entry.get("reason"))
+        for entry in total.permanent_document_failures
+        if isinstance(entry, dict)
+    }
+    for entry in item.permanent_document_failures:
+        if not isinstance(entry, dict):
+            continue
+        key = (entry.get("url"), entry.get("reason"))
+        if key in permanent_failures:
+            continue
+        total.permanent_document_failures.append(entry)
+        permanent_failures.add(key)
 
 
 def _add_llm_stats(total: LLMEnrichmentStats, item: LLMEnrichmentStats) -> None:

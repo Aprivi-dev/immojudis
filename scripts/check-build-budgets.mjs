@@ -10,8 +10,12 @@ const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
 // Keep its global allowance narrow; route-level initial-load budgets remain enforced.
 // The three procedure-specific pilot workspaces add client code to the sale detail view.
 // The Annonce refactor adds financing and urbanism panels across sale detail routes.
-// Keep the global allowance narrow and continue enforcing per-route initial-load budgets.
-const MAX_TOTAL_CLIENT_JS_BYTES = 4_330_000;
+// The supervised fact review, source refresh controls, and secure contribution form add a
+// bounded private/support surface to the all-chunk total. Keep a narrow allowance for that
+// workflow while the route-level initial-load budgets below continue to protect public pages.
+// The AI review projection and quarantine guard add a similarly bounded shared client surface.
+// Keep the allowance below 1% of the total and enforce every route budget independently.
+const MAX_TOTAL_CLIENT_JS_BYTES = 4_400_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -44,9 +48,16 @@ const businessModules = [
   "services/data-pipeline/src/asset_premium_analysis.py",
   "services/data-pipeline/src/asset_scoring.py",
   "services/data-pipeline/src/asset_surface_normalization.py",
+  "services/data-pipeline/src/pdf_document_types.py",
   "services/data-pipeline/src/pdf_document_selection.py",
   "services/data-pipeline/src/pdf_enrichment.py",
+  "services/data-pipeline/src/pdf_page_analysis.py",
   "services/data-pipeline/src/pdf_fact_extraction.py",
+  "services/data-pipeline/src/pdf_failure_diagnostics.py",
+  "services/data-pipeline/src/pdf_progress.py",
+  "services/data-pipeline/src/encheres_publiques_guard.py",
+  "services/data-pipeline/src/source_task_deadline.py",
+  "services/data-pipeline/src/llm_task_deadline.py",
 ];
 
 const routeBudgets = [
@@ -155,12 +166,6 @@ if (largestChunkBytes > MAX_CLIENT_CHUNK_BYTES) {
     `Chunk client trop lourd: ${largestChunk} (${largestChunkBytes} octets > ${MAX_CLIENT_CHUNK_BYTES}).`,
   );
 }
-if (totalClientBytes > MAX_TOTAL_CLIENT_JS_BYTES) {
-  throw new Error(
-    `JavaScript client total trop lourd: ${totalClientBytes} octets > ${MAX_TOTAL_CLIENT_JS_BYTES}.`,
-  );
-}
-
 const routeClientBytes = {};
 for (const budget of routeBudgets) {
   const bytes = await clientJavaScriptBytesForRoute(budget);
@@ -170,6 +175,12 @@ for (const budget of routeBudgets) {
       `JavaScript initial trop lourd pour ${budget.name}: ${bytes} octets > ${budget.maxBytes}.`,
     );
   }
+}
+
+if (totalClientBytes > MAX_TOTAL_CLIENT_JS_BYTES) {
+  throw new Error(
+    `JavaScript client total trop lourd: ${totalClientBytes} octets > ${MAX_TOTAL_CLIENT_JS_BYTES}.`,
+  );
 }
 
 const landingImages = await filesUnder("public/media/landing", (path) => path.endsWith(".webp"));

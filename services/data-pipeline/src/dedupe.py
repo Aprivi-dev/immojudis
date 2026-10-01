@@ -4,6 +4,7 @@ import hashlib
 import re
 import unicodedata
 from collections.abc import Iterable
+from copy import deepcopy
 from typing import Any
 
 from src.models import AuctionSale
@@ -188,12 +189,42 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
                 setattr(target, field, _merge_lists(current, incoming))
         elif field == "raw_payload" and isinstance(current, dict) and isinstance(incoming, dict):
             current.setdefault("source_checks", {}).update(incoming.get("source_checks") or {})
+            previous_content_changed = bool(current.get("source_content_changed"))
             if incoming.get("source_content_changed"):
                 current["source_content_changed"] = True
                 current["llm_display_status"] = "pending"
                 current.pop("llm_display_description", None)
                 current.pop("llm_prompt_version", None)
                 current.pop("document_facts_version", None)
+            # Invalidation metadata is part of the revision contract.  A
+            # second collector can carry an operational refresh on top of a
+            # documentary invalidation; dropping these markers here would
+            # make the merged row look eligible for a deterministic refresh
+            # (or enqueue a new LLM pass without the previous provenance).
+            if incoming.get("source_operational_changed"):
+                current["source_operational_changed"] = True
+            incoming_reason = incoming.get("source_content_change_reason")
+            current_reason = current.get("source_content_change_reason")
+            if incoming_reason and (
+                not previous_content_changed
+                or (
+                    current_reason is not None
+                    and incoming.get("source_content_changed")
+                    and current_reason == "source_operational_changed"
+                    and incoming_reason != "source_operational_changed"
+                )
+            ):
+                current["source_content_change_reason"] = incoming_reason
+            # A prior documentary marker with an unknown or documentary
+            # reason is deliberately retained.  An operational second source
+            # must not turn that pending/unknown invalidation into a
+            # refreshable one merely by replacing its superseded payload.
+            if incoming.get("superseded_analysis") is not None and (
+                not previous_content_changed
+                or current_reason == "source_operational_changed"
+                or not current.get("superseded_analysis")
+            ):
+                current["superseded_analysis"] = deepcopy(incoming["superseded_analysis"])
             current.setdefault("merged_sources", [])
             current["merged_sources"].append(_observation_summary(source))
 
@@ -228,7 +259,10 @@ def _observation_summary(sale: AuctionSale) -> dict[str, Any]:
         "department": sale.department,
         "starting_price_eur": float(sale.starting_price_eur) if sale.starting_price_eur is not None else None,
         "sale_date": sale.sale_date.isoformat() if sale.sale_date else None,
-        "raw_payload": sale.raw_payload,
+        # A summary becomes part of the primary payload. Copy the source
+        # graph so merging two models that share a raw_payload cannot create a
+        # back-reference from merged_sources to the payload being built.
+        "raw_payload": deepcopy(sale.raw_payload),
     }
 
 

@@ -179,7 +179,8 @@ def test_normalize_sale_calibrates_avoventes_lot_superficie_from_raw_text() -> N
     assert sale.rooms_count == 2
     assert sale.bedrooms_count == 2
     assert sale.bathrooms_count == 1
-    assert sale.parking_count == 1
+    # Plusieurs lots sont mentionnés sans nombre explicite de places.
+    assert sale.parking_count is None
 
 
 def test_normalize_sale_calibrates_avoventes_agricultural_mixed_asset() -> None:

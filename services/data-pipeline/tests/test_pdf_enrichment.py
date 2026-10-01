@@ -1,4 +1,7 @@
+import json
 import socket
+import subprocess
+import time
 import unicodedata
 import zipfile
 from datetime import UTC, datetime
@@ -6,29 +9,37 @@ from decimal import Decimal
 from types import SimpleNamespace
 from urllib.parse import unquote, urlparse
 
+import httpx
 import pytest
 
 from src.asset_normalization import normalize_asset_features
+from src.freshness import documents_are_current
 from src.normalize import normalize_sale
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
+    PdfDeadlineExceeded,
     PdfEnrichmentStats,
     PublicDocumentTarget,
     _adaptive_docling_timeout,
     _bounded_document_content,
+    _document_candidate_rejection_reason,
     _download_document_response,
+    _extract_pdf_text_with_docling_subprocess,
     _PinnedNetworkBackend,
+    _read_document_stream,
     _read_document_text_cache,
     _resolve_public_document_target,
     _select_documents_for_extraction,
     _store_document_analysis_status,
     _write_document_text_cache,
+    _write_pdf_text_cache,
     classify_document_type,
     download_documents,
     enrich_sale_from_pdf_text,
     extract_attached_document,
     extract_pdf_document,
     extract_pdf_pages,
+    pdf_deadline_scope,
 )
 
 
@@ -47,6 +58,121 @@ def test_bounded_document_content_rejects_declared_and_actual_oversize_payloads(
         raise AssertionError("actual oversize payload should be rejected")
     except ValueError as exc:
         assert "download limit" in str(exc)
+
+
+def test_deadline_ocr_skips_uninterruptible_native_path_and_propagates_timeout(monkeypatch) -> None:
+    calls = {"native": 0, "timeout": None}
+
+    class Pixmap:
+        def save(self, path: str) -> None:
+            from pathlib import Path
+
+            Path(path).write_bytes(b"image")
+
+    class Page:
+        def get_textpage_ocr(self, **_kwargs):
+            calls["native"] += 1
+            raise AssertionError("native OCR must not run under a worker deadline")
+
+        def get_pixmap(self, **_kwargs):
+            return Pixmap()
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment.load_settings",
+        lambda: {"pdf_ocr_tessdata": None, "pdf_ocr_language": "fra"},
+    )
+
+    def timeout_run(*args, **kwargs):
+        calls["timeout"] = kwargs["timeout"]
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr("src.pdf_enrichment.subprocess.run", timeout_run)
+
+    with pytest.raises(PdfDeadlineExceeded) as error:
+        with pdf_deadline_scope(time.monotonic() + 5):
+            from src.pdf_enrichment import _extract_page_text_with_ocr_result
+
+            _extract_page_text_with_ocr_result(
+                Page(),
+                fallback="",
+                checkpointed_pages=2,
+                total_pages=3,
+                new_progress_pages=1,
+            )
+
+    assert calls["native"] == 0
+    assert calls["timeout"] is not None and 0 < calls["timeout"] <= 5
+    assert error.value.checkpointed_pages == 2
+    assert error.value.progress_made is True
+
+
+def test_deadline_ocr_recomputes_timeout_after_render(monkeypatch) -> None:
+    captured = {"timeout": None}
+
+    class Pixmap:
+        def save(self, path: str) -> None:
+            from pathlib import Path
+
+            Path(path).write_bytes(b"image")
+
+    class Page:
+        def get_pixmap(self, **_kwargs):
+            # Rendering consumed almost all of the original five-second
+            # allowance; the subprocess must receive only the remainder.
+            from src import pdf_enrichment
+
+            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() + 0.2)
+            return Pixmap()
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment.load_settings",
+        lambda: {"pdf_ocr_tessdata": None, "pdf_ocr_language": "fra"},
+    )
+
+    def timeout_run(*args, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr("src.pdf_enrichment.subprocess.run", timeout_run)
+
+    with pytest.raises(PdfDeadlineExceeded):
+        with pdf_deadline_scope(time.monotonic() + 5):
+            from src.pdf_enrichment import _extract_page_text_with_ocr_result
+
+            _extract_page_text_with_ocr_result(Page(), fallback="")
+
+    assert captured["timeout"] is not None
+    assert 0 < captured["timeout"] <= 0.2
+
+
+def test_deadline_checks_between_continuous_document_stream_chunks() -> None:
+    class Stream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b"first"
+            # Simulate a peer that keeps the read timeout alive with tiny
+            # chunks until the worker cutoff is reached.
+            from src import pdf_enrichment
+
+            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() - 1)
+            yield b"second"
+
+    response = httpx.Response(200, stream=Stream())
+    with pytest.raises(PdfDeadlineExceeded):
+        with pdf_deadline_scope(time.monotonic() + 5):
+            _read_document_stream(response, max_bytes=1024)
+
+
+def test_deadline_docling_timeout_propagates_without_becoming_empty_text(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("src.pdf_enrichment.DOCLING_TEXTS_DIR", tmp_path / "docling-cache")
+
+    def timeout_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr("src.pdf_enrichment.subprocess.run", timeout_run)
+
+    with pytest.raises(PdfDeadlineExceeded):
+        with pdf_deadline_scope(time.monotonic() + 5):
+            _extract_pdf_text_with_docling_subprocess(tmp_path / "input.pdf", timeout=5)
 
 
 def test_resolve_public_document_target_rejects_any_non_public_answer() -> None:
@@ -321,6 +447,64 @@ def test_enrich_sale_from_pdf_text_detects_occupation_without_right_or_title() -
     enrich_sale_from_pdf_text(sale, ["Procès-verbal descriptif : le bien est occupé sans droit ni titre."])
 
     assert sale.occupancy_status == "squatted"
+
+
+def test_enrich_sale_from_pdf_text_extracts_plural_free_occupancy() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/pdf-plural-free-occupancy",
+            "property_type": "Appartement",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, ["Le logement et ses dépendances sont libres de toute occupation."])
+
+    assert sale.occupancy_status == "vacant"
+
+
+@pytest.mark.parametrize("text", ["Bien libre.", "Maison libre.", "Biens libres."])
+def test_enrich_sale_from_pdf_text_keeps_short_property_free_phrases(text: str) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/pdf-short-free-occupancy",
+            "property_type": "Appartement",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, [text])
+
+    assert sale.occupancy_status == "vacant"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Visite libre sur rendez-vous.", None),
+        ("Visites libres sur rendez-vous.", None),
+        ("Photos libres de droits.", None),
+        ("Appartement à vendre, visite libre sur rendez-vous.", None),
+        ("La visite est libre sur rendez-vous.", None),
+        ("Les visites sont libres sur rendez-vous.", None),
+        ("Visite libre sur rendez-vous. Le logement est libre de toute occupation.", "vacant"),
+    ],
+)
+def test_enrich_sale_from_pdf_text_does_not_infer_occupancy_from_non_property_free_phrases(
+    text: str,
+    expected: str | None,
+) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/pdf-free-visit",
+            "property_type": "Appartement",
+        }
+    )
+
+    enrich_sale_from_pdf_text(sale, [text])
+
+    assert sale.occupancy_status == expected
 
 
 def test_enrich_sale_from_pdf_text_detects_squatted_occupation() -> None:
@@ -867,6 +1051,38 @@ def test_select_documents_for_extraction_prioritizes_non_pdf_download_labels(mon
     ]
 
 
+def test_document_candidate_filter_excludes_social_and_media_urls_but_keeps_signed_downloads() -> None:
+    assert _document_candidate_rejection_reason(
+        {"label": "Dossier", "url": "https://www.facebook.com/auction/123", "type": "pdf"}
+    ) == "social_url"
+    assert _document_candidate_rejection_reason(
+        {"label": "Photo", "url": "https://source.example/images/preview.jpg", "type": "pdf"}
+    ) == "non_document_asset"
+    assert _document_candidate_rejection_reason(
+        {"label": "Logo", "url": "https://source.example/pix/facebook.png", "type": "document"}
+    ) == "non_document_asset"
+    assert _document_candidate_rejection_reason(
+        {
+            "label": "Procès verbal de description",
+            "url": "https://source.example/download.php?id=123&token=signed",
+            "type": "document",
+        }
+    ) is None
+
+
+def test_select_documents_for_extraction_does_not_spend_budget_on_social_or_media_candidates(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "1")
+    selected = _select_documents_for_extraction(
+        [
+            {"label": "Facebook", "url": "https://www.facebook.com/auction/123", "type": "pdf"},
+            {"label": "Photo", "url": "https://source.example/images/preview.jpg", "type": "pdf"},
+            {"label": "PV descriptif", "url": "https://source.example/download?id=pv", "type": "document"},
+        ]
+    )
+
+    assert [item["url"] for item in selected] == ["https://source.example/download?id=pv"]
+
+
 def test_select_documents_for_extraction_classifies_avoventes_generic_pdf_labels(monkeypatch) -> None:
     monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "2")
     sale = normalize_sale(
@@ -1131,6 +1347,62 @@ def test_document_analysis_does_not_count_empty_pdf_payload_as_extracted() -> No
     assert analysis["profiles"][0]["extraction_status"] == "empty"
 
 
+def test_document_analysis_fails_closed_for_malformed_cache_payload() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/malformed-pdf-cache.html",
+        }
+    )
+
+    _store_document_analysis_status(
+        sale,
+        [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}, "malformed"],
+        [],
+    )
+
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["coverage_status"] == "documents_not_extracted"
+    assert analysis["failed_documents"] == 1
+    assert analysis["documents_extracted"] == 0
+    assert analysis["profiles"] == []
+
+
+def test_complete_empty_pdf_is_terminal_but_never_a_fact_cache() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/terminal-empty-pdf.html",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    document = {
+        "label": "PV descriptif",
+        "url": "https://example.test/pv.pdf",
+        "document_type": "pv_huissier",
+    }
+    _store_document_analysis_status(
+        sale,
+        [document],
+        [{
+            **document,
+            "text": "",
+            "sha256": "pdf-empty",
+            "complete": True,
+            "extraction_status": "extracted",
+            "failed_pages": [],
+        }],
+    )
+
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["empty_document_urls"] == [document["url"]]
+    assert analysis["terminal_document_urls"] == [document["url"]]
+    assert analysis["failed_documents"] == 0
+    assert analysis["documents_extracted"] == 0
+    assert analysis["coverage_status"] == "partial"
+    assert analysis["profiles"][0]["extraction_status"] == "empty"
+
+
 def test_enrich_sale_from_pdf_text_does_not_sum_repeated_document_surfaces() -> None:
     sale = normalize_sale(
         {
@@ -1265,6 +1537,30 @@ def test_extract_pdf_document_preserves_page_level_text(tmp_path, monkeypatch) -
     assert "bail en cours" in payload["text"]
 
 
+def test_long_text_pdf_is_complete_with_bounded_500_page_ceiling(tmp_path, monkeypatch) -> None:
+    import fitz
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "false")
+    monkeypatch.setenv("PDF_MAX_TOTAL_PAGES", "500")
+    path = tmp_path / "long-report.pdf"
+    with fitz.open() as document:
+        for page_number in range(1, 417):
+            page = document.new_page()
+            page.insert_text((72, 72), f"Report page {page_number}: property description and evidence.")
+        document.save(path)
+
+    pages = extract_pdf_pages(path)
+    assert len(pages) == 416
+    assert pages[-1]["page"] == 416
+    assert "Report page 416" in pages[-1]["text"]
+
+    monkeypatch.setenv("PDF_MAX_TOTAL_PAGES", "300")
+    with pytest.raises(ValueError, match="300-page safety limit"):
+        extract_pdf_pages(path)
+
+
 def test_failed_ocr_page_is_retried_without_reocring_successful_cached_pages(tmp_path, monkeypatch) -> None:
     import fitz
 
@@ -1388,6 +1684,193 @@ def test_objectively_blank_page_is_excluded_but_empty_scan_stays_retryable(tmp_p
     assert payload["pages"][1]["failure_reason"] == "ocr_failed"
 
 
+def test_ocr_empty_near_blank_page_is_explicitly_excluded_and_preserved(tmp_path, monkeypatch) -> None:
+    import fitz
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    path = tmp_path / "near-blank-stamp.pdf"
+    with fitz.open() as document:
+        page = document.new_page()
+        page.draw_rect(fitz.Rect(72, 72, 112, 112), color=(0, 0, 0), fill=(0, 0, 0))
+        document.save(path)
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment._extract_page_text_with_ocr_result",
+        lambda page, **kwargs: {"text": "", "method": "fallback_text", "confidence": 0.0},
+    )
+    payload = extract_pdf_document(path)
+
+    page = payload["pages"][0]
+    assert payload["complete"] is True
+    assert payload["failed_pages"] == []
+    assert payload["blank_pages"] == [1]
+    assert payload["visual_blank_pages"] == [1]
+    assert page["status"] == "visual_blank_excluded"
+    assert page["retryable"] is False
+    assert page["visual_blank"] is True
+    assert page["source_page_preserved"] is True
+    assert page["original_status"] == "failed"
+    assert page["original_failure_reason"] == "ocr_failed"
+    assert page["original_method"] == "fallback_text"
+    assert page["visual_analysis"]["quasi_empty"] is True
+    assert page["visual_analysis"]["ink_ratio"] <= 0.005
+    from src.pdf_enrichment import _page_requires_retry
+
+    assert _page_requires_retry(page, ocr_enabled=True) is False
+
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/near-blank.pdf",
+            "documents": [{"label": "PV", "url": "https://example.test/near-blank.pdf"}],
+        }
+    )
+    payload.update({"label": "PV", "url": "https://example.test/near-blank.pdf"})
+    _store_document_analysis_status(
+        sale,
+        [{"label": "PV", "url": "https://example.test/near-blank.pdf"}],
+        [payload],
+    )
+    profile = sale.raw_payload["document_analysis"]["profiles"][0]
+    assert profile["extraction_status"] == "empty"
+    assert profile["visual_blank_pages"] == [1]
+
+
+def test_ocr_empty_decorative_edge_is_excluded_without_discarding_rich_pages(tmp_path, monkeypatch) -> None:
+    import fitz
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    path = tmp_path / "edge-and-content.pdf"
+    with fitz.open() as document:
+        edge = document.new_page()
+        edge.draw_rect(
+            fitz.Rect(edge.rect.width * 0.89, -15, edge.rect.width + 30, edge.rect.height + 15),
+            color=None,
+            fill=(0.89, 0.38, 0.05),
+        )
+        content = document.new_page()
+        content.draw_rect(
+            fitz.Rect(72, 72, content.rect.width - 72, content.rect.height - 72),
+            color=None,
+            fill=(0.2, 0.3, 0.4),
+        )
+        document.save(path)
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment._extract_page_text_with_ocr_result",
+        lambda page, **kwargs: {"text": "", "method": "fallback_text", "confidence": 0.0},
+    )
+    payload = extract_pdf_document(path)
+
+    edge_page, rich_page = payload["pages"]
+    assert edge_page["status"] == "visual_blank_excluded"
+    assert edge_page["failure_reason"] == "decorative_edge_after_ocr"
+    assert edge_page["visual_analysis"]["decorative_edge_only"] is True
+    assert edge_page["source_page_preserved"] is True
+    assert rich_page["status"] == "failed"
+    assert rich_page["visual_analysis"]["decorative_edge_only"] is False
+    assert payload["failed_pages"] == [2]
+
+
+def test_decorative_edge_classifier_preserves_text_annotations_and_complex_paths() -> None:
+    import fitz
+
+    from src.pdf_enrichment import _is_decorative_edge_only_page
+
+    with fitz.open() as document:
+        page = document.new_page()
+        page.draw_rect(
+            fitz.Rect(page.rect.width * 0.89, -15, page.rect.width + 30, page.rect.height + 15),
+            color=None,
+            fill=(0.89, 0.38, 0.05),
+        )
+        assert _is_decorative_edge_only_page(page) is True
+        page.insert_text((72, 72), "Surface : 55 m2")
+        assert _is_decorative_edge_only_page(page) is False
+
+        annotated = document.new_page()
+        annotated.draw_rect(
+            fitz.Rect(annotated.rect.width * 0.89, -15, annotated.rect.width + 30, annotated.rect.height + 15),
+            color=None,
+            fill=(0.89, 0.38, 0.05),
+        )
+        annotated.add_rect_annot(fitz.Rect(72, 72, 200, 200))
+        assert _is_decorative_edge_only_page(annotated) is False
+
+        complex_page = document.new_page()
+        shape = complex_page.new_shape()
+        for index in range(9):
+            shape.draw_rect(fitz.Rect(complex_page.rect.width * 0.89, index * 95, complex_page.rect.width, (index + 1) * 95))
+        shape.finish(color=None, fill=(0.89, 0.38, 0.05))
+        shape.commit()
+        assert len(complex_page.get_drawings()) == 1
+        assert _is_decorative_edge_only_page(complex_page) is False
+
+
+def test_ocr_empty_rich_image_remains_incomplete_with_visual_evidence(tmp_path, monkeypatch) -> None:
+    import fitz
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    path = tmp_path / "rich-image.pdf"
+    with fitz.open() as document:
+        page = document.new_page()
+        page.draw_rect(fitz.Rect(0, 0, page.rect.width, page.rect.height / 2), color=(0, 0, 0), fill=(0, 0, 0))
+        document.save(path)
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment._extract_page_text_with_ocr_result",
+        lambda page, **kwargs: {"text": "", "method": "fallback_text", "confidence": 0.0},
+    )
+    payload = extract_pdf_document(path)
+
+    page = payload["pages"][0]
+    assert payload["complete"] is False
+    assert payload["failed_pages"] == [1]
+    assert payload["blank_pages"] == []
+    assert payload["visual_blank_pages"] == []
+    assert page["status"] == "failed"
+    assert page["retryable"] is True
+    assert page["visual_analysis"]["quasi_empty"] is False
+    assert page["visual_analysis"]["ink_ratio"] > 0.005
+
+
+def test_visual_blank_page_keeps_document_coverage_partial() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/example-sale.html",
+            "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    _store_document_analysis_status(
+        sale,
+        [{"label": "PV", "url": "https://example.test/pv.pdf"}],
+        [
+            {
+                "label": "PV",
+                "url": "https://example.test/pv.pdf",
+                "document_type": "pv_huissier",
+                "text": "Description du bien vérifiée sur la page 1.",
+                "complete": True,
+                "extraction_status": "extracted",
+                "visual_blank_pages": [2],
+            }
+        ],
+    )
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["failed_documents"] == 0
+    assert analysis["visual_blank_documents"] == 1
+    assert analysis["coverage_status"] == "partial"
+    assert analysis["profiles"][0]["visual_blank_pages"] == [2]
+    assert "originaux" in analysis["warning"]
+
+
 def test_legacy_fallback_page_cache_is_not_a_hit_when_ocr_is_enabled(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     file_path = tmp_path / "legacy.pdf"
@@ -1472,6 +1955,7 @@ def test_extract_pdf_document_then_enriches_document_only_surface(tmp_path, monk
 
 
 def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, monkeypatch) -> None:
+    blocked_url = "https://www.licitor.com/data/pub/media/annonce/10/87/62/108762.000.001.pdf"
     sale = normalize_sale(
         {
             "source_name": "licitor",
@@ -1479,7 +1963,7 @@ def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, 
             "documents": [
                 {
                     "label": "PV descriptif",
-                    "url": "https://www.licitor.com/data/pub/media/annonce/10/87/62/108762.000.001.pdf",
+                    "url": blocked_url,
                     "type": "pdf",
                 }
             ],
@@ -1491,7 +1975,273 @@ def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, 
 
     monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fail_get)
 
-    assert download_documents(sale, output_root=tmp_path) == []
+    stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 0
+    assert stats.blocked_document_urls == [blocked_url]
+
+    _store_document_analysis_status(
+        sale,
+        [],
+        [],
+        blocked_document_urls=stats.blocked_document_urls,
+    )
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["coverage_status"] == "partial"
+    assert analysis["failed_documents"] == 0
+    assert analysis["failed_document_urls"] == []
+    assert analysis["blocked_documents"] == 1
+    assert analysis["blocked_document_urls"] == [blocked_url]
+    assert analysis["blocked_document_reasons"] == [
+        {
+            "url": blocked_url,
+            "reason": "robots.txt disallows fetching this Licitor document",
+        }
+    ]
+    assert "robots.txt" in analysis["warning"]
+
+
+def test_download_documents_skips_social_candidates_without_network_or_retry_error(tmp_path, monkeypatch) -> None:
+    def fail_get(*args, **kwargs):
+        raise AssertionError("social URLs must be filtered before document download")
+
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fail_get)
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-social-link.html",
+            "documents": [
+                {
+                    "label": "Dossier Facebook",
+                    "url": "https://www.facebook.com/auction/123",
+                    "type": "pdf",
+                },
+                {
+                    "label": "Logo",
+                    "url": "https://www.info-encheres.com/pix/facebook.png",
+                    "type": "document",
+                },
+            ],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 0
+    assert stats.permanent_document_failures == []
+
+    _store_document_analysis_status(sale, [], [], permanent_document_failures=[])
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["failed_documents"] == 0
+    assert analysis["skipped_documents"] == 2
+    assert {item["reason"] for item in analysis["skipped_document_reasons"]} == {
+        "social_url",
+        "non_document_asset",
+    }
+
+
+def test_download_documents_marks_http_404_and_html_as_permanent_without_retry_error(tmp_path, monkeypatch) -> None:
+    class NotFoundResponse:
+        status_code = 404
+        headers = {"content-type": "text/html"}
+        content = b"not found"
+
+        def raise_for_status(self) -> None:
+            raise AssertionError("the permanent status should be classified before raise_for_status")
+
+    class HtmlResponse:
+        status_code = 200
+        headers = {"content-type": "text/html; charset=utf-8"}
+        content = b"<html><body>Partner landing page</body></html>"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    responses = iter([NotFoundResponse(), HtmlResponse()])
+    monkeypatch.setattr(
+        "src.pdf_enrichment._send_pinned_document_request",
+        lambda *args, **kwargs: next(responses),
+    )
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-unavailable-documents.html",
+            "documents": [
+                {"label": "PV disparu", "url": "https://source.example/pv.pdf", "type": "pdf"},
+                {"label": "Cahier HTML", "url": "https://source.example/cahier.pdf", "type": "pdf"},
+            ],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 0
+    assert stats.permanent_document_failures == [
+        {"url": "https://source.example/pv.pdf", "reason": "not_found"},
+        {"url": "https://source.example/cahier.pdf", "reason": "unsupported_response"},
+    ]
+
+
+def test_download_documents_reuses_fresh_permanent_failure_without_network(tmp_path, monkeypatch) -> None:
+    class NotFoundResponse:
+        status_code = 404
+        headers = {"content-type": "text/html"}
+        content = b"not found"
+
+        def raise_for_status(self) -> None:
+            raise AssertionError("the permanent status should be classified before raise_for_status")
+
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-cached-permanent.html",
+            "documents": [{"label": "PV", "url": "https://source.example/pv.pdf", "type": "pdf"}],
+        }
+    )
+    monkeypatch.setattr(
+        "src.pdf_enrichment._send_pinned_document_request",
+        lambda *args, **kwargs: NotFoundResponse(),
+    )
+    first_stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=first_stats) == []
+    assert first_stats.permanent_document_failures == [
+        {"url": "https://source.example/pv.pdf", "reason": "not_found"}
+    ]
+
+    def fail_get(*args, **kwargs):
+        raise AssertionError("fresh permanent failures must not be retried")
+
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", fail_get)
+    second_stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=second_stats) == []
+    assert second_stats.errors == 0
+    assert second_stats.permanent_document_failures == [
+        {"url": "https://source.example/pv.pdf", "reason": "not_found"}
+    ]
+
+
+def test_download_documents_retries_permanent_failure_after_http_ttl(tmp_path, monkeypatch) -> None:
+    class NotFoundResponse:
+        status_code = 404
+        headers = {"content-type": "text/html"}
+        content = b"not found"
+
+        def raise_for_status(self) -> None:
+            raise AssertionError("the permanent status should be classified before raise_for_status")
+
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-expiring-permanent.html",
+            "documents": [{"label": "PV", "url": "https://source.example/pv.pdf", "type": "pdf"}],
+        }
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "src.pdf_enrichment._send_pinned_document_request",
+        lambda url, **_kwargs: (calls.append(url), NotFoundResponse())[1],
+    )
+
+    first_stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=first_stats) == []
+    _store_document_analysis_status(
+        sale,
+        [],
+        [],
+        permanent_document_failures=first_stats.permanent_document_failures,
+    )
+    assert len(calls) == 1
+
+    second_stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=second_stats) == []
+    assert len(calls) == 1
+
+    metadata_path = next(tmp_path.rglob("*.http.json"))
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["checked_at"] = "2020-01-01T00:00:00+00:00"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    third_stats = PdfEnrichmentStats()
+    assert download_documents(sale, output_root=tmp_path, stats=third_stats) == []
+    assert len(calls) == 2
+    assert third_stats.permanent_document_failures == [
+        {"url": "https://source.example/pv.pdf", "reason": "not_found"}
+    ]
+
+
+def test_download_documents_keeps_server_errors_retryable(tmp_path, monkeypatch) -> None:
+    response = httpx.Response(503, headers={"content-type": "text/html"})
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", lambda *args, **kwargs: response)
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://www.info-encheres.com/vente-temporary-document-error.html",
+            "documents": [{"label": "PV", "url": "https://source.example/pv.pdf", "type": "pdf"}],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 1
+    assert stats.permanent_document_failures == []
+
+
+def test_document_analysis_keeps_retryable_failure_separate_from_robots_block(tmp_path) -> None:
+    blocked_url = "https://www.licitor.com/data/pub/media/annonce/pv.pdf"
+    failed_url = "https://documents.example/pv.pdf"
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/mixed-document-status",
+            "documents": [
+                {"label": "PV bloqué", "url": blocked_url, "type": "pdf"},
+                {"label": "PV temporairement indisponible", "url": failed_url, "type": "pdf"},
+            ],
+        }
+    )
+
+    _store_document_analysis_status(
+        sale,
+        [],
+        [],
+        blocked_document_urls=[blocked_url],
+    )
+
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["coverage_status"] == "partial"
+    assert analysis["failed_documents"] == 1
+    assert analysis["failed_document_urls"] == [failed_url]
+    assert analysis["blocked_documents"] == 1
+    assert analysis["blocked_document_urls"] == [blocked_url]
+
+
+def test_document_analysis_keeps_permanent_failure_separate_from_retryable_failure() -> None:
+    permanent_url = "https://documents.example/missing.pdf"
+    retryable_url = "https://documents.example/temporary.pdf"
+    sale = normalize_sale(
+        {
+            "source_name": "licitor",
+            "source_url": "https://www.licitor.com/annonce/mixed-document-status-2",
+            "documents": [
+                {"label": "PV absent", "url": permanent_url, "type": "pdf"},
+                {"label": "CCV temporaire", "url": retryable_url, "type": "pdf"},
+            ],
+        }
+    )
+
+    _store_document_analysis_status(
+        sale,
+        [],
+        [],
+        permanent_document_failures=[{"url": permanent_url, "reason": "not_found"}],
+    )
+
+    analysis = sale.raw_payload["document_analysis"]
+    assert analysis["failed_documents"] == 1
+    assert analysis["failed_document_urls"] == [retryable_url]
+    assert analysis["permanent_document_failures"] == [
+        {"url": permanent_url, "reason": "not_found"}
+    ]
 
 
 def test_download_documents_uses_legacy_type_when_label_and_url_are_vague(tmp_path, monkeypatch) -> None:
@@ -1616,7 +2366,13 @@ def test_download_documents_rejects_html_response_and_uses_source_referer(tmp_pa
     stats = PdfEnrichmentStats()
 
     assert download_documents(sale, output_root=tmp_path, stats=stats) == []
-    assert stats.errors == 1
+    assert stats.errors == 0
+    assert stats.permanent_document_failures == [
+        {
+            "url": "https://example.test/download.php?id=5980&type=pvd",
+            "reason": "unsupported_response",
+        }
+    ]
     assert captured["headers"]["Referer"] == sale.source_url
     assert captured["timeout_seconds"] > 0
     assert list(tmp_path.rglob("*.pdf")) == []
@@ -1651,6 +2407,45 @@ def test_download_documents_rejects_private_network_urls(tmp_path, monkeypatch) 
     assert download_documents(sale, output_root=tmp_path, stats=stats) == []
     assert stats.errors == 1
     assert transport_targets == []
+
+
+def test_pinned_document_transport_adds_cessions_intermediate_only_for_exact_host() -> None:
+    import ssl
+    from pathlib import Path
+
+    from src.pdf_enrichment import PublicDocumentTarget, _PinnedHTTPTransport
+
+    pem = (
+        Path(__file__).parents[1]
+        / "src"
+        / "sources"
+        / "certificates"
+        / "sectigo-public-ov-r36.pem"
+    ).read_text()
+    intermediate_der = ssl.PEM_cert_to_DER_cert(pem)
+    if isinstance(intermediate_der, str):
+        intermediate_der = bytes.fromhex(intermediate_der)
+
+    def target(hostname: str) -> PublicDocumentTarget:
+        return PublicDocumentTarget(
+            url=f"https://{hostname}/document.pdf",
+            hostname=hostname,
+            port=443,
+            addresses=("203.0.113.10",),
+        )
+
+    cessions_transport = _PinnedHTTPTransport(target("cessions.immobilier-etat.gouv.fr"))
+    default_transport = _PinnedHTTPTransport(target("documents.example"))
+    try:
+        cessions_context = cessions_transport._pool._ssl_context
+        default_context = default_transport._pool._ssl_context
+        assert cessions_context.verify_mode == ssl.CERT_REQUIRED
+        assert cessions_context.check_hostname
+        assert intermediate_der in cessions_context.get_ca_certs(binary_form=True)
+        assert intermediate_der not in default_context.get_ca_certs(binary_form=True)
+    finally:
+        cessions_transport.close()
+        default_transport.close()
 
 
 def test_download_documents_fetches_duplicate_url_only_once(tmp_path, monkeypatch) -> None:
@@ -1966,11 +2761,195 @@ def test_document_text_cache_roundtrip(tmp_path, monkeypatch) -> None:
         "document_type": "pv_huissier",
         "file_path": str(file_path),
         "text": "Surface 80 m2",
+        "sha256": "pdf-a",
+        "complete": True,
+        "extraction_status": "extracted",
     }
 
     _write_document_text_cache(document, file_path, payload)
 
     assert _read_document_text_cache(document, file_path)["text"] == "Surface 80 m2"
+
+
+def test_document_text_cache_reader_keeps_partial_checkpoint_pages(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    file_path = tmp_path / "partial.pdf"
+    file_path.write_bytes(b"pdf bytes")
+    document = {"url": "https://example.test/partial.pdf", "label": "PV"}
+    payload = {
+        "text": "Page 1 conservée",
+        "pages": [{"page": 1, "text": "Page 1 conservée", "status": "extracted"}],
+        "sha256": "pdf-partial",
+        "complete": False,
+        "extraction_status": "extracted",
+    }
+    _write_document_text_cache(document, file_path, payload)
+
+    cached = _read_document_text_cache(document, file_path)
+    assert cached is not None
+    assert cached["complete"] is False
+    assert cached["pages"][0]["text"] == "Page 1 conservée"
+
+
+def test_pdf_text_cache_writer_preserves_complete_partial_and_legacy_markers(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("src.pdf_fact_extraction.PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/cache-writer",
+        }
+    )
+
+    def item(url: str, text: str, **markers: object) -> dict[str, object]:
+        return {
+            "label": "PV descriptif",
+            "url": url,
+            "type": "pdf",
+            "document_type": "pv_huissier",
+            "file_path": str(tmp_path / "document.pdf"),
+            "text": text,
+            "pages": [{"page": 1, "text": text, "status": "extracted"}] if text else [],
+            "cache_version": "pdf_text_v3_surface_calibration",
+            "sha256": f"sha-{url.rsplit('/', 1)[-1]}",
+            "page_count": 1,
+            "text_chars": len(text),
+            "page_text_chars": len(text),
+            "ocr_pages": 0,
+            "empty_pages": 0,
+            "extraction_method": "pymupdf_pages",
+            "confidence": 0.9,
+            **markers,
+        }
+
+    complete_url = "https://example.test/complete.pdf"
+    partial_url = "https://example.test/partial.pdf"
+    legacy_url = "https://example.test/legacy.pdf"
+    path = _write_pdf_text_cache(
+        sale,
+        [
+            item(
+                complete_url,
+                "Texte complet",
+                complete=True,
+                extraction_status="extracted",
+                failed_pages=[],
+                blank_pages=[2],
+                visual_blank_pages=[],
+            ),
+            item(
+                partial_url,
+                "Page conservée",
+                complete=False,
+                extraction_status="incomplete",
+                failed_pages=[3],
+                blank_pages=[2],
+                visual_blank_pages=[2],
+            ),
+            item(legacy_url, "Ancien cache"),
+        ],
+    )
+
+    persisted = {entry["url"]: entry for entry in json.loads(path.read_text(encoding="utf-8"))}
+    assert persisted[complete_url]["complete"] is True
+    assert persisted[complete_url]["extraction_status"] == "extracted"
+    assert persisted[complete_url]["failed_pages"] == []
+    assert persisted[complete_url]["blank_pages"] == [2]
+    assert persisted[complete_url]["visual_blank_pages"] == []
+    assert persisted[partial_url]["complete"] is False
+    assert persisted[partial_url]["extraction_status"] == "incomplete"
+    assert persisted[partial_url]["failed_pages"] == [3]
+    assert persisted[partial_url]["blank_pages"] == [2]
+    assert persisted[partial_url]["visual_blank_pages"] == [2]
+    assert all(marker not in persisted[legacy_url] for marker in (
+        "complete",
+        "extraction_status",
+        "failed_pages",
+        "blank_pages",
+        "visual_blank_pages",
+    ))
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+@pytest.mark.parametrize("failure_stage", ["serialize", "replace"])
+def test_pdf_text_cache_writer_preserves_previous_cache_on_failure(tmp_path, monkeypatch, failure_stage) -> None:
+    import src.pdf_fact_extraction as pdf_fact_extraction
+
+    monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale({"source_name": "avoventes", "source_url": "https://example.test/atomic-cache"})
+    item = {
+        "label": "PV descriptif",
+        "url": "https://example.test/pv.pdf",
+        "type": "pdf",
+        "document_type": "pv_huissier",
+        "file_path": str(tmp_path / "pv.pdf"),
+        "text": "Ancienne extraction conservée",
+    }
+    path = _write_pdf_text_cache(sale, [item])
+    previous_bytes = path.read_bytes()
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("cache write interrupted")
+
+    if failure_stage == "serialize":
+        monkeypatch.setattr(pdf_fact_extraction.json, "dump", fail_write)
+    else:
+        monkeypatch.setattr(pdf_fact_extraction.Path, "replace", fail_write)
+
+    with pytest.raises(OSError, match="cache write interrupted"):
+        _write_pdf_text_cache(sale, [{**item, "text": "Nouvelle extraction"}])
+
+    assert path.read_bytes() == previous_bytes
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_pdf_text_cache_writer_satisfies_freshness_only_for_complete_payload(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("src.pdf_fact_extraction.PDF_TEXTS_DIR", tmp_path)
+    monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/freshness-writer",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    text = "Surface habitable : 80 m2."
+    document = {
+        **sale.documents[0],
+        "type": "pdf",
+        "document_type": "pv_huissier",
+        "file_path": str(tmp_path / "pv.pdf"),
+    }
+    payload = {
+        **document,
+        "text": text,
+        "pages": [{"page": 1, "text": text, "status": "extracted"}],
+        "cache_version": "pdf_text_v3_surface_calibration",
+        "sha256": "a" * 64,
+        "page_count": 1,
+        "text_chars": len(text),
+        "page_text_chars": len(text),
+        "ocr_pages": 0,
+        "empty_pages": 0,
+        "extraction_method": "pymupdf_pages",
+        "confidence": 0.9,
+        "failed_pages": [],
+        "complete": True,
+        "extraction_status": "extracted",
+    }
+
+    _store_document_analysis_status(sale, [document], [payload])
+    _write_pdf_text_cache(sale, [payload])
+    assert documents_are_current(sale)
+
+    partial_payload = {
+        **payload,
+        "complete": False,
+        "extraction_status": "incomplete",
+        "failed_pages": [1],
+    }
+    _store_document_analysis_status(sale, [document], [partial_payload])
+    _write_pdf_text_cache(sale, [partial_payload])
+    assert not documents_are_current(sale)
 
 
 def test_store_document_analysis_status_marks_partial_document_coverage() -> None:

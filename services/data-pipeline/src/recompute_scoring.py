@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 from src.asset_normalization import normalize_asset_features
 from src.catalogue_readiness import apply_catalogue_readiness
-from src.config import ROOT_DIR, load_settings
+from src.config import ROOT_DIR, load_settings, require_encheres_publiques_access
 from src.geocode import geocode_sale
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
@@ -295,6 +295,11 @@ def refresh_unknown_sale_procedures(
     """Re-fetch public source pages for unresolved procedures, then verify them again."""
 
     _load_env_fallbacks()
+    if source == "encheres_publiques":
+        # The refresh command can reach the detail client without going through
+        # the normal source collector.  Keep its explicit mode behind the same
+        # two-switch gate before it even reads the catalogue.
+        require_encheres_publiques_access(load_settings())
     rows = _fetch_sales(source=source, limit=limit)
     candidates = [
         row
@@ -302,6 +307,10 @@ def refresh_unknown_sale_procedures(
         if row.get("sale_venue_type") == "unknown"
         and row.get("source_name") in PROCEDURE_REFRESH_SUPPORTED_SOURCES
     ]
+    if any(row.get("source_name") == "encheres_publiques" for row in candidates):
+        # ``all`` is allowed to inspect the catalogue, but it cannot create a
+        # client or issue an EP detail request until the source is authorized.
+        require_encheres_publiques_access(load_settings())
     if not candidates:
         print("Unknown sale procedure source refresh")
         print("- candidates: 0")

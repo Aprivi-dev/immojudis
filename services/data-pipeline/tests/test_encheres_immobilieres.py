@@ -52,6 +52,21 @@ def _settings() -> dict[str, object]:
     }
 
 
+def test_verified_detail_marks_capture_but_empty_page_does_not():
+    class Client:
+        def __init__(self, body):
+            self.body = body
+
+        def get(self, url):
+            return self.body
+
+    for body, expected in [(_detail_html(9486), 'complete'), ('<html></html>', None)]:
+        sale = {'source_url': f'{source.BASE_URL}/ventes/9486-maison-bordeaux-33',
+                'external_id': '9486', 'title': 'Carte de listing', 'city': 'Bordeaux'}
+        source._enrich_sale_from_detail(Client(body), sale, [])
+        assert sale.get('source_detail_status') == expected
+
+
 def test_detail_identity_mismatch_keeps_listing_and_quarantines_sale() -> None:
     source_url = f"{source.BASE_URL}/ventes/9486-maison-bordeaux-33"
     sale = {

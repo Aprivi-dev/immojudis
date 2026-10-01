@@ -28,4 +28,33 @@ describe("information-agent inbound webhook route", () => {
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "Réception email impossible." });
   });
+
+  it("acknowledges a verified receipt after it is durably queued", async () => {
+    vi.mocked(processInformationAgentInboundWebhook).mockResolvedValueOnce({
+      accepted: true,
+      caseId: "case-1",
+      messageId: "message-1",
+      processingStatus: "queued",
+    });
+
+    const response = await POST(new Request("https://example.test/webhook", { method: "POST" }));
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ processingStatus: "queued" });
+    expect(processInformationAgentInboundWebhook).toHaveBeenCalledWith({
+      request: expect.any(Request),
+      deferProcessing: true,
+    });
+  });
+
+  it("returns 413 when the inbound webhook body exceeds its limit", async () => {
+    const payloadTooLarge = new Error("Corps du webhook trop volumineux.");
+    payloadTooLarge.name = "InformationAgentWebhookPayloadTooLargeError";
+    vi.mocked(processInformationAgentInboundWebhook).mockRejectedValueOnce(payloadTooLarge);
+
+    const response = await POST(new Request("https://example.test/webhook", { method: "POST" }));
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: "Webhook trop volumineux." });
+  });
 });

@@ -174,6 +174,21 @@ function estimateBuiltSurface(
 }
 
 export function getDisplaySurface(sale: SurfaceSaleLike): SaleSurface {
+  if (isLandOnlySurface(sale)) {
+    const land = positiveSurface(sale.land_surface_m2) ?? positiveSurface(sale.app_surface_m2);
+    if (land != null) {
+      return {
+        value: land,
+        estimated: false,
+        label: formatSurface(land),
+        metricLabel: "Terrain",
+        kind: "land",
+        helperText:
+          "Surface terrain ou cadastrale connue. Elle n'est pas utilisée comme surface habitable pour le prix au m².",
+      };
+    }
+  }
+
   const primary = getSaleSurface(sale);
   if (primary.value != null) return primary;
 
@@ -191,4 +206,14 @@ export function getDisplaySurface(sale: SurfaceSaleLike): SaleSurface {
   }
 
   return primary;
+}
+
+function isLandOnlySurface(sale: SurfaceSaleLike): boolean {
+  const appKind = sale.app_surface_kind?.trim().toLocaleLowerCase("fr-FR");
+  const scope = sale.surface_scope?.trim().toLocaleLowerCase("fr-FR");
+  return (
+    appKind === "land" ||
+    scope === "land" ||
+    /\b(?:land|terrain|parcelle)\b/.test(sale.property_type?.toLocaleLowerCase("fr-FR") ?? "")
+  );
 }
