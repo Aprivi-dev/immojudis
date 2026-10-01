@@ -1,17 +1,17 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 1er octobre, 02 h 16 UTC
+## Synthèse actuelle — 1er octobre, 06 h 20 UTC
 
 | Chantier | État vérifié |
 | --- | --- |
-| SQL et CI | `32bc605b` : CI/CodeQL verts, 2 115 tests Python par version, 80 fichiers/1 488 assertions pgTAP et 201 migrations sans dérive. Allowlist v4.6 appliquée. Les corrections du refus fournisseur et des équivalences exactes de type de bien nécessitent une nouvelle qualification exacte avant maintenance. |
-| Santé | À 01 h 50, cinq alertes : cron.stale, enrichment.stalled, import.unhealthy, avoventes.missed et cessions_etat.missed. Santé globale non qualifiée. |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`, référencé par `GITHUB_SCROLL_REF`. Warm/cold ordinaires `e3deadf6` qualifiés. Canari `32bc605b` : 90 claims uniques, 79 completed, un failed fournisseur réessayable et dix queued ; preuve indépendante de tous les UUIDs. Routage inchangé. |
+| SQL et CI | `85b990b9eefadadce28c0b7e53a20091f7e0ed19` : CI/CodeQL verts, 2 127 tests Python par version, 81 fichiers/1 513 assertions pgTAP et 202 migrations sans dérive. Correction des équivalences de type appliquée. Nouveau reçu privé de suppression de job en qualification ; aucune application avant les tests PostgreSQL du nouveau commit. |
+| Santé | À 05 h 45, deux alertes ouvertes : cron.stale et enrichment.stalled. Les notifications sont livrées ; les contrôles de santé exécutés réussissent, mais le cron inbound reste absent. Santé globale non qualifiée. |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`, référencé par `GITHUB_SCROLL_REF`. Canari `85b990b9` : workflow réussi, 30 claims uniques ; un UUID absent sans preuve terminale. Qualification exhaustive refusée, aucune promotion. Le nouveau reçu permettra de vérifier les suppressions futures, sans requalifier ce canari. |
 | Collecte Avoventes | Warm `e3deadf6` : 240 annonces et 241/241 requêtes réussies, zéro échec de transport ; collecte/publication complètes, enrichissement partiel. Les preuves manuelles ne remplacent pas les timestamps du dernier run automatique. |
-| Autres sources | Neuf sources autorisées actives : huit disponibles, AGRASC partielle avec 22 échecs consécutifs. Licitor collecte/publication complètes à 23 h 43 le 30 septembre. Disponibilité ne vaut pas certificat de couverture ; une nouvelle collecte Notaires qualifiée et la fraîcheur durable restent requises. |
-| Documents | Warm : 75/95 → 95/95 pages, même fichier, texte enrichi, quatre documents complets. Cold : ces quatre PDF et trois autres sont verified/extracted, file_path NULL/persisted_pdf_text, mêmes hashes/longueurs/fingerprints, mises à jour post-start ; réutilisation SQL réelle des sept pièces qualifiée. |
-| Capacité | À 01 h 50 : 5 925 ouverts, 5 909 dus réessayables, 2 562 anciens sous plafond, huit épuisés, un running et zéro stale ; 1 006 completed sur 24 h. Ouverts −795 depuis 23 h 31, sans preuve de résorption durable. Valorisation : 2 472 ready/381 insufficient_data, zéro dû et 995 completed sur 24 h. |
-| Revue IA | Import atomique v4.6 commis à 01 h 43 : 100 statuts/912 projections. Relecture indépendante : 194 match, 55 conflict, 15 missing et 648 not_publishable à 01 h 48. Zéro projection finalement publiable ; 64 ventes portent le marqueur IA. App/discovery/preview : aucune fuite de vente quarantainée. Parmi les 38 conflits de type, 25 sont cinq équivalences françaises exactes avec les codes du modèle ; correction SQL en qualification. Aucun résultat d'exactitude statistique réelle. |
+| Autres sources | Neuf sources autorisées actives : huit couvertures complètes, sept publications complètes, six pointeurs automatiques réussis à 05 h 45. AGRASC partielle/22 échecs ; Notaires automatique échoué, publication pending. Notaires manuel `85b990b9` qualifié : 834 biens, 870 requêtes réussies, collecte/publication complètes. Le run manuel ne remplace pas le pointeur automatique. |
+| Documents | Warm/cold : reprise 75/95 → 95/95 pages et réutilisation SQL de sept PDF qualifiées. Dans le canari 85, trois erreurs OCR initiales : une récupérée naturellement ; deux restent incomplètes (page 6 et pages 14/16), avec hashes/checkpoints persistés et sans succès documentaire fictif. |
+| Capacité | À 05 h 45 : 6 079 ouverts, 6 066 dus réessayables, 2 483 anciens sous plafond, dix épuisés, zéro running/stale ; 1 090 completed sur 24 h. Aucune preuve de résorption nette durable. Valorisation : 2 465 ready/394 insufficient_data sur 2 860, deux dus (ancienneté 63 s), 895 ready/184 insufficient_data sur 24 h. |
+| Revue IA | Import atomique v4.6 commis à 01 h 43 : 100 cas/912 projections, non réimportés. Relecture courante : 324 resolved/verified, 299 absent, 79 unknown, 198 unresolved, 12 unverified ; 225 resolved/match, zéro projection finalement publiable. Tables/RLS, vues invoker et gardes des vues/RPC publics vérifiées ; aucun champ IA ajouté aux projections catalogue. Aucun résultat d'exactitude statistique réelle. |
 | Resend/portail | Clé, domaines, webhook et canari fournisseur vérifiés. Ajout du secret portail à Vercel Production refusé par auto-review, accord précis en attente. Aucun interlocuteur réel sollicité. |
 | Inbound | Route non publiée sur l’origine canonique, cron absent. Canari canonique authentifié puis activation et récupération automatique de santé requis après déploiement. |
 | Enchères Publiques | Source désactivée, gardes qualifiées sur `3400eb58`. Accord écrit et flux promis non reçus. Aucune nouvelle collecte. |
@@ -3299,3 +3299,164 @@ L'accord écrit et le flux EP promis restent non reçus ; la source demeure
 désactivée. La route inbound canonique n'est pas publiée et son cron reste
 suspendu. Aucune publication finale, promotion automatique, suppression de
 branche ni sollicitation d'un contact réel n'a été effectuée.
+
+## Qualification du commit 85 et preuve de suppression manquante — 1er octobre, 06 h 20 UTC
+
+Le commit exact `85b990b9eefadadce28c0b7e53a20091f7e0ed19` est qualifié
+par la [CI 36806573261](https://github.com/Aprivi-dev/immojudis/actions/runs/36806573261)
+(succès à 02 h 41 min 26 s) et
+[CodeQL 36806573219](https://github.com/Aprivi-dev/immojudis/actions/runs/36806573219)
+(succès à 02 h 37 min 30 s). Le merge testé
+`f0f002f741bc999792df8e2bb902bcb3ff36cb16` a pour parents main `05cff558`
+et le commit 85. Python 3.11 et 3.12 : chacun 2 127 passed/18 skipped,
+PostgreSQL disposable réellement healthy, intégrations DB exécutées.
+202 migrations rejouées sans dérive, 81 fichiers pgTAP/1 513 assertions PASS.
+Inbound : deux tests passés ; Web : 1 336 passed/5 skipped ; Playwright :
+87 passed/8 skipped ; typage, lint, invariants, budgets et build passent.
+Uploads CodeQL terminés, zéro alerte ouverte sur ce commit. Les logs privés
+CI/CodeQL portent les SHA `50c3c1330ef244638702360787d968d81e7316026ac1b114f170b925142b4425`
+et `7626dda708cf9cfc3933d37ebf56288cb9fbe69bc9bcffe8ea2a506c543d0950`.
+
+La [maintenance 36807201815](https://github.com/Aprivi-dev/immojudis/actions/runs/36807201815)
+sur le tag `immojudis-maintenance-85b990b9`, protégé avant création avec le
+ruleset actif `24284972` sans bypass/update/deletion, applique uniquement
+`20261001021521_ai_review_property_type_exact_codes.sql` à
+02 h 44 min 30,431752 s. Historique distant : 202 migrations, dernière
+version présente une seule fois, dérive contrôlée à 02 h 47. Les cinq
+équivalences françaises et huit codes exacts sont reconnus ; libellés
+composites/inconnus restent bloqués. Le log privé porte le SHA
+`a903d22d62e5e2c251f2083ff61619ad905fbe4f56658e4bcca959f2f15daf87`.
+
+La maintenance bornée du job fournisseur observé annule exactement
+`103ed0d2-336f-4acf-aa97-69620e3f63d4` à 02 h 44 min 37,988238 s,
+après garde sur son type, état failed, tentative 1/4, lease/completion NULL,
+empreinte d'entrée et refus fournisseur exact. Le motif sanitisé devient
+`review_required`, sans succès fictif, modification de fiche ni reset de
+tentative. La relecture du présent contrôle confirme cancelled/1/4 sans lease.
+
+Le [run Notaires 36807955448](https://github.com/Aprivi-dev/immojudis/actions/runs/36807955448)
+sur le tag protégé `immojudis-workers-85b990b9` réussit à 03 h 29 min 22 s.
+Le run SQL exact `a8742dad-5a4e-4835-b125-1620f984e0c9`, manual et
+`scheduler_owned=false`, va de 02 h 54 min 52 s à 03 h 29 min 10 s :
+834 biens distincts/870 requêtes réussies, collecte et publication complètes,
+enrichissement partiel. Les items sont 202 published/630 expired/
+deux quarantined, zéro pending/failed et aucune correspondance fiche manquante.
+Le pointeur automatique conserve son dernier échec : il n'est pas réécrit.
+Log privé SHA `b182fefabe40ad4cf6e783326052225ddc6ed5809eeedf7a582561f7579facb6`.
+
+### Canari d'enrichissement 85 : workflow réussi, qualification exhaustive refusée
+
+Le [canari 36813890609](https://github.com/Aprivi-dev/immojudis/actions/runs/36813890609)
+est dispatché une seule fois à 04 h 10 min 40 s sur le même tag protégé,
+après fin naturelle du writer précédent et preflight sans run/claim actif
+ni lease stale. Inputs ordinaires : enrichment_only=true, automatic=false,
+source=all, limit/run_id vides, autres modes false. Les limites natives
+90 jobs/1 200 secondes et la concurrence restent inchangées.
+Il réussit à 04 h 30 min 46 s, après 1 142,4 secondes de traitement et un
+arrêt `finalization_margin`. 30 UUIDs uniques : 15 source_detail/15 autres.
+Le débit affiché 94,5/h compte des dispositions de claims, pas des succès métier.
+
+Le relevé final à 04 h 30 min 26 s donne 15 completed/trois failed/
+trois cancelled/huit queued/zéro running/**un missing** ; huit reports
+demandés. Les dix PATCH REST de confirmation demandent select=id et rendent
+HTTP 200 ; aucun DataInspectionFailed, warning de confirmation perdue ni
+watchdog. Les trois RuntimeError sont des PDF incomplets après OCR.
+La relecture SQL indépendante à 05 h 50 min 29 s trouve
+20 completed/deux failed/trois cancelled/quatre queued/zéro running/
+**un missing**. Une reprise naturelle peut changer les états ; elle n'explique
+pas une disparition. Log privé SHA
+`c2b30b77aec7d955c3973ccfac429ba96c94e5998412f55eb05c3295a04bd6e2`,
+manifeste des 30 claims SHA
+`e5f31a62380f6adc20ceb8c3ed4187dcdd518fe8225a7cd0bd613bad54c968c8`.
+
+L'UUID absent `61914563-414d-4fd2-852f-e50de3ef54d5` est l'entrée ordonnée 12,
+source_detail, tentative 1, lease à 04 h 26 min 13,062887 s ; le reçu de claim
+`008bc90c-b503-479c-948f-ac9117baecf6` en conserve l'identité. Les 30 claims
+du log sont recoupés avec les reçus SQL dans la fenêtre du run. La proximité
+d'un fetch et de publications à 04 h 26 ne constitue pas un reçu terminal.
+La fiche corrélée est absente et son bridge d'archive ancien est détaché,
+mais aucun timestamp de suppression ni reçu ne relie ce bridge au job.
+La FK `auction_enrichment_jobs.source_url` cascade depuis le catalogue rend
+une suppression plausible ; elle reste **non prouvée**. Ce canari ne qualifie
+donc pas la promotion du worker. Aucun état historique n'est reconstruit.
+
+Les trois échecs PDF initiaux correspondent à des pages OCR : pages 21–25,
+pages 14/16 et page 6. Le premier est repris naturellement et ses quatre
+documents sont complets. Les deux autres restent incomplets, avec les hashes,
+manifestes et checkpoints persistés : quatre documents/ trois extraits pour
+page 6, cinq documents/trois extraits pour pages 14/16. Les jobs sont failed,
+respectivement 4/4 et 2/4. Aucun document n'est déclaré complet pour contourner
+un échec. Le log ne justifie pas un changement supplémentaire de moteur OCR.
+
+### Correction proposée : reçu privé transactionnel de DELETE
+
+La migration CLI `20261001060625_enrichment_job_delete_receipts.sql` ajoute
+un reçu privé de suppression indexé par job_id, sans FK, URL, input_hash,
+erreur brute, payload, contact ni document. Un trigger AFTER DELETE enregistre
+le dernier état, les tentatives et timestamps dans la même transaction que
+la suppression directe ou la cascade catalogue. Il conserve notamment
+running/lease : une suppression n'est pas un succès métier. Le contexte
+indique seulement si le parent est encore observable ; aucune cause de
+suppression ni identité d'opérateur n'est déduite.
+
+RLS et ACL : service_role SELECT seulement, clients sans lecture/écriture,
+fonction trigger privée SECURITY DEFINER avec search_path vide et sans EXECUTE
+API. La clé primaire refuse une réutilisation silencieuse d'UUID. TRUNCATE
+est révoqué et un trigger le refuse, car il contournerait les reçus par ligne.
+Un propriétaire privilégié peut toujours désactiver un trigger : cette
+protection ne constitue pas une preuve contre un administrateur superuser.
+Une purge bornée conserve les reçus 30 jours avec l'horloge DB seule, sans
+p_now contrôlé par l'appelant ; elle est ajoutée une seule fois au cron
+quotidien existant. Si cron est présent mais son job attendu manque, la
+migration échoue. Il n'y a aucun backfill historique.
+
+Le test pgTAP 409 couvre les suppressions directe/cascade, la conservation du
+dernier état, le rollback, les ACL, TRUNCATE et la purge. La nouvelle migration
+et ce test nécessitent la CI PostgreSQL réelle du nouveau commit avant toute
+application. Docker local ne démarre toujours pas ; aucune exécution locale
+pgTAP n'est revendiquée. Les advisors production lus à 06 h 15 concernent le
+schéma précédent, pas ce nouvel objet encore non appliqué.
+
+### Relevé courant des critères encore ouverts
+
+Les transactions READ ONLY, timeout 5 s/lock 1 s, à 05 h 45–05 h 49 constatent
+neuf sources autorisées actives, EP désactivée : huit couvertures complètes,
+sept publications complètes, six pointeurs automatiques réussis. AGRASC garde
+22 échecs et une couverture partielle ; Notaires conserve publication pending
+et deux échecs automatiques. Petites Affiches a un run automatique en cours,
+avec lease valable. Aucune entrée ni pointeur n'est modifié pour améliorer
+ces compteurs. Les preuves AGRASC des URL adressables ne rendent pas le
+catalogue complet, faute d'identifiant pour les cartes vendues restantes.
+
+La file compte 6 079 ouverts/6 066 dus/2 483 anciens sous plafond/
+dix épuisés/zéro running/stale et 1 090 completed sur 24 h :
+display 3 040/3 039 dus/570 anciens ; facts 90/84/16 ; PDF 392/386/26 ;
+detail 2 557/2 557/1 871. Les nouvelles entrées empêchent de déduire une
+résorption durable de la seule activité. Valorisation : 2 860 au total,
+2 465 servis (86,2 %), 2 858 traités (99,9 %), 394 insufficient_data,
+738 actionnables, deux dus âgés au plus de 63 secondes. Sur 24 h :
+895 ready/184 insufficient_data, zéro échec terminal.
+
+Alertes ouvertes : cron.stale critique/enrichment.stalled warning,
+notifications livrées. import.unhealthy, source*.missed et valuation.degraded
+sont résolues naturellement ; les exécutions récentes du cron santé passent
+96/96, rétention opérationnelle 1/1 et rétention catalogue 288/288.
+Le cron inbound est absent, aucun job inbound n'est présent, et la route
+canonique GET répond toujours 404. Aucun email n'a été envoyé dans ce contrôle.
+
+La revue IA reste 100 cas/912 projections, sans nouvel import :
+55 captured/exact, 21 captured/unmapped, 12 not_attempted/exact,
+quatre not_attempted/unmapped, six capture_failed/deux inaccessible.
+324 resolved/verified, 299 absent, 79 unknown, 198 unresolved, 12 unverified ;
+225 resolved/match mais zéro publication finale. Le read model est encore
+candidate:false ; les vues/RPC publics gardent la quarantaine et n'exposent
+aucune colonne de revue IA. Le comptage large du catalogue a atteint 5 s :
+aucun nouveau total n'est déduit de cet essai.
+
+La promotion interne du worker reste suspendue jusqu'à un nouveau canari
+dont chaque UUID a un état ou un reçu de suppression vérifiable. Ensuite,
+un cycle automatique complet doit qualifier capacité et fraîcheur. L'accord
+précis pour le secret portail Production, l'autorisation écrite et le flux EP,
+le canari inbound canonique et la récupération automatique de santé restent
+requis pour la publication finale. La PR reste en brouillon ; aucune publication
+applicative finale, suppression de branche ou sollicitation réelle n'a eu lieu.
