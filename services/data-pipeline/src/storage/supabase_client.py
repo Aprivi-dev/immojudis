@@ -1272,11 +1272,13 @@ def create_run_in_supabase(source: str, use_llm: bool, run_id: str | None = None
         return None
     if run_id:
         return start_existing_run_in_supabase(run_id, source, use_llm)
+    now = datetime.now(UTC).isoformat()
     payload = {
         "status": "running",
         "source": source,
         "use_llm": use_llm,
-        "started_at": datetime.now(UTC).isoformat(),
+        "started_at": now,
+        "updated_at": now,
     }
     response = _postgrest_request_with_retries(
         "POST",
@@ -1299,12 +1301,14 @@ def start_existing_run_in_supabase(run_id: str, source: str, use_llm: bool) -> s
     key = settings["supabase_service_role_key"]
     if not url or not key:
         return run_id
+    now = datetime.now(UTC).isoformat()
     payload = {
         "status": "running",
         "source": source,
         "use_llm": use_llm,
-        "started_at": datetime.now(UTC).isoformat(),
+        "started_at": now,
         "finished_at": None,
+        "updated_at": now,
     }
     try:
         response = _postgrest_request_with_retries(
@@ -1928,9 +1932,11 @@ def finish_run_in_supabase(
     key = settings["supabase_service_role_key"]
     if not url or not key:
         return
+    now = datetime.now(UTC).isoformat()
     payload = {
         "status": status,
-        "finished_at": datetime.now(UTC).isoformat(),
+        "finished_at": now,
+        "updated_at": now,
         "summary": summary,
         "errors": errors or {},
     }
@@ -1979,7 +1985,10 @@ def update_run_progress_in_supabase(
     key = settings["supabase_service_role_key"]
     if not url or not key:
         return
-    payload: dict[str, Any] = {"summary": summary}
+    payload: dict[str, Any] = {
+        "summary": summary,
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
     if errors is not None:
         payload["errors"] = errors
     response = _postgrest_request_with_retries(
