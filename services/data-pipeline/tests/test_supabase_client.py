@@ -248,6 +248,123 @@ def test_run_lifecycle_uses_postgres_after_cloudflare_521(monkeypatch) -> None:
     assert calls[1][1][-1] == "run-1"
 
 
+def test_run_start_payloads_use_one_deterministic_updated_at(monkeypatch) -> None:
+    frozen = datetime(2026, 10, 1, 9, 30, tzinfo=UTC)
+    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    requests: list[tuple[str, dict[str, object]]] = []
+
+    def fake_request(method, endpoint, table, **kwargs):
+        requests.append((method, kwargs["json"]))
+        if method == "POST":
+            return httpx.Response(201, json=[{"id": "run-new"}], request=httpx.Request(method, endpoint))
+        return httpx.Response(204, request=httpx.Request(method, endpoint))
+
+    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+
+    assert supabase_client.create_run_in_supabase("all", True) == "run-new"
+    assert supabase_client.start_existing_run_in_supabase("run-existing", "all", True) == "run-existing"
+
+    expected = frozen.isoformat()
+    assert requests == [
+        (
+            "POST",
+            {
+                "status": "running",
+                "source": "all",
+                "use_llm": True,
+                "started_at": expected,
+                "updated_at": expected,
+            },
+        ),
+        (
+            "PATCH",
+            {
+                "status": "running",
+                "source": "all",
+                "use_llm": True,
+                "started_at": expected,
+                "finished_at": None,
+                "updated_at": expected,
+            },
+        ),
+    ]
+
+
+def test_run_progress_payload_includes_deterministic_updated_at(monkeypatch) -> None:
+    frozen = datetime(2026, 10, 1, 9, 31, tzinfo=UTC)
+    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_request(method, endpoint, table, **kwargs):
+        captured.update(kwargs)
+        return httpx.Response(204, request=httpx.Request(method, endpoint))
+
+    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+
+    supabase_client.update_run_progress_in_supabase(
+        "run-progress",
+        {"mode": "llm_description_backfill", "completed": 1},
+        {"llm_backfill": []},
+    )
+
+    assert captured["json"] == {
+        "summary": {"mode": "llm_description_backfill", "completed": 1},
+        "errors": {"llm_backfill": []},
+        "updated_at": frozen.isoformat(),
+    }
+
+
+def test_run_finish_payload_includes_deterministic_updated_at(monkeypatch) -> None:
+    frozen = datetime(2026, 10, 1, 9, 32, tzinfo=UTC)
+    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_request(method, endpoint, table, **kwargs):
+        captured.update(kwargs)
+        return httpx.Response(204, request=httpx.Request(method, endpoint))
+
+    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+
+    supabase_client.finish_run_in_supabase(
+        "run-finish",
+        "succeeded",
+        {"stage": "complete"},
+        {"runner": []},
+    )
+
+    assert captured["json"] == {
+        "status": "succeeded",
+        "finished_at": frozen.isoformat(),
+        "updated_at": frozen.isoformat(),
+        "summary": {"stage": "complete"},
+        "errors": {"runner": []},
+    }
+
+
 def test_sanitize_postgrest_payload_removes_null_characters_recursively() -> None:
     payload = {
         "result": [
@@ -2088,6 +2205,8 @@ def test_has_active_running_run_checks_recent_running_rows(monkeypatch) -> None:
 
 
 def test_update_run_progress_in_supabase_patches_running_row(monkeypatch) -> None:
+    frozen = datetime(2026, 10, 1, 9, 33, tzinfo=UTC)
+    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
     monkeypatch.setattr(
         supabase_client,
         "load_settings",
@@ -2118,6 +2237,7 @@ def test_update_run_progress_in_supabase_patches_running_row(monkeypatch) -> Non
     assert captured["json"] == {
         "summary": {"mode": "llm_description_backfill", "completed": 1},
         "errors": {"llm_backfill": []},
+        "updated_at": frozen.isoformat(),
     }
 
 
