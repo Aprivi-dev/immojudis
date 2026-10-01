@@ -42,16 +42,54 @@ def test_finish_enrichment_respects_retry_after_and_exact_lease(monkeypatch):
 
     def patch(url, **kwargs):
         captured.update(kwargs)
-        return httpx.Response(204, request=httpx.Request('PATCH', url))
+        return httpx.Response(200, json=[{"id": "job"}], request=httpx.Request('PATCH', url))
 
     monkeypatch.setattr(supabase_client, 'load_settings', lambda: {'supabase_url':'https://supabase.test','supabase_service_role_key':'test-only'})
     monkeypatch.setattr(supabase_client.httpx, 'patch', patch)
     lease = datetime(2026, 9, 13, tzinfo=UTC)
     retry_at = datetime(2099, 1, 1, tzinfo=UTC)
-    supabase_client.finish_auction_enrichment_job_in_supabase('job', succeeded=False,
-        attempt_count=1, locked_at=lease, retry_not_before=retry_at.isoformat())
-    assert captured['params'] == {'id':'eq.job','status':'eq.running','attempt_count':'eq.1','locked_at':f'eq.{lease.isoformat()}'}
+    assert supabase_client.finish_auction_enrichment_job_in_supabase(
+        'job', succeeded=False, attempt_count=1, locked_at=lease, retry_not_before=retry_at.isoformat()
+    ) is True
+    assert captured['params'] == {'select': 'id', 'id':'eq.job','status':'eq.running','attempt_count':'eq.1','locked_at':f'eq.{lease.isoformat()}'}
+    assert captured['headers']['Prefer'] == 'return=representation'
     assert captured['json']['next_attempt_at'] == retry_at.isoformat()
+
+
+def test_finish_enrichment_reports_lost_lease(monkeypatch):
+    monkeypatch.setattr(
+        supabase_client,
+        'load_settings',
+        lambda: {'supabase_url': 'https://supabase.test', 'supabase_service_role_key': 'test-only'},
+    )
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        'patch',
+        lambda url, **kwargs: httpx.Response(200, json=[], request=httpx.Request('PATCH', url)),
+    )
+
+    assert supabase_client.finish_auction_enrichment_job_in_supabase(
+        'job', succeeded=False, cancelled=True, attempt_count=2, locked_at='2026-09-13T08:00:00+00:00'
+    ) is False
+
+
+@pytest.mark.parametrize("response_body", [[{}], [{"id": "other-job"}], [{"id": "job"}, {"id": "job"}], "malformed"])
+def test_finish_enrichment_requires_exact_cas_receipt(monkeypatch, response_body):
+    monkeypatch.setattr(
+        supabase_client,
+        'load_settings',
+        lambda: {'supabase_url': 'https://supabase.test', 'supabase_service_role_key': 'test-only'},
+    )
+
+    def patch(url, **kwargs):
+        if response_body == "malformed":
+            return httpx.Response(200, content=b"not-json", request=httpx.Request('PATCH', url))
+        return httpx.Response(200, json=response_body, request=httpx.Request('PATCH', url))
+
+    monkeypatch.setattr(supabase_client.httpx, 'patch', patch)
+    assert supabase_client.finish_auction_enrichment_job_in_supabase('job', succeeded=True) is (
+        response_body == [{"id": "job"}]
+    )
 
 
 def test_pdf_prerequisite_lookup_ignores_exhausted_jobs(monkeypatch) -> None:

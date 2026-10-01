@@ -1,21 +1,21 @@
 # État de la file avant publication — 29 septembre 2026
 
-## Synthèse actuelle — 30 septembre, 23 h 12 UTC
+## Synthèse actuelle — 1er octobre, 02 h 16 UTC
 
 | Chantier | État vérifié |
 | --- | --- |
-| SQL et CI | `1780af69` : CI/CodeQL verts, 2 091 tests Python par version, 80 fichiers/1 488 assertions pgTAP et 201 migrations sans dérive. Allowlist v4.6 appliquée en maintenance interne. Nouveaux correctifs parseurs/export : 94 tests revue/import, 106 tests sources et 25 matrix/calibration verts ; nouvelle CI exacte requise. |
-| Santé | À 21 h 05, quatre alertes : inbound absent, fraîcheur EImmo et Notaires, enrichissement stalled. Santé globale non qualifiée. |
-| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`. Warm/cold ordinaires `e3deadf6` réussis, caches réellement absents, reprise source/SQL démontrée. Routage inchangé ; prochain canari de queue avec vérification indépendante de tous ses UUIDs requis. |
+| SQL et CI | `32bc605b` : CI/CodeQL verts, 2 115 tests Python par version, 80 fichiers/1 488 assertions pgTAP et 201 migrations sans dérive. Allowlist v4.6 appliquée. Les corrections du refus fournisseur et des équivalences exactes de type de bien nécessitent une nouvelle qualification exacte avant maintenance. |
+| Santé | À 01 h 50, cinq alertes : cron.stale, enrichment.stalled, import.unhealthy, avoventes.missed et cessions_etat.missed. Santé globale non qualifiée. |
+| Worker automatique | Production sur le tag protégé `immojudis-workers-f695a739`, référencé par `GITHUB_SCROLL_REF`. Warm/cold ordinaires `e3deadf6` qualifiés. Canari `32bc605b` : 90 claims uniques, 79 completed, un failed fournisseur réessayable et dix queued ; preuve indépendante de tous les UUIDs. Routage inchangé. |
 | Collecte Avoventes | Warm `e3deadf6` : 240 annonces et 241/241 requêtes réussies, zéro échec de transport ; collecte/publication complètes, enrichissement partiel. Les preuves manuelles ne remplacent pas les timestamps du dernier run automatique. |
-| Autres sources | Six dernières collectes complètes sur neuf sources autorisées. AGRASC conserve 25 archives vendues sans identité ; EImmo timeout de transport, Notaires interrompu sur l’ancien worker. Nouvelle collecte Notaires qualifiée requise. |
+| Autres sources | Neuf sources autorisées actives : huit disponibles, AGRASC partielle avec 22 échecs consécutifs. Licitor collecte/publication complètes à 23 h 43 le 30 septembre. Disponibilité ne vaut pas certificat de couverture ; une nouvelle collecte Notaires qualifiée et la fraîcheur durable restent requises. |
 | Documents | Warm : 75/95 → 95/95 pages, même fichier, texte enrichi, quatre documents complets. Cold : ces quatre PDF et trois autres sont verified/extracted, file_path NULL/persisted_pdf_text, mêmes hashes/longueurs/fingerprints, mises à jour post-start ; réutilisation SQL réelle des sept pièces qualifiée. |
-| Capacité | À 22 h 24 : 6 044 ouverts, 6 024 dus réessayables, 2 619 anciens sous plafond, 13 épuisés, zéro running/stale. Ouverts −193 depuis 21 h 05, sans preuve de résorption durable. À 22 h 28 : valorisation zéro ouvert ; 26 pending observés à 22 h 24 ont été traités. |
-| Revue IA | v4.6 figée, 1 181 citations strictes et arbitrage complet (29 documentés/47 unresolved). Import atomique refusé par le contrat d'occupation : rollback vérifié, tables IA vides. Export corrigé : seuls alias déjà équivalents SQL canonisés, 15 phrases composées bloquées ; 433 valeurs passent la garde SQL. Snapshot actuel : 324 admissibles/588 bloquées, 55 captures mappées/21 non mappées. Aucun import commis ni mesure d'exactitude réelle. |
+| Capacité | À 01 h 50 : 5 925 ouverts, 5 909 dus réessayables, 2 562 anciens sous plafond, huit épuisés, un running et zéro stale ; 1 006 completed sur 24 h. Ouverts −795 depuis 23 h 31, sans preuve de résorption durable. Valorisation : 2 472 ready/381 insufficient_data, zéro dû et 995 completed sur 24 h. |
+| Revue IA | Import atomique v4.6 commis à 01 h 43 : 100 statuts/912 projections. Relecture indépendante : 194 match, 55 conflict, 15 missing et 648 not_publishable à 01 h 48. Zéro projection finalement publiable ; 64 ventes portent le marqueur IA. App/discovery/preview : aucune fuite de vente quarantainée. Parmi les 38 conflits de type, 25 sont cinq équivalences françaises exactes avec les codes du modèle ; correction SQL en qualification. Aucun résultat d'exactitude statistique réelle. |
 | Resend/portail | Clé, domaines, webhook et canari fournisseur vérifiés. Ajout du secret portail à Vercel Production refusé par auto-review, accord précis en attente. Aucun interlocuteur réel sollicité. |
 | Inbound | Route non publiée sur l’origine canonique, cron absent. Canari canonique authentifié puis activation et récupération automatique de santé requis après déploiement. |
 | Enchères Publiques | Source désactivée, gardes qualifiées sur `3400eb58`. Accord écrit et flux promis non reçus. Aucune nouvelle collecte. |
-| Publication finale | PR en brouillon. Preview `b95ea5a9` READY, canonique inbound 404. Aucun import IA, publication finale ou nettoyage. |
+| Publication finale | PR en brouillon. Canonique inbound 404 ; secret portail et flux EP manquants, santé/capacité/couverture non qualifiées. Import IA effectué, aucune publication finale, promotion du worker automatique ni suppression de branche. |
 
 ### Qualification des textes stockés — 30 septembre, 12 h 01 UTC
 
@@ -110,10 +110,10 @@ sans dégrader la fraîcheur des sources. La seule baisse du stock ne suffit pas
 les tâches de plus de 48 heures doivent être résorbées ou explicitement
 quarantainées avec un motif exploitable. Les échecs Vench, PDF et relais
 doivent être absents ou également quarantainés dans les nouveaux runs. Les
-champs `unresolved` ou `unverified` de la revue IA ne peuvent pas
-alimenter une valeur présentée comme confirmée. L'export v4 courant en compte
-respectivement 128 et 23 ; les nombres antérieurs de 21 et 11 décrivent un
-état provisoire de l'audit.
+champs `unknown`, `unresolved` ou `unverified` de la revue IA ne peuvent pas
+alimenter une valeur présentée comme confirmée. Les compteurs datés de la
+synthèse et des audits post-import décrivent l'état vérifié ; les anciens
+exports de la chronologie ne constituent pas une décision de publication.
 
 ## Maintenance interne autorisée et exécutée
 
@@ -3192,3 +3192,110 @@ ambiguë ne crée pas de compte ; les gardes anti-lots sur les pièces sont
 conservées. 106 tests sources et 25 parser matrix/calibration passent.
 Ces corrections n'ajoutent aucune collecte et ne qualifient pas la fraîcheur
 durable ou la capacité ; un prochain canari de queue reste nécessaire.
+
+## Import IA commis et canari de queue — 1er octobre
+
+La [CI 36790087139](https://github.com/Aprivi-dev/immojudis/actions/runs/36790087139)
+et [CodeQL 36790087229](https://github.com/Aprivi-dev/immojudis/actions/runs/36790087229)
+qualifient `32bc605b7e79f62e6594d18e4d328c091b1b210e` : Python 3.11/3.12
+chacune 2 115 passed/18 skipped, vraie base PG et quatre variantes stockage
+exécutées, 201 migrations sans dérive, 80 fichiers pgTAP/1 488 assertions PASS.
+Web 1 336 passed/5 skipped, Playwright 87 passed/8 skipped, typecheck, lint,
+invariants de sécurité, budgets et build passent. Les uploads CodeQL sont
+terminés et aucune alerte ouverte n'est attachée au SHA exact.
+
+Le [canari 36792101992](https://github.com/Aprivi-dev/immojudis/actions/runs/36792101992)
+est exécuté une seule fois sur `immojudis-workers-32bc605b`, protégé avant
+création par le ruleset `24278314`, update/deletion interdits sans bypass.
+Inputs ordinaires : enrichment_only=true, automatic=false, source=all,
+run_id et limit vides, publication_check/backfill/benchmark false. Les caches
+extraction/Justice sont réellement absents puis sauvegardés. Arrêt max_jobs :
+90 UUIDs uniques, 45 claims source_detail/45 autres enrichissements, 793,9 s,
+plus long lot de détail 12,7 s. L'audit SQL indépendant à 01 h 46 recoupe
+les 90 UUIDs : 79 completed, un failed, dix queued, zéro running/cancelled/
+missing. Les dix différés correspondent à deux manifestes PDF partiels et
+huit textes PDF manquants/incomplets ; le succès du workflow n'est pas
+90 succès métier. Log privé SHA
+`350f0dad5fd063a2440c13984fffdfa8649848b64542f44f76785d8c9628ec4d`,
+liste des claims SHA
+`588c061a4cb726bbe119b49278b6616867cf0f7aa81214b279e0c1b5b18eda2f`.
+
+Une tentative d'import normalisé du 30 septembre à 23 h 26 avait rencontré
+`55P03` pendant la collecte automatique Licitor : rollback intégral, tables
+IA toujours vides. Le preflight du 1er octobre à 01 h 42 constate zéro
+auction_run actif et zéro job running. La transaction unique, bornée à
+30 s/lock 2 s, importe alors le même export normalisé SHA
+`4d5b1643f261366987928cd70f09820b5bae2df364dc409069a5e176665565ae`.
+Commit confirmé à 01 h 43 min 21,770238 s : 100 statuts et 912 projections.
+Aucun worker n'a été arrêté, aucun verrou forcé et aucune garde affaiblie.
+L'artefact source v4.6 conserve le SHA approuvé `2f35c35b…` ci-dessus.
+
+La relecture indépendante, en transactions READ ONLY bornées à 5 s/lock 1 s,
+confirme 324 champs admissibles localement, 79 unknown, 198 unresolved,
+12 unverified et 252 unmapped bloqués. Zéro champ bloqué porte une valeur
+ou le booléen local publishable. À 01 h 48 min 57 s : 194 match, 55 conflict,
+15 missing, 648 not_publishable ; parmi ces derniers, 120 hashes canoniques
+absents ou périmés, 276 labels/citations bloqués et 252 mappings nécessaires.
+À 01 h 51, le readmodel et la vue publiable confirment zéro champ finalement
+publiable. La garde porte sur toute la vente, y compris les douze champs,
+l'identité, la capture et le hash courant. Les tables IA restent sous RLS,
+les vues invoker et l'import exécutable uniquement par postgres.
+
+Les vues publiques app/discovery/preview exposent respectivement
+2 978/2 978/3 223 ventes : zéro statut ou marqueur de quarantaine, zéro vente
+jointe manquante. La base contient 3 399 ventes, 112 statuts quarantined,
+165 marqueurs de quarantaine dont 64 IA. Ces marqueurs protègent les fiches
+dont la revue reste bloquée ; ils ne sont pas retirés pour augmenter le stock.
+
+L'échec du canari porte sur un refus terminal explicite de sortie du
+fournisseur. Le relevé SQL à 01 h 51 confirme failed, attempt_count=1,
+max_attempts=4, next_attempt_at déjà dû, locked_at/completed_at NULL.
+Il n'est donc pas épuisé. Le correctif typé distingue ce refus exact des
+timeouts, 429 et autres erreurs ; il propage la demande de revue sans
+réessai immédiat ni remplacement d'une synthèse validée. L'annulation des
+tâches de faits/synthèse doit confirmer le CAS de lease avant de les annoncer
+terminales. Les textes fournisseurs bruts ne servent pas de motif de queue
+dans ce nouveau chemin. Aucun état du job observé n'a été réécrit.
+La confirmation REST demande uniquement l'ID et exige un reçu exact d'une
+ligne. Les tâches non LLM sont différées sans succès documentaire fictif ;
+une confirmation absente conserve le claim pour son propriétaire/finalizer
+avec warning sanitisé. 198 tests Python ciblés passent, ainsi que la revue
+indépendante des scénarios CAS/lease et facts puis refus display. Ruff et
+diff sont verts, queued_runner reste à 1 499 lignes.
+
+Le diagnostic des 38 conflits property_type identifie 25 équivalences
+exactes du modèle : appartement/apartment (13), maison/house (7),
+ensemble immobilier/mixed (2), terrain/land (2), immeuble/building (1).
+Trois différences de code et dix libellés composites restent bloqués.
+La migration créée par le CLI Supabase 2.110.0,
+`20261001021521_ai_review_property_type_exact_codes.sql`, ne modifie que
+cette comparaison typée, avec une table fermée et des gardes de définition
+du corps courant post-405. Le texte générique, les valeurs persistées,
+les labels, citations, hashes et la quarantaine par vente restent inchangés.
+Elle nécessite des tests pgTAP réels et une nouvelle CI exacte avant application.
+Les 25 assertions du test 408 couvrent les cinq équivalences et leurs
+négatifs, unknown/unknown, ACL privée, texte de ville inchangé, retour
+missing unique, hash périmé et quarantaine. L'attente historique flat du
+test 405 devient unsupported. Relecture indépendante sans défaut restant.
+Le Docker local ne démarre pas (shared memory: No space left on device) :
+aucune exécution pgTAP locale n'est revendiquée.
+
+À 01 h 50, la file compte 5 925 ouverts/5 909 dus réessayables, 2 562 ouverts
+de plus de 48 h sous plafond, huit épuisés, un running et zéro stale.
+1 006 jobs ont terminé sur 24 h. Les définitions restent identiques aux
+relevés précédents ; ces compteurs incluent l'activité régulière et les
+entrées/rétentions. La baisse de 795 ouverts depuis 23 h 31 ne prouve pas
+un débit net durable sur un cycle complet. Valorisation : 2 853 au total,
+2 472 ready/381 insufficient_data, zéro dû, 995 completed sur 24 h.
+Les cinq alertes courantes sont cron.stale, enrichment.stalled,
+import.unhealthy, avoventes.missed et cessions_etat.missed.
+
+Le pointeur réel du worker automatique est `GITHUB_SCROLL_REF` ; il reste
+sur `immojudis-workers-f695a739`. Une collecte Notaires ordinaire qualifiée,
+la capacité durable et la récupération de santé restent à établir.
+L'ajout de `INFORMATION_AGENT_PORTAL_SECRET` à Vercel Production nécessite
+toujours l'autorisation précise précédemment demandée après refus auto-review.
+L'accord écrit et le flux EP promis restent non reçus ; la source demeure
+désactivée. La route inbound canonique n'est pas publiée et son cron reste
+suspendu. Aucune publication finale, promotion automatique, suppression de
+branche ni sollicitation d'un contact réel n'a été effectuée.
