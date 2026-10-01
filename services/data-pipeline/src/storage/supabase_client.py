@@ -1718,12 +1718,12 @@ def finish_auction_enrichment_job_in_supabase(
     attempt_count: int | None = None,
     locked_at: str | datetime | None = None,
     retry_not_before: str | datetime | None = None,
-) -> None:
+) -> bool:
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
     if not url or not key or not job_id:
-        return
+        return False
     now = datetime.now(UTC)
     status = "cancelled" if cancelled else ("completed" if succeeded else "failed")
     payload: dict[str, Any] = {
@@ -1745,15 +1745,25 @@ def finish_auction_enrichment_job_in_supabase(
         payload["next_attempt_at"] = retry_at.isoformat()
     response = httpx.patch(
         f"{str(url).rstrip('/')}/rest/v1/auction_enrichment_jobs",
-        params={"id": f"eq.{job_id}", "status": "eq.running",
+        params={"select": "id", "id": f"eq.{job_id}", "status": "eq.running",
                 **({"locked_at": f"eq.{locked_at.isoformat() if isinstance(locked_at, datetime) else locked_at}"} if locked_at is not None else {}),
                 **({"attempt_count": f"eq.{attempt_count}"} if attempt_count is not None else {})},
-        headers=_rest_headers(str(key), prefer="return=minimal"),
+        headers=_rest_headers(str(key), prefer="return=representation"),
         json=payload,
         timeout=30,
     )
     if response.is_error:
         response.raise_for_status()
+    try:
+        rows = response.json()
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return (
+        isinstance(rows, list)
+        and len(rows) == 1
+        and isinstance(rows[0], dict)
+        and str(rows[0].get("id") or "") == job_id
+    )
 
 
 def fetch_next_data_refresh_request_from_supabase() -> dict[str, Any] | None:

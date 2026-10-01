@@ -248,8 +248,8 @@ select is(
       '40500000-0000-4000-8000-000000000001'
     )
   ),
-  'conflict',
-  'a conflicting canonical text value remains a conflict'
+  'unsupported',
+  'an unreviewed property type label remains unsupported'
 );
 
 set local role postgres;

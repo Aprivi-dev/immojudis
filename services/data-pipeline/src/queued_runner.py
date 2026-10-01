@@ -20,7 +20,7 @@ from src.enrichment.extract_structured import (
     has_current_fact_analysis,
     needs_fact_extraction,
 )
-from src.enrichment.llm_client import create_llm_client
+from src.enrichment.llm_client import cancel_provider_output_refusal_jobs, create_llm_client
 from src.enrichment.operational_display import refresh_operational_display
 from src.freshness import document_fingerprint, documents_are_current
 from src.geocode import geocode_sale
@@ -49,6 +49,7 @@ from src.pdf_enrichment import (
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
 from src.pdf_progress import manifest_is_complete, read_modern_cache
 from src.pipeline_usage import PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
+from src.queue_job_state import finish_job as _finish_claim
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
 from src.source_task_deadline import source_task_deadline_scope
@@ -112,6 +113,10 @@ _WORKER_LLM_BUDGET_EXHAUSTED: ContextVar[bool | None] = ContextVar(
     "worker_llm_budget_exhausted",
     default=None,
 )
+
+
+def _finish_job(job: dict[str, object], **kwargs: object) -> bool:
+    return _finish_claim(job, finish_impl=finish_auction_enrichment_job_in_supabase, **kwargs)
 
 
 def main() -> int:
@@ -269,15 +274,6 @@ def run_data_refresh_request(request: dict[str, object]) -> int:
     finish_data_refresh_request_in_supabase(request_id, "completed", summary)
     print(f"Completed Immojudis data refresh: {request_id}")
     return 0
-
-
-def _finish_job(job: dict[str, object], **kwargs) -> None:
-    # A worker whose lease expired must not finish a later worker's attempt.
-    if job.get("attempt_count") is not None:
-        kwargs["attempt_count"] = int(job["attempt_count"])
-    if job.get("locked_at") is not None:
-        kwargs["locked_at"] = job["locked_at"]
-    finish_auction_enrichment_job_in_supabase(str(job.get("id") or ""), **kwargs)
 
 
 def _claim_enrichment_queue_jobs(*, limit: int, family: str | None) -> list[dict[str, object]]:
@@ -931,6 +927,10 @@ def run_enrichment_queue_batch(
             # default mixed-batch API keeps its historical handled-job count.
             return len(enrichment_jobs) if family == ENRICHMENT_FAMILY else handled_detail_jobs
         except Exception as exc:
+            if cancel_provider_output_refusal_jobs(
+                exc, sale_jobs, finish_job=_finish_job, mark_terminal=mark_enrichment_jobs_terminal
+            ):
+                continue
             LOGGER.exception("Enrichment queue failed for %s: %s", source_url, exc)
             analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
             try:

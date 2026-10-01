@@ -7,6 +7,7 @@ import math
 import re
 import threading
 import time
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
@@ -27,7 +28,7 @@ from src.llm_task_deadline import (
     ensure_llm_task_deadline,
     llm_task_bounded_timeout,
 )
-from src.pipeline_usage import record_prediction, reserve_prediction
+from src.pipeline_usage import QueueJobDeferred, defer_budget_jobs, record_prediction, reserve_prediction
 
 LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -42,6 +43,99 @@ _GENERATE_JSON_OWNS_DEADLINE_TELEMETRY: ContextVar[bool] = ContextVar(
 
 class LLMClientUnavailable(RuntimeError):
     pass
+
+
+class LLMProviderOutputRefused(RuntimeError):
+    """A provider rejected the generated output under its safety policy.
+
+    This is deliberately separate from transport and model-format failures:
+    the queue requires review before automatically submitting the same input
+    again. The exception message is fixed so provider response bodies never
+    enter queue state or worker telemetry.
+    """
+
+    def __init__(self, *, request_kind: str | None = None) -> None:
+        super().__init__("Replicate refused generated output for provider safety review")
+        self.request_kind = request_kind
+
+
+_PROVIDER_OUTPUT_REFUSAL_MARKER = (
+    "InternalError.Algo.DataInspectionFailed: Output data may contain inappropriate content"
+)
+PROVIDER_OUTPUT_REFUSAL_REVIEW_MESSAGE = "review_required: provider output policy refusal"
+
+
+def _is_provider_output_refusal(error: object) -> bool:
+    """Recognize only Replicate's exact terminal output-policy marker."""
+    return _PROVIDER_OUTPUT_REFUSAL_MARKER.casefold() in str(error or "").casefold()
+
+
+def _raise_terminal_prediction_error(status: object, error: object) -> None:
+    if _is_provider_output_refusal(error):
+        raise LLMProviderOutputRefused()
+    raise RuntimeError(f"Replicate prediction {status}: {error}")
+
+
+def cancel_provider_output_refusal_jobs(
+    error: BaseException,
+    jobs: list[dict[str, object]],
+    *,
+    finish_job: Callable[..., bool | None],
+    mark_terminal: Callable[[list[dict[str, object]]], None],
+    defer_jobs: Callable[[list[dict[str, object]]], None] | None = None,
+) -> bool:
+    """Handle a provider policy refusal without changing the sale payload.
+
+    Only an owned LLM claim may be cancelled.  A non-LLM claim is deferred so
+    a PDF or other checkpoint is never declared complete merely because a
+    later display request was refused.  A lost lease or finish error remains
+    pending for its owner/finalizer; it is never converted into a retryable
+    failure by this handler.
+    """
+    if not isinstance(error, LLMProviderOutputRefused):
+        return False
+    deferred_jobs: list[dict[str, object]] = []
+    for job in jobs:
+        job_type = str(job.get("job_type") or "")
+        if job_type not in {"fact_extraction", "display_description"}:
+            deferred_jobs.append(job)
+            continue
+        try:
+            confirmed = finish_job(
+                job,
+                succeeded=False,
+                cancelled=True,
+                error_message=PROVIDER_OUTPUT_REFUSAL_REVIEW_MESSAGE,
+            )
+        except Exception:
+            confirmed = False
+        if confirmed is True:
+            mark_terminal([job])
+        else:
+            LOGGER.warning(
+                "Provider refusal cancellation CAS was not confirmed for job %s",
+                str(job.get("id") or "<missing>"),
+            )
+    if deferred_jobs and defer_jobs is not None:
+        try:
+            defer_jobs(deferred_jobs)
+        except Exception:
+            LOGGER.warning(
+                "Provider refusal dependency deferral failed for jobs %s",
+                ",".join(str(job.get("id") or "<missing>") for job in deferred_jobs),
+            )
+    elif deferred_jobs:
+        try:
+            defer_budget_jobs(
+                deferred_jobs,
+                QueueJobDeferred("Provider output refusal requires dependent enrichment review"),
+            )
+        except Exception:
+            LOGGER.warning(
+                "Provider refusal dependency deferral failed for jobs %s",
+                ",".join(str(job.get("id") or "<missing>") for job in deferred_jobs),
+            )
+    return True
 
 
 @dataclass
@@ -109,6 +203,7 @@ class ReplicateClient:
         last_error: Exception | None = None
         prompt = _user_prompt_for_model(str(self.model), system_prompt, user_prompt)
         attempts = 1 if _is_display_description_prompt(system_prompt) else 2
+        request_kind = "display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction"
         for attempt in range(attempts):
             ensure_llm_task_deadline("starting LLM generation")
             prediction: dict[str, Any] | None = None
@@ -139,7 +234,7 @@ class ReplicateClient:
                 if prediction is not None:
                     self._record_usage(
                         prediction,
-                        request_kind="display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction",
+                        request_kind=request_kind,
                         attempt_number=attempt + 1,
                         prompt_chars=len(prompt),
                         system_prompt_chars=len(system_prompt),
@@ -148,6 +243,9 @@ class ReplicateClient:
                         error_message=str(exc),
                         exception=exc,
                     )
+                if isinstance(exc, LLMProviderOutputRefused):
+                    exc.request_kind = request_kind
+                    raise
                 if not isinstance(exc, ValueError):
                     raise
                 fallback = (
@@ -557,7 +655,7 @@ class ReplicateClient:
             if status == "succeeded":
                 return prediction.get("output")
             if status in {"failed", "canceled", "aborted"}:
-                raise RuntimeError(f"Replicate prediction {status}: {prediction.get('error')}")
+                _raise_terminal_prediction_error(status, prediction.get("error"))
 
             get_url = prediction.get("urls", {}).get("get")
             if not get_url:
@@ -607,7 +705,7 @@ class ReplicateClient:
                         record_prediction(prediction, model=str(self.model))
                     status = prediction.get("status")
                 if status != "succeeded":
-                    raise RuntimeError(f"Replicate prediction {status}: {prediction.get('error')}")
+                    _raise_terminal_prediction_error(status, prediction.get("error"))
                 if "output" not in prediction:
                     raise LLMRequestTransportAmbiguous(
                         "Replicate prediction succeeded without an output; provider reconciliation is required"

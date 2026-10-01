@@ -7,7 +7,11 @@ import pytest
 
 from src import llm_requests
 from src.enrichment import llm_client
-from src.enrichment.llm_client import ReplicateClient
+from src.enrichment.llm_client import (
+    LLMProviderOutputRefused,
+    ReplicateClient,
+    cancel_provider_output_refusal_jobs,
+)
 from src.enrichment.prompts import SYSTEM_PROMPT
 
 
@@ -434,6 +438,108 @@ def test_terminal_prediction_failure_is_finalized_as_failed(monkeypatch) -> None
         client.generate_json("MODE EXTRACTION STRICTE", "source text")
 
     assert [item["status"] for item in telemetry] == ["reserved", "failed"]
+
+
+def test_provider_output_refusal_is_typed_and_does_not_retry(monkeypatch) -> None:
+    client = ReplicateClient(
+        api_token="token",
+        model="owner/model:v1",
+        min_interval_seconds=0,
+    )
+    provider_calls = 0
+    telemetry: list[dict[str, object]] = []
+
+    monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: "reservation-1")
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: None)
+    monkeypatch.setattr(
+        llm_client,
+        "record_llm_request",
+        lambda reservation_id, **kwargs: telemetry.append({"id": reservation_id, **kwargs}),
+    )
+
+    def provider_post(*args, **kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        return httpx.Response(
+            201,
+            json={
+                "id": "prediction-refused",
+                "status": "failed",
+                "error": (
+                    "APIError: <400> InternalError.Algo.DataInspectionFailed: "
+                    "Output data may contain inappropriate content"
+                ),
+            },
+            request=httpx.Request("POST", "https://api.replicate.com/v1/predictions"),
+        )
+
+    monkeypatch.setattr(llm_client.httpx, "post", provider_post)
+
+    with pytest.raises(llm_client.LLMProviderOutputRefused) as refusal:
+        client.generate_json("MODE SYNTHESE STRICTE", "source text")
+
+    assert refusal.value.request_kind == "display_description"
+    assert provider_calls == 1
+    assert [item["status"] for item in telemetry] == ["reserved", "failed"]
+    assert all("inappropriate content" not in str(item) for item in telemetry)
+
+
+def test_unrelated_http400_terminal_error_stays_generic() -> None:
+    with pytest.raises(RuntimeError, match="prediction failed") as failure:
+        llm_client._raise_terminal_prediction_error("failed", "HTTP 400 Bad Request")
+
+    assert not isinstance(failure.value, llm_client.LLMProviderOutputRefused)
+
+
+def test_provider_refusal_multi_job_requires_cas_confirmation() -> None:
+    jobs = [
+        {"id": "job-display", "job_type": "display_description"},
+        {"id": "job-pdf", "job_type": "pdf"},
+    ]
+    finished: list[tuple[str, dict[str, object]]] = []
+    terminal: list[list[dict[str, object]]] = []
+    deferred: list[list[dict[str, object]]] = []
+
+    def finish_job(job: dict[str, object], **kwargs) -> bool:
+        finished.append((str(job["id"]), kwargs))
+        return str(job["id"]) == "job-pdf"
+
+    assert cancel_provider_output_refusal_jobs(
+        LLMProviderOutputRefused(request_kind="display_description"),
+        jobs,
+        finish_job=finish_job,
+        mark_terminal=terminal.append,
+        defer_jobs=deferred.append,
+    ) is True
+    assert [job_id for job_id, _ in finished] == ["job-display"]
+    assert finished[0][1]["cancelled"] is True
+    assert deferred == [[jobs[1]]]
+    assert terminal == []
+
+
+def test_provider_refusal_continues_after_finish_exception() -> None:
+    jobs = [
+        {"id": "job-lost", "job_type": "display_description"},
+        {"id": "job-facts", "job_type": "fact_extraction"},
+        {"id": "job-pdf", "job_type": "pdf"},
+    ]
+    terminal: list[list[dict[str, object]]] = []
+    deferred: list[list[dict[str, object]]] = []
+
+    def finish_job(job: dict[str, object], **kwargs) -> bool:
+        if job["id"] == "job-lost":
+            raise RuntimeError("lease confirmation unavailable")
+        return True
+
+    assert cancel_provider_output_refusal_jobs(
+        LLMProviderOutputRefused(),
+        jobs,
+        finish_job=finish_job,
+        mark_terminal=terminal.append,
+        defer_jobs=deferred.append,
+    ) is True
+    assert terminal == [[jobs[1]]]
+    assert deferred == [[jobs[2]]]
 
 
 def test_invalid_json_telemetry_keeps_actual_output_size(monkeypatch) -> None:

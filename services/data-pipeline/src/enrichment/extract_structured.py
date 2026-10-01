@@ -22,7 +22,12 @@ from src.encheres_publiques_guard import (
 )
 from src.enrichment.display_evidence import verify_display_claims
 from src.enrichment.display_quality import DISPLAY_MIN_CHARS, DISPLAY_QUALITY_VERSION, preserve_source_constraints
-from src.enrichment.llm_client import ReplicateClient, create_llm_client, repair_json_payload
+from src.enrichment.llm_client import (
+    LLMProviderOutputRefused,
+    ReplicateClient,
+    create_llm_client,
+    repair_json_payload,
+)
 from src.enrichment.prompts import (
     DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
     PROMPT_SAFETY_VERSION,
@@ -636,6 +641,8 @@ def enrich_sale_with_llm(
             raise
         except LLMTaskDeadlineExceeded:
             raise
+        except LLMProviderOutputRefused:
+            raise
         except Exception as exc:
             LOGGER.warning("LLM display synthesis failed for %s: %s", sale.source_url, exc)
             stats.errors += 1
@@ -754,6 +761,8 @@ def enrich_sale_with_llm(
         except PipelineBudgetExhausted:
             raise
         except LLMTaskDeadlineExceeded:
+            raise
+        except LLMProviderOutputRefused:
             raise
         except Exception as exc:
             failed_chunks += 1
@@ -878,6 +887,8 @@ def enrich_sale_with_llm(
             except PipelineBudgetExhausted:
                 raise
             except LLMTaskDeadlineExceeded:
+                raise
+            except LLMProviderOutputRefused:
                 raise
             except Exception as exc:
                 LOGGER.warning("LLM display synthesis failed for %s: %s", sale.source_url, exc)

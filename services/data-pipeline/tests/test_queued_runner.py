@@ -9,6 +9,7 @@ import pytest
 
 from src import pdf_enrichment
 from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
+from src.enrichment.llm_client import LLMProviderOutputRefused
 from src.freshness import document_fingerprint
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_remaining
 from src.models import AuctionSale
@@ -732,6 +733,68 @@ def test_enrichment_queue_marks_every_sale_job_failed_on_extraction_error(monkey
         ("job-facts", False, "invalid structured response"),
         ("job-display", False, "invalid structured response"),
     ]
+
+
+def test_enrichment_queue_cancels_provider_refusal_without_mutating_sale(monkeypatch) -> None:
+    previous_display = "Synthèse validée avant cette nouvelle tentative. " * 3
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/enrichment-provider-refusal",
+        }
+    )
+    sale.raw_payload.update(
+        {
+            "llm_display_description": previous_display,
+            "llm_display_status": "accepted",
+            "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
+        }
+    )
+    job = {
+        "id": "job-display-refused",
+        "source_url": sale.source_url,
+        "job_type": "display_description",
+        "attempt_count": 1,
+        "locked_at": "2026-10-01T00:00:00+00:00",
+    }
+    finished: list[tuple[str, dict[str, object]]] = []
+
+    monkeypatch.setattr(queued_runner, "claim_auction_enrichment_jobs_from_supabase", lambda limit: [job])
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
+    monkeypatch.setattr(
+        queued_runner,
+        "enrich_sale_with_llm",
+        lambda current, client, **kwargs: (_ for _ in ()).throw(
+            LLMProviderOutputRefused(request_kind="display_description")
+        ),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "upsert_sales_to_supabase",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("refused output must not be published")),
+    )
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)) or True,
+    )
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1) == 1
+    assert finished == [
+        (
+            "job-display-refused",
+            {
+                "succeeded": False,
+                "cancelled": True,
+                "error_message": "review_required: provider output policy refusal",
+                "attempt_count": 1,
+                "locked_at": "2026-10-01T00:00:00+00:00",
+            },
+        )
+    ]
+    assert sale.raw_payload["llm_display_description"] == previous_display
+    assert "inappropriate content" not in str(finished)
 
 
 def test_enrichment_queue_does_not_pay_twice_for_scan_description(monkeypatch) -> None:
