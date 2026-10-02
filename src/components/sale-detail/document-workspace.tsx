@@ -35,6 +35,7 @@ import {
 } from "@/lib/format";
 import { getDisplaySurface, getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import { isEmbeddableDocumentUrl, parseDocs } from "@/lib/documents";
+import { documentExtractionSummary } from "@/lib/document-extraction-summary";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
 import { FavoriteButton } from "@/components/FavoriteButton";
@@ -388,6 +389,9 @@ export function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                   </span>
                 </div>
                 <h3 className="mt-2 truncate text-base font-semibold text-foreground">{name}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {documentExtractionSummary(document)}
+                </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {documentReviewPrompt(document)}
                   {pages ? ` Pages signalées : ${pages}.` : ""}
@@ -457,6 +461,9 @@ export function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                         </div>
                         <p className="mt-2 text-sm leading-relaxed text-foreground">
                           {documentReviewPrompt(document)}
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {documentExtractionSummary(document)}
                         </p>
                         {pages && (
                           <p className="mt-2 text-xs text-muted-foreground">

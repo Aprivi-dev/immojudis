@@ -134,6 +134,12 @@ def test_asset_upsert_fetches_once_and_orders_document_extraction_cache(monkeypa
     sale, pdf_texts = _persisted_sale_fixture()
     persisted_map = _validated_map(sale, pdf_texts)
     events: list[tuple[str, object]] = []
+    prune_flags: list[bool] = []
+
+    def write_documents(sales, *, persisted_pdf_texts, prune_stale=False):
+        events.append(("documents", persisted_pdf_texts))
+        prune_flags.append(prune_stale)
+        return 4
 
     monkeypatch.setattr(
         storage,
@@ -143,7 +149,7 @@ def test_asset_upsert_fetches_once_and_orders_document_extraction_cache(monkeypa
     monkeypatch.setattr(
         storage,
         "upsert_documents_to_supabase",
-        lambda sales, *, persisted_pdf_texts: events.append(("documents", persisted_pdf_texts)) or 4,
+        write_documents,
     )
     monkeypatch.setattr(
         storage,
@@ -168,6 +174,7 @@ def test_asset_upsert_fetches_once_and_orders_document_extraction_cache(monkeypa
 
     assert [name for name, _value in events] == ["fetch", "documents", "extractions", "cache"]
     assert events[1][1] is persisted_map
+    assert prune_flags == [True]
     assert events[3][1] is persisted_map
 
 
