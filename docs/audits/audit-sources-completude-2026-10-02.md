@@ -1,5 +1,7 @@
 # Audit des sources et définition de la complétude — 2 octobre 2026
 
+Ce rapport conserve l’état initial de l’audit, avant correction. Les 13 écarts sont désormais corrigés et la mesure de 130 critères est publiée sur les fiches. Voir le [rapport de publication et les validations finales](./publication-extraction-profils-2026-10-02.md).
+
 ## Résultat
 
 Le contrôle couvre les **dix connecteurs immobiliers** identifiés dans le dépôt. Il compare des annonces effectivement ouvertes le 2 octobre, leurs titres/métadonnées, leurs descriptions, les blocs textuels et les médias avec les fonctions actuelles d'extraction et de normalisation. Les preuves, URL et captures sont conservées dans le dossier de l'audit : **27 visites/tentatives documentées**, comprenant aussi les catalogues, réponses API et écrans de refus.
