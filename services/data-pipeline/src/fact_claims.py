@@ -300,7 +300,7 @@ def _field_provenances(
         )
 
     normalized_aliases = {_normalize_key(alias) for alias in aliases}
-    for path, key, value in _walk_values(payload.get("source_blocks")):
+    for path, key, value in _walk_values(_source_evidence_blocks(payload)):
         if _normalize_key(key) not in normalized_aliases or not _has_value(value):
             continue
         provenances.append(
@@ -449,10 +449,19 @@ def _source_text(payload: dict[str, object]) -> str:
         value = clean_text(payload.get(key))
         if value:
             parts.append(value)
-    for _, _, value in _walk_values(payload.get("source_blocks")):
+    for _, _, value in _walk_values(_source_evidence_blocks(payload)):
         if not isinstance(value, (dict, list)) and (text := clean_text(value)):
             parts.append(text)
     return "\n".join(parts)
+
+
+def _source_evidence_blocks(payload: dict[str, object]) -> dict[str, object]:
+    blocks = payload.get("source_blocks")
+    if not isinstance(blocks, dict):
+        return {}
+    # This projection is generated from the source. Reading it as a new source
+    # block would turn inferred facts into independent evidence on later runs.
+    return {key: value for key, value in blocks.items() if key != "listing_completeness"}
 
 
 def _occupancy_quote(text: str) -> str | None:

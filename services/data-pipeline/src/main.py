@@ -40,6 +40,7 @@ from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
 from src.enrichment.operational_display import refresh_operational_display
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
+from src.extraction_profiles import attach_source_property_features
 from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
 from src.geocode import geocode_sale
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
@@ -1472,13 +1473,16 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     if surface_context:
         extract_and_apply_deterministic_surface_reasoning(sale, surface_context)
     normalize_asset_features(sale)
+    attach_source_property_features(sale.raw_payload)
     apply_catalogue_readiness(sale)
 
 
 def _surface_reasoning_context_for_sale(sale: AuctionSale) -> str:
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     source_blocks = payload.get("source_blocks")
-    block_values = list(source_blocks.values()) if isinstance(source_blocks, dict) else []
+    block_values = [
+        value for key, value in source_blocks.items() if key != "listing_completeness"
+    ] if isinstance(source_blocks, dict) else []
     values: list[object] = [
         sale.title,
         sale.description,

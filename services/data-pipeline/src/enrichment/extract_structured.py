@@ -1527,6 +1527,12 @@ def _source_payload_sections(payload: dict[str, Any], sale: AuctionSale, *, incl
     page_text: str | None = None
     if isinstance(blocks, dict):
         for key, value in blocks.items():
+            # This block is a generated completeness projection.  It is
+            # metadata about the captured source, not source text itself;
+            # feeding it to enrichment would turn prior claims into fresh
+            # citations on the next pass.
+            if str(key).casefold() == "listing_completeness":
+                continue
             text = clean_text(value)
             if not text:
                 continue

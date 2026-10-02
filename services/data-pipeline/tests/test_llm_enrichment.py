@@ -746,6 +746,33 @@ def test_extract_source_description_prefers_usable_source_blocks() -> None:
     )
 
 
+def test_source_payload_sections_skip_generated_completeness_projection() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-source-projection.html",
+            "source_blocks": {
+                "description": "Description réellement publiée par la source.",
+                "listing_completeness": {
+                    "source_property_features": {
+                        "surface_m2": {"value": 9999, "evidence": "projection interne"}
+                    },
+                    "source_field_observations": {
+                        "surface_m2": {"value": 9999, "state": "observed"}
+                    },
+                },
+            },
+        }
+    )
+
+    sections = extraction._source_payload_sections(sale.raw_payload, sale)
+    joined = "\n".join(sections)
+
+    assert "Description réellement publiée par la source." in joined
+    assert "projection interne" not in joined
+    assert "9999" not in joined
+
+
 def test_enrich_sale_with_llm_uses_cached_pdf_text_and_preserves_reliable_fields(tmp_path, monkeypatch) -> None:
     sale = normalize_sale(
         {

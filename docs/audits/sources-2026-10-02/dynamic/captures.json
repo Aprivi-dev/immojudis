@@ -1,0 +1,18 @@
+[
+  {
+    "id": "encheres-immobilieres-9486-reference",
+    "source": "encheres_immobilieres",
+    "url": "https://encheresimmobilieres.fr/ventes/9486-une-maison-elevee-dun-rez-de-chaussee-a-gignac-la-nerthe-13",
+    "checked_at": "2026-10-02T15:04:41.217Z",
+    "state": "capture_failed",
+    "error": "TimeoutError: page.goto: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"https://encheresimmobilieres.fr/ventes/9486-une-maison-elevee-dun-rez-de-chaussee-a-gignac-la-nerthe-13\", waiting until \"domcontentloaded\"\u001b[22m\n"
+  },
+  {
+    "id": "encheres-immobilieres-9354-reference",
+    "source": "encheres_immobilieres",
+    "url": "https://encheresimmobilieres.fr/ventes/9354-un-appartement-de-type-3-au-1er-etage-avec-balcon-place-de-parking-garag",
+    "checked_at": "2026-10-02T15:05:36.298Z",
+    "state": "capture_failed",
+    "error": "Error: page.goto: net::ERR_CONNECTION_TIMED_OUT at https://encheresimmobilieres.fr/ventes/9354-un-appartement-de-type-3-au-1er-etage-avec-balcon-place-de-parking-garag\nCall log:\n\u001b[2m  - navigating to \"https://encheresimmobilieres.fr/ventes/9354-un-appartement-de-type-3-au-1er-etage-avec-balcon-place-de-parking-garag\", waiting until \"domcontentloaded\"\u001b[22m\n"
+  }
+]

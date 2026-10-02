@@ -6,6 +6,7 @@ from src.models import AuctionSale
 from src.sale_procedure import (
     JUDICIAL_RULES_SOURCE_URL,
     SALE_PROCEDURE_SCHEMA_VERSION,
+    _sale_corpus,
     classify_sale_procedure,
 )
 
@@ -210,6 +211,32 @@ def test_reclassification_never_uses_derived_procedure_as_source_evidence() -> N
     assert first.sale_verification_status == "pending"
     assert second.sale_verification_status == "pending"
     assert second.sale_procedure["rules"]["lawyer_required"] is None
+
+
+def test_reclassification_keeps_real_blocks_but_ignores_completeness_projection() -> None:
+    sale = make_sale(
+        description="Vente notariale en ligne.",
+        tribunal=None,
+        tribunal_code=None,
+        raw_payload={
+            "source_blocks": {
+                "description": "Vente notariale en ligne publiée par la source.",
+                "listing_completeness": {
+                    "source_procedure_profile": {
+                        "procedure_family": "judicial",
+                        "evidence": "Tribunal judiciaire inventé par la projection",
+                    }
+                },
+            }
+        },
+    )
+
+    corpus = _sale_corpus(sale)
+    classified = classify_sale_procedure(sale, verified_at=VERIFIED_AT)
+
+    assert "Vente notariale en ligne publiée par la source." in corpus
+    assert "Tribunal judiciaire inventé par la projection" not in corpus
+    assert classified.sale_venue_type == "notary"
 
 
 def test_conflicting_explicit_venues_are_not_silently_resolved() -> None:
