@@ -207,7 +207,14 @@ def test_secondary_source_profiles_keep_procedure_and_observation_contract(sampl
     assert isinstance(observations, dict)
     assert isinstance(profile, dict)
     assert profile["family"] == "judicial"
-    assert observations["sale_legal_framework"]["state"] == "observed"
+    if "sale_legal_framework" in observations:
+        assert observations["sale_legal_framework"]["value"] in {
+            "judicial_seizure",
+            "judicial_partition",
+            "insolvency",
+            "voluntary_notarial",
+            "state_sale",
+        }
     for observation in observations.values():
         assert observation["state"] in {"observed", "inferred", "conflict", "unknown", "not_applicable"}
         for evidence in observation.get("evidence", []):

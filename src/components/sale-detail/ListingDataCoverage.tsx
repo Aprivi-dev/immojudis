@@ -375,20 +375,9 @@ export function ListingDataCoverage({ sale, className }: ListingDataCoverageProp
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               Mesure détaillée · 130 critères
             </p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">
-              {completeness.contextLabel} · {completeness.profile.label}
-            </p>
             <p className="mt-1 text-xs leading-relaxed text-slate-600">
               {completeness.applicableFieldCount} critères applicables ·{" "}
               {completeness.notApplicableFieldCount} non applicables
-            </p>
-          </div>
-          <div className="shrink-0 text-left sm:text-right">
-            <p className="text-2xl font-semibold tracking-tight text-slate-950">
-              {completeness.completenessScore}%
-            </p>
-            <p className="text-xs font-medium text-slate-600">
-              {completenessClassLabel(completeness.classification)}
             </p>
           </div>
         </div>

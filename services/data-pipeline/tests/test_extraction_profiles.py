@@ -149,6 +149,60 @@ def test_verified_state_framework_keeps_notarial_venue_as_complement() -> None:
     assert profile["priorities"][0] == "sale_method"
 
 
+def test_legal_framework_observation_uses_only_verified_canonical_values() -> None:
+    cases = (
+        (
+            {
+                "source_name": "cessions_etat",
+                "source_url": "https://example.test/state/13c",
+                "sale_procedure": {
+                    "venue_type": "notary",
+                    "legal_framework": "state_sale",
+                    "verification": {"status": "verified"},
+                },
+            },
+            "state",
+            "state_sale",
+        ),
+        (
+            {
+                "source_name": "avoventes",
+                "source_url": "https://example.test/judicial/partition",
+                "sale_procedure": {
+                    "venue_type": "tribunal",
+                    "legal_framework": "judicial_partition",
+                    "verification": {"status": "cross_checked"},
+                },
+            },
+            "judicial",
+            "judicial_partition",
+        ),
+        (
+            {
+                "source_name": "notaires",
+                "source_url": "https://example.test/notarial/unknown-framework",
+                "sale_procedure": {
+                    "venue_type": "notary",
+                    "legal_framework": "unknown",
+                    "verification": {"status": "verified"},
+                },
+            },
+            "notarial",
+            None,
+        ),
+    )
+
+    for raw_sale, expected_family, expected_framework in cases:
+        sale = attach_source_property_features(raw_sale)
+        assert sale["source_procedure_profile"]["family"] == expected_family
+        observation = sale["source_field_observations"].get("sale_legal_framework")
+        if expected_framework is None:
+            assert observation is None
+        else:
+            assert observation["state"] == "observed"
+            assert observation["value"] == expected_framework
+
+
 def test_source_name_alone_does_not_create_a_procedure() -> None:
     profile = build_procedure_profile(
         {

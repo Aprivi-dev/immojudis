@@ -1,4 +1,4 @@
-import catalogueJson from "./listing-completeness-runtime.json";
+import catalogueJson from "./listing-completeness-runtime-client.json";
 import { collectSaleDocuments } from "./sale-documents";
 import { listingVisits } from "./sale-listing";
 import { saleSession, saleWindow } from "./sale-window";
@@ -64,7 +64,88 @@ type CompletenessCatalogue = {
   };
 };
 
-const CATALOGUE = catalogueJson as unknown as CompletenessCatalogue;
+type CompactCatalogue = {
+  c: string;
+  f: string;
+};
+
+const CLIENT_PROPERTY_TYPES = [
+  "all",
+  "apartment",
+  "house",
+  "building",
+  "land",
+  "commercial",
+  "parking",
+  "mixed",
+];
+const CLIENT_PROCEDURES = ["all", "judicial", "notarial", "state", "online"];
+const CLIENT_IMPORTANCE: CompletenessImportance[] = ["critical", "high", "medium", "optional"];
+const RAW_FEATURE_CATEGORIES = new Set<CompletenessCategoryId>([
+  "property",
+  "energy",
+  "occupancy_and_risk",
+  "outdoor",
+]);
+const RAW_FEATURE_EXCEPTIONS = new Set([
+  "surface_habitable_m2",
+  "surface_carrez_m2",
+  "surface_built_m2",
+  "surface_scope",
+  "surface_provenance",
+  "rooms_count",
+  "bedrooms_count",
+  "bathrooms_count",
+  "occupancy_status",
+  "environmental_risks",
+  "technical_diagnostics",
+  "garden",
+  "terrace",
+  "garage",
+  "parking",
+]);
+
+function decodeCatalogue(input: CompactCatalogue): CompletenessCatalogue {
+  const categories = input.c.split(";").map((row) => {
+    const [id, label, weight] = row.split("|");
+    return { id: id as CompletenessCategoryId, label, weight: Number(weight) };
+  });
+  return {
+    categories,
+    fields: input.f.split(";").map((row) => {
+      const [id, label, packedValue, conditions] = row.split("|");
+      const packed = Number(packedValue);
+      const categoryIndex = packed & 7;
+      const propertyMask = (packed >> 3) & 255;
+      const procedureMask = (packed >> 11) & 31;
+      const importanceIndex = (packed >> 16) & 3;
+      return {
+        id,
+        category: categories[categoryIndex].id,
+        label,
+        applicability: {
+          property_types: CLIENT_PROPERTY_TYPES.filter((_, index) => propertyMask & (1 << index)),
+          procedures: CLIENT_PROCEDURES.filter((_, index) => procedureMask & (1 << index)),
+          ...(conditions ? { conditions } : {}),
+        },
+        importance: CLIENT_IMPORTANCE[importanceIndex],
+      };
+    }),
+    scoring: {
+      importance_factors: { critical: 3, high: 2, medium: 1, optional: 0.5 },
+      state_factors: {
+        observed: 1,
+        explicitly_absent: 1,
+        inferred: 0.6,
+        unknown: 0,
+        conflict: 0,
+        not_applicable: null,
+      },
+    },
+  };
+}
+
+const CATALOGUE = decodeCatalogue(catalogueJson as unknown as CompactCatalogue);
 
 export const LISTING_COMPLETENESS_CATALOGUE = CATALOGUE;
 export const LISTING_COMPLETENESS_FIELD_IDS = CATALOGUE.fields.map((field) => field.id);
@@ -504,37 +585,37 @@ function observationFromFeature(
   if (["observed", "inferred"].includes(state) && !objectHasContent(canonicalValue)) {
     return unknownObservation(field, {
       code: "empty_value",
-      explanation: "Un état connu doit conserver une valeur exploitable.",
+      explanation: "Valeur exploitable requise.",
     });
   }
   if (state === "observed" && !validObservedEvidence(evidence)) {
     return unknownObservation(field, {
       code: "invalid_observed_evidence",
-      explanation: "La preuve A/B et son extrait ou localisateur manquent.",
+      explanation: "Preuve A/B et extrait ou localisateur requis.",
     });
   }
   if (state === "inferred" && !validInference(inference)) {
     return unknownObservation(field, {
       code: "invalid_inference",
-      explanation: "La méthode, les entrées ou la confiance de l’inférence manquent.",
+      explanation: "Méthode, entrées ou confiance manquantes.",
     });
   }
   if (state === "explicitly_absent" && !validExplicitAbsenceEvidence(evidence)) {
     return unknownObservation(field, {
       code: "invalid_explicit_absence",
-      explanation: "Une négation citée et rattachée au lot est nécessaire.",
+      explanation: "Négation citée et rattachée au lot requise.",
     });
   }
   if (state === "not_applicable" && !validNotApplicableReason(reason)) {
     return unknownObservation(field, {
       code: "invalid_not_applicable",
-      explanation: "Une raison contrôlée est nécessaire ; une page inaccessible reste inconnue.",
+      explanation: "Raison contrôlée requise ; page inaccessible = inconnu.",
     });
   }
   if (state === "conflict" && conflicts.length === 0) {
     return unknownObservation(field, {
       code: "invalid_conflict",
-      explanation: "Les valeurs concurrentes et leur preuve manquent.",
+      explanation: "Valeurs concurrentes et preuves manquantes.",
     });
   }
   return makeObservation(field, state, value, {
@@ -664,8 +745,7 @@ function selectProfile(sale: AuctionSale, context: ProcedureContext): Completene
       procedure: "unknown",
       verified: false,
       sourceName: source,
-      selectionReason:
-        "Le portail seul ne qualifie pas une procédure ; la vente doit être vérifiée.",
+      selectionReason: "Le portail seul ne qualifie pas la procédure ; vérification requise.",
     };
   }
   if (context.procedure === "state" && sourceKey.includes("agrasc")) {
@@ -675,7 +755,7 @@ function selectProfile(sale: AuctionSale, context: ProcedureContext): Completene
       procedure: "state",
       verified: true,
       sourceName: source,
-      selectionReason: "Cadre domanial vérifié et connecteur AGRASC identifié.",
+      selectionReason: "Cadre domanial vérifié, connecteur AGRASC identifié.",
     };
   }
   if (context.procedure === "state") {
@@ -695,7 +775,7 @@ function selectProfile(sale: AuctionSale, context: ProcedureContext): Completene
       procedure: "online",
       verified: true,
       sourceName: source,
-      selectionReason: "Mode de participation en ligne vérifié.",
+      selectionReason: "Participation en ligne vérifiée.",
     };
   }
   if (context.procedure === "notarial") {
@@ -705,7 +785,7 @@ function selectProfile(sale: AuctionSale, context: ProcedureContext): Completene
       procedure: "notarial",
       verified: true,
       sourceName: source,
-      selectionReason: "Lieu ou cadre notarial vérifié ; le portail reste un indice.",
+      selectionReason: "Cadre notarial vérifié ; portail indicatif.",
     };
   }
   if (sourceKey.includes("encheres_publiques") || sourceKey.includes("encheres publiques")) {
@@ -715,7 +795,7 @@ function selectProfile(sale: AuctionSale, context: ProcedureContext): Completene
       procedure: "judicial",
       verified: true,
       sourceName: source,
-      selectionReason: "Procédure judiciaire vérifiée et source structurée identifiée.",
+      selectionReason: "Procédure judiciaire vérifiée.",
     };
   }
   return {
@@ -724,7 +804,7 @@ function selectProfile(sale: AuctionSale, context: ProcedureContext): Completene
     procedure: "judicial",
     verified: true,
     sourceName: source,
-    selectionReason: "Cadre judiciaire ou tribunal vérifié.",
+    selectionReason: "Cadre judiciaire vérifié.",
   };
 }
 
@@ -770,6 +850,7 @@ function mediaUrls(sale: AuctionSale): string[] {
 function directFieldValue(
   sale: AuctionSale,
   field: string,
+  fieldIndex: number,
   documents: CollectedDocuments,
 ): FieldObservation {
   const raw = rawPayload(sale);
@@ -790,32 +871,68 @@ function directFieldValue(
     firstDefined(...keys.map((key) => blocks[key]));
   const direct = (value: unknown): FieldObservation => directObservation(field, value);
 
-  switch (field) {
-    case "listing_id":
-      return direct(sale.id);
-    case "source_name":
-      return direct(sale.source_name);
-    case "source_url":
-      return direct(sale.source_url);
-    case "primary_source":
-      return direct(sale.primary_source);
-    case "source_urls":
+  const catalogCategory = CATALOGUE.fields[fieldIndex]?.category;
+  if (
+    catalogCategory &&
+    RAW_FEATURE_CATEGORIES.has(catalogCategory) &&
+    !RAW_FEATURE_EXCEPTIONS.has(field)
+  ) {
+    return direct(rawFeatureValue(sale, field));
+  }
+
+  const directSaleValues: Record<number, unknown> = {
+    0: sale.id,
+    1: sale.source_name,
+    2: sale.source_url,
+    3: sale.primary_source,
+    16: sale.property_type,
+    17: sale.sale_venue_type,
+    18: sale.sale_legal_framework,
+    19: sale.sale_verification_status,
+    20: sale.status,
+    22: sale.sale_date,
+    25: sale.tribunal_name ?? sale.tribunal,
+    26: sale.starting_price_eur,
+    27: sale.adjudication_price_eur,
+    31: listingVisits(sale),
+    35: procedure.eligible_bar,
+    36: sale.lawyer_name,
+    37: sale.lawyer_contact,
+    42: sale.address,
+    43: sale.postal_code,
+    44: sale.city,
+    45: sale.department,
+    52: sale.land_surface_m2,
+    54: sale.habitable_surface_m2,
+    55: sale.carrez_surface_m2,
+    57: sale.surface_scope,
+    59: sale.rooms_count,
+    60: sale.bedrooms_count,
+    61: sale.bathrooms_count,
+    104: sale.occupancy_status,
+    115: sale.risks,
+    118: documents,
+  };
+  if (fieldIndex in directSaleValues) return direct(directSaleValues[fieldIndex]);
+
+  switch (fieldIndex) {
+    case 4:
       return direct(Array.isArray(sale.source_urls) ? sale.source_urls : null);
-    case "external_id":
+    case 5:
       return direct(
         rawValue(["external_id"], ["source_external_id"], ["source_record", "external_id"]),
       );
-    case "source_title":
+    case 6:
       return direct(rawValue(["source_title"]) ?? sale.title);
-    case "source_description":
+    case 7:
       return direct(rawValue(["source_description"]) ?? sale.source_description);
-    case "capture_text":
+    case 8:
       return direct(rawValue(["capture_text"], ["raw_text"], ["source_blocks", "page_text"]));
-    case "source_blocks":
+    case 9:
       return direct(sale.source_blocks ?? asRecord(raw.source_blocks));
-    case "source_presence":
+    case 10:
       return direct(sale.source_presence ?? asRecord(raw.source_presence));
-    case "source_conflicts":
+    case 11:
       {
         const conflicts = Array.isArray(sale.source_conflicts)
           ? sale.source_conflicts
@@ -829,75 +946,49 @@ function directFieldValue(
         }
       }
       return unknownObservation(field);
-    case "capture_checked_at":
+    case 12:
       return direct(
         firstDefined(
           rawValue(["capture_checked_at"], ["source_last_seen_at"]),
           ...sourceCheckValues.map((item) => item?.checked_at),
         ),
       );
-    case "extractor_version":
+    case 13:
       return direct(
         firstDefined(
           rawValue(["extractor_version"]),
           ...sourceCheckValues.map((item) => item?.extractor_version),
         ),
       );
-    case "source_detail_status":
+    case 14:
       return direct(rawValue(["source_detail_status"], ["detail_status"]));
-    case "source_last_seen_at":
+    case 15:
       return direct(rawValue(["source_last_seen_at"], ["last_seen_at"]));
-    case "property_type":
-      return direct(sale.property_type);
-    case "sale_venue_type":
-      return direct(sale.sale_venue_type);
-    case "sale_legal_framework":
-      return direct(sale.sale_legal_framework);
-    case "sale_verification_status":
-      return direct(sale.sale_verification_status);
-    case "listing_status":
-      return direct(sale.status);
-    case "auction_round":
+    case 21:
       return direct(rawValue(["auction_round"], ["sale_procedure", "auction_round"]));
-    case "sale_date":
-      return direct(sale.sale_date);
-    case "sale_schedule":
+    case 23:
       return direct(
         rawValue(["source_sale_schedule"], ["sale_schedule"]) ??
           saleWindow(sale) ??
           saleSession(sale),
       );
-    case "procedure_record":
+    case 24:
       return direct(objectHasContent(procedure) ? procedure : null);
-    case "tribunal":
-      return direct(sale.tribunal_name ?? sale.tribunal);
-    case "starting_price_eur":
-      return direct(sale.starting_price_eur);
-    case "adjudication_price_eur":
-      return direct(sale.adjudication_price_eur);
-    case "outcome_status":
+    case 28:
       return direct(rawValue(["outcome_status"], ["result", "status"]));
-    case "venue_name":
+    case 29:
       return direct(
         procedure.venue_name ?? (sale.sale_venue_type === "tribunal" ? sale.tribunal_name : null),
       );
-    case "venue_address":
+    case 30:
       return direct(procedure.venue_address);
-    case "visit_dates":
-      return direct(listingVisits(sale));
-    case "participation_mode":
+    case 32:
       return direct(procedure.participation_mode);
-    case "bid_method":
+    case 33:
       return direct(rules.bid_method);
-    case "lawyer_required":
+    case 34:
       return direct(rules.lawyer_required);
-    case "eligible_bar":
-      return direct(procedure.eligible_bar);
-    case "lawyer_name":
-      return direct(sale.lawyer_name);
-    case "lawyer_contact":
-      return direct(sale.lawyer_contact);
-    case "consignation":
+    case 38:
       return direct(
         firstDefined(
           asRecord(rules.guarantee)?.amount_eur,
@@ -905,12 +996,12 @@ function directFieldValue(
           blockValue("consignation"),
         ),
       );
-    case "sale_fees":
+    case 39:
       return direct(
         rawValue(["sale_fees"], ["fees"], ["auction_fees"]) ??
           blockValue("sale_fees", "fees", "frais"),
       );
-    case "payment_terms":
+    case 40:
       return direct(
         firstDefined(
           rawValue(["payment_terms"]),
@@ -918,45 +1009,31 @@ function directFieldValue(
           blockValue("payment_terms", "seance_paiement"),
         ),
       );
-    case "surenchere_window":
+    case 41:
       return direct(
         firstDefined(rawValue(["surenchere_window"]), asRecord(rules.overbid)?.window_days),
       );
-    case "address":
-      return direct(sale.address);
-    case "postal_code":
-      return direct(sale.postal_code);
-    case "city":
-      return direct(sale.city);
-    case "department":
-      return direct(sale.department);
-    case "insee_code":
+    case 46:
       return direct(
         rawValue(["insee_code"], ["tribunal_assignment", "insee_code"], ["location", "insee_code"]),
       );
-    case "coordinates":
+    case 47:
       return direct(
         typeof sale.latitude === "number" && typeof sale.longitude === "number"
           ? { latitude: sale.latitude, longitude: sale.longitude }
           : null,
       );
-    case "location_precision":
+    case 48:
       return direct(rawValue(["location_precision"], ["location", "precision"]));
-    case "lot_reference":
+    case 49:
       return direct(rawValue(["lot_reference"], ["lot_number"], ["lot"]));
-    case "lot_count":
+    case 50:
       return direct(rawValue(["lot_count"], ["lots_count"]));
-    case "cadastral_references":
+    case 51:
       return direct(rawValue(["cadastral_references"], ["cadastre", "references"], ["parcels"]));
-    case "land_surface_m2":
-      return direct(sale.land_surface_m2);
-    case "land_surface_scope":
+    case 53:
       return direct(rawValue(["land_surface_scope"], ["surface", "land_scope"]));
-    case "surface_habitable_m2":
-      return direct(sale.habitable_surface_m2);
-    case "surface_carrez_m2":
-      return direct(sale.carrez_surface_m2);
-    case "surface_built_m2":
+    case 56:
       return direct(
         firstDefined(
           sale.app_surface_m2 &&
@@ -966,146 +1043,76 @@ function directFieldValue(
           rawValue(["surface_built_m2"]),
         ),
       );
-    case "surface_scope":
-      return direct(sale.surface_scope);
-    case "surface_provenance":
+    case 58:
       return direct(
         firstDefined(sale.surface_source, rawValue(["surface_provenance"]), sale.surface_evidence),
       );
-    case "rooms_count":
-      return direct(sale.rooms_count);
-    case "bedrooms_count":
-      return direct(sale.bedrooms_count);
-    case "bathrooms_count":
-      return direct(sale.bathrooms_count);
-    case "shower_rooms_count":
-      return direct(rawFeatureValue(sale, field));
-    case "wc_count":
-    case "floor_number":
-    case "building_floor_count":
-    case "elevator":
-    case "layout":
-    case "flooring":
-    case "ceiling_height_m":
-    case "year_built":
-    case "condition":
-    case "works_needed":
-    case "accessibility":
-    case "orientation":
-    case "view":
-    case "heating_mode":
-    case "heating_energy":
-    case "heating_distribution":
-    case "hot_water_mode":
-    case "hot_water_energy":
-    case "dpe_class":
-    case "ges_class":
-    case "energy_consumption_kwh_m2_year":
-    case "emissions_kg_co2_m2_year":
-    case "dpe_established_at":
-    case "dpe_valid_until":
-    case "dpe_number":
-    case "windows_insulation":
-    case "building_insulation":
-    case "ventilation":
-    case "cooling":
-    case "utilities_connections":
-    case "occupancy_details":
-    case "lease_status":
-    case "rent_eur":
-    case "lease_end_date":
-    case "coownership":
-    case "coownership_lot_description":
-    case "coownership_charges_eur":
-    case "coownership_works":
-    case "easements":
-    case "urban_planning":
-    case "property_tax_eur":
-    case "document_extraction_status":
-    case "media_origin":
-    case "media_rights_status":
-      return direct(rawFeatureValue(sale, field));
-    case "garden":
+    case 93:
       return inferredDirect(
         field,
         sale.has_garden,
         "normalized_boolean_without_explicit_negative_proof",
       );
-    case "terrace":
+    case 94:
       return inferredDirect(
         field,
         sale.has_terrace,
         "normalized_boolean_without_explicit_negative_proof",
       );
-    case "balcony":
-      return direct(rawFeatureValue(sale, field));
-    case "garage":
+    case 96:
       return inferredDirect(
         field,
         sale.has_garage,
         "normalized_boolean_without_explicit_negative_proof",
       );
-    case "parking":
+    case 97:
       return direct(
         firstDefined(
           rawFeatureValue(sale, field),
           isFinitePositive(sale.parking_count) ? sale.parking_count : null,
         ),
       );
-    case "cellar":
-    case "attic":
-    case "pool":
-    case "outbuildings":
-    case "land_use":
-    case "boundary_access":
-      return direct(rawFeatureValue(sale, field));
-    case "occupancy_status":
-      return direct(sale.occupancy_status);
-    case "environmental_risks":
-      return direct(sale.risks);
-    case "technical_diagnostics":
+    case 116:
       return direct(rawValue(["technical_diagnostics"], ["source_energy_diagnostics"]));
-    case "documents_inventory":
-      return direct(documents);
-    case "pv_description":
+    case 120:
       return direct(
         docsWithType.filter((doc) =>
           /pv|proc[eè]s|descriptif/i.test(`${doc.type ?? ""} ${doc.label ?? ""}`),
         ),
       );
-    case "conditions_sale":
+    case 121:
       return direct(
         docsWithType.filter((doc) =>
           /cahier|conditions|ccv/i.test(`${doc.type ?? ""} ${doc.label ?? ""}`),
         ),
       );
-    case "diagnostics_documents":
+    case 122:
       return direct(
         docsWithType.filter((doc) =>
           /dpe|diagnostic|ges/i.test(`${doc.type ?? ""} ${doc.label ?? ""}`),
         ),
       );
-    case "lease_documents":
+    case 123:
       return direct(
         docsWithType.filter((doc) =>
           /bail|lease|location/i.test(`${doc.type ?? ""} ${doc.label ?? ""}`),
         ),
       );
-    case "photos_count": {
+    case 124: {
       const urls = mediaUrls(sale);
       return direct(urls.length > 0 ? urls.length : null);
     }
-    case "photos_usable_count": {
+    case 125: {
       const usable = mediaUrls(sale).filter(
         (url) => /^https?:\/\//i.test(url) || url.startsWith("/"),
       );
       return direct(usable.length > 0 ? usable.length : null);
     }
-    case "floorplan_media": {
+    case 126: {
       const floorplans = mediaUrls(sale).filter((url) => /plan|floor|schema/i.test(url));
       return direct(floorplans.length > 0 ? floorplans.length : null);
     }
-    case "cadastre_media": {
+    case 127: {
       const cadastre = mediaUrls(sale).filter((url) => /cadastre|parcelle|plan/i.test(url));
       return direct(cadastre.length > 0 ? cadastre.length : null);
     }
@@ -1135,11 +1142,12 @@ function fieldApplicable(
 function fieldObservation(
   sale: AuctionSale,
   field: CatalogField,
+  fieldIndex: number,
   documents: CollectedDocuments,
 ): FieldObservation {
   const candidate = featureCandidate(sale, field.id);
   if (candidate) return observationFromFeature(field.id, candidate);
-  return directFieldValue(sale, field.id, documents);
+  return directFieldValue(sale, field.id, fieldIndex, documents);
 }
 
 function extractionUnavailable(sale: AuctionSale, observation: FieldObservation): boolean {
@@ -1159,29 +1167,24 @@ function extractionUnavailable(sale: AuctionSale, observation: FieldObservation)
 }
 
 function fieldReason(field: CompletenessFieldResult): string {
-  if (field.state === "conflict")
-    return "Des valeurs concurrentes restent à résoudre pour ce champ.";
+  if (field.state === "conflict") return "Résoudre les valeurs concurrentes.";
   if (field.state === "unknown") {
-    if (field.extractionExcluded)
-      return "La source est inaccessible ou verrouillée ; l’absence ne peut pas être conclue.";
-    return "Aucune valeur exploitable et prouvée n’a été conservée pour ce champ.";
+    if (field.extractionExcluded) return "Source inaccessible/verrouillée : absence non conclue.";
+    return "Aucune valeur prouvée conservée.";
   }
-  return field.state === "inferred"
-    ? "Une valeur existe, mais elle est inférée et doit être rapprochée d’une preuve."
-    : "";
+  return field.state === "inferred" ? "Rapprocher la valeur inférée d’une preuve." : "";
 }
 
 function nextAction(field: CompletenessFieldResult, profile: CompletenessSourceProfile): string {
-  if (field.state === "conflict")
-    return "Comparer les extraits et rattacher la valeur au lot exact.";
+  if (field.state === "conflict") return "Comparer les extraits et rattacher au lot exact.";
   if (field.extractionExcluded)
-    return "Réessayer la capture ou conserver la raison d’inaccessibilité.";
-  if (field.state === "inferred") return "Confirmer dans la page source ou les pièces du dossier.";
+    return "Réessayer la capture ou garder la raison d’inaccessibilité.";
+  if (field.state === "inferred") return "Confirmer dans la source ou les pièces du dossier.";
   if (field.category === "documents_and_media")
-    return `Contrôler les pièces attendues pour le profil ${profile.label}.`;
+    return `Contrôler les pièces du profil ${profile.label}.`;
   if (field.category === "procedure")
-    return `Compléter les modalités de la procédure ${profile.label.toLocaleLowerCase("fr-FR")}.`;
-  return "Rechercher ce champ dans la page source et les documents rattachés au lot.";
+    return `Compléter la procédure ${profile.label.toLocaleLowerCase("fr-FR")}.`;
+  return "Rechercher dans la source et les documents du lot.";
 }
 
 function fieldDisplayValue(observation: FieldObservation): unknown {
@@ -1353,7 +1356,7 @@ function buildGates(
       "Identité du bien",
       propertyIdentity,
       "identity",
-      "Type de bien et titre ou description source requis.",
+      "Type de bien et titre ou description requis.",
       ["property_type", "source_title", "source_description"],
     ),
     gate(
@@ -1361,7 +1364,7 @@ function buildGates(
       "Localisation précise",
       preciseLocation,
       "critical",
-      "Adresse avec précision ou couple parcelle/INSEE requis.",
+      "Adresse précise ou couple parcelle/INSEE requis.",
       ["address", "location_precision", "cadastral_references", "insee_code"],
     ),
     gate(
@@ -1369,7 +1372,7 @@ function buildGates(
       "Calendrier de vente",
       schedule && context.procedure !== "unknown",
       "critical",
-      "Date ou fenêtre de vente et procédure vérifiée requises.",
+      "Date/fenêtre de vente et procédure vérifiée requises.",
       ["sale_date", "sale_schedule"],
     ),
     gate(
@@ -1393,7 +1396,7 @@ function buildGates(
       "Prix ou méthode de vente",
       startingPrice,
       "critical",
-      "Mise à prix observée ou absence justifiée par la méthode d’État requise.",
+      "Mise à prix ou méthode d’État justifiée.",
       ["starting_price_eur", "procedure_record", "source_blocks"],
     ),
     gate(
@@ -1401,7 +1404,7 @@ function buildGates(
       "Preuve de capture",
       sourceProof,
       "critical",
-      "Texte, bloc source, pièce ou artefact média lisible requis.",
+      "Texte ou pièce lisible requis.",
       ["capture_text", "source_blocks", "documents_inventory", "photos_usable_count"],
     ),
     gate(
@@ -1409,7 +1412,7 @@ function buildGates(
       "Absence de conflit critique",
       criticalConflict,
       "critical",
-      "Tout conflit critique bloque la qualification publiée.",
+      "Tout conflit critique bloque la qualification.",
       criticalConflictFields,
     ),
     gate(
@@ -1417,7 +1420,7 @@ function buildGates(
       "Pièce de conditions",
       conditions,
       "critical",
-      "La pièce de conditions doit être observée ou explicitement non applicable avec raison contrôlée.",
+      "Pièce observée ou non-applicable justifiée.",
       ["conditions_sale"],
     ),
   ];
@@ -1520,10 +1523,10 @@ export function getListingCompleteness(sale: AuctionSale): ListingCompletenessRe
   const categoryLabels = new Map(
     CATALOGUE.categories.map((category) => [category.id, category.label]),
   );
-  const fields = CATALOGUE.fields.map((catalogField) => {
+  const fields = CATALOGUE.fields.map((catalogField, fieldIndex) => {
     const applicable = fieldApplicable(catalogField, propertyType, context.procedure);
     const observation = applicable
-      ? fieldObservation(sale, catalogField, documents)
+      ? fieldObservation(sale, catalogField, fieldIndex, documents)
       : makeObservation(catalogField.id, "not_applicable", null, {
           reason: {
             code: "property_or_procedure_scope",
@@ -1632,8 +1635,7 @@ export function getListingCompleteness(sale: AuctionSale): ListingCompletenessRe
     inferredFieldCount: counts.inferred,
     unknownFieldCount: counts.unknown,
     conflictFieldCount: counts.conflict,
-    notApplicableReason:
-      "Un champ non applicable est retiré du numérateur et du dénominateur ; une source inaccessible reste inconnue pour la complétude produit.",
+    notApplicableReason: "Le non-applicable sort du score ; l’inaccessible reste inconnu.",
   };
 }
 
