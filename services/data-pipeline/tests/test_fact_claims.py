@@ -92,6 +92,31 @@ def test_missing_field_provenance_does_not_create_a_claim() -> None:
     assert build_fact_claim_candidates(sale) == []
 
 
+@pytest.mark.parametrize("include_source", [False, True])
+def test_generated_completeness_projection_is_not_independent_source_evidence(include_source: bool) -> None:
+    blocks = {
+        "listing_completeness": {
+            "source_property_features": {"surface": "Maison de 999 m²", "occupation": "Libre"},
+            "source_field_observations": {
+                "occupancy_status": {"value": "vacant", "state": "inferred", "excerpt": "Libre"},
+            },
+        },
+    }
+    if include_source:
+        blocks["surface"] = "Maison de 55 m²"
+    sale = AuctionSale(
+        source_name="info_encheres",
+        source_url="https://source.example/completeness-projection",
+        raw_payload={"source_blocks": blocks},
+    )
+
+    candidates = build_fact_claim_candidates(sale)
+
+    assert [(candidate["field_key"], candidate["value_jsonb"]) for candidate in candidates] == (
+        [("property.surface_m2", 55.0)] if include_source else []
+    )
+
+
 def test_surface_excerpt_only_claims_the_surface_kind_named_by_the_excerpt() -> None:
     sale = AuctionSale(
         source_name="licitor",

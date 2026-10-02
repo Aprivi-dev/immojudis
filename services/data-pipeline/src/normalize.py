@@ -81,6 +81,27 @@ PROPERTY_TYPE_CODE_MAP = {
 VALID_STATUSES = {"upcoming", "past", "adjudicated", "unknown", "postponed", "cancelled", "withdrawn"}
 SURFACE_VALUE_PATTERN = r"([0-9]+(?:[\s.][0-9]{3})*(?:[,.]\s*[0-9]+)?|[0-9]+(?:[,.]\s*[0-9]+)?)"
 LATIN_LETTERS_PATTERN = r"A-Za-zÀ-ÖØ-öø-ÿŒœŸ"
+_STREET_TYPES_PATTERN = (
+    r"rue|avenue|av\.?|boulevard|bd\.?|chemin|route|impasse|all[ée]e|"
+    r"place|quai|cours|faubourg|passage|square|voie|lotissement|hameau"
+)
+_ADDRESS_CONTAMINATION_PATTERN = re.compile(
+    r"\b(?:on\s+ne\s+peut\s+ench[eéè]rir|afficher\s+le\s+plan|"
+    r"exactitude\s+non\s+garantie|ne\s+peut\s+ench[eéè]rir|"
+    r"adresse\s+du\s+bien|localisation\s+du\s+bien)\b",
+    re.I,
+)
+_LAWYER_CONTAMINATION_PATTERN = re.compile(
+    r"\b(?:ch[eè]que(?:s)?|carpa|consignation|outre\s+une\s+somme|"
+    r"somme\s+de|garantie|caution|ordre\s+de|ench[eéè]r)\b",
+    re.I,
+)
+_VISIT_DATE_PATTERN = re.compile(
+    rf"(?P<weekday>{'|'.join(FRENCH_WEEKDAYS)})\s*(?P<day>\d{{1,2}})\s*"
+    rf"(?P<month>{'|'.join(FRENCH_MONTHS)})\s*(?P<year>\d{{4}})"
+    rf"(?P<time>\s*(?:à|a)\s*\d{{1,2}}\s*h(?:\s*\d{{2}})?)?",
+    re.I,
+)
 
 
 def make_sale_signature(sale_date: object, price: object) -> str:
@@ -106,6 +127,129 @@ def clean_text(value: object | None) -> str | None:
         return None
     text = re.sub(r"\s+", " ", str(value).replace("\xa0", " ")).strip()
     return text or None
+
+
+def normalize_listing_address(value: object | None) -> str | None:
+    """Keep a property address separate from page chrome and legal notices.
+
+    A few source pages concatenate the legal notice, map controls and the
+    address into one text node. Returning that prose as an address makes it
+    reach geocoding, market comparables and the premium procedure panel. When
+    the contamination contains a recognizable street address, keep that
+    street; otherwise return ``None`` so callers can display a confirmation
+    state instead of an invented location.
+    """
+    text = clean_text(value)
+    if not text:
+        return None
+    contaminated = bool(_ADDRESS_CONTAMINATION_PATTERN.search(text))
+    if not contaminated:
+        return text
+    match = re.search(
+        rf"\b(?P<number>\d{{1,5}}\s*(?:bis|ter|quater)?\s*)"
+        rf"(?P<type>{_STREET_TYPES_PATTERN})\s*"
+        rf"(?P<name>[^\n|;]*?)(?=\s*(?:\||;|Afficher\s+le\s+plan|Exactitude\s+non\s+garantie|$))",
+        text,
+        re.I,
+    )
+    if not match:
+        return None
+    candidate = clean_text(match.group(0).strip(" ,-|"))
+    if not candidate:
+        return None
+    candidate = re.sub(r"(?i)(\d)(?=(?:bis|ter|quater)?\s*(?:" + _STREET_TYPES_PATTERN + r")\b)", r"\1 ", candidate, count=1)
+    candidate = re.sub(r"(?i)(" + _STREET_TYPES_PATTERN + r")(?!\s)(?=[A-Za-zÀ-ÿ])", r"\1 ", candidate, count=1)
+    return clean_text(candidate.strip(" ,-|"))
+
+
+def normalize_lawyer_name(value: object | None) -> str | None:
+    """Reject payment/procedure prose accidentally captured as an advocate."""
+    text = clean_text(value)
+    if not text:
+        return None
+    if not _LAWYER_CONTAMINATION_PATTERN.search(text) and not re.search(
+        r"\b(?:on\s+ne\s+peut|afficher\s+le\s+plan|exactitude\s+non\s+garantie)\b",
+        strip_accents(text).lower(),
+    ) and len(text) <= 180:
+        return text
+    # Preserve a clearly labelled short entity if a source appended a payment
+    # clause after it; never return the payment instruction itself.
+    match = re.match(
+        r"\s*((?:ma[iî]tre|me|scp|selarl|selas|cabinet|office|[ée]tude)\b[^|;\n]{2,120})",
+        text,
+        re.I,
+    )
+    if match and not _LAWYER_CONTAMINATION_PATTERN.search(match.group(1)):
+        return clean_text(match.group(1).rstrip(" ,.-"))
+    return None
+
+
+def normalize_lawyer_contact(value: object | None) -> str | None:
+    """Keep actionable contact details and drop CARPA/payment instructions."""
+    text = clean_text(value)
+    if not text:
+        return None
+    if not _LAWYER_CONTAMINATION_PATTERN.search(text):
+        return text
+    actionable = [
+        *re.findall(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", text, re.I),
+        *re.findall(r"(?:\+33\s?(?:\(0\)\s?)?|0)[1-9](?:[\s.()-]?\d{2}){4}", text),
+        *re.findall(r"https?://[^\s<>\"']+", text, re.I),
+    ]
+    return " · ".join(dict.fromkeys(actionable)) or None
+
+
+def normalize_visit_text(value: object | None) -> str | None:
+    """Normalize compact French visit text and remove dangling conjunctions."""
+    text = clean_text(value)
+    if not text:
+        return None
+    text = re.sub(r"(?:\s*[,;|]\s*)?\b(?:et|ou)\b\s*$", "", text, flags=re.I).strip(" ,;|")
+
+    def replace_date(match: re.Match[str]) -> str:
+        weekday = match.group("weekday")
+        day = match.group("day")
+        month = match.group("month")
+        year = match.group("year")
+        time = match.group("time")
+        if not time:
+            return f"{weekday} {day} {month} {year}"
+        time_match = re.search(r"(?:à|a)\s*(\d{1,2})\s*h(?:\s*(\d{2}))?", time, re.I)
+        if not time_match:
+            return f"{weekday} {day} {month} {year}"
+        minute = time_match.group(2) or ""
+        return f"{weekday} {day} {month} {year} à {time_match.group(1)}h{minute}"
+
+    return clean_text(_VISIT_DATE_PATTERN.sub(replace_date, text))
+
+
+def normalize_department(value: object | None) -> str | None:
+    """Return a two/three digit French department code from a loose field."""
+    text = clean_text(value)
+    if not text:
+        return None
+    for token in re.findall(r"\b\d{2,5}\b", text):
+        if len(token) == 5:
+            return extract_department(token)
+        if len(token) == 3 and token.startswith(("97", "98")):
+            return token
+        if len(token) == 2:
+            return token
+    return None
+
+
+def is_date_only_value(value: object | None) -> bool:
+    """Tell callers that a published date carries no reliable clock time."""
+    text = clean_text(value)
+    if not text:
+        return False
+    return not bool(
+        re.search(
+            r"(?:T\s*\d{1,2}:\d{2}|\b\d{1,2}\s*(?:h|heures?)\b|\b\d{1,2}:\d{2}\b)",
+            text,
+            re.I,
+        )
+    )
 
 
 def parse_price(value: object | None) -> Decimal | None:
@@ -650,6 +794,9 @@ def _count_numbered_bedrooms(text: str) -> int | None:
 
 
 def _is_rooms_count_false_positive(text: str, start: int, end: int) -> bool:
+    nearby = text[max(0, start - 20) : min(len(text), end + 30)]
+    if re.search(r"\bchambres?\s+froides?\b", nearby, re.I):
+        return True
     after_number = text[end : min(len(text), end + 20)]
     if re.match(r"\s*[,.]\d+\s*m(?:2|²)\b", after_number, re.I):
         return True
@@ -698,7 +845,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     description = clean_text(_field_or_source_block(raw_sale, "description", "description", "detail_description"))
     if description and re.fullmatch(r"\$[a-z0-9][a-z0-9_]*", description, re.I):
         description = None
-    address = clean_text(
+    address = normalize_listing_address(
         _field_or_source_block(raw_sale, "address", "adresse", "detail_adresse", "address", "localisation")
     )
     if address and re.fullmatch(r'[\d\s.,]+\s*(?:€|euros?|EUR)', address, re.I):
@@ -707,16 +854,42 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         raw_sale['quality_flags'] = [*(raw_sale.get('quality_flags') or []), 'address_unverified']
         raw_sale['latitude'] = raw_sale['longitude'] = None
         address = None
-    postal_code = clean_text(
+    explicit_postal_code = extract_postal_code(
         _field_or_source_block(raw_sale, "postal_code", "code_postal", "codePostal", "postal_code")
-    ) or extract_postal_code(address)
+    )
+    address_postal_code = extract_postal_code(address)
+    source_name = strip_accents(clean_text(raw_sale.get("source_name")) or "").lower()
+    postal_code = explicit_postal_code or address_postal_code
+    if source_name == "petites_affiches" and address_postal_code:
+        postal_code = address_postal_code
+        if explicit_postal_code and explicit_postal_code != address_postal_code:
+            raw_sale = dict(raw_sale)
+            raw_sale["invalid_postal_evidence"] = {
+                "value": explicit_postal_code,
+                "reason": "address_postal_code_conflict",
+                "address_value": address_postal_code,
+            }
+            flags = list(raw_sale.get("quality_flags") or [])
+            if "postal_address_conflict" not in flags:
+                flags.append("postal_address_conflict")
+            raw_sale["quality_flags"] = flags
     if postal_code is None and not _skip_contextless_postal_code_fallback(raw_sale, address):
         postal_code = extract_postal_code(raw_sale.get("raw_text"), source_text)
+    if _postal_code_is_starting_price_without_location(raw_sale, address, postal_code):
+        raw_sale = dict(raw_sale)
+        raw_sale["invalid_postal_evidence"] = {
+            "value": postal_code,
+            "reason": "starting_price_token_without_location_context",
+        }
+        flags = list(raw_sale.get("quality_flags") or [])
+        if "postal_code_unverified" not in flags:
+            flags.append("postal_code_unverified")
+        raw_sale["quality_flags"] = flags
+        postal_code = None
     city = clean_text(_field_or_source_block(raw_sale, "city", "ville", "commune", "city")) or extract_city(
         address, postal_code
     )
-    sale_date = parse_french_datetime(
-        _field_or_source_block(
+    sale_date_value = _field_or_source_block(
             raw_sale,
             "sale_date",
             "sale_date",
@@ -726,9 +899,24 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "audience",
             "date_de_l_audience",
             "seance_date",
-        ),
+        )
+    sale_date = parse_french_datetime(
+        sale_date_value,
         local_timezone=source_sale_timezone(raw_sale),
     )
+    if sale_date is not None and is_date_only_value(sale_date_value):
+        raw_sale = dict(raw_sale)
+        raw_sale.setdefault("date_precision", "day")
+    raw_department = _field_or_source_block(raw_sale, "department", "departement", "department")
+    explicit_department = normalize_department(raw_department)
+    postal_department = extract_department(postal_code)
+    if explicit_department and postal_department and explicit_department != postal_department:
+        raw_sale = dict(raw_sale)
+        flags = list(raw_sale.get("quality_flags") or [])
+        if "postal_department_conflict" not in flags:
+            flags.append("postal_department_conflict")
+        raw_sale["quality_flags"] = flags
+    department = postal_department or explicit_department
     adjudication_price = extract_adjudication_price(raw_sale)
     status = normalize_status(_field_or_source_block(raw_sale, "status", "status", "statut"), sale_date)
     if adjudication_price is not None:
@@ -812,6 +1000,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "contenance",
         )
     ) or _extract_land_surface_from_text(source_text)
+    if _has_conflicting_land_unit_evidence(source_text, land_surface_m2):
+        _record_land_unit_conflict(raw_sale, land_surface_m2, source_text)
+        land_surface_m2 = None
     if _is_coproperty_scoped_land_surface(raw_sale, source_text):
         # A parcel area attached to a copropriété may be the syndicate's
         # cadastral land, not the footprint owned with the advertised lot.
@@ -957,8 +1148,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             )
         ),
         tribunal_code=clean_text(raw_sale.get("tribunal_code")),
-        department=clean_text(_field_or_source_block(raw_sale, "department", "departement", "department"))
-        or extract_department(postal_code),
+        department=department,
         city=city,
         address=address,
         postal_code=postal_code,
@@ -981,8 +1171,8 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         bedrooms_count=bedrooms_count,
         bathrooms_count=bathrooms_count,
         parking_count=parking_count,
-        has_garden=_feature_bool(raw_sale.get("has_garden"), source_text, r"\bjardin\b"),
-        has_terrace=_feature_bool(raw_sale.get("has_terrace"), source_text, r"\bterrasse\b"),
+        has_garden=_property_feature_bool(raw_sale.get("has_garden"), source_text, "garden"),
+        has_terrace=_property_feature_bool(raw_sale.get("has_terrace"), source_text, "terrace"),
         has_garage=_feature_bool(raw_sale.get("has_garage"), source_text, r"\bgarage\b"),
         has_pool=_feature_bool(raw_sale.get("has_pool"), source_text, r"\bpiscine\b"),
         has_air_conditioning=_feature_bool(
@@ -1004,10 +1194,10 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
                 "visite_libre",
             )
         ),
-        lawyer_name=clean_text(
+        lawyer_name=normalize_lawyer_name(
             _field_or_source_block(raw_sale, "lawyer_name", "avocat", "notary_name", "notaire", "contact_nom")
         ),
-        lawyer_contact=clean_text(
+        lawyer_contact=normalize_lawyer_contact(
             _field_or_source_block(
                 raw_sale,
                 "lawyer_contact",
@@ -1242,6 +1432,54 @@ def _is_coproperty_scoped_land_surface(raw_sale: dict[str, object], text: str) -
     )
 
 
+def _has_conflicting_land_unit_evidence(text: str, value: Decimal | None) -> bool:
+    """Detect a structured m² value that disagrees with cadastral units."""
+    if value is None or not text:
+        return False
+    candidates = _land_unit_candidates(text)
+    return bool(candidates and value not in candidates)
+
+
+def _land_unit_candidates(text: str) -> set[Decimal]:
+    candidates: set[Decimal] = set()
+    for match in re.finditer(
+        r"\b(?:(?P<ha>\d+)\s*ha\s*)?(?P<a>\d+)\s*a\s*(?P<ca>\d+)\s*ca\b",
+        text,
+        re.I,
+    ):
+        candidates.add(
+            Decimal(match.group("ha") or 0) * Decimal("10000")
+            + Decimal(match.group("a")) * Decimal("100")
+            + Decimal(match.group("ca"))
+        )
+    for match in re.finditer(
+        r"\b(?P<a>\d+)\s*ares?\s*(?:et\s*)?(?P<ca>\d+)\s*centiares?\b",
+        text,
+        re.I,
+    ):
+        candidates.add(Decimal(match.group("a")) * Decimal("100") + Decimal(match.group("ca")))
+    for match in re.finditer(r"\b(?P<ares>\d+(?:[,.]\d+)?)\s*ares?\b(?!\s*(?:et\s*)?\d+\s*centiares?)", text, re.I):
+        candidates.add(Decimal(match.group("ares").replace(",", ".")) * Decimal("100"))
+    return candidates
+
+
+def _record_land_unit_conflict(raw_sale: dict[str, object], value: Decimal | None, text: str) -> None:
+    candidates = _land_unit_candidates(text)
+    raw_sale["land_surface_conflict"] = {
+        "structured_surface_m2": str(value) if value is not None else None,
+        "cadastral_surfaces_m2": [str(candidate) for candidate in sorted(candidates)],
+        "reason": "mixed_land_units",
+    }
+    source_blocks = raw_sale.setdefault("source_blocks", {})
+    if isinstance(source_blocks, dict):
+        source_blocks.setdefault("land_surface_conflict", raw_sale["land_surface_conflict"])
+    quality_flags = raw_sale.get("quality_flags")
+    flags = list(quality_flags) if isinstance(quality_flags, list) else []
+    if "land_surface_unit_conflict" not in flags:
+        flags.append("land_surface_unit_conflict")
+    raw_sale["quality_flags"] = flags
+
+
 def _source_energy_diagnostics(raw_sale: dict[str, object]) -> dict[str, object] | None:
     existing = raw_sale.get("source_energy_diagnostics")
     if isinstance(existing, dict) and any(
@@ -1346,6 +1584,8 @@ def _walk_source_blocks(value: object, prefix: str = "") -> list[tuple[str, obje
     if isinstance(value, dict):
         for key, nested in value.items():
             key_text = str(key)
+            if key_text == "listing_completeness":
+                continue
             nested_key = f"{prefix}_{key_text}" if prefix else key_text
             rows.append((nested_key, nested))
             rows.extend(_walk_source_blocks(nested, nested_key))
@@ -1382,6 +1622,29 @@ def _skip_contextless_postal_code_fallback(raw_sale: dict[str, object], address:
     return bool(address and source_name == "licitor")
 
 
+def _postal_code_is_starting_price_without_location(
+    raw_sale: dict[str, object], address: str | None, postal_code: str | None
+) -> bool:
+    """Reject a Petites Affiches price token misread as a property postal code.
+
+    The card extractor historically scanned the whole card, whose first
+    numeric token is often ``Mise à Prix : 50 000 €``.  A code equal to that
+    price is only rejected when the address itself carries no postal code;
+    explicit address evidence remains authoritative even when the amounts
+    happen to be equal.
+    """
+    source_name = strip_accents(clean_text(raw_sale.get("source_name")) or "").lower()
+    if source_name != "petites_affiches" or not postal_code or extract_postal_code(address):
+        return False
+    starting_price = extract_starting_price(raw_sale)
+    if starting_price is None:
+        return False
+    try:
+        return starting_price == Decimal(postal_code)
+    except (InvalidOperation, ValueError):
+        return False
+
+
 def _extract_asset_title_from_text(text: str) -> str | None:
     for pattern in (
         r"\bVente\s+aux\s+ench[èe]res\s+(?:Autres?|Other)\s+(.+?)(?:\b\d{5}\b|Mise\s+[àa]\s+prix|Date\s+de\s+la\s+vente)",
@@ -1414,8 +1677,8 @@ def _looks_like_asset_title(value: str | None) -> bool:
 
 def _normalize_visit_dates(value: object | None) -> list[str]:
     if isinstance(value, list):
-        return [text for item in value if (text := clean_text(item))]
-    text = clean_text(value)
+        return [text for item in value if (text := normalize_visit_text(item))]
+    text = normalize_visit_text(value)
     return [text] if text else []
 
 
@@ -1433,6 +1696,8 @@ def _extract_carrez_surface_from_text(*values: object) -> Decimal | None:
     patterns = (
         rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+(?:loi\s+)?carrez\b",
         rf"\b(?:surface\s+)?(?:loi\s+)?carrez\s*(?:totale\s*)?:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
+        rf"\b(?:superficie|surface)\s+(?:privative|totale|habitable)?\s*"
+        rf"\([^)]*loi\s+carrez[^)]*\)\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
     )
     return _extract_contextual_surface(text, patterns, exclude_secondary=False)
 
@@ -1699,6 +1964,36 @@ def _feature_bool(value: object | None, text: str, *patterns: str) -> bool | Non
     if explicit is not None:
         return explicit
     return True if any(re.search(pattern, text, re.I) for pattern in patterns) else None
+
+
+def _property_feature_bool(value: object | None, text: str, feature: str) -> bool | None:
+    """Infer an amenity only from evidence scoped to the advertised lot."""
+    explicit = _parse_bool(value)
+    if explicit is not None:
+        return explicit
+    if feature == "garden":
+        # ``rez-de-jardin`` names a level. It is not evidence of a garden
+        # right unless another, independently scoped garden mention exists.
+        evidence_text = re.sub(r"\brez[\s-]+de[\s-]+jardin\b", "", text, flags=re.I)
+        return True if re.search(r"\bjardin\b", evidence_text, re.I) else None
+    if feature == "terrace":
+        for match in re.finditer(r"\bterrasse\b", text, re.I):
+            if _is_building_scoped_terrace(text, match.start(), match.end()):
+                continue
+            return True
+        return None
+    return None
+
+
+def _is_building_scoped_terrace(text: str, start: int, end: int) -> bool:
+    context = text[max(0, start - 240) : min(len(text), end + 80)]
+    return bool(
+        re.search(
+            r"\b(?:au|du|le)\s+[\wÀ-ÿ-]+\s+étage\b[^.;]{0,100}\bdivers\s+locaux\b[^.;]{0,30}\bterrasse\b",
+            context,
+            re.I | re.S,
+        )
+    )
 
 
 def _joined_text(*values: object) -> str:

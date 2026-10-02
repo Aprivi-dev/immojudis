@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from src.asset_normalization import normalize_asset_features
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import ROOT_DIR, load_settings, require_encheres_publiques_access
+from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
+from src.extraction_profiles import attach_source_property_features
 from src.geocode import geocode_sale
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
@@ -578,7 +580,16 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
         geocode_sale(sale)
     fill_tribunal(sale)
     classify_sale_procedure(sale)
+    payload = sale.raw_payload
+    blocks = payload.get("source_blocks")
+    values = [sale.title, sale.description, sale.raw_text, payload.get("source_description")]
+    if isinstance(blocks, dict):
+        values.extend(value for key, value in blocks.items() if key != "listing_completeness")
+    context = "\n".join(dict.fromkeys(str(value).strip() for value in values if value))
+    if context:
+        extract_and_apply_deterministic_surface_reasoning(sale, context)
     normalize_asset_features(sale)
+    attach_source_property_features(sale.raw_payload)
     return sale
 
 

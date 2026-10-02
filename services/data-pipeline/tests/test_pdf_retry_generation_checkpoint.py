@@ -94,7 +94,9 @@ def test_retry_cap_requires_the_current_generation_after_partial_checkpoint(monk
             "max_attempts": 4,
             "input_hash": current_hash,
             "created_at": "2026-09-30T10:01:00+00:00",
-            "updated_at": "2026-10-02T10:01:00+00:00",
+            # The terminal queue observation must follow the checkpoint;
+            # a fixed date becomes older than it as the test calendar advances.
+            "updated_at": sale.raw_payload["document_analysis"]["checked_at"],
         }
     )
     assert not queued_runner._pdf_failure_reached_retry_cap(sale, sale.source_url)

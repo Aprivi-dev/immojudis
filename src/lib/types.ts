@@ -76,6 +76,10 @@ export type AuctionSale = {
   source_url: string | null;
   primary_source: string | null;
   source_urls: unknown;
+  /**
+   * Optional payload projection retained for detail-view completeness evidence.
+   */
+  raw_payload?: unknown | null;
   source_blocks: Record<string, unknown> | null;
   source_blocks_by_source: Record<string, Record<string, unknown>> | null;
   dedupe_confidence: string | null;

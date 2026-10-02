@@ -1,0 +1,1640 @@
+import catalogueJson from "./listing-completeness-runtime.json";
+import { collectSaleDocuments } from "./sale-documents";
+import { listingVisits } from "./sale-listing";
+import { saleSession, saleWindow } from "./sale-window";
+import type {
+  AuctionSale,
+  SaleLegalFramework,
+  SaleVenueType,
+  SaleVerificationStatus,
+} from "./types";
+
+export const COMPLETENESS_STATES = [
+  "observed",
+  "inferred",
+  "unknown",
+  "explicitly_absent",
+  "not_applicable",
+  "conflict",
+] as const;
+
+export type CompletenessState = (typeof COMPLETENESS_STATES)[number];
+export type CompletenessImportance = "critical" | "high" | "medium" | "optional";
+export type CompletenessCategoryId =
+  | "provenance"
+  | "procedure"
+  | "location"
+  | "property"
+  | "energy"
+  | "outdoor"
+  | "occupancy_and_risk"
+  | "documents_and_media";
+export type CompletenessProcedure = "judicial" | "notarial" | "state" | "online" | "unknown";
+export type CompletenessClass = "incomplet" | "a_enrichir" | "decision_prete" | "riche";
+
+type CatalogApplicability = {
+  property_types?: string[];
+  procedures?: string[];
+  conditions?: string;
+};
+
+type CatalogField = {
+  id: string;
+  category: CompletenessCategoryId;
+  label: string;
+  definition?: string;
+  type?: string;
+  unit?: string | null;
+  applicability: CatalogApplicability;
+  importance: CompletenessImportance;
+};
+
+type CatalogCategory = {
+  id: CompletenessCategoryId;
+  label: string;
+  weight: number;
+};
+
+type CompletenessCatalogue = {
+  fields: CatalogField[];
+  categories: CatalogCategory[];
+  scoring: {
+    importance_factors: Record<CompletenessImportance, number>;
+    state_factors: Record<CompletenessState, number | null>;
+  };
+};
+
+const CATALOGUE = catalogueJson as unknown as CompletenessCatalogue;
+
+export const LISTING_COMPLETENESS_CATALOGUE = CATALOGUE;
+export const LISTING_COMPLETENESS_FIELD_IDS = CATALOGUE.fields.map((field) => field.id);
+export const LISTING_COMPLETENESS_FIELD_COUNT = LISTING_COMPLETENESS_FIELD_IDS.length;
+
+const MISSING_TEXT_MARKERS = new Set([
+  "",
+  "-",
+  "—",
+  "a confirmer",
+  "a confirmer dans les documents",
+  "inconnu",
+  "n/a",
+  "non communique",
+  "non renseigne",
+  "non renseigné",
+  "unknown",
+]);
+
+const SOURCE_UNAVAILABLE_REASONS = new Set([
+  "document_locked",
+  "page_inaccessible",
+  "paywall",
+  "source_not_disclosed",
+  "inaccessible",
+  "access_denied",
+]);
+
+const IMPORTANCE_FACTOR: Record<CompletenessImportance, number> =
+  CATALOGUE.scoring.importance_factors;
+
+const STATE_FACTOR: Record<CompletenessState, number> = {
+  observed: CATALOGUE.scoring.state_factors.observed ?? 0,
+  explicitly_absent: CATALOGUE.scoring.state_factors.explicitly_absent ?? 0,
+  inferred: CATALOGUE.scoring.state_factors.inferred ?? 0,
+  unknown: CATALOGUE.scoring.state_factors.unknown ?? 0,
+  not_applicable: CATALOGUE.scoring.state_factors.not_applicable ?? 0,
+  conflict: CATALOGUE.scoring.state_factors.conflict ?? 0,
+};
+
+export type CompletenessEvidence = {
+  grade?: "A" | "B" | "C" | "none" | string;
+  source?: string | null;
+  source_name?: string | null;
+  url?: string | null;
+  source_url?: string | null;
+  excerpt?: string | null;
+  quote?: string | null;
+  text?: string | null;
+  snippet?: string | null;
+  locator?: string | null;
+  page?: number | null;
+  page_number?: number | null;
+  captured_at?: string | null;
+  [key: string]: unknown;
+};
+
+export type CompletenessReason = {
+  code?: string | null;
+  explanation?: string | null;
+  availability_reason?: string | null;
+  [key: string]: unknown;
+};
+
+export type CompletenessInference = {
+  method?: string | null;
+  input_fields?: string[] | null;
+  confidence?: number | null;
+  [key: string]: unknown;
+};
+
+export type FieldObservation = {
+  field: string;
+  state: CompletenessState;
+  value: unknown;
+  canonicalValue: unknown;
+  evidence: CompletenessEvidence[];
+  reason: CompletenessReason | null;
+  inference: CompletenessInference | null;
+  conflicts: unknown[];
+  sourceNames: string[];
+};
+
+export type CompletenessFieldResult = FieldObservation & {
+  id: string;
+  label: string;
+  category: CompletenessCategoryId;
+  categoryLabel: string;
+  definition: string;
+  type: string;
+  unit: string | null;
+  importance: CompletenessImportance;
+  applicable: boolean;
+  extractionExcluded: boolean;
+};
+
+export type CompletenessCategorySummary = {
+  id: CompletenessCategoryId;
+  label: string;
+  weight: number;
+  ratio: number | null;
+  applicableCount: number;
+  knownCount: number;
+  missingCount: number;
+  conflictCount: number;
+  notApplicableCount: number;
+};
+
+export type CompletenessGate = {
+  id: string;
+  label: string;
+  passed: boolean;
+  blocking: "identity" | "critical";
+  reason: string;
+  fields: string[];
+};
+
+export type CompletenessMissingField = {
+  id: string;
+  label: string;
+  category: CompletenessCategoryId;
+  importance: CompletenessImportance;
+  state: CompletenessState;
+  reason: string;
+  nextAction: string;
+  sourceContext: string;
+};
+
+export type CompletenessKnownField = {
+  id: string;
+  label: string;
+  state: CompletenessState;
+  value: unknown;
+  sourceNames: string[];
+  evidence: CompletenessEvidence[];
+};
+
+export type CompletenessProfileId =
+  | "judicial_tribunal"
+  | "public_auction_structured"
+  | "state_disposal"
+  | "agrasc_operator"
+  | "notarial"
+  | "online"
+  | "generic";
+
+export type CompletenessSourceProfile = {
+  id: CompletenessProfileId;
+  label: string;
+  procedure: CompletenessProcedure;
+  verified: boolean;
+  sourceName: string | null;
+  selectionReason: string;
+};
+
+export type ListingCompletenessResult = {
+  score: number;
+  completenessScore: number;
+  extractionCoverageScore: number;
+  classification: CompletenessClass;
+  rawClassification: CompletenessClass;
+  contextLabel: string;
+  propertyType: string;
+  procedure: CompletenessProcedure;
+  profile: CompletenessSourceProfile;
+  fields: CompletenessFieldResult[];
+  known: CompletenessKnownField[];
+  missing: CompletenessMissingField[];
+  toConfirm: CompletenessMissingField[];
+  knownBySource: Record<string, string[]>;
+  categories: CompletenessCategorySummary[];
+  gates: CompletenessGate[];
+  gateFailures: CompletenessGate[];
+  identityGateFailed: boolean;
+  criticalGateFailed: boolean;
+  applicableFieldCount: number;
+  notApplicableFieldCount: number;
+  observedFieldCount: number;
+  inferredFieldCount: number;
+  unknownFieldCount: number;
+  conflictFieldCount: number;
+  notApplicableReason: string;
+};
+
+type ProcedureContext = {
+  procedure: CompletenessProcedure;
+  verified: boolean;
+  venueType: SaleVenueType | null;
+  legalFramework: SaleLegalFramework | null;
+  participationMode: string | null;
+  verificationStatus: SaleVerificationStatus | null;
+};
+
+type DirectValue = {
+  value: unknown;
+  state?: CompletenessState;
+  reason?: CompletenessReason | null;
+  inference?: CompletenessInference | null;
+};
+
+type CollectedDocuments = ReturnType<typeof collectSaleDocuments>;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function isMeaningfulText(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const normalized = value
+    .trim()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("fr-FR");
+  return !MISSING_TEXT_MARKERS.has(normalized);
+}
+
+function isFinitePositive(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function objectHasContent(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "string") return isMeaningfulText(value);
+  if (value && typeof value === "object") return Object.keys(value).length > 0;
+  return value != null;
+}
+
+function normalized(value: unknown): string {
+  return typeof value === "string"
+    ? value
+        .trim()
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .toLocaleLowerCase("fr-FR")
+    : "";
+}
+
+function rawPayload(sale: AuctionSale): Record<string, unknown> {
+  return asRecord(sale.raw_payload) ?? {};
+}
+
+/**
+ * The detail view currently projects the completeness payload through
+ * source_blocks. Keep raw_payload as the preferred input when a private
+ * caller has it, then fall back to the published projection.
+ */
+function completenessPayloads(sale: AuctionSale): Record<string, unknown>[] {
+  const raw = rawPayload(sale);
+  const rawBlocks = asRecord(raw.source_blocks);
+  const projectedFromBlocks = asRecord(sale.source_blocks?.listing_completeness);
+  const projectedFromRawBlocks = asRecord(rawBlocks?.listing_completeness);
+  const projectedRoot = asRecord(raw.listing_completeness);
+  return [raw, projectedFromRawBlocks, projectedFromBlocks, projectedRoot].filter(
+    (value): value is Record<string, unknown> => Boolean(value),
+  );
+}
+
+function firstDefined(...values: unknown[]): unknown {
+  return values.find((value) => value !== undefined && value !== null) ?? null;
+}
+
+function pathValue(value: unknown, path: string[]): unknown {
+  let current: unknown = value;
+  for (const key of path) {
+    const record = asRecord(current);
+    if (!record || !(key in record)) return undefined;
+    current = record[key];
+  }
+  return current;
+}
+
+function firstPathValue(root: unknown, paths: string[][]): unknown {
+  for (const path of paths) {
+    const value = pathValue(root, path);
+    if (value !== undefined && value !== null) return value;
+  }
+  return null;
+}
+
+function evidenceList(value: unknown): CompletenessEvidence[] {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return values.flatMap((entry) => {
+    if (typeof entry === "string") return [{ excerpt: entry }];
+    const record = asRecord(entry);
+    return record ? [record as CompletenessEvidence] : [];
+  });
+}
+
+function evidenceSourceNames(evidence: CompletenessEvidence[]): string[] {
+  return [
+    ...new Set(
+      evidence
+        .map((item) => item.source_name ?? item.source ?? null)
+        .filter((source): source is string => isMeaningfulText(source)),
+    ),
+  ];
+}
+
+function hasEvidenceLocator(item: CompletenessEvidence): boolean {
+  return Boolean(
+    isMeaningfulText(item.excerpt) ||
+    isMeaningfulText(item.quote) ||
+    isMeaningfulText(item.text) ||
+    isMeaningfulText(item.snippet) ||
+    isMeaningfulText(item.locator) ||
+    typeof item.page === "number" ||
+    typeof item.page_number === "number",
+  );
+}
+
+function validObservedEvidence(evidence: CompletenessEvidence[]): boolean {
+  return evidence.some(
+    (item) =>
+      ["A", "B"].includes(String(item.grade ?? "").toUpperCase()) && hasEvidenceLocator(item),
+  );
+}
+
+function validExplicitAbsenceEvidence(evidence: CompletenessEvidence[]): boolean {
+  return evidence.some((item) => {
+    const quote = [item.excerpt, item.quote, item.text, item.snippet]
+      .filter((value): value is string => typeof value === "string")
+      .join(" ")
+      .toLocaleLowerCase("fr-FR");
+    return (
+      hasEvidenceLocator(item) &&
+      /\b(?:aucun|aucune|sans|non|n'est pas|ne comporte pas)\b/.test(quote)
+    );
+  });
+}
+
+function validNotApplicableReason(reason: CompletenessReason | null): boolean {
+  const code = normalized(reason?.code);
+  const explanation = reason?.explanation;
+  if (!code || !isMeaningfulText(explanation)) return false;
+  return !SOURCE_UNAVAILABLE_REASONS.has(code);
+}
+
+function validInference(inference: CompletenessInference | null): boolean {
+  return Boolean(
+    isMeaningfulText(inference?.method) &&
+    Array.isArray(inference?.input_fields) &&
+    inference.input_fields.length > 0 &&
+    typeof inference?.confidence === "number" &&
+    Number.isFinite(inference.confidence),
+  );
+}
+
+function makeObservation(
+  field: string,
+  state: CompletenessState,
+  value: unknown = null,
+  options: {
+    canonicalValue?: unknown;
+    evidence?: CompletenessEvidence[];
+    reason?: CompletenessReason | null;
+    inference?: CompletenessInference | null;
+    conflicts?: unknown[];
+  } = {},
+): FieldObservation {
+  const evidence = options.evidence ?? [];
+  return {
+    field,
+    state,
+    value,
+    canonicalValue: options.canonicalValue ?? value,
+    evidence,
+    reason: options.reason ?? null,
+    inference: options.inference ?? null,
+    conflicts: options.conflicts ?? [],
+    sourceNames: evidenceSourceNames(evidence),
+  };
+}
+
+function unknownObservation(field: string, reason?: CompletenessReason | null): FieldObservation {
+  return makeObservation(field, "unknown", null, { reason });
+}
+
+function featureCandidate(sale: AuctionSale, field: string): Record<string, unknown> | null {
+  const payloads = completenessPayloads(sale).reverse();
+  const candidates: Record<string, unknown>[] = [];
+  for (const payload of payloads) {
+    const containers: unknown[] = [
+      payload.source_property_features,
+      payload.source_field_observations,
+      payload.source_facts,
+    ];
+    for (const containerValue of containers) {
+      if (Array.isArray(containerValue)) {
+        for (const entry of containerValue) {
+          const record = asRecord(entry);
+          if (record?.field === field) candidates.push(record);
+        }
+        continue;
+      }
+      const container = asRecord(containerValue);
+      const nestedArray = Array.isArray(container?.fields) ? container.fields : [];
+      for (const entry of nestedArray) {
+        const record = asRecord(entry);
+        if (record?.field === field) candidates.push(record);
+      }
+      const nestedFields = asRecord(container?.fields);
+      const candidate = container?.[field] ?? nestedFields?.[field];
+      if (candidate !== undefined) {
+        const record = asRecord(candidate);
+        if (record) candidates.push(record);
+      }
+    }
+  }
+  if (candidates.length === 0) return null;
+  const merged: Record<string, unknown> = {};
+  for (const candidate of candidates) {
+    for (const [key, value] of Object.entries(candidate)) {
+      if (value !== undefined && value !== null) merged[key] = value;
+    }
+  }
+  if (!merged.field) merged.field = field;
+  return merged;
+}
+
+function observationFromFeature(
+  field: string,
+  candidate: Record<string, unknown>,
+): FieldObservation {
+  const rawState = candidate.state;
+  const state = COMPLETENESS_STATES.includes(rawState as CompletenessState)
+    ? (rawState as CompletenessState)
+    : "unknown";
+  const evidence = evidenceList(candidate.evidence);
+  const reason = asRecord(candidate.reason) as CompletenessReason | null;
+  const inference = asRecord(candidate.inference) as CompletenessInference | null;
+  const conflicts = Array.isArray(candidate.conflicts) ? candidate.conflicts : [];
+  const value = candidate.value ?? null;
+  const canonicalValue = candidate.canonical_value ?? value;
+
+  if (["observed", "inferred"].includes(state) && !objectHasContent(canonicalValue)) {
+    return unknownObservation(field, {
+      code: "empty_value",
+      explanation: "Un état connu doit conserver une valeur exploitable.",
+    });
+  }
+  if (state === "observed" && !validObservedEvidence(evidence)) {
+    return unknownObservation(field, {
+      code: "invalid_observed_evidence",
+      explanation: "La preuve A/B et son extrait ou localisateur manquent.",
+    });
+  }
+  if (state === "inferred" && !validInference(inference)) {
+    return unknownObservation(field, {
+      code: "invalid_inference",
+      explanation: "La méthode, les entrées ou la confiance de l’inférence manquent.",
+    });
+  }
+  if (state === "explicitly_absent" && !validExplicitAbsenceEvidence(evidence)) {
+    return unknownObservation(field, {
+      code: "invalid_explicit_absence",
+      explanation: "Une négation citée et rattachée au lot est nécessaire.",
+    });
+  }
+  if (state === "not_applicable" && !validNotApplicableReason(reason)) {
+    return unknownObservation(field, {
+      code: "invalid_not_applicable",
+      explanation: "Une raison contrôlée est nécessaire ; une page inaccessible reste inconnue.",
+    });
+  }
+  if (state === "conflict" && conflicts.length === 0) {
+    return unknownObservation(field, {
+      code: "invalid_conflict",
+      explanation: "Les valeurs concurrentes et leur preuve manquent.",
+    });
+  }
+  return makeObservation(field, state, value, {
+    canonicalValue,
+    evidence,
+    reason,
+    inference,
+    conflicts,
+  });
+}
+
+function directObservation(field: string, value: DirectValue | unknown): FieldObservation {
+  const direct = asRecord(value);
+  if (direct && "value" in direct) {
+    const state = COMPLETENESS_STATES.includes(direct.state as CompletenessState)
+      ? (direct.state as CompletenessState)
+      : objectHasContent(direct.value)
+        ? "observed"
+        : "unknown";
+    return makeObservation(field, state, direct.value, {
+      reason: (direct.reason as CompletenessReason | null | undefined) ?? null,
+      inference: (direct.inference as CompletenessInference | null | undefined) ?? null,
+    });
+  }
+  if (value === undefined || value === null) return unknownObservation(field);
+  if (typeof value === "string" && !isMeaningfulText(value)) return unknownObservation(field);
+  if (Array.isArray(value) && value.length === 0) return unknownObservation(field);
+  return makeObservation(field, "observed", value);
+}
+
+function inferredDirect(field: string, value: unknown, method: string): FieldObservation {
+  if (value === undefined || value === null) return unknownObservation(field);
+  if (typeof value === "string" && !isMeaningfulText(value)) return unknownObservation(field);
+  if (typeof value === "boolean" && !value) return unknownObservation(field);
+  if (Array.isArray(value) && value.length === 0) return unknownObservation(field);
+  return makeObservation(field, "inferred", value, {
+    inference: { method, input_fields: [field], confidence: 0.6 },
+  });
+}
+
+function normalizedPropertyType(value: unknown): string {
+  const key = normalized(value);
+  if (!key) return "unknown";
+  if (/appartement|apartment|studio|duplex|loft|t[1-9]/.test(key)) return "apartment";
+  if (/maison|villa|pavillon/.test(key)) return "house";
+  if (/terrain|parcelle|pre(?:$|[^a-z])|bois|agricole/.test(key)) return "land";
+  if (/parking|garage|box/.test(key)) return "parking";
+  if (/commerce|commercial|bureau|local/.test(key)) return "commercial";
+  if (/immeuble|batiment|building/.test(key)) return "building";
+  if (/mixte|mixed/.test(key)) return "mixed";
+  if (key === "other" || key === "autre") return "other";
+  return "unknown";
+}
+
+function procedureContext(sale: AuctionSale): ProcedureContext {
+  const rawProcedure = asRecord(sale.sale_procedure);
+  const verification = asRecord(rawProcedure?.verification);
+  const rawStatus = verification?.status ?? sale.sale_verification_status;
+  const verificationStatus = ["verified", "cross_checked", "pending", "conflict"].includes(
+    String(rawStatus),
+  )
+    ? (String(rawStatus) as SaleVerificationStatus)
+    : null;
+  const venueRaw = rawProcedure?.venue_type ?? sale.sale_venue_type;
+  const venueType = ["tribunal", "notary", "state", "online", "unknown"].includes(String(venueRaw))
+    ? (String(venueRaw) as SaleVenueType)
+    : null;
+  const legalRaw = rawProcedure?.legal_framework ?? sale.sale_legal_framework;
+  const legalFramework = [
+    "judicial_seizure",
+    "judicial_partition",
+    "insolvency",
+    "voluntary_notarial",
+    "state_sale",
+    "unknown",
+  ].includes(String(legalRaw))
+    ? (String(legalRaw) as SaleLegalFramework)
+    : null;
+  const participationMode = isMeaningfulText(rawProcedure?.participation_mode)
+    ? String(rawProcedure?.participation_mode)
+    : null;
+  const verified = verificationStatus === "verified" || verificationStatus === "cross_checked";
+  if (!verified) {
+    return {
+      procedure: "unknown",
+      verified: false,
+      venueType,
+      legalFramework,
+      participationMode,
+      verificationStatus,
+    };
+  }
+  let procedure: CompletenessProcedure = "unknown";
+  if (legalFramework === "state_sale") procedure = "state";
+  else if (legalFramework?.startsWith("judicial")) procedure = "judicial";
+  else if (legalFramework === "voluntary_notarial") procedure = "notarial";
+  else if (venueType === "state") procedure = "state";
+  else if (venueType === "tribunal") procedure = "judicial";
+  else if (venueType === "notary") procedure = "notarial";
+  else if (venueType === "online" || ["online", "hybrid"].includes(participationMode ?? ""))
+    procedure = "online";
+  return {
+    procedure,
+    verified: procedure !== "unknown",
+    venueType,
+    legalFramework,
+    participationMode,
+    verificationStatus,
+  };
+}
+
+function sourceName(sale: AuctionSale): string | null {
+  return isMeaningfulText(sale.source_name)
+    ? sale.source_name.trim()
+    : isMeaningfulText(sale.primary_source)
+      ? sale.primary_source.trim()
+      : null;
+}
+
+function selectProfile(sale: AuctionSale, context: ProcedureContext): CompletenessSourceProfile {
+  const source = sourceName(sale);
+  const sourceKey = normalized(source);
+  if (!context.verified) {
+    return {
+      id: "generic",
+      label: "Profil générique",
+      procedure: "unknown",
+      verified: false,
+      sourceName: source,
+      selectionReason:
+        "Le portail seul ne qualifie pas une procédure ; la vente doit être vérifiée.",
+    };
+  }
+  if (context.procedure === "state" && sourceKey.includes("agrasc")) {
+    return {
+      id: "agrasc_operator",
+      label: "Opérateur AGRASC",
+      procedure: "state",
+      verified: true,
+      sourceName: source,
+      selectionReason: "Cadre domanial vérifié et connecteur AGRASC identifié.",
+    };
+  }
+  if (context.procedure === "state") {
+    return {
+      id: "state_disposal",
+      label: "Cession d’État",
+      procedure: "state",
+      verified: true,
+      sourceName: source,
+      selectionReason: "Cadre de cession d’État vérifié.",
+    };
+  }
+  if (context.procedure === "online") {
+    return {
+      id: "online",
+      label: "Vente en ligne",
+      procedure: "online",
+      verified: true,
+      sourceName: source,
+      selectionReason: "Mode de participation en ligne vérifié.",
+    };
+  }
+  if (context.procedure === "notarial") {
+    return {
+      id: "notarial",
+      label: "Vente notariale",
+      procedure: "notarial",
+      verified: true,
+      sourceName: source,
+      selectionReason: "Lieu ou cadre notarial vérifié ; le portail reste un indice.",
+    };
+  }
+  if (sourceKey.includes("encheres_publiques") || sourceKey.includes("encheres publiques")) {
+    return {
+      id: "public_auction_structured",
+      label: "Enchères publiques structurées",
+      procedure: "judicial",
+      verified: true,
+      sourceName: source,
+      selectionReason: "Procédure judiciaire vérifiée et source structurée identifiée.",
+    };
+  }
+  return {
+    id: "judicial_tribunal",
+    label: "Vente au tribunal",
+    procedure: "judicial",
+    verified: true,
+    sourceName: source,
+    selectionReason: "Cadre judiciaire ou tribunal vérifié.",
+  };
+}
+
+function contextLabel(procedure: CompletenessProcedure): string {
+  return {
+    judicial: "Tribunal",
+    notarial: "Notaire",
+    state: "Cession d’État",
+    online: "Vente en ligne",
+    unknown: "Procédure à confirmer",
+  }[procedure];
+}
+
+function procedureRecord(sale: AuctionSale): Record<string, unknown> {
+  const direct = asRecord(sale.sale_procedure);
+  const fromBlocks = asRecord(sale.source_blocks?.sale_procedure);
+  return direct ?? fromBlocks ?? {};
+}
+
+function procedureRules(sale: AuctionSale): Record<string, unknown> {
+  return asRecord(procedureRecord(sale).rules) ?? {};
+}
+
+function rawFeatureValue(sale: AuctionSale, field: string): unknown {
+  const candidate = featureCandidate(sale, field);
+  return candidate?.canonical_value ?? candidate?.value ?? null;
+}
+
+function mediaUrls(sale: AuctionSale): string[] {
+  const media = Array.isArray(sale.media) ? sale.media : [];
+  const rawImageValue = rawPayload(sale).source_images;
+  const rawImages: unknown[] = Array.isArray(rawImageValue) ? rawImageValue : [];
+  return [
+    ...new Set(
+      [
+        ...media.map((item) => asRecord(item)?.url),
+        ...rawImages.map((item) => (typeof item === "string" ? item : asRecord(item)?.url)),
+      ].filter((value): value is string => isMeaningfulText(value)),
+    ),
+  ];
+}
+
+function directFieldValue(
+  sale: AuctionSale,
+  field: string,
+  documents: CollectedDocuments,
+): FieldObservation {
+  const raw = rawPayload(sale);
+  const evidencePayloads = completenessPayloads(sale);
+  const blocks = sale.source_blocks ?? asRecord(raw.source_blocks) ?? {};
+  const procedure = procedureRecord(sale);
+  const rules = procedureRules(sale);
+  const docsWithType = documents.filter(
+    (document) => isMeaningfulText(document.type) || isMeaningfulText(document.label),
+  );
+  const sourceChecks = asRecord(sale.source_checks) ?? asRecord(raw.source_checks);
+  const sourceCheckValues = sourceChecks
+    ? Object.values(sourceChecks).map(asRecord).filter(Boolean)
+    : [];
+  const rawValue = (...paths: string[][]): unknown =>
+    firstDefined(...evidencePayloads.map((payload) => firstPathValue(payload, paths)));
+  const blockValue = (...keys: string[]): unknown =>
+    firstDefined(...keys.map((key) => blocks[key]));
+  const direct = (value: unknown): FieldObservation => directObservation(field, value);
+
+  switch (field) {
+    case "listing_id":
+      return direct(sale.id);
+    case "source_name":
+      return direct(sale.source_name);
+    case "source_url":
+      return direct(sale.source_url);
+    case "primary_source":
+      return direct(sale.primary_source);
+    case "source_urls":
+      return direct(Array.isArray(sale.source_urls) ? sale.source_urls : null);
+    case "external_id":
+      return direct(
+        rawValue(["external_id"], ["source_external_id"], ["source_record", "external_id"]),
+      );
+    case "source_title":
+      return direct(rawValue(["source_title"]) ?? sale.title);
+    case "source_description":
+      return direct(rawValue(["source_description"]) ?? sale.source_description);
+    case "capture_text":
+      return direct(rawValue(["capture_text"], ["raw_text"], ["source_blocks", "page_text"]));
+    case "source_blocks":
+      return direct(sale.source_blocks ?? asRecord(raw.source_blocks));
+    case "source_presence":
+      return direct(sale.source_presence ?? asRecord(raw.source_presence));
+    case "source_conflicts":
+      {
+        const conflicts = Array.isArray(sale.source_conflicts)
+          ? sale.source_conflicts
+          : Array.isArray(raw.source_conflicts)
+            ? raw.source_conflicts
+            : [];
+        if (conflicts.length > 0) {
+          return makeObservation(field, "conflict", conflicts, {
+            conflicts,
+          });
+        }
+      }
+      return unknownObservation(field);
+    case "capture_checked_at":
+      return direct(
+        firstDefined(
+          rawValue(["capture_checked_at"], ["source_last_seen_at"]),
+          ...sourceCheckValues.map((item) => item?.checked_at),
+        ),
+      );
+    case "extractor_version":
+      return direct(
+        firstDefined(
+          rawValue(["extractor_version"]),
+          ...sourceCheckValues.map((item) => item?.extractor_version),
+        ),
+      );
+    case "source_detail_status":
+      return direct(rawValue(["source_detail_status"], ["detail_status"]));
+    case "source_last_seen_at":
+      return direct(rawValue(["source_last_seen_at"], ["last_seen_at"]));
+    case "property_type":
+      return direct(sale.property_type);
+    case "sale_venue_type":
+      return direct(sale.sale_venue_type);
+    case "sale_legal_framework":
+      return direct(sale.sale_legal_framework);
+    case "sale_verification_status":
+      return direct(sale.sale_verification_status);
+    case "listing_status":
+      return direct(sale.status);
+    case "auction_round":
+      return direct(rawValue(["auction_round"], ["sale_procedure", "auction_round"]));
+    case "sale_date":
+      return direct(sale.sale_date);
+    case "sale_schedule":
+      return direct(
+        rawValue(["source_sale_schedule"], ["sale_schedule"]) ??
+          saleWindow(sale) ??
+          saleSession(sale),
+      );
+    case "procedure_record":
+      return direct(objectHasContent(procedure) ? procedure : null);
+    case "tribunal":
+      return direct(sale.tribunal_name ?? sale.tribunal);
+    case "starting_price_eur":
+      return direct(sale.starting_price_eur);
+    case "adjudication_price_eur":
+      return direct(sale.adjudication_price_eur);
+    case "outcome_status":
+      return direct(rawValue(["outcome_status"], ["result", "status"]));
+    case "venue_name":
+      return direct(
+        procedure.venue_name ?? (sale.sale_venue_type === "tribunal" ? sale.tribunal_name : null),
+      );
+    case "venue_address":
+      return direct(procedure.venue_address);
+    case "visit_dates":
+      return direct(listingVisits(sale));
+    case "participation_mode":
+      return direct(procedure.participation_mode);
+    case "bid_method":
+      return direct(rules.bid_method);
+    case "lawyer_required":
+      return direct(rules.lawyer_required);
+    case "eligible_bar":
+      return direct(procedure.eligible_bar);
+    case "lawyer_name":
+      return direct(sale.lawyer_name);
+    case "lawyer_contact":
+      return direct(sale.lawyer_contact);
+    case "consignation":
+      return direct(
+        firstDefined(
+          asRecord(rules.guarantee)?.amount_eur,
+          rawValue(["consignation"]),
+          blockValue("consignation"),
+        ),
+      );
+    case "sale_fees":
+      return direct(
+        rawValue(["sale_fees"], ["fees"], ["auction_fees"]) ??
+          blockValue("sale_fees", "fees", "frais"),
+      );
+    case "payment_terms":
+      return direct(
+        firstDefined(
+          rawValue(["payment_terms"]),
+          asRecord(rules)?.payment_deadline_days,
+          blockValue("payment_terms", "seance_paiement"),
+        ),
+      );
+    case "surenchere_window":
+      return direct(
+        firstDefined(rawValue(["surenchere_window"]), asRecord(rules.overbid)?.window_days),
+      );
+    case "address":
+      return direct(sale.address);
+    case "postal_code":
+      return direct(sale.postal_code);
+    case "city":
+      return direct(sale.city);
+    case "department":
+      return direct(sale.department);
+    case "insee_code":
+      return direct(
+        rawValue(["insee_code"], ["tribunal_assignment", "insee_code"], ["location", "insee_code"]),
+      );
+    case "coordinates":
+      return direct(
+        typeof sale.latitude === "number" && typeof sale.longitude === "number"
+          ? { latitude: sale.latitude, longitude: sale.longitude }
+          : null,
+      );
+    case "location_precision":
+      return direct(rawValue(["location_precision"], ["location", "precision"]));
+    case "lot_reference":
+      return direct(rawValue(["lot_reference"], ["lot_number"], ["lot"]));
+    case "lot_count":
+      return direct(rawValue(["lot_count"], ["lots_count"]));
+    case "cadastral_references":
+      return direct(rawValue(["cadastral_references"], ["cadastre", "references"], ["parcels"]));
+    case "land_surface_m2":
+      return direct(sale.land_surface_m2);
+    case "land_surface_scope":
+      return direct(rawValue(["land_surface_scope"], ["surface", "land_scope"]));
+    case "surface_habitable_m2":
+      return direct(sale.habitable_surface_m2);
+    case "surface_carrez_m2":
+      return direct(sale.carrez_surface_m2);
+    case "surface_built_m2":
+      return direct(
+        firstDefined(
+          sale.app_surface_m2 &&
+            ["built", "surface_built", "sol", "generic"].includes(normalized(sale.app_surface_kind))
+            ? sale.app_surface_m2
+            : null,
+          rawValue(["surface_built_m2"]),
+        ),
+      );
+    case "surface_scope":
+      return direct(sale.surface_scope);
+    case "surface_provenance":
+      return direct(
+        firstDefined(sale.surface_source, rawValue(["surface_provenance"]), sale.surface_evidence),
+      );
+    case "rooms_count":
+      return direct(sale.rooms_count);
+    case "bedrooms_count":
+      return direct(sale.bedrooms_count);
+    case "bathrooms_count":
+      return direct(sale.bathrooms_count);
+    case "shower_rooms_count":
+      return direct(rawFeatureValue(sale, field));
+    case "wc_count":
+    case "floor_number":
+    case "building_floor_count":
+    case "elevator":
+    case "layout":
+    case "flooring":
+    case "ceiling_height_m":
+    case "year_built":
+    case "condition":
+    case "works_needed":
+    case "accessibility":
+    case "orientation":
+    case "view":
+    case "heating_mode":
+    case "heating_energy":
+    case "heating_distribution":
+    case "hot_water_mode":
+    case "hot_water_energy":
+    case "dpe_class":
+    case "ges_class":
+    case "energy_consumption_kwh_m2_year":
+    case "emissions_kg_co2_m2_year":
+    case "dpe_established_at":
+    case "dpe_valid_until":
+    case "dpe_number":
+    case "windows_insulation":
+    case "building_insulation":
+    case "ventilation":
+    case "cooling":
+    case "utilities_connections":
+    case "occupancy_details":
+    case "lease_status":
+    case "rent_eur":
+    case "lease_end_date":
+    case "coownership":
+    case "coownership_lot_description":
+    case "coownership_charges_eur":
+    case "coownership_works":
+    case "easements":
+    case "urban_planning":
+    case "property_tax_eur":
+    case "document_extraction_status":
+    case "media_origin":
+    case "media_rights_status":
+      return direct(rawFeatureValue(sale, field));
+    case "garden":
+      return inferredDirect(
+        field,
+        sale.has_garden,
+        "normalized_boolean_without_explicit_negative_proof",
+      );
+    case "terrace":
+      return inferredDirect(
+        field,
+        sale.has_terrace,
+        "normalized_boolean_without_explicit_negative_proof",
+      );
+    case "balcony":
+      return direct(rawFeatureValue(sale, field));
+    case "garage":
+      return inferredDirect(
+        field,
+        sale.has_garage,
+        "normalized_boolean_without_explicit_negative_proof",
+      );
+    case "parking":
+      return direct(
+        firstDefined(
+          rawFeatureValue(sale, field),
+          isFinitePositive(sale.parking_count) ? sale.parking_count : null,
+        ),
+      );
+    case "cellar":
+    case "attic":
+    case "pool":
+    case "outbuildings":
+    case "land_use":
+    case "boundary_access":
+      return direct(rawFeatureValue(sale, field));
+    case "occupancy_status":
+      return direct(sale.occupancy_status);
+    case "environmental_risks":
+      return direct(sale.risks);
+    case "technical_diagnostics":
+      return direct(rawValue(["technical_diagnostics"], ["source_energy_diagnostics"]));
+    case "documents_inventory":
+      return direct(documents);
+    case "pv_description":
+      return direct(
+        docsWithType.filter((doc) =>
+          /pv|proc[eè]s|descriptif/i.test(`${doc.type ?? ""} ${doc.label ?? ""}`),
+        ),
+      );
+    case "conditions_sale":
+      return direct(
+        docsWithType.filter((doc) =>
+          /cahier|conditions|ccv/i.test(`${doc.type ?? ""} ${doc.label ?? ""}`),
+        ),
+      );
+    case "diagnostics_documents":
+      return direct(
+        docsWithType.filter((doc) =>
+          /dpe|diagnostic|ges/i.test(`${doc.type ?? ""} ${doc.label ?? ""}`),
+        ),
+      );
+    case "lease_documents":
+      return direct(
+        docsWithType.filter((doc) =>
+          /bail|lease|location/i.test(`${doc.type ?? ""} ${doc.label ?? ""}`),
+        ),
+      );
+    case "photos_count": {
+      const urls = mediaUrls(sale);
+      return direct(urls.length > 0 ? urls.length : null);
+    }
+    case "photos_usable_count": {
+      const usable = mediaUrls(sale).filter(
+        (url) => /^https?:\/\//i.test(url) || url.startsWith("/"),
+      );
+      return direct(usable.length > 0 ? usable.length : null);
+    }
+    case "floorplan_media": {
+      const floorplans = mediaUrls(sale).filter((url) => /plan|floor|schema/i.test(url));
+      return direct(floorplans.length > 0 ? floorplans.length : null);
+    }
+    case "cadastre_media": {
+      const cadastre = mediaUrls(sale).filter((url) => /cadastre|parcelle|plan/i.test(url));
+      return direct(cadastre.length > 0 ? cadastre.length : null);
+    }
+    default:
+      return unknownObservation(field);
+  }
+}
+
+function fieldApplicable(
+  field: CatalogField,
+  propertyType: string,
+  procedure: CompletenessProcedure,
+): boolean {
+  const propertyTypes = field.applicability.property_types ?? ["all"];
+  const procedures = field.applicability.procedures ?? ["all"];
+  const propertyMatches =
+    propertyType === "unknown"
+      ? propertyTypes.includes("all") || propertyTypes.length > 0
+      : propertyTypes.includes("all") || propertyTypes.includes(propertyType);
+  const procedureMatches =
+    procedure === "unknown"
+      ? procedures.includes("all") || procedures.length > 0
+      : procedures.includes("all") || procedures.includes(procedure);
+  return propertyMatches && procedureMatches;
+}
+
+function fieldObservation(
+  sale: AuctionSale,
+  field: CatalogField,
+  documents: CollectedDocuments,
+): FieldObservation {
+  const candidate = featureCandidate(sale, field.id);
+  if (candidate) return observationFromFeature(field.id, candidate);
+  return directFieldValue(sale, field.id, documents);
+}
+
+function extractionUnavailable(sale: AuctionSale, observation: FieldObservation): boolean {
+  if (observation.state !== "unknown") return false;
+  const availability = normalized(observation.reason?.availability_reason);
+  if (SOURCE_UNAVAILABLE_REASONS.has(availability)) return true;
+  const presence = asRecord(sale.source_presence);
+  const rawPresence = asRecord(rawPayload(sale).source_presence);
+  const projectedPresence = completenessPayloads(sale)
+    .map((payload) => asRecord(payload.source_presence)?.[observation.field])
+    .find((value) => value !== undefined);
+  const entry = asRecord(
+    presence?.[observation.field] ?? rawPresence?.[observation.field] ?? projectedPresence,
+  );
+  const entryAvailability = normalized(entry?.availability ?? entry?.state);
+  return SOURCE_UNAVAILABLE_REASONS.has(entryAvailability);
+}
+
+function fieldReason(field: CompletenessFieldResult): string {
+  if (field.state === "conflict")
+    return "Des valeurs concurrentes restent à résoudre pour ce champ.";
+  if (field.state === "unknown") {
+    if (field.extractionExcluded)
+      return "La source est inaccessible ou verrouillée ; l’absence ne peut pas être conclue.";
+    return "Aucune valeur exploitable et prouvée n’a été conservée pour ce champ.";
+  }
+  return field.state === "inferred"
+    ? "Une valeur existe, mais elle est inférée et doit être rapprochée d’une preuve."
+    : "";
+}
+
+function nextAction(field: CompletenessFieldResult, profile: CompletenessSourceProfile): string {
+  if (field.state === "conflict")
+    return "Comparer les extraits et rattacher la valeur au lot exact.";
+  if (field.extractionExcluded)
+    return "Réessayer la capture ou conserver la raison d’inaccessibilité.";
+  if (field.state === "inferred") return "Confirmer dans la page source ou les pièces du dossier.";
+  if (field.category === "documents_and_media")
+    return `Contrôler les pièces attendues pour le profil ${profile.label}.`;
+  if (field.category === "procedure")
+    return `Compléter les modalités de la procédure ${profile.label.toLocaleLowerCase("fr-FR")}.`;
+  return "Rechercher ce champ dans la page source et les documents rattachés au lot.";
+}
+
+function fieldDisplayValue(observation: FieldObservation): unknown {
+  return observation.canonicalValue ?? observation.value;
+}
+
+function stateAccepted(
+  field: CompletenessFieldResult | undefined,
+  states: CompletenessState[],
+  values?: unknown[],
+): boolean {
+  if (!field || !states.includes(field.state)) return false;
+  if (values && !values.some((value) => sameCanonicalValue(fieldDisplayValue(field), value)))
+    return false;
+  return true;
+}
+
+function sameCanonicalValue(left: unknown, right: unknown): boolean {
+  if (typeof left === "number" && typeof right === "number") return left === right;
+  if (typeof left === "boolean" && typeof right === "boolean") return left === right;
+  if (typeof left === "string" && typeof right === "string") {
+    return normalized(left) === normalized(right);
+  }
+  return left === right;
+}
+
+function hasField(
+  fields: Map<string, CompletenessFieldResult>,
+  id: string,
+  states: CompletenessState[] = ["observed"],
+  values?: unknown[],
+): boolean {
+  return stateAccepted(fields.get(id), states, values);
+}
+
+function nonEmptyProofField(fields: Map<string, CompletenessFieldResult>, id: string): boolean {
+  const field = fields.get(id);
+  return Boolean(
+    field &&
+    ["observed", "explicitly_absent"].includes(field.state) &&
+    objectHasContent(fieldDisplayValue(field)),
+  );
+}
+
+function buildGates(
+  sale: AuctionSale,
+  fields: Map<string, CompletenessFieldResult>,
+  propertyType: string,
+  context: ProcedureContext,
+): CompletenessGate[] {
+  const sourceIdentity =
+    hasField(fields, "listing_id") &&
+    hasField(fields, "source_name") &&
+    hasField(fields, "source_url");
+  const propertyIdentity =
+    hasField(fields, "property_type") &&
+    (hasField(fields, "source_title") || hasField(fields, "source_description"));
+  const preciseLocation = (() => {
+    const exactAddress =
+      hasField(fields, "address") &&
+      hasField(fields, "location_precision", ["observed"], ["exact", "address"]);
+    const parcel =
+      hasField(fields, "cadastral_references") &&
+      hasField(fields, "insee_code") &&
+      hasField(fields, "location_precision", ["observed"], ["exact", "cadastral", "parcel"]);
+    return exactAddress || parcel;
+  })();
+  const schedule = hasField(fields, "sale_date") || hasField(fields, "sale_schedule");
+  const qualifiedSurface = (() => {
+    if (propertyType === "land") {
+      return hasField(fields, "land_surface_m2") && hasField(fields, "land_surface_scope");
+    }
+    if (propertyType === "mixed") {
+      const oneLotOnly =
+        hasField(fields, "lot_count", ["observed"], [1]) ||
+        hasField(fields, "lot_count", ["not_applicable"]);
+      return (
+        (hasField(fields, "surface_built_m2") &&
+          hasField(fields, "surface_scope", ["observed"], ["asset"])) ||
+        (oneLotOnly &&
+          hasField(fields, "surface_built_m2") &&
+          hasField(fields, "lot_reference") &&
+          hasField(fields, "surface_scope", ["observed"], ["lot"]))
+      );
+    }
+    if (propertyType === "parking") {
+      return (
+        (hasField(fields, "surface_built_m2") &&
+          hasField(fields, "surface_scope", ["observed"], ["asset", "lot", "annex"])) ||
+        hasField(fields, "parking")
+      );
+    }
+    return (
+      hasField(fields, "surface_habitable_m2") ||
+      hasField(fields, "surface_carrez_m2") ||
+      hasField(fields, "surface_built_m2")
+    );
+  })();
+  const stateMethod = normalized(
+    asRecord(procedureRecord(sale).rules)?.state_sale_method ??
+      procedureRecord(sale).state_sale_method,
+  );
+  const noStartingPriceConcept =
+    context.procedure === "state" && ["appel_offres", "cession_amiable"].includes(stateMethod);
+  const startingPrice =
+    hasField(fields, "starting_price_eur") ||
+    (noStartingPriceConcept &&
+      hasField(fields, "starting_price_eur", ["not_applicable"]) &&
+      hasField(fields, "procedure_record") &&
+      hasField(fields, "source_blocks"));
+  const sourceProof =
+    nonEmptyProofField(fields, "capture_text") ||
+    nonEmptyProofField(fields, "source_blocks") ||
+    nonEmptyProofField(fields, "documents_inventory") ||
+    (hasField(fields, "photos_usable_count") &&
+      Number(fieldDisplayValue(fields.get("photos_usable_count")!)) >= 1);
+  const criticalConflictFields = [
+    "listing_id",
+    "source_name",
+    "source_url",
+    "property_type",
+    "lot_reference",
+    "address",
+    "sale_venue_type",
+    "sale_legal_framework",
+    "sale_verification_status",
+    "procedure_record",
+    "participation_mode",
+    "bid_method",
+    "payment_terms",
+    "sale_date",
+    "sale_schedule",
+    "starting_price_eur",
+    "sale_fees",
+    "adjudication_price_eur",
+    "surface_habitable_m2",
+    "surface_carrez_m2",
+    "surface_built_m2",
+    "land_surface_m2",
+    "occupancy_status",
+  ];
+  const criticalConflict =
+    !criticalConflictFields.some((id) => fields.get(id)?.state === "conflict") &&
+    fields.get("source_conflicts")?.state !== "conflict" &&
+    fields.get("sale_verification_status")?.canonicalValue !== "conflict";
+  const conditions =
+    context.procedure !== "unknown" &&
+    (hasField(fields, "conditions_sale") ||
+      hasField(fields, "conditions_sale", ["not_applicable"]));
+  const gate = (
+    id: string,
+    label: string,
+    passed: boolean,
+    blocking: "identity" | "critical",
+    reason: string,
+    gateFields: string[],
+  ): CompletenessGate => ({ id, label, passed, blocking, reason, fields: gateFields });
+  return [
+    gate(
+      "source_identity",
+      "Identité de la source",
+      sourceIdentity,
+      "identity",
+      "Identifiant, source et URL canonique requis.",
+      ["listing_id", "source_name", "source_url"],
+    ),
+    gate(
+      "property_identity",
+      "Identité du bien",
+      propertyIdentity,
+      "identity",
+      "Type de bien et titre ou description source requis.",
+      ["property_type", "source_title", "source_description"],
+    ),
+    gate(
+      "location_precision",
+      "Localisation précise",
+      preciseLocation,
+      "critical",
+      "Adresse avec précision ou couple parcelle/INSEE requis.",
+      ["address", "location_precision", "cadastral_references", "insee_code"],
+    ),
+    gate(
+      "sale_schedule",
+      "Calendrier de vente",
+      schedule && context.procedure !== "unknown",
+      "critical",
+      "Date ou fenêtre de vente et procédure vérifiée requises.",
+      ["sale_date", "sale_schedule"],
+    ),
+    gate(
+      "qualified_surface",
+      "Surface qualifiée",
+      qualifiedSurface,
+      "critical",
+      "Surface rattachée au bon actif, lot ou place requise.",
+      [
+        "surface_habitable_m2",
+        "surface_carrez_m2",
+        "surface_built_m2",
+        "land_surface_m2",
+        "land_surface_scope",
+        "surface_scope",
+        "parking",
+      ],
+    ),
+    gate(
+      "starting_price",
+      "Prix ou méthode de vente",
+      startingPrice,
+      "critical",
+      "Mise à prix observée ou absence justifiée par la méthode d’État requise.",
+      ["starting_price_eur", "procedure_record", "source_blocks"],
+    ),
+    gate(
+      "source_proof",
+      "Preuve de capture",
+      sourceProof,
+      "critical",
+      "Texte, bloc source, pièce ou artefact média lisible requis.",
+      ["capture_text", "source_blocks", "documents_inventory", "photos_usable_count"],
+    ),
+    gate(
+      "critical_conflict_free",
+      "Absence de conflit critique",
+      criticalConflict,
+      "critical",
+      "Tout conflit critique bloque la qualification publiée.",
+      criticalConflictFields,
+    ),
+    gate(
+      "conditions_document",
+      "Pièce de conditions",
+      conditions,
+      "critical",
+      "La pièce de conditions doit être observée ou explicitement non applicable avec raison contrôlée.",
+      ["conditions_sale"],
+    ),
+  ];
+}
+
+export function classifyListingCompletenessScore(score: number): CompletenessClass {
+  if (score < 55) return "incomplet";
+  if (score < 75) return "a_enrichir";
+  if (score < 90) return "decision_prete";
+  return "riche";
+}
+
+function percentage(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function scoreFields(
+  fields: CompletenessFieldResult[],
+  extraction: boolean,
+): { score: number; categories: CompletenessCategorySummary[] } {
+  const categoryScores = CATALOGUE.categories.map((category) => {
+    const applicable = fields.filter(
+      (field) =>
+        field.category === category.id &&
+        field.applicable &&
+        field.state !== "not_applicable" &&
+        (!extraction || !field.extractionExcluded),
+    );
+    const denominator = applicable.reduce(
+      (total, field) => total + IMPORTANCE_FACTOR[field.importance],
+      0,
+    );
+    const numerator = applicable.reduce(
+      (total, field) => total + IMPORTANCE_FACTOR[field.importance] * STATE_FACTOR[field.state],
+      0,
+    );
+    const categoryFields = fields.filter((field) => field.category === category.id);
+    const ratio = denominator ? (numerator / denominator) * 100 : null;
+    return {
+      summary: {
+        id: category.id,
+        label: category.label,
+        weight: category.weight,
+        ratio: ratio == null ? null : percentage(ratio),
+        applicableCount: applicable.length,
+        knownCount: categoryFields.filter(
+          (field) =>
+            ["observed", "explicitly_absent", "inferred"].includes(field.state) && field.applicable,
+        ).length,
+        missingCount: categoryFields.filter(
+          (field) => ["unknown", "conflict"].includes(field.state) && field.applicable,
+        ).length,
+        conflictCount: categoryFields.filter(
+          (field) => field.state === "conflict" && field.applicable,
+        ).length,
+        notApplicableCount: categoryFields.filter(
+          (field) => field.state === "not_applicable" || !field.applicable,
+        ).length,
+      } satisfies CompletenessCategorySummary,
+      ratio,
+    };
+  });
+  const active = categoryScores.filter((category) => category.ratio !== null);
+  const weight = active.reduce((total, category) => total + category.summary.weight, 0);
+  const score = weight
+    ? active.reduce(
+        (total, category) => total + (category.ratio ?? 0) * category.summary.weight,
+        0,
+      ) / weight
+    : 0;
+  return { score, categories: categoryScores.map((category) => category.summary) };
+}
+
+function buildKnownBySource(fields: CompletenessFieldResult[]): Record<string, string[]> {
+  const grouped: Record<string, string[]> = {};
+  for (const field of fields) {
+    if (!field.applicable || !["observed", "explicitly_absent", "inferred"].includes(field.state))
+      continue;
+    const sources = field.sourceNames.length ? field.sourceNames : ["Projection canonique"];
+    for (const source of sources) {
+      grouped[source] = [...new Set([...(grouped[source] ?? []), field.id])];
+    }
+  }
+  return grouped;
+}
+
+/**
+ * Computes the 130-field completeness contract for one listing.
+ *
+ * Product completeness keeps inaccessible fields in the denominator. The
+ * extraction view excludes only fields whose source presence explicitly proves
+ * that the artifact could not be read. A portal name never selects a judicial,
+ * notarial, state or online profile by itself.
+ */
+export function getListingCompleteness(sale: AuctionSale): ListingCompletenessResult {
+  const propertyType = normalizedPropertyType(sale.property_type);
+  const context = procedureContext(sale);
+  const profile = selectProfile(sale, context);
+  const documents = collectSaleDocuments(sale);
+  const categoryLabels = new Map(
+    CATALOGUE.categories.map((category) => [category.id, category.label]),
+  );
+  const fields = CATALOGUE.fields.map((catalogField) => {
+    const applicable = fieldApplicable(catalogField, propertyType, context.procedure);
+    const observation = applicable
+      ? fieldObservation(sale, catalogField, documents)
+      : makeObservation(catalogField.id, "not_applicable", null, {
+          reason: {
+            code: "property_or_procedure_scope",
+            explanation: `Le champ ne s’applique pas au type de bien ${propertyType} ou à cette procédure.`,
+          },
+        });
+    return {
+      ...observation,
+      id: catalogField.id,
+      label: catalogField.label,
+      category: catalogField.category,
+      categoryLabel: categoryLabels.get(catalogField.category) ?? catalogField.category,
+      definition: catalogField.definition ?? "",
+      type: catalogField.type ?? "unknown",
+      unit: catalogField.unit ?? null,
+      importance: catalogField.importance,
+      applicable,
+      extractionExcluded: applicable && extractionUnavailable(sale, observation),
+    } satisfies CompletenessFieldResult;
+  });
+  const fieldMap = new Map(fields.map((field) => [field.id, field]));
+  const productScore = scoreFields(fields, false);
+  const extractionScore = scoreFields(fields, true);
+  const gates = buildGates(sale, fieldMap, propertyType, context);
+  const gateFailures = gates.filter((gate) => !gate.passed);
+  const identityGateFailed = gateFailures.some((gate) => gate.blocking === "identity");
+  const criticalGateFailed = gateFailures.some((gate) => gate.blocking === "critical");
+  const rawClassification = classifyListingCompletenessScore(productScore.score);
+  const publishedClassification = identityGateFailed
+    ? "incomplet"
+    : criticalGateFailed
+      ? "a_enrichir"
+      : rawClassification;
+  const missing = fields
+    .filter((field) => field.applicable && ["unknown", "conflict"].includes(field.state))
+    .sort((left, right) => IMPORTANCE_FACTOR[right.importance] - IMPORTANCE_FACTOR[left.importance])
+    .map((field) => ({
+      id: field.id,
+      label: field.label,
+      category: field.category,
+      importance: field.importance,
+      state: field.state,
+      reason: fieldReason(field),
+      nextAction: nextAction(field, profile),
+      sourceContext: `${contextLabel(context.procedure)} · ${profile.label}`,
+    }));
+  const toConfirm = fields
+    .filter((field) => field.applicable && ["inferred", "conflict"].includes(field.state))
+    .sort((left, right) => IMPORTANCE_FACTOR[right.importance] - IMPORTANCE_FACTOR[left.importance])
+    .map((field) => ({
+      id: field.id,
+      label: field.label,
+      category: field.category,
+      importance: field.importance,
+      state: field.state,
+      reason: fieldReason(field),
+      nextAction: nextAction(field, profile),
+      sourceContext: `${contextLabel(context.procedure)} · ${profile.label}`,
+    }));
+  const known = fields
+    .filter(
+      (field) =>
+        field.applicable && ["observed", "explicitly_absent", "inferred"].includes(field.state),
+    )
+    .map((field) => ({
+      id: field.id,
+      label: field.label,
+      state: field.state,
+      value: fieldDisplayValue(field),
+      sourceNames: field.sourceNames,
+      evidence: field.evidence,
+    }));
+  const counts = {
+    applicable: fields.filter((field) => field.applicable && field.state !== "not_applicable")
+      .length,
+    notApplicable: fields.filter((field) => !field.applicable || field.state === "not_applicable")
+      .length,
+    observed: fields.filter((field) => field.applicable && field.state === "observed").length,
+    inferred: fields.filter((field) => field.applicable && field.state === "inferred").length,
+    unknown: fields.filter((field) => field.applicable && field.state === "unknown").length,
+    conflict: fields.filter((field) => field.applicable && field.state === "conflict").length,
+  };
+  return {
+    score: percentage(productScore.score),
+    completenessScore: percentage(productScore.score),
+    extractionCoverageScore: percentage(extractionScore.score),
+    classification: publishedClassification,
+    rawClassification,
+    contextLabel: contextLabel(context.procedure),
+    propertyType,
+    procedure: context.procedure,
+    profile,
+    fields,
+    known,
+    missing,
+    toConfirm,
+    knownBySource: buildKnownBySource(fields),
+    categories: productScore.categories,
+    gates,
+    gateFailures,
+    identityGateFailed,
+    criticalGateFailed,
+    applicableFieldCount: counts.applicable,
+    notApplicableFieldCount: counts.notApplicable,
+    observedFieldCount: counts.observed,
+    inferredFieldCount: counts.inferred,
+    unknownFieldCount: counts.unknown,
+    conflictFieldCount: counts.conflict,
+    notApplicableReason:
+      "Un champ non applicable est retiré du numérateur et du dénominateur ; une source inaccessible reste inconnue pour la complétude produit.",
+  };
+}
+
+export const computeListingCompleteness = getListingCompleteness;

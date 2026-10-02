@@ -98,6 +98,8 @@ describe("getListingDataCoverage", () => {
 
     expect(screen.getByRole("heading", { name: "Couverture des informations" })).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100");
+    expect(screen.getByText("Mesure détaillée · 130 critères")).toBeTruthy();
+    expect(screen.getByText(/Le score mesure les informations reçues/)).toBeTruthy();
     const details = container.querySelector("details");
     expect(details?.open).toBe(false);
     expect(screen.getByText("Voir les détails")).toBeTruthy();
