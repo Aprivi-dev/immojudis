@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from src.config import load_settings
+from src.extraction_profiles import build_procedure_profile
 from src.freshness import document_fingerprint, timestamp_is_fresh
 from src.models import AuctionSale
 from src.normalize import clean_text
@@ -280,6 +281,29 @@ def _needs_energy_diagnostics(sale: AuctionSale) -> bool:
     return sale.property_type in {"house", "apartment", "building", "commercial", "mixed"}
 
 
+def _core_document_profile_for_sale(sale: AuctionSale) -> tuple[str, dict[str, set[str]]]:
+    """Keep dossier families consistent with the verified sale procedure.
+
+    This describes available documentary families, not legal sufficiency or
+    factual completeness. Land/parking still have their risk and cadastral
+    criteria in the listing checklist; they do not require a housing DPE.
+    """
+    view = dict(sale.raw_payload) if isinstance(sale.raw_payload, dict) else {}
+    for field in ("sale_procedure", "sale_venue_type", "sale_legal_framework", "sale_verification_status"):
+        value = getattr(sale, field)
+        if value and value not in ("unknown", "pending"):
+            view[field] = value
+    view.setdefault("title", sale.title)
+    view.setdefault("raw_text", sale.raw_text)
+    family = str(build_procedure_profile(view)["family"])
+    groups = {"conditions_vente": {"cahier_conditions_vente", "conditions_vente"}}
+    if family not in {"state", "notarial"}:
+        groups["pv_descriptif"] = {"pv_huissier", "pv_notaire", "proces_verbal"}
+    if sale.property_type not in {"land", "parking"}:
+        groups["diagnostics"] = {"diagnostics_techniques"}
+    return family, groups
+
+
 def _document_group_order(required_groups: tuple[frozenset[str], ...]) -> tuple[frozenset[str], ...]:
     return _unique_document_groups((*required_groups, *DEFAULT_DOCUMENT_GROUPS))
 
@@ -411,11 +435,7 @@ def _store_document_analysis_status(
     type_counts = Counter(profile["document_type"] for profile in typed_documents)
     extracted_type_counts = Counter(profile["document_type"] for profile in text_profiles)
 
-    required_groups = {
-        "pv_descriptif": {"pv_huissier", "pv_notaire", "proces_verbal"},
-        "conditions_vente": {"cahier_conditions_vente", "conditions_vente"},
-        "diagnostics": {"diagnostics_techniques"},
-    }
+    procedure_family, required_groups = _core_document_profile_for_sale(sale)
     extracted_types = set(extracted_type_counts)
     available_types = set(type_counts)
     missing_core_documents = [
@@ -788,6 +808,8 @@ def _store_document_analysis_status(
         "document_types": dict(type_counts),
         "extracted_document_types": dict(extracted_type_counts),
         "missing_core_documents": missing_core_documents,
+        "procedure_family": procedure_family,
+        "required_core_document_groups": sorted(required_groups),
         # This is deliberately derived from the current PDF payloads, never
         # copied from an older ``profiles`` manifest.  The text itself stays
         # in the local cache; the persisted marker records enough provenance

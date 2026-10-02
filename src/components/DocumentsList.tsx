@@ -2,6 +2,8 @@ import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import { parseDocs } from "@/lib/documents";
 import { documentTypeLabel } from "@/lib/format";
+import { documentExtractionSummary } from "@/lib/document-extraction-summary";
+import type { SaleDocument, SaleDocumentRich } from "@/lib/types";
 
 export function DocumentsList({ documents }: { documents: unknown }) {
   const docs = parseDocs(documents);
@@ -24,7 +26,10 @@ export function DocumentsList({ documents }: { documents: unknown }) {
                 {d.name ?? d.url.split("/").pop() ?? `Pièce ${i + 1}`}
               </span>
               <span className="mt-1 block text-xs text-muted-foreground">
-                Disponible · {documentTypeLabel(d.type)}
+                {documentTypeLabel(d.type)}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {documentExtractionSummary(d as SaleDocument & Partial<SaleDocumentRich>)}
               </span>
             </span>
             <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-gold-soft" />

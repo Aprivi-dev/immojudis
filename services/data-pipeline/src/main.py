@@ -545,8 +545,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             sale
             for sale in enrichment_sales
             if _can_use_paid_llm(sale)
-            and _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
-            and not _llm_description_already_current(sale, current_llm_description_hashes)
+            and (
+                needs_fact_extraction(sale)
+                or (
+                    _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
+                    and not _llm_description_already_current(sale, current_llm_description_hashes)
+                )
+            )
             and sale.source_url not in failed_urls
             and not (
                 options.upsert
@@ -569,7 +574,19 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     )
     if options.use_llm and llm_client is not None and llm_targets:
         with ThreadPoolExecutor(max_workers=llm_workers) as executor:
-            futures = {executor.submit(enrich_sale_with_llm, sale, client=llm_client): sale for sale in llm_targets}
+            futures = {
+                executor.submit(
+                    enrich_sale_with_llm,
+                    sale,
+                    client=llm_client,
+                    extraction_mode=(
+                        "structured_then_display"
+                        if needs_fact_extraction(sale)
+                        else "display_description"
+                    ),
+                ): sale
+                for sale in llm_targets
+            }
             for future in as_completed(futures):
                 sale = futures[future]
                 try:

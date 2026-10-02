@@ -1,0 +1,3312 @@
+{
+  "audit_id": "pdf-2026-10-02",
+  "generated_at": "2026-10-02",
+  "baseline": {
+    "label": "baseline-21913e8",
+    "commit": "21913e8ca068edc2189b9e418d3f03f8ce41899d",
+    "root": "/private/tmp/immojudis-baseline-21913e8"
+  },
+  "patched": {
+    "label": "patched-source-release",
+    "commit": "21913e8ca068edc2189b9e418d3f03f8ce41899d",
+    "root": "/private/tmp/immojudis-source-release-git",
+    "working_tree": "dirty; extraction-agent edits in page analysis, PDF enrichment/fact extraction, progress and document selection/type modules"
+  },
+  "execution": {
+    "network": false,
+    "llm": false,
+    "ocr": "Tesseract fra+eng via extraction module",
+    "page_method": "one-page local PDF copy -> extract_pdf_pages -> _extract_energy_diagnostics_from_documents",
+    "page_count": 27
+  },
+  "focused_false_positive_pages": [
+    "dpe-fp-cabinet132-p22",
+    "dpe-fp-ddt-vion-p21",
+    "dpe-fp-jtyzddt-p29",
+    "dpe-fp-mhfndiags-p115",
+    "dpe-fp-mhfndiags-p97",
+    "saint-cloud-dpe-p9"
+  ],
+  "focused_legitimate_class_pages_not_recovered": [
+    "dpe-fp-cabinet132-p22",
+    "dpe-fp-ddt-vion-p21",
+    "dpe-fp-mhfndiags-p97",
+    "saint-cloud-dpe-p1"
+  ],
+  "cases": [
+    {
+      "id": "agrasc-auchel-p1",
+      "pdf": "corpus/agrasc-auchel-urbanisme.pdf",
+      "page": 1,
+      "scope": "maison / parcelle AC354",
+      "visual_expected": {
+        "document": "urbanisme/cadastre",
+        "dpe_class": "G",
+        "land_m2": 164.0,
+        "carrez_m2": 62.6
+      },
+      "baseline": {
+        "id": "agrasc-auchel-p1",
+        "pdf": "corpus/agrasc-auchel-urbanisme.pdf",
+        "page": 1,
+        "scope": "maison / parcelle AC354",
+        "visual_expected": {
+          "document": "urbanisme/cadastre",
+          "dpe_class": "G",
+          "land_m2": 164.0,
+          "carrez_m2": 62.6
+        },
+        "input_pdf_sha256": "253d415884280387e4849345514525b88694f573cee8ddc07c1cd14a0fe4aeb9",
+        "input_page_count": 1,
+        "native_text_chars": 325,
+        "native_image_coverage": 0.2839,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 323,
+          "confidence": 0.84,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "9a66e1e92745777b4f16afa9941a4f285f1d403180d168c6c3a90200e9fa2e40",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": {
+          "dpe_class": "G",
+          "ges_class": null,
+          "energy_consumption_kwh_m2_year": null,
+          "emissions_kg_co2_m2_year": null,
+          "page_number": 1,
+          "page_confidence": 0.84,
+          "extraction_method": "pymupdf_text",
+          "evidence_sha256": "8eebfa0a0aeafebaa91424f8367dedc579550cba142d41b6fd6cbdf4e3287156",
+          "evidence_chars": 201
+        }
+      },
+      "patched": {
+        "id": "agrasc-auchel-p1",
+        "pdf": "corpus/agrasc-auchel-urbanisme.pdf",
+        "page": 1,
+        "scope": "maison / parcelle AC354",
+        "visual_expected": {
+          "document": "urbanisme/cadastre",
+          "dpe_class": "G",
+          "land_m2": 164.0,
+          "carrez_m2": 62.6
+        },
+        "input_pdf_sha256": "253d415884280387e4849345514525b88694f573cee8ddc07c1cd14a0fe4aeb9",
+        "input_page_count": 1,
+        "native_text_chars": 325,
+        "native_image_coverage": 0.2839,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 660,
+          "confidence": 0.62,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "0473646b397e3f21d77252af761d172a215270ef212615554e9e7ce6ec8a3fc1",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": {
+          "dpe_class": "G",
+          "ges_class": null,
+          "energy_consumption_kwh_m2_year": null,
+          "emissions_kg_co2_m2_year": null,
+          "page_number": 1,
+          "page_confidence": 0.62,
+          "extraction_method": "ocr_tesseract",
+          "evidence_sha256": "1de33da38215e0053f6559488a292c62bad478e4b295fc0793488bcc018ce3f5",
+          "evidence_chars": 307
+        }
+      },
+      "delta": {
+        "dpe_class": [
+          "G",
+          "G"
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          323,
+          660
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_visuelle_retrouvee"
+    },
+    {
+      "id": "saint-cloud-dpe-p1",
+      "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+      "page": 1,
+      "scope": "lot 6, pièce en rez-de-jardin",
+      "visual_expected": {
+        "document": "DPE courant",
+        "dpe_class": "F",
+        "ges_class": "F",
+        "consumption_kwh_m2_year": 445.0,
+        "emissions_kg_co2_m2_year": 94.0
+      },
+      "baseline": {
+        "id": "saint-cloud-dpe-p1",
+        "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+        "page": 1,
+        "scope": "lot 6, pièce en rez-de-jardin",
+        "visual_expected": {
+          "document": "DPE courant",
+          "dpe_class": "F",
+          "ges_class": "F",
+          "consumption_kwh_m2_year": 445.0,
+          "emissions_kg_co2_m2_year": 94.0
+        },
+        "input_pdf_sha256": "0d15f0b6467a82ff13258c897e8c93cefc07dae9298fcbf4b2ef3002d37267f5",
+        "input_page_count": 10,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 1494,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "00eb40c9aedfbb95a21cb28a028ebd57eab169eaed70f3c462ee4270f5f445bd",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "saint-cloud-dpe-p1",
+        "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+        "page": 1,
+        "scope": "lot 6, pièce en rez-de-jardin",
+        "visual_expected": {
+          "document": "DPE courant",
+          "dpe_class": "F",
+          "ges_class": "F",
+          "consumption_kwh_m2_year": 445.0,
+          "emissions_kg_co2_m2_year": 94.0
+        },
+        "input_pdf_sha256": "0d15f0b6467a82ff13258c897e8c93cefc07dae9298fcbf4b2ef3002d37267f5",
+        "input_page_count": 10,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 1494,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "00eb40c9aedfbb95a21cb28a028ebd57eab169eaed70f3c462ee4270f5f445bd",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          1494,
+          1494
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_visuelle_non_extraite"
+    },
+    {
+      "id": "saint-cloud-dpe-p7",
+      "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+      "page": 7,
+      "scope": "fiche technique du lot 6",
+      "visual_expected": {
+        "document": "fiche technique DPE",
+        "dpe_class": null,
+        "surface_m2": 10.1,
+        "parcel": "AL204"
+      },
+      "baseline": {
+        "id": "saint-cloud-dpe-p7",
+        "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+        "page": 7,
+        "scope": "fiche technique du lot 6",
+        "visual_expected": {
+          "document": "fiche technique DPE",
+          "dpe_class": null,
+          "surface_m2": 10.1,
+          "parcel": "AL204"
+        },
+        "input_pdf_sha256": "0d15f0b6467a82ff13258c897e8c93cefc07dae9298fcbf4b2ef3002d37267f5",
+        "input_page_count": 10,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 2363,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "4ca41d41f173db88d1fbbb432a4ccffe4b9f95efbb33102421f18036efa05036",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "saint-cloud-dpe-p7",
+        "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+        "page": 7,
+        "scope": "fiche technique du lot 6",
+        "visual_expected": {
+          "document": "fiche technique DPE",
+          "dpe_class": null,
+          "surface_m2": 10.1,
+          "parcel": "AL204"
+        },
+        "input_pdf_sha256": "0d15f0b6467a82ff13258c897e8c93cefc07dae9298fcbf4b2ef3002d37267f5",
+        "input_page_count": 10,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 2363,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "4ca41d41f173db88d1fbbb432a4ccffe4b9f95efbb33102421f18036efa05036",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          2363,
+          2363
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "saint-cloud-dpe-p8",
+      "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+      "page": 8,
+      "scope": "tableau parois/systèmes du lot 6",
+      "visual_expected": {
+        "document": "table chauffage/tableaux",
+        "dpe_class": null,
+        "table_terms": [
+          "chauffage",
+          "radiateur",
+          "central",
+          "intermittence collective"
+        ]
+      },
+      "baseline": {
+        "id": "saint-cloud-dpe-p8",
+        "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+        "page": 8,
+        "scope": "tableau parois/systèmes du lot 6",
+        "visual_expected": {
+          "document": "table chauffage/tableaux",
+          "dpe_class": null,
+          "table_terms": [
+            "chauffage",
+            "radiateur",
+            "central",
+            "intermittence collective"
+          ]
+        },
+        "input_pdf_sha256": "0d15f0b6467a82ff13258c897e8c93cefc07dae9298fcbf4b2ef3002d37267f5",
+        "input_page_count": 10,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 2146,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "42dace24a405bf4a07b6a92f8aafc6337092973b4afcc5fdb933f06ef40f4a13",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "saint-cloud-dpe-p8",
+        "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+        "page": 8,
+        "scope": "tableau parois/systèmes du lot 6",
+        "visual_expected": {
+          "document": "table chauffage/tableaux",
+          "dpe_class": null,
+          "table_terms": [
+            "chauffage",
+            "radiateur",
+            "central",
+            "intermittence collective"
+          ]
+        },
+        "input_pdf_sha256": "0d15f0b6467a82ff13258c897e8c93cefc07dae9298fcbf4b2ef3002d37267f5",
+        "input_page_count": 10,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 2146,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "42dace24a405bf4a07b6a92f8aafc6337092973b4afcc5fdb933f06ef40f4a13",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          2146,
+          2146
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "saint-cloud-dpe-p9",
+      "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+      "page": 9,
+      "scope": "tableau chauffage + notice RGPD du lot 6",
+      "visual_expected": {
+        "document": "notice RGPD",
+        "dpe_class": null,
+        "rgpd_phrase": "observatoire DPE à des fins",
+        "table_terms": [
+          "gaz naturel",
+          "central",
+          "intermittence collective"
+        ]
+      },
+      "baseline": {
+        "id": "saint-cloud-dpe-p9",
+        "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+        "page": 9,
+        "scope": "tableau chauffage + notice RGPD du lot 6",
+        "visual_expected": {
+          "document": "notice RGPD",
+          "dpe_class": null,
+          "rgpd_phrase": "observatoire DPE à des fins",
+          "table_terms": [
+            "gaz naturel",
+            "central",
+            "intermittence collective"
+          ]
+        },
+        "input_pdf_sha256": "0d15f0b6467a82ff13258c897e8c93cefc07dae9298fcbf4b2ef3002d37267f5",
+        "input_page_count": 10,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 2669,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "2d8b12c0886805621abbf3f9cd9ba82bcb607efdb64472bdf7be16a6bbdd96ee",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": true,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": true,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": {
+          "dpe_class": "A",
+          "ges_class": null,
+          "energy_consumption_kwh_m2_year": null,
+          "emissions_kg_co2_m2_year": null,
+          "page_number": 9,
+          "page_confidence": 0.7,
+          "extraction_method": "ocr_tesseract",
+          "evidence_sha256": "27af7522baae59d133d9f290cce783187f8f5cdb3ecee174524bae560f83d52f",
+          "evidence_chars": 324
+        }
+      },
+      "patched": {
+        "id": "saint-cloud-dpe-p9",
+        "pdf": "corpus/avoventes-saint-cloud-dpe.pdf",
+        "page": 9,
+        "scope": "tableau chauffage + notice RGPD du lot 6",
+        "visual_expected": {
+          "document": "notice RGPD",
+          "dpe_class": null,
+          "rgpd_phrase": "observatoire DPE à des fins",
+          "table_terms": [
+            "gaz naturel",
+            "central",
+            "intermittence collective"
+          ]
+        },
+        "input_pdf_sha256": "0d15f0b6467a82ff13258c897e8c93cefc07dae9298fcbf4b2ef3002d37267f5",
+        "input_page_count": 10,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 2669,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "2d8b12c0886805621abbf3f9cd9ba82bcb607efdb64472bdf7be16a6bbdd96ee",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": true,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": true,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          "A",
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          2669,
+          2669
+        ],
+        "flags": {}
+      },
+      "verdict": "faux_positif_corrige"
+    },
+    {
+      "id": "saint-cloud-pv-p1",
+      "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+      "page": 1,
+      "scope": "procès-verbal, lot 6",
+      "visual_expected": {
+        "document": "PV descriptif",
+        "dpe_class": null,
+        "procedure_date": "03/02/2026"
+      },
+      "baseline": {
+        "id": "saint-cloud-pv-p1",
+        "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+        "page": 1,
+        "scope": "procès-verbal, lot 6",
+        "visual_expected": {
+          "document": "PV descriptif",
+          "dpe_class": null,
+          "procedure_date": "03/02/2026"
+        },
+        "input_pdf_sha256": "c5d4c711889592154cf38dde5d084456003ad042d777712546c9fce2ee211e43",
+        "input_page_count": 11,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 1105,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "8d0713d467dcb54163f1da0aa45fbeda988da49ed31bb66e780a414e89d760bc",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "saint-cloud-pv-p1",
+        "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+        "page": 1,
+        "scope": "procès-verbal, lot 6",
+        "visual_expected": {
+          "document": "PV descriptif",
+          "dpe_class": null,
+          "procedure_date": "03/02/2026"
+        },
+        "input_pdf_sha256": "c5d4c711889592154cf38dde5d084456003ad042d777712546c9fce2ee211e43",
+        "input_page_count": 11,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 1105,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "8d0713d467dcb54163f1da0aa45fbeda988da49ed31bb66e780a414e89d760bc",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          1105,
+          1105
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "saint-cloud-pv-p4",
+      "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+      "page": 4,
+      "scope": "description physique du lot 6",
+      "visual_expected": {
+        "document": "PV descriptif",
+        "dpe_class": null,
+        "surface_m2": 10.1
+      },
+      "baseline": {
+        "id": "saint-cloud-pv-p4",
+        "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+        "page": 4,
+        "scope": "description physique du lot 6",
+        "visual_expected": {
+          "document": "PV descriptif",
+          "dpe_class": null,
+          "surface_m2": 10.1
+        },
+        "input_pdf_sha256": "c5d4c711889592154cf38dde5d084456003ad042d777712546c9fce2ee211e43",
+        "input_page_count": 11,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 750,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "ba0b71ff994306487f4df032971437193cbb4947cd0d1d9697a40dc04fc424e0",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "saint-cloud-pv-p4",
+        "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+        "page": 4,
+        "scope": "description physique du lot 6",
+        "visual_expected": {
+          "document": "PV descriptif",
+          "dpe_class": null,
+          "surface_m2": 10.1
+        },
+        "input_pdf_sha256": "c5d4c711889592154cf38dde5d084456003ad042d777712546c9fce2ee211e43",
+        "input_page_count": 11,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 750,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "ba0b71ff994306487f4df032971437193cbb4947cd0d1d9697a40dc04fc424e0",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          750,
+          750
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "saint-cloud-pv-p5",
+      "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+      "page": 5,
+      "scope": "description physique du lot 6",
+      "visual_expected": {
+        "document": "PV descriptif",
+        "dpe_class": null,
+        "table_terms": [
+          "carrelé",
+          "double vitrage",
+          "radiateur"
+        ]
+      },
+      "baseline": {
+        "id": "saint-cloud-pv-p5",
+        "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+        "page": 5,
+        "scope": "description physique du lot 6",
+        "visual_expected": {
+          "document": "PV descriptif",
+          "dpe_class": null,
+          "table_terms": [
+            "carrelé",
+            "double vitrage",
+            "radiateur"
+          ]
+        },
+        "input_pdf_sha256": "c5d4c711889592154cf38dde5d084456003ad042d777712546c9fce2ee211e43",
+        "input_page_count": 11,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 708,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "94133af769b226ea29a8478576135a108574baf1f528c9e0710410a32056cc4b",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "saint-cloud-pv-p5",
+        "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+        "page": 5,
+        "scope": "description physique du lot 6",
+        "visual_expected": {
+          "document": "PV descriptif",
+          "dpe_class": null,
+          "table_terms": [
+            "carrelé",
+            "double vitrage",
+            "radiateur"
+          ]
+        },
+        "input_pdf_sha256": "c5d4c711889592154cf38dde5d084456003ad042d777712546c9fce2ee211e43",
+        "input_page_count": 11,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 708,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "94133af769b226ea29a8478576135a108574baf1f528c9e0710410a32056cc4b",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          708,
+          708
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "saint-cloud-pv-p11",
+      "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+      "page": 11,
+      "scope": "copropriété et liste des diagnostics",
+      "visual_expected": {
+        "document": "PV annexes",
+        "dpe_class": null,
+        "charges_quarterly_eur": 160.0,
+        "surface_privative_m2": 10.1
+      },
+      "baseline": {
+        "id": "saint-cloud-pv-p11",
+        "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+        "page": 11,
+        "scope": "copropriété et liste des diagnostics",
+        "visual_expected": {
+          "document": "PV annexes",
+          "dpe_class": null,
+          "charges_quarterly_eur": 160.0,
+          "surface_privative_m2": 10.1
+        },
+        "input_pdf_sha256": "c5d4c711889592154cf38dde5d084456003ad042d777712546c9fce2ee211e43",
+        "input_page_count": 11,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 1035,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "cc3918af2147562d7b42dc7478400c8df2457d01c7a781746e9176e356f33ff4",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "saint-cloud-pv-p11",
+        "pdf": "corpus/avoventes-saint-cloud-pv.pdf",
+        "page": 11,
+        "scope": "copropriété et liste des diagnostics",
+        "visual_expected": {
+          "document": "PV annexes",
+          "dpe_class": null,
+          "charges_quarterly_eur": 160.0,
+          "surface_privative_m2": 10.1
+        },
+        "input_pdf_sha256": "c5d4c711889592154cf38dde5d084456003ad042d777712546c9fce2ee211e43",
+        "input_page_count": 11,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 1035,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "cc3918af2147562d7b42dc7478400c8df2457d01c7a781746e9176e356f33ff4",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          1035,
+          1035
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "cessions-cahier-p1",
+      "pdf": "corpus/cessions-saint-junien-cahier.pdf",
+      "page": 1,
+      "scope": "lot 1, BR104, terrain non bâti",
+      "visual_expected": {
+        "document": "cahier des charges",
+        "dpe_class": null,
+        "parcel": "BR104",
+        "land_area": "1 ha 30 a 37 ca",
+        "plu": "A"
+      },
+      "baseline": {
+        "id": "cessions-cahier-p1",
+        "pdf": "corpus/cessions-saint-junien-cahier.pdf",
+        "page": 1,
+        "scope": "lot 1, BR104, terrain non bâti",
+        "visual_expected": {
+          "document": "cahier des charges",
+          "dpe_class": null,
+          "parcel": "BR104",
+          "land_area": "1 ha 30 a 37 ca",
+          "plu": "A"
+        },
+        "input_pdf_sha256": "b0241a2da0acaa660172c29756da7a53d3f1a97924373ec4abafa47b5320cad9",
+        "input_page_count": 1,
+        "native_text_chars": 3966,
+        "native_image_coverage": 0.0299,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 3886,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "51afbc91d5c7a5a6671dd8f8750e4f6859ced119b219287d2786727f0103b506",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "cessions-cahier-p1",
+        "pdf": "corpus/cessions-saint-junien-cahier.pdf",
+        "page": 1,
+        "scope": "lot 1, BR104, terrain non bâti",
+        "visual_expected": {
+          "document": "cahier des charges",
+          "dpe_class": null,
+          "parcel": "BR104",
+          "land_area": "1 ha 30 a 37 ca",
+          "plu": "A"
+        },
+        "input_pdf_sha256": "b0241a2da0acaa660172c29756da7a53d3f1a97924373ec4abafa47b5320cad9",
+        "input_page_count": 1,
+        "native_text_chars": 3966,
+        "native_image_coverage": 0.0299,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 3886,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "51afbc91d5c7a5a6671dd8f8750e4f6859ced119b219287d2786727f0103b506",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "pymupdf_text"
+        ],
+        "chars": [
+          3886,
+          3886
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "cessions-risques-p1",
+      "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+      "page": 1,
+      "scope": "état des risques, parcelle 000-BR-85",
+      "visual_expected": {
+        "document": "état des risques",
+        "dpe_class": null,
+        "parcel": "000-BR-85"
+      },
+      "baseline": {
+        "id": "cessions-risques-p1",
+        "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+        "page": 1,
+        "scope": "état des risques, parcelle 000-BR-85",
+        "visual_expected": {
+          "document": "état des risques",
+          "dpe_class": null,
+          "parcel": "000-BR-85"
+        },
+        "input_pdf_sha256": "0a313ebd9473c9b785a68993fc6240e8c55753661d649799f9db70513c30d498",
+        "input_page_count": 7,
+        "native_text_chars": 1687,
+        "native_image_coverage": 0.184,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 1648,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "1e1ede9d6247c600a74fa87a02d920e882c0079718d89abad6e34526178d6854",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "cessions-risques-p1",
+        "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+        "page": 1,
+        "scope": "état des risques, parcelle 000-BR-85",
+        "visual_expected": {
+          "document": "état des risques",
+          "dpe_class": null,
+          "parcel": "000-BR-85"
+        },
+        "input_pdf_sha256": "0a313ebd9473c9b785a68993fc6240e8c55753661d649799f9db70513c30d498",
+        "input_page_count": 7,
+        "native_text_chars": 1687,
+        "native_image_coverage": 0.184,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 1648,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "1e1ede9d6247c600a74fa87a02d920e882c0079718d89abad6e34526178d6854",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "pymupdf_text"
+        ],
+        "chars": [
+          1648,
+          1648
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "cessions-risques-p2",
+      "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+      "page": 2,
+      "scope": "tableau des risques obligatoires",
+      "visual_expected": {
+        "document": "tableau risques",
+        "dpe_class": null,
+        "sismicity": "2/5",
+        "radon": "3/3"
+      },
+      "baseline": {
+        "id": "cessions-risques-p2",
+        "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+        "page": 2,
+        "scope": "tableau des risques obligatoires",
+        "visual_expected": {
+          "document": "tableau risques",
+          "dpe_class": null,
+          "sismicity": "2/5",
+          "radon": "3/3"
+        },
+        "input_pdf_sha256": "0a313ebd9473c9b785a68993fc6240e8c55753661d649799f9db70513c30d498",
+        "input_page_count": 7,
+        "native_text_chars": 745,
+        "native_image_coverage": 0.446,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 737,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "b222bc9b301d5af40e661f9e0cf5faaa62cfe7fe87fb8e6e69908d6fd07cf53c",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "cessions-risques-p2",
+        "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+        "page": 2,
+        "scope": "tableau des risques obligatoires",
+        "visual_expected": {
+          "document": "tableau risques",
+          "dpe_class": null,
+          "sismicity": "2/5",
+          "radon": "3/3"
+        },
+        "input_pdf_sha256": "0a313ebd9473c9b785a68993fc6240e8c55753661d649799f9db70513c30d498",
+        "input_page_count": 7,
+        "native_text_chars": 745,
+        "native_image_coverage": 0.446,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 1583,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "90609960d2a4fa2dcd1911c068a17c9d3fb1e5559aa38bd80ba408e6f1b4dcae",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          737,
+          1583
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "cessions-risques-p5",
+      "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+      "page": 5,
+      "scope": "risque argile",
+      "visual_expected": {
+        "document": "tableau risques",
+        "dpe_class": null,
+        "clay": "1/3"
+      },
+      "baseline": {
+        "id": "cessions-risques-p5",
+        "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+        "page": 5,
+        "scope": "risque argile",
+        "visual_expected": {
+          "document": "tableau risques",
+          "dpe_class": null,
+          "clay": "1/3"
+        },
+        "input_pdf_sha256": "0a313ebd9473c9b785a68993fc6240e8c55753661d649799f9db70513c30d498",
+        "input_page_count": 7,
+        "native_text_chars": 1382,
+        "native_image_coverage": 0.2269,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 1361,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "cfd9faa8c61be0960a600f5bc38ec765cd581a3f33a722d3d1149b84627fc59a",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "cessions-risques-p5",
+        "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+        "page": 5,
+        "scope": "risque argile",
+        "visual_expected": {
+          "document": "tableau risques",
+          "dpe_class": null,
+          "clay": "1/3"
+        },
+        "input_pdf_sha256": "0a313ebd9473c9b785a68993fc6240e8c55753661d649799f9db70513c30d498",
+        "input_page_count": 7,
+        "native_text_chars": 1382,
+        "native_image_coverage": 0.2269,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 2730,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "573e40d30b4c0b183e5ccfc2f2b64615bd469718763e417300b8a0d16d235b48",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          1361,
+          2730
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "cessions-risques-p6",
+      "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+      "page": 6,
+      "scope": "tableau CAT-NAT",
+      "visual_expected": {
+        "document": "tableau catastrophes naturelles",
+        "dpe_class": null,
+        "cat_nat_total": 8,
+        "flood_count": 4
+      },
+      "baseline": {
+        "id": "cessions-risques-p6",
+        "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+        "page": 6,
+        "scope": "tableau CAT-NAT",
+        "visual_expected": {
+          "document": "tableau catastrophes naturelles",
+          "dpe_class": null,
+          "cat_nat_total": 8,
+          "flood_count": 4
+        },
+        "input_pdf_sha256": "0a313ebd9473c9b785a68993fc6240e8c55753661d649799f9db70513c30d498",
+        "input_page_count": 7,
+        "native_text_chars": 1141,
+        "native_image_coverage": 0.0079,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 1139,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "7c9903834dced0d554f6c18fd15d52364e322d664c7836c2ec2a458626efeb06",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "cessions-risques-p6",
+        "pdf": "corpus/cessions-saint-junien-diagnostic.pdf",
+        "page": 6,
+        "scope": "tableau CAT-NAT",
+        "visual_expected": {
+          "document": "tableau catastrophes naturelles",
+          "dpe_class": null,
+          "cat_nat_total": 8,
+          "flood_count": 4
+        },
+        "input_pdf_sha256": "0a313ebd9473c9b785a68993fc6240e8c55753661d649799f9db70513c30d498",
+        "input_page_count": 7,
+        "native_text_chars": 1141,
+        "native_image_coverage": 0.0079,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 1139,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "7c9903834dced0d554f6c18fd15d52364e322d664c7836c2ec2a458626efeb06",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "pymupdf_text"
+        ],
+        "chars": [
+          1139,
+          1139
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "cessions-plan-p1",
+      "pdf": "corpus/cessions-saint-junien-plan-parcellaire.pdf",
+      "page": 1,
+      "scope": "plan cadastral section BR",
+      "visual_expected": {
+        "document": "plan parcellaire",
+        "dpe_class": null,
+        "parcels": [
+          "BR103",
+          "BR104"
+        ]
+      },
+      "baseline": {
+        "id": "cessions-plan-p1",
+        "pdf": "corpus/cessions-saint-junien-plan-parcellaire.pdf",
+        "page": 1,
+        "scope": "plan cadastral section BR",
+        "visual_expected": {
+          "document": "plan parcellaire",
+          "dpe_class": null,
+          "parcels": [
+            "BR103",
+            "BR104"
+          ]
+        },
+        "input_pdf_sha256": "1aec83ce4c3b1c9e3f7f3ad718b3f9fa4a090d7336ef85ed0867524a64804818",
+        "input_page_count": 3,
+        "native_text_chars": 2065,
+        "native_image_coverage": 0.0,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 2017,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "f50f84603d87520d28eed4d183c2c17cb2cd8ea635cb5dad80c5810d548aa0b2",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": true,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "cessions-plan-p1",
+        "pdf": "corpus/cessions-saint-junien-plan-parcellaire.pdf",
+        "page": 1,
+        "scope": "plan cadastral section BR",
+        "visual_expected": {
+          "document": "plan parcellaire",
+          "dpe_class": null,
+          "parcels": [
+            "BR103",
+            "BR104"
+          ]
+        },
+        "input_pdf_sha256": "1aec83ce4c3b1c9e3f7f3ad718b3f9fa4a090d7336ef85ed0867524a64804818",
+        "input_page_count": 3,
+        "native_text_chars": 2065,
+        "native_image_coverage": 0.0,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 2017,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "f50f84603d87520d28eed4d183c2c17cb2cd8ea635cb5dad80c5810d548aa0b2",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": true,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "pymupdf_text"
+        ],
+        "chars": [
+          2017,
+          2017
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "cessions-plan-p2",
+      "pdf": "corpus/cessions-saint-junien-plan-parcellaire.pdf",
+      "page": 2,
+      "scope": "procès-verbal de division",
+      "visual_expected": {
+        "document": "document d'arpentage",
+        "dpe_class": null,
+        "document_number": "3385 E"
+      },
+      "baseline": {
+        "id": "cessions-plan-p2",
+        "pdf": "corpus/cessions-saint-junien-plan-parcellaire.pdf",
+        "page": 2,
+        "scope": "procès-verbal de division",
+        "visual_expected": {
+          "document": "document d'arpentage",
+          "dpe_class": null,
+          "document_number": "3385 E"
+        },
+        "input_pdf_sha256": "1aec83ce4c3b1c9e3f7f3ad718b3f9fa4a090d7336ef85ed0867524a64804818",
+        "input_page_count": 3,
+        "native_text_chars": 47,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 4406,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "4cea856512abbe1057869ce9f110f581703a49a70ea0558723b627025391b5de",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": true,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "cessions-plan-p2",
+        "pdf": "corpus/cessions-saint-junien-plan-parcellaire.pdf",
+        "page": 2,
+        "scope": "procès-verbal de division",
+        "visual_expected": {
+          "document": "document d'arpentage",
+          "dpe_class": null,
+          "document_number": "3385 E"
+        },
+        "input_pdf_sha256": "1aec83ce4c3b1c9e3f7f3ad718b3f9fa4a090d7336ef85ed0867524a64804818",
+        "input_page_count": 3,
+        "native_text_chars": 47,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 4453,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "d4958b59cea2e809cec0f3914d175f1e419e09cfe7cb369b0448354ea1d59944",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": true,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          4406,
+          4453
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "cessions-plan-p3",
+      "pdf": "corpus/cessions-saint-junien-plan-parcellaire.pdf",
+      "page": 3,
+      "scope": "tableau BR85 -> BR103/BR104",
+      "visual_expected": {
+        "document": "tableau de division",
+        "dpe_class": null,
+        "old_area": "1 ha 46 a 88 ca",
+        "br104_area": "1 ha 30 a 37 ca"
+      },
+      "baseline": {
+        "id": "cessions-plan-p3",
+        "pdf": "corpus/cessions-saint-junien-plan-parcellaire.pdf",
+        "page": 3,
+        "scope": "tableau BR85 -> BR103/BR104",
+        "visual_expected": {
+          "document": "tableau de division",
+          "dpe_class": null,
+          "old_area": "1 ha 46 a 88 ca",
+          "br104_area": "1 ha 30 a 37 ca"
+        },
+        "input_pdf_sha256": "1aec83ce4c3b1c9e3f7f3ad718b3f9fa4a090d7336ef85ed0867524a64804818",
+        "input_page_count": 3,
+        "native_text_chars": 21,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 420,
+          "confidence": 0.62,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "51ce95cbc48165a2cfe7470d11605b3f064166aaea21ac7fcba2b95c07bc6525",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "cessions-plan-p3",
+        "pdf": "corpus/cessions-saint-junien-plan-parcellaire.pdf",
+        "page": 3,
+        "scope": "tableau BR85 -> BR103/BR104",
+        "visual_expected": {
+          "document": "tableau de division",
+          "dpe_class": null,
+          "old_area": "1 ha 46 a 88 ca",
+          "br104_area": "1 ha 30 a 37 ca"
+        },
+        "input_pdf_sha256": "1aec83ce4c3b1c9e3f7f3ad718b3f9fa4a090d7336ef85ed0867524a64804818",
+        "input_page_count": 3,
+        "native_text_chars": 21,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 434,
+          "confidence": 0.62,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "ebd1174a5ee1eb6b929e9c0d9505de3f5b2b6bc828310768078f1f6094405bd8",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": true,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          420,
+          434
+        ],
+        "flags": {
+          "cadastre_table": [
+            false,
+            true
+          ]
+        }
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "meyzieu-pvd-p1",
+      "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+      "page": 1,
+      "scope": "PV descriptif, maison DN345",
+      "visual_expected": {
+        "document": "PV descriptif",
+        "dpe_class": null,
+        "procedure_date": "06/06/2025"
+      },
+      "baseline": {
+        "id": "meyzieu-pvd-p1",
+        "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+        "page": 1,
+        "scope": "PV descriptif, maison DN345",
+        "visual_expected": {
+          "document": "PV descriptif",
+          "dpe_class": null,
+          "procedure_date": "06/06/2025"
+        },
+        "input_pdf_sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+        "input_page_count": 19,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 1438,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "5f8f11b33602c8ab05299e60370f3ca7e57d3af2ecf49fab49a4eeef3d58510f",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "meyzieu-pvd-p1",
+        "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+        "page": 1,
+        "scope": "PV descriptif, maison DN345",
+        "visual_expected": {
+          "document": "PV descriptif",
+          "dpe_class": null,
+          "procedure_date": "06/06/2025"
+        },
+        "input_pdf_sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+        "input_page_count": 19,
+        "native_text_chars": 0,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 1438,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "5f8f11b33602c8ab05299e60370f3ca7e57d3af2ecf49fab49a4eeef3d58510f",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          1438,
+          1438
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "meyzieu-pvd-p2",
+      "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+      "page": 2,
+      "scope": "maison d'habitation, DN345",
+      "visual_expected": {
+        "document": "PV descriptif",
+        "dpe_class": null,
+        "parcel": "DN345",
+        "land_area": "5 ares 01 ca"
+      },
+      "baseline": {
+        "id": "meyzieu-pvd-p2",
+        "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+        "page": 2,
+        "scope": "maison d'habitation, DN345",
+        "visual_expected": {
+          "document": "PV descriptif",
+          "dpe_class": null,
+          "parcel": "DN345",
+          "land_area": "5 ares 01 ca"
+        },
+        "input_pdf_sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+        "input_page_count": 19,
+        "native_text_chars": 1895,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 1865,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "19109a219ae737d5a33902d772aa4ec14bf2f14d188a83a5cbceb9cda8d6ff6e",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "meyzieu-pvd-p2",
+        "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+        "page": 2,
+        "scope": "maison d'habitation, DN345",
+        "visual_expected": {
+          "document": "PV descriptif",
+          "dpe_class": null,
+          "parcel": "DN345",
+          "land_area": "5 ares 01 ca"
+        },
+        "input_pdf_sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+        "input_page_count": 19,
+        "native_text_chars": 1895,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 3724,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "db775b95c976e6381de6549bc70764e7dd9dbe9233fdefcea75871859c4b7792",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          1865,
+          3724
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "meyzieu-pvd-p4",
+      "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+      "page": 4,
+      "scope": "tableau des surfaces de la maison",
+      "visual_expected": {
+        "document": "tableau surfaces",
+        "dpe_class": null,
+        "floor_total_m2": 137.63,
+        "roofless_m2": 57.14,
+        "covered_m2": 20.51,
+        "cellar_m2": 16.48
+      },
+      "baseline": {
+        "id": "meyzieu-pvd-p4",
+        "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+        "page": 4,
+        "scope": "tableau des surfaces de la maison",
+        "visual_expected": {
+          "document": "tableau surfaces",
+          "dpe_class": null,
+          "floor_total_m2": 137.63,
+          "roofless_m2": 57.14,
+          "covered_m2": 20.51,
+          "cellar_m2": 16.48
+        },
+        "input_pdf_sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+        "input_page_count": 19,
+        "native_text_chars": 1908,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 1878,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "6e0e88dcd25ccc99703ddb28fce43e5ec5ad73b71f8850162e1e9470fd48d4b6",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "meyzieu-pvd-p4",
+        "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+        "page": 4,
+        "scope": "tableau des surfaces de la maison",
+        "visual_expected": {
+          "document": "tableau surfaces",
+          "dpe_class": null,
+          "floor_total_m2": 137.63,
+          "roofless_m2": 57.14,
+          "covered_m2": 20.51,
+          "cellar_m2": 16.48
+        },
+        "input_pdf_sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+        "input_page_count": 19,
+        "native_text_chars": 1908,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 3753,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "14febbece2e89ddfd6d60045b4eebaa99a2d534d0068d794e4623152558a93fb",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          1878,
+          3753
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "meyzieu-pvd-p8",
+      "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+      "page": 8,
+      "scope": "certificat de superficie privative",
+      "visual_expected": {
+        "document": "certificat surface",
+        "dpe_class": null,
+        "carrez_m2": 0.0,
+        "floor_total_m2": 137.63
+      },
+      "baseline": {
+        "id": "meyzieu-pvd-p8",
+        "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+        "page": 8,
+        "scope": "certificat de superficie privative",
+        "visual_expected": {
+          "document": "certificat surface",
+          "dpe_class": null,
+          "carrez_m2": 0.0,
+          "floor_total_m2": 137.63
+        },
+        "input_pdf_sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+        "input_page_count": 19,
+        "native_text_chars": 2782,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 2726,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "dc9bafcab8b324755502e690952dbf98db5ab6b4278f4916b6624c4ddb527f03",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "meyzieu-pvd-p8",
+        "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+        "page": 8,
+        "scope": "certificat de superficie privative",
+        "visual_expected": {
+          "document": "certificat surface",
+          "dpe_class": null,
+          "carrez_m2": 0.0,
+          "floor_total_m2": 137.63
+        },
+        "input_pdf_sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+        "input_page_count": 19,
+        "native_text_chars": 2782,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 5158,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "075ff564489f5b321dd75be0663dcbb4eb27e728534b0e1addfbfb8a1dbfdda0",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          2726,
+          5158
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "meyzieu-pvd-p9",
+      "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+      "page": 9,
+      "scope": "tableau certificat de superficie",
+      "visual_expected": {
+        "document": "tableau surfaces",
+        "dpe_class": null,
+        "carrez_m2": 0.0,
+        "extension_m2": 43.5,
+        "floor_total_m2": 137.63
+      },
+      "baseline": {
+        "id": "meyzieu-pvd-p9",
+        "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+        "page": 9,
+        "scope": "tableau certificat de superficie",
+        "visual_expected": {
+          "document": "tableau surfaces",
+          "dpe_class": null,
+          "carrez_m2": 0.0,
+          "extension_m2": 43.5,
+          "floor_total_m2": 137.63
+        },
+        "input_pdf_sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+        "input_page_count": 19,
+        "native_text_chars": 1065,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 1024,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "ef78bbab946ad2cf88e300b0447716fa7c573051d5b5ab68968b3261e68547c6",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "patched": {
+        "id": "meyzieu-pvd-p9",
+        "pdf": "corpus/info-meyzieu-pvd-diags.pdf",
+        "page": 9,
+        "scope": "tableau certificat de superficie",
+        "visual_expected": {
+          "document": "tableau surfaces",
+          "dpe_class": null,
+          "carrez_m2": 0.0,
+          "extension_m2": 43.5,
+          "floor_total_m2": 137.63
+        },
+        "input_pdf_sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+        "input_page_count": 19,
+        "native_text_chars": 1065,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 2174,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "f8b7bf2c54ffde90395e123fb6e3f77eb028bcf6acb9985d2a0fa54fde6af907",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": false,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          null,
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          1024,
+          2174
+        ],
+        "flags": {}
+      },
+      "verdict": "classe_absente_correctement"
+    },
+    {
+      "id": "dpe-fp-jtyzddt-p29",
+      "pdf": "corpus/dpe-fp/info-jTYZDDT.pdf",
+      "page": 29,
+      "scope": "définition légale du champ DPE",
+      "visual_expected": {
+        "document": "définition/exceptions DPE",
+        "dpe_class": null,
+        "exception_letter": "a)",
+        "exception_duration": "2 ans"
+      },
+      "baseline": {
+        "id": "dpe-fp-jtyzddt-p29",
+        "pdf": "corpus/dpe-fp/info-jTYZDDT.pdf",
+        "page": 29,
+        "scope": "définition légale du champ DPE",
+        "visual_expected": {
+          "document": "définition/exceptions DPE",
+          "dpe_class": null,
+          "exception_letter": "a)",
+          "exception_duration": "2 ans"
+        },
+        "input_pdf_sha256": "978759f402df91fe5bb07514974b68a35e45f9972b47078ccee05da8915084ae",
+        "input_page_count": 92,
+        "native_text_chars": 1982,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 1936,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "4777386a52fbd27cc7627ec96acd8f78a32bda128d342b69d65d746ec6eb6616",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": true,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": {
+          "dpe_class": "A",
+          "ges_class": null,
+          "energy_consumption_kwh_m2_year": null,
+          "emissions_kg_co2_m2_year": null,
+          "page_number": 29,
+          "page_confidence": 0.92,
+          "extraction_method": "pymupdf_text",
+          "evidence_sha256": "7673623d3dcf54282dde6174991f582ad0973af95809be0b173104a6cf2610e8",
+          "evidence_chars": 350
+        }
+      },
+      "patched": {
+        "id": "dpe-fp-jtyzddt-p29",
+        "pdf": "corpus/dpe-fp/info-jTYZDDT.pdf",
+        "page": 29,
+        "scope": "définition légale du champ DPE",
+        "visual_expected": {
+          "document": "définition/exceptions DPE",
+          "dpe_class": null,
+          "exception_letter": "a)",
+          "exception_duration": "2 ans"
+        },
+        "input_pdf_sha256": "978759f402df91fe5bb07514974b68a35e45f9972b47078ccee05da8915084ae",
+        "input_page_count": 92,
+        "native_text_chars": 1982,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 3879,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "05c7dd390e8a8b5f2a3c6fcee1db7fc02f5c0203100c9e38a8ffe89acd1237b8",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": true,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": true,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          "A",
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          1936,
+          3879
+        ],
+        "flags": {}
+      },
+      "verdict": "faux_positif_corrige"
+    },
+    {
+      "id": "dpe-fp-cabinet132-p22",
+      "pdf": "corpus/dpe-fp/avoventes-cabinet132-6a5e013c3afdettt.pdf",
+      "page": 22,
+      "scope": "DPE courant, maison 116,31 m²",
+      "visual_expected": {
+        "document": "DPE courant",
+        "dpe_class": "D",
+        "ges_class": "A",
+        "consumption_kwh_m2_year": 186.0,
+        "emissions_kg_co2_m2_year": 5.0,
+        "rgpd_phrase": "observatoire DPE à des fins"
+      },
+      "baseline": {
+        "id": "dpe-fp-cabinet132-p22",
+        "pdf": "corpus/dpe-fp/avoventes-cabinet132-6a5e013c3afdettt.pdf",
+        "page": 22,
+        "scope": "DPE courant, maison 116,31 m²",
+        "visual_expected": {
+          "document": "DPE courant",
+          "dpe_class": "D",
+          "ges_class": "A",
+          "consumption_kwh_m2_year": 186.0,
+          "emissions_kg_co2_m2_year": 5.0,
+          "rgpd_phrase": "observatoire DPE à des fins"
+        },
+        "input_pdf_sha256": "b56e436a6cf1da74c088d5098f4d975524b79e3a2ec86986e8887296a32f000d",
+        "input_page_count": 45,
+        "native_text_chars": 2913,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 2791,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "ebd1ae02de032e652d679af91ec196e3ed3c668e3aa6099d09593c3773e259de",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": true,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": true,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": {
+          "dpe_class": "A",
+          "ges_class": null,
+          "energy_consumption_kwh_m2_year": null,
+          "emissions_kg_co2_m2_year": null,
+          "page_number": 22,
+          "page_confidence": 0.92,
+          "extraction_method": "pymupdf_text",
+          "evidence_sha256": "d68c9a901ffd6ef3bb57e9a8d7c65ca0757c4346a85eb45e4960e72a48c2f6e4",
+          "evidence_chars": 304
+        }
+      },
+      "patched": {
+        "id": "dpe-fp-cabinet132-p22",
+        "pdf": "corpus/dpe-fp/avoventes-cabinet132-6a5e013c3afdettt.pdf",
+        "page": 22,
+        "scope": "DPE courant, maison 116,31 m²",
+        "visual_expected": {
+          "document": "DPE courant",
+          "dpe_class": "D",
+          "ges_class": "A",
+          "consumption_kwh_m2_year": 186.0,
+          "emissions_kg_co2_m2_year": 5.0,
+          "rgpd_phrase": "observatoire DPE à des fins"
+        },
+        "input_pdf_sha256": "b56e436a6cf1da74c088d5098f4d975524b79e3a2ec86986e8887296a32f000d",
+        "input_page_count": 45,
+        "native_text_chars": 2913,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 5132,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "807fe952698ce61c7f52815379e8d3cfe6fa8421b1676649c054762d2d44be66",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": true,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": true,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          "A",
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          2791,
+          5132
+        ],
+        "flags": {}
+      },
+      "verdict": "faux_positif_corrige"
+    },
+    {
+      "id": "dpe-fp-ddt-vion-p21",
+      "pdf": "corpus/dpe-fp/info-DDT_VION.pdf",
+      "page": 21,
+      "scope": "DPE courant, appartement lot 2015-172-14",
+      "visual_expected": {
+        "document": "DPE courant scanné",
+        "dpe_class": "F",
+        "ges_class": "C",
+        "consumption_kwh_m2_year": 374.0,
+        "emissions_kg_co2_m2_year": 12.0,
+        "rgpd_phrase": "observatoire DPE à des fins"
+      },
+      "baseline": {
+        "id": "dpe-fp-ddt-vion-p21",
+        "pdf": "corpus/dpe-fp/info-DDT_VION.pdf",
+        "page": 21,
+        "scope": "DPE courant, appartement lot 2015-172-14",
+        "visual_expected": {
+          "document": "DPE courant scanné",
+          "dpe_class": "F",
+          "ges_class": "C",
+          "consumption_kwh_m2_year": 374.0,
+          "emissions_kg_co2_m2_year": 12.0,
+          "rgpd_phrase": "observatoire DPE à des fins"
+        },
+        "input_pdf_sha256": "2b3a9087b495f6084b49e7eb8baef901ede3965c8e985c7450136c26ec11e18d",
+        "input_page_count": 41,
+        "native_text_chars": 0,
+        "native_image_coverage": 0.9995,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 2879,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "d5421dff5cd02c718eed21d9a4ace2966c66670ef88141b887315b052bd0046c",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": true,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": {
+          "dpe_class": "A",
+          "ges_class": null,
+          "energy_consumption_kwh_m2_year": null,
+          "emissions_kg_co2_m2_year": null,
+          "page_number": 21,
+          "page_confidence": 0.7,
+          "extraction_method": "ocr_tesseract",
+          "evidence_sha256": "bec73272e9e4388c0edee8a40bc018efe904cccb04609ebef788ed754c8912f9",
+          "evidence_chars": 304
+        }
+      },
+      "patched": {
+        "id": "dpe-fp-ddt-vion-p21",
+        "pdf": "corpus/dpe-fp/info-DDT_VION.pdf",
+        "page": 21,
+        "scope": "DPE courant, appartement lot 2015-172-14",
+        "visual_expected": {
+          "document": "DPE courant scanné",
+          "dpe_class": "F",
+          "ges_class": "C",
+          "consumption_kwh_m2_year": 374.0,
+          "emissions_kg_co2_m2_year": 12.0,
+          "rgpd_phrase": "observatoire DPE à des fins"
+        },
+        "input_pdf_sha256": "2b3a9087b495f6084b49e7eb8baef901ede3965c8e985c7450136c26ec11e18d",
+        "input_page_count": 41,
+        "native_text_chars": 0,
+        "native_image_coverage": 0.9995,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 2879,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "d5421dff5cd02c718eed21d9a4ace2966c66670ef88141b887315b052bd0046c",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": true,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": false
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          "A",
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "ocr_tesseract",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          2879,
+          2879
+        ],
+        "flags": {}
+      },
+      "verdict": "faux_positif_corrige"
+    },
+    {
+      "id": "dpe-fp-mhfndiags-p97",
+      "pdf": "corpus/dpe-fp/info-MHFNDiags-internetok.pdf",
+      "page": 97,
+      "scope": "DPE courant, maison individuelle",
+      "visual_expected": {
+        "document": "DPE courant",
+        "dpe_class": "G",
+        "consumption_kwh_m2_year": 421.0,
+        "rgpd_phrase": "observatoire DPE à des fins"
+      },
+      "baseline": {
+        "id": "dpe-fp-mhfndiags-p97",
+        "pdf": "corpus/dpe-fp/info-MHFNDiags-internetok.pdf",
+        "page": 97,
+        "scope": "DPE courant, maison individuelle",
+        "visual_expected": {
+          "document": "DPE courant",
+          "dpe_class": "G",
+          "consumption_kwh_m2_year": 421.0,
+          "rgpd_phrase": "observatoire DPE à des fins"
+        },
+        "input_pdf_sha256": "1866329c22d7f9d30a1236948f2ea81fee875332c3e16cd59ace1d01908b455e",
+        "input_page_count": 161,
+        "native_text_chars": 2795,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 2734,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "76122b9754f9ca18df45c296106efe81784c70de2f855a61c811ee3966a5ab0f",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": true,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": {
+          "dpe_class": "A",
+          "ges_class": null,
+          "energy_consumption_kwh_m2_year": null,
+          "emissions_kg_co2_m2_year": null,
+          "page_number": 97,
+          "page_confidence": 0.92,
+          "extraction_method": "pymupdf_text",
+          "evidence_sha256": "5aa7e04d4a7f1b2ceb9859a64d3c019a86123538d9d23b8d251b17ada35ed2ca",
+          "evidence_chars": 304
+        }
+      },
+      "patched": {
+        "id": "dpe-fp-mhfndiags-p97",
+        "pdf": "corpus/dpe-fp/info-MHFNDiags-internetok.pdf",
+        "page": 97,
+        "scope": "DPE courant, maison individuelle",
+        "visual_expected": {
+          "document": "DPE courant",
+          "dpe_class": "G",
+          "consumption_kwh_m2_year": 421.0,
+          "rgpd_phrase": "observatoire DPE à des fins"
+        },
+        "input_pdf_sha256": "1866329c22d7f9d30a1236948f2ea81fee875332c3e16cd59ace1d01908b455e",
+        "input_page_count": 161,
+        "native_text_chars": 2795,
+        "native_image_coverage": 1.0,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 5353,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "3fae9eebdec4b01a797b281dbc422a9b11dd73ac58cb8b3ada979edfc482beff",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": true,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": false,
+            "threshold_450": false,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          "A",
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          null,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          2734,
+          5353
+        ],
+        "flags": {}
+      },
+      "verdict": "faux_positif_corrige"
+    },
+    {
+      "id": "dpe-fp-mhfndiags-p115",
+      "pdf": "corpus/dpe-fp/info-MHFNDiags-internetok.pdf",
+      "page": 115,
+      "scope": "audit énergétique, page interne 2/45",
+      "visual_expected": {
+        "document": "audit/recommandations",
+        "dpe_class": null,
+        "scenario_letters": [
+          "A",
+          "B"
+        ],
+        "threshold_kwh_m2_year": 450
+      },
+      "baseline": {
+        "id": "dpe-fp-mhfndiags-p115",
+        "pdf": "corpus/dpe-fp/info-MHFNDiags-internetok.pdf",
+        "page": 115,
+        "scope": "audit énergétique, page interne 2/45",
+        "visual_expected": {
+          "document": "audit/recommandations",
+          "dpe_class": null,
+          "scenario_letters": [
+            "A",
+            "B"
+          ],
+          "threshold_kwh_m2_year": 450
+        },
+        "input_pdf_sha256": "1866329c22d7f9d30a1236948f2ea81fee875332c3e16cd59ace1d01908b455e",
+        "input_page_count": 161,
+        "native_text_chars": 3533,
+        "native_image_coverage": 0.9306,
+        "extraction": {
+          "method": "pymupdf_text",
+          "status": "extracted",
+          "chars": 3496,
+          "confidence": 0.92,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "66930b53683dd2485499a22809c600acc0309e0b9a7467ccee6e522a27915c3a",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": true,
+            "threshold_450": true,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": {
+          "dpe_class": "A",
+          "ges_class": null,
+          "energy_consumption_kwh_m2_year": 450,
+          "emissions_kg_co2_m2_year": null,
+          "page_number": 115,
+          "page_confidence": 0.92,
+          "extraction_method": "pymupdf_text",
+          "evidence_sha256": "ca71f3827e80ee8c57ec3c56d23d2fc5f0caa3236f345c841bee609e881d69d1",
+          "evidence_chars": 2804
+        }
+      },
+      "patched": {
+        "id": "dpe-fp-mhfndiags-p115",
+        "pdf": "corpus/dpe-fp/info-MHFNDiags-internetok.pdf",
+        "page": 115,
+        "scope": "audit énergétique, page interne 2/45",
+        "visual_expected": {
+          "document": "audit/recommandations",
+          "dpe_class": null,
+          "scenario_letters": [
+            "A",
+            "B"
+          ],
+          "threshold_kwh_m2_year": 450
+        },
+        "input_pdf_sha256": "1866329c22d7f9d30a1236948f2ea81fee875332c3e16cd59ace1d01908b455e",
+        "input_page_count": 161,
+        "native_text_chars": 3533,
+        "native_image_coverage": 0.9306,
+        "extraction": {
+          "method": "ocr_tesseract",
+          "status": "extracted",
+          "chars": 6986,
+          "confidence": 0.7,
+          "retryable": false,
+          "failure_reason": null,
+          "text_sha256": "46b02899b344d204acba27b43877f2d1ab49a8e479e1b847e12d3d14706a4d22",
+          "flags": {
+            "rgpd_observatoire_dpe_a_des_fins": false,
+            "legal_exception_a_two_years": false,
+            "audit_scenario_a_or_b": true,
+            "threshold_450": true,
+            "current_dpe_header": true,
+            "heating_table": false,
+            "surface_table": false,
+            "cadastre_table": false,
+            "avoventes_watermark_or_filigrane": false,
+            "source_had_native_text": true
+          }
+        },
+        "dpe": null
+      },
+      "delta": {
+        "dpe_class": [
+          "A",
+          null
+        ],
+        "ges_class": [
+          null,
+          null
+        ],
+        "energy_consumption_kwh_m2_year": [
+          450,
+          null
+        ],
+        "emissions_kg_co2_m2_year": [
+          null,
+          null
+        ],
+        "method": [
+          "pymupdf_text",
+          "ocr_tesseract"
+        ],
+        "chars": [
+          3496,
+          6986
+        ],
+        "flags": {}
+      },
+      "verdict": "faux_positif_corrige"
+    }
+  ]
+}

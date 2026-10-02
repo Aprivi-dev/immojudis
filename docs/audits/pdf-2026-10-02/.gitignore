@@ -1,0 +1,8 @@
+# Les originaux publics et les rendus peuvent contenir des données de procédure.
+# Le dépôt conserve le manifeste et la preuve textuelle; le corpus reste local.
+corpus/
+pages/
+supplementary/
+transport-failures/
+text/
+notes/
