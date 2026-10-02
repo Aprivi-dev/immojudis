@@ -19,6 +19,18 @@ from typing import Any
 PROPERTY_FEATURE_SCHEMA_VERSION = "source_property_features_v1"
 PROCEDURE_PROFILE_SCHEMA_VERSION = "source_procedure_profile_v1"
 _GENERATED_FEATURE_ORIGIN = "source_text_extraction"
+_VERIFIED_LEGAL_FRAMEWORKS = frozenset(
+    {
+        "judicial_seizure",
+        "judicial_partition",
+        "insolvency",
+        "voluntary_notarial",
+        "state_sale",
+    }
+)
+_VERIFIED_PROCEDURE_STATUSES = frozenset(
+    {"verified", "cross_checked", "explicit", "source_verified"}
+)
 
 
 def _clean(value: Any) -> str:
@@ -546,7 +558,9 @@ def _feature_observation_id(path: str) -> str | None:
         "notary_study": "venue_name",
         "sale_method": "participation_mode",
         "deadline": "sale_schedule",
-        "procedure_family": "sale_legal_framework",
+        # A family (judicial/notarial/state) is not a legal framework.  The
+        # latter is projected only from a verified canonical framework below.
+        "procedure_family": None,
         "eligible_lawyer": "__expand_eligible_lawyer__",
         "contact.name": "lawyer_name",
         "contact.phone": "lawyer_contact",
@@ -642,6 +656,50 @@ def _feature_claim_projections(
     if observation_id == "heating_energy":
         projected["value"] = _normalized_heating_energy(value)
     yield observation_id, projected
+
+
+def _verified_legal_framework_claim(raw_sale: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a canonical legal framework only when the procedure is verified.
+
+    ``procedure_family`` is intentionally broader than the legal framework:
+    a notarial venue may administer a state sale, and a judicial venue may
+    cover a seizure or a partition.  Never turn that family label into a
+    made-up ``sale_legal_framework`` value.
+    """
+
+    procedure = raw_sale.get("sale_procedure")
+    candidates: list[tuple[Any, Any, str]] = []
+    if isinstance(procedure, Mapping):
+        verification = procedure.get("verification")
+        nested_status = verification.get("status") if isinstance(verification, Mapping) else None
+        candidates.append(
+            (
+                procedure.get("legal_framework"),
+                nested_status or procedure.get("verification_status") or raw_sale.get("sale_verification_status"),
+                "sale_procedure.legal_framework",
+            )
+        )
+    candidates.append(
+        (
+            raw_sale.get("sale_legal_framework"),
+            raw_sale.get("sale_verification_status"),
+            "sale_legal_framework",
+        )
+    )
+    for value, status, origin in candidates:
+        framework = _clean(value).casefold()
+        verification_status = _clean(status).casefold()
+        if framework not in _VERIFIED_LEGAL_FRAMEWORKS or verification_status not in _VERIFIED_PROCEDURE_STATUSES:
+            continue
+        return {
+            "field": "sale_legal_framework",
+            "value": framework,
+            "state": "present",
+            "provenance": "verified_metadata",
+            "subject_scope": "sale",
+            "evidence": f"{origin}={framework}",
+        }
+    return None
 
 
 def _append_claim(
@@ -1501,24 +1559,12 @@ def build_source_field_observations(
             },
         )
     if isinstance(profile, Mapping):
-        family = _clean(profile.get("family")) or "unknown"
-        add_projected(
-            "procedure_family",
-            {
-                "value": family if family != "unknown" else None,
-                "state": "present" if family != "unknown" else "unknown",
-                "provenance": profile.get("verification_status") or "unavailable",
-                "subject_scope": "sale",
-                "evidence": next(
-                    (
-                        _clean(item.get("quote"))
-                        for item in profile.get("evidence", [])
-                        if isinstance(item, Mapping) and item.get("field") == "procedure_family"
-                    ),
-                    "",
-                ),
-            },
-        )
+        # Keep the broad family in source_procedure_profile.  Only a verified
+        # canonical framework may populate the catalogue's legal-framework
+        # observation; e.g. a notary venue alone is not voluntary_notarial.
+        legal_framework_claim = _verified_legal_framework_claim(raw_sale)
+        if legal_framework_claim is not None:
+            add_projected("sale_legal_framework", legal_framework_claim)
         fields = profile.get("fields")
         if isinstance(fields, Mapping):
             for field, claim in fields.items():
