@@ -252,7 +252,19 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
             # text as current context; an ordinary failed or bounded pass
             # has no such proof and keeps its verified projections for retry.
             sale.raw_text = clean_text((sale.raw_text or "").split("--- PDF TEXT ENRICHMENT ---", 1)[0])
-            _clear_pdf_derived_source_description(sale, None)
+            terminal_urls = set(stats.blocked_document_urls) | {
+                item.get("url") for item in stats.permanent_document_failures if item.get("url")
+            }
+            declared_urls = {item.get("url") for item in sale.documents if item.get("url")}
+            if declared_urls and declared_urls.issubset(terminal_urls):
+                _clear_pdf_fact_projections(sale)
+            else:
+                traces = sale.raw_payload.get("pdf_fact_provenance") or {}
+                if not isinstance(traces, dict):
+                    traces = {}
+                affected = {key for key, trace in traces.items() if isinstance(trace, dict) and trace.get("document_url") in terminal_urls}
+                _clear_pdf_fact_projections(sale, fields=affected)
+                _clear_pdf_derived_source_description(sale, None)
             invalidate_analysis(sale.raw_payload, "document_access_changed")
         before = sale.raw_text or ""
         enrich_sale_from_pdf_text(sale, merged_pdf_texts)
