@@ -202,6 +202,8 @@ def test_deterministic_final_replay_is_preserved_for_surface_and_equipment_check
 
     arcachon = _replay_final("notaires-2083008-arcachon")
     assert arcachon.raw_payload["surface_analysis"]["version"] == "surface_reasoning_v1"
+    assert float(arcachon.carrez_surface_m2) == 117.58
+    assert float(arcachon.app_surface_m2) == 117.58
     assert arcachon.parking_count == 2
 
     bordeaux = _replay_final("notaires-2074289-bordeaux")

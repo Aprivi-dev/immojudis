@@ -1263,9 +1263,20 @@ def build_procedure_profile(raw_sale: Mapping[str, Any]) -> dict[str, Any]:
         add("conditions_documents", docs, " ; ".join(docs))
     elif family == "notarial":
         priorities = ["notary_study", "sale_window", "bid", "visits", "coownership"]
-        study_match = _first_match(text, (r"(?:[ée]tude|office|notaire)\s*:?\s*([^.;\n]{2,100})",))
+        study_match = _first_match(text, (
+            r"\b(?:[ée]tude|office)(?:\s+notarial[e]?)?\b\s*:\s*([^.;\n]{2,100})",
+            r"\bnotaire\b\s*:\s*([^.;\n]{2,100})",
+        ))
         study = _clean(study_match.group(1)) if study_match else None
-        add("notary_study", study, _quote(text, study_match) if study_match else "")
+        study_quote = _quote(text, study_match) if study_match else ""
+        study_provenance = "explicit"
+        procedure = raw_sale.get("sale_procedure")
+        if verification == "verified_metadata" and isinstance(procedure, Mapping):
+            if _fold(procedure.get("organizer_type")) == "notary" and procedure.get("organizer_name"):
+                study = _clean(procedure["organizer_name"])
+                study_quote = f"organizer_type=notary; organizer_name={study}"
+                study_provenance = "verified_metadata"
+        add("notary_study", study, study_quote, provenance=study_provenance)
         schedule = raw_sale.get("source_sale_schedule") or raw_sale.get("sale_schedule")
         add("sale_window", schedule, _clean(schedule))
         bid_match = _first_match(text, (r"(?:ench[eè]res|offres?)\s+(?:en ligne|online|sur internet)", r"vente\s+interactive"))
