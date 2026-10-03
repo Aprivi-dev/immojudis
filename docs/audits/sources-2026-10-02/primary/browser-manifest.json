@@ -1,0 +1,37 @@
+[
+  {
+    "id": "licitor-109932",
+    "source": "licitor",
+    "url": "https://www.licitor.com/annonce/10/99/32/vente-aux-encheres/une-maison/savigne/vienne/109932.html"
+  },
+  {
+    "id": "licitor-110031",
+    "source": "licitor",
+    "url": "https://www.licitor.com/annonce/11/00/31/vente-aux-encheres/trois-lots-de-copropriete/poitiers/vienne/110031.html"
+  },
+  {
+    "id": "avoventes-une-villa-a-ceyreste",
+    "source": "avoventes",
+    "url": "https://avoventes.fr/enchere/une-villa-a-ceyreste"
+  },
+  {
+    "id": "avoventes-un-appartement-a-marseille-2",
+    "source": "avoventes",
+    "url": "https://avoventes.fr/enchere/un-appartement-a-marseille-2"
+  },
+  {
+    "id": "avoventes-une-piece-a-saint-cloud",
+    "source": "avoventes",
+    "url": "https://avoventes.fr/enchere/une-piece-a-saint-cloud"
+  },
+  {
+    "id": "encheres-publiques-catalogue-old",
+    "source": "encheres_publiques",
+    "url": "https://www.encheres-publiques.com/ventes/immobilier"
+  },
+  {
+    "id": "encheres-publiques-catalogue-current",
+    "source": "encheres_publiques",
+    "url": "https://encheres-publiques.com/fr/evenements/immobilier/paris-75"
+  }
+]

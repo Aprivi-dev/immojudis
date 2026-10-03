@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup, Tag
 
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
+from src.extraction_profiles import attach_source_property_features as _attach_source_property_features
 from src.normalize import (
     LATIN_LETTERS_PATTERN,
     SURFACE_VALUE_PATTERN,
@@ -23,6 +24,14 @@ from src.source_checkpoint import CheckpointSales
 from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
+from src.sources.source_features import cadastral_to_m2 as _cadastral_to_m2
+from src.sources.source_features import extract_parking_count as _extract_parking_count
+from src.sources.source_features import extract_qualified_surface as _extract_qualified_surface_impl
+from src.sources.source_features import extract_rooms_count as _extract_rooms_count
+from src.sources.source_features import is_mixed_property as _is_mixed_property
+from src.sources.source_features import merge_documents as _merge_documents
+from src.sources.source_features import merge_text_values as _merge_text_values
+from src.sources.source_features import normalize_document_text as _normalize_document_text
 
 BASE_URL = "https://www.vench.fr"
 LIST_URL = f"{BASE_URL}/prochaines-ventes-aux-encheres.html"
@@ -41,6 +50,11 @@ DETAIL_OVERRIDE_FIELDS = {
     "raw_text",
     "raw_image_url",
     "source_images",
+    "source_property_features",
+    "source_property_feature_evidence",
+    "source_property_features_meta",
+    "source_procedure_profile",
+    "source_field_observations",
 }
 
 
@@ -269,7 +283,7 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         if value is not None:
             source_blocks[key] = str(value)
 
-    return {
+    return _attach_source_property_features({
         "source_name": "vench",
         "source_url": source_url,
         "external_id": _extract_external_id(source_url),
@@ -299,7 +313,7 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "source_blocks": source_blocks,
         "raw_image_url": source_images[0] if source_images else None,
         "source_images": source_images,
-    }
+    })
 
 
 def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> dict[str, Any] | None:
@@ -311,7 +325,7 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
     title, city = _split_title_city(_text(card.select_one("h3").get_text(" ", strip=True)) if card.select_one("h3") else None)
     image = card.find("img")
     image_url = urljoin(page_url, str(image.get("data-src") or image.get("src"))) if image else None
-    return {
+    return _attach_source_property_features({
         "source_name": "vench",
         "source_url": source_url,
         "external_id": _extract_external_id(source_url),
@@ -328,7 +342,7 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
         "raw_text": raw_text,
         "raw_image_url": image_url,
         "source_images": [image_url] if image_url else [],
-    }
+    })
 
 
 def _find_sale_link(card: Tag) -> Tag | None:
@@ -377,6 +391,7 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
             sale[key] = value
         elif not sale.get(key):
             sale[key] = value
+    _attach_source_property_features(sale)
 
 
 def _extract_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, str]]:
@@ -416,53 +431,6 @@ def _document_type(label: str, href: str) -> str:
     return "pdf"
 
 
-def _normalize_document_text(value: str | None) -> str:
-    text = clean_text(value) or ""
-    return (
-        text.lower()
-        .replace("é", "e")
-        .replace("è", "e")
-        .replace("ê", "e")
-        .replace("à", "a")
-        .replace("â", "a")
-        .replace("î", "i")
-        .replace("ï", "i")
-        .replace("ô", "o")
-        .replace("û", "u")
-        .replace("ù", "u")
-        .replace("ç", "c")
-    )
-
-
-def _merge_documents(existing: object, incoming: list[dict[str, str]]) -> list[dict[str, str]]:
-    documents = existing if isinstance(existing, list) else []
-    by_url: dict[str, dict[str, str]] = {}
-    for document in [*documents, *incoming]:
-        if isinstance(document, dict) and document.get("url"):
-            by_url[str(document["url"])] = {
-                "label": str(document.get("label") or "document"),
-                "url": str(document["url"]),
-                "type": str(document.get("type") or "pdf"),
-            }
-    return list(by_url.values())
-
-
-def _merge_text_values(existing: object, incoming: object) -> list[str]:
-    values: list[str] = []
-    for item in [*_as_text_list(existing), *_as_text_list(incoming)]:
-        if item not in values:
-            values.append(item)
-    return values
-
-
-def _as_text_list(value: object) -> list[str]:
-    if isinstance(value, str):
-        return [value] if _text(value) else []
-    if not isinstance(value, list):
-        return []
-    return [text for item in value if (text := _text(item))]
-
-
 def _extract_title_from_detail(soup: BeautifulSoup) -> str | None:
     heading = soup.select_one("#page-heading h1")
     if heading:
@@ -493,27 +461,6 @@ def _extract_property_type(title: str | None, detail_text: str | None = None) ->
         return "mixed"
     match = re.search(r"\b(appartement|maison|immeuble|terrain|studio|local|garage|parking|villa)\b", text, re.I)
     return match.group(1) if match else text
-
-
-def _is_mixed_property(text: str | None) -> bool:
-    value = clean_text(text) or ""
-    if not value:
-        return False
-    residential = re.search(r"\b(?:habitation|habitations|logement|logements|appartement|maison)\b", value, re.I)
-    commercial = re.search(
-        r"\b(?:commerce|commercial(?:e|es)?|bureaux|local(?:ux)?|industriel(?:le|les)?|centre\s+[ée]questre)\b",
-        value,
-        re.I,
-    )
-    if not (residential and commercial):
-        return False
-    return bool(
-        re.search(
-            r"\b(?:usage\s+mixte|mixte|partie\s+[àa]\s+usage|ensemble\s+immobilier|b[âa]timent|immeuble)\b",
-            value,
-            re.I,
-        )
-    )
 
 
 def _extract_description(soup: BeautifulSoup) -> str | None:
@@ -658,29 +605,7 @@ def _normalize_surface_number(value: str) -> str | None:
 
 
 def _extract_qualified_surface(text: str | None, kind: str) -> str | None:
-    value = clean_text(text) or ""
-    if not value:
-        return None
-    number = rf"{SURFACE_VALUE_PATTERN}\s*(?:m\s*(?:²|2)|²)\b"
-    if kind == "carrez":
-        patterns = (
-            rf"\b{number}\s*(?:de\s+)?(?:surface\s+)?loi\s+carrez\b",
-            rf"(?:surface\s+)?loi\s+carrez(?:\s+(?:totale|privative))?\s*(?:-|:|de)?\s*{number}",
-        )
-    elif kind == "habitable":
-        patterns = (
-            rf"\b(?:surface|superficie)\s+habitable(?:\s+totale)?\s*(?:est\s+)?(?:de|:)\s*{number}",
-            rf"\b{number}\s*(?:de\s+)?surface\s+habitable\b",
-        )
-    else:
-        return None
-    candidates = [
-        _normalize_surface_number(match.group(1))
-        for pattern in patterns
-        for match in re.finditer(pattern, value, re.I)
-    ]
-    candidates = [candidate for candidate in candidates if candidate]
-    return candidates[0] if len(candidates) == 1 else None
+    return _extract_qualified_surface_impl(text, kind, _normalize_surface_number)
 
 
 def _extract_land_surface_m2(text: str | None) -> str | None:
@@ -725,118 +650,6 @@ def _extract_land_surface_m2(text: str | None) -> str | None:
     ]
     land_m2 = [candidate for candidate in land_m2 if candidate]
     return land_m2[0] if len(land_m2) == 1 else None
-
-
-def _cadastral_to_m2(match: re.Match[str]) -> str | None:
-    hectares = int(match.group(1) or 0)
-    ares = int(match.group(2) or 0)
-    centiares = int(match.group(3))
-    return str(hectares * 10000 + ares * 100 + centiares)
-
-
-_ROOM_COUNT_WORDS = {
-    "un": 1,
-    "une": 1,
-    "deux": 2,
-    "trois": 3,
-    "quatre": 4,
-    "cinq": 5,
-    "six": 6,
-    "sept": 7,
-    "huit": 8,
-    "neuf": 9,
-    "dix": 10,
-}
-
-
-def _parse_room_count(value: str) -> int | None:
-    token = value.lower().strip()
-    if token.isdigit():
-        count = int(token)
-        return count if count > 0 else None
-    return _ROOM_COUNT_WORDS.get(token)
-
-
-def _extract_rooms_count(text: str | None, title: str | None = None) -> int | None:
-    detail = clean_text(text) or ""
-    heading = clean_text(title) or ""
-    if not detail and not heading:
-        return None
-
-    direct_title = re.search(r"\b(?:appartement|maison|studio)\b[^.]{0,40}?\b(?:de\s+type\s*)?T?([1-9])\b", heading, re.I)
-    if direct_title:
-        return int(direct_title.group(1))
-
-    combined = " ".join(part for part in (heading, detail) if part)
-    if re.search(
-        r"\b(?:vente\s+en\s+\d+\s+lots?|r[ée]union\s+des\s+lots?|ensemble\s+immobilier|plusieurs\s+(?:appartements?|maisons?|logements?))\b",
-        combined,
-        re.I,
-    ) or len(re.findall(r"\blots?\s*(?:n[°o.]?\s*)?\d+\b", combined, re.I)) >= 2:
-        return None
-
-    qualified_type = re.search(
-        r"\b(?:appartement|maison|studio)\b[^.]{0,100}?\b(?:de\s+type\s*)?T?([1-9])\b",
-        detail,
-        re.I,
-    )
-    if qualified_type:
-        return int(qualified_type.group(1))
-
-    piece_matches = [
-        _parse_room_count(match.group(1))
-        for match in re.finditer(
-            r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+pi[eè]ces?\s+principales?\b",
-            detail,
-            re.I,
-        )
-    ]
-    piece_matches.extend(
-        _parse_room_count(match.group(1))
-        for match in re.finditer(
-            r"\b(?:appartement|maison|villa)\s+(?:de\s+)?([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+pi[eè]ces?\b",
-            detail,
-            re.I,
-        )
-    )
-    unique_pieces = {value for value in piece_matches if value}
-    if len(unique_pieces) == 1:
-        return next(iter(unique_pieces))
-    if len(unique_pieces) > 1:
-        return None
-
-    if len(re.findall(r"\bpi[eè]ce\s+principale\b", detail, re.I)) == 1 and not re.search(
-        r"\b(?:chambres?|\d+\s+pi[eè]ces?)\b", detail, re.I
-    ):
-        return 1
-    return None
-
-
-def _extract_parking_count(text: str | None) -> int | None:
-    detail = clean_text(text) or ""
-    if not detail:
-        return None
-    token = r"[1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix"
-    patterns = (
-        rf"\b({token})\s+(?:emplacements?|places?)\s+(?:de\s+)?(?:parking|stationnement)\b",
-        rf"\b({token})\s+(?:parkings?|stationnements?)\b",
-        rf"\b(?:parking|stationnement)\s*:\s*({token})\b",
-    )
-    values = [
-        _parse_room_count(match.group(1))
-        for pattern in patterns
-        for match in re.finditer(pattern, detail, re.I)
-    ]
-    values = [value for value in values if value is not None]
-    if len(values) == 1:
-        return values[0]
-    if len(values) > 1:
-        return None
-    if re.search(r"\b(?:visiteur|public|proximit[ée]|proche)\b", detail, re.I):
-        return None
-    if len(re.findall(r"\b(?:parking|stationnement|box|garage)\b", detail, re.I)) == 1:
-        return 1
-    return None
 
 
 def _extract_occupancy_status(raw_text: str) -> str | None:

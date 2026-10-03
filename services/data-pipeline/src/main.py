@@ -40,6 +40,7 @@ from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
 from src.enrichment.operational_display import refresh_operational_display
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
+from src.extraction_profiles import attach_source_property_features
 from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
 from src.geocode import geocode_sale
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
@@ -200,6 +201,20 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "land_surface_extraction",
     "investment_analysis",
     "llm_due_diligence",
+    # PDF projection traces and candidate evidence are enrichment metadata.
+    # Preserve them through a cold source pass so the PDF worker can invalidate
+    # only stale projections without treating the markers as fresh source text.
+    "pdf_fact_provenance",
+    "pdf_sale_date_extraction",
+    "pdf_visit_dates_extraction",
+    "pdf_energy_diagnostics",
+    "pdf_energy_diagnostics_candidates",
+    "pdf_surface_candidates",
+    "pdf_land_surface_candidates",
+    "pdf_rooms_candidates",
+    "pdf_bedrooms_candidates",
+    "pdf_occupancy_candidates",
+    "pdf_multi_lot_guard",
 )
 
 KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS = (
@@ -215,6 +230,25 @@ KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS = (
     "surface_source",
     "surface_confidence",
     "surface_evidence",
+)
+
+KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS = (
+    "source_name",
+    "source_url",
+    "raw_text",
+    "starting_price_eur",
+    *KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
+    *KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
+    *KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
+    "rooms_count",
+    "bedrooms_count",
+    "occupancy_status",
+    "sale_date",
+    "status",
+    "visit_dates",
+    "property_type",
+    "description",
+    "risk_notes",
 )
 
 
@@ -544,8 +578,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             sale
             for sale in enrichment_sales
             if _can_use_paid_llm(sale)
-            and _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
-            and not _llm_description_already_current(sale, current_llm_description_hashes)
+            and (
+                needs_fact_extraction(sale)
+                or (
+                    _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
+                    and not _llm_description_already_current(sale, current_llm_description_hashes)
+                )
+            )
             and sale.source_url not in failed_urls
             and not (
                 options.upsert
@@ -568,7 +607,19 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     )
     if options.use_llm and llm_client is not None and llm_targets:
         with ThreadPoolExecutor(max_workers=llm_workers) as executor:
-            futures = {executor.submit(enrich_sale_with_llm, sale, client=llm_client): sale for sale in llm_targets}
+            futures = {
+                executor.submit(
+                    enrich_sale_with_llm,
+                    sale,
+                    client=llm_client,
+                    extraction_mode=(
+                        "structured_then_display"
+                        if needs_fact_extraction(sale)
+                        else "display_description"
+                    ),
+                ): sale
+                for sale in llm_targets
+            }
             for future in as_completed(futures):
                 sale = futures[future]
                 try:
@@ -1128,11 +1179,7 @@ def _preserve_known_enrichment_payloads(
         known_payload = known.get("raw_payload") or {}
         if not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed"):
             sale["source_factual_snapshot"] = {
-                key: sale.get(key) for key in (
-                    "source_name", "source_url", "raw_text", "starting_price_eur",
-                    *KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS, *KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
-                    *KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
-                )
+                key: sale.get(key) for key in KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS
             }
         elif known_payload.get("source_factual_snapshot"):
             sale["source_factual_snapshot"] = known_payload["source_factual_snapshot"]
@@ -1472,13 +1519,16 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     if surface_context:
         extract_and_apply_deterministic_surface_reasoning(sale, surface_context)
     normalize_asset_features(sale)
+    attach_source_property_features(sale.raw_payload)
     apply_catalogue_readiness(sale)
 
 
 def _surface_reasoning_context_for_sale(sale: AuctionSale) -> str:
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     source_blocks = payload.get("source_blocks")
-    block_values = list(source_blocks.values()) if isinstance(source_blocks, dict) else []
+    block_values = [
+        value for key, value in source_blocks.items() if key != "listing_completeness"
+    ] if isinstance(source_blocks, dict) else []
     values: list[object] = [
         sale.title,
         sale.description,

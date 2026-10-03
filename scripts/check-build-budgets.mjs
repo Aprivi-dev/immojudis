@@ -53,6 +53,8 @@ const businessModules = [
   "services/data-pipeline/src/pdf_enrichment.py",
   "services/data-pipeline/src/pdf_page_analysis.py",
   "services/data-pipeline/src/pdf_fact_extraction.py",
+  "services/data-pipeline/src/pdf_fact_scope.py",
+  "services/data-pipeline/src/pdf_ocr.py",
   "services/data-pipeline/src/pdf_failure_diagnostics.py",
   "services/data-pipeline/src/pdf_progress.py",
   "services/data-pipeline/src/encheres_publiques_guard.py",

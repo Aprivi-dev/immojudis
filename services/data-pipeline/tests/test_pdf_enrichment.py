@@ -17,6 +17,7 @@ from src.freshness import documents_are_current
 from src.normalize import normalize_sale
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
+    PDF_TEXT_CACHE_VERSION,
     PdfDeadlineExceeded,
     PdfEnrichmentStats,
     PublicDocumentTarget,
@@ -40,6 +41,10 @@ from src.pdf_enrichment import (
     extract_pdf_document,
     extract_pdf_pages,
     pdf_deadline_scope,
+)
+from src.pdf_fact_extraction import (
+    _extract_energy_diagnostics_from_documents,
+    _extract_energy_diagnostics_with_evidence,
 )
 
 
@@ -589,6 +594,129 @@ def test_enrich_sale_from_pdf_text_extracts_compact_energy_diagnostics() -> None
     assert diagnostics["energy_consumption_kwh_m2_year"] == 520
     assert diagnostics["emissions_kg_co2_m2_year"] == 32
     assert "DPE G" in (sale.risk_notes or "")
+
+
+def test_pdf_multi_lot_scalars_are_not_projected_without_binding() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/pdf-multi-lot-unbound",
+            "property_type": "Appartement",
+        }
+    )
+    text = (
+        "Lot 1 : appartement de 40 m², 2 pièces, 1 chambre, libre de toute occupation. "
+        "DPE F, GES C, 350 kWh/m²/an, 20 kg CO2/m²/an.\n"
+        "Lot 2 : appartement de 80 m², 4 pièces, 3 chambres, occupé par un locataire. "
+        "DPE D, GES B, 180 kWh/m²/an, 10 kg CO2/m²/an."
+    )
+    pdf_texts = [
+        {
+            "label": "Procès verbal descriptif",
+            "url": "https://example.test/multi-lot.pdf",
+            "document_type": "pv_huissier",
+            "text": text,
+            "pages": [{"page": 7, "text": text, "confidence": 0.93, "method": "pymupdf_text"}],
+        }
+    ]
+
+    enrich_sale_from_pdf_text(sale, pdf_texts)
+
+    assert sale.surface_m2 is None
+    assert sale.rooms_count is None
+    assert sale.bedrooms_count is None
+    assert sale.occupancy_status is None
+    assert "pdf_energy_diagnostics" not in sale.raw_payload
+    guard = sale.raw_payload["pdf_multi_lot_guard"]
+    assert set(guard["fields"]) == {"surface", "rooms", "bedrooms", "occupancy", "energy"}
+    assert {"lot:1", "lot:2"} <= set(guard["lot_labels"])
+    assert {item["page_number"] for item in sale.raw_payload["pdf_surface_candidates"]} == {7}
+    assert {
+        item["energy_consumption_kwh_m2_year"]
+        for item in sale.raw_payload["pdf_energy_diagnostics_candidates"]
+    } == {
+        # Both records are retained for review; neither is projected to sale scope.
+        350,
+        180,
+    }
+
+
+def test_pdf_multi_lot_explicit_ensemble_can_sum_surface_and_rooms() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/pdf-multi-lot-ensemble",
+            "property_type": "Appartement",
+        }
+    )
+    text = (
+        "Lot 1 : appartement de 40 m², 2 pièces, 1 chambre. "
+        "Lot 2 : appartement de 80 m², 4 pièces, 3 chambres. "
+        "Les deux lots sont vendus ensemble."
+    )
+    enrich_sale_from_pdf_text(
+        sale,
+        [
+            {
+                "label": "Procès verbal descriptif",
+                "url": "https://example.test/multi-lot-ensemble.pdf",
+                "document_type": "pv_huissier",
+                "text": text,
+                "pages": [{"page": 8, "text": text, "confidence": 0.93, "method": "pymupdf_text"}],
+            }
+        ],
+    )
+
+    assert sale.surface_m2 == Decimal("120")
+    assert sale.rooms_count == 6
+    assert sale.bedrooms_count == 4
+    assert "pdf_multi_lot_guard" not in sale.raw_payload
+    assert sale.raw_payload["surface_extraction"]["aggregate"] is True
+
+
+def test_energy_diagnostics_rejects_unrelated_letters_units_and_clears_stale_pdf_fact() -> None:
+    assert _extract_energy_diagnostics_with_evidence(
+        "DPE à des fins de location. Classement juridique du document."
+    ) is None
+    assert _extract_energy_diagnostics_with_evidence(
+        "DPE non soumis. Chauffage électrique 210 kWh/m2/an."
+    ) is None
+    assert _extract_energy_diagnostics_with_evidence(
+        "Audit : classe A ou B selon recommandations. Seuil de consommation 450 kWh/m2/an."
+    ) is None
+
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/pdf-dpe-replaced",
+            "property_type": "Maison",
+        }
+    )
+    sale.raw_payload["pdf_energy_diagnostics"] = {"dpe_class": "F"}
+    enrich_sale_from_pdf_text(sale, ["DPE à des fins de location. Classement juridique du document."])
+    assert "pdf_energy_diagnostics" not in sale.raw_payload
+
+
+def test_energy_diagnostics_keeps_document_boundary_for_top_level_fallback() -> None:
+    diagnostics = _extract_energy_diagnostics_from_documents(
+        [
+            {
+                "label": "Annexe",
+                "document_type": "pdf",
+                "pages": [{"page": 1, "text": "DPE F"}],
+            },
+            {
+                "label": "Diagnostics techniques",
+                "document_type": "diagnostics_techniques",
+                "text": "GES : C. Émissions de gaz à effet de serre : 12 kg CO2/m2/an.",
+            },
+        ]
+    )
+
+    assert diagnostics is not None
+    assert diagnostics["document_label"] == "Diagnostics techniques"
+    assert diagnostics["ges_class"] == "C"
+    assert diagnostics["page_number"] is None
 
 
 def test_enrich_sale_from_pdf_text_extracts_visit_dates_with_provenance() -> None:
@@ -1530,7 +1658,7 @@ def test_extract_pdf_document_preserves_page_level_text(tmp_path, monkeypatch) -
 
     payload = extract_pdf_document(path, document={"label": "PV", "document_type": "pv_huissier"})
 
-    assert payload["cache_version"] == "pdf_text_v3_surface_calibration"
+    assert payload["cache_version"] == PDF_TEXT_CACHE_VERSION
     assert payload["page_count"] == 2
     assert [page["page"] for page in payload["pages"]] == [1, 2]
     assert "Surface habitable" in payload["text"]
@@ -1608,6 +1736,46 @@ def test_failed_ocr_page_is_retried_without_reocring_successful_cached_pages(tmp
     assert recovered_payload["complete"] is True
     _write_document_text_cache(document, path, recovered_payload)
     assert _read_document_text_cache(document, path)["complete"] is True
+
+
+def test_image_rich_mixed_page_triggers_ocr_even_with_long_native_header(tmp_path, monkeypatch) -> None:
+    import fitz
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    monkeypatch.setenv("PDF_MAX_EXTRACT_PAGES", "1")
+    path = tmp_path / "mixed-header-scan.pdf"
+
+    with fitz.open() as scan_document:
+        scan_page = scan_document.new_page()
+        scan_page.insert_text((72, 72), "DPE CLASSE F GES C 394 kWhEP/m2/an 12 kg CO2/m2/an")
+        scan_pixmap = scan_page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+        with fitz.open() as document:
+            page = document.new_page()
+            page.insert_text(
+                (72, 72),
+                "En-tête numérique de contrôle et référence de dossier " * 4,
+            )
+            page.insert_image(page.rect, pixmap=scan_pixmap)
+            document.save(path)
+
+    calls: list[int] = []
+
+    def ocr_result(page, **_kwargs):
+        calls.append(page.number)
+        return {
+            "text": "OCR DPE CLASSE F GES C 394 kWhEP/m2/an 12 kg CO2/m2/an",
+            "method": "ocr_test",
+            "confidence": 0.8,
+        }
+
+    monkeypatch.setattr("src.pdf_enrichment._extract_page_text_with_ocr_result", ocr_result)
+    pages = extract_pdf_pages(path)
+
+    assert calls == [0]
+    assert pages[0]["method"] == "ocr_test"
+    assert "OCR DPE" in pages[0]["text"]
 
 
 def test_mixed_pdf_with_failed_page_remains_incomplete_in_document_profile(tmp_path, monkeypatch) -> None:
@@ -2923,7 +3091,7 @@ def test_pdf_text_cache_writer_satisfies_freshness_only_for_complete_payload(tmp
         **document,
         "text": text,
         "pages": [{"page": 1, "text": text, "status": "extracted"}],
-        "cache_version": "pdf_text_v3_surface_calibration",
+        "cache_version": PDF_TEXT_CACHE_VERSION,
         "sha256": "a" * 64,
         "page_count": 1,
         "text_chars": len(text),

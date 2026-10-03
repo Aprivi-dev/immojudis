@@ -14,6 +14,10 @@ LOGGER = logging.getLogger(__name__)
 VISUAL_BLANK_INK_THRESHOLD = 240
 VISUAL_BLANK_INK_RATIO_MAX = 0.005
 VISUAL_BLANK_RENDER_MAX_DIMENSION = 800
+# A native text layer can contain a header, footer, or a few labels while the
+# actual page is a scanned image. OCR must still run when the image covers a
+# meaningful part of the page. Keep small logos/stamps below this threshold.
+PAGE_OCR_IMAGE_COVERAGE_MIN = 0.20
 
 
 def is_decorative_edge_only_page(page: fitz.Page) -> bool:
@@ -70,6 +74,42 @@ def _is_objectively_blank_page(page: fitz.Page, raw_text: str) -> bool:
         # page cannot be called objectively blank without all three checks.
         return False
     return True
+
+
+def _page_image_coverage(page: fitz.Page) -> float:
+    """Return the approximate fraction of the page covered by images.
+
+    ``Page.get_images`` exposes image resources but not their placement. The
+    image-info API includes bounding boxes and lets us distinguish a full-page
+    scan from a small logo without rasterising the page. Overlapping images are
+    conservatively summed and capped at 100%.
+    """
+    try:
+        page_rect = page.rect
+        page_area = float(page_rect.width) * float(page_rect.height)
+        if page_area <= 0:
+            return 0.0
+        covered_area = 0.0
+        for info in page.get_image_info():
+            bbox = info.get("bbox") if isinstance(info, dict) else None
+            if not bbox or len(bbox) != 4:
+                continue
+            x0, y0, x1, y1 = (float(value) for value in bbox)
+            left = max(float(page_rect.x0), min(x0, x1))
+            top = max(float(page_rect.y0), min(y0, y1))
+            right = min(float(page_rect.x1), max(x0, x1))
+            bottom = min(float(page_rect.y1), max(y0, y1))
+            if right > left and bottom > top:
+                covered_area += (right - left) * (bottom - top)
+        return min(1.0, max(0.0, covered_area / page_area))
+    except Exception:
+        # If placement inspection fails, leave the normal short-text OCR gate
+        # in charge. A malformed image must never make a page complete.
+        return 0.0
+
+
+def _page_has_substantial_image(page: fitz.Page) -> bool:
+    return _page_image_coverage(page) >= PAGE_OCR_IMAGE_COVERAGE_MIN
 
 
 def _visual_page_profile(page: fitz.Page) -> dict[str, object]:

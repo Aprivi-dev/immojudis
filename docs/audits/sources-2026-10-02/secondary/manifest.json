@@ -1,0 +1,14 @@
+[
+  {"id":"info-list","source":"info_encheres","url":"https://www.info-encheres.com/vente-encheres-immobilieres-annonces.html"},
+  {"id":"info-6051","source":"info_encheres","url":"https://www.info-encheres.com/108291-d-vente-encheres-immobilieres-maison-ancienne-avec-grange-attenante-castillon-de-lembeye-64-ref-6051.html"},
+  {"id":"info-6053","source":"info_encheres","url":"https://www.info-encheres.com/108293-d-vente-encheres-immobilieres-maison-an-usage-d-habitation-meyzieu-69-ref-6053.html"},
+  {"id":"vench-list","source":"vench","url":"https://www.vench.fr/prochaines-ventes-aux-encheres.html","dismissCookieButton":"OK"},
+  {"id":"vench-166665","source":"vench","url":"https://www.vench.fr/vente-166665-un-appartement-cannes.html","dismissCookieButton":"OK"},
+  {"id":"vench-166663","source":"vench","url":"https://www.vench.fr/vente-166663-une-maison-de-4-pieces-saint-laurent-du-var.html","dismissCookieButton":"OK"},
+  {"id":"petites-list","source":"petites_affiches","url":"https://www.petitesaffiches.fr/encheres-immobilieres/","dismissCookieButton":"Refuser tous les cookies"},
+  {"id":"petites-165934","source":"petites_affiches","url":"https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/j/une-villa-t4a-a-frejus-165934.html","dismissCookieButton":"Refuser tous les cookies"},
+  {"id":"petites-165875","source":"petites_affiches","url":"https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/j/une-maison-mitoyenne-a-saint-raphael-165875.html","dismissCookieButton":"Refuser tous les cookies"},
+  {"id":"agrasc-list","source":"agrasc","url":"https://agrasc.gouv.fr/ventes-aux-encheres?page=0","dismissCookieButton":"Tout refuser"},
+  {"id":"agrasc-evry-2075541","source":"agrasc","url":"https://www.immo-interactif.fr/encheres-en-ligne/maison/evry-courcouronnes-91/2075541"},
+  {"id":"agrasc-auchel-424878","source":"agrasc","url":"https://www.agorastore-immo.fr/vente-occasion/immobilier/maison/maison-62-m-auchel-62-424878.aspx"}
+]

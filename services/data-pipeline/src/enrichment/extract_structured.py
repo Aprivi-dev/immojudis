@@ -1147,18 +1147,13 @@ def needs_fact_extraction(sale: AuctionSale) -> bool:
         return False
     if documents_extracted <= 0 or has_current_fact_analysis(sale):
         return False
-    surface_analysis = raw_payload.get("surface_analysis")
-    contradictions = (
-        surface_analysis.get("contradictions")
-        if isinstance(surface_analysis, dict)
-        else None
-    )
-    return bool(
-        not sale.app_surface_m2
-        or sale.occupancy_status in {None, "unknown"}
-        or raw_payload.get("source_conflicts")
-        or contradictions
-    )
+    # A complete surface and occupancy pair does not prove that the rest of
+    # the documentary facts (risks, copropriété, works, investment facts, and
+    # page-level conflicts) were analysed. Once PDF evidence exists, schedule
+    # one authoritative fact pass until its content-addressed manifest is
+    # current. The old gap-only predicate silently routed these rows through
+    # display synthesis and never extracted the remaining facts.
+    return True
 
 
 def _all_source_fact_sections(sale: AuctionSale) -> list[str]:
@@ -1194,6 +1189,7 @@ def _all_pdf_fact_sections(pdf_payload: list[dict[str, Any]]) -> list[str]:
         document_type = clean_text(item.get("document_type")) or "pdf"
         document_url = clean_text(item.get("url")) or "URL inconnue"
         pages = item.get("pages")
+        page_sections: list[str] = []
         if isinstance(pages, list) and pages:
             for page in pages:
                 if not isinstance(page, dict):
@@ -1203,9 +1199,25 @@ def _all_pdf_fact_sections(pdf_payload: list[dict[str, Any]]) -> list[str]:
                     continue
                 page_number = page.get("page")
                 method = clean_text(page.get("method")) or "extraction"
-                sections.append(
+                page_sections.append(
                     f"[DOCUMENT: {label} | TYPE: {document_type} | URL: {document_url} | "
                     f"PAGE: {page_number} | METHODE: {method}]\n{text}"
+                )
+            sections.extend(page_sections)
+            # Docling/table extractors can retain a richer aggregate than the
+            # native page text. Keep it when it contains text absent from the
+            # page records, otherwise fact mode can miss table-only values.
+            aggregate = clean_text(item.get("text"))
+            page_text = "\n".join(
+                clean_text(page.get("text"))
+                for page in pages
+                if isinstance(page, dict) and clean_text(page.get("text"))
+            )
+            if aggregate and aggregate not in page_text:
+                sections.append(
+                    f"[DOCUMENT: {label} | TYPE: {document_type} | URL: {document_url} | "
+                    "PAGE: aggregate]\n"
+                    f"{aggregate}"
                 )
             continue
         text = clean_text(item.get("text"))
@@ -1527,6 +1539,12 @@ def _source_payload_sections(payload: dict[str, Any], sale: AuctionSale, *, incl
     page_text: str | None = None
     if isinstance(blocks, dict):
         for key, value in blocks.items():
+            # This block is a generated completeness projection.  It is
+            # metadata about the captured source, not source text itself;
+            # feeding it to enrichment would turn prior claims into fresh
+            # citations on the next pass.
+            if str(key).casefold() == "listing_completeness":
+                continue
             text = clean_text(value)
             if not text:
                 continue
@@ -2931,7 +2949,10 @@ def _join_unique_sections(sections: list[str], max_chars: int) -> str | None:
     total = 0
     for section in sections:
         normalized = re.sub(r"\s+", " ", section).strip()
-        fingerprint = normalized[:300]
+        # Page headers are often identical for hundreds of characters. A
+        # prefix fingerprint therefore discarded later pages with distinct
+        # facts. Hash the complete normalized section instead.
+        fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
         if not normalized or fingerprint in seen:
             continue
         if total + len(normalized) + 2 > max_chars:

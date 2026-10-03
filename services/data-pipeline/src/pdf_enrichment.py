@@ -6,7 +6,6 @@ import hashlib
 import importlib
 import json
 import logging
-import os
 import shutil
 import subprocess
 import sys
@@ -66,6 +65,7 @@ from src.pdf_page_analysis import (
     VISUAL_BLANK_INK_THRESHOLD,  # noqa: F401
     VISUAL_BLANK_RENDER_MAX_DIMENSION,  # noqa: F401
     _is_objectively_blank_page,
+    _page_has_substantial_image,
     _page_requires_retry,
     _page_text_confidence,
     _visual_page_profile,
@@ -74,6 +74,8 @@ from src.pdf_page_analysis import (
     is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
 )
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
+from src.pdf_ocr import extract_page_text_with_ocr_result as _extract_page_text_with_ocr_result_impl
+from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections
 
 LOGGER = logging.getLogger(__name__)
 
@@ -81,7 +83,11 @@ DOCUMENT_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 
 MAX_DOCUMENT_REDIRECTS = 5
 
-DOCUMENT_FACTS_VERSION = "document_facts_v2_surface_reasoning"
+# Deterministic PDF facts now include page/document scoped candidates and
+# multi-lot ambiguity decisions.  Bump this marker whenever the projection
+# semantics change so a previously complete extraction cannot be treated as
+# current by the structured-facts cache.
+DOCUMENT_FACTS_VERSION = "document_facts_v3_pdf_scope_diagnostics"
 
 # Keep a fixed part of the queue worker budget for the sale write, lease
 # telemetry, and claim cleanup after a bounded PDF pass returns.  The worker
@@ -241,6 +247,31 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     merged_pdf_texts = merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures)
     if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures:
         _write_pdf_text_cache(sale, merged_pdf_texts)
+        terminal_urls = set(stats.blocked_document_urls) | {
+            item.get("url") for item in stats.permanent_document_failures if item.get("url")
+        }
+        if terminal_urls:
+            # Revoke a terminal piece even when another PDF remains readable.
+            # Unbound projections may depend on the revoked text; rebuild them
+            # from the retained texts. Explicit proofs from other URLs survive.
+            sale.raw_text = clean_text((sale.raw_text or "").split("--- PDF TEXT ENRICHMENT ---", 1)[0])
+            declared_urls = {item.get("url") for item in sale.documents if item.get("url")}
+            if declared_urls and declared_urls.issubset(terminal_urls):
+                _clear_pdf_fact_projections(sale)
+            else:
+                traces = sale.raw_payload.get("pdf_fact_provenance") or {}
+                if not isinstance(traces, dict):
+                    traces = {}
+                affected = {
+                    key for key, trace in traces.items()
+                    if isinstance(trace, dict)
+                    and (not trace.get("document_url") or trace.get("document_url") in terminal_urls)
+                }
+                if "surface_m2" in affected:
+                    affected.update({"app_surface_m2", "app_surface_kind"})
+                _clear_pdf_fact_projections(sale, fields=affected)
+                _clear_pdf_derived_source_description(sale, None)
+            invalidate_analysis(sale.raw_payload, "document_access_changed")
         before = sale.raw_text or ""
         enrich_sale_from_pdf_text(sale, merged_pdf_texts)
         if len(sale.raw_text or "") > len(before):
@@ -262,31 +293,69 @@ def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]
     hashes = {profile.get("url"): profile.get("sha256") for profile in previous.get("profiles", [])}
     changed = any(hashes.get(doc.get("url")) and doc.get("sha256")
                   and hashes[doc.get("url")] != doc["sha256"] for doc in documents)
-    if not changed:
+    # A failed download or a bounded pass does not prove that a source removed
+    # a piece. Only the complete source manifest can establish that absence.
+    current_urls = {doc.get("url") for doc in sale.documents if isinstance(doc, dict) and doc.get("url")}
+    removed = sale.raw_payload.get("source_detail_status") == "complete" and bool(set(hashes) - current_urls)
+    if not changed and not removed:
         return
-    invalidate_analysis(sale.raw_payload, "document_bytes_changed")
+    built_pdf = sale.surface_source == "pdf" or (sale.raw_payload.get("surface_extraction") or {}).get("source") == "pdf"
+    land_pdf = (sale.raw_payload.get("land_surface_extraction") or {}).get("source") == "pdf"
+    projection_state = _clear_pdf_fact_projections(sale)
+    preserved_projection_fields = projection_state.get("preserved", set())
+    invalidate_analysis(sale.raw_payload, "document_manifest_changed" if removed else "document_bytes_changed")
     sale.raw_payload["superseded_document_analysis"] = previous
     snapshot = sale.raw_payload.get("source_factual_snapshot") or {
         "source_name": sale.source_name, "source_url": sale.source_url,
     }
     factual = normalize_sale(snapshot)
-    built_pdf = sale.surface_source == "pdf" or (sale.raw_payload.get("surface_extraction") or {}).get("source") == "pdf"
-    land_pdf = (sale.raw_payload.get("land_surface_extraction") or {}).get("source") == "pdf"
     fields = []
     if built_pdf:
-        fields += ["surface_m2", "habitable_surface_m2", "carrez_surface_m2", "app_surface_m2",
-                   "app_surface_kind", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"]
+        fields += [
+            field
+            for field in (
+                "surface_m2", "habitable_surface_m2", "carrez_surface_m2", "app_surface_m2",
+                "app_surface_kind", "surface_scope", "surface_source", "surface_confidence", "surface_evidence",
+            )
+            if field not in preserved_projection_fields
+        ]
     if land_pdf:
-        fields += ["land_surface_m2"]
+        if "land_surface_m2" not in preserved_projection_fields:
+            fields += ["land_surface_m2"]
     if sale.raw_payload.get("starting_price_extraction"):
-        fields += ["starting_price_eur"]
+        if "starting_price_eur" not in preserved_projection_fields:
+            fields += ["starting_price_eur"]
+    if sale.raw_payload.get("pdf_sale_date_extraction"):
+        if "sale_date" not in preserved_projection_fields:
+            fields += ["sale_date"]
+    if sale.raw_payload.get("pdf_visit_dates_extraction"):
+        if "visit_dates" not in preserved_projection_fields:
+            fields += ["visit_dates"]
     for key in fields:
         setattr(sale, key, getattr(factual, key))
         sale.raw_payload.pop(key, None)
-    for key in ("surface_extraction", "surface_analysis", "land_surface_extraction", "starting_price_extraction"):
+    for key in (
+        "surface_extraction",
+        "surface_analysis",
+        "land_surface_extraction",
+        "starting_price_extraction",
+        "pdf_sale_date_extraction",
+        "pdf_energy_diagnostics",
+        "pdf_energy_diagnostics_candidates",
+        "pdf_surface_candidates",
+        "pdf_land_surface_candidates",
+        "pdf_rooms_candidates",
+        "pdf_bedrooms_candidates",
+        "pdf_occupancy_candidates",
+        "pdf_multi_lot_guard",
+        "pdf_visit_dates_extraction",
+        "pdf_fact_provenance",
+    ):
         sale.raw_payload.pop(key, None)
-    if snapshot.get("raw_text"):
-        sale.raw_text = str(snapshot["raw_text"])
+    if "raw_text" in snapshot:
+        sale.raw_text = clean_text(snapshot.get("raw_text"))
+    else:
+        sale.raw_text = clean_text((sale.raw_text or "").split("--- PDF TEXT ENRICHMENT ---", 1)[0])
 
 
 def download_documents(
@@ -1031,7 +1100,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
             text = raw_text
             status = "extracted" if clean_text(raw_text) else "failed"
             failure_reason = "empty_page_not_proven_blank" if not clean_text(raw_text) else None
-            if _should_try_ocr(raw_text):
+            if _should_try_ocr(raw_text, page=page):
                 _ensure_pdf_deadline(
                     operation=f"checking OCR budget for page {index}",
                     checkpointed_pages=index - 1,
@@ -1128,11 +1197,16 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
     return pages
 
 
-def _should_try_ocr(text: str) -> bool:
+def _should_try_ocr(text: str, *, page: fitz.Page | None = None) -> bool:
     settings = load_settings()
     if not settings["pdf_ocr_enabled"]:
         return False
-    return len(clean_text(text) or "") < 80
+    if len(clean_text(text) or "") < 80:
+        return True
+    # Mixed PDFs often have a native header/footer over a scanned page. The
+    # text-length gate alone would mark those pages complete and hide the
+    # image-only body from fact extraction.
+    return page is not None and _page_has_substantial_image(page)
 
 
 def _extract_page_text_with_ocr(page: fitz.Page, fallback: str) -> str:
@@ -1147,145 +1221,18 @@ def _extract_page_text_with_ocr_result(
     total_pages: int = 0,
     new_progress_pages: int = 0,
 ) -> dict[str, object]:
-    settings = load_settings()
-    tessdata = settings.get("pdf_ocr_tessdata")
-    remaining = _ensure_pdf_deadline(
-        operation="starting OCR",
-        checkpointed_pages=checkpointed_pages,
-        total_pages=total_pages,
-        new_progress_pages=new_progress_pages,
-    )
-    if remaining is not None:
-        # PyMuPDF's native OCR call has no timeout. During a bounded queue
-        # pass use the interruptible tesseract subprocess instead, with the
-        # remaining PDF budget recomputed after page rendering as its hard
-        # timeout.
-        return _extract_page_text_with_tesseract_result(
-            page,
-            fallback=fallback,
-            settings=settings,
-            tessdata=tessdata,
-            timeout=60.0,
-            checkpointed_pages=checkpointed_pages,
-            total_pages=total_pages,
-            new_progress_pages=new_progress_pages,
-        )
-    try:
-        text_page = page.get_textpage_ocr(
-            language=str(settings["pdf_ocr_language"]),
-            full=True,
-            tessdata=str(tessdata) if tessdata else None,
-        )
-        text = page.get_text("text", textpage=text_page)
-        if clean_text(text):
-            return {
-                "text": text,
-                "method": "ocr_pymupdf",
-                "confidence": _page_text_confidence(text, method="ocr_pymupdf"),
-                "status": "extracted",
-                "retryable": False,
-            }
-    except PdfDeadlineExceeded:
-        raise
-    except Exception as exc:
-        LOGGER.debug("PDF OCR unavailable or failed: %s", exc)
-    return _extract_page_text_with_tesseract_result(
+    return _extract_page_text_with_ocr_result_impl(
         page,
-        fallback=fallback,
-        settings=settings,
-        tessdata=tessdata,
-        timeout=60.0,
+        fallback,
+        settings=load_settings(),
+        ensure_deadline=_ensure_pdf_deadline,
+        deadline_bounded_timeout=_deadline_bounded_timeout,
+        page_text_confidence=_page_text_confidence,
+        deadline_exception=PdfDeadlineExceeded,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
         new_progress_pages=new_progress_pages,
     )
-
-
-def _extract_page_text_with_tesseract_result(
-    page: fitz.Page,
-    *,
-    fallback: str,
-    settings: dict[str, object],
-    tessdata: object,
-    timeout: float,
-    checkpointed_pages: int,
-    total_pages: int,
-    new_progress_pages: int,
-) -> dict[str, object]:
-    try:
-        _ensure_pdf_deadline(
-            operation="rendering OCR page",
-            checkpointed_pages=checkpointed_pages,
-            total_pages=total_pages,
-            new_progress_pages=new_progress_pages,
-        )
-        with tempfile.TemporaryDirectory() as tmpdir:
-            image_path = Path(tmpdir) / "page.png"
-            pixmap = page.get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
-            _ensure_pdf_deadline(
-                operation="preparing OCR image",
-                checkpointed_pages=checkpointed_pages,
-                total_pages=total_pages,
-                new_progress_pages=new_progress_pages,
-            )
-            pixmap.save(str(image_path))
-            timeout, deadline_bounded = _deadline_bounded_timeout(
-                timeout,
-                operation="starting OCR subprocess",
-            )
-            env = os.environ.copy()
-            if tessdata:
-                env["TESSDATA_PREFIX"] = str(tessdata)
-            result = subprocess.run(
-                ["tesseract", str(image_path), "stdout", "-l", str(settings["pdf_ocr_language"])],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                env=env,
-                check=False,
-            )
-            _ensure_pdf_deadline(
-                operation="finishing OCR subprocess",
-                checkpointed_pages=checkpointed_pages,
-                total_pages=total_pages,
-                new_progress_pages=new_progress_pages,
-            )
-            if result.returncode == 0 and clean_text(result.stdout):
-                return {
-                    "text": result.stdout,
-                    "method": "ocr_tesseract",
-                    "confidence": _page_text_confidence(result.stdout, method="ocr_tesseract"),
-                    "status": "extracted",
-                    "retryable": False,
-                }
-            LOGGER.debug("Tesseract OCR returned %s: %s", result.returncode, result.stderr)
-    except subprocess.TimeoutExpired as exc:
-        if deadline_bounded:
-            raise PdfDeadlineExceeded(
-                "PDF worker deadline reached during OCR; retry resumes from checkpoint",
-                checkpointed_pages=checkpointed_pages,
-                total_pages=total_pages,
-                new_progress_pages=new_progress_pages,
-            ) from exc
-        _ensure_pdf_deadline(
-            operation="checking deadline after OCR timeout",
-            checkpointed_pages=checkpointed_pages,
-            total_pages=total_pages,
-            new_progress_pages=new_progress_pages,
-        )
-        LOGGER.debug("Tesseract OCR timed out after %.1fs", timeout)
-    except PdfDeadlineExceeded:
-        raise
-    except Exception as exc:
-        LOGGER.debug("Tesseract OCR fallback failed: %s", exc)
-    return {
-        "text": fallback,
-        "method": "fallback_text",
-        "confidence": _page_text_confidence(fallback, method="fallback_text"),
-        "status": "failed",
-        "retryable": True,
-        "failure_reason": "ocr_failed",
-    }
 
 
 def _document_text_cache_path(document: dict[str, str], file_path: Path) -> Path:

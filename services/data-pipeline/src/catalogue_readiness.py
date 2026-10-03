@@ -319,7 +319,11 @@ def _has_surface(sale: AuctionSale) -> bool:
 def _has_source_proof(sale: AuctionSale) -> bool:
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     blocks = payload.get("source_blocks")
-    if isinstance(blocks, dict) and any(_text(value) for value in blocks.values()):
+    if isinstance(blocks, dict) and any(
+        _text(value)
+        for key, value in blocks.items()
+        if str(key).casefold() != "listing_completeness"
+    ):
         return True
     if any(
         _text(value)
