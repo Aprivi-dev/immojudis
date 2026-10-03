@@ -201,6 +201,20 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "land_surface_extraction",
     "investment_analysis",
     "llm_due_diligence",
+    # PDF projection traces and candidate evidence are enrichment metadata.
+    # Preserve them through a cold source pass so the PDF worker can invalidate
+    # only stale projections without treating the markers as fresh source text.
+    "pdf_fact_provenance",
+    "pdf_sale_date_extraction",
+    "pdf_visit_dates_extraction",
+    "pdf_energy_diagnostics",
+    "pdf_energy_diagnostics_candidates",
+    "pdf_surface_candidates",
+    "pdf_land_surface_candidates",
+    "pdf_rooms_candidates",
+    "pdf_bedrooms_candidates",
+    "pdf_occupancy_candidates",
+    "pdf_multi_lot_guard",
 )
 
 KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS = (
@@ -216,6 +230,24 @@ KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS = (
     "surface_source",
     "surface_confidence",
     "surface_evidence",
+)
+
+KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS = (
+    "source_name",
+    "source_url",
+    "raw_text",
+    "starting_price_eur",
+    *KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
+    *KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
+    *KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
+    "rooms_count",
+    "bedrooms_count",
+    "occupancy_status",
+    "sale_date",
+    "visit_dates",
+    "property_type",
+    "description",
+    "risk_notes",
 )
 
 
@@ -1146,11 +1178,7 @@ def _preserve_known_enrichment_payloads(
         known_payload = known.get("raw_payload") or {}
         if not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed"):
             sale["source_factual_snapshot"] = {
-                key: sale.get(key) for key in (
-                    "source_name", "source_url", "raw_text", "starting_price_eur",
-                    *KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS, *KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
-                    *KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
-                )
+                key: sale.get(key) for key in KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS
             }
         elif known_payload.get("source_factual_snapshot"):
             sale["source_factual_snapshot"] = known_payload["source_factual_snapshot"]

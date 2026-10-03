@@ -477,6 +477,10 @@ def parse_french_datetime(value: object | None, *, local_timezone: str = "Europe
         candidate = dated[0].group(0).strip()
         if not re.search(r"\d{1,2}:\d{2}", lowered) or re.search(r"\d{1,2}:\d{2}", candidate):
             lowered = candidate
+    # dateutil recognizes these timezone names only in their canonical case.
+    # Lowercasing the French text above must not turn an explicit UTC/GMT
+    # instant into a naive Paris civil time.
+    lowered = re.sub(r"\b(utc|gmt|z)\b", lambda match: match.group(1).upper(), lowered, flags=re.I)
     try:
         parsed = parser.parse(lowered, dayfirst=True, fuzzy=True)
     except (ValueError, TypeError, OverflowError):

@@ -75,6 +75,7 @@ from src.pdf_page_analysis import (
 )
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
 from src.pdf_ocr import extract_page_text_with_ocr_result as _extract_page_text_with_ocr_result_impl
+from src.pdf_fact_scope import _clear_pdf_fact_projections
 
 LOGGER = logging.getLogger(__name__)
 
@@ -267,24 +268,44 @@ def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]
     hashes = {profile.get("url"): profile.get("sha256") for profile in previous.get("profiles", [])}
     changed = any(hashes.get(doc.get("url")) and doc.get("sha256")
                   and hashes[doc.get("url")] != doc["sha256"] for doc in documents)
-    if not changed:
+    # A failed download or a bounded pass does not prove that a source removed
+    # a piece. Only the complete source manifest can establish that absence.
+    current_urls = {doc.get("url") for doc in sale.documents if isinstance(doc, dict) and doc.get("url")}
+    removed = sale.raw_payload.get("source_detail_status") == "complete" and bool(set(hashes) - current_urls)
+    if not changed and not removed:
         return
-    invalidate_analysis(sale.raw_payload, "document_bytes_changed")
+    built_pdf = sale.surface_source == "pdf" or (sale.raw_payload.get("surface_extraction") or {}).get("source") == "pdf"
+    land_pdf = (sale.raw_payload.get("land_surface_extraction") or {}).get("source") == "pdf"
+    projection_state = _clear_pdf_fact_projections(sale)
+    preserved_projection_fields = projection_state.get("preserved", set())
+    invalidate_analysis(sale.raw_payload, "document_manifest_changed" if removed else "document_bytes_changed")
     sale.raw_payload["superseded_document_analysis"] = previous
     snapshot = sale.raw_payload.get("source_factual_snapshot") or {
         "source_name": sale.source_name, "source_url": sale.source_url,
     }
     factual = normalize_sale(snapshot)
-    built_pdf = sale.surface_source == "pdf" or (sale.raw_payload.get("surface_extraction") or {}).get("source") == "pdf"
-    land_pdf = (sale.raw_payload.get("land_surface_extraction") or {}).get("source") == "pdf"
     fields = []
     if built_pdf:
-        fields += ["surface_m2", "habitable_surface_m2", "carrez_surface_m2", "app_surface_m2",
-                   "app_surface_kind", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"]
+        fields += [
+            field
+            for field in (
+                "surface_m2", "habitable_surface_m2", "carrez_surface_m2", "app_surface_m2",
+                "app_surface_kind", "surface_scope", "surface_source", "surface_confidence", "surface_evidence",
+            )
+            if field not in preserved_projection_fields
+        ]
     if land_pdf:
-        fields += ["land_surface_m2"]
+        if "land_surface_m2" not in preserved_projection_fields:
+            fields += ["land_surface_m2"]
     if sale.raw_payload.get("starting_price_extraction"):
-        fields += ["starting_price_eur"]
+        if "starting_price_eur" not in preserved_projection_fields:
+            fields += ["starting_price_eur"]
+    if sale.raw_payload.get("pdf_sale_date_extraction"):
+        if "sale_date" not in preserved_projection_fields:
+            fields += ["sale_date"]
+    if sale.raw_payload.get("pdf_visit_dates_extraction"):
+        if "visit_dates" not in preserved_projection_fields:
+            fields += ["visit_dates"]
     for key in fields:
         setattr(sale, key, getattr(factual, key))
         sale.raw_payload.pop(key, None)
@@ -293,6 +314,7 @@ def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]
         "surface_analysis",
         "land_surface_extraction",
         "starting_price_extraction",
+        "pdf_sale_date_extraction",
         "pdf_energy_diagnostics",
         "pdf_energy_diagnostics_candidates",
         "pdf_surface_candidates",
@@ -302,10 +324,13 @@ def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]
         "pdf_occupancy_candidates",
         "pdf_multi_lot_guard",
         "pdf_visit_dates_extraction",
+        "pdf_fact_provenance",
     ):
         sale.raw_payload.pop(key, None)
-    if snapshot.get("raw_text"):
-        sale.raw_text = str(snapshot["raw_text"])
+    if "raw_text" in snapshot:
+        sale.raw_text = clean_text(snapshot.get("raw_text"))
+    else:
+        sale.raw_text = clean_text((sale.raw_text or "").split("--- PDF TEXT ENRICHMENT ---", 1)[0])
 
 
 def download_documents(

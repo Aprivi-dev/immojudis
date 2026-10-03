@@ -11,7 +11,7 @@ export function documentExtractionSummary(
   const download =
     typeof document.download_status === "string" ? document.download_status.toLowerCase() : null;
   if (["blocked", "failed", "unavailable", "not_found"].includes(download ?? "")) {
-    return "Accès à la pièce indisponible · texte à récupérer.";
+    return "Récupération automatique indisponible · consulter la pièce originale.";
   }
   if (["incomplete", "partial", "ocr_failed"].includes(status ?? "")) {
     return "Extraction partielle · certaines pages restent à lire.";

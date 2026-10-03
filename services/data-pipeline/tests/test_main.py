@@ -1268,6 +1268,100 @@ def test_known_pdf_surface_is_preserved_before_incremental_publication() -> None
     assert raw["document_analysis"]["documents_extracted"] == 3
 
 
+def test_cold_worker_roundtrip_keeps_pdf_provenance_and_matching_source_facts() -> None:
+    source_url = "https://example.test/cold-roundtrip/source-confirmed"
+    document = {"url": "https://example.test/cold-roundtrip/pv.pdf", "label": "PV"}
+    # These values were projected by the old PDF pass and are independently
+    # confirmed by the new source payload.  The snapshot must therefore be
+    # available if a later PDF replacement invalidates the projection.
+    source_facts = {
+        "raw_text": "Appartement 3 pièces, 2 chambres, libre.",
+        "starting_price_eur": 180000,
+        "surface_m2": 82.5,
+        "habitable_surface_m2": 80.0,
+        "carrez_surface_m2": 79.0,
+        "land_surface_m2": 120.0,
+        "app_surface_m2": 80.0,
+        "app_surface_kind": "habitable",
+        "surface_scope": "total",
+        "surface_source": "source_listing",
+        "surface_confidence": 0.94,
+        "surface_evidence": "Surface habitable : 80 m²",
+        "rooms_count": 3,
+        "bedrooms_count": 2,
+        "occupancy_status": "vacant",
+        "sale_date": "2027-02-15T14:00:00+01:00",
+        "visit_dates": ["2027-02-01 10:00"],
+        "property_type": "apartment",
+        "description": "Appartement confirmé par la source.",
+        "risk_notes": "DPE à vérifier",
+    }
+    pdf_markers = {
+        "pdf_fact_provenance": {
+            "rooms_count": {
+                "value": 3,
+                "source": "pdf",
+                "payload_keys": ["pdf_rooms_candidates"],
+            }
+        },
+        "pdf_sale_date_extraction": {"value": source_facts["sale_date"], "source": "pdf"},
+        "pdf_visit_dates_extraction": {"visit_dates": source_facts["visit_dates"], "source": "pdf"},
+        "pdf_energy_diagnostics": {"dpe_class": "C", "source": "pdf"},
+        "pdf_energy_diagnostics_candidates": [{"dpe_class": "C", "document_url": document["url"]}],
+        "pdf_surface_candidates": [{"value": source_facts["surface_m2"], "document_url": document["url"]}],
+        "pdf_land_surface_candidates": [{"value": source_facts["land_surface_m2"], "document_url": document["url"]}],
+        "pdf_rooms_candidates": [{"value": source_facts["rooms_count"], "document_url": document["url"]}],
+        "pdf_bedrooms_candidates": [{"value": source_facts["bedrooms_count"], "document_url": document["url"]}],
+        "pdf_occupancy_candidates": [{"value": source_facts["occupancy_status"], "document_url": document["url"]}],
+        "pdf_multi_lot_guard": {"status": "clear"},
+    }
+    raw = {
+        "source_name": "licitor",
+        "source_url": source_url,
+        "documents": [document],
+        **source_facts,
+    }
+    known = {
+        source_url: {
+            "source_name": "licitor",
+            "source_url": source_url,
+            "documents": [document],
+            **source_facts,
+            "raw_payload": pdf_markers,
+        }
+    }
+
+    main._preserve_known_enrichment_payloads([raw], known)
+
+    snapshot = raw["source_factual_snapshot"]
+    assert {key: snapshot[key] for key in source_facts} == source_facts
+    assert "pdf_fact_provenance" not in snapshot
+    assert "pdf_rooms_candidates" not in snapshot
+    assert raw["rooms_count"] == pdf_markers["pdf_rooms_candidates"][0]["value"]
+    for key, value in pdf_markers.items():
+        assert raw[key] == value
+
+    # Reconstruct the next cold worker from the row that would be returned by
+    # auction_sales.  It must receive both the source snapshot and PDF trace;
+    # no PDF read is needed to keep the confirmed value stable.
+    persisted_row = {
+        **known[source_url],
+        "raw_payload": {**pdf_markers, "source_factual_snapshot": snapshot},
+    }
+    cold_raw = {
+        "source_name": "licitor",
+        "source_url": source_url,
+        "_known_unchanged": True,
+    }
+    main._hydrate_known_unchanged_sales([cold_raw], {source_url: persisted_row})
+    main._preserve_known_enrichment_payloads([cold_raw], {source_url: persisted_row})
+
+    assert cold_raw["source_factual_snapshot"] == snapshot
+    assert cold_raw["pdf_fact_provenance"] == pdf_markers["pdf_fact_provenance"]
+    assert cold_raw["rooms_count"] == source_facts["rooms_count"]
+    assert cold_raw["surface_m2"] == source_facts["surface_m2"]
+
+
 def test_known_pdf_price_resolution_is_preserved_until_source_price_changes() -> None:
     source_url = "https://www.info-encheres.com/vente-6008.html"
     raw = {
