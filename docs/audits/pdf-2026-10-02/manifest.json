@@ -14,7 +14,7 @@
     "note": "Les PDF et captures locales peuvent contenir des adresses, signatures ou informations de procédure. Ils ne doivent pas être publiés; le manifeste conserve les métriques et SHA-256 pour rejouer l'audit sans les committer."
   },
   "tooling": {
-    "pdf_skill": "/Users/aprivileggio/.codex/plugins/cache/openai-primary-runtime/pdf/26.905.11957/skills/pdf/SKILL.md",
+    "pdf_skill": "pdf:pdf (version 26.905.11957)",
     "renderer": "PyMuPDF (fitz), services/data-pipeline/.venv/bin/python",
     "visual_review": "Pages ciblées rendues en PNG puis inspectées visuellement; les conclusions sont dans ground-truth.md.",
     "llm_or_database": "none"

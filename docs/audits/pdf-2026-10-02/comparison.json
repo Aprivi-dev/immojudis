@@ -4,12 +4,12 @@
   "baseline": {
     "label": "baseline-21913e8",
     "commit": "21913e8ca068edc2189b9e418d3f03f8ce41899d",
-    "root": "/private/tmp/immojudis-baseline-21913e8"
+    "root": "checkout-baseline-21913e8"
   },
   "patched": {
     "label": "patched-source-release",
     "commit": "21913e8ca068edc2189b9e418d3f03f8ce41899d",
-    "root": "/private/tmp/immojudis-source-release-git",
+    "root": "checkout-extraction-audit",
     "working_tree": "dirty; extraction-agent edits in page analysis, PDF enrichment/fact extraction, progress and document selection/type modules"
   },
   "execution": {

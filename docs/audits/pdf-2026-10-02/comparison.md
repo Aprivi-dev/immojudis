@@ -1,6 +1,6 @@
 # Comparaison extraction PDF — baseline / patch
 
-Rejeu local hors réseau, sans LLM, avec Tesseract fra+eng. Le baseline est l'archive Git 21913e8; le patch est le checkout /private/tmp/immojudis-source-release-git à la même tête mais avec les modifications non commitées de l'agent extraction.
+Rejeu local hors réseau, sans LLM, avec Tesseract fra+eng. Le baseline est l'archive Git 21913e8; le patch correspond à un checkout isolé de la même tête avec les modifications d’extraction en cours au moment du rejeu. L’identifiant de la version finale publiée et ses validations figurent dans le rapport d’audit.
 
 Les entrées ne conservent pas le texte OCR brut. Elles conservent la page source, le SHA du PDF, la méthode, les longueurs, un SHA du texte extrait, des indicateurs de contexte et les champs DPE retournés par le parseur. La vérité de classe vient de l'inspection visuelle référencée dans ground-truth.md.
 
