@@ -244,6 +244,7 @@ KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS = (
     "bedrooms_count",
     "occupancy_status",
     "sale_date",
+    "status",
     "visit_dates",
     "property_type",
     "description",

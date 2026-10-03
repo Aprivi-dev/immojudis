@@ -12,6 +12,7 @@ from src.normalize import (
     clean_text,
     has_rented_occupancy_signal,
     no_lease_occupancy_status,
+    normalize_status,
     parse_french_datetime,
     parse_price,
     source_sale_timezone,
@@ -29,6 +30,8 @@ _PDF_SCALAR_CANDIDATE_KEYS = (
 )
 
 _PDF_FACT_PROVENANCE_KEY = "pdf_fact_provenance"
+_PDF_PROVENANCE_UNSET = object()
+_PDF_TEXT_ENRICHMENT_MARKER = "--- PDF TEXT ENRICHMENT ---"
 _PDF_LEGACY_SCALAR_FIELDS = {
     "rooms_count": "pdf_rooms_candidates",
     "bedrooms_count": "pdf_bedrooms_candidates",
@@ -202,6 +205,8 @@ def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
             sale.raw_payload[key] = value
         return
     current = getattr(sale, field, None)
+    if field == "status":
+        value = normalize_status(value, getattr(sale, "sale_date", None))
     if value is None and isinstance(current, list):
         value = []
     if value is not None and isinstance(current, Decimal):
@@ -233,6 +238,8 @@ def _pdf_record_fact_projection(
     document_url: str = "",
     page_number: object = None,
     payload_keys: tuple[str, ...] = (),
+    baseline: object = _PDF_PROVENANCE_UNSET,
+    previous_value: object = _PDF_PROVENANCE_UNSET,
 ) -> None:
     """Record the last PDF projection without making it source evidence.
 
@@ -256,6 +263,19 @@ def _pdf_record_fact_projection(
         value = _pdf_get_projected_value(sale, field)
         if value is None:
             continue
+        existing_trace = provenance.get(field)
+        trace_baseline = baseline
+        # A partial pass can append another PDF-derived note to the previous
+        # projection. Keep the original source baseline in that case. If the
+        # field changed independently, the value supplied by the caller is the
+        # new baseline and remains recoverable on the next replacement.
+        if (
+            previous_value is not _PDF_PROVENANCE_UNSET
+            and isinstance(existing_trace, dict)
+            and "baseline" in existing_trace
+            and _pdf_values_match(previous_value, existing_trace.get("value"))
+        ):
+            trace_baseline = existing_trace["baseline"]
         serializable = _pdf_provenance_value(value)
         identity = {
             "field": field,
@@ -278,6 +298,8 @@ def _pdf_record_fact_projection(
             trace["document_url"] = document_url
         if page_number is not None:
             trace["page_number"] = page_number
+        if trace_baseline is not _PDF_PROVENANCE_UNSET:
+            trace["baseline"] = _pdf_provenance_value(trace_baseline)
         provenance[field] = trace
 
 
@@ -335,6 +357,73 @@ def _trace_derived_pdf_surface(sale: Any, provenance: dict[str, object]) -> set[
     return set()
 
 
+def _clear_pdf_derived_source_description(
+    sale: Any,
+    description_trace: dict[str, object] | None,
+) -> None:
+    """Drop a source-description projection that was built from PDF text.
+
+    ``_finalize_sale_for_app`` caches ``source_description`` for downstream
+    context.  When no source description exists, that cache can be the raw
+    text with the PDF marker or the PDF-derived ``description`` itself.  It
+    must not survive document replacement and become source evidence.
+    """
+    raw_payload = getattr(sale, "raw_payload", None)
+    if not isinstance(raw_payload, dict):
+        return
+    value = raw_payload.get("source_description")
+    if not isinstance(value, str):
+        return
+    marker_index = value.find(_PDF_TEXT_ENRICHMENT_MARKER)
+    if marker_index >= 0:
+        source_prefix = clean_text(value[:marker_index])
+        if source_prefix:
+            raw_payload["source_description"] = source_prefix
+        else:
+            raw_payload.pop("source_description", None)
+        return
+    if isinstance(description_trace, dict) and _pdf_values_match(value, description_trace.get("value")):
+        raw_payload.pop("source_description", None)
+
+
+def _document_texts_are_complete(
+    pdf_texts: list[dict[str, object]] | list[str],
+    *,
+    sale: Any = None,
+) -> bool:
+    """Return true only when every supplied document is a complete pass."""
+    if not pdf_texts:
+        return False
+    sale_documents = getattr(sale, "documents", None) if sale is not None else None
+    sale_urls = {
+        clean_text(item.get("url"))
+        for item in sale_documents or []
+        if isinstance(item, dict) and clean_text(item.get("url"))
+    }
+    payload_urls = {
+        clean_text(item.get("url"))
+        for item in pdf_texts
+        if isinstance(item, dict) and clean_text(item.get("url"))
+    }
+    if sale_urls and payload_urls != sale_urls:
+        return False
+    for item in pdf_texts:
+        if not isinstance(item, dict):
+            if not clean_text(item):
+                return False
+            continue
+        status = str(item.get("extraction_status") or "").strip().lower()
+        if item.get("complete") is False or status in {"incomplete", "failed"}:
+            return False
+        if not clean_text(item.get("text")) and item.get("complete") is not True and status != "empty":
+            pages = item.get("pages")
+            if not isinstance(pages, list) or not any(
+                isinstance(page, dict) and clean_text(page.get("text")) for page in pages
+            ):
+                return False
+    return True
+
+
 def _clear_pdf_fact_projections(
     sale: Any,
     *,
@@ -347,6 +436,8 @@ def _clear_pdf_fact_projections(
     provenance = raw_payload.get(_PDF_FACT_PROVENANCE_KEY)
     if not isinstance(provenance, dict):
         provenance = {}
+    description_trace = provenance.get("description")
+    description_trace = description_trace if isinstance(description_trace, dict) else None
     independent_derived_fields = _trace_derived_pdf_surface(sale, provenance)
     refreshed_provenance = raw_payload.get(_PDF_FACT_PROVENANCE_KEY)
     if isinstance(refreshed_provenance, dict):
@@ -374,12 +465,19 @@ def _clear_pdf_fact_projections(
             preserved.add(field)
             retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
             continue
-        source_value = snapshot[field] if field in snapshot else None
+        if field in snapshot:
+            source_value = snapshot[field]
+        elif "baseline" in trace:
+            source_value = trace["baseline"]
+        else:
+            source_value = None
         _pdf_set_projected_value(sale, field, source_value)
         cleared.add(field)
         removed_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
     for key in removed_payload_keys - retained_payload_keys:
         raw_payload.pop(key, None)
+    if selected is None or "description" in selected:
+        _clear_pdf_derived_source_description(sale, description_trace)
     if remaining:
         raw_payload[_PDF_FACT_PROVENANCE_KEY] = remaining
     else:
@@ -403,6 +501,50 @@ def _clear_pdf_fact_projections(
         raw_payload.pop(candidate_key, None)
         cleared.add(field)
     return {"cleared": cleared, "preserved": preserved}
+
+
+def _apply_pdf_textual_facts(
+    sale: Any,
+    combined: str,
+    *,
+    property_type_extractor: Callable[[str], object | None],
+    description_extractor: Callable[[str], object | None],
+    risk_notes_extractor: Callable[[str], object | None],
+    risk_notes_merger: Callable[..., str | None],
+    energy_risk_note_extractor: Callable[[dict[str, object]], str | None],
+    energy_diagnostics: dict[str, object] | None,
+) -> None:
+    """Project PDF text fields while retaining their pre-PDF baselines."""
+    if not sale.property_type or sale.property_type == "other":
+        previous = sale.property_type
+        value = property_type_extractor(combined)
+        if value:
+            sale.property_type = value
+            _pdf_record_fact_projection(
+                sale, ["property_type"], evidence=combined[:600],
+                baseline=previous, previous_value=previous,
+            )
+    if not sale.description:
+        previous = sale.description
+        value = description_extractor(combined)
+        if value:
+            sale.description = value
+            _pdf_record_fact_projection(
+                sale, ["description"], evidence=combined[:600],
+                baseline=previous, previous_value=previous,
+            )
+    risk_notes = risk_notes_extractor(combined)
+    if energy_diagnostics:
+        risk_notes = risk_notes_merger(risk_notes, energy_risk_note_extractor(energy_diagnostics))
+    if risk_notes:
+        previous = sale.risk_notes
+        value = clean_text(" | ".join(filter(None, [previous, risk_notes])))
+        if value != previous:
+            sale.risk_notes = value
+            _pdf_record_fact_projection(
+                sale, ["risk_notes"], evidence=combined[:600],
+                baseline=previous, previous_value=previous,
+            )
 
 
 def _pdf_lot_scope_labels(text: str) -> set[str]:

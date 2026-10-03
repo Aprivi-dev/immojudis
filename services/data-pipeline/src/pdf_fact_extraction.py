@@ -41,7 +41,9 @@ from src.pdf_fact_scope import (
     _PDF_SCALAR_CANDIDATE_KEYS,
     _aggregate_pdf_count_candidates,
     _aggregate_pdf_surface_candidates,
+    _apply_pdf_textual_facts,
     _clear_pdf_fact_projections,
+    _document_texts_are_complete,
     _extract_bedrooms_count_candidates,
     _extract_rooms_count_candidates,
     _pdf_candidate_payload,
@@ -76,18 +78,24 @@ from src.pdf_fact_scope import (
 def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, object]] | list[str]) -> AuctionSale:
     texts = [str(item.get("text") or "") if isinstance(item, dict) else item for item in pdf_texts]
     combined = "\n\n".join(text for text in texts if text)
+    complete_texts = _document_texts_are_complete(pdf_texts, sale=sale)
+    if complete_texts:
+        # A complete, text-empty document is still authoritative evidence that
+        # the previous PDF projection no longer exists.  Partial/failed
+        # payloads must leave the last verified projection available for the
+        # next retry.
+        _clear_pdf_fact_projections(sale)
     if not combined:
-        enriched_marker = "\n\n--- PDF TEXT ENRICHMENT ---\n"
-        current_raw = sale.raw_text or ""
-        if enriched_marker.strip() in current_raw:
-            sale.raw_text = clean_text(current_raw.split(enriched_marker.strip(), 1)[0])
+        if complete_texts:
+            enriched_marker = "\n\n--- PDF TEXT ENRICHMENT ---\n"
+            current_raw = sale.raw_text or ""
+            if enriched_marker.strip() in current_raw:
+                sale.raw_text = clean_text(current_raw.split(enriched_marker.strip(), 1)[0])
         return sale
 
     # Keep every deterministic scalar candidate available for review.  A
     # sale-level field is populated only after its document/page scope is
     # demonstrably unique or explicitly aggregated.
-    if _document_texts_are_complete(pdf_texts):
-        _clear_pdf_fact_projections(sale)
     for key in _PDF_SCALAR_CANDIDATE_KEYS:
         sale.raw_payload.pop(key, None)
     chunk_text = "\n\n".join(str(item.get("text") or "") for item in _pdf_text_chunks(pdf_texts))
@@ -211,11 +219,6 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             sale.visit_dates = list(visit_dates["visit_dates"])
             sale.raw_payload["pdf_visit_dates_extraction"] = visit_dates
             _pdf_record_fact_projection(sale, ["visit_dates"], candidate=visit_dates, payload_keys=("pdf_visit_dates_extraction",))
-    if not sale.property_type or sale.property_type == "other":
-        sale.property_type = _extract_property_type(combined) or sale.property_type
-    if not sale.description:
-        sale.description = _extract_description(combined)
-
     # The per-document extractor also handles plain string inputs. Do not fall
     # back to the sale-wide concatenation: class/value pairs from different
     # PDFs or pages are not one DPE record.
@@ -226,16 +229,21 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     if energy_diagnostics:
         sale.raw_payload["pdf_energy_diagnostics"] = energy_diagnostics
         _pdf_record_fact_projection(sale, ["raw_payload:pdf_energy_diagnostics"], candidate=energy_diagnostics)
-    elif _document_texts_are_complete(pdf_texts):
+    elif complete_texts:
         # A fresh, complete read that no longer contains a diagnostic must not
         # keep projecting a class from an older PDF revision.
         sale.raw_payload.pop("pdf_energy_diagnostics", None)
 
-    risk_notes = _extract_risk_notes(combined)
-    if energy_diagnostics:
-        risk_notes = _merge_pdf_risk_notes(risk_notes, _energy_diagnostic_risk_note(energy_diagnostics))
-    if risk_notes:
-        sale.risk_notes = clean_text(" | ".join(filter(None, [sale.risk_notes, risk_notes])))
+    _apply_pdf_textual_facts(
+        sale,
+        combined,
+        property_type_extractor=_extract_property_type,
+        description_extractor=_extract_description,
+        risk_notes_extractor=_extract_risk_notes,
+        risk_notes_merger=_merge_pdf_risk_notes,
+        energy_risk_note_extractor=_energy_diagnostic_risk_note,
+        energy_diagnostics=energy_diagnostics,
+    )
 
     surface_assets = _extract_document_surface_assets(pdf_texts)
     if (
@@ -259,17 +267,6 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     sale.raw_text = clean_text(f"{current_raw}{enriched_marker}{combined[:15000]}")
     sale.raw_payload["document_facts_version"] = DOCUMENT_FACTS_VERSION
     return sale
-
-def _document_texts_are_complete(pdf_texts: list[dict[str, object]] | list[str]) -> bool:
-    """Whether a PDF pass is safe to use for invalidating old derived facts."""
-    for item in pdf_texts:
-        if not isinstance(item, dict):
-            continue
-        if item.get("complete") is False:
-            return False
-        if str(item.get("extraction_status") or "").strip().lower() in {"incomplete", "failed"}:
-            return False
-    return True
 
 def _pdf_surface_candidates_with_provenance(
     pdf_texts: list[dict[str, object]] | list[str],
@@ -794,7 +791,18 @@ def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> No
     sale.raw_payload["pdf_sale_date_extraction"] = {key: value for key, value in sale_date.items() if key != "value"}
     _pdf_record_fact_projection(sale, ["sale_date"], candidate=sale_date, payload_keys=("pdf_sale_date_extraction",))
     if sale.status in {"", "unknown"}:
-        sale.status = normalize_status(None, parsed)
+        previous_status = sale.status or "unknown"
+        projected_status = normalize_status(None, parsed)
+        sale.status = projected_status
+        if projected_status != previous_status:
+            _pdf_record_fact_projection(
+                sale,
+                ["status"],
+                candidate=sale_date,
+                baseline=previous_status,
+                previous_value=previous_status,
+                payload_keys=("pdf_sale_date_extraction",),
+            )
 
 def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> Path:
     PDF_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
