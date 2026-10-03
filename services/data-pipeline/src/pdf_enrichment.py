@@ -75,7 +75,7 @@ from src.pdf_page_analysis import (
 )
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
 from src.pdf_ocr import extract_page_text_with_ocr_result as _extract_page_text_with_ocr_result_impl
-from src.pdf_fact_scope import _clear_pdf_fact_projections
+from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections
 
 LOGGER = logging.getLogger(__name__)
 
@@ -247,6 +247,13 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     merged_pdf_texts = merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures)
     if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures:
         _write_pdf_text_cache(sale, merged_pdf_texts)
+        if not merged_pdf_texts:
+            # Explicit terminal HTTP/policy observations revoke this cached
+            # text as current context; an ordinary failed or bounded pass
+            # has no such proof and keeps its verified projections for retry.
+            sale.raw_text = clean_text((sale.raw_text or "").split("--- PDF TEXT ENRICHMENT ---", 1)[0])
+            _clear_pdf_derived_source_description(sale, None)
+            invalidate_analysis(sale.raw_payload, "document_access_changed")
         before = sale.raw_text or ""
         enrich_sale_from_pdf_text(sale, merged_pdf_texts)
         if len(sale.raw_text or "") > len(before):

@@ -173,6 +173,7 @@ def test_replaced_pdf_date_is_invalidated_after_postgres_utc_roundtrip():
     _replace(sale)
 
     assert sale.sale_date is None
+    assert sale.status == "unknown"
 
 
 def test_replaced_pdf_visit_dates_are_invalidated():
@@ -204,6 +205,163 @@ def test_replaced_pdf_date_restores_a_canonical_date_from_french_source_text():
 
     assert isinstance(sale.sale_date, datetime)
     assert (sale.sale_date.month, sale.sale_date.day) == (11, 25)
+
+
+def test_replaced_pdf_date_restores_source_status_from_snapshot():
+    sale = _sale()
+    enrich_sale_from_pdf_text(
+        sale, [_document("La vente aux enchères aura lieu le 22 octobre 2026 à 14h30.")]
+    )
+    sale.raw_payload["source_factual_snapshot"] = {
+        "source_name": "info_encheres",
+        "source_url": SOURCE_URL,
+        "status": "cancelled",
+    }
+
+    _replace(sale)
+
+    assert sale.sale_date is None
+    assert sale.status == "cancelled"
+
+
+def test_replaced_pdf_text_projections_restore_direct_call_baselines():
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": SOURCE_URL,
+            "property_type": "other",
+            "risk_notes": "Risque source conservé",
+            "documents": [{"url": DOCUMENT_URL, "label": "PV descriptif"}],
+        }
+    )
+    enrich_sale_from_pdf_text(
+        sale,
+        [
+            _document(
+                "Désignation : Maison individuelle. "
+                "Description : Une description PDF suffisamment longue pour être conservée. "
+                "DPE F."
+            )
+        ],
+    )
+    assert sale.property_type == "house"
+    assert "description PDF" in (sale.description or "")
+    assert "DPE F" in (sale.risk_notes or "")
+    assert {"property_type", "description", "risk_notes"} <= set(
+        sale.raw_payload["pdf_fact_provenance"]
+    )
+
+    _replace(sale)
+
+    assert sale.property_type == "other"
+    assert sale.description is None
+    assert sale.risk_notes == "Risque source conservé"
+
+
+def test_replaced_pdf_text_projections_preserve_independent_corrections():
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": SOURCE_URL,
+            "property_type": "other",
+            "risk_notes": "Risque source",
+            "documents": [{"url": DOCUMENT_URL, "label": "PV descriptif"}],
+        }
+    )
+    enrich_sale_from_pdf_text(
+        sale,
+        [_document("Désignation : Maison individuelle. DPE F. Description documentaire.")],
+    )
+    sale.property_type = "apartment"
+    sale.description = "Correction éditoriale"
+    sale.risk_notes = "Correction risque"
+
+    _replace(sale)
+
+    assert sale.property_type == "apartment"
+    assert sale.description == "Correction éditoriale"
+    assert sale.risk_notes == "Correction risque"
+
+
+def test_complete_empty_pdf_pass_clears_old_projections():
+    sale = _sale()
+    enrich_sale_from_pdf_text(sale, [_document(INITIAL)])
+    previous_raw_text = sale.raw_text
+
+    enrich_sale_from_pdf_text(sale, [_document("", complete=True)])
+
+    assert sale.surface_m2 is None
+    assert sale.rooms_count is None
+    assert sale.bedrooms_count is None
+    assert sale.occupancy_status is None
+    assert sale.raw_text is None
+    assert sale.raw_text != previous_raw_text
+    assert "pdf_fact_provenance" not in sale.raw_payload
+
+
+def test_partial_empty_pdf_pass_preserves_old_projections_for_retry():
+    sale = _sale()
+    enrich_sale_from_pdf_text(sale, [_document(INITIAL)])
+    previous_raw_text = sale.raw_text
+
+    enrich_sale_from_pdf_text(sale, [_document("", complete=False)])
+
+    assert sale.surface_m2 == Decimal("50")
+    assert sale.rooms_count == 2
+    assert sale.bedrooms_count == 1
+    assert sale.occupancy_status == "vacant"
+    assert sale.raw_text == previous_raw_text
+
+
+def test_empty_pdf_pass_without_payload_preserves_old_projections():
+    sale = _sale()
+    enrich_sale_from_pdf_text(sale, [_document(INITIAL)])
+    previous_raw_text = sale.raw_text
+
+    enrich_sale_from_pdf_text(sale, [])
+
+    assert sale.surface_m2 == Decimal("50")
+    assert sale.rooms_count == 2
+    assert sale.occupancy_status == "vacant"
+    assert sale.raw_text == previous_raw_text
+
+
+def test_empty_complete_subset_does_not_prove_that_the_whole_dossier_is_empty():
+    sale = _sale()
+    enrich_sale_from_pdf_text(sale, [_document(INITIAL)])
+    sale.documents.append({"url": "https://example.test/second-pv.pdf", "label": "Annexe"})
+    previous_raw_text = sale.raw_text
+
+    enrich_sale_from_pdf_text(sale, [_document("", complete=True)])
+
+    assert sale.rooms_count == 2
+    assert sale.surface_m2 == Decimal("50")
+    assert sale.raw_text == previous_raw_text
+
+
+def test_pdf_status_restores_unknown_from_an_explicitly_empty_source_snapshot():
+    sale = _sale()
+    sale.raw_payload["source_factual_snapshot"] = {
+        "source_name": "info_encheres", "source_url": SOURCE_URL,
+        "status": None, "sale_date": None,
+    }
+    enrich_sale_from_pdf_text(sale, [_document("Vente aux enchères le 22 octobre 2026 à 14h30.")])
+    assert sale.status == "upcoming"
+
+    _replace(sale)
+
+    assert sale.status == "unknown"
+    assert sale.sale_date is None
+
+
+def test_replaced_pdf_clears_cached_source_description_derived_from_marker():
+    sale = _sale()
+    enrich_sale_from_pdf_text(sale, [_document(INITIAL)])
+    sale.raw_payload["source_description"] = sale.raw_text
+
+    _replace(sale)
+
+    assert "source_description" not in sale.raw_payload
 
 
 def test_removed_document_in_complete_source_manifest_clears_old_pdf_facts():
