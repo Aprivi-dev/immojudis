@@ -640,9 +640,7 @@ function directObservation(field: string, value: DirectValue | unknown): FieldOb
       inference: (direct.inference as CompletenessInference | null | undefined) ?? null,
     });
   }
-  if (value === undefined || value === null) return unknownObservation(field);
-  if (typeof value === "string" && !isMeaningfulText(value)) return unknownObservation(field);
-  if (Array.isArray(value) && value.length === 0) return unknownObservation(field);
+  if (!objectHasContent(value)) return unknownObservation(field);
   return makeObservation(field, "observed", value);
 }
 
@@ -929,7 +927,13 @@ function directFieldValue(
     case 8:
       return direct(rawValue(["capture_text"], ["raw_text"], ["source_blocks", "page_text"]));
     case 9:
-      return direct(sale.source_blocks ?? asRecord(raw.source_blocks));
+      return direct(
+        Object.fromEntries(
+          Object.entries(blocks).filter(
+            ([key, value]) => key !== "listing_completeness" && objectHasContent(value),
+          ),
+        ),
+      );
     case 10:
       return direct(sale.source_presence ?? asRecord(raw.source_presence));
     case 11:
@@ -1102,12 +1106,10 @@ function directFieldValue(
       const urls = mediaUrls(sale);
       return direct(urls.length > 0 ? urls.length : null);
     }
-    case 125: {
-      const usable = mediaUrls(sale).filter(
-        (url) => /^https?:\/\//i.test(url) || url.startsWith("/"),
-      );
-      return direct(usable.length > 0 ? usable.length : null);
-    }
+    case 125:
+      // A URL proves availability in the manifest, not a decoded property photo.
+      // Explicit usability observations are handled by fieldObservation above.
+      return unknownObservation(field);
     case 126: {
       const floorplans = mediaUrls(sale).filter((url) => /plan|floor|schema/i.test(url));
       return direct(floorplans.length > 0 ? floorplans.length : null);
@@ -1298,7 +1300,16 @@ function buildGates(
   const sourceProof =
     nonEmptyProofField(fields, "capture_text") ||
     nonEmptyProofField(fields, "source_blocks") ||
-    nonEmptyProofField(fields, "documents_inventory") ||
+    collectSaleDocuments(sale).some(
+      (document) =>
+        ["extracted", "incomplete", "partial"].includes(document.extraction_status ?? "") &&
+        !["blocked", "failed", "unavailable", "not_found"].includes(
+          document.download_status ?? "",
+        ) &&
+        typeof document.text_chars === "number" &&
+        Number.isFinite(document.text_chars) &&
+        document.text_chars > 0,
+    ) ||
     (hasField(fields, "photos_usable_count") &&
       Number(fieldDisplayValue(fields.get("photos_usable_count")!)) >= 1);
   const criticalConflictFields = [
