@@ -181,6 +181,35 @@ def test_document_upsert_keeps_rows_for_restricted_subset(monkeypatch) -> None:
     assert deletes == []
 
 
+@pytest.mark.parametrize("payload", [
+    {}, {"source_detail_status": None}, {"source_detail_status": ""},
+    {"source_detail_status": " \t "},
+])
+@pytest.mark.parametrize("same_source", [False, True])
+def test_unmarked_revision_does_not_abort_publication_or_authorize_pruning(
+    monkeypatch, payload, same_source,
+) -> None:
+    complete = _sale([], detail_status="complete", source_url="https://example.test/complete")
+    unmarked = _sale(
+        [{"url": "https://example.test/retained.pdf", "label": "Pièce"}],
+        source_url=complete.source_url if same_source else "https://example.test/unmarked",
+    )
+    unmarked.raw_payload = payload
+    deletes = []
+    writes = []
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: {
+        "supabase_url": "https://supabase.test", "supabase_service_role_key": "secret",
+    })
+    monkeypatch.setattr(supabase_client, "_postgrest_upsert", lambda *args, **kwargs: writes.append(args[3]))
+    monkeypatch.setattr(supabase_client, "_postgrest_delete", lambda *args: deletes.append(args[3]))
+
+    assert supabase_client.upsert_documents_to_supabase(
+        [complete, unmarked], persisted_pdf_texts={}, prune_stale=True,
+    ) == 1
+    assert writes[0][0]["document_url"] == "https://example.test/retained.pdf"
+    assert deletes == ([] if same_source else [{"source_url": f"eq.{complete.source_url}"}])
+
+
 def test_document_url_can_be_shared_by_two_source_sales(monkeypatch) -> None:
     shared_url = "https://cdn.example/shared.pdf"
     sale_one = _sale(

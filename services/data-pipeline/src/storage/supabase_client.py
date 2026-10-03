@@ -4728,7 +4728,7 @@ def _prune_stale_document_rows(
             invalid_sources.add(source_url)
             continue
         raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
-        detail_status = clean_text(raw_payload.get("source_detail_status")).casefold()
+        detail_status = (clean_text(raw_payload.get("source_detail_status")) or "").casefold()
         if detail_status != "complete":
             invalid_sources.add(source_url)
             continue
