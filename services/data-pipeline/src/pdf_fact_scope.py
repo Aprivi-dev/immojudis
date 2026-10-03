@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections.abc import Callable
+from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
-from src.normalize import clean_text, has_rented_occupancy_signal, no_lease_occupancy_status, strip_accents
+from src.normalize import (
+    clean_text,
+    has_rented_occupancy_signal,
+    no_lease_occupancy_status,
+    parse_french_datetime,
+    parse_price,
+    source_sale_timezone,
+    strip_accents,
+)
 from src.pdf_document_types import _canonical_document_type, _normalize_document_classifier_text
 
 _PDF_SCALAR_CANDIDATE_KEYS = (
@@ -15,6 +27,33 @@ _PDF_SCALAR_CANDIDATE_KEYS = (
     "pdf_occupancy_candidates",
     "pdf_energy_diagnostics_candidates",
 )
+
+_PDF_FACT_PROVENANCE_KEY = "pdf_fact_provenance"
+_PDF_LEGACY_SCALAR_FIELDS = {
+    "rooms_count": "pdf_rooms_candidates",
+    "bedrooms_count": "pdf_bedrooms_candidates",
+    "occupancy_status": "pdf_occupancy_candidates",
+}
+_PDF_SCOPE_FIELDS = {
+    "surface": {
+        "surface_m2",
+        "habitable_surface_m2",
+        "carrez_surface_m2",
+        "app_surface_m2",
+        "app_surface_kind",
+        "surface_scope",
+        "surface_source",
+        "surface_confidence",
+        "surface_evidence",
+    },
+    "land_surface": {"land_surface_m2"},
+    "rooms": {"rooms_count"},
+    "bedrooms": {"bedrooms_count"},
+    "occupancy": {"occupancy_status"},
+    "energy": {"raw_payload:pdf_energy_diagnostics"},
+    "starting_price": {"starting_price_eur"},
+    "dates": {"sale_date", "visit_dates"},
+}
 
 
 def _pdf_text_chunks(pdf_texts: list[dict[str, object]] | list[str]) -> list[dict[str, object]]:
@@ -86,6 +125,284 @@ def _pdf_text_chunks(pdf_texts: list[dict[str, object]] | list[str]) -> list[dic
                 }
             )
     return chunks
+
+
+def _pdf_provenance_value(value: object) -> object:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _pdf_provenance_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_pdf_provenance_value(item) for item in value]
+    return value
+
+
+def _pdf_datetime_for_compare(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _pdf_datetimes_match(current: object, recorded: object) -> bool | None:
+    current_datetime = _pdf_datetime_for_compare(current)
+    recorded_datetime = _pdf_datetime_for_compare(recorded)
+    if current_datetime is None or recorded_datetime is None:
+        return None
+    current_aware = current_datetime.tzinfo is not None and current_datetime.utcoffset() is not None
+    recorded_aware = recorded_datetime.tzinfo is not None and recorded_datetime.utcoffset() is not None
+    if current_aware != recorded_aware:
+        return False
+    if current_aware:
+        return current_datetime.astimezone(UTC) == recorded_datetime.astimezone(UTC)
+    return current_datetime == recorded_datetime
+
+
+def _pdf_values_match(current: object, recorded: object) -> bool:
+    if current is None or recorded is None:
+        return current is recorded or (current is None and recorded is None)
+    datetime_match = _pdf_datetimes_match(current, recorded)
+    if datetime_match is not None:
+        return datetime_match
+    if isinstance(current, (list, tuple)) and isinstance(recorded, (list, tuple)):
+        return len(current) == len(recorded) and all(
+            _pdf_values_match(current_item, recorded_item)
+            for current_item, recorded_item in zip(current, recorded, strict=True)
+        )
+    if isinstance(current, dict) and isinstance(recorded, dict):
+        return current.keys() == recorded.keys() and all(
+            _pdf_values_match(current[key], recorded[key]) for key in current
+        )
+    if isinstance(current, Decimal) or isinstance(recorded, (Decimal, int, float)):
+        try:
+            return Decimal(str(current)) == Decimal(str(recorded))
+        except (ArithmeticError, TypeError, ValueError):
+            pass
+    return _pdf_provenance_value(current) == _pdf_provenance_value(recorded)
+
+
+def _pdf_get_projected_value(sale: Any, field: str) -> object:
+    if field.startswith("raw_payload:"):
+        return sale.raw_payload.get(field.split(":", 1)[1])
+    return getattr(sale, field, None)
+
+
+def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
+    if field.startswith("raw_payload:"):
+        key = field.split(":", 1)[1]
+        if value is None:
+            sale.raw_payload.pop(key, None)
+        else:
+            sale.raw_payload[key] = value
+        return
+    current = getattr(sale, field, None)
+    if value is None and isinstance(current, list):
+        value = []
+    if value is not None and isinstance(current, Decimal):
+        try:
+            value = Decimal(str(value))
+        except (ArithmeticError, TypeError, ValueError):
+            parsed = parse_price(value)
+            if parsed is not None:
+                value = parsed
+    elif value is not None and isinstance(current, datetime) and not isinstance(value, datetime):
+        value = parse_french_datetime(
+            value,
+            local_timezone=source_sale_timezone(getattr(sale, "raw_payload", {}) or {}),
+        )
+    elif value is not None and isinstance(current, int) and not isinstance(current, bool):
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            pass
+    setattr(sale, field, value)
+
+
+def _pdf_record_fact_projection(
+    sale: Any,
+    fields: list[str] | tuple[str, ...] | set[str],
+    *,
+    candidate: dict[str, object] | None = None,
+    evidence: str = "",
+    document_url: str = "",
+    page_number: object = None,
+    payload_keys: tuple[str, ...] = (),
+) -> None:
+    """Record the last PDF projection without making it source evidence.
+
+    The value trace lets a later document replacement remove only values that
+    still equal the old PDF projection.  A manually corrected field therefore
+    survives invalidation, while a stale PDF value can be restored from the
+    trusted source snapshot (or cleared when no source value exists).
+    """
+    raw_payload = getattr(sale, "raw_payload", None)
+    if not isinstance(raw_payload, dict):
+        return
+    provenance = raw_payload.setdefault(_PDF_FACT_PROVENANCE_KEY, {})
+    if not isinstance(provenance, dict):
+        provenance = {}
+        raw_payload[_PDF_FACT_PROVENANCE_KEY] = provenance
+    candidate = candidate or {}
+    evidence = str(candidate.get("evidence") or evidence)
+    document_url = str(candidate.get("document_url") or document_url)
+    page_number = candidate.get("page_number", page_number)
+    for field in fields:
+        value = _pdf_get_projected_value(sale, field)
+        if value is None:
+            continue
+        serializable = _pdf_provenance_value(value)
+        identity = {
+            "field": field,
+            "value": serializable,
+            "evidence": evidence,
+            "document_url": document_url,
+            "page_number": page_number,
+        }
+        trace = {
+            "value": serializable,
+            "source": "pdf",
+            "fingerprint": hashlib.sha256(
+                json.dumps(identity, sort_keys=True, default=str).encode("utf-8")
+            ).hexdigest(),
+            "payload_keys": list(payload_keys),
+        }
+        if evidence:
+            trace["evidence"] = evidence[:600]
+        if document_url:
+            trace["document_url"] = document_url
+        if page_number is not None:
+            trace["page_number"] = page_number
+        provenance[field] = trace
+
+
+def _pdf_record_candidate_projection(
+    sale: Any,
+    field: str,
+    candidate: dict[str, object] | None,
+    *,
+    fallback_evidence: str = "",
+    payload_keys: tuple[str, ...] = (),
+) -> None:
+    candidate = candidate or {}
+    _pdf_record_fact_projection(
+        sale,
+        [field],
+        evidence=str(candidate.get("evidence") or fallback_evidence),
+        document_url=str(candidate.get("document_url") or ""),
+        page_number=candidate.get("page_number"),
+        payload_keys=payload_keys,
+    )
+
+
+def _pdf_projection_scope_fields(fields: list[str] | tuple[str, ...] | set[str] | None) -> set[str] | None:
+    if fields is None:
+        return None
+    selected: set[str] = set()
+    for scope in fields:
+        selected.update(_PDF_SCOPE_FIELDS.get(scope, {scope}))
+    return selected
+
+
+def _trace_derived_pdf_surface(sale: Any, provenance: dict[str, object]) -> set[str]:
+    """Keep the displayed surface subject to its original PDF value proof."""
+    app_surface = getattr(sale, "app_surface_m2", None)
+    surface_traces = [
+        trace
+        for field, trace in provenance.items()
+        if field in {"surface_m2", "habitable_surface_m2", "carrez_surface_m2"}
+        and isinstance(trace, dict)
+        and trace.get("source") == "pdf"
+        and trace.get("value") is not None
+    ]
+    if app_surface is None or not surface_traces:
+        return set()
+    matching = next(
+        (trace for trace in surface_traces if _pdf_values_match(app_surface, trace.get("value"))),
+        None,
+    )
+    if matching is None:
+        # A different displayed value has no proof of belonging to the old PDF.
+        return {"app_surface_m2", "app_surface_kind"}
+    missing = [field for field in ("app_surface_m2", "app_surface_kind") if field not in provenance]
+    if missing:
+        _pdf_record_fact_projection(sale, missing, candidate=matching)
+    return set()
+
+
+def _clear_pdf_fact_projections(
+    sale: Any,
+    *,
+    fields: list[str] | tuple[str, ...] | set[str] | None = None,
+) -> dict[str, set[str]]:
+    """Remove unchanged stale PDF projections and restore trusted source facts."""
+    raw_payload = getattr(sale, "raw_payload", None)
+    if not isinstance(raw_payload, dict):
+        return {"cleared": set(), "preserved": set()}
+    provenance = raw_payload.get(_PDF_FACT_PROVENANCE_KEY)
+    if not isinstance(provenance, dict):
+        provenance = {}
+    independent_derived_fields = _trace_derived_pdf_surface(sale, provenance)
+    refreshed_provenance = raw_payload.get(_PDF_FACT_PROVENANCE_KEY)
+    if isinstance(refreshed_provenance, dict):
+        provenance = refreshed_provenance
+    selected = _pdf_projection_scope_fields(fields)
+    snapshot = raw_payload.get("source_factual_snapshot")
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    cleared: set[str] = set()
+    preserved: set[str] = set(independent_derived_fields)
+    removed_payload_keys: set[str] = set()
+    retained_payload_keys: set[str] = set()
+    remaining: dict[str, object] = {}
+    for field, trace in provenance.items():
+        if not isinstance(trace, dict):
+            remaining[field] = trace
+            continue
+        if selected is not None and field not in selected:
+            remaining[field] = trace
+            retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
+            continue
+        current = _pdf_get_projected_value(sale, field)
+        if not _pdf_values_match(current, trace.get("value")):
+            # The value was independently corrected after the PDF pass.
+            remaining[field] = trace
+            preserved.add(field)
+            retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
+            continue
+        source_value = snapshot[field] if field in snapshot else None
+        _pdf_set_projected_value(sale, field, source_value)
+        cleared.add(field)
+        removed_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
+    for key in removed_payload_keys - retained_payload_keys:
+        raw_payload.pop(key, None)
+    if remaining:
+        raw_payload[_PDF_FACT_PROVENANCE_KEY] = remaining
+    else:
+        raw_payload.pop(_PDF_FACT_PROVENANCE_KEY, None)
+    # Rows written before the per-field trace existed may still carry a
+    # single PDF candidate list. Treat a matching scalar as stale only when
+    # the trusted source snapshot has no independent value to restore.
+    for field, candidate_key in _PDF_LEGACY_SCALAR_FIELDS.items():
+        if field in provenance:
+            continue
+        if selected is not None and field not in selected:
+            continue
+        candidates = raw_payload.get(candidate_key)
+        if not isinstance(candidates, list) or not candidates:
+            continue
+        values = { _pdf_provenance_value(item.get("value")) for item in candidates if isinstance(item, dict) }
+        current = getattr(sale, field, None)
+        if len(values) != 1 or not _pdf_values_match(current, next(iter(values))):
+            continue
+        _pdf_set_projected_value(sale, field, snapshot[field] if field in snapshot else None)
+        raw_payload.pop(candidate_key, None)
+        cleared.add(field)
+    return {"cleared": cleared, "preserved": preserved}
 
 
 def _pdf_lot_scope_labels(text: str) -> set[str]:
@@ -586,6 +903,26 @@ def _dedupe_scalar_candidates(candidates: list[dict[str, object]]) -> list[dict[
     return unique
 
 
+def _pdf_count_has_explicit_total(candidate: dict[str, object], *, field: str) -> bool:
+    value = candidate.get("value")
+    try:
+        numeric_value = int(value)
+    except (TypeError, ValueError):
+        return False
+    value_tokens = [str(numeric_value)]
+    value_tokens.extend(word for word, number in _PDF_COUNT_WORDS.items() if number == numeric_value)
+    value_expression = "(?:" + "|".join(re.escape(token) for token in value_tokens) + ")"
+    label = r"pi[eè]ces?" if field == "rooms" else r"chambres?"
+    evidence = str(candidate.get("evidence") or "")
+    return any(
+        re.search(pattern, evidence, re.I)
+        for pattern in (
+            rf"\b{value_expression}\s*{label}\b[^.;:\n]{{0,16}}\b(?:au\s+total|total(?:e|es)?)\b",
+            rf"\b(?:au\s+total|total(?:e|es)?(?:\s+de|\s*:)?)\s*{value_expression}\s*{label}\b",
+        )
+    )
+
+
 def _pdf_scalar_candidates_from_documents(
     pdf_texts: list[dict[str, object]] | list[str],
     extractor: Callable[..., list[dict[str, object]]],
@@ -608,9 +945,7 @@ def _aggregate_pdf_count_candidates(
     if len(labels) < 2:
         return None
     explicit_total = [
-        candidate
-        for candidate in candidates
-        if re.search(r"\b(?:total|au\s+total)\b", str(candidate.get("evidence") or ""), re.I)
+        candidate for candidate in candidates if _pdf_count_has_explicit_total(candidate, field=field)
     ]
     if explicit_total:
         return explicit_total[0]

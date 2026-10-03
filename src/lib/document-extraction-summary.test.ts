@@ -31,7 +31,7 @@ describe("documentExtractionSummary", () => {
 
   it("distinguishes unavailable access, pending extraction and missing metadata", () => {
     expect(documentExtractionSummary({ ...document, download_status: "blocked" })).toContain(
-      "Accès à la pièce indisponible",
+      "Récupération automatique indisponible",
     );
     expect(documentExtractionSummary(document)).toBe("Texte en attente d’extraction.");
     expect(documentExtractionSummary({ ...document, extraction_status: null })).toContain(
