@@ -26,7 +26,7 @@ except ModuleNotFoundError:  # pragma: no cover - GitHub Actions installs psycop
     sql = None
     Jsonb = None
 
-from src.admission import has_price_or_surface, is_expired, quarantine_reason
+from src.admission import has_price_or_surface, is_catalogue_expired, is_expired, quarantine_reason
 from src.asset_normalization import (
     build_auction_features_row,
     build_auction_risk_rows_from_occurrences,
@@ -579,7 +579,12 @@ def upsert_sales_to_supabase(
     *,
     refresh_last_seen: bool = True,
 ) -> int:
-    sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
+    sales = [
+        sale for sale in sales
+        if has_price_or_surface(sale)
+        and not is_expired(sale)
+        and not is_catalogue_expired(sale)
+    ]
     for sale in sales:
         apply_catalogue_readiness(sale)
     if not sales:
