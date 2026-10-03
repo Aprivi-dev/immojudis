@@ -4,6 +4,7 @@ from pathlib import Path
 from src.extraction_profiles import (
     attach_source_property_features,
     build_procedure_profile,
+    build_source_field_observations,
 )
 
 
@@ -302,6 +303,160 @@ def test_existing_typed_feature_tree_is_preserved_and_projected() -> None:
         )["fields"]
     }
     assert set(observations).issubset(catalogue_ids)
+
+
+def test_contact_channels_are_structured_without_false_conflict() -> None:
+    sale = attach_source_property_features(
+        {
+            "source_url": "https://example.test/notaires/contact",
+            "description": "Appartement API",
+            "source_property_features": {
+                "contact": {
+                    "phone": "05 00 00 00 00",
+                    "email": "office@example.test",
+                },
+            },
+        }
+    )
+
+    observation = sale["source_field_observations"]["lawyer_contact"]
+    assert observation["state"] == "observed"
+    assert observation["value"] == {
+        "phone": "05 00 00 00 00",
+        "email": "office@example.test",
+    }
+    assert set(observation["channels"]) == {"phone", "email"}
+    assert observation["channels"]["phone"]["provenance"] == "parser_field"
+    assert observation["channels"]["email"]["provenance"] == "parser_field"
+    assert any(item["quote"] == "contact.phone=05 00 00 00 00" for item in observation["evidence"])
+    assert any(item["quote"] == "contact.email=office@example.test" for item in observation["evidence"])
+    assert "conflicts" not in observation
+
+
+def test_inferred_contact_channel_keeps_the_inference_contract() -> None:
+    observations = build_source_field_observations(
+        {"source_url": "https://example.test/notaires/contact-inferred"},
+        {
+            "contact": {
+                "email": {
+                    "value": "office@example.test",
+                    "state": "inferred",
+                    "provenance": "inferred",
+                    "evidence": "contact email extracted from source field",
+                    "inference": {
+                        "method": "parser_field_without_explicit_source_text",
+                        "input_fields": ["contact.email"],
+                        "confidence": 0.6,
+                    },
+                },
+            },
+        },
+    )
+
+    observation = observations["lawyer_contact"]
+    assert observation["state"] == "inferred"
+    assert observation["channels"]["email"]["state"] == "inferred"
+    assert observation["inference"] == {
+        "method": "parser_field_without_explicit_source_text",
+        "input_fields": ["contact.email"],
+        "confidence": 0.6,
+    }
+
+
+def test_mixed_contact_channels_keep_per_channel_state_and_conservative_inference() -> None:
+    observations = build_source_field_observations(
+        {"source_url": "https://example.test/notaires/contact-mixed"},
+        {
+            "contact": {
+                "phone": "05 00 00 00 00",
+                "email": {
+                    "value": "office@example.test",
+                    "state": "inferred",
+                    "provenance": "inferred",
+                    "evidence": "contact email inferred",
+                    "inference": {
+                        "method": "email_from_parser_field",
+                        "input_fields": ["contact.email"],
+                        "confidence": 0.7,
+                    },
+                },
+            },
+        },
+    )
+
+    observation = observations["lawyer_contact"]
+    assert observation["state"] == "inferred"
+    assert observation["channels"]["phone"]["state"] == "observed"
+    assert observation["channels"]["email"]["state"] == "inferred"
+    assert observation["inference"] == {
+        "method": "structured_contact_channels",
+        "input_fields": ["lawyer_contact.email"],
+        "confidence": 0.7,
+    }
+
+
+def test_same_contact_channel_conflict_is_retained() -> None:
+    observations = build_source_field_observations(
+        {"source_url": "https://example.test/notaires/contact-conflict"},
+        {"contact": {"phone": "05 00 00 00 00"}},
+        {
+            "fields": {
+                "eligible_lawyer": {
+                    "value": {"contact": "06 00 00 00 00"},
+                    "state": "present",
+                    "provenance": "explicit",
+                    "evidence": "profile contact",
+                },
+            },
+        },
+    )
+
+    observation = observations["lawyer_contact"]
+    assert observation["state"] == "conflict"
+    assert observation["channels"]["phone"]["state"] == "conflict"
+    assert set(observation["channels"]["phone"]["values"]) == {
+        "05 00 00 00 00",
+        "06 00 00 00 00",
+    }
+    assert len(observation["conflicts"]) >= 2
+    assert all(row["channel"] == "phone" for row in observation["conflicts"])
+
+
+def test_profile_lawyer_name_does_not_become_phone_evidence() -> None:
+    sale = attach_source_property_features(
+        {
+            "source_url": "https://example.test/judicial/contact-proof",
+            "description": "Tribunal judiciaire de Bordeaux. Vente aux enchères.",
+            "lawyer_name": "SELARL Exemple",
+            "lawyer_contact": "05 58 90 02 26",
+        }
+    )
+
+    observation = sale["source_field_observations"]["lawyer_contact"]
+    phone = observation["channels"]["phone"]
+    assert phone["provenance"] == "parser_field"
+    assert all(item["quote"] != "SELARL Exemple" for item in phone["evidence"])
+    assert all(
+        not (item["grade"] == "A" and "SELARL Exemple" in item["quote"])
+        for item in phone["evidence"]
+    )
+
+
+def test_patio_is_preserved_without_being_projected_as_terrace() -> None:
+    sale = attach_source_property_features(
+        {
+            "source_url": "https://example.test/notaires/patio",
+            "description": "Maison avec patio intérieur.",
+            "source_property_features": {
+                "annexes": {"terrace": False, "patio": True},
+            },
+        }
+    )
+
+    assert sale["source_property_features"]["annexes"]["patio"] is True
+    assert sale["source_field_observations"]["terrace"]["state"] == "observed"
+    assert sale["source_field_observations"]["terrace"]["value"] is False
+    assert "patio" not in sale["source_field_observations"]
 
 
 def test_conflicting_structured_feature_values_are_retained_without_hashing() -> None:
