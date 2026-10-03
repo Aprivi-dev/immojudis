@@ -247,14 +247,14 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     merged_pdf_texts = merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures)
     if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures:
         _write_pdf_text_cache(sale, merged_pdf_texts)
-        if not merged_pdf_texts:
-            # Explicit terminal HTTP/policy observations revoke this cached
-            # text as current context; an ordinary failed or bounded pass
-            # has no such proof and keeps its verified projections for retry.
+        terminal_urls = set(stats.blocked_document_urls) | {
+            item.get("url") for item in stats.permanent_document_failures if item.get("url")
+        }
+        if terminal_urls:
+            # Revoke a terminal piece even when another PDF remains readable.
+            # Unbound projections may depend on the revoked text; rebuild them
+            # from the retained texts. Explicit proofs from other URLs survive.
             sale.raw_text = clean_text((sale.raw_text or "").split("--- PDF TEXT ENRICHMENT ---", 1)[0])
-            terminal_urls = set(stats.blocked_document_urls) | {
-                item.get("url") for item in stats.permanent_document_failures if item.get("url")
-            }
             declared_urls = {item.get("url") for item in sale.documents if item.get("url")}
             if declared_urls and declared_urls.issubset(terminal_urls):
                 _clear_pdf_fact_projections(sale)
@@ -262,7 +262,13 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
                 traces = sale.raw_payload.get("pdf_fact_provenance") or {}
                 if not isinstance(traces, dict):
                     traces = {}
-                affected = {key for key, trace in traces.items() if isinstance(trace, dict) and trace.get("document_url") in terminal_urls}
+                affected = {
+                    key for key, trace in traces.items()
+                    if isinstance(trace, dict)
+                    and (not trace.get("document_url") or trace.get("document_url") in terminal_urls)
+                }
+                if "surface_m2" in affected:
+                    affected.update({"app_surface_m2", "app_surface_kind"})
                 _clear_pdf_fact_projections(sale, fields=affected)
                 _clear_pdf_derived_source_description(sale, None)
             invalidate_analysis(sale.raw_payload, "document_access_changed")
