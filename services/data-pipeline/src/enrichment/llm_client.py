@@ -7,7 +7,7 @@ import math
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
@@ -268,6 +268,79 @@ class ReplicateClient:
         retry_label = "after retry" if attempts > 1 else "without retry"
         raise ValueError(f"Replicate returned invalid JSON {retry_label}: {last_error}")
 
+    def generate_json_with_images(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        image_inputs: Sequence[str],
+    ) -> dict[str, Any]:
+        """Make one bounded JSON request with image inputs for a vision model.
+
+        The catalogue path keeps using :meth:`generate_json` and its existing
+        text-only payload. This separate entry point is deliberately limited to
+        the configured Qwen3.7-Plus image contract, accepts only HTTPS or data
+        image URLs, and performs no JSON retry (one image analysis per asset).
+        Callers must keep the data URL bytes bounded before invoking it.
+        """
+        if not self.api_token:
+            raise LLMClientUnavailable("REPLICATE_API_TOKEN is missing")
+        if not _is_qwen_vision_model(str(self.model or "")):
+            raise LLMClientUnavailable("Configured Replicate model has no approved image input contract")
+        images = list(image_inputs)
+        if not 1 <= len(images) <= 4:
+            raise ValueError("Vision requests must contain between 1 and 4 images")
+        for image in images:
+            if not isinstance(image, str) or not image:
+                raise ValueError("Vision image inputs must be non-empty strings")
+            if len(image) > 8_000_000:
+                raise ValueError("Vision image input exceeds the 8 MB encoded limit")
+            if not (image.startswith("https://") or image.startswith("data:image/")):
+                raise ValueError("Vision image inputs must be HTTPS or data image URLs")
+
+        ensure_llm_task_deadline("starting vision generation")
+        prompt = _user_prompt_for_model(str(self.model), system_prompt, user_prompt)
+        prediction: dict[str, Any] | None = None
+        raw_response: str | None = None
+        try:
+            prediction = self._create_prediction(
+                prompt,
+                system_prompt=system_prompt,
+                image_inputs=images,
+            )
+            deadline_telemetry_token = _GENERATE_JSON_OWNS_DEADLINE_TELEMETRY.set(True)
+            try:
+                output = self._wait_for_output(prediction)
+            finally:
+                _GENERATE_JSON_OWNS_DEADLINE_TELEMETRY.reset(deadline_telemetry_token)
+            raw_response = _stringify_output(output)
+            parsed = parse_json_response(raw_response)
+            self._record_usage(
+                prediction,
+                request_kind="vision_analysis",
+                attempt_number=1,
+                prompt_chars=len(prompt),
+                system_prompt_chars=len(system_prompt),
+                output_chars=len(raw_response),
+                succeeded=True,
+            )
+            return parsed
+        except Exception as exc:
+            if prediction is not None:
+                self._record_usage(
+                    prediction,
+                    request_kind="vision_analysis",
+                    attempt_number=1,
+                    prompt_chars=len(prompt),
+                    system_prompt_chars=len(system_prompt),
+                    output_chars=len(raw_response or ""),
+                    succeeded=False,
+                    error_message=str(exc),
+                    exception=exc,
+                )
+            if isinstance(exc, LLMProviderOutputRefused):
+                exc.request_kind = "vision_analysis"
+            raise
+
     def _record_usage(
         self,
         prediction: dict[str, Any],
@@ -344,7 +417,13 @@ class ReplicateClient:
         }
         record_llm_usage_event(event)
 
-    def _create_prediction(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
+    def _create_prediction(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        *,
+        image_inputs: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
         ensure_llm_task_deadline("preparing Replicate prediction")
         owner, model_name = _split_replicate_model(str(self.model))
         model_reference = str(self.model)
@@ -360,7 +439,10 @@ class ReplicateClient:
             "Prefer": f"wait={min(int(self.wait_seconds or 60), 60)}",
             "Cancel-After": str(self.cancel_after),
         }
-        payload = {"input": self._input_payload(prompt, system_prompt=system_prompt)}
+        input_kwargs: dict[str, object] = {"system_prompt": system_prompt}
+        if image_inputs:
+            input_kwargs["image_inputs"] = image_inputs
+        payload = {"input": self._input_payload(prompt, **input_kwargs)}
         if versioned_model:
             # Community models are called through the versioned predictions
             # endpoint. Pinning the version also protects the scan output from
@@ -369,11 +451,18 @@ class ReplicateClient:
         ensure_llm_task_deadline("creating Replicate prediction")
         metadata_token = _REQUEST_METADATA.set(
             {
-                "request_kind": "display_description"
-                if _is_display_description_prompt(system_prompt or "")
-                else "fact_extraction",
+                "request_kind": (
+                    "vision_analysis"
+                    if image_inputs
+                    else (
+                        "display_description"
+                        if _is_display_description_prompt(system_prompt or "")
+                        else "fact_extraction"
+                    )
+                ),
                 "prompt_chars": len(prompt),
                 "system_prompt_chars": len(system_prompt or ""),
+                "image_count": len(image_inputs or ()),
             }
         )
         try:
@@ -591,8 +680,16 @@ class ReplicateClient:
         # latency on top of the configured interval for every backfill item.
         return
 
-    def _input_payload(self, prompt: str, system_prompt: str | None = None) -> dict[str, Any]:
+    def _input_payload(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        *,
+        image_inputs: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
         max_tokens = self._max_tokens_for_prompt(system_prompt)
+        if image_inputs and not _is_qwen_vision_model(str(self.model)):
+            raise LLMClientUnavailable("Configured Replicate model has no approved image input contract")
         if _is_gemini_model(str(self.model)):
             payload = {
                 "prompt": prompt,
@@ -625,7 +722,7 @@ class ReplicateClient:
                 "repetition_penalty": 1,
             }
         if _is_qwen_model(str(self.model)):
-            return {
+            payload = {
                 "prompt": prompt,
                 "system_prompt": system_prompt or "",
                 "max_tokens": int(max_tokens or 8192),
@@ -634,6 +731,9 @@ class ReplicateClient:
                 "presence_penalty": 0,
                 "frequency_penalty": 0,
             }
+            if image_inputs:
+                payload["image"] = list(image_inputs)
+            return payload
         return {
             "prompt": prompt,
             "max_tokens": int(max_tokens or 4096),
@@ -749,6 +849,11 @@ def _is_gemini_3_model(model: str) -> bool:
 def _is_qwen_model(model: str) -> bool:
     model_path = model.split(":", 1)[0].lower()
     return bool(re.search(r"(?:^|/)qwen(?:[\d._-]|$)", model_path))
+
+
+def _is_qwen_vision_model(model: str) -> bool:
+    """Return true only for the documented Qwen3.7-Plus image contract."""
+    return model.split(":", 1)[0].lower() == "qwen/qwen3-7-plus"
 
 
 def _is_qwen2_7b_instruct_model(model: str) -> bool:

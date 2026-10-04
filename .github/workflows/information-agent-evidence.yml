@@ -21,7 +21,16 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       INFORMATION_AGENT_EVIDENCE_BATCH_SIZE: 5
-      PDF_OCR_ENABLED: "true"
+      INFORMATION_AGENT_EVIDENCE_OCR_ENABLED: "true"
+      INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED: "true"
+      INFORMATION_AGENT_EVIDENCE_VISION_ENABLED: "true"
+      LLM_ENABLED: "true"
+      LLM_PROVIDER: replicate
+      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      REPLICATE_MODEL: qwen/qwen3-7-plus
+      REPLICATE_MIN_INTERVAL_SECONDS: 11
+      REPLICATE_MAX_RETRIES: 0
+      REPLICATE_MAX_CALLS_PER_HOUR: 60
     steps:
       - name: Check for queued evidence
         id: preflight
@@ -44,6 +53,12 @@ jobs:
       - name: Check out repository
         if: steps.preflight.outputs.should_run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ vars.INFORMATION_AGENT_EVIDENCE_REF || github.sha }}
+
+      - name: Record evidence worker revision
+        if: steps.preflight.outputs.should_run == 'true'
+        run: git rev-parse HEAD
 
       - name: Set up Python
         if: steps.preflight.outputs.should_run == 'true'
