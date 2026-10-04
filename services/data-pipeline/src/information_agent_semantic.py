@@ -36,6 +36,12 @@ MAX_PHOTO_OBSERVATION_CHARS = 300
 PHOTO_SEMANTIC_MAX_OUTPUT_TOKENS = 768
 PHOTO_SEMANTIC_TIMEOUT_SECONDS = 25
 PHOTO_SEMANTIC_PROCESSOR_VERSION = "photo_semantic_v1"
+UNCERTAIN_EVIDENCE_RE = re.compile(
+    r"\b(?:non\s+(?:communiqu(?:e|ée)|pr[eé]cis(?:e|ée)|renseign(?:e|ée)|disponible|"
+    r"confirm(?:e|é|ée)|valid(?:e|é|ée))|(?:a|à)\s+(?:confirmer|v[eé]rifier|verifier)|"
+    r"inconnu(?:e)?|ind[eé]termin(?:e|ée)|incertain(?:e)?|sous\s+r[eé]serve|n/?a|nc)\b",
+    re.IGNORECASE,
+)
 
 # Keep this set synchronized with the fact_key check on
 # information_agent_fact_candidates. Attachments themselves are persisted as
@@ -362,6 +368,8 @@ def _validate_fact(raw: Mapping[str, object], page_texts: Mapping[int, str]) -> 
     evidence_excerpt = _grounded_excerpt(source_text, raw_excerpt)
     if evidence_excerpt is None:
         return None
+    if UNCERTAIN_EVIDENCE_RE.search(evidence_excerpt):
+        return None
     value = _validated_value(fact_key, raw.get("proposed_value"))
     if value is None:
         return None
@@ -455,6 +463,8 @@ def _value_is_grounded(
         except ValueError:
             return False
         return _date_is_grounded(expected, evidence_excerpt)
+    if fact_key == "energy_diagnostics":
+        return _energy_grade_is_grounded(str(value), evidence_excerpt)
     normalized = _normalized(str(value))
     if not normalized:
         return False
@@ -552,6 +562,23 @@ def _contains_grounded_phrase(source: str, candidate: str) -> bool:
     ) is not None
 
 
+def _energy_grade_is_grounded(value: str, evidence_excerpt: str) -> bool:
+    """Require an energy-label context before accepting a single A–G grade."""
+    grade = value.strip().upper()
+    if grade not in set("ABCDEFG"):
+        return False
+    context = re.search(
+        r"\b(?:dpe|diagnostic\s+de\s+performance\s+[ée]nerg[ée]tique|"
+        r"classe\s+(?:[ée]nerg[ée]tique|[ée]nergie)|"
+        r"performance\s+[ée]nerg[ée]tique|[ée]tiquette\s+[ée]nerg[ée]tique)\b",
+        evidence_excerpt,
+        re.IGNORECASE,
+    )
+    if context is None:
+        return False
+    return re.search(rf"(?<![A-Za-z]){re.escape(grade)}(?![A-Za-z])", evidence_excerpt) is not None
+
+
 def _numeric_value_in_text(value: float, text: str) -> bool:
     compact = re.sub(r"(?<=\d)[ .\u202f](?=\d{3}(?:\D|$))", "", text)
     for token in re.findall(r"(?<!\w)\d+(?:[.,]\d+)?(?!\w)", compact):
@@ -621,9 +648,10 @@ def run_configured_semantic_analysis(
         # ceiling; the regular provider reservation still records the call.
         client.fact_max_tokens = min(int(client.fact_max_tokens or SEMANTIC_MAX_OUTPUT_TOKENS), SEMANTIC_MAX_OUTPUT_TOKENS)
         client.max_retries = 0
+        generate_json = getattr(client, "generate_json_once", client.generate_json)
         return analyze_semantic_evidence(
             pages,
-            generate_json=client.generate_json,
+            generate_json=generate_json,
             enabled=True,
             model=str(client.model or "") or None,
         )

@@ -611,6 +611,17 @@ def test_non_vision_model_rejects_image_payload_before_provider_call() -> None:
         client._input_payload("describe", system_prompt="vision", image_inputs=["data:image/png;base64,AA=="])
 
 
+def test_versioned_qwen_model_rejects_image_payload_without_approved_contract() -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="qwen/qwen3-7-plus:version-sha",
+        max_tokens=768,
+    )
+
+    with pytest.raises(LLMClientUnavailable, match="image input contract"):
+        client._input_payload("describe", system_prompt="vision", image_inputs=["data:image/png;base64,AA=="])
+
+
 def test_qwen37_generate_json_with_images_makes_one_bounded_request(monkeypatch) -> None:
     client = ReplicateClient(
         api_token="replicate-token-test",
