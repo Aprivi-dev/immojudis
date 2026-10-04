@@ -1154,14 +1154,23 @@ def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
         raw_payload={"source_blocks": {"description": "Appartement."}},
     )
     calls: list[str] = []
+    progress_summaries: list[dict[str, object]] = []
+    finish_summaries: list[dict[str, object]] = []
 
     monkeypatch.setattr(main, "load_settings", lambda: settings)
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-backfill")
-    monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: calls.append("finish"))
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda *args, **kwargs: (calls.append("finish"), finish_summaries.append(args[2])),
+    )
     monkeypatch.setattr(
         main,
         "update_run_progress_in_supabase",
-        lambda run_id, summary, errors=None: calls.append(f"progress:{summary['completed']}"),
+        lambda run_id, summary, errors=None: (
+            calls.append(f"progress:{summary['completed']}"),
+            progress_summaries.append(summary),
+        ),
     )
     monkeypatch.setattr(main, "fetch_sales_needing_llm_descriptions", lambda **kwargs: [stale, failed])
     monkeypatch.setattr(main, "create_llm_client", lambda: object())
@@ -1190,10 +1199,47 @@ def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
 
     monkeypatch.setattr(main, "upsert_sales_to_supabase", fake_upsert)
 
-    assert main.run_llm_description_backfill(main.PipelineOptions(llm_backfill=True, upsert=True)) == 1
+    assert (
+        main.run_llm_description_backfill(
+            main.PipelineOptions(llm_backfill=True, upsert=True, limit=7)
+        )
+        == 1
+    )
     assert calls.count("upsert:1") == 2
     assert calls[-1] == "finish"
     assert failed.raw_payload["llm_display_error_count"] == 1
+    assert progress_summaries
+    assert all(summary["limit"] == 7 for summary in progress_summaries)
+    assert finish_summaries[-1]["limit"] == 7
+
+
+def test_run_llm_description_backfill_persists_limit_when_no_sales(monkeypatch) -> None:
+    settings = {**_settings(), "pipeline_llm_backfill_max_targets": 20}
+    finished: list[dict[str, object]] = []
+
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "fetch_sales_needing_llm_descriptions", lambda **_: [])
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finished.append(summary),
+    )
+
+    assert (
+        main.run_llm_description_backfill(
+            main.PipelineOptions(llm_backfill=True, upsert=True, limit=7, run_id="run-backfill")
+        )
+        == 0
+    )
+    assert len(finished) == 1
+    assert finished[0]["mode"] == "llm_description_backfill"
+    assert finished[0]["limit"] == 7
+    assert finished[0]["selected"] == 0
+    assert finished[0]["processed"] == 0
+    assert finished[0]["updated"] == 0
+    assert finished[0]["prompt_version"] == settings["llm_prompt_version"]
+    assert finished[0]["statuses"] == ["active", "upcoming"]
+    assert finished[0]["skipped_unauthorized"] == 0
 
 
 def test_llm_backfill_progress_is_batched() -> None:

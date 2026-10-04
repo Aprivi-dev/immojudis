@@ -875,6 +875,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
     if not sales:
         summary = {
             "mode": "llm_description_backfill",
+            "limit": limit,
             "selected": 0,
             "processed": 0,
             "updated": 0,
@@ -900,6 +901,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         completed=completed,
         llm_stats=LLMEnrichmentStats(),
         failed_sales=[],
+        limit=limit,
         prompt_version=prompt_version,
         statuses=options.llm_backfill_statuses,
         timings=timings,
@@ -913,7 +915,12 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
     except LLMClientUnavailable as exc:
         errors["llm_backfill"].append(str(exc))
         if options.upsert:
-            finish_run_in_supabase(run_id, "failed", {"mode": "llm_description_backfill"}, errors)
+            finish_run_in_supabase(
+                run_id,
+                "failed",
+                {"mode": "llm_description_backfill", "limit": limit},
+                errors,
+            )
         print(f"LLM description backfill failed: {exc}")
         return 1
 
@@ -944,6 +951,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
                             completed=completed,
                             llm_stats=llm_stats,
                             failed_sales=failed_sales,
+                            limit=limit,
                             prompt_version=prompt_version,
                             statuses=options.llm_backfill_statuses,
                             timings=timings,
@@ -976,6 +984,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
                         completed=completed,
                         llm_stats=llm_stats,
                         failed_sales=failed_sales,
+                        limit=limit,
                         prompt_version=prompt_version,
                         statuses=options.llm_backfill_statuses,
                         timings=timings,
@@ -998,6 +1007,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
 
     summary = {
         "mode": "llm_description_backfill",
+        "limit": limit,
         "selected": len(sales),
         "completed": completed,
         "processed": llm_stats.analyzed,
@@ -1080,6 +1090,7 @@ def _llm_backfill_progress_summary(
     completed: int,
     llm_stats: LLMEnrichmentStats,
     failed_sales: list[AuctionSale],
+    limit: int,
     prompt_version: str,
     statuses: tuple[str, ...],
     timings: dict[str, float],
@@ -1087,6 +1098,7 @@ def _llm_backfill_progress_summary(
 ) -> dict[str, object]:
     return {
         "mode": "llm_description_backfill",
+        "limit": limit,
         "phase": phase,
         "selected": selected,
         "completed": completed,
