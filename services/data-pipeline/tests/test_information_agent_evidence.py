@@ -157,6 +157,23 @@ def test_photo_failure_is_visible_as_manual_review_required() -> None:
     assert "VISION_PROVIDER_ERROR" not in (unavailable.summary or "")
 
 
+def test_semantic_failure_is_visible_as_manual_review_required() -> None:
+    analysis = analyze_evidence_bytes(
+        _pdf_bytes("Surface habitable : 87 m2"),
+        filename="document.pdf",
+        declared_mime_type="application/pdf",
+        ocr_enabled=False,
+    )
+    unavailable = evidence._append_semantic_failure_summary(
+        analysis,
+        SemanticAnalysis("unavailable", [], error_code="SEMANTIC_PROVIDER_ERROR"),
+    )
+
+    assert "Analyse sémantique indisponible" in (unavailable.summary or "")
+    assert "vérification manuelle" in (unavailable.summary or "")
+    assert "SEMANTIC_PROVIDER_ERROR" not in (unavailable.summary or "")
+
+
 def test_rejects_image_dimensions_before_decoder_allocation() -> None:
     analysis = analyze_evidence_bytes(
         _png_header(100_000, 100_000),
@@ -450,6 +467,14 @@ def test_placeholder_and_low_confidence_values_are_not_candidate_rows() -> None:
             "Visite : non communiquée",
             "Visite : non communiquée",
             0.72,
+            1,
+        ),
+        EvidenceFact(
+            "surface_m2",
+            82,
+            "82 m²",
+            "Surface : 82 m² à confirmer",
+            0.9,
             1,
         ),
         EvidenceFact("rooms_count", 4, "4 pièce(s)", "4 pièces", 0.49, 1),

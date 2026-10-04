@@ -32,6 +32,7 @@ from src.pipeline_usage import QueueJobDeferred, defer_budget_jobs, record_predi
 
 LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+VISION_IMAGE_TOKEN_CEILING = 16_384
 _LAST_REPLICATE_REQUEST_AT = 0.0
 _REPLICATE_REQUEST_LOCK = threading.Lock()
 _REQUEST_METADATA: ContextVar[dict[str, Any] | None] = ContextVar("replicate_request_metadata", default=None)
@@ -197,12 +198,18 @@ class ReplicateClient:
     def is_available(self) -> bool:
         return bool(self.api_token and self.model)
 
-    def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+    def generate_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        _allow_json_retry: bool = True,
+    ) -> dict[str, Any]:
         if not self.api_token:
             raise LLMClientUnavailable("REPLICATE_API_TOKEN is missing")
         last_error: Exception | None = None
         prompt = _user_prompt_for_model(str(self.model), system_prompt, user_prompt)
-        attempts = 1 if _is_display_description_prompt(system_prompt) else 2
+        attempts = 1 if _is_display_description_prompt(system_prompt) or not _allow_json_retry else 2
         request_kind = "display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction"
         for attempt in range(attempts):
             ensure_llm_task_deadline("starting LLM generation")
@@ -267,6 +274,16 @@ class ReplicateClient:
                 )
         retry_label = "after retry" if attempts > 1 else "without retry"
         raise ValueError(f"Replicate returned invalid JSON {retry_label}: {last_error}")
+
+    def generate_json_once(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+        """Run one JSON attempt for bounded optional evidence analysis.
+
+        Catalogue enrichment keeps the historical malformed-JSON retry via
+        :meth:`generate_json`; the inbound evidence worker uses this dedicated
+        entry point so an invalid optional response cannot create a second
+        paid prediction.
+        """
+        return self.generate_json(system_prompt, user_prompt, _allow_json_retry=False)
 
     def generate_json_with_images(
         self,
@@ -494,6 +511,13 @@ class ReplicateClient:
             raise LLMRequestTransportAmbiguous(
                 "Replicate returned an incomplete successful response; provider reconciliation is required"
             ) from error
+        if image_inputs:
+            # Keep the image count in the autonomous usage metrics without
+            # retaining the image bytes or prompt. The reservation below also
+            # charges a conservative per-image input-token ceiling.
+            metrics = dict(prediction.get("metrics") or {})
+            metrics["image_count"] = len(image_inputs)
+            prediction["metrics"] = metrics
         reservation_id = getattr(response, "_llm_request_reservation_id", None)
         if reservation_id:
             prediction[RESERVATION_KEY] = reservation_id
@@ -542,11 +566,16 @@ class ReplicateClient:
                     or self.max_tokens
                     or 512
                 )
+                image_inputs = model_input.get("image")
+                image_count = len(image_inputs) if isinstance(image_inputs, list) else 0
                 reservation = reserve_prediction(
                     str(self.model),
-                    input_token_ceiling=len(prompt_text.encode("utf-8"))
-                    + len(system_text.encode("utf-8"))
-                    + 256,
+                    input_token_ceiling=(
+                        len(prompt_text.encode("utf-8"))
+                        + len(system_text.encode("utf-8"))
+                        + 256
+                        + image_count * VISION_IMAGE_TOKEN_CEILING
+                    ),
                     output_token_ceiling=output_cap,
                 )
                 request_timeout = llm_task_bounded_timeout(
@@ -853,7 +882,7 @@ def _is_qwen_model(model: str) -> bool:
 
 def _is_qwen_vision_model(model: str) -> bool:
     """Return true only for the documented Qwen3.7-Plus image contract."""
-    return model.split(":", 1)[0].lower() == "qwen/qwen3-7-plus"
+    return model.lower() == "qwen/qwen3-7-plus"
 
 
 def _is_qwen2_7b_instruct_model(model: str) -> bool:

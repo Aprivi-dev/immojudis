@@ -3,8 +3,9 @@
 The default mode is offline and creates a local geometric PNG only. ``--live``
 is an explicit opt-in for one Qwen3.7-Plus inference; it refuses Supabase and
 autonomous-run credentials so no customer data or production mutation can be
-involved. The report contains aggregate status only, never the image or model
-response.
+involved. The live report includes only bounded description/observation text
+from this synthetic image so a failed shape check is diagnosable; it never
+includes the image bytes or an unrestricted provider response.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ def build_synthetic_photo() -> bytes:
     """Create a synthetic blue rectangle and red circle without user data."""
     document = fitz.open()
     page = document.new_page(width=400, height=300)
-    page.draw_rect(fitz.Rect(45, 65, 220, 230), color=(0, 0, 1), fill=(0.2, 0.4, 1))
+    page.draw_rect(fitz.Rect(35, 95, 220, 175), color=(0, 0, 1), fill=(0.2, 0.4, 1))
     page.draw_circle((310, 150), 70, color=(1, 0, 0), fill=(1, 0.1, 0.1))
     pixmap = page.get_pixmap(matrix=fitz.Matrix(1, 1), colorspace=fitz.csRGB, alpha=False)
     content = pixmap.tobytes("png")
@@ -81,7 +82,7 @@ def run(*, live: bool) -> dict[str, object]:
     if not token:
         raise RuntimeError("REPLICATE_API_TOKEN is required for --live")
     model = str(os.getenv("REPLICATE_MODEL") or settings.get("replicate_model") or "")
-    if model.split(":", 1)[0].lower() != VISION_MODEL:
+    if model.lower() != VISION_MODEL:
         raise RuntimeError(f"--live requires {VISION_MODEL}; configured model is not an approved vision contract")
     data_url = image_bytes_to_data_url(content, "image/png")
     if data_url is None:
@@ -106,7 +107,7 @@ def run(*, live: bool) -> dict[str, object]:
     ).casefold()
     observation_match = {
         "blue_rectangle": any(term in observed_text for term in ("blue", "bleu"))
-        and any(term in observed_text for term in ("rectangle", "rectangular")),
+        and any(term in observed_text for term in ("rectangle", "rectangular", "rectangulaire")),
         "red_circle": any(term in observed_text for term in ("red", "rouge"))
         and any(term in observed_text for term in ("circle", "cercle", "round")),
     }
@@ -119,6 +120,13 @@ def run(*, live: bool) -> dict[str, object]:
             "review_required": True,
             "visual_understanding": result.metadata().get("visual_understanding"),
             "observation_count": len(result.observations or []),
+            # The canary input is generated locally and contains no customer
+            # data, so bounded output is safe and makes a failed visual check
+            # diagnosable without logging the provider response wholesale.
+            "synthetic_description": (result.description or "")[:500],
+            "synthetic_observations": [
+                observation.text[:300] for observation in (result.observations or [])[:8]
+            ],
             "observation_match": observation_match,
             "canary_passed": canary_passed,
             "error_code": result.error_code,
