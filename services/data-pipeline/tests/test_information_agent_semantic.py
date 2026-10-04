@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src.enrichment import llm_client
 from src.information_agent_semantic import (
     MAX_SEMANTIC_INPUT_CHARS,
     MAX_SEMANTIC_PAGES,
@@ -229,6 +230,55 @@ def test_enum_grounding_does_not_match_occupied_inside_inoccupied() -> None:
     assert facts == []
 
 
+def test_energy_grade_requires_dpe_or_energy_class_context() -> None:
+    facts = validate_semantic_facts(
+        [
+            {
+                "fact_key": "energy_diagnostics",
+                "proposed_value": {"value": "D"},
+                "evidence_excerpt": "D : couleur de la porte",
+                "source_page": 1,
+                "confidence": 0.9,
+            },
+            {
+                "fact_key": "energy_diagnostics",
+                "proposed_value": {"value": "D"},
+                "evidence_excerpt": "Classe énergétique : D",
+                "source_page": 1,
+                "confidence": 0.9,
+            },
+        ],
+        [{"page": 1, "text": "D : couleur de la porte. Classe énergétique : D."}],
+    )
+
+    assert len(facts) == 1
+    assert facts[0].value == "D"
+
+
+def test_uncertain_citations_are_not_promoted_to_semantic_facts() -> None:
+    facts = validate_semantic_facts(
+        [
+            {
+                "fact_key": "surface_m2",
+                "proposed_value": {"value": 82},
+                "evidence_excerpt": "Surface : 82 m² à confirmer",
+                "source_page": 1,
+                "confidence": 0.9,
+            },
+            {
+                "fact_key": "energy_diagnostics",
+                "proposed_value": {"value": "D"},
+                "evidence_excerpt": "DPE D non confirmé",
+                "source_page": 1,
+                "confidence": 0.9,
+            },
+        ],
+        [{"page": 1, "text": "Surface : 82 m² à confirmer. DPE D non confirmé."}],
+    )
+
+    assert facts == []
+
+
 def test_configured_semantic_pass_is_opt_in() -> None:
     result = run_configured_semantic_analysis(
         [{"page": 1, "text": "Surface habitable : 87 m2"}],
@@ -238,6 +288,28 @@ def test_configured_semantic_pass_is_opt_in() -> None:
     assert result.status == "disabled"
     assert result.facts == []
     assert result.metadata()["review_required"] is True
+
+
+def test_configured_semantic_pass_uses_one_json_attempt(monkeypatch) -> None:
+    class OneAttemptClient:
+        model = "qwen/qwen3-7-plus"
+        fact_max_tokens = 1_024
+        max_retries = 2
+
+        def generate_json(self, _system: str, _user: str):
+            raise AssertionError("catalogue retrying method must not be used")
+
+        def generate_json_once(self, _system: str, _user: str):
+            return {"facts": []}
+
+    monkeypatch.setattr(llm_client, "create_llm_client", lambda: OneAttemptClient())
+    result = run_configured_semantic_analysis(
+        [{"page": 1, "text": "Surface habitable : 87 m2"}],
+        {"information_agent_evidence_semantic_enabled": True},
+    )
+
+    assert result.status == "completed"
+    assert result.facts == []
 
 
 def test_photo_pass_keeps_only_observable_bounded_descriptions() -> None:

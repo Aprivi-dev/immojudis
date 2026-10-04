@@ -42,10 +42,12 @@ function fixture({
   concurrentAssetLookup = false,
   closeCaseBeforeFinalUpdate = false,
   moveCaseToReviewBeforeFinalUpdate = false,
+  bodyAssetCollisionSha256,
 }: {
   concurrentAssetLookup?: boolean;
   closeCaseBeforeFinalUpdate?: boolean;
   moveCaseToReviewBeforeFinalUpdate?: boolean;
+  bodyAssetCollisionSha256?: string;
 } = {}) {
   const cases: Row[] = [
     {
@@ -87,6 +89,7 @@ function fixture({
   let assetLookupCount = 0;
   let closeCaseBeforeNextUpdate = closeCaseBeforeFinalUpdate;
   let moveCaseToReviewBeforeNextUpdate = moveCaseToReviewBeforeFinalUpdate;
+  let bodyAssetCollisionConsumed = false;
   let releaseAssetLookups: () => void = () => {};
   const assetLookupsReady = new Promise<void>((resolve) => {
     releaseAssetLookups = resolve;
@@ -220,6 +223,27 @@ function fixture({
       if (this.operation === "insert") {
         const incoming = Array.isArray(this.values) ? this.values : [this.values as Row];
         for (const row of incoming) {
+          const metadata = row.metadata;
+          if (
+            this.table === "information_agent_evidence_assets" &&
+            bodyAssetCollisionSha256 &&
+            !bodyAssetCollisionConsumed &&
+            metadata &&
+            typeof metadata === "object" &&
+            !Array.isArray(metadata) &&
+            (metadata as Record<string, unknown>).evidence_kind === "email_body"
+          ) {
+            bodyAssetCollisionConsumed = true;
+            const collision: Row = {
+              ...row,
+              id: "concurrent-body-asset",
+              sha256: bodyAssetCollisionSha256,
+            };
+            rows.push(collision);
+            bodyAssets.push(collision);
+            operations.push("email_body_asset_collision");
+            return { data: [], error: { code: "23505" } as never };
+          }
           if (
             this.table === "information_agent_messages" &&
             messages.some((message) => message.provider_message_id === row.provider_message_id)
@@ -517,6 +541,18 @@ describe("information-agent offline inbound scenarios", () => {
       state.facts.every((fact) => !["document", "photo"].includes(String(fact.fact_key))),
     ).toBe(true);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse a concurrent body asset with a different SHA", async () => {
+    const state = fixture({ bodyAssetCollisionSha256: "0".repeat(64) });
+    receivedEmail({ text: "Surface habitable : 84 m²." });
+
+    await expect(webhook()).rejects.toThrow("contenu différent");
+    expect(state.bodyAssets).toHaveLength(1);
+    expect(state.bodyAssets[0]?.sha256).toBe("0".repeat(64));
+    expect(state.messages[0]?.metadata).toMatchObject({
+      inbound_processing: { status: "failed" },
+    });
   });
 
   it("persists a verified receipt before attachment processing when deferred", async () => {

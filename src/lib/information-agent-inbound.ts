@@ -1689,15 +1689,21 @@ async function persistInboundBodyEvidence({
   if (!bodyForEvidence || bodyForEvidence === "Réponse reçue sans corps de texte.") return null;
   await ensureInboundJobLease(assertJobLease);
 
+  const bytes = new TextEncoder().encode(bodyForEvidence);
+  if (!bytes.length || bytes.length > MAX_TOTAL_ATTACHMENT_BYTES) return null;
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
   const providerAttachmentId = `email-body:${messageId}`;
   const { data: existing, error: existingError } = await supabaseAdmin
     .from("information_agent_evidence_assets")
-    .select("id,original_filename,mime_type,storage_path,size_bytes")
+    .select("id,original_filename,mime_type,storage_path,size_bytes,sha256")
     .eq("message_id", messageId)
     .eq("provider_attachment_id", providerAttachmentId)
     .maybeSingle();
   if (existingError) throw existingError;
   if (existing) {
+    if (existing.sha256 !== sha256) {
+      throw new Error("Asset du corps entrant déjà enregistré avec un contenu différent.");
+    }
     return {
       id: existing.id,
       filename: existing.original_filename,
@@ -1707,9 +1713,6 @@ async function persistInboundBodyEvidence({
     };
   }
 
-  const bytes = new TextEncoder().encode(bodyForEvidence);
-  if (!bytes.length || bytes.length > MAX_TOTAL_ATTACHMENT_BYTES) return null;
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
   const storagePath = `${sharedCase.id}/${messageId}/body/${sha256}-email-body.txt`;
   const { error: uploadError } = await supabaseAdmin.storage
     .from("information-agent-evidence")
@@ -1746,11 +1749,16 @@ async function persistInboundBodyEvidence({
   if (assetError) {
     const { data: concurrentAsset, error: concurrentError } = await supabaseAdmin
       .from("information_agent_evidence_assets")
-      .select("id,original_filename,mime_type,storage_path,size_bytes")
+      .select("id,original_filename,mime_type,storage_path,size_bytes,sha256")
       .eq("message_id", messageId)
       .eq("provider_attachment_id", providerAttachmentId)
       .maybeSingle();
-    if (concurrentError || !concurrentAsset) throw assetError;
+    if (concurrentError || !concurrentAsset) {
+      throw assetError;
+    }
+    if (concurrentAsset.sha256 !== sha256) {
+      throw new Error("Asset concurrent du corps entrant avec un contenu différent.");
+    }
     return {
       id: concurrentAsset.id,
       filename: concurrentAsset.original_filename,

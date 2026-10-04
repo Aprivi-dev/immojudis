@@ -115,7 +115,7 @@ def record_prediction(prediction: dict, *, reservation: str | None = None, model
         return
     from src.storage.supabase_client import _postgres_connect
     metrics = {key:value for key,value in (prediction.get('metrics') or {}).items()
-               if key in {'predict_time','total_time','input_token_count','output_token_count',
+               if key in {'predict_time','total_time','input_token_count','output_token_count','image_count',
                           'token_input_count','token_output_count'}
                and isinstance(value,(int,float)) and math.isfinite(value) and value>=0}
     model = model or str(prediction.get('model') or PINNED_MODEL)

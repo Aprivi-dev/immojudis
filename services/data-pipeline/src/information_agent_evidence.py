@@ -23,7 +23,9 @@ import httpx
 from src.config import load_settings
 from src.information_agent_semantic import (
     MAX_VISION_IMAGE_BYTES,
+    UNCERTAIN_EVIDENCE_RE,
     PhotoSemanticAnalysis,
+    SemanticAnalysis,
     SemanticFact,
     run_configured_photo_analysis,
     run_configured_semantic_analysis,
@@ -726,6 +728,18 @@ def _append_photo_summary(
     return replace(analysis, summary=(base + suffix)[:4_000])
 
 
+def _append_semantic_failure_summary(
+    analysis: EvidenceAnalysis,
+    semantic_analysis: SemanticAnalysis,
+) -> EvidenceAnalysis:
+    """Make an optional provider failure visible without exposing its error."""
+    if semantic_analysis.status not in {"unavailable", "invalid_output"}:
+        return analysis
+    base = analysis.summary or "Pièce jointe reçue."
+    suffix = " Analyse sémantique indisponible : vérification manuelle nécessaire."
+    return replace(analysis, summary=(base + suffix)[:4_000])
+
+
 def _apply_pdf_ocr_candidates(
     content: bytes,
     pages: list[dict[str, object]],
@@ -1204,6 +1218,7 @@ def _process_job(
             settings,
         )
         analysis = _merge_semantic_facts(analysis, semantic_analysis.facts)
+        analysis = _append_semantic_failure_summary(analysis, semantic_analysis)
         photo_analysis = PhotoSemanticAnalysis("not_run", error_code="EVIDENCE_NOT_IMAGE")
         if analysis.status == "completed" and analysis.detected_mime_type in {
             "image/jpeg",
@@ -1452,6 +1467,7 @@ def _candidate_facts_for_insertion(facts: list[EvidenceFact]) -> list[EvidenceFa
         if fact.fact_key not in ambiguous_keys
         and fact.confidence >= MIN_FACT_CANDIDATE_CONFIDENCE
         and not _uncertain_fact_value(fact.value)
+        and not _uncertain_evidence_excerpt(fact.evidence_excerpt)
     ]
 
 
@@ -1460,6 +1476,12 @@ def _uncertain_fact_value(value: object) -> bool:
         return False
     normalized = clean_text(value) or ""
     return bool(_UNCERTAIN_FACT_VALUE_RE.search(normalized))
+
+
+def _uncertain_evidence_excerpt(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    return UNCERTAIN_EVIDENCE_RE.search(value) is not None
 
 
 def _fact_value_key(value: object) -> str:

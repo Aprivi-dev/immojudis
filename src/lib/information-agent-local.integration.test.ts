@@ -572,14 +572,14 @@ describeLocal("information-agent local integration", () => {
     );
     expect(
       storedBytes.find((entry) => entry.providerAttachmentId === mixed.attachmentIds.jpeg)?.bytes,
-    ).toEqual(VALID_JPEG_BYTES);
+    ).toEqual(new Uint8Array(VALID_JPEG_BYTES));
     expect(
       storedBytes.find((entry) => entry.providerAttachmentId === mixed.attachmentIds.pdf)?.bytes,
-    ).toEqual(VALID_PDF_BYTES);
+    ).toEqual(new Uint8Array(VALID_PDF_BYTES));
     expect(
       storedBytes.find((entry) => entry.providerAttachmentId === mixed.attachmentIds.mimeMismatch)
         ?.bytes,
-    ).toEqual(VALID_JPEG_BYTES);
+    ).toEqual(new Uint8Array(VALID_JPEG_BYTES));
 
     const duplicate = await processInformationAgentInboundWebhook({
       request: webhookRequest(mixed.webhookPayload, `${mixed.emailId}-duplicate`),
