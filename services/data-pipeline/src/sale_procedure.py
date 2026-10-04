@@ -6,7 +6,12 @@ from decimal import Decimal
 from typing import Any
 
 from src.models import AuctionSale
-from src.normalize import clean_text
+from src.normalize import (
+    clean_text,
+    normalize_lawyer_contact,
+    normalize_lawyer_name,
+    normalize_listing_address,
+)
 
 SALE_PROCEDURE_SCHEMA_VERSION = "sale_procedure_v1"
 LEGAL_RULESET_VERSION = "fr_auction_participation_2026-08-20"
@@ -130,7 +135,7 @@ def classify_sale_procedure(
         "participation_mode": participation_mode,
         "organizer_name": _organizer_name(sale, venue_type),
         "organizer_type": _organizer_type(venue_type),
-        "organizer_contact": clean_text(sale.lawyer_contact),
+        "organizer_contact": normalize_lawyer_contact(sale.lawyer_contact),
         "eligible_bar": _eligible_bar(sale, venue_type),
         "rules": rules,
         "verification": {
@@ -439,7 +444,11 @@ def _sale_corpus(sale: AuctionSale) -> str:
     # Otherwise a pending address-only court assignment can promote itself to
     # verified by matching wording in its own generated participation guide.
     block_values = (
-        [f"{key}: {value}" for key, value in source_blocks.items() if key not in {"sale_procedure", "listing_completeness"}]
+        [
+            f"{key}: {value}"
+            for key, value in source_blocks.items()
+            if key not in {"sale_procedure", "listing_completeness"}
+        ]
         if isinstance(source_blocks, dict)
         else []
     )
@@ -571,7 +580,7 @@ def _venue_address(sale: AuctionSale, *, venue_type: str, status: str) -> str | 
         for key in ("sale_location", "auction_location", "venue", "lieu_vente"):
             value = clean_text(source_blocks.get(key))
             if value:
-                return value
+                return normalize_listing_address(value)
     assignment = payload.get("tribunal_assignment")
     if (
         venue_type == "tribunal"
@@ -579,13 +588,13 @@ def _venue_address(sale: AuctionSale, *, venue_type: str, status: str) -> str | 
         and isinstance(assignment, dict)
         and assignment.get("status") == "verified"
     ):
-        return clean_text(assignment.get("court_address"))
+        return normalize_listing_address(assignment.get("court_address"))
     return None
 
 
 def _organizer_name(sale: AuctionSale, venue_type: str) -> str | None:
     if venue_type in {"tribunal", "notary"}:
-        return clean_text(sale.lawyer_name) or (
+        return normalize_lawyer_name(sale.lawyer_name) or (
             _extract_notary_name(_sale_corpus(sale)) if venue_type == "notary" else None
         )
     if venue_type == "state":

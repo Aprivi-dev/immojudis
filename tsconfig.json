@@ -6,16 +6,7 @@
     "src/**/*.tsx",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": [
-    "node_modules",
-    "src/routeTree.gen.ts",
-    "src/router.tsx",
-    "src/routes/__root.tsx",
-    "src/server.ts",
-    "src/start.ts",
-    "src/integrations/supabase/auth-attacher.ts",
-    "vite.config.ts"
-  ],
+  "exclude": ["node_modules"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",
@@ -30,8 +21,8 @@
     /* Linting */
     "skipLibCheck": true,
     "strict": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "paths": {

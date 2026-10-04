@@ -65,8 +65,9 @@ type SearchParamsLike = {
 function searchParamsToObject(searchParams: SearchParamsLike): SearchRecord {
   const next: SearchRecord = {};
   searchParams.forEach((value, key) => {
-    const numeric = Number(value);
-    next[key] = value.trim() !== "" && Number.isFinite(numeric) ? numeric : value;
+    // Route validators own numeric conversion. Postal codes and identifiers
+    // must retain leading zeroes (for example 06000 and department 01).
+    next[key] = value;
   });
   return next;
 }
@@ -142,7 +143,7 @@ function buildHref({
     }
   }
 
-  return `${url.pathname}${url.search}`;
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 type CompatLinkProps = Omit<React.ComponentProps<typeof NextLink>, "href"> & {
@@ -166,7 +167,7 @@ export function Link({
 }: CompatLinkProps) {
   const pathname = usePathname();
   const resolvedHref = href ?? buildHref({ to, params, search });
-  const resolvedPath = resolvedHref.split("?")[0] || "/";
+  const resolvedPath = resolvedHref.split(/[?#]/)[0] || "/";
   const isActive = activeOptions?.exact
     ? pathname === resolvedPath
     : pathname === resolvedPath || pathname.startsWith(`${resolvedPath}/`);
@@ -182,6 +183,7 @@ type NavigateOptions = {
   params?: ParamsRecord;
   search?: SearchRecord | ((previous: SearchRecord) => SearchRecord);
   replace?: boolean;
+  shallow?: boolean;
 };
 
 export function useNavigate(_options?: unknown) {
@@ -210,6 +212,18 @@ export function useNavigate(_options?: unknown) {
         params: options.params,
         search: nextSearch,
       });
+
+      if (options.shallow && options.replace && typeof window !== "undefined") {
+        const nextUrl = new URL(href, window.location.origin);
+        if (nextUrl.origin === window.location.origin && nextUrl.pathname === pathname) {
+          window.history.replaceState(
+            null,
+            "",
+            `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`,
+          );
+          return;
+        }
+      }
 
       if (options.replace) {
         router.replace(href);

@@ -19,14 +19,13 @@ import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Minus from "lucide-react/dist/esm/icons/minus.js";
 import Navigation from "lucide-react/dist/esm/icons/navigation.js";
 import Plus from "lucide-react/dist/esm/icons/plus.js";
-import { DPE_CLASSES, dpeColor, extractDpe } from "@/lib/dpe";
+import { dpeColor, extractDpe } from "@/lib/dpe";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
 import {
   MAPBOX_ATTRIBUTION,
   MAPBOX_COPYRIGHT_URL,
   getMapboxAccessToken,
-  getMapboxStyleUrl,
   mapboxSatelliteImageUrl,
 } from "@/lib/mapbox";
 import {

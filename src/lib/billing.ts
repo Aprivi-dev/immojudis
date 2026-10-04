@@ -12,6 +12,19 @@ import {
   sendCommercialConfirmation,
 } from "@/lib/commercial-acceptance";
 import { assertPaidOfferLegalReadiness } from "@/lib/legal-documents";
+import {
+  ANALYSIS_BILLING_MODEL,
+  ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
+  ANALYSIS_OFFER_CODE,
+  ANALYSIS_RECURRING_CURRENCY,
+  ANALYSIS_RECURRING_INTERVAL,
+  ANALYSIS_RECURRING_INTERVAL_COUNT,
+  ANALYSIS_RECURRING_PRICE_CENTS,
+  ANALYSIS_SUBSCRIPTION_BILLING_MODEL,
+  ANALYSIS_SUBSCRIPTION_OFFER_CODE,
+  ANALYSIS_TRIAL_DAYS,
+  resolveAnalysisOfferLabel,
+} from "@/lib/analysis-offer";
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
 
@@ -81,9 +94,53 @@ type StripePaymentLifecycleRpcClient = {
   }>;
 };
 
+type StripeCheckoutReservationRpcClient = {
+  rpc(
+    name: "reserve_analyse_checkout",
+    args: { p_checkout_token: string; p_user_id: string },
+  ): Promise<{ data: boolean | null; error: { message?: string } | null }>;
+  rpc(
+    name: "release_analyse_checkout",
+    args: { p_checkout_token: string; p_user_id: string },
+  ): Promise<{ data: boolean | null; error: { message?: string } | null }>;
+  rpc(
+    name: "attach_analyse_checkout_customer",
+    args: {
+      p_checkout_token: string;
+      p_stripe_customer_id: string;
+      p_user_id: string;
+    },
+  ): Promise<{ data: string | null; error: { message?: string } | null }>;
+};
+
 const STRIPE_API_VERSION = "2026-06-24.dahlia";
+export {
+  ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
+  ANALYSIS_OFFER_CODE,
+  ANALYSIS_RECURRING_CURRENCY,
+  ANALYSIS_RECURRING_INTERVAL,
+  ANALYSIS_RECURRING_INTERVAL_COUNT,
+  ANALYSIS_RECURRING_PRICE_CENTS,
+  ANALYSIS_SUBSCRIPTION_BILLING_MODEL,
+  ANALYSIS_SUBSCRIPTION_OFFER_CODE,
+  ANALYSIS_TRIAL_DAYS,
+} from "@/lib/analysis-offer";
 export const ANALYSIS_ACCESS_DAYS = 30;
-export const ANALYSIS_PRICE_CENTS = 2_900;
+/** Legacy one-time constants retained for validating historical webhooks. */
+export const ANALYSIS_PRICE_CENTS = ANALYSIS_RECURRING_PRICE_CENTS;
+
+export function resolveAnalysisPriceId(env: Pick<NodeJS.ProcessEnv, string> = process.env): string {
+  const priceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
+  if (!priceId) {
+    throw new Error(
+      "Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID manquant pour le tarif validé de 29 € / mois.",
+    );
+  }
+  if (!/^price_[A-Za-z0-9]+$/.test(priceId)) {
+    throw new Error("Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID invalide.");
+  }
+  return priceId;
+}
 
 let stripeClient: Stripe | undefined;
 
@@ -141,7 +198,7 @@ export async function createAnalyseCheckoutSession({
 export async function createPlanCheckoutSession({
   auth,
   origin,
-  plan,
+  plan: _plan,
   consent,
   requestId,
   userAgent,
@@ -157,29 +214,138 @@ export async function createPlanCheckoutSession({
   assertCommercialConfirmationReadiness();
   const stripe = getStripe();
   const appOrigin = resolveBillingOrigin(origin);
-  const customerId = await ensureStripeCustomer(auth);
+  const priceId = resolveAnalysisPriceId();
+  const price = await resolveConfiguredAnalysisPrice(stripe, priceId);
+  const reservationToken = randomUUID();
+  // Start the Session window before acquiring the database reservation so
+  // Customer/history requests cannot make Checkout outlive that reservation.
+  const checkoutExpiresAt = Math.floor(Date.now() / 1000) + ANALYSIS_CHECKOUT_EXPIRY_MINUTES * 60;
+  if (!(await reserveAnalyseCheckout(auth.userId, reservationToken))) {
+    throw new Error(
+      "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.",
+    );
+  }
   const acceptanceId = randomUUID();
 
-  const session = await stripe.checkout.sessions.create(
-    buildAnalysisCheckoutSessionParams({
-      appOrigin,
-      customerId,
-      userId: auth.userId,
-      acceptanceId,
-    }),
-  );
+  let session: Stripe.Checkout.Session | null = null;
+  try {
+    // The account reservation must already exist before Customer creation. The
+    // RPC-backed attach below then merges the customer id while retaining this
+    // reservation token, so a second first checkout cannot race this request.
+    const customerId = await ensureStripeCustomer(auth, reservationToken);
+    const subscriptionHistory = await listCustomerSubscriptions(stripe, customerId);
+    if (
+      subscriptionHistory.some((subscription) =>
+        ["trialing", "active", "past_due", "paused", "incomplete"].includes(subscription.status),
+      )
+    ) {
+      throw new Error(
+        "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.",
+      );
+    }
+    const trialAvailable = !subscriptionHistory.some(
+      (subscription) => subscription.trial_start != null || subscription.trial_end != null,
+    );
+    const trialDays = trialAvailable ? ANALYSIS_TRIAL_DAYS : 0;
+    const offerCode = trialAvailable ? ANALYSIS_OFFER_CODE : ANALYSIS_SUBSCRIPTION_OFFER_CODE;
+    const billingModel = trialAvailable
+      ? ANALYSIS_BILLING_MODEL
+      : ANALYSIS_SUBSCRIPTION_BILLING_MODEL;
 
-  if (!session.url) throw new Error("Session de paiement Stripe indisponible.");
-  await recordCommercialAcceptance({
-    acceptanceId,
-    auth,
-    consent,
-    checkoutSessionId: session.id,
-    checkoutCreatedAt: new Date(session.created * 1000).toISOString(),
-    requestId: requestId ?? null,
-    userAgent: userAgent ?? null,
-  });
-  return { url: session.url };
+    session = await stripe.checkout.sessions.create(
+      buildAnalysisCheckoutSessionParams({
+        appOrigin,
+        customerId,
+        userId: auth.userId,
+        acceptanceId,
+        priceId,
+        reservationToken,
+        trialDays,
+        offerCode,
+        billingModel,
+        expiresAt: checkoutExpiresAt,
+      }),
+    );
+
+    if (!session.url) throw new Error("Session de paiement Stripe indisponible.");
+    await recordCommercialAcceptance({
+      acceptanceId,
+      auth,
+      consent,
+      checkoutSessionId: session.id,
+      checkoutCreatedAt: new Date(session.created * 1000).toISOString(),
+      requestId: requestId ?? null,
+      userAgent: userAgent ?? null,
+      offer: {
+        priceId,
+        offerCode,
+        billingModel,
+        trialDays,
+        amountCents: price.unit_amount,
+        currency: price.currency,
+        recurringInterval: price.recurring?.interval ?? null,
+        recurringIntervalCount: price.recurring?.interval_count ?? null,
+      },
+    });
+    return { url: session.url };
+  } catch (error) {
+    let canReleaseReservation = canReleaseCheckoutReservationAfterFailure(session?.status, false);
+    if (session?.status === "open") {
+      try {
+        await stripe.checkout.sessions.expire(session.id);
+        canReleaseReservation = true;
+      } catch {
+        // Keep the reservation until Stripe emits `checkout.session.expired`.
+      }
+    }
+    if (canReleaseReservation) {
+      await releaseAnalyseCheckout(auth.userId, reservationToken).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+export function canReleaseCheckoutReservationAfterFailure(
+  status: Stripe.Checkout.Session.Status | null | undefined,
+  expirationSucceeded: boolean,
+): boolean {
+  if (status == null || status === "expired") return true;
+  return status === "open" && expirationSucceeded;
+}
+
+export async function resolveAnalysisCheckoutAvailability(
+  auth: SupabaseAuthContext,
+): Promise<{ trialAvailable: boolean }> {
+  const subscription = await getUserSubscription(auth);
+  if (!subscription?.stripe_customer_id) return { trialAvailable: true };
+  const history = await listCustomerSubscriptions(getStripe(), subscription.stripe_customer_id);
+  return {
+    trialAvailable: !history.some((item) => item.trial_start != null || item.trial_end != null),
+  };
+}
+
+async function listCustomerSubscriptions(
+  stripe: Stripe,
+  customerId: string,
+): Promise<Stripe.Subscription[]> {
+  const data: Stripe.Subscription[] = [];
+  let startingAfter: string | undefined;
+  let hasMore = true;
+
+  while (hasMore) {
+    const page = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 100,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    data.push(...page.data);
+    hasMore = page.has_more;
+    startingAfter = page.data.at(-1)?.id;
+    if (!startingAfter) hasMore = false;
+  }
+
+  return data;
 }
 
 export function buildAnalysisCheckoutSessionParams({
@@ -187,56 +353,103 @@ export function buildAnalysisCheckoutSessionParams({
   customerId,
   userId,
   acceptanceId,
+  priceId,
+  reservationToken,
+  trialDays = ANALYSIS_TRIAL_DAYS,
+  offerCode = ANALYSIS_OFFER_CODE,
+  billingModel = ANALYSIS_BILLING_MODEL,
+  expiresAt,
 }: {
   appOrigin: string;
   customerId: string;
   userId: string;
   acceptanceId?: string;
+  priceId?: string;
+  reservationToken?: string;
+  trialDays?: number;
+  offerCode?: string;
+  billingModel?: string;
+  expiresAt?: number;
 }): Stripe.Checkout.SessionCreateParams {
+  const recurringPriceId = priceId ?? resolveAnalysisPriceId();
+  const offerLabel = resolveAnalysisOfferLabel();
   return {
-    mode: "payment",
-    submit_type: "pay",
+    mode: "subscription",
     customer: customerId,
     client_reference_id: userId,
     line_items: [
       {
-        price_data: {
-          currency: "eur",
-          unit_amount: ANALYSIS_PRICE_CENTS,
-          product_data: {
-            name: "ImmoJudis Analyse — 30 jours",
-            description:
-              "Accès complet aux analyses, documents, risques, comparables et outils de décision pendant 30 jours.",
-          },
-        },
+        price: recurringPriceId,
         quantity: 1,
       },
     ],
-    locale: "fr",
-    invoice_creation: {
-      enabled: true,
-      invoice_data: {
-        description: "ImmoJudis Analyse — accès 30 jours, paiement unique",
-      },
-    },
-    success_url: `${appOrigin}/accompagnement?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appOrigin}/accompagnement?checkout=cancelled`,
-    metadata: {
-      user_id: userId,
-      plan_code: "analyse",
-      access_duration_days: String(ANALYSIS_ACCESS_DAYS),
-      billing_model: "one_time_30_days",
-      ...(acceptanceId ? { commercial_acceptance_id: acceptanceId } : {}),
-    },
-    payment_intent_data: {
+    payment_method_collection: "always",
+    subscription_data: {
+      ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
       metadata: {
         user_id: userId,
         plan_code: "analyse",
-        access_duration_days: String(ANALYSIS_ACCESS_DAYS),
+        billing_model: billingModel,
+        trial_days: String(trialDays),
+        offer_code: offerCode,
+        offer_label: offerLabel,
+        ...(reservationToken ? { checkout_reservation_token: reservationToken } : {}),
         ...(acceptanceId ? { commercial_acceptance_id: acceptanceId } : {}),
       },
     },
+    locale: "fr",
+    success_url: `${appOrigin}/accompagnement?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${appOrigin}/accompagnement?checkout=cancelled`,
+    ...(expiresAt ? { expires_at: expiresAt } : {}),
+    metadata: {
+      user_id: userId,
+      plan_code: "analyse",
+      billing_model: billingModel,
+      trial_days: String(trialDays),
+      offer_code: offerCode,
+      offer_label: offerLabel,
+      ...(reservationToken ? { checkout_reservation_token: reservationToken } : {}),
+      ...(acceptanceId ? { commercial_acceptance_id: acceptanceId } : {}),
+    },
   };
+}
+
+async function resolveConfiguredAnalysisPrice(
+  stripe: Stripe,
+  priceId: string,
+): Promise<Stripe.Price> {
+  const price = await stripe.prices.retrieve(priceId);
+  if (
+    !price.active ||
+    price.type !== "recurring" ||
+    price.currency !== ANALYSIS_RECURRING_CURRENCY ||
+    !price.recurring ||
+    price.unit_amount !== ANALYSIS_RECURRING_PRICE_CENTS ||
+    price.recurring.interval !== ANALYSIS_RECURRING_INTERVAL ||
+    price.recurring.interval_count !== ANALYSIS_RECURRING_INTERVAL_COUNT
+  ) {
+    throw new Error("Le Price Stripe Analyse doit être actif et récurrent à 29 € / mois en EUR.");
+  }
+  return price;
+}
+
+async function reserveAnalyseCheckout(userId: string, checkoutToken: string): Promise<boolean> {
+  const client = supabaseAdmin as unknown as StripeCheckoutReservationRpcClient;
+  const { data, error } = await client.rpc("reserve_analyse_checkout", {
+    p_checkout_token: checkoutToken,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(error.message || "Réservation du checkout Analyse impossible.");
+  return data === true;
+}
+
+async function releaseAnalyseCheckout(userId: string, checkoutToken: string): Promise<void> {
+  const client = supabaseAdmin as unknown as StripeCheckoutReservationRpcClient;
+  const { error } = await client.rpc("release_analyse_checkout", {
+    p_checkout_token: checkoutToken,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(error.message || "Libération du checkout Analyse impossible.");
 }
 
 export async function createBillingPortalSession({
@@ -288,6 +501,9 @@ export async function handleStripeWebhook({
           event.data.object as Stripe.Checkout.Session,
           event,
         );
+        break;
+      case "checkout.session.expired":
+        handled = await handleCheckoutExpired(event.data.object as Stripe.Checkout.Session);
         break;
       case "customer.subscription.created":
       case "customer.subscription.updated":
@@ -376,37 +592,44 @@ export function stripeCurrentPeriodEndIso(
   return periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
 }
 
-async function ensureStripeCustomer(auth: SupabaseAuthContext): Promise<string> {
+export function stripeCustomerIdempotencyKey(userId: string): string {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) throw new Error("Identifiant utilisateur Stripe manquant.");
+  return `immojudis-customer-${normalizedUserId}`;
+}
+
+async function ensureStripeCustomer(
+  auth: SupabaseAuthContext,
+  reservationToken: string,
+): Promise<string> {
   const subscription = await getUserSubscription(auth);
   if (subscription?.stripe_customer_id) return subscription.stripe_customer_id;
 
   const stripe = getStripe();
-  const customer = await stripe.customers.create({
-    email: typeof auth.claims.email === "string" ? auth.claims.email : undefined,
-    metadata: {
-      user_id: auth.userId,
-      source: "immojudis",
-    },
-  });
-
-  const existingMetadata = jsonObject(subscription?.metadata);
-  const { error } = await supabaseAdmin.from("user_subscriptions").upsert(
+  const customer = await stripe.customers.create(
     {
-      user_id: auth.userId,
-      plan_code: subscription?.plan_code ?? "decouverte",
-      status: subscription?.status ?? "active",
-      stripe_customer_id: customer.id,
-      metadata: asJson({
-        ...existingMetadata,
-        stripe_customer_id: customer.id,
-        stripe_customer_created_at: new Date().toISOString(),
-      }),
+      email: typeof auth.claims.email === "string" ? auth.claims.email : undefined,
+      metadata: {
+        user_id: auth.userId,
+        source: "immojudis",
+      },
     },
-    { onConflict: "user_id" },
+    {
+      idempotencyKey: stripeCustomerIdempotencyKey(auth.userId),
+    },
   );
 
-  if (error) throw error;
-  return customer.id;
+  const client = supabaseAdmin as unknown as StripeCheckoutReservationRpcClient;
+  const { data, error } = await client.rpc("attach_analyse_checkout_customer", {
+    p_checkout_token: reservationToken,
+    p_stripe_customer_id: customer.id,
+    p_user_id: auth.userId,
+  });
+  if (error) {
+    throw new Error(error.message || "Association du compte Stripe impossible.");
+  }
+  if (!data) throw new Error("Association du compte Stripe impossible.");
+  return data;
 }
 
 async function getUserSubscription(auth: SupabaseAuthContext): Promise<UserSubscriptionRow | null> {
@@ -474,7 +697,20 @@ async function handleCheckoutCompleted(
       : subscriptionValue;
 
   if (subscription?.object === "subscription") {
-    return syncStripeSubscription(subscription, userId);
+    const synced = await syncStripeSubscription(subscription, userId);
+    if (synced) await releaseCheckoutReservation(session);
+    const acceptanceId = session.metadata?.commercial_acceptance_id;
+    if (synced && acceptanceId) {
+      await sendCommercialConfirmation({
+        acceptanceId,
+        checkoutSessionId: session.id,
+        userId,
+        paidAt: new Date(event.created * 1000).toISOString(),
+      }).catch((confirmationError) => {
+        console.error("[billing] durable confirmation failed", confirmationError);
+      });
+    }
+    return synced;
   }
 
   const customerId = stripeObjectId(session.customer);
@@ -497,7 +733,36 @@ async function handleCheckoutCompleted(
   );
 
   if (error) throw error;
+  await releaseCheckoutReservation(session);
+  const acceptanceId = session.metadata?.commercial_acceptance_id;
+  if (acceptanceId) {
+    await sendCommercialConfirmation({
+      acceptanceId,
+      checkoutSessionId: session.id,
+      userId,
+      paidAt: new Date(event.created * 1000).toISOString(),
+    }).catch((confirmationError) => {
+      console.error("[billing] durable confirmation failed", confirmationError);
+    });
+  }
   return true;
+}
+
+async function handleCheckoutExpired(session: Stripe.Checkout.Session): Promise<boolean> {
+  const userId = session.metadata?.user_id || session.client_reference_id;
+  const reservationToken = session.metadata?.checkout_reservation_token;
+  if (!userId || !reservationToken) return false;
+  await releaseAnalyseCheckout(userId, reservationToken);
+  return true;
+}
+
+async function releaseCheckoutReservation(session: Stripe.Checkout.Session): Promise<void> {
+  const userId = session.metadata?.user_id || session.client_reference_id;
+  const reservationToken = session.metadata?.checkout_reservation_token;
+  if (!userId || !reservationToken) return;
+  await releaseAnalyseCheckout(userId, reservationToken).catch((error) => {
+    console.error("[billing] checkout reservation release failed", error);
+  });
 }
 
 async function beginStripeWebhookEvent(event: Stripe.Event): Promise<boolean> {
@@ -634,6 +899,15 @@ async function syncStripeSubscription(
         stripe_status: subscription.status,
         stripe_price_id: price?.id ?? null,
         stripe_product_id: stripeObjectId(price?.product),
+        stripe_price_amount_cents: price?.unit_amount ?? null,
+        stripe_price_currency: price?.currency ?? null,
+        stripe_price_interval: price?.recurring?.interval ?? null,
+        stripe_price_interval_count: price?.recurring?.interval_count ?? null,
+        stripe_subscription_created_at: unixToIso(subscription.created),
+        stripe_trial_start: unixToIso(subscription.trial_start),
+        stripe_trial_end: unixToIso(subscription.trial_end),
+        stripe_first_invoice_at: unixToIso(subscription.trial_end ?? subscription.created),
+        stripe_current_period_end: stripeCurrentPeriodEndIso(subscription),
         cancel_at_period_end: subscription.cancel_at_period_end,
         canceled_at: unixToIso(subscription.canceled_at),
         synced_at: new Date().toISOString(),
@@ -699,10 +973,6 @@ function stripeObjectId(value: unknown): string | null {
 
 function unixToIso(value: number | null | undefined): string | null {
   return value ? new Date(value * 1000).toISOString() : null;
-}
-
-function jsonObject(value: Json | null | undefined): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
 }
 
 function asJson(value: unknown): Json {

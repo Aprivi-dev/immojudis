@@ -1,9 +1,17 @@
-import { useId } from "react";
-import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import CircleAlert from "lucide-react/dist/esm/icons/circle-alert.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
+import { ListingQualityNotice } from "@/components/ListingQualityNotice";
 import { collectSaleDocuments } from "@/lib/sale-documents";
 import { getDisplaySurface } from "@/lib/surface";
+import { listingOccupation } from "@/lib/listing-evidence";
+import {
+  getFactPresentation,
+  getFactReliabilityForDisplay,
+  type FactPresentation,
+  type FactPresentationKind,
+  type FactReliabilityMap,
+  type KeyFact,
+} from "@/lib/fact-reliability";
 import { listingVisits } from "@/lib/sale-listing";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { saleSourceLinks } from "@/lib/sale-source-links";
@@ -22,6 +30,7 @@ const MISSING_TEXT_MARKERS = new Set([
   "inconnu",
   "n/a",
   "non renseigne",
+  "non renseignee",
   "unknown",
 ]);
 
@@ -30,6 +39,7 @@ const CHECKLIST = [
   { key: "description", label: "Description de l’annonce" },
   { key: "location", label: "Localisation" },
   { key: "surface", label: "Surface publiée" },
+  { key: "occupation", label: "Occupation du bien" },
   { key: "price", label: "Prix de départ / mise à prix" },
   { key: "schedule", label: "Date ou échéance" },
   { key: "visits", label: "Dates de visite" },
@@ -41,10 +51,23 @@ const CHECKLIST = [
 
 export type ListingDataCoverageKey = (typeof CHECKLIST)[number]["key"];
 
+const KEY_FACT_FIELDS: ReadonlyArray<{ key: ListingDataCoverageKey; field: KeyFact }> = [
+  { key: "surface", field: "surface" },
+  { key: "occupation", field: "occupancy_status" },
+  { key: "price", field: "starting_price_eur" },
+  { key: "schedule", field: "sale_date" },
+];
+
 export type ListingDataCoverageItem = {
   key: ListingDataCoverageKey;
   label: string;
   present: boolean;
+};
+
+export type ListingDataCoverageKeyFact = {
+  key: ListingDataCoverageKey;
+  label: string;
+  presentation: FactPresentation;
 };
 
 export type ListingDataCoverageResult = {
@@ -55,12 +78,16 @@ export type ListingDataCoverageResult = {
   items: ListingDataCoverageItem[];
   present: ListingDataCoverageItem[];
   missing: ListingDataCoverageItem[];
+  toConfirm: Array<ListingDataCoverageItem & { detail: string }>;
+  keyFacts: ListingDataCoverageKeyFact[];
   completeness: ListingCompletenessResult;
 };
 
 export type ListingDataCoverageProps = {
   sale: AuctionSale;
   className?: string;
+  factReliabilities?: FactReliabilityMap | null;
+  coverage?: ListingDataCoverageResult;
 };
 
 /**
@@ -168,12 +195,18 @@ function hasSource(sale: AuctionSale): boolean {
  * fields. This measures presence only; it does not infer quality or verify a
  * value against a source.
  */
-export function getListingDataCoverage(sale: AuctionSale): ListingDataCoverageResult {
+export function getListingDataCoverage(
+  sale: AuctionSale,
+  facts?: FactReliabilityMap | null,
+): ListingDataCoverageResult {
+  const occupation = listingOccupation(sale);
   const presence: Record<ListingDataCoverageKey, boolean> = {
     propertyType: hasPropertyType(sale),
     description: hasDescription(sale),
     location: hasLocation(sale),
     surface: hasPublishedSurface(sale),
+    occupation:
+      hasMeaningfulText(occupation) && !["Non renseignée", "À confirmer"].includes(occupation),
     price: hasPublishedPrice(sale),
     schedule: hasSchedule(sale),
     visits: listingVisits(sale).length > 0,
@@ -191,6 +224,34 @@ export function getListingDataCoverage(sale: AuctionSale): ListingDataCoverageRe
   const present = items.filter((item) => item.present);
   const missing = items.filter((item) => !item.present);
   const total = items.length;
+  const procedure = getSaleProcedure(sale);
+  const schedule = saleWindow(sale) ?? saleSession(sale);
+  const displayedDate =
+    (procedure.venueType === "state" ? schedule?.closes_at : schedule?.opens_at) ?? sale.sale_date;
+  const keyFacts = KEY_FACT_FIELDS.map(({ key, field }) => {
+    const item = items.find((candidate) => candidate.key === key)!;
+    return {
+      key,
+      label: item.label,
+      presentation: getFactPresentation(
+        sale,
+        field,
+        field === "sale_date" ? displayedDate : undefined,
+        facts,
+      ),
+    };
+  });
+  const toConfirm = present.flatMap((item) => {
+    const field = KEY_FACT_FIELDS.find((candidate) => candidate.key === item.key)?.field;
+    if (!field) return [];
+    const fact = getFactReliabilityForDisplay(
+      sale,
+      field,
+      field === "sale_date" ? displayedDate : undefined,
+      facts,
+    );
+    return fact.status === "observed" ? [] : [{ ...item, detail: fact.detail }];
+  });
 
   return {
     percentage: Math.round((present.length / total) * 100),
@@ -200,18 +261,20 @@ export function getListingDataCoverage(sale: AuctionSale): ListingDataCoverageRe
     items,
     present,
     missing,
+    toConfirm,
+    keyFacts,
     completeness: getListingCompleteness(sale),
   };
 }
 
 function completenessStateLabel(state: CompletenessState): string {
   return {
-    observed: "observé",
-    inferred: "inféré",
-    unknown: "inconnu",
-    explicitly_absent: "absent explicitement",
-    not_applicable: "non applicable",
-    conflict: "en conflit",
+    observed: "renseigné",
+    inferred: "estimé / déduit",
+    unknown: "non renseigné",
+    explicitly_absent: "absent selon la source",
+    not_applicable: "hors périmètre",
+    conflict: "sources divergentes",
   }[state];
 }
 
@@ -279,135 +342,87 @@ function displayFieldValue(field: ListingCompletenessResult["fields"][number]): 
       .join(", ");
     return values ? (values.length > 100 ? `${values.slice(0, 97)}…` : values) : null;
   }
+  if (field.id === "lawyer_contact" && typeof field.value === "object") {
+    const contact = field.value as Record<string, unknown>;
+    const phone = typeof contact.phone === "string" ? contact.phone.trim() : "";
+    const email = typeof contact.email === "string" ? contact.email.trim() : "";
+    const legacy = typeof contact.value === "string" ? contact.value.trim() : "";
+    const channels = [
+      phone ? `Téléphone : ${phone}` : null,
+      email ? `Email : ${email}` : null,
+      legacy && legacy !== phone && legacy !== email ? legacy : null,
+    ].filter((value): value is string => Boolean(value));
+    return channels.length ? channels.join(" · ") : null;
+  }
   if (typeof field.value === "object") return "Donnée structurée";
   const value = String(field.value).replace(/\s+/g, " ").trim();
   return value ? (value.length > 100 ? `${value.slice(0, 97)}…` : value) : null;
 }
 
 function displaySourceName(source: string): string {
-  return source === "Projection canonique" ? "Données de l’annonce" : source;
+  return source === "Projection canonique" ? "Données collectées · source non rattachée" : source;
 }
 
-function completenessClassLabel(
-  classification: ListingCompletenessResult["classification"],
+function displayPriorityFields(
+  completeness: ListingCompletenessResult,
+): Array<ListingCompletenessResult["missing"][number]> {
+  const seen = new Set<string>();
+  return displayMissingFields([...completeness.missing, ...completeness.toConfirm]).filter(
+    (field) => {
+      if (seen.has(field.id)) return false;
+      seen.add(field.id);
+      return true;
+    },
+  );
+}
+
+function completenessFieldDetail(
+  field: ListingCompletenessResult["fields"][number],
+  completeness: ListingCompletenessResult,
 ): string {
-  return {
-    incomplet: "À compléter",
-    a_enrichir: "À enrichir",
-    decision_prete: "Prête pour décision",
-    riche: "Fiche riche",
-  }[classification];
+  const issue = [...completeness.missing, ...completeness.toConfirm].find(
+    (candidate) => candidate.id === field.id,
+  );
+  if (issue) return `${issue.reason} ${issue.nextAction}`;
+  if (field.state === "explicitly_absent") return "La source indique explicitement l’absence.";
+  if (field.state === "not_applicable") {
+    return field.reason?.explanation ?? "Ce critère ne concerne pas cette vente.";
+  }
+  if (field.state === "observed") return "Valeur renseignée dans les données disponibles.";
+  return "";
 }
 
-export function ListingDataCoverage({ sale, className }: ListingDataCoverageProps) {
-  const coverage = getListingDataCoverage(sale);
+const FACT_PRESENTATION_CLASSES: Record<FactPresentationKind, string> = {
+  documented: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  reported: "border-sky-200 bg-sky-50 text-sky-800",
+  estimated: "border-amber-200 bg-amber-50 text-amber-800",
+  review: "border-amber-200 bg-amber-50 text-amber-900",
+  missing: "border-slate-200 bg-slate-50 text-slate-600",
+  conflict: "border-rose-200 bg-rose-50 text-rose-800",
+};
+
+export function ListingDataCoverage({
+  sale,
+  className,
+  factReliabilities,
+  coverage: providedCoverage,
+}: ListingDataCoverageProps) {
+  const coverage = providedCoverage ?? getListingDataCoverage(sale, factReliabilities);
   const completeness = coverage.completeness;
-  const practicalMissing = displayMissingFields(completeness.missing);
+  const practicalMissing = displayPriorityFields(completeness);
   const fieldsByCategory = completeness.categories.map((category) => ({
     ...category,
     fields: completeness.fields.filter((field) => field.category === category.id),
   }));
-  const headingId = useId();
-  const presentHeadingId = `${headingId}-present`;
-  const missingHeadingId = `${headingId}-missing`;
-  const classNames = [
-    "mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5",
-    className,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const classNames = ["mt-5", className].filter(Boolean).join(" ");
 
   return (
-    <section className={classNames} aria-labelledby={headingId}>
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Complétude de l’annonce · 130 critères
-          </p>
-          <h2 id={headingId} className="mt-1 text-lg font-semibold tracking-tight text-slate-950">
-            Richesse des informations
-          </h2>
-          <p className="mt-1 text-xs font-medium text-slate-600">
-            {completeness.contextLabel} · {completeness.profile.label}
-          </p>
-        </div>
-        <div className="shrink-0 text-left sm:text-right">
-          <p className="text-3xl font-semibold tracking-tight text-slate-950">
-            {completeness.completenessScore}%
-          </p>
-          <p className="text-xs font-medium text-slate-600">
-            {completenessClassLabel(completeness.classification)}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 sm:p-4">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-slate-800">Couverture des informations</h3>
-          <p className="text-sm font-semibold text-slate-800">
-            {coverage.presentCount}/{coverage.total} champs clés
-          </p>
-        </div>
-        <div
-          className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-100"
-          role="progressbar"
-          aria-label={`Couverture des ${coverage.total} champs clés`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={coverage.percentage}
-          aria-valuetext={`${coverage.percentage}% des informations clés présentes`}
-        >
-          <span
-            className="block h-full rounded-full bg-emerald-500 transition-[width] duration-300"
-            style={{ width: `${coverage.percentage}%` }}
-          />
-        </div>
-        <p className="mt-2 text-xs leading-relaxed text-slate-500">
-          {coverage.missingCount > 0
-            ? `${coverage.missingCount} champ${coverage.missingCount > 1 ? "s" : ""} à compléter ou à vérifier.`
-            : "Tous les champs clés sont présents dans les données reçues."}
-        </p>
-      </div>
-
-      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 sm:p-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Mesure détaillée · 130 critères
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-600">
-              {completeness.applicableFieldCount} critères applicables ·{" "}
-              {completeness.notApplicableFieldCount} non applicables
-            </p>
-          </div>
-        </div>
-        <p className="mt-3 text-xs leading-relaxed text-slate-600">
-          {completeness.observedFieldCount} observés · {completeness.inferredFieldCount} inférés ·{" "}
-          {completeness.unknownFieldCount} inconnus · {completeness.conflictFieldCount} en conflit.
-        </p>
-        <p className="mt-2 text-xs leading-relaxed text-slate-500">
-          Le score mesure les informations reçues et leurs preuves ; il ne remplace pas la lecture
-          des pièces de la vente.
-        </p>
-        {completeness.gateFailures.length > 0 ? (
-          <p className="mt-2 text-xs font-medium leading-relaxed text-amber-800">
-            {completeness.gateFailures.length} contrôle
-            {completeness.gateFailures.length > 1 ? "s" : ""} critique
-            {completeness.gateFailures.length > 1 ? "s" : ""} à résoudre avant de considérer la
-            fiche comme complète.
-          </p>
-        ) : (
-          <p className="mt-2 text-xs font-medium text-emerald-800">
-            Les contrôles critiques sont levés pour cette procédure.
-          </p>
-        )}
-      </div>
-
-      <details className="group mt-4 rounded-xl border border-slate-200 bg-slate-50/55">
+    <section className={classNames} aria-label="Détail des informations du dossier">
+      <details className="group rounded-xl border border-slate-200 bg-slate-50/55">
         <summary className="flex cursor-pointer list-none items-center gap-3 px-3.5 py-3 text-sm font-semibold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-500 sm:px-4">
-          <span>Voir les détails</span>
+          <span>Voir le détail des informations et de leur origine</span>
           <span className="font-normal text-slate-500">
-            {coverage.presentCount} présents · {coverage.missingCount} manquants
+            {coverage.presentCount}/{coverage.total} champs clés
           </span>
           <ChevronDown
             className="ml-auto h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180"
@@ -415,54 +430,99 @@ export function ListingDataCoverage({ sale, className }: ListingDataCoverageProp
           />
         </summary>
 
-        <div className="grid gap-3 border-t border-slate-200 p-3.5 sm:p-4 md:grid-cols-2">
-          <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/45 p-3.5">
-            <h3 id={presentHeadingId} className="text-sm font-semibold text-emerald-950">
-              Informations présentes ({coverage.presentCount})
-            </h3>
-            {coverage.present.length > 0 ? (
-              <ul aria-labelledby={presentHeadingId} className="mt-3 space-y-2">
-                {coverage.present.map((item) => (
-                  <li key={item.key} className="flex items-start gap-2 text-sm text-slate-700">
-                    <CheckCircle2
-                      className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700"
-                      aria-hidden
-                    />
-                    <span>{item.label}</span>
-                  </li>
-                ))}
-              </ul>
+        <div className="space-y-4 border-t border-slate-200 p-3.5 sm:p-4">
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Synthèse de la collecte</h3>
+            <p className="mt-1 text-xs font-medium text-slate-600">
+              {completeness.contextLabel} · {completeness.profile.label}
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              {completeness.applicableFieldCount} critères applicables ·{" "}
+              {completeness.notApplicableFieldCount} hors périmètre · indice pondéré de
+              renseignement {completeness.completenessScore}%.
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-600">
+              {completeness.observedFieldCount} renseignés · {completeness.inferredFieldCount}{" "}
+              estimés / déduits · {completeness.unknownFieldCount} non renseignés ·{" "}
+              {completeness.conflictFieldCount} sources divergentes.
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-500">
+              Cet indice décrit les données conservées et leur état de collecte. Il ne constitue ni
+              une validation du dossier ni une recommandation de décision.
+            </p>
+            {completeness.gateFailures.length > 0 ? (
+              <div className="mt-3 text-xs leading-relaxed text-amber-800">
+                <p className="font-semibold">
+                  {completeness.gateFailures.length} contrôle
+                  {completeness.gateFailures.length > 1 ? "s" : ""} critique
+                  {completeness.gateFailures.length > 1 ? "s" : ""} à revoir
+                </p>
+                <ul className="mt-1 list-disc space-y-1 pl-4">
+                  {completeness.gateFailures.map((gate) => (
+                    <li key={gate.id}>
+                      {gate.label} · {gate.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : (
-              <p className="mt-3 text-sm text-slate-600">Aucune information clé reçue.</p>
+              <p className="mt-3 text-xs font-medium text-emerald-800">
+                Aucun contrôle critique en échec dans les données reçues.
+              </p>
             )}
-          </div>
+          </section>
 
-          <div className="rounded-xl border border-amber-200/80 bg-amber-50/55 p-3.5">
-            <h3 id={missingHeadingId} className="text-sm font-semibold text-amber-950">
-              Informations manquantes ({coverage.missingCount})
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-900">Champs clés</h3>
+              <span className="text-xs font-medium text-slate-500">
+                {coverage.presentCount}/{coverage.total} présents
+              </span>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              La présence d’une valeur ne préjuge pas de sa vérification dans la source.
+            </p>
+            <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+              {coverage.keyFacts.map((fact) => (
+                <li key={fact.key} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-800">{fact.label}</span>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${FACT_PRESENTATION_CLASSES[fact.presentation.kind]}`}
+                    >
+                      {fact.presentation.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                    {fact.presentation.detail}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4">
+            <h3 className="text-sm font-semibold text-slate-900">
+              Champs clés non renseignés ({coverage.missingCount})
             </h3>
             {coverage.missing.length > 0 ? (
-              <ul aria-labelledby={missingHeadingId} className="mt-3 space-y-2">
+              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
                 {coverage.missing.map((item) => (
-                  <li key={item.key} className="flex items-start gap-2 text-sm text-slate-700">
+                  <li key={item.key} className="flex items-start gap-2 text-xs text-slate-700">
                     <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
                     <span>{item.label}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="mt-3 text-sm text-slate-600">Aucune information clé manquante.</p>
+              <p className="mt-2 text-xs text-slate-600">
+                Aucun champ clé n’est absent des données reçues.
+              </p>
             )}
-          </div>
+          </section>
 
-          <p className="text-xs leading-relaxed text-slate-500 md:col-span-2">
-            Le taux mesure la présence des champs reçus, pas leur niveau de vérification.
-          </p>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5 md:col-span-2 sm:p-4">
-            <h3 className="text-sm font-semibold text-slate-900">
-              Ce qu’il reste à compléter en priorité
-            </h3>
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Priorités à examiner</h3>
             {practicalMissing.length > 0 ? (
               <ul className="mt-3 grid gap-2 sm:grid-cols-2">
                 {practicalMissing.map((item) => (
@@ -470,48 +530,41 @@ export function ListingDataCoverage({ sale, className }: ListingDataCoverageProp
                     <span className="font-medium">{item.label}</span>
                     <span className="text-slate-500">
                       {" "}
-                      · {completenessStateLabel(item.state)} · {item.reason}
+                      · {completenessStateLabel(item.state)} · {item.reason} {item.nextAction}
                     </span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-xs text-slate-600">
-                Aucun critère applicable ne reste inconnu.
-              </p>
+              <p className="mt-2 text-xs text-slate-600">Aucun critère applicable à examiner.</p>
             )}
-            {completeness.missing.length > practicalMissing.length ? (
+            {completeness.missing.length + completeness.toConfirm.length >
+            practicalMissing.length ? (
               <p className="mt-2 text-xs text-slate-500">
-                {completeness.missing.length - practicalMissing.length} autre
-                {completeness.missing.length - practicalMissing.length > 1 ? "s" : ""} critère
-                {completeness.missing.length - practicalMissing.length > 1 ? "s" : ""} reste
-                {completeness.missing.length - practicalMissing.length > 1 ? "nt" : ""} à revoir
-                dans la liste exhaustive ci-dessous.
+                D’autres critères sont détaillés dans la liste exhaustive ci-dessous.
               </p>
             ) : null}
-          </div>
+          </section>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5 md:col-span-2 sm:p-4">
-            <h3 className="text-sm font-semibold text-slate-900">
-              Informations connues par source
-            </h3>
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Origine des informations</h3>
             <p className="mt-1 text-xs leading-relaxed text-slate-500">
-              Profil retenu : {completeness.profile.label}. Les valeurs inférées sont affichées
-              comme telles et demandent une confirmation.
+              Profil retenu : {completeness.profile.label}. Les valeurs estimées ou déduites sont
+              signalées dans la liste exhaustive.
             </p>
             {Object.keys(completeness.knownBySource).length > 0 ? (
               <ul className="mt-3 grid gap-2 sm:grid-cols-2">
                 {Object.entries(completeness.knownBySource).map(([source, fieldIds]) => (
                   <li key={source} className="text-xs leading-relaxed text-slate-700">
                     <span className="font-medium">{displaySourceName(source)}</span>
-                    <span className="text-slate-500"> · {fieldIds.length} critères connus</span>
+                    <span className="text-slate-500"> · {fieldIds.length} critères associés</span>
                     <span className="mt-0.5 block text-slate-500">
                       {fieldIds
                         .slice(0, 4)
                         .map(
                           (fieldId) =>
                             completeness.fields.find((field) => field.id === fieldId)?.label ??
-                            fieldId,
+                            "Critère non libellé",
                         )
                         .join(" · ")}
                       {fieldIds.length > 4 ? " · …" : ""}
@@ -521,60 +574,50 @@ export function ListingDataCoverage({ sale, className }: ListingDataCoverageProp
               </ul>
             ) : (
               <p className="mt-2 text-xs text-slate-600">
-                Aucune preuve de champ n’est encore rattachée à une source.
+                Aucune origine n’est encore enregistrée pour les informations disponibles.
               </p>
             )}
-          </div>
+          </section>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5 md:col-span-2 sm:p-4">
-            <details className="group/criteria">
-              <summary className="flex cursor-pointer list-none items-start gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500">
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-slate-900">
-                    Voir les 130 critères
-                  </span>
-                  <span className="mt-1 block text-xs leading-relaxed text-slate-500">
-                    {completeness.known.length} connus · {completeness.missing.length} à revoir ·{" "}
-                    {completeness.notApplicableFieldCount} non applicables
-                  </span>
-                </span>
-                <ChevronDown
-                  className="ml-auto mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition-transform group-open/criteria:rotate-180"
-                  aria-hidden
-                />
-              </summary>
-
-              <div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
-                <p className="text-xs leading-relaxed text-slate-500">
-                  Chaque critère conserve son état de preuve. « Inconnu » indique qu’aucune donnée
-                  exploitable n’a été conservée ; « non applicable » dépend du bien ou de la
-                  procédure.
-                </p>
-                {fieldsByCategory.map(({ fields, ...category }) => (
-                  <section
-                    key={category.id}
-                    className="overflow-hidden rounded-lg border border-slate-200"
-                  >
-                    <div className="flex flex-col gap-1 bg-slate-50 px-3 py-2 sm:flex-row sm:items-baseline sm:justify-between">
-                      <h4 className="text-xs font-semibold text-slate-800">{category.label}</h4>
-                      <p className="text-[11px] text-slate-500">
-                        {fields.length} critères · {category.knownCount} connus ·{" "}
-                        {category.missingCount} à revoir · {category.notApplicableCount} N/A
-                      </p>
-                    </div>
-                    <ul className="divide-y divide-slate-100">
-                      {fields.map((field) => {
-                        const value = displayFieldValue(field);
-                        return (
-                          <li
-                            key={field.id}
-                            className="flex items-start justify-between gap-3 px-3 py-2.5"
-                          >
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4">
+            <h3 className="text-sm font-semibold text-slate-900">
+              {completeness.fields.length} critères du dossier
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              Chaque critère garde un état lisible : renseigné, estimé / déduit, non renseigné,
+              absent selon la source, hors périmètre ou sources divergentes.
+            </p>
+            <div className="mt-3 space-y-3">
+              {fieldsByCategory.map(({ fields, ...category }) => (
+                <section
+                  key={category.id}
+                  className="overflow-hidden rounded-lg border border-slate-200"
+                >
+                  <div className="flex flex-col gap-1 bg-slate-50 px-3 py-2 sm:flex-row sm:items-baseline sm:justify-between">
+                    <h4 className="text-xs font-semibold text-slate-800">{category.label}</h4>
+                    <p className="text-[11px] text-slate-500">
+                      {fields.length} critères · {category.knownCount} renseignés ou estimés ·{" "}
+                      {category.missingCount} à revoir · {category.notApplicableCount} hors
+                      périmètre
+                    </p>
+                  </div>
+                  <ul className="divide-y divide-slate-100">
+                    {fields.map((field) => {
+                      const value = displayFieldValue(field);
+                      const detail = completenessFieldDetail(field, completeness);
+                      const source = field.sourceNames.length
+                        ? field.sourceNames.map(displaySourceName).join(" · ")
+                        : null;
+                      return (
+                        <li key={field.id} className="px-3 py-2.5">
+                          <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-xs font-medium text-slate-800">{field.label}</p>
-                              <p className="mt-0.5 truncate text-[10px] text-slate-400">
-                                {field.id}
-                              </p>
+                              {source ? (
+                                <p className="mt-0.5 text-[10px] text-slate-500">
+                                  Origine : {source}
+                                </p>
+                              ) : null}
                             </div>
                             <div className="flex shrink-0 flex-col items-end gap-1 text-right">
                               <span
@@ -583,35 +626,42 @@ export function ListingDataCoverage({ sale, className }: ListingDataCoverageProp
                                 {completenessStateLabel(field.state)}
                               </span>
                               {value ? (
-                                <span className="max-w-[13rem] text-[10px] leading-relaxed text-slate-500">
+                                <span className="max-w-[13rem] break-words whitespace-normal text-[10px] leading-relaxed text-slate-500">
                                   {value}
                                 </span>
                               ) : null}
                             </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </section>
-                ))}
-              </div>
-            </details>
-          </div>
+                          </div>
+                          {detail ? (
+                            <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                              {detail}
+                            </p>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          </section>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5 md:col-span-2 sm:p-4">
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4">
             <h3 className="text-sm font-semibold text-slate-900">Répartition par catégorie</h3>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {completeness.categories.map((category) => (
                 <div key={category.id} className="rounded-lg bg-slate-50 p-2.5">
                   <p className="text-xs font-medium text-slate-800">{category.label}</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {category.ratio == null ? "Non applicable" : `${category.ratio}%`} ·{" "}
-                    {category.knownCount} connus · {category.missingCount} à revoir
+                    {category.ratio == null ? "Hors périmètre" : `Indice ${category.ratio}%`} ·{" "}
+                    {category.knownCount} renseignés ou estimés · {category.missingCount} à revoir
                   </p>
                 </div>
               ))}
             </div>
-          </div>
+          </section>
+
+          <ListingQualityNotice sale={sale} />
         </div>
       </details>
     </section>

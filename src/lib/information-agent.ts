@@ -568,11 +568,23 @@ async function approveAndSendMission({
   });
   assertInformationAgentOutboundEnabled();
   assertInformationAgentCanaryRecipient(input.recipientEmail);
+  // Validate delivery prerequisites before approval reserves the case for sending.
+  // Otherwise a configuration error can leave an approved case with no delivery attempt.
+  const config = resolveInformationAgentEmailConfig();
+
+  // An admin may replace a source-derived address while approving the draft.
+  // Preserve the provenance only when the normalized address is unchanged;
+  // otherwise the canonical case must record an explicit manual recipient.
+  const recipientKind =
+    normalizedEmail(input.recipientEmail) === normalizedEmail(mission.recipient_email)
+      ? mission.recipient_kind
+      : "manual_professional";
 
   const { data: edited, error: editError } = await supabaseAdmin
     .from("information_agent_missions")
     .update({
       recipient_email: input.recipientEmail,
+      recipient_kind: recipientKind,
       recipient_name: input.recipientName || null,
       reply_to_email: null,
       share_requester_email: false,
@@ -599,7 +611,6 @@ async function approveAndSendMission({
   if (!approval) throw new Error("Approbation de l'enquête impossible.");
   if (!approval.should_send) return;
 
-  const config = resolveInformationAgentEmailConfig();
   const replyTo = `enquete+${approval.inbound_token}@${config.inboundDomain}`;
   const sendingAt = new Date().toISOString();
 

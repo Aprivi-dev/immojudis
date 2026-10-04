@@ -3,95 +3,37 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import dynamic from "next/dynamic";
-import type * as React from "react";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import entryMotion from "@/components/ui/entry-motion.module.css";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
-import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
-import BedDouble from "lucide-react/dist/esm/icons/bed-double.js";
-import Bell from "lucide-react/dist/esm/icons/bell.js";
-import Building2 from "lucide-react/dist/esm/icons/building-2.js";
-import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import Download from "lucide-react/dist/esm/icons/download.js";
-import Heart from "lucide-react/dist/esm/icons/heart.js";
-import Landmark from "lucide-react/dist/esm/icons/landmark.js";
-import LayoutPanelLeft from "lucide-react/dist/esm/icons/layout-panel-left.js";
-import ListFilter from "lucide-react/dist/esm/icons/list-filter.js";
-import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
-import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
-import Map from "lucide-react/dist/esm/icons/map.js";
-import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
-import Ruler from "lucide-react/dist/esm/icons/ruler.js";
-import SearchIcon from "lucide-react/dist/esm/icons/search.js";
-import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "sonner";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
-import { useViewedSales } from "@/hooks/use-viewed-sales";
-import { supabase } from "@/integrations/supabase/client";
-import { Link, useLocation, useNavigate } from "@/lib/router-compat";
+import { useLocation, useNavigate } from "@/lib/router-compat";
 import {
   createWatchedZone as createWatchedZoneRequest,
-  addFavoriteSale as addFavoriteSaleRequest,
+  fetchAccessPlan,
   fetchDpeExplorer,
   exportSalesCsv,
-  fetchFeatureEntitlements,
   fetchSalesAiReviewProjections,
   fetchSalesStatistics,
-  removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
 import { createAlert } from "@/lib/queries";
-import { DPE_CLASSES, dpeColor, extractDpe, type DpeClass } from "@/lib/dpe";
-import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
-import {
-  formatDate,
-  formatPrice,
-  formatPricePerM2,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
-import { geocodeAddress, geocodeAdministrativeArea, pricePerM2, type GeoPoint } from "@/lib/geo";
-import { mapboxStaticImageUrl } from "@/lib/mapbox";
-import { firstPropertyImage, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
-import { cleanSaleTitle, saleDisplayTitle } from "@/lib/sale-title";
-import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
-import { isNew } from "@/lib/dates";
+import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
-import type { AuctionSale } from "@/lib/types";
-import type { WatchedZoneInput } from "@/lib/watched-zones";
-import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
 import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
 import {
   DEFAULT_SEARCH_LIMIT,
-  HOME_TYPE_OPTIONS,
-  SORT_OPTIONS,
-  STATUS_OPTIONS,
   applyClientSearchFilters,
-  compactPrice,
   countActiveSearchFilters,
-  hasClientOnlyFilters,
   hasCoordinates,
   sortClientSearchResults,
 } from "@/lib/search/search-filters";
-import {
-  areMapViewportsClose,
-  shouldMapListFollowViewport,
-  visibleSalesForMapViewport,
-} from "@/lib/search/map-viewport-results";
+import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
 import {
   mergeSalesSearch,
   salesSearchToUrlRecord,
   type SalesSearchParams,
-  type SalesSearchUrlRecord,
-  type SearchSortKey,
 } from "@/lib/search/search-url-state";
 import {
   fetchSearchCount,
@@ -102,13 +44,7 @@ import type { MapViewportChange } from "./MapPanel";
 import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
-import {
-  ResultsSummary,
-  SearchHeader,
-  SortDropdown,
-  SaveSearchButton,
-  CsvExportButton,
-} from "./SearchHeader";
+import { ResultsSummary, SearchHeader, SortDropdown } from "./SearchHeader";
 import { SearchResultsList } from "./SearchResults";
 import { SaleComparisonBar } from "./SaleComparisonBar";
 import {
@@ -163,7 +99,6 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const [hoveredSaleId, setHoveredSaleId] = useState<string | null>(null);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [mapViewport, setMapViewport] = useState<MapViewportChange | null>(null);
-  const deferredMapViewport = useDeferredValue(mapViewport);
   const [wideMap, setWideMap] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mobileMapOpen, setMobileMapOpen] = useState(Boolean(search.map));
@@ -179,10 +114,12 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const [center, setCenter] = useState<GeoPoint | null>(null);
   const [geocoding, setGeocoding] = useState(false);
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const mapVisible = isDesktop || mobileMapOpen;
   const geographicLabel = search.city || search.department || search.query || "";
   useEffect(() => {
     let cancelled = false;
-    if (!geographicLabel) {
+    if (!mapVisible || !geographicLabel) {
       setLocationCenter(null);
       return;
     }
@@ -209,8 +146,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     return () => {
       cancelled = true;
     };
-  }, [geographicLabel]);
-  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  }, [geographicLabel, mapVisible]);
   const page = search.page ?? 1;
   const pageSize = search.limit ?? DEFAULT_SEARCH_LIMIT;
   const pageOffset = (page - 1) * pageSize;
@@ -261,7 +197,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
       const nextRecord = salesSearchToUrlRecord(nextSearch);
       if (stableUrlRecord(currentRecord) === stableUrlRecord(nextRecord)) return;
       ownDraftNavigations.current.add(JSON.stringify(searchToDraft(nextSearch)));
-      navigate({ search: nextRecord, replace: true });
+      navigate({ search: nextRecord, replace: true, shallow: true });
     }, 320);
 
     return () => window.clearTimeout(timeout);
@@ -300,8 +236,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     [search],
   );
   const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
-    queryKey: ["feature-entitlements", user?.id ?? "anonymous"],
-    queryFn: fetchFeatureEntitlements,
+    queryKey: ["feature-entitlements", user?.id ?? "anonymous", "plan"],
+    queryFn: fetchAccessPlan,
     enabled: Boolean(user) && !authLoading,
     staleTime: 5 * 60_000,
   });
@@ -322,6 +258,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     queryFn: () => fetchSearchResults({ search, preview: isPreview, discovery: isDiscovery }),
     enabled: catalogReady,
     staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
   const { data: totalCount, isLoading: isCountLoading } = useQuery({
@@ -329,13 +266,15 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     queryFn: () => fetchSearchCount({ search, preview: isPreview, discovery: isDiscovery }),
     enabled: catalogReady,
     staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
   const { data: rawMapSales = [], isLoading: isMapLoading } = useQuery({
     queryKey: ["sales-search-map", mapSearchKeySignature, isPreview, isDiscovery],
     queryFn: () => fetchSearchMapResults(search, { discovery: isDiscovery }),
-    enabled: catalogReady && !isPreview,
+    enabled: catalogReady && !isPreview && mapVisible,
     staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
   const filteredSales = useMemo(
@@ -352,26 +291,23 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   const mapSales = useMemo(
     () =>
-      (isPreview
-        ? rawSales
-        : sortClientSearchResults(
-            applyClientSearchFilters(rawMapSales.length ? rawMapSales : rawSales, search, center),
-            search,
-            center,
-          )
+      (!mapVisible
+        ? []
+        : isPreview
+          ? rawSales
+          : sortClientSearchResults(
+              applyClientSearchFilters(rawMapSales.length ? rawMapSales : rawSales, search, center),
+              search,
+              center,
+            )
       )
         .filter(hasCoordinates)
         .slice(0, 500),
-    [center, isPreview, rawMapSales, rawSales, search],
-  );
-
-  const mapViewportResults = useMemo(
-    () => visibleSalesForMapViewport(mapSales, deferredMapViewport),
-    [deferredMapViewport, mapSales],
+    [center, isPreview, mapVisible, rawMapSales, rawSales, search],
   );
 
   const mapListFollowsViewport = false;
-  const displayedSales = mapListFollowsViewport ? mapViewportResults.sales : filteredSales;
+  const displayedSales = filteredSales;
   const aiReviewSaleIds = useMemo(
     () => [...new Set([...displayedSales, ...mapSales].map((sale) => sale.id).filter(Boolean))],
     [displayedSales, mapSales],
@@ -379,7 +315,10 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const { data: aiReviewData, isError: aiReviewError } = useQuery({
     queryKey: ["sales-ai-review", user?.id ?? "anonymous", aiReviewSaleIds],
     queryFn: () => fetchSalesAiReviewProjections(aiReviewSaleIds),
-    enabled: Boolean(user && !authLoading && !isPreview && aiReviewSaleIds.length),
+    // Discovery rows already use the public redacted view. The AI review
+    // endpoint reads Analyse-only projections and must not blank valid public
+    // city, price or date values for free users.
+    enabled: Boolean(user && !authLoading && !isPreview && !isDiscovery && aiReviewSaleIds.length),
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -392,7 +331,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     return grouped;
   }, [aiReviewData]);
   const aiReviewStatus: AiReviewRequestStatus =
-    !user || isPreview || aiReviewSaleIds.length === 0
+    !user || isPreview || isDiscovery || aiReviewSaleIds.length === 0
       ? "disabled"
       : aiReviewError
         ? "error"
@@ -402,19 +341,11 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const hasLocalFilters = false;
   const isInitialLoading = authLoading || entitlementsLoading || isLoading;
   const activeFiltersCount = countActiveSearchFilters(search);
-  const searchDisplayCount = hasLocalFilters
-    ? filteredSales.length
-    : (totalCount ?? filteredSales.length);
-  const displayCount = mapListFollowsViewport ? mapViewportResults.total : searchDisplayCount;
-  const loadedCount = mapListFollowsViewport ? mapSales.length : rawSales.length;
+  const displayCount = totalCount ?? filteredSales.length;
   const filteredCount = displayedSales.length;
   const hasMore =
-    !mapListFollowsViewport &&
-    !hasLocalFilters &&
-    totalCount != null &&
-    pageOffset + rawSales.length < totalCount &&
-    rawSales.length >= pageSize;
-  const hasPrevious = !mapListFollowsViewport && page > 1;
+    totalCount != null && pageOffset + rawSales.length < totalCount && rawSales.length >= pageSize;
+  const hasPrevious = page > 1;
   const splitClass = wideMap
     ? "lg:grid-cols-[minmax(390px,40%)_minmax(0,1fr)]"
     : "lg:grid-cols-[minmax(0,52%)_minmax(0,48%)]";
@@ -434,16 +365,16 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const { data: salesStatisticsData, isFetching: salesStatisticsLoading } = useQuery({
     queryKey: ["sales-statistics", searchKeySignature],
     queryFn: () => fetchSalesStatistics({ search }),
-    enabled: !statisticsLocked && !authLoading && Boolean(user),
+    enabled: statisticsOpen && !statisticsLocked && !authLoading && Boolean(user),
     retry: false,
     staleTime: 2 * 60_000,
   });
   const searchStatistics = useMemo(
     () =>
-      salesStatisticsData && !mapListFollowsViewport
+      salesStatisticsData
         ? searchStatisticsFromServer(salesStatisticsData.summary)
         : localSearchStatistics,
-    [localSearchStatistics, mapListFollowsViewport, salesStatisticsData],
+    [localSearchStatistics, salesStatisticsData],
   );
   const statisticsLoading =
     isInitialLoading || (!statisticsLocked && salesStatisticsLoading && !salesStatisticsData);
@@ -471,7 +402,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const updateSearch = useCallback(
     (patch: Partial<SalesSearchParams>) => {
       const next = mergeSalesSearch(searchRef.current, patch);
-      navigate({ search: salesSearchToUrlRecord(next), replace: true });
+      navigate({ search: salesSearchToUrlRecord(next), replace: true, shallow: true });
     },
     [navigate],
   );
@@ -481,6 +412,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     navigate({
       search: salesSearchToUrlRecord({ sort: search.sort }),
       replace: true,
+      shallow: true,
     });
   }, [navigate, search.sort]);
 
@@ -527,6 +459,34 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     },
     [isPreview, updateSearch],
   );
+
+  const handleSearchAsMoveChange = useCallback(
+    (enabled: boolean) => {
+      updateSearch({
+        searchAsMove: enabled,
+        viewport: enabled ? mapViewport?.bounds : undefined,
+      });
+    },
+    [mapViewport, updateSearch],
+  );
+
+  const mapPanelProps = {
+    sales: mapSales,
+    locationCenter,
+    totalCount,
+    hoveredSaleId,
+    selectedSaleId,
+    isLoading: isInitialLoading || isMapLoading,
+    searchAsMove: !isPreview && Boolean(search.searchAsMove),
+    preview: isPreview,
+    showDpeLegend: !dpeLocked,
+    aiReviewBySaleId,
+    aiReviewStatus,
+    onHover: setHoveredSaleId,
+    onSelect: handleMapSelect,
+    onViewportChange: handleViewportChange,
+    onSearchAsMoveChange: handleSearchAsMoveChange,
+  };
 
   async function saveSearch() {
     if (!user) {
@@ -635,18 +595,11 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
       </a>
 
       <SearchHeader
-        search={search}
         draft={draft}
         setDraft={setDraft}
-        displayCount={displayCount}
-        loadedCount={loadedCount}
-        filteredCount={filteredCount}
         activeFiltersCount={activeFiltersCount}
-        mapListFollowsViewport={mapListFollowsViewport}
         isLoading={isInitialLoading}
-        isCountLoading={isCountLoading}
         isFetching={isFetching}
-        geocoding={geocoding}
         filtersOpen={filtersOpen}
         savingAlert={savingAlert}
         alertsLocked={alertsLocked}
@@ -657,7 +610,6 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         onReset={resetFilters}
         onSaveSearch={saveSearch}
         onExportCsv={exportCsv}
-        onSortChange={(sort) => updateSearch({ sort: sort === "relevance" ? undefined : sort })}
         onToggleLayout={() => setWideMap((value) => !value)}
       />
 
@@ -677,11 +629,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
             <ResultsSummary
               search={search}
               displayCount={displayCount}
-              loadedCount={loadedCount}
-              filteredCount={filteredCount}
               hasLocalFilters={hasLocalFilters}
-              mapListFollowsViewport={mapListFollowsViewport}
-              mapViewport={deferredMapViewport}
               isLoading={isInitialLoading || isCountLoading}
               geocoding={geocoding}
             />
@@ -769,28 +717,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         {isDesktop ? (
           <aside className="relative min-h-[calc(100svh_-_var(--sales-header-height))] bg-[#dfe7eb] lg:order-2">
             <div className="sticky top-[var(--sales-header-height)] h-[calc(100svh_-_var(--sales-header-height))]">
-              <LazyMapPanel
-                sales={mapSales}
-                locationCenter={locationCenter}
-                totalCount={totalCount}
-                hoveredSaleId={hoveredSaleId}
-                selectedSaleId={selectedSaleId}
-                isLoading={isInitialLoading || isMapLoading}
-                searchAsMove={!isPreview && Boolean(search.searchAsMove)}
-                preview={isPreview}
-                showDpeLegend={!dpeLocked}
-                aiReviewBySaleId={aiReviewBySaleId}
-                aiReviewStatus={aiReviewStatus}
-                onHover={setHoveredSaleId}
-                onSelect={handleMapSelect}
-                onViewportChange={handleViewportChange}
-                onSearchAsMoveChange={(enabled) =>
-                  updateSearch({
-                    searchAsMove: enabled,
-                    viewport: enabled ? mapViewport?.bounds : undefined,
-                  })
-                }
-              />
+              <LazyMapPanel {...mapPanelProps} />
             </div>
           </aside>
         ) : null}
@@ -848,28 +775,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
               </span>
             </div>
             <div className="h-full pt-14">
-              <LazyMapPanel
-                sales={mapSales}
-                locationCenter={locationCenter}
-                totalCount={totalCount}
-                hoveredSaleId={hoveredSaleId}
-                selectedSaleId={selectedSaleId}
-                isLoading={isInitialLoading || isMapLoading}
-                searchAsMove={!isPreview && Boolean(search.searchAsMove)}
-                preview={isPreview}
-                showDpeLegend={!dpeLocked}
-                aiReviewBySaleId={aiReviewBySaleId}
-                aiReviewStatus={aiReviewStatus}
-                onHover={setHoveredSaleId}
-                onSelect={handleMapSelect}
-                onViewportChange={handleViewportChange}
-                onSearchAsMoveChange={(enabled) =>
-                  updateSearch({
-                    searchAsMove: enabled,
-                    viewport: enabled ? mapViewport?.bounds : undefined,
-                  })
-                }
-              />
+              <LazyMapPanel {...mapPanelProps} />
             </div>
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>

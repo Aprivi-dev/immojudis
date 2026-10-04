@@ -185,14 +185,13 @@ def import_snapshot(store: CloudStore, snapshot: Path, run_id: str) -> dict:
                 key = "detail:" + identity
                 tasks[key] = (run_id, key, "detail", url, None, 0, "done" if url in details else "pending", 0, None)
             for error in errors:
-                if error["kind"].startswith("detail"):
-                    key = "detail:" + announcement_id(error["url"])
-                    if key in tasks:
-                        tasks[key] = (*tasks[key][:6], "error", error["attempts"], error["message"])
-                else:
-                    key = "index:" + error["url"]
-                    if key in tasks:
-                        tasks[key] = (*tasks[key][:6], "error", error["attempts"], error["message"])
+                key = (
+                    "detail:" + announcement_id(error["url"])
+                    if error["kind"].startswith("detail")
+                    else "index:" + error["url"]
+                )
+                if key in tasks:
+                    tasks[key] = (*tasks[key][:6], "error", error["attempts"], error["message"])
             cursor.executemany(
                 """insert into licitor_ingestion.tasks
                 (run_id,task_key,kind,url,zone,page_number,status,attempts,last_error) values (%s,%s,%s,%s,%s,%s,%s,%s,%s)

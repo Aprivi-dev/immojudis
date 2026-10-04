@@ -3,7 +3,6 @@
 import Activity from "lucide-react/dist/esm/icons/activity.js";
 import Bot from "lucide-react/dist/esm/icons/bot.js";
 import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
-import BriefcaseBusiness from "lucide-react/dist/esm/icons/briefcase-business.js";
 import Settings from "lucide-react/dist/esm/icons/settings.js";
 import CreditCard from "lucide-react/dist/esm/icons/credit-card.js";
 import Database from "lucide-react/dist/esm/icons/database.js";

@@ -1,11 +1,10 @@
 import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 
 type ReferencedLawyerRow = Database["public"]["Tables"]["referenced_lawyers"]["Row"];
 type ReferencedLawyerInsert = Database["public"]["Tables"]["referenced_lawyers"]["Insert"];
-type ReferencedLawyerUpdate = Database["public"]["Tables"]["referenced_lawyers"]["Update"];
 type ReferencedLawyerCoverageRow =
   Database["public"]["Tables"]["referenced_lawyer_coverage"]["Row"];
 type ReferencedLawyerCoverageInsert =
@@ -35,6 +34,29 @@ const optionalTextSchema = z
   .optional()
   .transform((value) => (value ? value : null));
 
+const optionalEmailSchema = optionalTextSchema.refine(
+  (value) => value === null || z.string().email().safeParse(value).success,
+  { message: "L’adresse email de l’avocat est invalide." },
+);
+
+const optionalWebsiteSchema = optionalTextSchema.refine(
+  (value) => {
+    if (value === null) return true;
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  },
+  { message: "Le site de l’avocat doit être une URL HTTP(S) valide." },
+);
+
+const optionalPlacementDateSchema = optionalTextSchema.refine(
+  (value) => value === null || Number.isFinite(new Date(value).getTime()),
+  { message: "La fenêtre de placement doit contenir une date valide." },
+);
+
 export const adminReferencedLawyerCoverageInputSchema = z
   .object({
     id: z.string().uuid().optional(),
@@ -52,33 +74,46 @@ export const adminReferencedLawyerCoverageInputSchema = z
     { message: "Chaque zone doit contenir un tribunal, département, code postal ou ville." },
   );
 
-export const adminReferencedLawyerInputSchema = z.object({
-  id: z.string().uuid().optional(),
-  status: lawyerStatusSchema.default("draft"),
-  paidPlacementStatus: paidPlacementStatusSchema.default("not_started"),
-  displayName: z.string().trim().min(2).max(160),
-  firmName: optionalTextSchema,
-  email: optionalTextSchema,
-  phone: optionalTextSchema,
-  websiteUrl: optionalTextSchema,
-  barAssociation: optionalTextSchema,
-  barNumber: optionalTextSchema,
-  city: optionalTextSchema,
-  department: optionalTextSchema,
-  address: optionalTextSchema,
-  profileSummary: optionalTextSchema,
-  practiceTags: z
-    .array(z.string().trim().min(1).max(80))
-    .max(12)
-    .default(["adjudication"])
-    .transform((tags) => Array.from(new Set(tags.map((tag) => tag.toLowerCase())))),
-  acceptsJudicialAuctions: z.boolean().default(true),
-  acceptsRemoteContact: z.boolean().default(true),
-  priorityWeight: z.number().int().min(0).max(1_000).default(0),
-  paidPlacementStartsAt: optionalTextSchema,
-  paidPlacementEndsAt: optionalTextSchema,
-  coverage: z.array(adminReferencedLawyerCoverageInputSchema).max(30).default([]),
-});
+export const adminReferencedLawyerInputSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    status: lawyerStatusSchema.default("draft"),
+    paidPlacementStatus: paidPlacementStatusSchema.default("not_started"),
+    displayName: z.string().trim().min(2).max(160),
+    firmName: optionalTextSchema,
+    email: optionalEmailSchema,
+    phone: optionalTextSchema,
+    websiteUrl: optionalWebsiteSchema,
+    barAssociation: optionalTextSchema,
+    barNumber: optionalTextSchema,
+    city: optionalTextSchema,
+    department: optionalTextSchema,
+    address: optionalTextSchema,
+    profileSummary: optionalTextSchema,
+    practiceTags: z
+      .array(z.string().trim().min(1).max(80))
+      .max(12)
+      .default(["adjudication"])
+      .transform((tags) => Array.from(new Set(tags.map((tag) => tag.toLowerCase())))),
+    acceptsJudicialAuctions: z.boolean().default(true),
+    acceptsRemoteContact: z.boolean().default(true),
+    priorityWeight: z.number().int().min(0).max(1_000).default(0),
+    paidPlacementStartsAt: optionalPlacementDateSchema,
+    paidPlacementEndsAt: optionalPlacementDateSchema,
+    coverage: z.array(adminReferencedLawyerCoverageInputSchema).max(30).default([]),
+  })
+  .superRefine((input, context) => {
+    if (!input.paidPlacementStartsAt || !input.paidPlacementEndsAt) return;
+    const startsAt = new Date(input.paidPlacementStartsAt).getTime();
+    const endsAt = new Date(input.paidPlacementEndsAt).getTime();
+    if (Number.isFinite(startsAt) && Number.isFinite(endsAt) && startsAt > endsAt) {
+      context.addIssue({
+        code: "custom",
+        path: ["paidPlacementEndsAt"],
+        message: "La fin du placement doit être postérieure au début.",
+      });
+    }
+  });
 
 export type AdminReferencedLawyerInput = z.input<typeof adminReferencedLawyerInputSchema>;
 export type AdminReferencedLawyerPayload = z.output<typeof adminReferencedLawyerInputSchema>;
@@ -170,28 +205,19 @@ export async function saveAdminReferencedLawyer({
 }): Promise<AdminReferencedLawyerSaveResponse> {
   const auth = await assertAdminAuth(authToken);
   const lawyerPayload = referencedLawyerPayload(input);
-  const savedLawyer = input.id
-    ? await updateReferencedLawyer(input.id, lawyerPayload)
-    : await insertReferencedLawyer({
+  const coverageRows = referencedLawyerCoveragePayload(input.coverage);
+  const { data: savedLawyer, error } = await supabaseAdmin
+    .rpc("save_referenced_lawyer_with_coverage", {
+      p_lawyer_id: input.id ?? null,
+      p_lawyer: asJson({
         ...lawyerPayload,
-        created_by: auth.userId,
-      });
+        ...(input.id ? {} : { created_by: auth.userId }),
+      }),
+      p_coverage: asJson(coverageRows),
+    })
+    .single();
 
-  const coverageRows = referencedLawyerCoverageRows(savedLawyer.id, input.coverage);
-  const { error: deleteError } = await supabaseAdmin
-    .from("referenced_lawyer_coverage")
-    .delete()
-    .eq("lawyer_id", savedLawyer.id);
-
-  if (deleteError) throw deleteError;
-
-  if (coverageRows.length) {
-    const { error: insertCoverageError } = await supabaseAdmin
-      .from("referenced_lawyer_coverage")
-      .insert(coverageRows);
-
-    if (insertCoverageError) throw insertCoverageError;
-  }
+  if (error) throw error;
 
   const coverageByLawyer = await getCoverageByLawyerId([savedLawyer.id]);
   const metricsByLawyer = await getPlacementMetricsByLawyerId([savedLawyer.id]);
@@ -244,40 +270,24 @@ export function referencedLawyerCoverageRows(
   }));
 }
 
+function referencedLawyerCoveragePayload(
+  coverage: AdminReferencedLawyerPayload["coverage"],
+): Array<Omit<ReferencedLawyerCoverageInsert, "lawyer_id">> {
+  return coverage.map((row) => ({
+    tribunal_code: row.tribunalCode,
+    tribunal_name: row.tribunalName,
+    city: row.city,
+    department: row.department,
+    postal_code_prefix: row.postalCodePrefix,
+  }));
+}
+
 async function assertAdminAuth(authToken: string) {
   const auth = await requireSupabaseAuthContext(authToken);
   if (!auth.isAdmin) {
     throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
   }
   return auth;
-}
-
-async function insertReferencedLawyer(
-  payload: ReferencedLawyerInsert,
-): Promise<ReferencedLawyerRow> {
-  const { data, error } = await supabaseAdmin
-    .from("referenced_lawyers")
-    .insert(payload)
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function updateReferencedLawyer(
-  id: string,
-  payload: ReferencedLawyerUpdate,
-): Promise<ReferencedLawyerRow> {
-  const { data, error } = await supabaseAdmin
-    .from("referenced_lawyers")
-    .update(payload)
-    .eq("id", id)
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  return data;
 }
 
 async function getCoverageByLawyerId(
@@ -399,4 +409,8 @@ function emptyPlacementMetrics(
     ctaClicks: 0,
     referralRequests: 0,
   };
+}
+
+function asJson(value: unknown): Json {
+  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

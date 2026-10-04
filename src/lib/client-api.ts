@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { authHeaders, readJson } from "@/lib/client-api-core";
 import type { AudienceTrackingResponse } from "@/lib/audience-tracking";
 import type {
   AlertNotificationListResponse,
@@ -77,7 +77,6 @@ import type {
   PropertyReportUpdateInput,
   PlanEntitlements,
 } from "@/lib/property-reports";
-import type { BillingSessionResponse } from "@/lib/billing";
 import type {
   DataRefreshListResponse,
   DataRefreshRequestInput,
@@ -88,6 +87,12 @@ import type {
   AdminSourceRefreshResponse,
 } from "@/lib/admin-source-refresh";
 import type { DataQualityReport } from "@/lib/data-quality-monitor";
+import type {
+  AdminPublicationQuery,
+  AdminPublicationReviewInput,
+  AdminPublicationReviewResponse,
+  AdminPublicationRequestsResponse,
+} from "@/lib/admin-publication-requests";
 import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import type { SaleHistoryResponse } from "@/lib/sale-history";
@@ -122,7 +127,6 @@ import type {
 } from "@/lib/sale-analysis-sets";
 import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
 import type { PlanUsageSummary } from "@/lib/usage";
-import type { PlanCode } from "@/lib/plans";
 import type {
   WatchedZoneInput,
   WatchedZoneResponse,
@@ -150,29 +154,7 @@ import type {
 } from "@/lib/information-agent-email-template";
 import type { PipelineControlSettings, PipelineStatus } from "@/lib/pipeline-status";
 
-async function authHeaders(): Promise<HeadersInit> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("Connexion requise.");
-  }
-
-  return {
-    Authorization: `Bearer ${session.access_token}`,
-  };
-}
-
-async function readJson<T>(response: Response): Promise<T> {
-  const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
-
-  if (!response.ok) {
-    throw new Error(payload?.error ?? `Erreur HTTP ${response.status}`);
-  }
-
-  return payload as T;
-}
+export { fetchAccessPlan, openBillingPortal, startAnalyseCheckout } from "@/lib/client-billing";
 
 export type SaleFactReliabilitiesResponse = {
   facts: FactReliabilityMap;
@@ -472,19 +454,13 @@ export async function disablePropertyReportShare(args: {
   return readJson<PropertyReportShareResponse>(response);
 }
 
-export async function fetchAccessPlan(): Promise<{ plan: PlanEntitlements }> {
-  const response = await fetch("/api/feature-entitlements?scope=plan", {
-    headers: await authHeaders(),
-  });
-  return readJson<{ plan: PlanEntitlements }>(response);
-}
-
 export async function fetchFeatureEntitlements(): Promise<{
   plan: PlanEntitlements;
   usage: PlanUsageSummary;
 }> {
   const response = await fetch("/api/feature-entitlements", {
     headers: await authHeaders(),
+    cache: "no-store",
   });
 
   return readJson<{ plan: PlanEntitlements; usage: PlanUsageSummary }>(response);
@@ -1127,29 +1103,6 @@ export async function exportSalesCsv(args: {
   };
 }
 
-export async function startAnalyseCheckout(args: {
-  plan?: Exclude<PlanCode, "decouverte">;
-  consent: {
-    termsAccepted: true;
-    termsVersion: string;
-    privacyVersion: string;
-    paymentObligationAcknowledged: true;
-    immediatePerformanceRequested: true;
-    withdrawalInformationAcknowledged: true;
-  };
-}): Promise<BillingSessionResponse> {
-  const response = await fetch("/api/billing/checkout", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify({ plan: args.plan ?? "analyse", consent: args.consent }),
-  });
-
-  return readJson<BillingSessionResponse>(response);
-}
-
 export async function fetchPrivacyRequests(): Promise<PrivacyRequestListResponse> {
   const response = await fetch("/api/privacy/requests", { headers: await authHeaders() });
   return readJson<PrivacyRequestListResponse>(response);
@@ -1166,8 +1119,14 @@ export async function createPrivacyRequestClient(
   return readJson<PrivacyRequestSummary>(response);
 }
 
-export async function fetchAdminPrivacyRequests(): Promise<PrivacyRequestAdminListResponse> {
-  const response = await fetch("/api/admin/privacy-requests", {
+export async function fetchAdminPrivacyRequests(
+  input: { offset?: number; limit?: number } = {},
+): Promise<PrivacyRequestAdminListResponse> {
+  const search = new URLSearchParams({
+    offset: String(input.offset ?? 0),
+    limit: String(input.limit ?? 100),
+  });
+  const response = await fetch("/api/admin/privacy-requests?" + search.toString(), {
     signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });
@@ -1183,15 +1142,6 @@ export async function updateAdminPrivacyRequest(
     body: JSON.stringify(data),
   });
   return readJson<PrivacyRequestAdminSummary>(response);
-}
-
-export async function openBillingPortal(): Promise<BillingSessionResponse> {
-  const response = await fetch("/api/billing/portal", {
-    method: "POST",
-    headers: await authHeaders(),
-  });
-
-  return readJson<BillingSessionResponse>(response);
 }
 
 export async function fetchAdminDashboard(): Promise<AdminDashboardData> {
@@ -1459,6 +1409,34 @@ export async function fetchAdminDataQuality(): Promise<DataQualityReport> {
   return readJson<DataQualityReport>(response);
 }
 
+export async function fetchAdminPublicationRequests(
+  input: Partial<AdminPublicationQuery> = {},
+): Promise<AdminPublicationRequestsResponse> {
+  const search = new URLSearchParams();
+  search.set("status", input.status ?? "all");
+  search.set("search", input.search ?? "");
+  search.set("offset", String(input.offset ?? 0));
+  search.set("limit", String(input.limit ?? 30));
+  const response = await fetch("/api/admin/publications?" + search.toString(), {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<AdminPublicationRequestsResponse>(response);
+}
+
+export async function reviewAdminPublicationRequest(
+  input: AdminPublicationReviewInput,
+): Promise<AdminPublicationReviewResponse> {
+  const response = await fetch("/api/admin/publications", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  return readJson<AdminPublicationReviewResponse>(response);
+}
+
 export async function startAdminScrollRequest(args: {
   data: { source: AdminScrollSource; mode?: AdminScrollMode; limit?: number };
 }): Promise<StartScrollResult> {
@@ -1507,8 +1485,14 @@ export async function saveAdminReferencedLawyer(args: {
   return readJson<AdminReferencedLawyerSaveResponse>(response);
 }
 
-export async function fetchAdminLawyerReferralRequests(): Promise<AdminLawyerReferralListResponse> {
-  const response = await fetch("/api/admin/lawyer-referrals", {
+export async function fetchAdminLawyerReferralRequests(
+  input: { offset?: number; limit?: number } = {},
+): Promise<AdminLawyerReferralListResponse> {
+  const search = new URLSearchParams({
+    offset: String(input.offset ?? 0),
+    limit: String(input.limit ?? 50),
+  });
+  const response = await fetch("/api/admin/lawyer-referrals?" + search.toString(), {
     signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });
@@ -1531,8 +1515,14 @@ export async function updateAdminLawyerReferralRequest(args: {
   return readJson<AdminLawyerReferralUpdateResponse>(response);
 }
 
-export async function fetchAdminSubscriptions(): Promise<AdminSubscriptionListResponse> {
-  const response = await fetch("/api/admin/subscriptions", {
+export async function fetchAdminSubscriptions(
+  input: { offset?: number; limit?: number } = {},
+): Promise<AdminSubscriptionListResponse> {
+  const search = new URLSearchParams({
+    offset: String(input.offset ?? 0),
+    limit: String(input.limit ?? 50),
+  });
+  const response = await fetch("/api/admin/subscriptions?" + search.toString(), {
     signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });

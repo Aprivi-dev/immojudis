@@ -22,6 +22,10 @@ def has_price_or_surface(sale: AuctionSale) -> bool:
 def retention_deadline(sale: AuctionSale):
     """Mirror the database retention deadline; uncertain schedules are retained.
 
+    A terminal status is positive evidence that an old sale can be cleaned up
+    even when one source disagreed on its date. Upcoming or unknown rows with
+    that conflict remain protected.
+
     A date-only source does not prove a sale time. Its retention window starts
     after the Paris civil day has ended, then runs for 24 elapsed hours. A
     midnight in ``sale_date`` alone is never treated as date-only evidence.
@@ -33,8 +37,14 @@ def retention_deadline(sale: AuctionSale):
     if re.search(r'\b(postponed|reported|report[eé]e?)\b', str(sale.status or '') + ' ' + str(sale.raw_payload.get('status') or ''), re.I):
         return None
     conflicts = sale.raw_payload.get('source_conflicts')
-    if isinstance(conflicts, list) and any(isinstance(conflict, dict) and conflict.get('field') == 'sale_date'
-                                          for conflict in conflicts):
+    terminal_status = str(sale.status or '').lower() in {
+        'past', 'adjudicated', 'cancelled', 'withdrawn',
+    }
+    if (
+        isinstance(conflicts, list)
+        and any(isinstance(conflict, dict) and conflict.get('field') == 'sale_date' for conflict in conflicts)
+        and not terminal_status
+    ):
         return None
     procedure = sale.sale_procedure or {}
     for schedule in (procedure.get('sale_window'), procedure.get('sale_session'), sale.raw_payload.get('source_sale_schedule')):
@@ -68,15 +78,22 @@ def retention_deadline(sale: AuctionSale):
     return sale_datetime.astimezone(UTC) + timedelta(hours=24)
 
 
-def catalogue_expiry_deadline(sale: AuctionSale):
-    """Return when a sale must leave the public catalogue.
+def catalogue_expiry_deadline(sale: AuctionSale, *, policy: str | None = None):
+    """Return the instant after which a sale leaves the public catalogue.
 
-    A date-only source is normalized to midnight, which is an ingestion
-    convention rather than evidence that the hearing started at midnight.
-    Keep that listing through the corresponding civil day in Europe/Paris.
-    A validated online sale window takes precedence and remains visible until
-    its observed ``closes_at`` instant.
+    Catalogue visibility has a stricter rule than retention.  A dated sale is
+    hidden as soon as its known timestamp has passed.  A date-only source is
+    kept visible through that civil day in Europe/Paris, because midnight in
+    the normalized value is an ingestion convention rather than evidence that
+    the hearing started at 00:00.  The policy is explicit and can be changed
+    with ``IMMOJUDIS_DATE_ONLY_CATALOGUE_POLICY`` (``end_of_local_day`` is the
+    safe default; ``start_of_day`` is available for a deliberate product
+    decision).
+
+    A missing date remains eligible for retention and review, but is not an
+    upcoming catalogue item.  The SQL catalogue uses the same rule.
     """
+    import os
     import re
     from datetime import UTC, datetime, timedelta
     from zoneinfo import ZoneInfo
@@ -87,9 +104,14 @@ def catalogue_expiry_deadline(sale: AuctionSale):
     sale_datetime = sale.sale_date.replace(tzinfo=UTC) if sale.sale_date.tzinfo is None else sale.sale_date
     raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
 
+    # An online sale can open at ``sale_date`` and remain actionable until
+    # the observed closing instant.  Keep this ingestion-side cutoff aligned
+    # with the SQL catalogue helper; otherwise an upsert could drop a listing
+    # while the public catalogue still considers its window live.
+    procedure = sale.sale_procedure if isinstance(sale.sale_procedure, dict) else {}
     for schedule in (
-        (sale.sale_procedure or {}).get("sale_window"),
-        (sale.sale_procedure or {}).get("sale_session"),
+        procedure.get("sale_window"),
+        procedure.get("sale_session"),
         raw_payload.get("source_sale_schedule"),
     ):
         if not isinstance(schedule, dict):
@@ -97,10 +119,10 @@ def catalogue_expiry_deadline(sale: AuctionSale):
         try:
             start = datetime.fromisoformat(str(schedule["opens_at"]).replace("Z", "+00:00"))
             end = datetime.fromisoformat(str(schedule["closes_at"]).replace("Z", "+00:00"))
+            if start.tzinfo is not None and end.tzinfo is not None and end > start:
+                return end.astimezone(UTC)
         except (KeyError, TypeError, ValueError):
             continue
-        if start.tzinfo is not None and end.tzinfo is not None and end > start:
-            return end.astimezone(UTC)
 
     raw_date = str(raw_payload.get("sale_date") or "")
     precision = (
@@ -108,13 +130,26 @@ def catalogue_expiry_deadline(sale: AuctionSale):
         or str(raw_payload.get("sale_date_precision") or "").strip()
     ).lower()
     date_only = precision in {"day", "date", "day_only", "date_only", "unknown_time", "time_unknown"}
-    date_only = date_only or bool(
-        raw_date and not re.search(r"[0-9]{1,2}\s*([hH]|:[0-9]{2})", raw_date)
-    )
+    date_only = date_only or bool(raw_date and not re.search(r"[0-9]{1,2}\s*([hH]|:[0-9]{2})", raw_date))
+
+    selected_policy = (
+        policy
+        or os.getenv("IMMOJUDIS_DATE_ONLY_CATALOGUE_POLICY")
+        or "end_of_local_day"
+    ).strip().lower()
+    if selected_policy not in {"end_of_local_day", "start_of_day"}:
+        selected_policy = "end_of_local_day"
     if not date_only:
         return sale_datetime.astimezone(UTC)
 
     local_date = sale_datetime.astimezone(ZoneInfo("Europe/Paris")).date()
+    if selected_policy == "start_of_day":
+        return datetime.combine(
+            local_date,
+            datetime.min.time(),
+            ZoneInfo("Europe/Paris"),
+        ).astimezone(UTC)
+
     next_paris_midnight = datetime.combine(
         local_date + timedelta(days=1),
         datetime.min.time(),
@@ -123,11 +158,11 @@ def catalogue_expiry_deadline(sale: AuctionSale):
     return next_paris_midnight.astimezone(UTC)
 
 
-def is_catalogue_expired(sale: AuctionSale, now=None) -> bool:
-    """Whether a sale must be excluded before writing catalogue rows."""
+def is_catalogue_expired(sale: AuctionSale, now=None, *, policy: str | None = None) -> bool:
+    """Whether the sale must be excluded before writing catalogue rows."""
     from datetime import UTC, datetime
 
-    deadline = catalogue_expiry_deadline(sale)
+    deadline = catalogue_expiry_deadline(sale, policy=policy)
     return deadline is not None and deadline <= (now or datetime.now(UTC))
 
 

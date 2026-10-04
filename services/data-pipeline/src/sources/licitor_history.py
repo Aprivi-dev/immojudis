@@ -4,7 +4,7 @@ import argparse
 import json
 import re
 import unicodedata
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -350,10 +350,10 @@ def scrape_licitor_historical_result(
     pages_fetched = 0
     entries: list[LicitorHistoryIndexEntry] = []
     for start_url in _history_start_urls_for_target_departments():
-        pending = [start_url]
+        pending = deque([start_url])
         visited: set[str] = set()
         while pending and len(visited) < max_pages_per_zone:
-            page_url = pending.pop(0)
+            page_url = pending.popleft()
             if page_url in visited:
                 continue
             visited.add(page_url)

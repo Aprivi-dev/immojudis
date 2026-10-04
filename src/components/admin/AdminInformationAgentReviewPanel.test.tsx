@@ -203,6 +203,104 @@ describe("AdminInformationAgentReviewPanel", () => {
     );
   });
 
+  it("shows a vision summary as review-only text and surfaces extraction details", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "fact-vision",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          fact_key: "photo",
+          display_value: "Photo reçue",
+          confidence: 0.82,
+          evidence_asset_id: "asset-vision",
+          evidence_excerpt: null,
+          source_page: 2,
+        },
+      ],
+      cases: [{ id: "33333333-3333-4333-8333-333333333333", status: "review" }],
+      assets: [
+        {
+          id: "asset-vision",
+          mime_type: "image/jpeg",
+          rights_status: "authorized",
+          original_filename: "facade.jpg",
+        },
+      ],
+      extractions: [
+        {
+          asset_id: "asset-vision",
+          status: "completed",
+          summary: "Observation visuelle : <b>façade</b>",
+          error_message: null,
+        },
+      ],
+      messages: [],
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText(/Résumé de l’analyse — à vérifier/)).toBeTruthy();
+    expect(screen.getByText("Observation visuelle : <b>façade</b>")).toBeTruthy();
+    expect(screen.getByText("Page source : 2")).toBeTruthy();
+    expect(container.querySelector("b")).toBeNull();
+  });
+
+  it.each(["unsupported", "failed"] as const)(
+    "shows a readable extraction error for %s evidence",
+    async (status) => {
+      mocks.fetchReview.mockResolvedValue({
+        facts: [
+          {
+            id: "fact-" + status,
+            case_id: "33333333-3333-4333-8333-333333333333",
+            sale_id: "11111111-1111-4111-8111-111111111111",
+            fact_key: "document",
+            display_value: "Document reçu",
+            confidence: 0.4,
+            evidence_asset_id: "asset-" + status,
+            evidence_excerpt: null,
+          },
+        ],
+        cases: [{ id: "33333333-3333-4333-8333-333333333333", status: "review" }],
+        assets: [
+          {
+            id: "asset-" + status,
+            mime_type: "application/octet-stream",
+            rights_status: "authorized",
+            original_filename: "piece.bin",
+          },
+        ],
+        extractions: [
+          {
+            asset_id: "asset-" + status,
+            status,
+            summary: null,
+            error_message: "Format de pièce non pris en charge.",
+          },
+        ],
+        messages: [],
+      });
+
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={client}>
+          <AdminInformationAgentReviewPanel />
+        </QueryClientProvider>,
+      );
+
+      const error = await screen.findByRole("alert");
+      expect(error.textContent).toContain(
+        "Erreur d’analyse : Format de pièce non pris en charge.",
+      );
+    },
+  );
+
   it("opens a private attachment and records the administrator rights decision", async () => {
     mocks.fetchReview.mockResolvedValue({
       facts: [

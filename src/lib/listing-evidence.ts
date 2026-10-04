@@ -109,8 +109,15 @@ export function listingOccupation(sale: AuctionSale): string {
     }
     return "Libre selon l’annonce";
   }
-  const label = occupancyLabel(sale.occupancy_status);
-  return label === "Non renseigné" ? "À confirmer" : label;
+  const rawStatus = sale.occupancy_status?.trim() ?? "";
+  const normalizedStatus = normalize(rawStatus).replace(/\s+/g, "_");
+  if (
+    !normalizedStatus ||
+    ["unknown", "inconnu", "non_renseigne", "non_precise", "n/a"].includes(normalizedStatus)
+  ) {
+    return "Non renseignée";
+  }
+  return occupancyLabel(rawStatus);
 }
 
 export function listingSaleStatus(sale: AuctionSale, now = new Date()): string | null {

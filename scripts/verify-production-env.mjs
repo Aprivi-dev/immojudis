@@ -120,6 +120,7 @@ const missingLegal = stripeEnabled ? legalNames.filter((name) => isMissing(proce
 const missingTransactionalEmail = stripeEnabled
   ? ["RESEND_API_KEY", "ALERT_EMAIL_FROM"].filter((name) => isMissing(process.env[name]))
   : [];
+const missingAnalysisPrice = stripeEnabled && isMissing(process.env.STRIPE_ANALYSIS_PRICE_ID);
 
 if (missing.length) {
   console.error("[env:prod] Missing required production environment groups:");
@@ -159,13 +160,20 @@ if (missingTransactionalEmail.length) {
   for (const name of missingTransactionalEmail) console.error(`  - ${name}`);
 }
 
+if (missingAnalysisPrice) {
+  console.error(
+    "[env:prod] Paid checkout requires STRIPE_ANALYSIS_PRICE_ID for the approved recurring Analyse price.",
+  );
+}
+
 if (
   missing.length ||
   invalidSiteUrl ||
   invalidMapboxToken ||
   invalidPortalSecret ||
   missingLegal.length ||
-  missingTransactionalEmail.length
+  missingTransactionalEmail.length ||
+  missingAnalysisPrice
 )
   process.exit(1);
 

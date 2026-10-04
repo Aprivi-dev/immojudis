@@ -31,7 +31,6 @@ _VERIFIED_LEGAL_FRAMEWORKS = frozenset(
 _VERIFIED_PROCEDURE_STATUSES = frozenset(
     {"verified", "cross_checked", "explicit", "source_verified"}
 )
-_CONTACT_CHANNELS = frozenset({"phone", "email"})
 
 
 def _clean(value: Any) -> str:
@@ -520,6 +519,7 @@ def _feature_observation_id(path: str) -> str | None:
         "annexes.garage": "garage",
         "annexes.garden": "garden",
         "annexes.terrace": "terrace",
+        "annexes.patio": "terrace",
         "annexes.balcony": "balcony",
         "annexes.cellar": "cellar",
         "annexes.celliers": "cellar",
@@ -593,27 +593,6 @@ def _normalized_heating_energy(value: Any) -> Any:
     return value
 
 
-def _contact_channel(value: Any) -> str | None:
-    """Infer a contact channel for a legacy scalar contact claim.
-
-    Structured ``contact.phone`` and ``contact.email`` claims carry their
-    channel explicitly.  This fallback keeps older ``eligible_lawyer`` and
-    canonical contact claims mergeable without treating a phone and an email
-    as competing scalar values.
-    """
-
-    if isinstance(value, Mapping):
-        return None
-    text = _clean(value)
-    if not text:
-        return None
-    if re.search(r"@[A-Za-z0-9][^\s@]*", text):
-        return "email"
-    if re.search(r"(?<!\w)\+?\d[\d .()/-]{5,}\d(?!\w)", text):
-        return "phone"
-    return None
-
-
 def _feature_claim_projections(
     path: str,
     claim: Mapping[str, Any],
@@ -663,21 +642,9 @@ def _feature_claim_projections(
             ):
                 if value.get(source_key) in (None, "", [], {}):
                     continue
-                source_value = value[source_key]
-                if source_key == "contact" and _is_claim_mapping(source_value):
-                    projected = dict(source_value)
-                    projected["field"] = target
-                else:
-                    projected = dict(claim)
-                    projected["field"] = target
-                    projected["value"] = source_value
-                if source_key == "contact" and not _is_claim_mapping(source_value):
-                    # The profile evidence belongs to the lawyer/name block;
-                    # it does not prove a phone or email value.  Keep the
-                    # contact claim parser-backed and conservative unless a
-                    # channel-specific claim supplied its own evidence.
-                    projected["provenance"] = "parser_field"
-                    projected["evidence"] = ""
+                projected = dict(claim)
+                projected["field"] = target
+                projected["value"] = value[source_key]
                 yield target, projected
         elif value not in (None, "", [], {}):
             projected = dict(claim)
@@ -686,10 +653,6 @@ def _feature_claim_projections(
         return
     projected = dict(claim)
     projected["field"] = observation_id
-    if observation_id == "lawyer_contact":
-        source_path = path.removeprefix("_extracted.")
-        if source_path in {"contact.phone", "contact.email"}:
-            projected["_contact_channel"] = source_path.rsplit(".", 1)[-1]
     if observation_id == "heating_energy":
         projected["value"] = _normalized_heating_energy(value)
     yield observation_id, projected
@@ -1396,7 +1359,6 @@ def build_source_field_observations(
     processing_at = raw_sale.get("processing_at")
     url = _source_url(raw_sale)
     observations: dict[str, dict[str, Any]] = {}
-    contact_claims: list[dict[str, Any]] = []
 
     def inference_contract(key: str, claim: Mapping[str, Any], state: str) -> dict[str, Any] | None:
         """Return the explicit contract required for an inferred observation.
@@ -1469,7 +1431,7 @@ def build_source_field_observations(
                 result.append(normalized)
         return result
 
-    def make_observation(key: str, claim: Mapping[str, Any]) -> dict[str, Any]:
+    def add(key: str, claim: Mapping[str, Any]) -> None:
         raw_state = _clean(claim.get("state")) or "unknown"
         state = "observed" if raw_state == "present" else raw_state
         provenance = _clean(claim.get("provenance")) or "explicit"
@@ -1511,16 +1473,9 @@ def build_source_field_observations(
                 claim,
                 observation.get("evidence", []),
             )
-        return observation
-
-    def merge_observation(
-        container: dict[str, dict[str, Any]],
-        key: str,
-        observation: dict[str, Any],
-    ) -> None:
-        existing = container.get(key)
+        existing = observations.get(key)
         if not existing:
-            container[key] = observation
+            observations[key] = observation
             return
         if existing.get("value") == observation.get("value"):
             existing_evidence = existing.setdefault("evidence", [])
@@ -1557,129 +1512,6 @@ def build_source_field_observations(
             current_evidence,
         )
         existing["conflicts"] = unique_rows([*prior_conflicts, *current_conflicts])
-
-    def add(key: str, claim: Mapping[str, Any]) -> None:
-        if key == "lawyer_contact":
-            # Phone and email are separate channels.  Collect them until all
-            # projections have run so that same-channel disagreements remain
-            # conflicts while different channels form one structured value.
-            contact_claims.append(dict(claim))
-            return
-        merge_observation(observations, key, make_observation(key, claim))
-
-    def contact_claim_parts(claim: Mapping[str, Any]) -> Iterable[tuple[str, dict[str, Any]]]:
-        explicit_channel = _clean(claim.get("_contact_channel"))
-        if explicit_channel in _CONTACT_CHANNELS:
-            yield explicit_channel, dict(claim)
-            return
-        value = claim.get("value")
-        if isinstance(value, Mapping):
-            yielded = False
-            for channel in ("phone", "email"):
-                channel_value = value.get(channel)
-                if channel_value in (None, "", [], {}):
-                    continue
-                projected = dict(claim)
-                projected["value"] = channel_value
-                projected["_contact_channel"] = channel
-                yield channel, projected
-                yielded = True
-            if yielded:
-                return
-        channel = _contact_channel(value) or "value"
-        yield channel, dict(claim)
-
-    def flush_contact_claims() -> None:
-        if not contact_claims:
-            return
-        channels: dict[str, dict[str, Any]] = {}
-        for claim in contact_claims:
-            for channel, channel_claim in contact_claim_parts(claim):
-                merge_observation(
-                    channels,
-                    channel,
-                    make_observation("lawyer_contact", channel_claim),
-                )
-        if not channels:
-            return
-        ordered_channels = [
-            channel for channel in ("phone", "email") if channel in channels
-        ] + sorted(channel for channel in channels if channel not in _CONTACT_CHANNELS)
-        channel_values = {
-            channel: channels[channel].get("value")
-            for channel in ordered_channels
-        }
-        evidence: list[dict[str, Any]] = []
-        conflicts: list[dict[str, Any]] = []
-        values: list[dict[str, Any]] = []
-        scopes: list[str] = []
-        for channel in ordered_channels:
-            channel_observation = channels[channel]
-            scope = _clean(channel_observation.get("subject_scope"))
-            if scope:
-                scopes.append(scope)
-            for item in channel_observation.get("evidence", []):
-                annotated = dict(item)
-                annotated["channel"] = channel
-                evidence.append(annotated)
-            channel_values_for_conflict = channel_observation.get("values")
-            if not isinstance(channel_values_for_conflict, list):
-                channel_values_for_conflict = [channel_observation.get("value")]
-            for candidate in channel_values_for_conflict:
-                values.append({"channel": channel, "value": candidate})
-            for item in channel_observation.get("conflicts", []):
-                annotated = dict(item)
-                annotated["channel"] = channel
-                conflicts.append(annotated)
-        states = {entry.get("state") for entry in channels.values()}
-        if "conflict" in states:
-            state = "conflict"
-        elif "unknown" in states:
-            state = "unknown"
-        elif "inferred" in states:
-            state = "inferred"
-        elif "observed" in states:
-            state = "observed"
-        elif "explicitly_absent" in states:
-            state = "explicitly_absent"
-        else:
-            state = "unknown"
-        structured: dict[str, Any] = {
-            "value": channel_values,
-            "state": state,
-            "evidence": evidence,
-            "provenance": "structured_contact",
-            "subject_scope": scopes[0] if scopes and len(set(scopes)) == 1 else "mixed",
-            "channels": {channel: channels[channel] for channel in ordered_channels},
-        }
-        if conflicts:
-            structured["conflicts"] = unique_rows(conflicts)
-            structured["values"] = _unique_values(values)
-        if state == "inferred":
-            inferences = [
-                entry.get("inference")
-                for entry in channels.values()
-                if isinstance(entry.get("inference"), Mapping)
-            ]
-            if len(channels) == 1 and len(inferences) == 1:
-                structured["inference"] = inferences[0]
-            else:
-                confidence_values = [
-                    item.get("confidence")
-                    for item in inferences
-                    if isinstance(item.get("confidence"), (int, float))
-                    and not isinstance(item.get("confidence"), bool)
-                ]
-                structured["inference"] = {
-                    "method": "structured_contact_channels",
-                    "input_fields": [
-                        f"lawyer_contact.{channel}"
-                        for channel, entry in channels.items()
-                        if isinstance(entry.get("inference"), Mapping)
-                    ],
-                    "confidence": min(confidence_values) if confidence_values else 0.6,
-                }
-        observations["lawyer_contact"] = structured
 
     def add_projected(key: str, claim: Mapping[str, Any]) -> None:
         for observation_id, projected in _feature_claim_projections(key, claim):
@@ -1749,7 +1581,6 @@ def build_source_field_observations(
             for field, claim in fields.items():
                 if isinstance(claim, Mapping):
                     add_projected(str(field), claim)
-    flush_contact_claims()
     return observations
 
 

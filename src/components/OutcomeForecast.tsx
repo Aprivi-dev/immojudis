@@ -9,7 +9,6 @@ import CircleDashed from "lucide-react/dist/esm/icons/circle-dashed.js";
 import Gavel from "lucide-react/dist/esm/icons/gavel.js";
 import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import Target from "lucide-react/dist/esm/icons/target.js";
 import TrendingUp from "lucide-react/dist/esm/icons/trending-up.js";
 import Users from "lucide-react/dist/esm/icons/users.js";
 import type { OutcomeGraphForecastQuery } from "@/hooks/use-outcome-graph-forecast";

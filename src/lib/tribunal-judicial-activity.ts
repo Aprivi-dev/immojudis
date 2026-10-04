@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { publishedDay } from "@/lib/listing-evidence";
 
 export class TribunalCourtUnresolvedError extends Error {
   constructor(message = "Le rattachement exact au tribunal reste à confirmer.") {
@@ -13,6 +14,7 @@ export const TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE = 5;
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 
 export const tribunalJudicialActivityHistoryMonthsSchema = z.union([
+  z.literal(3),
   z.literal(12),
   z.literal(24),
   z.literal(36),
@@ -121,6 +123,80 @@ const upcomingPropertyTypeBenchmarkSchema = z
   })
   .strict();
 
+const occupationDistributionSchema = z
+  .object({
+    status: z.enum(["vacant", "occupied", "rented"]),
+    count: z.number().int().nonnegative(),
+    share: z.number().min(0).max(1),
+  })
+  .strict();
+
+const occupationSchema = z
+  .object({
+    knownSales: z.number().int().nonnegative(),
+    unknownSales: z.number().int().nonnegative(),
+    distribution: z.array(occupationDistributionSchema).max(3),
+  })
+  .strict()
+  .superRefine((occupation, context) => {
+    const statuses = new Set<string>();
+    let countTotal = 0;
+    let shareTotal = 0;
+    for (const [index, item] of occupation.distribution.entries()) {
+      if (statuses.has(item.status)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["distribution", index, "status"],
+          message: "Chaque statut d’occupation ne peut apparaître qu’une fois.",
+        });
+      }
+      statuses.add(item.status);
+      countTotal += item.count;
+      shareTotal += item.share;
+      const expectedShare = occupation.knownSales === 0 ? 0 : item.count / occupation.knownSales;
+      if (Math.abs(item.share - expectedShare) > 0.000001) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["distribution", index, "share"],
+          message: "La part d’occupation doit utiliser le dénominateur des ventes renseignées.",
+        });
+      }
+    }
+    if (countTotal !== occupation.knownSales) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["distribution"],
+        message: "Les effectifs d’occupation doivent totaliser les ventes renseignées.",
+      });
+    }
+    const expectedShareTotal = occupation.knownSales === 0 ? 0 : 1;
+    // Shares are serialized to six decimals by the builder. Three thirds
+    // therefore sum to 0.999999, while each individual share still has to be
+    // accurate to one millionth of its count denominator.
+    if (Math.abs(shareTotal - expectedShareTotal) > 0.000003) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["distribution"],
+        message: "Les parts d’occupation doivent totaliser 100 % des ventes renseignées.",
+      });
+    }
+  });
+
+const hearingCalendarEntrySchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    sales: z.number().int().positive(),
+  })
+  .strict();
+
+const communeShareSchema = z
+  .object({
+    city: z.string().min(1),
+    count: z.number().int().positive(),
+    share: z.number().min(0).max(1),
+  })
+  .strict();
+
 export const tribunalJudicialActivityResponseSchema = z
   .object({
     court: z
@@ -150,6 +226,10 @@ export const tribunalJudicialActivityResponseSchema = z
         upcomingMedianStartingPriceEur: tribunalJudicialActivityMetricSchema,
         upcomingStartingPriceRangeEur: tribunalJudicialActivityRangeMetricSchema,
         visitCoverage: tribunalJudicialActivityMetricSchema,
+        observedVisitCoverage: tribunalJudicialActivityMetricSchema.optional(),
+        occupation: occupationSchema.optional(),
+        hearingCalendar: z.array(hearingCalendarEntrySchema).max(100).optional(),
+        communes: z.array(communeShareSchema).max(20).optional(),
         medianDiscoveryLeadDays: tribunalJudicialActivityMetricSchema,
         discoveryLeadRangeDays: tribunalJudicialActivityRangeMetricSchema,
         upcomingMedianDiscoveryLeadDays: tribunalJudicialActivityMetricSchema,
@@ -181,7 +261,18 @@ export const tribunalJudicialActivityResponseSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((response, context) => {
+    const occupation = response.activity.occupation;
+    if (!occupation) return;
+    if (occupation.knownSales + occupation.unknownSales !== response.activity.observedPastSales) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["activity", "occupation"],
+        message: "Les ventes renseignées et inconnues doivent couvrir l’historique observé.",
+      });
+    }
+  });
 
 export type TribunalJudicialActivityHistoryMonths = z.infer<
   typeof tribunalJudicialActivityHistoryMonthsSchema
@@ -209,6 +300,8 @@ export type TribunalJudicialActivitySale = {
   propertyType: string | null;
   visitDates: unknown;
   firstSeenAt: string | null;
+  occupationStatus?: string | null;
+  city?: string | null;
 };
 
 type ParsedTribunalJudicialActivitySale = TribunalJudicialActivitySale & {
@@ -221,7 +314,10 @@ export function judicialActivityPeriod(
 ): { historyStart: Date; upcomingEnd: Date } {
   assertValidDate(asOf, "asOf");
   return {
-    historyStart: new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - historyMonths, 1)),
+    historyStart:
+      historyMonths === 3
+        ? addUtcCalendarMonths(asOf, -3)
+        : new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - historyMonths, 1)),
     upcomingEnd: addUtcCalendarMonths(asOf, 12),
   };
 }
@@ -267,6 +363,7 @@ export function buildTribunalJudicialActivity(input: {
   const observedLeadDays = discoveryLeadDays(past);
   const upcomingLeadDays = discoveryLeadDays(upcoming);
   const visits = upcoming.filter((sale) => hasVisitDate(sale.visitDates)).length;
+  const observedVisits = past.filter((sale) => hasVisitDate(sale.visitDates)).length;
   const hearingDayCounts = new Map<string, number>();
   for (const sale of upcoming) {
     const day = parisDateKey(sale.parsedSaleDate);
@@ -280,6 +377,7 @@ export function buildTribunalJudicialActivity(input: {
       (24 * 60 * 60 * 1_000)
     );
   });
+  const hearingCalendar = buildHearingCalendar(upcoming, upcoming90End);
 
   const response: TribunalJudicialActivityResponse = {
     court,
@@ -303,6 +401,13 @@ export function buildTribunalJudicialActivity(input: {
       upcomingMedianStartingPriceEur: sampleMetric(upcomingPrices, median(upcomingPrices)),
       upcomingStartingPriceRangeEur: rangeMetric(upcomingPrices),
       visitCoverage: sampleMetric(upcoming, upcoming.length > 0 ? visits / upcoming.length : null),
+      observedVisitCoverage: sampleMetric(
+        past,
+        past.length > 0 ? observedVisits / past.length : null,
+      ),
+      occupation: occupationStats(past),
+      hearingCalendar,
+      communes: observedCommunes(past),
       medianDiscoveryLeadDays: sampleMetric(observedLeadDays, median(observedLeadDays)),
       discoveryLeadRangeDays: rangeMetric(observedLeadDays),
       upcomingMedianDiscoveryLeadDays: sampleMetric(upcomingLeadDays, median(upcomingLeadDays)),
@@ -342,6 +447,100 @@ export function buildTribunalJudicialActivity(input: {
     },
   };
   return tribunalJudicialActivityResponseSchema.parse(response);
+}
+
+function occupationStats(sales: ParsedTribunalJudicialActivitySale[]) {
+  const statuses = ["vacant", "occupied", "rented"] as const;
+  const counts = new Map<(typeof statuses)[number], number>(statuses.map((status) => [status, 0]));
+  let knownSales = 0;
+  for (const sale of sales) {
+    const status = normalizeOccupationStatus(sale.occupationStatus);
+    if (!status) continue;
+    counts.set(status, (counts.get(status) ?? 0) + 1);
+    knownSales += 1;
+  }
+  return {
+    knownSales,
+    unknownSales: sales.length - knownSales,
+    distribution: statuses
+      .map((status) => ({
+        status,
+        count: counts.get(status) ?? 0,
+        share: knownSales > 0 ? round((counts.get(status) ?? 0) / knownSales, 6) : 0,
+      }))
+      .filter((entry) => entry.count > 0),
+  };
+}
+
+function normalizeOccupationStatus(
+  value: string | null | undefined,
+): "vacant" | "occupied" | "rented" | null {
+  const normalized = value?.trim().toLocaleLowerCase("fr-FR");
+  if (normalized === "vacant" || normalized === "rented") return normalized;
+  if (normalized === "occupied" || normalized === "owner_occupied" || normalized === "squatted") {
+    return "occupied";
+  }
+  return null;
+}
+
+function hasVisitDate(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.some((item) => typeof item === "string" && publishedVisitDay(item) !== null)
+  );
+}
+
+function publishedVisitDay(value: string): string | null {
+  const parsed = publishedDay(value);
+  if (parsed) return parsed;
+  const match = /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/.exec(value.trim());
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const candidate = new Date(Date.UTC(year, month - 1, day, 12));
+  if (
+    !Number.isFinite(candidate.getTime()) ||
+    candidate.getUTCFullYear() !== year ||
+    candidate.getUTCMonth() !== month - 1 ||
+    candidate.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return candidate.toISOString().slice(0, 10);
+}
+
+function buildHearingCalendar(sales: ParsedTribunalJudicialActivitySale[], upcoming90End: Date) {
+  const counts = new Map<string, number>();
+  for (const sale of sales) {
+    if (sale.parsedSaleDate >= upcoming90End) continue;
+    const date = parisDateKey(sale.parsedSaleDate);
+    counts.set(date, (counts.get(date) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, salesCount]) => ({ date, sales: salesCount }));
+}
+
+function observedCommunes(sales: ParsedTribunalJudicialActivitySale[]) {
+  const counts = new Map<string, number>();
+  for (const sale of sales) {
+    const city = sale.city?.trim();
+    if (!city) continue;
+    counts.set(city, (counts.get(city) ?? 0) + 1);
+  }
+  const knownSales = [...counts.values()].reduce((total, count) => total + count, 0);
+  if (knownSales === 0) return [];
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "fr"))
+    .slice(0, 20)
+    .map(([city, count]) => ({
+      city,
+      count,
+      // The denominator is the past sales with a non-empty commune. Missing
+      // communes are deliberately excluded rather than presented as a city.
+      share: round(count / knownSales, 6),
+    }));
 }
 
 function startingPrices(sales: ParsedTribunalJudicialActivitySale[]): number[] {
@@ -456,10 +655,6 @@ function quantile(values: number[], probability: number): number | null {
   const lower = ordered[lowerIndex]!;
   const upper = ordered[upperIndex]!;
   return lower + (upper - lower) * (position - lowerIndex);
-}
-
-function hasVisitDate(value: unknown): boolean {
-  return Array.isArray(value) && value.length > 0;
 }
 
 function reliability(sampleSize: number): {

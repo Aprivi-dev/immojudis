@@ -1,6 +1,7 @@
 import type { MarketEstimate } from "@/lib/market.functions";
 import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { AuctionSale } from "@/lib/types";
+import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 
 export type DemographicSignalKind =
   | "population"
@@ -171,7 +172,7 @@ export function buildDemographicAnalysis({
     decisionImpact: decisionImpact(status),
     nextActions: nextActions({ status, signals, missingData }),
     limitations: [
-      "Cette analyse exploite les signaux disponibles et des proxys de marché ; elle doit être enrichie par des données INSEE/IRIS pour une lecture démographique complète.",
+      "Cette analyse exploite les signaux disponibles et des indices de marché ; elle ne remplace pas une vérification des indicateurs démographiques locaux.",
       "Les profils de demande ne constituent pas une garantie de location, de revente ou de plus-value.",
     ],
   };
@@ -254,7 +255,7 @@ function buildProxySignals({
       source: "DVF / estimation marché",
       detail: `${marketEstimate.sampleSize} comparable(s) retenu(s), qualité ${marketEstimate.qualityLabel}.`,
       impact:
-        "Utiliser la densité de transactions comme proxy de liquidité locale, sans remplacer les données de population.",
+        "Utiliser la densité de transactions comme indice de liquidité locale ; elle ne renseigne pas à elle seule la population.",
     });
   }
 
@@ -302,8 +303,8 @@ function confidenceLabel({
     return "Signaux démographiques et proxys marché recoupés";
   }
   if (status === "source_signals") return "Signaux démographiques repérés dans les sources";
-  if (status === "market_proxy") return "Lecture par proxys marché et services";
-  if (status === "location_only") return "Localisation disponible, données INSEE à connecter";
+  if (status === "market_proxy") return "Lecture indicative fondée sur le marché et les services";
+  if (status === "location_only") return "Localisation disponible, profil démographique à vérifier";
   return "Analyse démographique non qualifiée";
 }
 
@@ -313,7 +314,7 @@ function profileLabel(signals: DemographicSignal[]): string {
   if (kinds.has("household")) return "Profil familial ou ménages à qualifier";
   if (kinds.has("age")) return "Âges et accessibilité à qualifier";
   if (kinds.has("tenure") || kinds.has("rental_demand")) return "Demande locative à qualifier";
-  return "Profil local à enrichir";
+  return "Profil local à documenter";
 }
 
 function demandLabel({
@@ -327,10 +328,12 @@ function demandLabel({
   if (rentalSignals.length) {
     return rentalSignals.some((signal) => signal.status === "source_signal")
       ? "Demande locative signalée"
-      : "Demande locative à tester par proxys";
+      : "Demande locative à tester avec les loyers et la vacance observés";
   }
-  if (signals.some((signal) => signal.kind === "market_depth")) return "Liquidité locale à mesurer";
-  if (status === "location_only") return "Demande locale à enrichir";
+  if (signals.some((signal) => signal.kind === "market_depth")) {
+    return "Liquidité locale à mesurer sur les ventes comparables";
+  }
+  if (status === "location_only") return "Demande locale non documentée";
   return "Demande non qualifiée";
 }
 
@@ -339,7 +342,7 @@ function missingDataFor(signals: DemographicSignal[]): string[] {
     signals.filter((signal) => signal.status === "source_signal").map((signal) => signal.kind),
   );
   const missing: string[] = [];
-  if (!kinds.has("population")) missing.push("Population, évolution et densité INSEE/commune");
+  if (!kinds.has("population")) missing.push("Population, évolution et densité de la commune");
   if (!kinds.has("income")) missing.push("Revenus médians et pouvoir d'achat local");
   if (!kinds.has("age") && !kinds.has("student"))
     missing.push("Âges, étudiants et profils d'occupants");
@@ -367,12 +370,12 @@ function summary({
   }
   if (status === "market_proxy") {
     const labels = [...new Set(signals.map((signal) => signal.label))].slice(0, 3);
-    return `Lecture provisoire par proxys : ${labels.join(", ")}.`;
+    return `Lecture indicative : ${labels.join(", ")}. Ces indices doivent être vérifiés avant décision.`;
   }
   if (status === "location_only") {
-    return "Localisation connue : données démographiques INSEE/IRIS à connecter.";
+    return "Localisation connue, mais le profil démographique n'est pas documenté dans les sources consultées.";
   }
-  return "Analyse démographique à enrichir : localisation et données locales insuffisantes.";
+  return "Analyse démographique limitée : les sources consultées ne permettent pas de qualifier la demande locale.";
 }
 
 function decisionImpact(status: DemographicAnalysis["status"]): string {
@@ -380,7 +383,7 @@ function decisionImpact(status: DemographicAnalysis["status"]): string {
     return "Vérifier ces mentions avec des données locales datées avant d’ajuster la cible locative ou le plafond.";
   }
   if (status === "market_proxy") {
-    return "Traiter les proxys comme indices faibles avant de valider loyer, vacance et revente.";
+    return "Traiter les indices de marché et de services comme des repères avant de valider loyer, vacance et revente.";
   }
   return "Ne pas fonder le plafond sur la demande locale tant que les données démographiques ne sont pas enrichies.";
 }
@@ -400,7 +403,7 @@ function nextActions({
 
   if (status !== "source_signals") {
     actions.push(
-      "Brancher les données INSEE commune/IRIS pour objectiver population, revenus et ménages.",
+      "Consulter les indicateurs publics de la commune et du quartier sur la population, les revenus et les ménages.",
     );
   }
   if (missingData.length) {
@@ -462,25 +465,6 @@ function dedupeStrings(values: string[]): string[] {
   });
 }
 
-function flattenKeyValues(value: unknown, path = ""): Array<{ path: string; value: unknown }> {
-  if (!value || typeof value !== "object") return [];
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) => flattenPrimitiveOrObject(item, `${path}[${index}]`));
-  }
-
-  return Object.entries(value as Record<string, unknown>).flatMap(([key, item]) =>
-    flattenPrimitiveOrObject(item, path ? `${path}.${key}` : key),
-  );
-}
-
-function flattenPrimitiveOrObject(
-  value: unknown,
-  path: string,
-): Array<{ path: string; value: unknown }> {
-  if (value && typeof value === "object") return flattenKeyValues(value, path);
-  return [{ path, value }];
-}
-
 function cleanText(value: unknown): string | null {
   if (typeof value === "string" || typeof value === "number") {
     const text = String(value).replace(/\s+/g, " ").trim();
@@ -498,19 +482,4 @@ function cleanText(value: unknown): string | null {
     return text || null;
   }
   return null;
-}
-
-function normalizeText(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[’']/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function excerpt(value: string): string {
-  const text = value.replace(/\s+/g, " ").trim();
-  return text.length > 180 ? `${text.slice(0, 177).trim()}...` : text;
 }

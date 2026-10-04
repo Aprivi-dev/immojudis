@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { AccountProfile } from "@/lib/account";
@@ -18,17 +18,31 @@ function concurrentRead<T>(pending: Map<string, Promise<T>>, key: string, read: 
   return request;
 }
 
+export const AuthContext = createContext<ReturnType<typeof useVerifiedAuth> | null>(null);
+
 export function useAuth() {
+  const shared = useContext(AuthContext);
+  const standalone = useVerifiedAuth(shared === null);
+  return shared ?? standalone;
+}
+
+// AppProviders keeps a single verified identity across client-side navigation.
+// Standalone consumers still work outside the application provider.
+export function useVerifiedAuth(enabled = true, routeKey?: string) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const refreshRef = useRef<(() => void) | null>(null);
+  const previousRouteRef = useRef(routeKey);
 
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     let verification = 0;
     let verifiedUserId: string | undefined;
+    let currentSession: Session | null | undefined;
 
     async function fetchProfile(nextUser: User): Promise<AccountProfile | null> {
       const { data, error } = await supabase
@@ -48,6 +62,7 @@ export function useAuth() {
     }
 
     async function verifySession(nextSession: Session | null) {
+      currentSession = nextSession;
       const currentVerification = ++verification;
       setAuthError(null);
       if (nextSession?.user.id !== verifiedUserId) {
@@ -97,24 +112,42 @@ export function useAuth() {
       void verifySession(s);
     });
 
-    supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        if (active && verification === 0) void verifySession(data.session);
-      })
-      .catch(() => {
-        if (!active || verification !== 0) return;
-        setAuthError(
-          "Votre session n’a pas pu être vérifiée. Reconnectez-vous pour ouvrir l’annonce.",
-        );
-        setLoading(false);
-      });
+    function readSession() {
+      const currentVerification = verification;
+      supabase.auth
+        .getSession()
+        .then(({ data }) => {
+          if (active && verification === currentVerification) void verifySession(data.session);
+        })
+        .catch(() => {
+          if (!active || verification !== currentVerification) return;
+          setAuthError(
+            "Votre session n’a pas pu être vérifiée. Reconnectez-vous pour ouvrir l’annonce.",
+          );
+          setLoading(false);
+        });
+    }
+
+    refreshRef.current = () => {
+      if (currentSession === undefined) readSession();
+      else void verifySession(currentSession);
+    };
+    readSession();
 
     return () => {
       active = false;
+      refreshRef.current = null;
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [enabled]);
+
+  useEffect(() => {
+    if (previousRouteRef.current === routeKey) return;
+    previousRouteRef.current = routeKey;
+    // Refresh profile changes made outside Auth without blocking the next page
+    // or repeating the same request for every mounted consumer.
+    refreshRef.current?.();
+  }, [routeKey]);
 
   return { session, user, profile, loading, authError };
 }

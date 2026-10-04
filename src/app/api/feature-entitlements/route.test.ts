@@ -16,6 +16,8 @@ describe("feature entitlements scope", () => {
     mocks.plan.mockResolvedValue({ hasAnalysisAccess: false });
     const response = await GET(new Request("http://localhost/api/feature-entitlements?scope=plan"));
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("vary")).toBe("authorization");
     expect(await response.json()).toEqual({ plan: { hasAnalysisAccess: false } });
     expect(mocks.auth).toHaveBeenCalledWith("test-token");
     expect(mocks.plan).toHaveBeenCalledWith({ userId: "verified" });
@@ -27,6 +29,8 @@ describe("feature entitlements scope", () => {
     mocks.plan.mockResolvedValue({ hasAnalysisAccess: true });
     mocks.usage.mockResolvedValue({ limits: [] });
     const response = await GET(new Request("http://localhost/api/feature-entitlements"));
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("vary")).toBe("authorization");
     expect(await response.json()).toEqual({
       plan: { hasAnalysisAccess: true },
       usage: { limits: [] },
@@ -38,6 +42,8 @@ describe("feature entitlements scope", () => {
     mocks.auth.mockRejectedValue(new Error("Unauthorized"));
     const response = await GET(new Request("http://localhost/api/feature-entitlements?scope=plan"));
     expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("vary")).toBe("authorization");
     expect(mocks.plan).not.toHaveBeenCalled();
     expect(mocks.usage).not.toHaveBeenCalled();
   });

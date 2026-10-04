@@ -244,6 +244,7 @@ class ArchiveHttp:
         if not refresh and (html := self.state.cached(url)) is not None:
             return html
         current = url
+        allowed_history_paths = {urlsplit(zone).path for zone in LICITOR_HISTORY_ZONE_URLS}
         for _ in range(6):
             self.checkpoint()
             if not is_allowed_origin_url(current, ALLOWED_ORIGINS):
@@ -252,7 +253,7 @@ class ArchiveHttp:
             allowed_path = (
                 path == "/robots.txt"
                 or path.startswith("/annonce/")
-                or path in {urlsplit(zone).path for zone in LICITOR_HISTORY_ZONE_URLS}
+                or path in allowed_history_paths
             )
             if not allowed_path or (kind != "robots" and not self.rules.can_fetch(current)):
                 raise RunPaused("robots_or_path_policy_denied")

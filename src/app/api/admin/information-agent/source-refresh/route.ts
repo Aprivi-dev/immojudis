@@ -8,6 +8,7 @@ import {
   getAdminSourceRefreshStatus,
   requestAdminSourceRefresh,
 } from "@/lib/admin-source-refresh";
+import { adminErrorResponse } from "@/lib/api-route-errors";
 
 export async function GET(request: Request) {
   try {
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminSourceRefreshError(error);
+    return adminErrorResponse(error, { fallbackMessage: "Refresh source indisponible." });
   }
 }
 
@@ -34,16 +35,6 @@ export async function POST(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminSourceRefreshError(error);
+    return adminErrorResponse(error, { fallbackMessage: "Refresh source indisponible." });
   }
-}
-
-function adminSourceRefreshError(error: unknown): Response {
-  const message = error instanceof Error ? error.message : "Refresh source indisponible.";
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden")
-      ? 403
-      : 400;
-  return Response.json({ error: message }, { status });
 }

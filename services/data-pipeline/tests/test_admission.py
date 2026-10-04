@@ -96,7 +96,7 @@ def test_date_only_marker_uses_the_paris_civil_date_for_an_aware_midnight():
     assert retention_deadline(sale) == datetime(2026, 10, 26, 23, tzinfo=UTC)
 
 
-def test_catalogue_date_only_expires_at_end_of_paris_civil_day():
+def test_catalogue_date_only_expires_at_the_end_of_the_paris_civil_day():
     from datetime import UTC, datetime
 
     from src.admission import catalogue_expiry_deadline, is_catalogue_expired
@@ -108,13 +108,12 @@ def test_catalogue_date_only_expires_at_end_of_paris_civil_day():
         raw_payload={"sale_date": "2026-10-25", "date_precision": "day"},
     )
     deadline = catalogue_expiry_deadline(sale)
-
     assert deadline == datetime(2026, 10, 25, 23, tzinfo=UTC)
     assert not is_catalogue_expired(sale, datetime(2026, 10, 25, 22, 59, tzinfo=UTC))
     assert is_catalogue_expired(sale, deadline)
 
 
-def test_catalogue_timed_sale_expires_at_observed_timestamp():
+def test_catalogue_timed_sale_uses_the_observed_timestamp():
     from datetime import UTC, datetime
 
     from src.admission import catalogue_expiry_deadline
@@ -125,11 +124,10 @@ def test_catalogue_timed_sale_expires_at_observed_timestamp():
         sale_date="2026-10-25T14:00:00+02:00",
         raw_payload={"sale_date": "25/10/2026 à 14h"},
     )
-
     assert catalogue_expiry_deadline(sale) == datetime(2026, 10, 25, 12, tzinfo=UTC)
 
 
-def test_catalogue_online_sale_expires_at_validated_window_close():
+def test_catalogue_online_sale_stays_live_until_validated_window_closes():
     from datetime import UTC, datetime
 
     from src.admission import catalogue_expiry_deadline
@@ -146,8 +144,21 @@ def test_catalogue_online_sale_expires_at_validated_window_close():
         },
         raw_payload={"sale_date": "25/10/2026 à 14h"},
     )
-
     assert catalogue_expiry_deadline(sale) == datetime(2026, 10, 25, 15, tzinfo=UTC)
+
+
+def test_catalogue_date_only_policy_can_be_explicitly_set_to_start_of_day():
+    from datetime import UTC, datetime
+
+    from src.admission import catalogue_expiry_deadline
+
+    sale = AuctionSale(
+        source_name="test",
+        source_url="https://example.org/catalogue-policy",
+        sale_date="2026-10-25T00:00:00+02:00",
+        raw_payload={"sale_date": "2026-10-25", "date_precision": "day"},
+    )
+    assert catalogue_expiry_deadline(sale, policy="start_of_day") == datetime(2026, 10, 24, 22, tzinfo=UTC)
 
 
 def test_midnight_sale_date_without_date_only_evidence_keeps_timestamp_semantics():
@@ -162,6 +173,21 @@ def test_midnight_sale_date_without_date_only_evidence_keeps_timestamp_semantics
         raw_payload={'source_date': '2026-09-10'},
     )
     assert retention_deadline(sale) == datetime(2026, 9, 11, tzinfo=UTC)
+
+
+def test_terminal_sale_date_conflict_does_not_block_retention_cleanup():
+    from datetime import UTC, datetime
+
+    from src.admission import retention_deadline
+
+    sale = AuctionSale(
+        source_name="test",
+        source_url="https://example.org/terminal-conflict",
+        sale_date="2026-09-10T12:00:00+00:00",
+        status="past",
+        raw_payload={"source_conflicts": [{"field": "sale_date"}]},
+    )
+    assert retention_deadline(sale) == datetime(2026, 9, 11, 12, tzinfo=UTC)
 
 
 def test_explicit_sale_hour_still_uses_sale_timestamp_plus_24h():

@@ -881,9 +881,19 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         postal_code = extract_postal_code(raw_sale.get("raw_text"), source_text)
     if _postal_code_is_starting_price_without_location(raw_sale, address, postal_code):
         raw_sale = dict(raw_sale)
+        invalid_reason = "starting_price_token_without_location_context"
+        source_text_for_postal = " ".join(
+            str(raw_sale.get(key) or "") for key in ("raw_text", "description", "title", "address")
+        )
+        if re.search(
+            rf"\b(?:r[eé]f(?:[eé]rence)?|lot)\s*(?:[.:#-]\s*)*\s*(?:[A-Z0-9]{{1,8}}[/\\-])?{re.escape(postal_code or '')}\b",
+            source_text_for_postal,
+            re.I,
+        ):
+            invalid_reason = "legal_reference_token_without_location_context"
         raw_sale["invalid_postal_evidence"] = {
             "value": postal_code,
-            "reason": "starting_price_token_without_location_context",
+            "reason": invalid_reason,
         }
         flags = list(raw_sale.get("quality_flags") or [])
         if "postal_code_unverified" not in flags:
@@ -1629,24 +1639,37 @@ def _skip_contextless_postal_code_fallback(raw_sale: dict[str, object], address:
 def _postal_code_is_starting_price_without_location(
     raw_sale: dict[str, object], address: str | None, postal_code: str | None
 ) -> bool:
-    """Reject a Petites Affiches price token misread as a property postal code.
+    """Reject an uncontextual postal token that is demonstrably not a location.
 
-    The card extractor historically scanned the whole card, whose first
-    numeric token is often ``Mise à Prix : 50 000 €``.  A code equal to that
-    price is only rejected when the address itself carries no postal code;
-    explicit address evidence remains authoritative even when the amounts
-    happen to be equal.
+    Several source cards contain a legal reference (for example
+    ``Réf. :26/01251``) next to ``Mise à Prix :180 000 €``.  When the address
+    has no postal evidence, accepting either token as the property postal code
+    produces a fake department and a misleading city badge.  Explicit
+    address evidence remains authoritative even when an amount or reference
+    happens to look like a five digit code.
     """
-    source_name = strip_accents(clean_text(raw_sale.get("source_name")) or "").lower()
-    if source_name != "petites_affiches" or not postal_code or extract_postal_code(address):
+    if not postal_code or extract_postal_code(address):
         return False
     starting_price = extract_starting_price(raw_sale)
-    if starting_price is None:
-        return False
     try:
-        return starting_price == Decimal(postal_code)
+        if starting_price is not None and starting_price == Decimal(postal_code):
+            return True
     except (InvalidOperation, ValueError):
-        return False
+        pass
+
+    text_parts: list[str] = []
+    for key in ("raw_text", "description", "title", "address"):
+        value = raw_sale.get(key)
+        if isinstance(value, str):
+            text_parts.append(value)
+    source_text = " ".join(text_parts)
+    if source_text and re.search(
+        rf"\b(?:r[eé]f(?:[eé]rence)?|lot)\s*(?:[.:#-]\s*)*\s*(?:[A-Z0-9]{{1,8}}[/\\-])?{re.escape(postal_code)}\b",
+        source_text,
+        re.I,
+    ):
+        return True
+    return False
 
 
 def _extract_asset_title_from_text(text: str) -> str | None:

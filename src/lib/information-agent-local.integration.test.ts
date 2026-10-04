@@ -1,5 +1,8 @@
 import { createHmac, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createServer, type Server } from "node:http";
+import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import postgres from "postgres";
@@ -20,6 +23,15 @@ const INBOUND_DOMAIN = "reponses.example.test";
 const RESEND_WEBHOOK_SECRET = `whsec_${Buffer.from("local-resend-webhook-secret").toString("base64")}`;
 const RESEND_EMAIL_ID = "resend-local-email-1";
 const RESEND_ATTACHMENT_ID = "resend-local-attachment-1";
+const LOCAL_RESEND_ATTACHMENT_HOST = "attachments.example.test";
+const VALID_PDF_BYTES = Buffer.from(
+  "JVBERi0xLjcKJcK1wrYKCjEgMCBvYmoKPDwvVHlwZS9DYXRhbG9nL1BhZ2VzIDIgMCBSPj4KZW5kb2JqCgoyIDAgb2JqCjw8L1R5cGUvUGFnZXMvQ291bnQgMS9LaWRzWzQgMCBSXT4+CmVuZG9iagoKMyAwIG9iago8PC9Gb250PDwvaGVsdiA1IDAgUj4+Pj4KZW5kb2JqCgo0IDAgb2JqCjw8L1R5cGUvUGFnZS9NZWRpYUJveFswIDAgNTk1IDg0Ml0vUm90YXRlIDAvUmVzb3VyY2VzIDMgMCBSL1BhcmVudCAyIDAgUi9Db250ZW50c1s2IDAgUl0+PgplbmRvYmoKCjUgMCBvYmoKPDwvVHlwZS9Gb250L1N1YnR5cGUvVHlwZTEvQmFzZUZvbnQvSGVsdmV0aWNhL0VuY29kaW5nL1dpbkFuc2lJbmNvZGluZz4+CmVuZGJqagoKNiAwIG9iago8PC9MZW5ndGggMTM5L0ZpbHRlci9GbGF0ZURlY29kZT4+CnN0cmVhbQp42iVNMQ4CMQzb84r8gCRtk6uEGE5iYUPqhhjQXU8MMLDwftxDURLbkR360NxIWVDKYRwh3N50ePbXl1W5bXw7lhQlzN3VkxcTn4DMa+R9L0NLD/SUMq5rMhNbwcFCvHoZvkh/dTihdKAFyJA8MvOYSNzwa8e+wTU+iyuUCt5P93ahc6Mr/QC+DCjjCmVuZHN0cmVhbQplbmRvYmoKCnhyZWYKMCA3CjAwMDAwMDAwMDAgMDAwMDEgZiAKMDAwMDAwMDE2IDAwMDAwIG4gCjAwMDAwMDA2MiAwMDAwIG4gCjAwMDAwMDExNCAwMDAwMCBuIAowMDAwMDAxNTUgMDAwMDAgbiAKMDAwMDAwMjYyIDAwMDAwIG4gCjAwMDAwMDM1MSAwMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNy9Sb290IDEgMCBSL0lEWzwxRkZEM0EyM0MyQjZDMjkxRkMyOTIyM0MyOEJDMkIxPjw3NDE3QTE3QTUzMjY5MjMyNEJCQTUzRDk4NDM2MTQ3Mz5dPj4Kc3RhcnR4cmVmCjU1OQolJUVPRgo=",
+  "base64",
+);
+const VALID_JPEG_BYTES = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wgARCAADAAQDAREAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAABv/EABQBAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhADEAAAAWR//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxB//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPxB//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxB//9k=",
+  "base64",
+);
 
 type LocalClient = ReturnType<typeof createClient<Database>>;
 
@@ -101,7 +113,7 @@ describeLocal("information-agent local integration", () => {
               filename: attachment.filename,
               content_type: attachment.contentType,
               size: attachment.size,
-              download_url: `${resendBaseUrl}${attachment.downloadPath}`,
+              download_url: `https://${LOCAL_RESEND_ATTACHMENT_HOST}${attachment.downloadPath}`,
               content_disposition: "attachment",
             })),
             has_more: false,
@@ -403,6 +415,7 @@ describeLocal("information-agent local integration", () => {
     });
     const resendResponse = await processInformationAgentInboundWebhook({
       request: webhookRequest(webhookPayload, "local-svix-id"),
+      fetchImpl: localResendFetch,
       deferProcessing: false,
     });
     expect(resendResponse).toMatchObject({
@@ -478,6 +491,7 @@ describeLocal("information-agent local integration", () => {
 
     const duplicate = await processInformationAgentInboundWebhook({
       request: webhookRequest(webhookPayload, "local-svix-id-duplicate"),
+      fetchImpl: localResendFetch,
       deferProcessing: false,
     });
     expect(duplicate).toMatchObject({ duplicate: true, processingStatus: "review" });
@@ -488,6 +502,189 @@ describeLocal("information-agent local integration", () => {
     if (duplicateAssetCountError) throw duplicateAssetCountError;
     expect(duplicateAssetCount).toBe(1);
   }, 30_000);
+
+  it("stores a reply body with a JPEG, a text PDF, and a MIME-mismatch attachment, then replays it idempotently", async () => {
+    const mixed = await ingestMixedAttachmentReply("mixed-attachments");
+
+    expect(mixed.receipt).toMatchObject({
+      accepted: true,
+      caseId: mixed.conversation.caseId,
+      processingStatus: "review",
+    });
+    expect(mixed.receipt.attachmentCount).toBeGreaterThanOrEqual(3);
+    expect(mixed.receipt.factCount).toBeGreaterThanOrEqual(6);
+
+    const bodyFactKeys = new Set(
+      mixed.facts.filter((fact) => fact.evidence_asset_id === null).map((fact) => fact.fact_key),
+    );
+    expect(bodyFactKeys).toEqual(new Set(["surface_m2", "rooms_count", "occupancy_status"]));
+
+    expect(mixed.attachmentAssets).toHaveLength(3);
+    expect(mixed.attachmentAssets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider_attachment_id: mixed.attachmentIds.jpeg,
+          mime_type: "image/jpeg",
+        }),
+        expect.objectContaining({
+          provider_attachment_id: mixed.attachmentIds.pdf,
+          mime_type: "application/pdf",
+        }),
+        expect.objectContaining({
+          provider_attachment_id: mixed.attachmentIds.mimeMismatch,
+          // The inbound contract persists the declared MIME. The worker probe
+          // below is responsible for rejecting the real JPEG signature.
+          mime_type: "application/pdf",
+        }),
+      ]),
+    );
+    expect(mixed.attachmentExtractions.every((extraction) => extraction.status === "queued")).toBe(
+      true,
+    );
+    expect(mixed.bodyAssets).toHaveLength(1);
+    expect(mixed.bodyAssets[0]).toMatchObject({
+      provider_attachment_id: `email-body:${mixed.messageId}`,
+      mime_type: "text/plain",
+      metadata: expect.objectContaining({ evidence_kind: "email_body" }),
+    });
+    const { data: bodyAssetData, error: bodyAssetDownloadError } = await admin.storage
+      .from(BUCKET)
+      .download(mixed.bodyAssets[0]?.storage_path ?? "");
+    if (bodyAssetDownloadError || !bodyAssetData) {
+      throw bodyAssetDownloadError ?? new Error("Inbound body evidence cannot be downloaded.");
+    }
+    expect(new TextDecoder().decode(await bodyAssetData.arrayBuffer())).toContain("84");
+    expect(
+      mixed.facts
+        .filter((fact) => mixed.bodyAssets.some((asset) => asset.id === fact.evidence_asset_id))
+        .every((fact) => !["document", "photo"].includes(fact.fact_key)),
+    ).toBe(true);
+
+    const storedBytes = await Promise.all(
+      mixed.attachmentAssets.map(async (asset) => {
+        const { data, error } = await admin.storage.from(BUCKET).download(asset.storage_path);
+        if (error || !data) throw error ?? new Error("Mixed attachment cannot be downloaded.");
+        return {
+          providerAttachmentId: asset.provider_attachment_id,
+          bytes: new Uint8Array(await data.arrayBuffer()),
+        };
+      }),
+    );
+    expect(
+      storedBytes.find((entry) => entry.providerAttachmentId === mixed.attachmentIds.jpeg)?.bytes,
+    ).toEqual(VALID_JPEG_BYTES);
+    expect(
+      storedBytes.find((entry) => entry.providerAttachmentId === mixed.attachmentIds.pdf)?.bytes,
+    ).toEqual(VALID_PDF_BYTES);
+    expect(
+      storedBytes.find((entry) => entry.providerAttachmentId === mixed.attachmentIds.mimeMismatch)
+        ?.bytes,
+    ).toEqual(VALID_JPEG_BYTES);
+
+    const duplicate = await processInformationAgentInboundWebhook({
+      request: webhookRequest(mixed.webhookPayload, `${mixed.emailId}-duplicate`),
+      fetchImpl: localResendFetch,
+      deferProcessing: false,
+    });
+    expect(duplicate).toMatchObject({
+      accepted: true,
+      duplicate: true,
+      caseId: mixed.conversation.caseId,
+      processingStatus: "review",
+    });
+    for (const attachmentId of Object.values(mixed.attachmentIds)) {
+      const { count, error } = await admin
+        .from("information_agent_evidence_assets")
+        .select("id", { count: "exact", head: true })
+        .eq("provider_attachment_id", attachmentId);
+      if (error) throw error;
+      expect(count).toBe(1);
+    }
+  }, 30_000);
+
+  it.skipIf(process.env.IMMOJUDIS_EVIDENCE_WORKER_INTEGRATION !== "true")(
+    "runs the gated Python evidence worker against the mixed reply without a paid provider",
+    async () => {
+      const mixed = await ingestMixedAttachmentReply("mixed-worker");
+      const targetAssetIds = new Set(mixed.assets.map((asset) => asset.id));
+      let processedCount = 0;
+      let processedExtractions = mixed.extractions;
+      for (let pass = 0; pass < 5; pass += 1) {
+        const worker = await runLocalEvidenceWorker();
+        processedCount += worker.processed;
+        const { data: currentExtractions, error: currentExtractionsError } = await admin
+          .from("information_agent_evidence_extractions")
+          .select("id,asset_id,status,detected_mime_type,extracted_text,extracted_facts,error_code")
+          .eq("message_id", mixed.messageId);
+        if (currentExtractionsError) throw currentExtractionsError;
+        processedExtractions = currentExtractions ?? [];
+        if (
+          processedExtractions
+            .filter((extraction) => targetAssetIds.has(extraction.asset_id))
+            .every((extraction) =>
+              ["completed", "unsupported", "needs_password", "failed"].includes(extraction.status),
+            )
+        ) {
+          break;
+        }
+      }
+      expect(processedCount).toBeGreaterThanOrEqual(3);
+      const extractionByAsset = new Map(
+        (processedExtractions ?? []).map((extraction) => [extraction.asset_id, extraction]),
+      );
+      const jpegAsset = mixed.attachmentAssets.find(
+        (asset) => asset.provider_attachment_id === mixed.attachmentIds.jpeg,
+      );
+      const pdfAsset = mixed.attachmentAssets.find(
+        (asset) => asset.provider_attachment_id === mixed.attachmentIds.pdf,
+      );
+      const mismatchAsset = mixed.attachmentAssets.find(
+        (asset) => asset.provider_attachment_id === mixed.attachmentIds.mimeMismatch,
+      );
+      if (!jpegAsset || !pdfAsset || !mismatchAsset) {
+        throw new Error("Mixed worker fixture assets are incomplete.");
+      }
+
+      const jpegExtraction = extractionByAsset.get(jpegAsset.id);
+      const pdfExtraction = extractionByAsset.get(pdfAsset.id);
+      const mismatchExtraction = extractionByAsset.get(mismatchAsset.id);
+      const bodyAsset = mixed.bodyAssets[0];
+      if (!bodyAsset) throw new Error("Mixed worker body asset is missing.");
+      expect(extractionByAsset.get(bodyAsset.id)).toMatchObject({
+        status: "completed",
+        detected_mime_type: "text/plain",
+      });
+      expect(jpegExtraction).toMatchObject({
+        status: "completed",
+        detected_mime_type: "image/jpeg",
+      });
+      expect(pdfExtraction).toMatchObject({
+        status: "completed",
+        detected_mime_type: "application/pdf",
+      });
+      expect(pdfExtraction?.extracted_text).toContain("Surface habitable");
+      expect(pdfExtraction?.extracted_facts).toEqual(
+        expect.arrayContaining([expect.objectContaining({ fact_key: "surface_m2" })]),
+      );
+      expect(mismatchExtraction).toMatchObject({
+        status: "unsupported",
+        detected_mime_type: "image/jpeg",
+        error_code: "MIME_MISMATCH",
+      });
+      expect(mismatchExtraction?.extracted_facts).toEqual([]);
+
+      const { data: workerCase, error: workerCaseError } = await admin
+        .from("information_agent_cases")
+        .select("status")
+        .eq("id", mixed.conversation.caseId)
+        .single();
+      if (workerCaseError || !workerCase) {
+        throw workerCaseError ?? new Error("Mixed worker case missing.");
+      }
+      expect(workerCase.status).toBe("review");
+    },
+    45_000,
+  );
 
   it("retries after a post-candidate failure without crossing into another sale", async () => {
     const retryFixture = await createAdditionalConversation("retry");
@@ -526,6 +723,7 @@ describeLocal("information-agent local integration", () => {
     await withTransientMissionReplyFailure(databaseUrl, async () => {
       const queued = await processInformationAgentInboundWebhook({
         request: webhookRequest(webhookPayload, "local-svix-id-retry-first"),
+        fetchImpl: localResendFetch,
         deferProcessing: true,
       });
       expect(queued).toMatchObject({
@@ -537,6 +735,7 @@ describeLocal("information-agent local integration", () => {
 
       const firstWorker = await runInformationAgentInboundQueue({
         env: process.env,
+        fetchImpl: localResendFetch,
         now: firstWorkerNow,
         limit: 1,
       });
@@ -613,6 +812,7 @@ describeLocal("information-agent local integration", () => {
 
     const retry = await runInformationAgentInboundQueue({
       env: process.env,
+      fetchImpl: localResendFetch,
       now: new Date(firstWorkerNow.getTime() + 31_000),
       limit: 1,
     });
@@ -714,6 +914,168 @@ async function missionRow() {
   };
 }
 
+async function ingestMixedAttachmentReply(prefix: string) {
+  const conversation = await createAdditionalConversation(prefix);
+  const emailId = `resend-local-${prefix}-email`;
+  const attachmentIds = {
+    jpeg: `resend-local-${prefix}-jpeg`,
+    pdf: `resend-local-${prefix}-pdf`,
+    mimeMismatch: `resend-local-${prefix}-mime-mismatch`,
+  } as const;
+  const address = `enquete+${conversation.inboundToken}@${INBOUND_DOMAIN}`;
+  const jpegPath = `/attachments/${prefix}-photo.jpg`;
+  const pdfPath = `/attachments/${prefix}-details.pdf`;
+  const mismatchPath = `/attachments/${prefix}-mismatch.pdf`;
+  registerResendFixture({
+    emailId,
+    to: [address],
+    from: "Contact de test <contact@example.test>",
+    subject: `Re: Informations sur la vente ${prefix}`,
+    text: "Surface habitable : 84 m², 4 pièces. Le bien est libre de toute occupation.",
+    createdAt: "2026-09-28T12:10:00.000Z",
+    attachments: [
+      {
+        id: attachmentIds.jpeg,
+        filename: "photo-bien.jpg",
+        contentType: "image/jpeg",
+        size: VALID_JPEG_BYTES.byteLength,
+        downloadPath: jpegPath,
+        bytes: VALID_JPEG_BYTES,
+      },
+      {
+        id: attachmentIds.pdf,
+        filename: "informations-bien.pdf",
+        contentType: "application/pdf",
+        size: VALID_PDF_BYTES.byteLength,
+        downloadPath: pdfPath,
+        bytes: VALID_PDF_BYTES,
+      },
+      {
+        id: attachmentIds.mimeMismatch,
+        filename: "piece-annonce.pdf",
+        contentType: "application/pdf",
+        size: VALID_JPEG_BYTES.byteLength,
+        downloadPath: mismatchPath,
+        bytes: VALID_JPEG_BYTES,
+      },
+    ],
+  });
+  const webhookPayload = JSON.stringify({
+    type: "email.received",
+    created_at: "2026-09-28T12:10:00.000Z",
+    data: { email_id: emailId, to: [address], received_for: [address] },
+  });
+  const receipt = await processInformationAgentInboundWebhook({
+    request: webhookRequest(webhookPayload, `${emailId}-svix`),
+    fetchImpl: localResendFetch,
+    deferProcessing: false,
+  });
+  if (!receipt.messageId) throw new Error("Mixed inbound message was not persisted.");
+
+  const { data: facts, error: factsError } = await admin
+    .from("information_agent_fact_candidates")
+    .select("fact_key,evidence_asset_id,proposed_value")
+    .eq("message_id", receipt.messageId);
+  if (factsError) throw factsError;
+  const { data: assets, error: assetsError } = await admin
+    .from("information_agent_evidence_assets")
+    .select(
+      "id,provider_attachment_id,mime_type,storage_path,size_bytes,sha256,original_filename,metadata",
+    )
+    .eq("message_id", receipt.messageId);
+  if (assetsError) throw assetsError;
+  const { data: extractions, error: extractionsError } = await admin
+    .from("information_agent_evidence_extractions")
+    .select("id,asset_id,status,detected_mime_type,extracted_text,extracted_facts,error_code")
+    .eq("message_id", receipt.messageId);
+  if (extractionsError) throw extractionsError;
+  const allAssets = assets ?? [];
+  const allExtractions = extractions ?? [];
+  const attachmentProviderIds = new Set<string>(Object.values(attachmentIds));
+  const attachmentAssets = allAssets.filter((asset) =>
+    attachmentProviderIds.has(asset.provider_attachment_id ?? ""),
+  );
+  const bodyAssets = allAssets.filter(
+    (asset) => !attachmentProviderIds.has(asset.provider_attachment_id ?? ""),
+  );
+  const attachmentAssetIds = new Set(attachmentAssets.map((asset) => asset.id));
+  return {
+    conversation,
+    emailId,
+    attachmentIds,
+    webhookPayload,
+    messageId: receipt.messageId,
+    receipt,
+    facts: facts ?? [],
+    assets: allAssets,
+    attachmentAssets,
+    bodyAssets,
+    extractions: allExtractions,
+    attachmentExtractions: allExtractions.filter((extraction) =>
+      attachmentAssetIds.has(extraction.asset_id),
+    ),
+  };
+}
+
+async function runLocalEvidenceWorker(): Promise<{
+  processed: number;
+  stdout: string;
+  stderr: string;
+}> {
+  const serviceRoot = resolve(process.cwd(), "services/data-pipeline");
+  const configuredPython = process.env.INFORMATION_AGENT_EVIDENCE_PYTHON?.trim();
+  const bundledPython = resolve(serviceRoot, ".venv/bin/python");
+  const python = configuredPython || (existsSync(bundledPython) ? bundledPython : "python3");
+  const pathSeparator = process.platform === "win32" ? ";" : ":";
+  const child = spawn(python, ["-m", "src.information_agent_evidence"], {
+    cwd: serviceRoot,
+    env: {
+      ...process.env,
+      INFORMATION_AGENT_EVIDENCE_BATCH_SIZE: "10",
+      INFORMATION_AGENT_EVIDENCE_OCR_ENABLED: "false",
+      INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED: "false",
+      INFORMATION_AGENT_EVIDENCE_VISION_ENABLED: "false",
+      LLM_ENABLED: "false",
+      REPLICATE_API_TOKEN: "",
+      PYTHONPATH: [serviceRoot, process.env.PYTHONPATH].filter(Boolean).join(pathSeparator),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  return await new Promise((resolveProbe, rejectProbe) => {
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+    child.once("error", rejectProbe);
+    child.once("close", (code, signal) => {
+      if (code !== 0) {
+        rejectProbe(
+          new Error(
+            `Evidence worker probe failed (${signal ?? `exit ${code}`}): ${stderr || stdout}`,
+          ),
+        );
+        return;
+      }
+      try {
+        const output = JSON.parse(stdout.trim().split("\n").at(-1) ?? "{}") as {
+          processed?: unknown;
+        };
+        if (typeof output.processed !== "number") {
+          throw new Error("Evidence worker probe did not return a processed count.");
+        }
+        resolveProbe({ processed: output.processed, stdout, stderr });
+      } catch (error) {
+        rejectProbe(new Error(`Evidence worker probe returned invalid JSON: ${String(error)}`));
+      }
+    });
+  });
+}
+
 function respondJson(response: import("node:http").ServerResponse, body: unknown) {
   response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
 }
@@ -721,6 +1083,14 @@ function respondJson(response: import("node:http").ServerResponse, body: unknown
 function registerResendFixture(fixture: LocalResendFixture) {
   resendFixtures.set(fixture.emailId, fixture);
 }
+
+const localResendFetch: typeof fetch = (input, init) => {
+  const inputUrl =
+    typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+  const url = new URL(inputUrl);
+  if (url.hostname !== LOCAL_RESEND_ATTACHMENT_HOST) return fetch(input, init);
+  return fetch(`${resendBaseUrl}${url.pathname}${url.search}`, init);
+};
 
 async function createAdditionalConversation(prefix: string) {
   const newSaleId = randomUUID();

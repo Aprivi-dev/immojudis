@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runAdminInformationAgentAction } from "@/lib/information-agent";
 
 const mocks = vi.hoisted(() => ({

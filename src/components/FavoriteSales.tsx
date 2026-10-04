@@ -21,6 +21,7 @@ export function FavoriteSales() {
     enabled: Boolean(user) && !loading,
   });
   const data = user && !loading ? query.data : undefined;
+  const isAnalysis = data?.plan.code === "analyse";
   const favoriteSaleIds = useMemo(
     () => data?.favorites.map(({ saleId }) => saleId) ?? [],
     [data?.favorites],
@@ -28,7 +29,10 @@ export function FavoriteSales() {
   const aiReviewQuery = useQuery({
     queryKey: ["favorites-ai-review", user?.id, favoriteSaleIds],
     queryFn: () => fetchSalesAiReviewProjections(favoriteSaleIds),
-    enabled: Boolean(user && !loading && favoriteSaleIds.length),
+    // Discovery rows already come from the redacted public view. The AI
+    // review endpoint reads the Analyse view and would turn valid public city,
+    // price and date fields into "à confirmer" placeholders for free users.
+    enabled: Boolean(user && !loading && isAnalysis && favoriteSaleIds.length),
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -41,7 +45,7 @@ export function FavoriteSales() {
     return grouped;
   }, [aiReviewQuery.data]);
   const aiReviewStatus: AiReviewRequestStatus =
-    !user || loading || favoriteSaleIds.length === 0
+    !user || loading || !isAnalysis || favoriteSaleIds.length === 0
       ? "disabled"
       : aiReviewQuery.isError
         ? "error"
@@ -52,7 +56,7 @@ export function FavoriteSales() {
     <main className="mx-auto min-h-screen max-w-5xl px-4 pb-16 pt-28">
       <h1 className="text-3xl font-bold">Mes ventes suivies</h1>
       <p className="mt-3 text-muted-foreground">
-        Retrouvez vos favoris sur vos appareils. Jusqu’à 10 favoris en Découverte ; sans limite avec
+        Retrouvez vos favoris sur vos appareils. Jusqu’à 3 favoris en Découverte ; sans limite avec
         Analyse.
       </p>
       <Link href="/sales" className="mt-4 inline-block underline">

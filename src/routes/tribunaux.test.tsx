@@ -11,11 +11,15 @@ import { TribunalsPage } from "@/routes/tribunaux";
 
 const mocks = vi.hoisted(() => ({
   fetchDirectory: vi.fn(),
+  fetchPlan: vi.fn(),
+  useAuth: vi.fn(),
 }));
 
 vi.mock("@/lib/tribunal-judicial-activity-directory-client", () => ({
   fetchTribunalJudicialActivityDirectory: mocks.fetchDirectory,
 }));
+vi.mock("@/hooks/use-auth", () => ({ useAuth: mocks.useAuth }));
+vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: mocks.fetchPlan }));
 vi.mock("@/components/PremiumAdjudicationExplorer", () => ({
   PremiumAdjudicationExplorer: () => <section aria-label="Résultats premium Licitor" />,
 }));
@@ -38,12 +42,17 @@ const DIRECTORY = buildTribunalJudicialActivityDirectory({
 describe("TribunalsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.useAuth.mockReturnValue({
+      session: { user: { id: "premium-user" } },
+      loading: false,
+    });
+    mocks.fetchPlan.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
     mocks.fetchDirectory.mockResolvedValue(DIRECTORY);
   });
 
   afterEach(cleanup);
 
-  it("affiche publiquement les fourchettes de mise et de délai du tribunal", async () => {
+  it("affiche les fourchettes de mise et de délai au membre Analyse", async () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "TJ Marseille" })).toBeTruthy();
@@ -54,7 +63,7 @@ describe("TribunalsPage", () => {
     expect(mocks.fetchDirectory).toHaveBeenCalledWith(36);
   });
 
-  it("permet de rechercher un autre tribunal sans authentification", async () => {
+  it("permet au membre Analyse de rechercher un autre tribunal", async () => {
     renderPage();
     await screen.findByRole("heading", { name: "TJ Marseille" });
 
@@ -66,7 +75,36 @@ describe("TribunalsPage", () => {
     expect(screen.queryByRole("heading", { name: "TJ Marseille" })).toBeNull();
   });
 
-  it("remplace une erreur interne par un message public stable", async () => {
+  it("affiche un aperçu sans charger l’annuaire pour un visiteur ou la Découverte", async () => {
+    mocks.useAuth.mockReturnValue({ session: null, loading: false });
+
+    renderPage();
+
+    expect(
+      await screen.findByRole("region", {
+        name: "Activité des annonces et prochaines audiences",
+      }),
+    ).toBeTruthy();
+    expect(mocks.fetchDirectory).not.toHaveBeenCalled();
+
+    cleanup();
+    mocks.useAuth.mockReturnValue({
+      session: { user: { id: "discovery-user" } },
+      loading: false,
+    });
+    mocks.fetchPlan.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+
+    renderPage();
+
+    expect(
+      await screen.findByRole("region", {
+        name: "Activité des annonces et prochaines audiences",
+      }),
+    ).toBeTruthy();
+    expect(mocks.fetchDirectory).not.toHaveBeenCalled();
+  });
+
+  it("remplace une erreur interne par un message stable pour le membre Analyse", async () => {
     mocks.fetchDirectory.mockRejectedValue(
       new Error("relation billing_secrets does not exist for tenant 8842"),
     );
@@ -78,7 +116,7 @@ describe("TribunalsPage", () => {
     expect(alert.textContent).not.toContain("billing_secrets");
   });
 
-  it("recalcule la période lorsque le visiteur choisit 12 mois", async () => {
+  it("recalcule la période lorsque le membre Analyse choisit 12 mois", async () => {
     renderPage();
     await screen.findByRole("heading", { name: "TJ Marseille" });
 

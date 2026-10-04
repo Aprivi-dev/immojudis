@@ -203,8 +203,8 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 3",
-  subjectTemplate: "{{sale_subject_title}} — précisions sur la vente",
+  name: "Demande de précisions sur une vente — version 4",
+  subjectTemplate: "{{sale_subject_title}} — précisions pour ImmoJudis",
   blocks: [
     {
       id: "greeting",
@@ -217,7 +217,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Présentation ImmoJudis",
       content:
-        "Je vous contacte pour ImmoJudis, service indépendant d’information sur les ventes immobilières judiciaires. Nous vérifions la fiche de cette vente :",
+        "ImmoJudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous complétons la fiche ci-dessous et votre connaissance du dossier nous serait précieuse.",
     },
     {
       id: "sale_details",
@@ -230,7 +230,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Introduction de la demande",
       content:
-        "Pourriez-vous nous confirmer les points suivants ou nous transmettre les pièces disponibles ?\n\nPourriez-vous aussi nous envoyer des photos récentes du bien et de ses annexes, même si l’annonce contient déjà des photos ? Privilégiez les fichiers JPG ou PNG de moins de 10 Mo chacun. Pour un lot important, répondez en plusieurs emails de 20 Mo maximum chacun. Si vous disposez d’une vidéo, signalez-le sans la joindre ; nous vous indiquerons comment la transmettre.",
+        "Pourriez-vous nous préciser les points suivants ou nous transmettre les pièces utiles ? Une réponse même partielle nous aide à présenter un dossier plus clair et à limiter les demandes répétées.",
     },
     {
       id: "questions",
@@ -243,13 +243,14 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Consignes de réponse",
       content:
-        "Une réponse partielle nous aidera déjà. Vous pouvez simplement répondre à cet email et joindre les pièces que vous êtes autorisé à transmettre. Si vous n’êtes pas le bon interlocuteur, pourriez-vous nous orienter ?",
+        "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire. Si ce dossier relève d’un autre interlocuteur, son contact nous serait utile.",
     },
     {
       id: "closing",
       kind: "fixed",
       label: "Conclusion et signature",
-      content: "Merci pour votre aide.\n\nBien cordialement,\nL’équipe ImmoJudis",
+      content:
+        "Merci pour votre aide : votre réponse contribuera à rendre cette fiche plus utile aux personnes qui étudient la vente.\n\nBien cordialement,\nL’équipe ImmoJudis",
     },
   ],
 };

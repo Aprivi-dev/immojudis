@@ -1,14 +1,17 @@
 import { saleDateBoundary } from "./search/sale-date-range";
-import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
+import { supabase } from "@/integrations/supabase/client";
 import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
-import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
+import type { AuctionSale, SaleFilters, SortKey } from "./types";
+import { assertCloudConfigured } from "./query-configuration";
+import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
+export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
+export type { CreateAlertPayload } from "./alert-queries";
 
 export const DETAIL_VIEW = "v_auction_sales_app";
 const DISCOVERY_VIEW = "v_auction_sales_discovery" as typeof DETAIL_VIEW;
+const SEARCH_VIEW = "v_auction_sales_app_search" as typeof DETAIL_VIEW;
+const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAIL_VIEW;
 const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
-const CONFIGURATION_ERROR =
-  "La configuration Supabase est absente. Ajoutez les variables d'environnement Supabase pour afficher les données.";
 
 type SupabaseQueryError = {
   code?: string;
@@ -175,15 +178,6 @@ const SALE_MAP_COLUMNS = [
   "documents_rich",
   "created_at",
 ].join(",");
-
-function assertCloudConfigured() {
-  if (isSupabaseConfigured) return true;
-  // On the SSR worker the env may not be hydrated yet — return false so
-  // callers can short-circuit with empty results and let the browser
-  // refetch once the user session and env are available.
-  if (typeof window === "undefined") return false;
-  throw new Error(CONFIGURATION_ERROR);
-}
 
 function isMissingPreviewViewError(error: SupabaseQueryError | null): boolean {
   if (!error) return false;
@@ -398,10 +392,11 @@ export async function getSales(
   }
 
   const s = SORT_MAP[sort];
-  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
   let q = db
     .from(catalogView)
     .select(SALE_LIST_COLUMNS)
+    .order("coordinates_rank", { ascending: true })
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
@@ -422,10 +417,11 @@ export async function getSalesForSearch(
   if (!assertCloudConfigured()) return [];
 
   const s = SORT_MAP[sort];
-  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
   let q = supabase
     .from(catalogView)
     .select(SALE_CARD_COLUMNS)
+    .order("coordinates_rank", { ascending: true })
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
@@ -480,7 +476,7 @@ export async function getSaleById(
   const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
   const { data, error } = await supabase.from(catalogView).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
-  return data as AuctionSale | null;
+  return data ? sanitizeAuctionSaleForDisplay(data as AuctionSale) : null;
 }
 
 export async function getSalePreviewById(id: string): Promise<AuctionSale | null> {
@@ -642,60 +638,5 @@ export async function removeFavorite(userId: string, saleId: string) {
     .delete()
     .eq("user_id", userId)
     .eq("sale_id", saleId);
-  if (error) throw error;
-}
-
-// Alerts
-type UserAlertInsert = Database["public"]["Tables"]["user_alerts"]["Insert"];
-export type CreateAlertPayload = Omit<
-  UserAlertInsert,
-  "id" | "user_id" | "created_at" | "updated_at" | "last_evaluated_at" | "last_match_count"
-> & {
-  is_active?: boolean;
-};
-
-export async function getAlerts(userId: string): Promise<UserAlert[]> {
-  if (!assertCloudConfigured()) return [];
-  const { data, error } = await supabase
-    .from("user_alerts")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as UserAlert[];
-}
-
-export async function createAlert(userId: string, payload: CreateAlertPayload) {
-  assertCloudConfigured();
-  const insertPayload: UserAlertInsert = {
-    user_id: userId,
-    ...payload,
-    is_active: payload.is_active ?? true,
-    dpe_classes: payload.dpe_classes ?? [],
-    require_house_with_land: payload.require_house_with_land ?? false,
-    alert_frequency: payload.alert_frequency ?? "daily",
-    advanced_criteria: payload.advanced_criteria ?? {},
-  };
-  const { error } = await supabase.from("user_alerts").insert(insertPayload);
-  if (error) throw error;
-}
-
-export async function updateAlert(userId: string, alertId: string, patch: Partial<UserAlert>) {
-  assertCloudConfigured();
-  const { error } = await supabase
-    .from("user_alerts")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", alertId)
-    .eq("user_id", userId);
-  if (error) throw error;
-}
-
-export async function deleteAlert(userId: string, alertId: string) {
-  assertCloudConfigured();
-  const { error } = await supabase
-    .from("user_alerts")
-    .delete()
-    .eq("id", alertId)
-    .eq("user_id", userId);
   if (error) throw error;
 }

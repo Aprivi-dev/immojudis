@@ -16,11 +16,7 @@ import type { SalesSearchParams, SearchSortKey, ViewportBounds } from "./search-
 export const DEFAULT_SEARCH_LIMIT = 24;
 export const MAX_MAP_RESULTS = 300;
 
-export const TRANSACTION_OPTIONS = [
-  { label: "Ventes aux enchères", value: "for_sale" },
-  { label: "Locations", value: "for_rent" },
-  { label: "Ventes passées", value: "sold" },
-] as const;
+export const TRANSACTION_OPTIONS = [{ label: "Ventes aux enchères", value: "for_sale" }] as const;
 
 export const HOME_TYPE_OPTIONS = [
   { label: "Maison", value: "house" },
@@ -31,13 +27,7 @@ export const HOME_TYPE_OPTIONS = [
   { label: "Garage", value: "garage" },
 ] as const;
 
-export const STATUS_OPTIONS = [
-  { label: "Active", value: "active" },
-  { label: "À venir", value: "upcoming" },
-  { label: "Adjugée", value: "adjudicated" },
-  { label: "Passée", value: "past" },
-  { label: "Retirée", value: "withdrawn" },
-] as const;
+export const STATUS_OPTIONS = [{ label: "À venir", value: "upcoming" }] as const;
 
 export const SORT_OPTIONS: Array<{ label: string; value: SearchSortKey }> = [
   { label: "Pertinence", value: "relevance" },
@@ -114,10 +104,14 @@ export function dataFiltersFromSearch(search: SalesSearchParams): SaleFilters {
 }
 
 function statusValuesForSearch(search: SalesSearchParams): string[] | undefined {
-  if (search.status?.length) return search.status;
-  if (search.transactionType === "sold") return ["sold", "adjudicated", "past"];
-  if (search.transactionType === "for_sale") return ["active", "upcoming"];
-  return undefined;
+  if (search.status?.length) {
+    const upcoming = search.status.includes("upcoming");
+    return upcoming ? ["upcoming", "unknown", "postponed"] : ["__unsupported_catalogue_status__"];
+  }
+  if (search.transactionType && search.transactionType !== "for_sale") {
+    return ["__unsupported_catalogue_transaction__"];
+  }
+  return ["upcoming", "unknown", "postponed"];
 }
 
 export function countActiveSearchFilters(search: SalesSearchParams): number {
@@ -286,7 +280,13 @@ function matchesAnyHomeType(value: string | null | undefined, accepted: string[]
 function matchesStatus(value: string | null | undefined, accepted: string[]) {
   if (!value) return false;
   const normalized = value.toLowerCase();
-  return accepted.some((candidate) => normalized === candidate.toLowerCase());
+  return accepted.some((candidate) => {
+    const normalizedCandidate = candidate.toLowerCase();
+    return (
+      normalized === normalizedCandidate ||
+      (normalizedCandidate === "upcoming" && ["unknown", "postponed"].includes(normalized))
+    );
+  });
 }
 
 function isSoldLike(sale: AuctionSale) {

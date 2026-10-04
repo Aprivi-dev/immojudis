@@ -2,6 +2,9 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 
+const BUILD_DIR = process.env.IMMOJUDIS_NEXT_DIST_DIR?.trim() || ".next";
+const buildPath = (path) => path.replace(/^\.next(?=\/|$)/u, () => BUILD_DIR);
+
 const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
 // The protected admin editor adds an isolated client route; keep a small global
 // allowance for it while enforcing a dedicated initial-load budget below.
@@ -15,7 +18,12 @@ const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
 // workflow while the route-level initial-load budgets below continue to protect public pages.
 // The AI review projection and quarantine guard add a similarly bounded shared client surface.
 // Keep the allowance below 1% of the total and enforce every route budget independently.
-const MAX_TOTAL_CLIENT_JS_BYTES = 4_400_000;
+// The listing's works editor, amortizing-loan simulator and rental scenario add
+// 43 KB of deferred chunks across the site. Bound this feature allowance to
+// 50 KB; the sale-detail initial-load budget remains unchanged at 660 KB.
+// Tribunal listing statistics add 27 KB of deferred JavaScript. Bound the new
+// allowance to 30 KB; public route initial-load budgets remain unchanged.
+const MAX_TOTAL_CLIENT_JS_BYTES = 4_480_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -135,7 +143,7 @@ const requiredHtml = [
 ];
 
 for (const [path, expectedText] of requiredHtml) {
-  const html = await readFile(path, "utf8");
+  const html = await readFile(buildPath(path), "utf8");
   if (!html.includes("<h1") || !html.includes(expectedText)) {
     throw new Error(`${path} ne contient pas le HTML SSR utile attendu (${expectedText}).`);
   }
@@ -156,7 +164,9 @@ const businessModuleLines = Object.fromEntries(
   ),
 );
 
-const chunks = await filesUnder(".next/static/chunks", (path) => path.endsWith(".js"));
+const chunks = await filesUnder(join(BUILD_DIR, "static", "chunks"), (path) =>
+  path.endsWith(".js"),
+);
 const chunkSizes = await Promise.all(chunks.map(async (path) => [path, (await stat(path)).size]));
 const totalClientBytes = chunkSizes.reduce((sum, [, size]) => sum + size, 0);
 const [largestChunk, largestChunkBytes] = chunkSizes.sort(
@@ -221,7 +231,7 @@ console.info(
 );
 
 async function clientJavaScriptBytesForRoute({ manifest, routeKey, entryKey }) {
-  const source = await readFile(manifest, "utf8");
+  const source = await readFile(buildPath(manifest), "utf8");
   const context = { globalThis: {} };
   runInNewContext(source, context);
   const routeManifest = context.globalThis.__RSC_MANIFEST?.[routeKey];
@@ -230,7 +240,7 @@ async function clientJavaScriptBytesForRoute({ manifest, routeKey, entryKey }) {
     throw new Error(`Manifest client absent ou vide pour ${routeKey} (${manifest}).`);
   }
   const sizes = await Promise.all(
-    [...new Set(files)].map(async (path) => (await stat(join(".next", path))).size),
+    [...new Set(files)].map(async (path) => (await stat(join(BUILD_DIR, path))).size),
   );
   return sizes.reduce((sum, bytes) => sum + bytes, 0);
 }

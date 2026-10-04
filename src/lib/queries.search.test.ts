@@ -13,6 +13,8 @@ describe("Supabase sale search query", () => {
       });
       expect(builder.calls).toContainEqual(["eq", "sale_venue_type", "notary"]);
       expect(builder.calls).toContainEqual(["range", 24, 35]);
+      if (!preview)
+        expect(builder.calls).toContainEqual(["order", "coordinates_rank", { ascending: true }]);
       const columns = String(builder.calls.find((call) => call[0] === "select")?.[1]);
       expect(columns).toContain("sale_venue_type");
       expect(columns).toContain("sale_verification_status");

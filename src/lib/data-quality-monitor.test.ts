@@ -1,10 +1,178 @@
 import { describe, expect, it } from "vitest";
-import { buildDataQualityReport } from "@/lib/data-quality-monitor";
+import { buildDataQualityReport, DATA_QUALITY_SALE_COLUMNS } from "@/lib/data-quality-monitor";
 import type { AuctionSale } from "@/lib/types";
 
 const NOW = new Date("2026-07-06T08:00:00.000Z");
 
 describe("data quality monitor", () => {
+  it("keeps the full scan projection limited to fields used by quality metrics", () => {
+    expect(new Set(DATA_QUALITY_SALE_COLUMNS).size).toBe(DATA_QUALITY_SALE_COLUMNS.length);
+    expect(DATA_QUALITY_SALE_COLUMNS).toEqual(
+      expect.arrayContaining([
+        "sale_procedure",
+        "sale_verification_status",
+        "id",
+        "title",
+        "property_type",
+        "starting_price_eur",
+        "sale_date",
+        "latitude",
+        "longitude",
+        "occupancy_status",
+        "app_surface_m2",
+        "habitable_surface_m2",
+        "carrez_surface_m2",
+        "rooms_count",
+        "score_confidence",
+        "risks",
+        "documents",
+        "documents_rich",
+        "source_blocks",
+        "llm_display_description",
+        "status",
+        "updated_at",
+      ]),
+    );
+    for (const omittedColumn of [
+      "source_checks",
+      "source_conflicts",
+      "analysis_status",
+      "source_presence",
+      "description",
+      "source_description",
+      "about_description",
+      "visit_dates",
+      "media",
+      "score_factors",
+      "source_blocks_by_source",
+      "quality_flags",
+    ]) {
+      expect(DATA_QUALITY_SALE_COLUMNS).not.toContain(omittedColumn);
+    }
+  });
+
+  it("keeps every report metric unchanged when unused sale fields are removed", () => {
+    const richStudioSale = saleFixture({
+      id: "rich-studio",
+      title: "Studio avec plan cadastral",
+      property_type: "studio",
+      app_surface_m2: null,
+      habitable_surface_m2: null,
+      carrez_surface_m2: null,
+      rooms_count: null,
+      occupancy_status: "vacant",
+      score_confidence: 0.82,
+      risk_notes: "Parcelle cadastrale AB 123 à vérifier.",
+      source_blocks: { dpe_classe: "C", parcelle: "AB 123" },
+      documents_rich: [
+        {
+          url: "https://example.test/cahier.pdf",
+          label: "Cahier des conditions",
+          type: "conditions",
+          extraction_status: "completed",
+        },
+        {
+          url: "https://example.test/dpe.pdf",
+          label: "Diagnostic DPE",
+          type: "diagnostic",
+          extraction_status: "completed",
+        },
+        {
+          url: "https://example.test/cadastre.pdf",
+          label: "Plan cadastral",
+          type: "cadastre",
+          extraction_status: "completed",
+        },
+      ],
+      risks: [
+        {
+          risk_type: "servitude_access",
+          risk_label: "Servitude d'accès à vérifier",
+          severity: 3,
+          evidence: "Servitude mentionnée dans le cahier des conditions.",
+          occurrences: [
+            {
+              document_url: "https://example.test/cahier.pdf",
+              document_label: "Cahier des conditions",
+              document_type: "conditions",
+              page_number: 8,
+              excerpt: "Servitude de passage à confirmer.",
+              confidence: 0.82,
+            },
+          ],
+        },
+      ],
+    });
+    const projectedStudioSale = Object.fromEntries(
+      DATA_QUALITY_SALE_COLUMNS.map((column) => [column, richStudioSale[column]]),
+    ) as unknown as AuctionSale;
+    const reportOptions = {
+      runs: [{ status: "succeeded", finished_at: "2026-07-06T06:00:00.000Z" }],
+      now: NOW,
+      adminEmail: "admin@example.test",
+    };
+
+    expect(buildDataQualityReport({ sales: [projectedStudioSale], ...reportOptions })).toEqual(
+      buildDataQualityReport({ sales: [richStudioSale], ...reportOptions }),
+    );
+  });
+
+  it("builds twelve compact priorities in date order without mutating or exposing full sale payloads", () => {
+    const sales = Array.from({ length: 15 }, (_, index) =>
+      saleFixture({
+        id: `weak-${String(index).padStart(2, "0")}`,
+        sale_date: "2026-08-01T08:00:00Z",
+        score_confidence: 0.2,
+        description: "Long source payload",
+        documents_rich: [],
+      }),
+    ).reverse();
+    sales.push(saleFixture({ id: "undated", sale_date: null, score_confidence: 0.1 }));
+    const originalIds = sales.map((sale) => sale.id);
+    const report = buildDataQualityReport({ sales, now: NOW });
+    expect(report.prioritySales.map((sale) => sale.id)).toEqual(
+      Array.from({ length: 12 }, (_, index) => `weak-${String(index).padStart(2, "0")}`),
+    );
+    expect(report.prioritySales[0].flags).toEqual([
+      "confiance faible",
+      "documents manquants",
+      "occupation",
+    ]);
+    expect(report.prioritySales[0]).not.toHaveProperty("description");
+    expect(report.prioritySales[0]).not.toHaveProperty("documents_rich");
+    expect(sales.map((sale) => sale.id)).toEqual(originalIds);
+  });
+
+  it("limits priority inspection to the first 500 dated sales while metrics cover the whole catalogue", () => {
+    const sales = Array.from({ length: 500 }, (_, index) =>
+      saleFixture({
+        id: `healthy-${index}`,
+        sale_date: "2026-08-01T08:00:00Z",
+        score_confidence: 0.8,
+        occupancy_status: "vacant",
+      }),
+    );
+    sales.push(
+      saleFixture({ id: "later-weak", sale_date: "2026-09-01T08:00:00Z", score_confidence: 0.1 }),
+    );
+    const report = buildDataQualityReport({ sales, now: NOW });
+    expect(report.sampleSize).toBe(501);
+    expect(report.prioritySales).toEqual([]);
+  });
+
+  it("distinguishes missing documents from unenriched documents and uses the report surface rules", () => {
+    const sale = saleFixture({
+      score_confidence: 0.8,
+      occupancy_status: "vacant",
+      app_surface_m2: null,
+      habitable_surface_m2: 72,
+      documents_rich: [],
+      documents: ["https://example.test/conditions.pdf"],
+    });
+    const report = buildDataQualityReport({ sales: [sale], now: NOW });
+    expect(report.prioritySales[0].flags).toEqual(["documents non enrichis"]);
+  });
+
   it("marks product capabilities healthy when sales have the required enrichment", () => {
     const sales = [
       saleFixture({

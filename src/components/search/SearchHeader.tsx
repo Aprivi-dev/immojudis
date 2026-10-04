@@ -16,27 +16,18 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Link } from "@/lib/router-compat";
 import { HOME_TYPE_OPTIONS, SORT_OPTIONS } from "@/lib/search/search-filters";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
-import type { MapViewportChange } from "./MapPanel";
 import type { SearchDraft } from "./search-page-state";
 import { SaleTypeFilter } from "./SaleTypeFilter";
 export function SearchHeader({
-  search,
   draft,
   setDraft,
-  displayCount,
-  loadedCount,
-  filteredCount,
   activeFiltersCount,
-  mapListFollowsViewport,
   isLoading,
-  isCountLoading,
   isFetching,
-  geocoding,
   filtersOpen,
   savingAlert,
   alertsLocked,
@@ -47,21 +38,13 @@ export function SearchHeader({
   onReset,
   onSaveSearch,
   onExportCsv,
-  onSortChange,
   onToggleLayout,
 }: {
-  search: SalesSearchParams;
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
-  displayCount: number;
-  loadedCount: number;
-  filteredCount: number;
   activeFiltersCount: number;
-  mapListFollowsViewport: boolean;
   isLoading: boolean;
-  isCountLoading: boolean;
   isFetching: boolean;
-  geocoding: boolean;
   filtersOpen: boolean;
   savingAlert: boolean;
   alertsLocked: boolean;
@@ -72,7 +55,6 @@ export function SearchHeader({
   onReset: () => void;
   onSaveSearch: () => void;
   onExportCsv: () => void;
-  onSortChange: (sort: SearchSortKey) => void;
   onToggleLayout: () => void;
 }) {
   const headerRef = useRef<HTMLElement>(null);
@@ -498,11 +480,7 @@ export function ResultsSummary({
 }: {
   search: SalesSearchParams;
   displayCount: number;
-  loadedCount: number;
-  filteredCount: number;
   hasLocalFilters: boolean;
-  mapListFollowsViewport: boolean;
-  mapViewport: MapViewportChange | null;
   isLoading: boolean;
   geocoding: boolean;
 }) {

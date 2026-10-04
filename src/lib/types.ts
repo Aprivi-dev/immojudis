@@ -77,7 +77,9 @@ export type AuctionSale = {
   primary_source: string | null;
   source_urls: unknown;
   /**
-   * Optional payload projection retained for detail-view completeness evidence.
+   * Source evidence retained for detail views. The completeness calculator
+   * only trusts typed facts under `source_property_features` or
+   * `source_field_observations` when their evidence contract is valid.
    */
   raw_payload?: unknown | null;
   source_blocks: Record<string, unknown> | null;

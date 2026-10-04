@@ -1,11 +1,11 @@
 .page {
-  background: #f4f6f9;
+  background: #f6f5f1;
   color: #132238;
   min-height: 100vh;
   overflow-wrap: anywhere;
 }
 .container {
-  max-width: 1260px;
+  max-width: 1360px;
   margin: 0 auto;
   padding: 16px 16px 40px;
 }
@@ -25,12 +25,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 15px;
   border: 1px solid #dbe1e9;
-  border-radius: 50%;
+  border-radius: 10px;
   background: #fff;
   color: #132238;
+  font-size: 13px;
+  font-weight: 650;
 }
 .share:hover {
   background: #edf1f5;
@@ -46,7 +49,7 @@
   border: 1px solid #dbe1e9;
   border-radius: 20px;
   background: #fff;
-  padding: 24px;
+  padding: 22px 24px;
   box-shadow: 0 12px 32px rgb(19 34 56 / 5%);
 }
 .heroDetails {
@@ -69,13 +72,19 @@
   border-radius: 20px;
   background: #e2e8f0;
 }
+.heroGallery {
+  min-width: 0;
+}
+.galleryMain {
+  height: 500px;
+}
 .overview {
   position: relative;
   padding: 0;
 }
 .title {
   font-family: var(--font-display), Georgia, serif;
-  font-size: clamp(30px, 3vw, 44px);
+  font-size: clamp(28px, 2.7vw, 36px);
   line-height: 1.08;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -90,17 +99,19 @@
 .priceLabel {
   margin-top: 0;
   color: #475569;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
+  line-height: 1.35;
 }
 .heroPrices {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
-  gap: 18px;
+  gap: 14px;
   align-items: start;
-  margin-top: 24px;
-  padding-top: 22px;
-  border-top: 1px solid #e2e8f0;
+  margin-top: 20px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f4f2eb;
 }
 .premiumPrice {
   min-width: 0;
@@ -160,7 +171,7 @@
   line-height: 1.5;
 }
 .price {
-  font-size: clamp(32px, 5vw, 44px);
+  font-size: clamp(28px, 3vw, 34px);
   line-height: 1.15;
   font-weight: 700;
   letter-spacing: -0.04em;
@@ -173,8 +184,8 @@
   grid-template-columns: 20px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  margin-top: 22px;
-  padding: 16px 0;
+  margin-top: 18px;
+  padding: 14px 0;
   border-top: 1px solid #e2e8f0;
   border-bottom: 1px solid #e2e8f0;
 }
@@ -205,9 +216,8 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid #e2e8f0;
+  margin-top: 15px;
+  padding-top: 0;
 }
 .fact {
   display: flex;
@@ -233,6 +243,13 @@
   font-size: 11px;
   line-height: 1.4;
   margin-top: 4px;
+}
+.factValue.factMissing {
+  color: #526176;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  overflow-wrap: normal;
 }
 .heroLinks {
   display: flex;
@@ -290,6 +307,16 @@
   border: 1px solid #dbe1e9;
   border-radius: 16px;
   background: #fff;
+}
+.descriptionPreview {
+  padding: 22px 24px;
+  margin-bottom: 12px;
+  border: 1px solid #deded5;
+  border-radius: 16px;
+  background: #fff;
+  color: #405168;
+  font-size: 15px;
+  line-height: 1.75;
 }
 .descriptionDisclosure > summary {
   display: flex;
@@ -592,20 +619,162 @@
   }
 }
 @media (min-width: 1024px) {
+  .upper {
+    align-items: stretch;
+  }
+  .heroGallery {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  .heroGallery > .photo {
+    flex: 1 1 auto;
+  }
+  .galleryMain {
+    height: 100%;
+    min-height: 490px;
+  }
   .upper,
   .lower {
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr);
-    gap: 40px;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr);
+    gap: 28px;
   }
   .heroDetails {
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr);
     gap: 40px;
   }
   .title {
-    font-size: clamp(32px, 3vw, 42px);
+    font-size: clamp(28px, 2.7vw, 36px);
   }
   .heading {
     font-size: 24px;
+  }
+}
+
+.scenarioSummary {
+  margin-top: 16px;
+  padding: 11px 16px;
+  border: 1px solid #e8d9bc;
+  border-radius: 14px;
+  background: #fcf8ef;
+}
+.scenarioHeading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  color: #805722;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.scenarioHeading a {
+  display: inline-flex;
+  gap: 5px;
+  min-height: 22px;
+  align-items: center;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+.projectCost {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 3px;
+}
+.projectCost > span {
+  color: #405168;
+  font-size: 13px;
+}
+.projectCost > strong {
+  font-size: 24px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+}
+.scenarioBasis {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #607086;
+  line-height: 1.5;
+}
+.scenarioMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e8d9bc;
+}
+.scenarioMetrics span {
+  display: block;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #607086;
+}
+.scenarioMetrics strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 16px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+.scenarioNote {
+  margin-top: 6px;
+  color: #6d665a;
+  font-size: 10px;
+  line-height: 1.4;
+}
+@media (max-width: 767px) {
+  .overview {
+    background: transparent;
+  }
+  .heroSummary {
+    border: 1px solid #deded5;
+    border-radius: 18px;
+    padding: 22px 18px;
+  }
+  .heroPrices {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 14px;
+  }
+  .premiumPrice {
+    border-top: 0;
+    border-left: 1px solid #ded9cf;
+    padding: 0 0 0 12px;
+  }
+  .price,
+  .premiumPriceValue {
+    font-size: clamp(23px, 6.4vw, 32px);
+  }
+  .priceLabel {
+    font-size: 11px;
+  }
+  .heroPrices .muted,
+  .priceExplanation {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .overview {
+    margin: 0;
+    padding: 0;
+  }
+  .share span {
+    display: none;
+  }
+  .share {
+    padding: 0;
+    width: 42px;
+    border-radius: 50%;
+  }
+  .projectCost {
+    flex-wrap: wrap;
+    gap: 3px 12px;
   }
 }
 @media (min-width: 640px) and (max-width: 767px) {

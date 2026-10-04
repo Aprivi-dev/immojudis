@@ -166,3 +166,43 @@ def test_empty_page_never_becomes_terminal_proof(monkeypatch) -> None:
     assert len(result.sales) == 1
     assert result.coverage["coverage_complete"] is False
     assert result.coverage["stop_reason"] == "empty_page_unverified"
+
+
+def test_detail_fields_ignore_page_chrome_payment_clause_and_trailing_visit_conjunction() -> None:
+    html = """
+    <article>
+      <h1>Maison à SAINT-QUENTIN (59)</h1>
+      <p>Adresse du bien</p>
+      <p>On ne peut enchérir que par avocat|Saint-Quentin|17 rueRoland Garros, 02100 Saint-Quentin|Afficher le plan|(exactitude non garantie)</p>
+      <p>Visite(s) du bien</p>
+      <p>vendredi28août2026 à14h et</p>
+      <p>Avocat poursuivant</p>
+      <p>chèque de banque à l’ordre de la CARPA de5.000€ outre une somme...</p>
+    </article>
+    """
+
+    parsed = source.parse_encheres_immobilieres_detail_html(
+        html, f"{source.BASE_URL}/ventes/6db2731d-627d-41e6-8151-e1f3e73dfd5a"
+    )
+
+    assert parsed["address"] == "17 rue Roland Garros, 02100 Saint-Quentin"
+    assert parsed["postal_code"] == "02100"
+    assert parsed["lawyer_name"] is None
+    assert parsed["visit_dates"] == ["vendredi 28 août 2026 à 14h"]
+
+    split_html = html.replace(
+        "<p>On ne peut enchérir que par avocat|Saint-Quentin|17 rueRoland Garros, 02100 Saint-Quentin|Afficher le plan|(exactitude non garantie)</p>",
+        "<p>On ne peut enchérir que par avocat</p><p>Saint-Quentin</p><p>17 rueRoland Garros, 02100 Saint-Quentin</p><p>Afficher le plan</p><p>(exactitude non garantie)</p>",
+    )
+    split = source.parse_encheres_immobilieres_detail_html(
+        split_html, f"{source.BASE_URL}/ventes/6db2731d-627d-41e6-8151-e1f3e73dfd5a"
+    )
+    assert split["address"] == "17 rue Roland Garros, 02100 Saint-Quentin"
+
+    normalized = normalize_sale({**parsed, "department": "59"})
+    assert normalized.address == "17 rue Roland Garros, 02100 Saint-Quentin"
+    assert normalized.postal_code == "02100"
+    assert normalized.department == "02"
+    assert "postal_department_conflict" in normalized.quality_flags
+    assert normalized.lawyer_name is None
+    assert normalized.visit_dates == ["vendredi 28 août 2026 à 14h"]

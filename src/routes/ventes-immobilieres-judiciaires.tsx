@@ -632,8 +632,13 @@ export function ResourcesPage() {
               .
             </P>
             <P>
-              Après paiement et formalités de publication, le jugement d'adjudication constitue le
-              titre de propriété.
+              Le titre de vente réunit le cahier des conditions de vente, muni de la formule
+              exécutoire, et le jugement d’adjudication transcrit à sa suite. Il est délivré par le
+              greffe puis publié au fichier immobilier selon les formalités applicables. Voir les{" "}
+              <Ext href="https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939111/">
+                articles R. 322-61 à R. 322-63 du Code des procédures civiles d’exécution
+              </Ext>
+              .
             </P>
           </Section>
 

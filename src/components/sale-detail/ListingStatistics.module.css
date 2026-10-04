@@ -1,0 +1,826 @@
+.root {
+  --stats-navy: var(--brand-navy, #132238);
+  --stats-gold: var(--gold-soft, #9c642b);
+  --stats-warm: #fffaf2;
+  --stats-line: rgb(19 34 56 / 13%);
+  --stats-muted: rgb(19 34 56 / 67%);
+  scroll-margin-top: 9rem;
+  background: var(--stats-warm);
+  color: var(--stats-navy);
+}
+
+.hero,
+.content {
+  width: min(100%, 1260px);
+  margin: 0 auto;
+  padding-inline: 16px;
+}
+
+.hero {
+  padding-top: 32px;
+}
+
+.heroTopline,
+.sectionHeadingRow,
+.cardTopline,
+.progressHeader,
+.distributionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.heroTopline {
+  align-items: end;
+}
+
+.heroTopline > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.eyebrow,
+.cardEyebrow,
+.kpiLabel,
+.metricLabel {
+  margin: 0;
+  color: var(--stats-gold);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.heroTitle,
+.sectionTitle,
+.cardTitle,
+.metricValue,
+.kpiValue,
+.kpiValueSmall {
+  font-family: var(--font-display, Georgia, serif);
+}
+
+.heroTitle {
+  max-width: 38ch;
+  margin: 5px 0 0;
+  color: var(--stats-navy);
+  font-size: clamp(31px, 4vw, 46px);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.heroDescription,
+.sectionDescription,
+.cardNote,
+.methodHint,
+.nationalNote,
+.lockedCard p,
+.noLocalPriceCard p,
+.statusCard p,
+.demoNotice,
+.emptyData,
+.inlineEvidence,
+.methodBody,
+.kpiNote {
+  color: var(--stats-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.heroDescription {
+  max-width: 64ch;
+  margin: 9px 0 0;
+}
+
+.heroMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 16px;
+  margin-top: 14px;
+  color: var(--stats-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.heroMeta span {
+  position: relative;
+}
+
+.heroMeta span + span::before {
+  position: absolute;
+  top: 0;
+  left: -9px;
+  color: var(--stats-gold);
+  content: "·";
+}
+
+.periodControl {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 6px;
+  color: var(--stats-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.periodControl select {
+  min-height: 42px;
+  border: 1px solid var(--stats-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--stats-navy);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 34px 8px 11px;
+}
+
+.periodControl select:focus-visible,
+.retryButton:focus-visible,
+.upcomingToggle:focus-visible,
+.anchorNav a:focus-visible,
+.methodDetails summary:focus-visible {
+  outline: 2px solid var(--stats-gold);
+  outline-offset: 3px;
+}
+
+.anchorNav {
+  display: flex;
+  gap: 7px;
+  margin-top: 28px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--stats-line);
+  padding-bottom: 10px;
+  scrollbar-width: thin;
+}
+
+.anchorNav a {
+  flex: 0 0 auto;
+  border: 1px solid rgb(156 100 43 / 22%);
+  border-radius: 999px;
+  color: var(--stats-navy);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+  text-decoration: none;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease;
+}
+
+.anchorNav a:hover {
+  border-color: var(--stats-gold);
+  background: rgb(201 141 69 / 10%);
+}
+
+.content {
+  padding-bottom: 58px;
+}
+
+.section {
+  scroll-margin-top: 9rem;
+  padding-top: 42px;
+}
+
+.sectionHeading {
+  min-width: 0;
+}
+
+.sectionTitle {
+  margin: 4px 0 0;
+  color: var(--stats-navy);
+  font-size: clamp(25px, 3.4vw, 37px);
+  font-weight: 500;
+  letter-spacing: -0.028em;
+  line-height: 1.1;
+}
+
+.sectionDescription {
+  max-width: 70ch;
+  margin: 8px 0 0;
+}
+
+.sectionHeadingRow {
+  align-items: end;
+}
+
+.periodBadge,
+.sampleBadge {
+  flex: 0 0 auto;
+  border: 1px solid rgb(156 100 43 / 23%);
+  border-radius: 999px;
+  background: rgb(201 141 69 / 9%);
+  color: var(--stats-gold);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.2;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.kpiCard,
+.familyCard,
+.priceCard,
+.noLocalPriceCard,
+.lockedCard,
+.statusCard,
+.calendarItem,
+.communeItem {
+  min-width: 0;
+  border: 1px solid var(--stats-line);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 9px 26px rgb(19 34 56 / 4%);
+}
+
+.kpiCard {
+  min-height: 145px;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+}
+
+.kpiValue,
+.kpiValueSmall {
+  display: block;
+  margin-top: 12px;
+  color: var(--stats-navy);
+  font-size: clamp(26px, 3.2vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.kpiValueSmall {
+  font-size: clamp(20px, 2.3vw, 29px);
+  line-height: 1.13;
+}
+
+.kpiNote {
+  display: block;
+  margin-top: auto;
+  padding-top: 14px;
+}
+
+.familyGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.familyCard,
+.priceCard,
+.noLocalPriceCard,
+.lockedCard,
+.statusCard {
+  padding: 20px;
+}
+
+.cardTitle {
+  margin: 0;
+  color: var(--stats-navy);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.cardTopline {
+  align-items: center;
+}
+
+.progressList {
+  display: grid;
+  gap: 15px;
+  margin: 21px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progressItem {
+  display: grid;
+  gap: 7px;
+}
+
+.progressHeader {
+  align-items: baseline;
+  gap: 12px;
+  color: var(--stats-navy);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.progressHeader > span:first-child {
+  min-width: 0;
+}
+
+.progressValue {
+  flex: 0 0 auto;
+  color: var(--stats-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.progressTrack {
+  position: relative;
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(19 34 56 / 9%);
+}
+
+.progressFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--stats-gold), #d3a560);
+  transition: width 220ms ease;
+}
+
+.emptyData {
+  margin: 24px 0 3px;
+}
+
+.progressCaption {
+  margin: 14px 0 0;
+  color: var(--stats-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.inlineEvidence {
+  margin: 20px 0 0;
+}
+
+.detailMetricList {
+  display: grid;
+  gap: 16px;
+  margin-top: 21px;
+}
+
+.detailMetricList > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 12px;
+  row-gap: 4px;
+  border-bottom: 1px solid rgb(19 34 56 / 9%);
+  padding-bottom: 13px;
+}
+
+.detailMetricList > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.detailMetricList span,
+.detailMetricList small {
+  color: var(--stats-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.detailMetricList strong {
+  color: var(--stats-navy);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-align: right;
+}
+
+.detailMetricList small {
+  grid-column: 1 / -1;
+}
+
+.demoNotice {
+  margin: 17px 0 0;
+  border-left: 3px solid var(--stats-gold);
+  background: rgb(201 141 69 / 8%);
+  padding: 10px 13px;
+}
+
+.priceStack {
+  display: grid;
+  gap: 15px;
+  margin-top: 18px;
+}
+
+.localPriceCard {
+  border-color: rgb(156 100 43 / 30%);
+}
+
+.priceMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.scopePeriod {
+  margin: 14px 0 0;
+  color: var(--stats-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.priceMetricGrid > div {
+  border-radius: 12px;
+  background: var(--stats-warm);
+  padding: 13px;
+}
+
+.metricLabel {
+  display: block;
+  color: var(--stats-muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.metricValue {
+  display: block;
+  margin-top: 9px;
+  color: var(--stats-navy);
+  font-size: clamp(19px, 2.6vw, 28px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.distributionBlock {
+  margin-top: 22px;
+  border-top: 1px solid rgb(19 34 56 / 10%);
+  padding-top: 17px;
+}
+
+.distributionHeading {
+  align-items: baseline;
+  color: var(--stats-muted);
+  font-size: 12px;
+}
+
+.distributionHeading + .progressList {
+  margin-top: 13px;
+}
+
+.cardNote {
+  margin: 17px 0 0;
+}
+
+.lockedCard {
+  margin-top: 18px;
+  background: #fff;
+}
+
+.lockedCard .cardTitle,
+.noLocalPriceCard .cardTitle {
+  margin-top: 5px;
+}
+
+.lockedCard p:last-child,
+.noLocalPriceCard p:last-child {
+  max-width: 68ch;
+  margin-bottom: 0;
+}
+
+.noLocalPriceCard {
+  border-style: dashed;
+  background: rgb(255 255 255 / 72%);
+}
+
+.nationalDetails,
+.methodDetails {
+  border: 1px solid var(--stats-line);
+  border-radius: 14px;
+  background: #fff;
+  padding: 0 16px;
+}
+
+.nationalDetails summary,
+.methodDetails summary {
+  cursor: pointer;
+  list-style-position: outside;
+  padding: 15px 3px;
+  color: var(--stats-navy);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.nationalDetails[open] summary,
+.methodDetails[open] summary {
+  border-bottom: 1px solid var(--stats-line);
+}
+
+.nationalNote {
+  margin: 15px 3px 0;
+}
+
+.nationalDetails .priceCard {
+  margin: 15px 0 16px;
+  background: var(--stats-warm);
+}
+
+.methodHint {
+  margin: 0;
+}
+
+.statusCard {
+  margin-top: 22px;
+  border-color: rgb(19 34 56 / 17%);
+  background: #fff;
+}
+
+.statusCard[role="alert"] {
+  border-color: rgb(156 100 43 / 30%);
+}
+
+.statusCard .cardTitle {
+  margin-top: 5px;
+}
+
+.retryButton {
+  min-height: 40px;
+  margin-top: 8px;
+  border: 1px solid var(--stats-navy);
+  border-radius: 10px;
+  background: var(--stats-navy);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  padding: 8px 12px;
+}
+
+.retryButton:hover {
+  background: #263953;
+}
+
+.calendarGrid,
+.communesGrid,
+.salesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.calendarItem,
+.communeItem,
+.saleItem {
+  padding: 17px;
+}
+
+.saleItem {
+  min-width: 0;
+  border: 1px solid var(--stats-line);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 9px 26px rgb(19 34 56 / 4%);
+}
+
+.saleItemTopline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.saleDate {
+  color: var(--stats-gold);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.saleLink {
+  display: block;
+  margin-top: 11px;
+  color: var(--stats-navy);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.saleLink:hover {
+  color: var(--stats-gold);
+}
+
+.saleLink:focus-visible {
+  outline: 2px solid var(--stats-gold);
+  outline-offset: 3px;
+}
+
+.saleMeta,
+.saleEvidence {
+  color: var(--stats-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.saleMeta {
+  margin: 8px 0 0;
+}
+
+.saleEvidence {
+  display: grid;
+  gap: 3px;
+  margin-top: 14px;
+  border-top: 1px solid rgb(19 34 56 / 9%);
+  padding-top: 11px;
+}
+
+.upcomingControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 16px;
+}
+
+.upcomingToggle {
+  min-height: 40px;
+  border: 1px solid rgb(156 100 43 / 42%);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--stats-navy);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  padding: 8px 12px;
+}
+
+.upcomingToggle:hover {
+  border-color: var(--stats-gold);
+  background: rgb(201 141 69 / 9%);
+}
+
+.upcomingCount {
+  margin: 0;
+  color: var(--stats-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.calendarDate {
+  color: var(--stats-gold);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.calendarItem strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--stats-navy);
+  font-size: 15px;
+}
+
+.calendarItem .progressTrack,
+.communeItem .progressTrack {
+  margin-top: 14px;
+}
+
+.communeItem .progressHeader {
+  align-items: center;
+}
+
+.lawyerTable {
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid var(--stats-line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.lawyerRowHeader,
+.lawyerRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px 90px;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 17px;
+}
+
+.lawyerRowHeader {
+  background: var(--stats-warm);
+  color: var(--stats-muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lawyerRow {
+  border-top: 1px solid rgb(19 34 56 / 9%);
+  color: var(--stats-navy);
+  font-size: 13px;
+}
+
+.lawyerRow span:not(:first-child),
+.lawyerRowHeader span:not(:first-child) {
+  text-align: right;
+}
+
+.methodDetails {
+  margin-top: 0;
+}
+
+.methodBody {
+  display: grid;
+  gap: 3px;
+  padding: 12px 3px 16px;
+}
+
+.methodBody p {
+  margin: 0;
+}
+
+@media (max-width: 960px) {
+  .kpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .familyGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .calendarGrid,
+  .communesGrid,
+  .salesGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .hero {
+    padding-top: 28px;
+  }
+
+  .heroTopline,
+  .sectionHeadingRow {
+    display: grid;
+    align-items: start;
+  }
+
+  .heroTitle {
+    max-width: none;
+    font-size: clamp(30px, 9vw, 42px);
+  }
+
+  .periodControl {
+    width: min(100%, 220px);
+  }
+
+  .periodControl select {
+    width: 100%;
+  }
+
+  .kpiGrid,
+  .calendarGrid,
+  .communesGrid,
+  .salesGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .lawyerRowHeader,
+  .lawyerRow {
+    grid-template-columns: minmax(0, 1fr) 74px 62px;
+    gap: 10px;
+    padding-inline: 12px;
+  }
+
+  .priceMetricGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .cardTopline {
+    align-items: flex-start;
+  }
+
+  .sampleBadge,
+  .periodBadge {
+    white-space: normal;
+    text-align: right;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anchorNav a,
+  .progressFill {
+    transition: none;
+  }
+}

@@ -36,6 +36,28 @@ const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
   "image/heif",
   "text/plain",
 ]);
+const ATTACHMENT_MIME_ALIASES: Record<string, string> = {
+  "application/acrobat": "application/pdf",
+  "application/octet-stream": "",
+  "application/pdf": "application/pdf",
+  "application/x-pdf": "application/pdf",
+  "image/jpg": "image/jpeg",
+  "image/pjpeg": "image/jpeg",
+  "text/csv": "text/plain",
+  "text/markdown": "text/plain",
+};
+const ATTACHMENT_EXTENSION_MIME_TYPES: Record<string, string> = {
+  ".csv": "text/plain",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".md": "text/plain",
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".txt": "text/plain",
+  ".webp": "image/webp",
+};
 
 type SharedCase = Database["public"]["Tables"]["information_agent_cases"]["Row"];
 type Mission = Database["public"]["Tables"]["information_agent_missions"]["Row"];
@@ -63,7 +85,17 @@ type InboundReviewReason =
   | "sender_authentication_unverified";
 
 export type ExtractedInformationAgentFact = {
-  factKey: "surface_m2" | "rooms_count" | "occupancy_status" | "sale_date" | "starting_price_eur";
+  factKey:
+    | "surface_m2"
+    | "land_surface_m2"
+    | "rooms_count"
+    | "occupancy_status"
+    | "visit_information"
+    | "sale_date"
+    | "starting_price_eur"
+    | "energy_diagnostics"
+    | "property_type"
+    | "address";
   proposedValue: { value: number | string; unit?: string };
   displayValue: string;
   evidenceExcerpt: string;
@@ -128,6 +160,14 @@ type InboundJobLeaseGuard = () => Promise<boolean>;
 type InboundLeaseFence = {
   leaseId: string;
   messageId: string;
+};
+
+type StoredInboundEvidenceAsset = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  storagePath: string;
+  size: number;
 };
 
 export async function processInformationAgentInboundWebhook({
@@ -215,7 +255,9 @@ async function ingestReceivedEmail({
   if (receiveError || !received) {
     throw new Error(receiveError?.message || "Email entrant Resend introuvable.");
   }
-  const receivedTokens = collectInboundTokens(received.to, inboundDomain);
+  const receivedTo = stringArray((received as unknown as { to?: unknown }).to);
+  const receivedFor = stringArray((received as unknown as { received_for?: unknown }).received_for);
+  const receivedTokens = collectInboundTokens([...receivedTo, ...receivedFor], inboundDomain);
   if (receivedTokens.length > 1 || (receivedTokens.length === 1 && receivedTokens[0] !== token)) {
     return { accepted: true, ignored: true };
   }
@@ -236,12 +278,17 @@ async function ingestReceivedEmail({
     mission,
     providerMessageId: event.data.email_id,
     from: received.from,
-    to: received.to.join(", "),
+    to: receivedTo.join(", "),
     subject: received.subject || `Re: ${sharedCase.subject}`,
     bodyText,
     receivedAt,
     senderMatches,
     senderAuthentication,
+    providerMessageIdHeader:
+      stringValue((received as unknown as { message_id?: unknown }).message_id) ??
+      stringValue((event.data as unknown as { message_id?: unknown }).message_id) ??
+      undefined,
+    receivedFor,
   });
   const messageId = inboundMessage.id;
   const leaseFence = leaseId ? { leaseId, messageId } : undefined;
@@ -294,6 +341,12 @@ async function ingestReceivedEmail({
     senderMatches,
     senderAuthentication,
   });
+  const contactOptOut = Boolean(
+    senderEmail &&
+    senderMatches &&
+    senderAuthentication.status === "pass" &&
+    detectInformationAgentContactOptOut(bodyText),
+  );
 
   if (deferProcessing) {
     const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId, leaseId);
@@ -321,6 +374,21 @@ async function ingestReceivedEmail({
         attachmentCount: 0,
         processingStatus: "ignored",
       };
+    }
+
+    if (contactOptOut && senderEmail) {
+      return finalizeInboundContactOptOut({
+        sharedCase,
+        messageId,
+        providerEmailId: event.data.email_id,
+        receivedAt,
+        senderEmail,
+        inboundMetadata,
+        processing: existingProcessing,
+        leaseFence,
+        leaseId,
+        assertJobLease,
+      });
     }
 
     // The case address is a routing key, not proof that the sender or the
@@ -440,6 +508,21 @@ async function ingestReceivedEmail({
     };
   }
 
+  if (contactOptOut && senderEmail) {
+    return finalizeInboundContactOptOut({
+      sharedCase,
+      messageId,
+      providerEmailId: event.data.email_id,
+      receivedAt,
+      senderEmail,
+      inboundMetadata,
+      processing: inboundProcessingState(inboundMetadata),
+      leaseFence,
+      leaseId,
+      assertJobLease,
+    });
+  }
+
   // The case address is a routing key, not proof that the sender or the
   // provider's authentication result is safe for automatic extraction.
   if (reviewReason) {
@@ -503,6 +586,7 @@ async function ingestReceivedEmail({
   }
 
   try {
+    let bodyEvidence: StoredInboundEvidenceAsset | null = null;
     await ensureInboundJobLease(assertJobLease);
     const { attachments, truncated } = await fetchInboundAttachments(resend, event.data.email_id);
     const { stored: storedAssets, rejected } = await storeInboundAttachments({
@@ -573,10 +657,23 @@ async function ingestReceivedEmail({
       assertJobLease,
       leaseId,
     });
+    // Create the body asset only after deterministic candidates are durable.
+    // The storage trigger can start the semantic worker immediately; writing
+    // the candidates first lets the worker skip any facts already extracted
+    // from the same reply.
+    await ensureInboundJobLease(assertJobLease);
+    bodyEvidence = await persistInboundBodyEvidence({
+      bodyText,
+      sharedCase,
+      messageId,
+      providerEmailId: event.data.email_id,
+      assertJobLease,
+      leaseId,
+    });
 
     const now = new Date().toISOString();
     const hasReviewableEvidence = Boolean(
-      extractedFacts.length || storedAssets.length || rejected.length,
+      bodyEvidence || extractedFacts.length || storedAssets.length || rejected.length,
     );
     await ensureInboundJobLease(assertJobLease);
     const caseUpdated = await updateInboundReplyCase({
@@ -639,7 +736,9 @@ async function ingestReceivedEmail({
     }
 
     const processingStatus =
-      extractedFacts.length || storedAssets.length || rejected.length ? "review" : "completed";
+      bodyEvidence || extractedFacts.length || storedAssets.length || rejected.length
+        ? "review"
+        : "completed";
     await ensureInboundJobLease(assertJobLease);
     await updateInboundProcessingState(
       messageId,
@@ -1121,6 +1220,81 @@ async function ignoreIfCaseClosed(
   return currentCase.status;
 }
 
+async function recordInboundContactOptOut(email: string, opposedAt: string): Promise<void> {
+  const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(
+    {
+      sale_id: null,
+      scope_sale_id: null,
+      email,
+      opposition_status: "opposed",
+      opposed_at: opposedAt,
+    },
+    { onConflict: "scope_sale_id,normalized_email" },
+  );
+  if (error) throw error;
+}
+
+async function finalizeInboundContactOptOut({
+  sharedCase,
+  messageId,
+  providerEmailId,
+  receivedAt,
+  senderEmail,
+  inboundMetadata,
+  processing,
+  leaseFence,
+  leaseId,
+  assertJobLease,
+}: {
+  sharedCase: SharedCase;
+  messageId: string;
+  providerEmailId: string;
+  receivedAt: string;
+  senderEmail: string;
+  inboundMetadata: Json;
+  processing: InboundProcessingState | null;
+  leaseFence?: InboundLeaseFence;
+  leaseId?: string;
+  assertJobLease?: InboundJobLeaseGuard;
+}): Promise<InformationAgentInboundResult> {
+  await ensureInboundJobLease(assertJobLease);
+  await recordInboundContactOptOut(senderEmail, receivedAt);
+  const caseUpdated = await updateOpenInformationAgentCase(
+    sharedCase.id,
+    {
+      status: "review",
+      replied_at: receivedAt,
+      metadata: mergeJsonObject(sharedCase.metadata, {
+        last_inbound_email_id: providerEmailId,
+        last_inbound_contact_opposed: true,
+        last_inbound_contact_opposed_at: receivedAt,
+      }),
+    },
+    sharedCase.updated_at,
+    leaseFence,
+  );
+  await updateInboundProcessingState(
+    messageId,
+    inboundMetadata,
+    {
+      status: "review",
+      attempts: processing?.attempts ?? 0,
+      providerEmailId,
+      queuedAt: processing?.queuedAt ?? receivedAt,
+      reason: caseUpdated ? "contact_opposed" : "case_closed_during_processing",
+    },
+    leaseId,
+  );
+  return {
+    accepted: true,
+    caseId: sharedCase.id,
+    messageId,
+    factCount: 0,
+    attachmentCount: 0,
+    processingStatus: "review",
+  };
+}
+
 async function loadInitiatorMission(sharedCase: SharedCase): Promise<Mission> {
   let query = supabaseAdmin.from("information_agent_missions").select("*");
   query = sharedCase.initiator_mission_id
@@ -1143,6 +1317,8 @@ async function insertOrLoadInboundMessage({
   receivedAt,
   senderMatches,
   senderAuthentication,
+  providerMessageIdHeader,
+  receivedFor,
 }: {
   sharedCase: SharedCase;
   mission: Mission;
@@ -1154,6 +1330,8 @@ async function insertOrLoadInboundMessage({
   receivedAt: string;
   senderMatches: boolean;
   senderAuthentication: InboundSenderAuthentication;
+  providerMessageIdHeader?: string;
+  receivedFor: string[];
 }): Promise<InboundMessageRef> {
   const id = randomUUID();
   const queuedAt = new Date().toISOString();
@@ -1162,6 +1340,8 @@ async function insertOrLoadInboundMessage({
     content_trust: "untrusted",
     sender_matches_recipient: senderMatches,
     sender_authentication: senderAuthentication,
+    ...(providerMessageIdHeader ? { rfc_message_id: providerMessageIdHeader } : {}),
+    ...(receivedFor.length ? { received_for: receivedFor.slice(0, 20) } : {}),
     inbound_processing: {
       version: INBOUND_PROCESSING_VERSION,
       status: "queued",
@@ -1490,6 +1670,104 @@ export async function readBoundedAttachment(
   return bytes;
 }
 
+async function persistInboundBodyEvidence({
+  bodyText,
+  sharedCase,
+  messageId,
+  providerEmailId,
+  assertJobLease,
+  leaseId,
+}: {
+  bodyText: string;
+  sharedCase: SharedCase;
+  messageId: string;
+  providerEmailId: string;
+  assertJobLease?: InboundJobLeaseGuard;
+  leaseId?: string;
+}): Promise<StoredInboundEvidenceAsset | null> {
+  const bodyForEvidence = replyTextForExtraction(bodyText).trim();
+  if (!bodyForEvidence || bodyForEvidence === "Réponse reçue sans corps de texte.") return null;
+  await ensureInboundJobLease(assertJobLease);
+
+  const providerAttachmentId = `email-body:${messageId}`;
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("information_agent_evidence_assets")
+    .select("id,original_filename,mime_type,storage_path,size_bytes")
+    .eq("message_id", messageId)
+    .eq("provider_attachment_id", providerAttachmentId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) {
+    return {
+      id: existing.id,
+      filename: existing.original_filename,
+      mimeType: existing.mime_type,
+      storagePath: existing.storage_path,
+      size: Number(existing.size_bytes),
+    };
+  }
+
+  const bytes = new TextEncoder().encode(bodyForEvidence);
+  if (!bytes.length || bytes.length > MAX_TOTAL_ATTACHMENT_BYTES) return null;
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const storagePath = `${sharedCase.id}/${messageId}/body/${sha256}-email-body.txt`;
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from("information-agent-evidence")
+    .upload(storagePath, bytes, {
+      contentType: "text/plain",
+      upsert: false,
+    });
+  if (uploadError && !/already exists|duplicate/i.test(uploadError.message)) throw uploadError;
+
+  await ensureInboundJobLease(assertJobLease);
+  const { data: asset, error: assetError } = await supabaseAdmin
+    .from("information_agent_evidence_assets")
+    .insert({
+      case_id: sharedCase.id,
+      message_id: messageId,
+      sale_id: sharedCase.sale_id,
+      provider_attachment_id: providerAttachmentId,
+      storage_bucket: "information-agent-evidence",
+      storage_path: storagePath,
+      original_filename: "email-body.txt",
+      mime_type: "text/plain",
+      size_bytes: bytes.length,
+      sha256,
+      metadata: {
+        evidence_kind: "email_body",
+        content_trust: "untrusted_external_evidence",
+        prompt_instructions_ignored: true,
+        provider_email_id: providerEmailId,
+        ...(leaseId ? { inbound_lease_id: leaseId, inbound_message_id: messageId } : {}),
+      },
+    })
+    .select("id,original_filename,mime_type,storage_path,size_bytes")
+    .single();
+  if (assetError) {
+    const { data: concurrentAsset, error: concurrentError } = await supabaseAdmin
+      .from("information_agent_evidence_assets")
+      .select("id,original_filename,mime_type,storage_path,size_bytes")
+      .eq("message_id", messageId)
+      .eq("provider_attachment_id", providerAttachmentId)
+      .maybeSingle();
+    if (concurrentError || !concurrentAsset) throw assetError;
+    return {
+      id: concurrentAsset.id,
+      filename: concurrentAsset.original_filename,
+      mimeType: concurrentAsset.mime_type,
+      storagePath: concurrentAsset.storage_path,
+      size: Number(concurrentAsset.size_bytes),
+    };
+  }
+  return {
+    id: asset.id,
+    filename: asset.original_filename,
+    mimeType: asset.mime_type,
+    storagePath: asset.storage_path,
+    size: Number(asset.size_bytes),
+  };
+}
+
 async function storeInboundAttachments({
   attachments,
   sharedCase,
@@ -1505,39 +1783,41 @@ async function storeInboundAttachments({
   assertJobLease?: InboundJobLeaseGuard;
   leaseId?: string;
 }) {
-  const stored: Array<{
-    id: string;
-    filename: string;
-    mimeType: string;
-    storagePath: string;
-    size: number;
-  }> = [];
+  const stored: StoredInboundEvidenceAsset[] = [];
   const rejected: Array<{ filename: string; reason: string }> = [];
   let totalBytes = 0;
 
   for (const attachment of attachments) {
     await ensureInboundJobLease(assertJobLease);
-    const filename = safeFilename(attachment.filename || `piece-${attachment.id}`);
-    const mimeType =
-      typeof attachment.content_type === "string"
-        ? attachment.content_type.split(";", 1)[0].trim().toLowerCase()
-        : "";
+    const attachmentId = stringValue((attachment as unknown as { id?: unknown }).id);
+    const rawFilename = stringValue((attachment as unknown as { filename?: unknown }).filename);
+    const filename = safeFilename(rawFilename || `piece-${attachmentId || "jointe"}`);
+    const rawMimeType = normalizeRawMimeType(
+      stringValue((attachment as unknown as { content_type?: unknown }).content_type),
+    );
+    const mimeType = normalizeAttachmentMimeType(rawMimeType, filename);
+    const declaredSize = (attachment as unknown as { size?: unknown }).size;
+    const downloadUrl = normalizeAttachmentDownloadUrl(
+      stringValue((attachment as unknown as { download_url?: unknown }).download_url),
+    );
     if (
-      typeof attachment.id !== "string" ||
-      attachment.id.length === 0 ||
+      !attachmentId ||
       !ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType) ||
-      !Number.isSafeInteger(attachment.size) ||
-      attachment.size <= 0 ||
-      attachment.size > MAX_ATTACHMENT_BYTES ||
-      totalBytes + attachment.size > MAX_TOTAL_ATTACHMENT_BYTES
+      !Number.isSafeInteger(declaredSize) ||
+      (declaredSize as number) <= 0 ||
+      (declaredSize as number) > MAX_ATTACHMENT_BYTES ||
+      totalBytes + (declaredSize as number) > MAX_TOTAL_ATTACHMENT_BYTES ||
+      !downloadUrl
     ) {
       rejected.push({
         filename,
-        reason: mimeType.startsWith("video/")
+        reason: rawMimeType.startsWith("video/")
           ? "Vidéo non traitée : demander un autre mode de transmission"
-          : !ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType)
-            ? "Format non pris en charge"
-            : "Taille hors limite",
+          : !downloadUrl
+            ? "Lien de téléchargement absent ou non sécurisé"
+            : !ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType)
+              ? "Format non pris en charge"
+              : "Taille hors limite",
       });
       continue;
     }
@@ -1546,7 +1826,7 @@ async function storeInboundAttachments({
       .from("information_agent_evidence_assets")
       .select("id,original_filename,mime_type,storage_path,size_bytes")
       .eq("message_id", messageId)
-      .eq("provider_attachment_id", attachment.id)
+      .eq("provider_attachment_id", attachmentId)
       .maybeSingle();
     if (existingError) throw existingError;
     if (existing) {
@@ -1563,8 +1843,9 @@ async function storeInboundAttachments({
 
     let response: Response;
     try {
-      response = await fetchImpl(attachment.download_url, {
+      response = await fetchImpl(downloadUrl, {
         headers: { accept: mimeType },
+        redirect: "error",
       });
     } catch {
       // A Resend attachment URL is short-lived. Let the signed webhook be
@@ -1601,7 +1882,7 @@ async function storeInboundAttachments({
 
     await ensureInboundJobLease(assertJobLease);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    const attachmentKey = createHash("sha256").update(attachment.id).digest("hex");
+    const attachmentKey = createHash("sha256").update(attachmentId).digest("hex");
     const storagePath = `${sharedCase.id}/${messageId}/${attachmentKey}/${sha256}-${filename}`;
     const { error: uploadError } = await supabaseAdmin.storage
       .from("information-agent-evidence")
@@ -1618,14 +1899,31 @@ async function storeInboundAttachments({
         case_id: sharedCase.id,
         message_id: messageId,
         sale_id: sharedCase.sale_id,
-        provider_attachment_id: attachment.id,
+        provider_attachment_id: attachmentId,
         storage_path: storagePath,
         original_filename: filename,
         mime_type: mimeType,
         size_bytes: bytes.length,
         sha256,
         metadata: {
-          content_disposition: attachment.content_disposition,
+          ...(stringValue(
+            (attachment as unknown as { content_disposition?: unknown }).content_disposition,
+          )
+            ? {
+                content_disposition: stringValue(
+                  (attachment as unknown as { content_disposition?: unknown }).content_disposition,
+                ),
+              }
+            : {}),
+          ...(stringValue((attachment as unknown as { content_id?: unknown }).content_id)
+            ? {
+                content_id: stringValue(
+                  (attachment as unknown as { content_id?: unknown }).content_id,
+                ),
+              }
+            : {}),
+          ...(rawMimeType ? { declared_content_type: rawMimeType } : {}),
+          declared_size: declaredSize as number,
           ...(leaseId ? { inbound_lease_id: leaseId, inbound_message_id: messageId } : {}),
         },
       })
@@ -1638,7 +1936,7 @@ async function storeInboundAttachments({
         .from("information_agent_evidence_assets")
         .select("id,original_filename,mime_type,storage_path,size_bytes,sha256")
         .eq("message_id", messageId)
-        .eq("provider_attachment_id", attachment.id)
+        .eq("provider_attachment_id", attachmentId)
         .maybeSingle();
       if (concurrentError || !concurrentAsset || concurrentAsset.sha256 !== sha256) {
         throw assetError;
@@ -1689,7 +1987,9 @@ export async function persistFactCandidates({
   await ensureInboundJobLease(assertJobLease);
   const { data: sale, error: saleError } = await supabaseAdmin
     .from("auction_sales")
-    .select("surface_m2,app_surface_m2,rooms_count,occupancy_status,sale_date,starting_price_eur")
+    .select(
+      "surface_m2,app_surface_m2,land_surface_m2,rooms_count,occupancy_status,sale_date,starting_price_eur,property_type,address",
+    )
     .eq("id", sharedCase.sale_id)
     .single();
   if (saleError) throw saleError;
@@ -1751,11 +2051,31 @@ export function replyTextForExtraction(bodyText: string): string {
   const withoutMobileSignature = mobileSignatureMatch
     ? withoutQuotedHistory.slice(0, mobileSignatureMatch.index)
     : withoutQuotedHistory;
-  return withoutMobileSignature
+  const signatureSeparatorMatch = SIGNATURE_SEPARATOR_PATTERN.exec(withoutMobileSignature);
+  const withoutSignature = signatureSeparatorMatch
+    ? withoutMobileSignature.slice(0, signatureSeparatorMatch.index)
+    : withoutMobileSignature;
+  return withoutSignature
     .split("\n")
     .filter((line) => !/^\s*>/.test(line))
     .join("\n")
     .trim();
+}
+
+/**
+ * Detect an explicit request to stop contact in the authenticated sender's
+ * reply. Quoted history is removed before this helper is called so an old
+ * message cannot unsubscribe a contact by being forwarded back to us.
+ */
+export function detectInformationAgentContactOptOut(bodyText: string): boolean {
+  const text = replyTextForExtraction(bodyText)
+    .replace(/\u00a0/g, " ")
+    .trim();
+  if (!text) return false;
+  return [
+    /(?:^|\n)\s*(?:stop|unsubscribe|désinscription|desinscription)(?:\s+merci)?\s*[.!…]*\s*$/imu,
+    /\b(?:merci\s+de\s+ne\s+plus\s+(?:me|nous)\s+contacter|merci\s+de\s+(?:supprimer|retirer)\s+(?:mon\s+adresse|moi|nous)(?:\s+de\s+vos\s+listes?)?|(?:supprimez|retirez)\s+mon\s+adresse(?:\s+de\s+vos\s+listes?)?|ne\s+(?:me|nous)\s+contact(?:e|ez|er)\s+plus|retirez[-\s]?(?:moi|nous)(?:\s+de\s+vos\s+listes?)?|supprimez[-\s]?(?:moi|nous)(?:\s+de\s+vos\s+listes?)?|désinscrivez[-\s]?(?:moi|nous)|desinscrivez[-\s]?(?:moi|nous)|je\s+ne\s+souhaite\s+plus\s+(?:être\s+contact[ée]|recevoir\s+vos\s+(?:e-?mails?|courriels?))|je\s+ne\s+veux\s+plus\s+(?:être\s+contact[ée]|recevoir\s+vos\s+(?:e-?mails?|courriels?))|je\s+m['’]oppose\s+à\s+(?:tout|ce|votre)\s+contact|please\s+(?:remove|unsubscribe)\s+me|do\s+not\s+contact\s+me\s+again)\b/iu,
+  ].some((pattern) => pattern.test(text));
 }
 
 function collectInboundTokens(addresses: readonly string[], inboundDomain: string): string[] {
@@ -1789,7 +2109,7 @@ export function htmlToPlainText(value: string) {
         if (tag === "script" || tag === "style") {
           suppressedDepth += 1;
         } else if (tag === "div") {
-          const isOutlookQuote = attributes.id?.toLowerCase() === "divrplyfwdmsg";
+          const isOutlookQuote = isQuotedHtmlContainer(attributes);
           outlookDivStack.push(isOutlookQuote);
           if (isOutlookQuote) {
             quotedDepth += 1;
@@ -1834,31 +2154,50 @@ export function htmlToPlainText(value: string) {
     .trim();
 }
 
+function isQuotedHtmlContainer(attributes: Record<string, string>): boolean {
+  const id = attributes.id?.trim().toLowerCase() ?? "";
+  const classes = new Set(
+    (attributes.class?.toLowerCase().match(/[a-z0-9_-]+/g) ?? []).map((value) => value.trim()),
+  );
+  return (
+    id === "divrplyfwdmsg" ||
+    classes.has("gmail_quote") ||
+    classes.has("gmail_attr") ||
+    classes.has("yahoo_quoted") ||
+    classes.has("protonmail_quote") ||
+    classes.has("moz-cite-prefix")
+  );
+}
+
 export function extractInformationAgentFacts(bodyText: string): ExtractedInformationAgentFact[] {
   const normalized = replyTextForExtraction(bodyText).replace(/\u00a0/g, " ");
   const facts: ExtractedInformationAgentFact[] = [];
-  const surfaceMatches = [
-    ...normalized.matchAll(
-      /(?:surface(?:\s+(?:habitable|carrez|totale))?[^\d]{0,30})?(?<!\d)(\d{1,4}(?:[.,]\d{1,2})?)(?![\d.,])\s*m(?:²|2)(?![a-z0-9])/gi,
-    ),
-  ];
-  const surfaceValues = new Set(surfaceMatches.map((match) => Number(match[1].replace(",", "."))));
-  const surfaceMatch = surfaceValues.size === 1 ? surfaceMatches[0] : undefined;
-  if (surfaceMatch) {
-    const value = Number(surfaceMatch[1].replace(",", "."));
-    if (
-      value > 0 &&
-      value <= 1000000 &&
-      !hasAmbiguousCorrectionNear(normalized, surfaceMatch.index ?? 0)
-    ) {
+  const surfaceObservation = extractSurfaceObservation(normalized);
+  if (surfaceObservation) {
+    const { value, index, label } = surfaceObservation;
+    if (value > 0 && value <= 1000000 && !hasAmbiguousCorrectionNear(normalized, index)) {
       facts.push({
         factKey: "surface_m2",
         proposedValue: { value, unit: "m2" },
-        displayValue: `${value.toLocaleString("fr-FR")} m²`,
-        evidenceExcerpt: excerptAround(normalized, surfaceMatch.index ?? 0),
-        confidence: /surface/i.test(surfaceMatch[0]) ? 0.88 : 0.7,
+        displayValue: `${label ? `${label} : ` : ""}${value.toLocaleString("fr-FR")} m²`,
+        evidenceExcerpt: excerptAround(normalized, index),
+        confidence: label ? 0.88 : 0.7,
       });
     }
+  }
+
+  const landSurfaceObservation = extractLandSurfaceObservation(normalized);
+  if (
+    landSurfaceObservation &&
+    !hasAmbiguousCorrectionNear(normalized, landSurfaceObservation.index)
+  ) {
+    facts.push({
+      factKey: "land_surface_m2",
+      proposedValue: { value: landSurfaceObservation.value, unit: "m2" },
+      displayValue: `Terrain : ${landSurfaceObservation.value.toLocaleString("fr-FR")} m²`,
+      evidenceExcerpt: excerptAround(normalized, landSurfaceObservation.index),
+      confidence: 0.88,
+    });
   }
 
   const roomsMatches = [...normalized.matchAll(/(?<!\d)(\d{1,2})(?!\d)\s+pi[eè]ces?\b/gi)];
@@ -1883,6 +2222,13 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
 
   const occupancyPatterns: Array<[RegExp, string, string]> = [
     [
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?occup[ée]e?s?\s+par\s+(?:le|la|les)\s+propri[ée]taire(?:s)?\b/iu,
+      "owner_occupied",
+      "Bien occupé par le propriétaire",
+    ],
+    [/\b(?:libre\s+de\s+toute\s+occupation|vacant|inoccup[ée])\b/iu, "vacant", "Bien libre"],
+    [/\b(?:bail\s+en\s+cours|locataire|location)\b/iu, "rented", "Bien loué"],
+    [
       /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?libres?(?![\p{L}\p{N}])/iu,
       "vacant",
       "Bien libre",
@@ -1902,11 +2248,19 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
   const occupancyMatches = occupancyPatterns.flatMap(([pattern, value, label]) =>
     pattern.test(normalized) ? [{ pattern, value, label }] : [],
   );
-  if (new Set(occupancyMatches.map((match) => match.value)).size === 1) {
-    for (const { pattern, value, label } of occupancyMatches) {
+  const effectiveOccupancyMatches = occupancyMatches.some(
+    (match) => match.value === "owner_occupied",
+  )
+    ? occupancyMatches.filter((match) => match.value !== "occupied")
+    : occupancyMatches;
+  if (new Set(effectiveOccupancyMatches.map((match) => match.value)).size === 1) {
+    for (const { pattern, value, label } of effectiveOccupancyMatches) {
       const match = normalized.match(pattern);
       if (!match) continue;
-      if (!hasAmbiguousCorrectionNear(normalized, match.index ?? 0)) {
+      if (
+        !hasAmbiguousCorrectionNear(normalized, match.index ?? 0) &&
+        !hasNegatedValueNear(normalized, match.index ?? 0)
+      ) {
         facts.push({
           factKey: "occupancy_status",
           proposedValue: { value },
@@ -1917,6 +2271,50 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
       }
       break;
     }
+  }
+
+  const visitObservation = extractVisitObservation(normalized);
+  if (visitObservation) {
+    facts.push({
+      factKey: "visit_information",
+      proposedValue: { value: visitObservation.value },
+      displayValue: visitObservation.value,
+      evidenceExcerpt: visitObservation.evidenceExcerpt,
+      confidence: 0.72,
+    });
+  }
+
+  const diagnosticObservation = extractEnergyDiagnosticObservation(normalized);
+  if (diagnosticObservation) {
+    facts.push({
+      factKey: "energy_diagnostics",
+      proposedValue: { value: diagnosticObservation.value },
+      displayValue: diagnosticObservation.value,
+      evidenceExcerpt: diagnosticObservation.evidenceExcerpt,
+      confidence: 0.88,
+    });
+  }
+
+  const propertyTypeObservation = extractPropertyTypeObservation(normalized);
+  if (propertyTypeObservation) {
+    facts.push({
+      factKey: "property_type",
+      proposedValue: { value: propertyTypeObservation.value },
+      displayValue: propertyTypeObservation.displayValue,
+      evidenceExcerpt: propertyTypeObservation.evidenceExcerpt,
+      confidence: 0.84,
+    });
+  }
+
+  const addressObservation = extractAddressObservation(normalized);
+  if (addressObservation) {
+    facts.push({
+      factKey: "address",
+      proposedValue: { value: addressObservation.value },
+      displayValue: addressObservation.value,
+      evidenceExcerpt: addressObservation.evidenceExcerpt,
+      confidence: 0.8,
+    });
   }
 
   const saleDateObservations = extractLabeledSaleDates(normalized);
@@ -1955,15 +2353,290 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
   return facts;
 }
 
+type SurfaceObservation = { value: number; index: number; label: string | null };
+
+function extractSurfaceObservation(text: string): SurfaceObservation | null {
+  const labelledPattern =
+    /\b(surface(?:\s+(?:habitable|carrez|privative|utile|totale|au\s+sol))?)[^\d]{0,45}(\d{1,8}(?:[.,]\d{1,2})?)\s*m(?:²|2)(?![\p{L}\p{N}])/giu;
+  const genericPattern = /(?<![\d.,])(\d{1,8}(?:[.,]\d{1,2})?)\s*m(?:²|2)(?![\p{L}\p{N}])/giu;
+  const labelled: SurfaceObservation[] = [];
+  for (const match of text.matchAll(labelledPattern)) {
+    const rawValue = match[2];
+    const matchIndex = match.index ?? 0;
+    const trailingClause =
+      text
+        .slice(matchIndex + (match[0]?.length ?? 0), matchIndex + (match[0]?.length ?? 0) + 60)
+        .split(/[.!?\n;]/u, 1)[0] ?? "";
+    if (
+      !rawValue ||
+      isLandSurfaceContext(text, matchIndex) ||
+      /\b(?:terrain|parcelle|contenance)\b/iu.test(match[0] ?? "") ||
+      hasExplicitUncertainty(match[0] ?? "") ||
+      hasExplicitUncertainty(trailingClause)
+    )
+      continue;
+    const value = Number(rawValue.replace(",", "."));
+    if (Number.isFinite(value) && value > 0 && value <= 1_000_000) {
+      labelled.push({
+        value,
+        index: matchIndex,
+        label: normalizeWhitespace(match[1] ?? "surface"),
+      });
+    }
+  }
+
+  const generic: SurfaceObservation[] = [];
+  for (const match of text.matchAll(genericPattern)) {
+    const value = Number((match[1] ?? "").replace(",", "."));
+    const index = match.index ?? 0;
+    if (
+      !Number.isFinite(value) ||
+      value <= 0 ||
+      value > 1_000_000 ||
+      isLandSurfaceContext(text, index) ||
+      hasExplicitUncertainty(
+        text.slice(
+          Math.max(0, index - 70),
+          Math.min(text.length, index + (match[0]?.length ?? 0) + 70),
+        ),
+      ) ||
+      labelled.some((observation) => observation.index === index)
+    ) {
+      continue;
+    }
+    generic.push({ value, index, label: null });
+  }
+  const genericValues = new Set(generic.map((observation) => observation.value));
+  const preferred = labelled.filter((observation) =>
+    /habitable|privative|utile|totale|au sol/i.test(observation.label ?? ""),
+  );
+  const carrez = labelled.filter((observation) => /carrez/i.test(observation.label ?? ""));
+  for (const candidates of [preferred, carrez, labelled]) {
+    const values = new Set(candidates.map((observation) => observation.value));
+    if (values.size > 1) return null;
+    const candidate = candidates[0];
+    if (candidate && [...genericValues].every((value) => value === candidate.value)) {
+      return candidate;
+    }
+  }
+  const values = new Set(generic.map((observation) => observation.value));
+  return values.size === 1 ? (generic[0] ?? null) : null;
+}
+
+function extractLandSurfaceObservation(text: string): { value: number; index: number } | null {
+  const pattern =
+    /\b(?:surface\s+(?:du|de\s+la)\s+terrain|terrain|parcelle|contenance)[^\d]{0,60}(\d{1,10}(?:[.,]\d{1,2})?)\s*m(?:²|2)(?![\p{L}\p{N}])/giu;
+  const observations: Array<{ value: number; index: number }> = [];
+  for (const match of text.matchAll(pattern)) {
+    const value = Number((match[1] ?? "").replace(",", "."));
+    if (Number.isFinite(value) && value > 0 && value <= 100_000_000) {
+      observations.push({ value, index: match.index ?? 0 });
+    }
+  }
+  const values = new Set(observations.map((observation) => observation.value));
+  return values.size === 1 ? (observations[0] ?? null) : null;
+}
+
+function isLandSurfaceContext(text: string, index: number): boolean {
+  return /\b(?:terrain|parcelle|contenance)\b/i.test(text.slice(Math.max(0, index - 70), index));
+}
+
+function extractVisitObservation(text: string): { value: string; evidenceExcerpt: string } | null {
+  const pattern = /\bvisites?\b/giu;
+  const observations: Array<{ value: string; evidenceExcerpt: string }> = [];
+  for (const match of text.matchAll(pattern)) {
+    const start = match.index ?? 0;
+    const source = text.slice(start, Math.min(text.length, start + 240));
+    const nextLabel =
+      /\b(?:DPE|GES|mise\s+[àa]\s+prix|date\s+de\s+la\s+vente|surface|diagnostic|frais)\b/iu.exec(
+        source.slice(match[0].length),
+      );
+    let end = nextLabel ? match[0].length + (nextLabel.index ?? 0) : source.length;
+    for (let index = match[0].length; index < end; index++) {
+      const character = source[index];
+      if (
+        character === "\n" ||
+        character === "\r" ||
+        character === ";" ||
+        character === "!" ||
+        character === "?"
+      ) {
+        end = index;
+        break;
+      }
+      if (character === "." && !isDigit(source[index - 1]) && !isDigit(source[index + 1])) {
+        end = index;
+        break;
+      }
+      if (character === "." && !isDigit(source[index + 1])) {
+        end = index;
+        break;
+      }
+    }
+    const raw = normalizeWhitespace(source.slice(0, end));
+    const detail = raw.replace(/^visites?\b\s*[:-]?\s*/iu, "").trim();
+    const rawWithPrefix = normalizeWhitespace(
+      `${text.slice(Math.max(0, start - 40), start)} ${raw}`,
+    );
+    if (
+      !detail ||
+      /\b(?:aucun(?:e)?|pas\s+de)\s+visites?\b|\bvisites?\s+(?:impossible|indisponible|non\s+(?:possible|disponible)|pas\s+possible|à\s+confirmer|a\s+confirmer)\b/iu.test(
+        rawWithPrefix,
+      ) ||
+      /^(?:aucun(?:e)?|pas\s+de|impossible|indisponible|non\s+(?:possible|disponible)|pas\s+possible)\b/iu.test(
+        detail,
+      ) ||
+      !hasVisitSignal(detail)
+    )
+      continue;
+    const value = raw ? `${raw.slice(0, 1).toLocaleUpperCase("fr-FR")}${raw.slice(1)}` : raw;
+    observations.push({
+      value: value.slice(0, 500),
+      evidenceExcerpt: excerptAround(text, match.index ?? 0),
+    });
+  }
+  const unique = new Map(
+    observations.map((observation) => [observation.value.toLowerCase(), observation]),
+  );
+  return unique.size === 1 ? (unique.values().next().value ?? null) : null;
+}
+
+function hasVisitSignal(value: string): boolean {
+  return /\b(?:\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?|\d{1,2}\s+(?:janv|févr|fevr|mars|avr|mai|juin|juil|ao[uû]t|sept?|oct|nov|déc|dec)[a-zéû]*|\d{1,2}\s*h|rendez[- ]vous|inscription|sur\s+rendez|organis|possible|aucune?|pas\s+de|contact)\b/iu.test(
+    value,
+  );
+}
+
+function extractEnergyDiagnosticObservation(
+  text: string,
+): { value: string; evidenceExcerpt: string } | null {
+  const diagnosticPattern =
+    /\b(?:DPE|diagnostic\s+de\s+performance\s+[ée]nerg[ée]tique)\b[^\n.]{0,180}/giu;
+  const observations: Array<{ value: string; evidenceExcerpt: string }> = [];
+  for (const match of text.matchAll(diagnosticPattern)) {
+    const segment = normalizeWhitespace(match[0] ?? "");
+    if (containsUncertainQualifier(segment)) continue;
+    const dpe =
+      /\b(?:DPE|classe\s+(?:énerg(?:ie|étique)|energie|energetique)|étiquette\s+énergie)\s*[:-]?\s*([A-G])\b/iu
+        .exec(segment)?.[1]
+        ?.toUpperCase();
+    const ges = /\bGES\s*[:-]?\s*([A-G])\b/iu.exec(segment)?.[1]?.toUpperCase();
+    if (!dpe && !ges && !/\b(?:disponible|réalis[ée]|a[nn]ex[ée]|joint|transmis)/iu.test(segment))
+      continue;
+    const value =
+      [dpe ? `DPE ${dpe}` : null, ges ? `GES ${ges}` : null].filter(Boolean).join(" · ") || segment;
+    observations.push({
+      value: value.slice(0, 500),
+      evidenceExcerpt: excerptAround(text, match.index ?? 0),
+    });
+  }
+  const unique = new Map(
+    observations.map((observation) => [observation.value.toLowerCase(), observation]),
+  );
+  return unique.size === 1 ? (unique.values().next().value ?? null) : null;
+}
+
+type PropertyTypeValue =
+  | "house"
+  | "apartment"
+  | "building"
+  | "commercial"
+  | "mixed"
+  | "land"
+  | "parking";
+
+const PROPERTY_TYPE_OBSERVATIONS: Array<{
+  value: PropertyTypeValue;
+  displayValue: string;
+  pattern: RegExp;
+}> = [
+  { value: "house", displayValue: "Maison", pattern: /\b(?:maison|villa|pavillon)\b/iu },
+  {
+    value: "apartment",
+    displayValue: "Appartement",
+    pattern: /\b(?:appartement|studio|duplex|triplex|T\s*[1-9]\d?)\b/iu,
+  },
+  { value: "building", displayValue: "Immeuble", pattern: /\bimmeuble\b/iu },
+  {
+    value: "commercial",
+    displayValue: "Local commercial",
+    pattern: /\b(?:local\s+commercial|commerce|bureau)\b/iu,
+  },
+  { value: "mixed", displayValue: "Bien mixte", pattern: /\bbien\s+mixte\b/iu },
+  {
+    value: "land",
+    displayValue: "Terrain",
+    pattern: /\b(?:terrain|parcelle)\s+(?:à|a)\s+(?:bâtir|batir|construire)\b/iu,
+  },
+  { value: "parking", displayValue: "Parking", pattern: /\b(?:parking|box\s+(?:fermé|ferme))\b/iu },
+];
+
+function extractPropertyTypeObservation(
+  text: string,
+): { value: string; displayValue: string; evidenceExcerpt: string } | null {
+  const observations: Array<{ value: string; displayValue: string; evidenceExcerpt: string }> = [];
+  for (const item of PROPERTY_TYPE_OBSERVATIONS) {
+    const match = item.pattern.exec(text);
+    if (!match) continue;
+    if (!hasExplicitPropertyTypeContext(text, match.index ?? 0, match[0].length)) continue;
+    observations.push({
+      value: item.value,
+      displayValue: item.displayValue,
+      evidenceExcerpt: excerptAround(text, match.index ?? 0),
+    });
+  }
+  const unique = new Map(observations.map((observation) => [observation.value, observation]));
+  return unique.size === 1 ? (unique.values().next().value ?? null) : null;
+}
+
+function hasExplicitPropertyTypeContext(text: string, index: number, length: number): boolean {
+  const before = text.slice(Math.max(0, index - 90), index);
+  const after = text.slice(index + length, Math.min(text.length, index + length + 40));
+  return (
+    /(?:type\s+de\s+bien|nature\s+du\s+bien|cat[ée]gorie|propri[ée]t[ée]|lot)\s*[:=-]?\s*$/iu.test(
+      before,
+    ) ||
+    /(?:\b(?:le\s+)?bien|c['’]est|il\s+s['’]agit)\s+(?:est\s+)?(?:d['’])?(?:un(?:e)?\s+)?$/iu.test(
+      before,
+    ) ||
+    /^\s*(?:à|a)\s+(?:vendre|louer|b[âa]tir|construire)\b/iu.test(after)
+  );
+}
+
+function extractAddressObservation(
+  text: string,
+): { value: string; evidenceExcerpt: string } | null {
+  const pattern =
+    /\b(?:adresse|sis(?:e)?|situ[ée]?(?:\s+(?:au|à|a))?)\b\s*[:-]?\s*([^\n]{5,180})/giu;
+  const observations: Array<{ value: string; evidenceExcerpt: string }> = [];
+  for (const match of text.matchAll(pattern)) {
+    const value = normalizeWhitespace(match[1] ?? "")
+      .replace(/[.,;]+$/, "")
+      .trim();
+    if (!value || hasExplicitUncertainty(value)) continue;
+    observations.push({
+      value: value.slice(0, 180),
+      evidenceExcerpt: excerptAround(text, match.index ?? 0),
+    });
+  }
+  const unique = new Map(
+    observations.map((observation) => [observation.value.toLowerCase(), observation]),
+  );
+  return unique.size === 1 ? (unique.values().next().value ?? null) : null;
+}
+
 function conflictsWithSale(
   fact: ExtractedInformationAgentFact,
   sale: {
     surface_m2: number | null;
     app_surface_m2: number | null;
+    land_surface_m2: number | null;
     rooms_count: number | null;
     occupancy_status: string | null;
     sale_date: string | null;
     starting_price_eur: number | null;
+    property_type: string | null;
+    address: string | null;
   },
 ) {
   const value = fact.proposedValue.value;
@@ -1974,11 +2647,26 @@ function conflictsWithSale(
   if (fact.factKey === "rooms_count") {
     return sale.rooms_count != null && sale.rooms_count !== Number(value);
   }
+  if (fact.factKey === "land_surface_m2") {
+    return sale.land_surface_m2 != null && Math.abs(sale.land_surface_m2 - Number(value)) > 0.5;
+  }
   if (fact.factKey === "occupancy_status") {
     return sale.occupancy_status != null && sale.occupancy_status !== value;
   }
   if (fact.factKey === "sale_date") {
     return sale.sale_date != null && String(sale.sale_date).slice(0, 10) !== String(value);
+  }
+  if (fact.factKey === "property_type") {
+    return sale.property_type != null && sale.property_type !== String(value);
+  }
+  if (fact.factKey === "address") {
+    return (
+      sale.address != null &&
+      normalizeComparableText(sale.address) !== normalizeComparableText(String(value))
+    );
+  }
+  if (fact.factKey === "visit_information" || fact.factKey === "energy_diagnostics") {
+    return false;
   }
   return (
     sale.starting_price_eur != null && Math.abs(sale.starting_price_eur - Number(value)) > 0.01
@@ -2078,7 +2766,13 @@ function isDigit(value: string | undefined): boolean {
 }
 
 function containsUncertainQualifier(value: string): boolean {
-  return /(?<![\p{L}\p{N}])(?:pas|aucun[e]?|inconnu[e]?|non\s+communiqu[ée]e?|à\s+confirmer|a\s+confirmer|à\s+d[ée]finir|a\s+definir|sous\s+r[ée]serve|report[ée]e?|en\s+attente)(?![\p{L}\p{N}])/iu.test(
+  return /(?<![\p{L}\p{N}])(?:pas|aucun[e]?|inconnu[e]?|non\s+communiqu[ée]e?|non\s+disponible|indisponible|à\s+confirmer|a\s+confirmer|à\s+d[ée]finir|a\s+definir|sous\s+r[ée]serve|report[ée]e?|en\s+attente)(?![\p{L}\p{N}])/iu.test(
+    value,
+  );
+}
+
+function hasExplicitUncertainty(value: string): boolean {
+  return /(?<![\p{L}\p{N}])(?:à\s+confirmer|a\s+confirmer|à\s+d[ée]finir|a\s+definir|inconnu[e]?|incertain[e]?|non\s+communiqu[ée]e?|pas\s+communiqu[ée]e?|non\s+disponible|indisponible|sous\s+r[ée]serve|en\s+attente)(?![\p{L}\p{N}])/iu.test(
     value,
   );
 }
@@ -2090,6 +2784,31 @@ function hasAmbiguousCorrectionNear(text: string, index: number): boolean {
   const start = Math.max(0, index - 120);
   const end = Math.min(text.length, index + 120);
   return AMBIGUOUS_CORRECTION_PATTERN.test(text.slice(start, end));
+}
+
+function hasNegatedValueNear(text: string, index: number): boolean {
+  const before = text.slice(Math.max(0, index - 70), index);
+  const after = text.slice(index, Math.min(text.length, index + 70));
+  return (
+    /(?:n['’]est|n['’]était|ne\s+\w+|pas|sans|non)\s+[^.!?\n]{0,35}$/iu.test(before) ||
+    /^\s*(?:pas|non)\b/iu.test(after)
+  );
+}
+
+function normalizeWhitespace(value: string): string {
+  return value
+    .replace(/[\t ]+/g, " ")
+    .replace(/\s*\n\s*/g, " ")
+    .trim();
+}
+
+function normalizeComparableText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("fr-FR")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function parseFrenchDate(value: string): string | null {
@@ -2195,8 +2914,11 @@ function formatFrenchDate(value: string): string {
 }
 
 function cleanInboundBody(text: string | null, html: string | null) {
+  const plainText = text?.replace(/\r\n?/g, "\n").trim() ?? "";
+  const htmlText = htmlToPlainText(html || "");
   const source =
-    text?.trim() || htmlToPlainText(html || "") || "Réponse reçue sans corps de texte.";
+    (plainText && replyTextForExtraction(plainText) ? plainText : htmlText || plainText) ||
+    "Réponse reçue sans corps de texte.";
   return source.slice(0, 16000);
 }
 
@@ -2249,6 +2971,47 @@ function safeFilename(value: string) {
   return safe || "piece-jointe";
 }
 
+function normalizeRawMimeType(value: string | null): string {
+  return value?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+}
+
+function normalizeAttachmentMimeType(rawMimeType: string, filename: string): string {
+  const alias = ATTACHMENT_MIME_ALIASES[rawMimeType];
+  if (alias) return alias;
+  if (ALLOWED_ATTACHMENT_MIME_TYPES.has(rawMimeType)) return rawMimeType;
+  if (rawMimeType === "" || rawMimeType === "application/octet-stream") {
+    const extension = filename.slice(filename.lastIndexOf(".")).toLowerCase();
+    return ATTACHMENT_EXTENSION_MIME_TYPES[extension] ?? "";
+  }
+  return "";
+}
+
+function normalizeAttachmentDownloadUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    const string = stringValue(value);
+    return string ? [string] : [];
+  }
+  return value.flatMap((item) => {
+    const string = stringValue(item);
+    return string ? [string] : [];
+  });
+}
+
 function excerptAround(value: string, index: number) {
   return value.slice(Math.max(0, index - 80), Math.min(value.length, index + 240)).trim();
 }
@@ -2279,7 +3042,9 @@ const SIMPLE_EMAIL_PATTERN =
   /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)*$/i;
 
 const MOBILE_SIGNATURE_LINE_PATTERN =
-  /^[ \t]*(?:sent from my (?:iphone|ipad|android(?: phone)?|(?:mobile )?phone|mobile device|galaxy)|envoy[ée] (?:de|depuis) mon (?:iphone|ipad|smartphone|t[ée]l[ée]phone(?: mobile)?|appareil(?: mobile)?(?: [^\r\n]+)*))[ \t]*$/imu;
+  /^[ \t]*(?:sent from (?:my )?(?:iphone|ipad|android(?: phone)?|(?:mobile )?phone|mobile device|galaxy)|sent from mail for windows|get outlook for (?:android|ios)|envoy[ée] (?:de|depuis) mon (?:iphone|ipad|smartphone|t[ée]l[ée]phone(?: mobile)?|appareil(?: mobile)?(?: [^\r\n]+)*|application[^\r\n]*)|envoy[ée] avec l['’]application[^\r\n]*)[ \t]*$/imu;
+
+const SIGNATURE_SEPARATOR_PATTERN = /^[ \t]*--[ \t]*$/mu;
 
 function requiredHeader(request: Request, name: string) {
   const value = request.headers.get(name)?.trim();

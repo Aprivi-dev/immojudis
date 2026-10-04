@@ -140,10 +140,10 @@ describe("readable listing sections", () => {
       />,
     );
 
-    expect(screen.getByRole("note", { name: /Date de vente : À confirmer/ })).toBeTruthy();
-    expect(screen.getByRole("note", { name: /Mise à prix : À confirmer/ })).toBeTruthy();
-    expect(screen.getByRole("note", { name: /Surface : Observé/ })).toBeTruthy();
-    expect(screen.getByRole("note", { name: /Occupation : Conflit/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Date de vente : Non vérifié/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Mise à prix : Non vérifié/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Surface : Documenté/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Occupation : Sources divergentes/ })).toBeTruthy();
   });
 
   it("labels a provisional surface as inferred in the real listing summary", () => {
@@ -160,7 +160,7 @@ describe("readable listing sections", () => {
     );
 
     expect(screen.getByText("Surface estimée")).toBeTruthy();
-    expect(screen.getByRole("note", { name: /Surface : Inféré/ })).toBeTruthy();
+    expect(screen.getByRole("note", { name: /Surface : Estimé/ })).toBeTruthy();
   });
 
   it("suppresses AI-blocked type and rooms while retaining source provenance", () => {
@@ -195,7 +195,7 @@ describe("readable listing sections", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
       "Type de bien à confirmer",
     );
-    expect(screen.getAllByText("À confirmer").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("À confirmer")).toBeTruthy();
     expect(
       screen.getAllByRole("link", { name: /Source : Avoventes/ }).length,
     ).toBeGreaterThanOrEqual(2);
@@ -222,6 +222,23 @@ describe("readable listing sections", () => {
     expect(screen.getAllByText("À confirmer").length).toBeGreaterThan(0);
     expect(screen.queryByText("42,6 m²")).toBeNull();
     expect(screen.getByText(/Source : Avoventes/)).toBeTruthy();
+    expect(screen.queryByRole("note", { name: /Surface :/ })).toBeNull();
+  });
+  it("suppresses the price reliability badge when the AI review blocks the price", () => {
+    const projection: AiReviewProjectionReadModel = {
+      auction_sale_id: "sale-1",
+      field_key: "sale.starting_price_eur",
+      review_state: "unverified",
+      citation_status: "unverified",
+      is_publishable: false,
+      source_name: "Avoventes",
+      source_url: "https://avoventes.fr/vente/1",
+    };
+
+    render(<ListingOverview sale={item()} aiReviewProjections={[projection]} />);
+
+    expect(screen.getByText("À confirmer")).toBeTruthy();
+    expect(screen.queryByRole("note", { name: /Mise à prix :/ })).toBeNull();
   });
   it("does not show zero or invalid amounts as known property facts", () => {
     const { container } = render(
@@ -236,9 +253,53 @@ describe("readable listing sections", () => {
         })}
       />,
     );
-    expect(screen.getAllByText("À confirmer").length).toBeGreaterThanOrEqual(4);
+    expect(screen.getAllByText("Non renseigné").length).toBeGreaterThanOrEqual(2);
     expect(container.textContent).not.toContain("0 €");
     expect(container.textContent).not.toContain("NaN");
+  });
+  it("labels absent listing facts without presenting them as pending review", () => {
+    render(
+      <ListingOverview
+        sale={item({
+          title: "Lot",
+          property_type: "commercial",
+          city: null,
+          postal_code: null,
+          sale_date: null,
+          starting_price_eur: null,
+          rooms_count: null,
+          app_surface_m2: null,
+          habitable_surface_m2: null,
+          carrez_surface_m2: null,
+          land_surface_m2: null,
+        })}
+      />,
+    );
+    expect(screen.getAllByText("Non renseignée").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Non renseigné").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Date non renseignée")).toBeTruthy();
+    expect(screen.getByText("Localisation non renseignée")).toBeTruthy();
+  });
+  it("labels absent venue, visit and contact details explicitly", () => {
+    render(
+      <ListingPracticalDetails
+        sale={item({
+          sale_venue_type: "unknown",
+          sale_procedure: null,
+          source_blocks: null,
+          sale_date: null,
+          visit_dates: [],
+          lawyer_name: null,
+          lawyer_contact: null,
+          tribunal: null,
+          tribunal_name: null,
+        })}
+      />,
+    );
+    expect(screen.getByText("Lieu non renseigné")).toBeTruthy();
+    expect(screen.getByText("Dates de visite non renseignées")).toBeTruthy();
+    expect(screen.getByText("Contact non renseigné")).toBeTruthy();
+    expect(screen.getByText("Date non renseignée")).toBeTruthy();
   });
   it("shows the actual visits and an actionable dossier contact", () => {
     render(<ListingPracticalDetails sale={item()} />);

@@ -1,87 +1,30 @@
 import { SaleProcedureBadge } from "@/components/SaleProcedurePanel";
-import { getSaleProcedure, saleEventLabel } from "@/lib/sale-procedure";
+import { SaleCountdown } from "@/components/SaleCountdown";
 import type * as React from "react";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import entryMotion from "@/components/ui/entry-motion.module.css";
+import { memo, useEffect, useMemo, useState } from "react";
+import { getDisplaySurface } from "@/lib/surface";
+import { SaleVisual } from "@/components/SaleVisual";
+import { saleDisplayTitle } from "@/lib/sale-title";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
-import BedDouble from "lucide-react/dist/esm/icons/bed-double.js";
-import Bell from "lucide-react/dist/esm/icons/bell.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import Download from "lucide-react/dist/esm/icons/download.js";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
-import Landmark from "lucide-react/dist/esm/icons/landmark.js";
-import LayoutPanelLeft from "lucide-react/dist/esm/icons/layout-panel-left.js";
-import ListFilter from "lucide-react/dist/esm/icons/list-filter.js";
-import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
-import Map from "lucide-react/dist/esm/icons/map.js";
-import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
-import SearchIcon from "lucide-react/dist/esm/icons/search.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
-import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "sonner";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { supabase } from "@/integrations/supabase/client";
-import { Link, useLocation, useNavigate } from "@/lib/router-compat";
+import { Link, useNavigate } from "@/lib/router-compat";
 import {
-  createWatchedZone as createWatchedZoneRequest,
   addFavoriteSale as addFavoriteSaleRequest,
-  exportSalesCsv,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { createAlert } from "@/lib/queries";
-import { DPE_CLASSES, dpeColor, extractDpe, type DpeClass } from "@/lib/dpe";
 import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
-import { geocodeAddress, pricePerM2, type GeoPoint } from "@/lib/geo";
-import { SaleVisual } from "@/components/SaleVisual";
-import { cleanSaleTitle, saleDisplayTitle } from "@/lib/sale-title";
-import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
-import { isNew } from "@/lib/dates";
 import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
-import type { WatchedZoneInput } from "@/lib/watched-zones";
-import {
-  DEFAULT_SEARCH_LIMIT,
-  HOME_TYPE_OPTIONS,
-  SORT_OPTIONS,
-  STATUS_OPTIONS,
-  applyClientSearchFilters,
-  compactPrice,
-  countActiveSearchFilters,
-  hasClientOnlyFilters,
-  hasCoordinates,
-  sortClientSearchResults,
-} from "@/lib/search/search-filters";
-import {
-  areMapViewportsClose,
-  shouldMapListFollowViewport,
-  visibleSalesForMapViewport,
-} from "@/lib/search/map-viewport-results";
-import {
-  mergeSalesSearch,
-  salesSearchToUrlRecord,
-  type SalesSearchParams,
-  type SalesSearchUrlRecord,
-  type SearchSortKey,
-} from "@/lib/search/search-url-state";
-import {
-  fetchSearchCount,
-  fetchSearchMapResults,
-  fetchSearchResults,
-} from "@/lib/search/search-service";
-import type { MapViewportChange } from "./MapPanel";
-import { SearchPagination } from "./SearchPagination";
 import { ErrorState, ListingCardSkeleton, NoResultsState } from "./SearchFilters";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
 import {
-  AI_REVIEW_ENERGY_FIELD_KEYS,
   AI_REVIEW_SURFACE_FIELD_KEYS,
   firstBlockedAiReviewField,
   getAiReviewFieldResult,
@@ -121,6 +64,27 @@ export function SearchResultsList({
   aiReviewBySaleId?: Readonly<Record<string, readonly AiReviewProjectionReadModel[]>>;
   aiReviewStatus?: AiReviewRequestStatus;
 }) {
+  const { user, loading: authLoading } = useAuth();
+  const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
+  const favoriteQueryIds = useMemo(() => [...saleIds].sort(), [saleIds]);
+  const favoriteQuery = useQuery({
+    queryKey: ["search-favorite-status", user?.id ?? null, favoriteQueryIds],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("user_favorites")
+        .select("sale_id")
+        .eq("user_id", user!.id)
+        .in("sale_id", saleIds);
+      if (error) throw error;
+      return data.map(({ sale_id }) => sale_id);
+    },
+    enabled: Boolean(user && !authLoading && !isLoading && !locked && saleIds.length),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const favoriteIds = useMemo(() => new Set(favoriteQuery.data ?? []), [favoriteQuery.data]);
+  const favoriteScope = user?.id ?? null;
+
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
       {error ? <ErrorState error={error} /> : null}
@@ -130,7 +94,7 @@ export function SearchResultsList({
       <div className="grid grid-cols-1 gap-3">
         {isLoading
           ? Array.from({ length: 8 }).map((_, index) => <ListingCardSkeleton key={index} />)
-          : sales.map((sale, index) => (
+          : sales.map((sale) => (
               <ListingCard
                 key={sale.id}
                 sale={sale}
@@ -138,7 +102,6 @@ export function SearchResultsList({
                 locked={locked}
                 analysisLocked={analysisLocked}
                 active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
-                index={index}
                 onHover={onHover}
                 onSelect={onSelect}
                 comparisonSelected={comparedSaleIds.includes(sale.id)}
@@ -150,19 +113,20 @@ export function SearchResultsList({
                 onToggleComparison={onToggleComparison}
                 aiReviewProjections={aiReviewBySaleId?.[sale.id]}
                 aiReviewStatus={aiReviewStatus}
+                favoriteScope={favoriteScope}
+                initialFavorite={favoriteIds.has(sale.id)}
               />
             ))}
       </div>
     </div>
   );
 }
-export function ListingCard({
+export const ListingCard = memo(function ListingCard({
   sale,
   returnTo,
   locked,
   analysisLocked,
   active,
-  index,
   onHover,
   onSelect,
   comparisonSelected = false,
@@ -170,13 +134,14 @@ export function ListingCard({
   onToggleComparison,
   aiReviewProjections,
   aiReviewStatus = "ready",
+  favoriteScope = null,
+  initialFavorite = false,
 }: {
   sale: AuctionSale;
   returnTo: string;
   locked: boolean;
   analysisLocked: boolean;
   active: boolean;
-  index: number;
   onHover: (saleId: string | null) => void;
   onSelect: (saleId: string | null) => void;
   comparisonSelected?: boolean;
@@ -184,13 +149,13 @@ export function ListingCard({
   onToggleComparison?: (sale: AuctionSale) => void;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus?: AiReviewRequestStatus;
+  favoriteScope?: string | null;
+  initialFavorite?: boolean;
 }) {
   const displaySurface = getDisplaySurface(sale);
-  const surface = getSaleSurface(sale).value;
   const { isViewed } = useViewedSales();
   const premiumLocked = locked || analysisLocked;
   const viewed = !locked && isViewed(sale.id);
-  const fresh = !locked && isNew(sale.created_at);
   const propertyTypeReview = getAiReviewFieldResult(
     aiReviewProjections,
     "property.property_type",
@@ -207,11 +172,6 @@ export function ListingCard({
     AI_REVIEW_SURFACE_FIELD_KEYS,
     aiReviewStatus,
   );
-  const energyReviewField = firstBlockedAiReviewField(
-    aiReviewProjections,
-    AI_REVIEW_ENERGY_FIELD_KEYS,
-    aiReviewStatus,
-  );
   const guardedPropertyType = propertyTypeReview.blocked
     ? "À confirmer"
     : propertyTypeLabel(sale.property_type);
@@ -221,43 +181,7 @@ export function ListingCard({
     : propertyTypeReview.blocked || cityReview.blocked
       ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
       : saleDisplayTitle(sale);
-  const location = locked
-    ? [sale.city, sale.department].filter(Boolean).join(" · ")
-    : [sale.address, sale.city, sale.department ? `(${sale.department})` : null]
-        .filter(Boolean)
-        .join(", ");
   const beds = roomsReview.blocked ? null : (sale.bedrooms_count ?? sale.rooms_count);
-  const baths = sale.bathrooms_count;
-  const riskCount = premiumLocked ? 0 : (sale.risks?.length ?? 0);
-  const ppm =
-    premiumLocked || surfaceReviewField ? null : pricePerM2(sale.starting_price_eur, surface);
-  const dpe = premiumLocked || energyReviewField ? null : extractDpe(sale);
-  const dpeTheme = dpeColor(dpe?.class);
-  const procedure = getSaleProcedure(sale);
-  const organizerLabel = locked
-    ? "Fiche complète avec un compte gratuit"
-    : procedure.venueType === "tribunal" && sale.tribunal_city
-      ? `TJ ${sale.tribunal_city}`
-      : (procedure.venueName ?? procedure.organizerName ?? "Organisateur à confirmer");
-  const score = premiumLocked ? null : sale.investment_score;
-  const scoreLabel = premiumLocked
-    ? "Analyse"
-    : score == null
-      ? "À auditer"
-      : `${Math.round(score)}`;
-  const riskLabel = premiumLocked
-    ? "Analyse"
-    : riskCount > 1
-      ? `${riskCount} alertes`
-      : riskCount === 1
-        ? "1 alerte"
-        : "Faible";
-  const riskTone =
-    premiumLocked || riskCount > 1
-      ? "text-[#8a5b00]"
-      : riskCount === 1
-        ? "text-[#9c642b]"
-        : "text-[#0f766e]";
 
   return (
     <article
@@ -331,7 +255,15 @@ export function ListingCard({
               {beds != null ? ` · ${beds} ch.` : ""}
             </p>
           </div>
-          <CompactFavoriteButton saleId={sale.id} locked={premiumLocked} />
+          <CompactFavoriteButton
+            key={`${sale.id}:${favoriteScope ?? "anonymous"}`}
+            saleId={sale.id}
+            // Discovery can save up to three favourites. Keep the favourite
+            // control available while the rest of the card stays analysis-gated.
+            locked={locked}
+            favoriteScope={favoriteScope}
+            initialFavorite={initialFavorite}
+          />
         </div>
         <p className="mt-2 text-xl font-bold leading-tight text-[#9c642b] sm:text-2xl">
           <AiReviewField
@@ -360,6 +292,7 @@ export function ListingCard({
               {formatDate(sale.sale_date)}
             </AiReviewField>
           </span>
+          <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
           <SaleProcedureBadge sale={sale} />
           {!premiumLocked && sale.occupancy_status && (
             <span className="rounded bg-[#f0f5f3] px-2 py-1">
@@ -407,7 +340,7 @@ export function ListingCard({
       </div>
     </article>
   );
-}
+});
 
 export function ListingImage({
   sale,
@@ -524,37 +457,32 @@ export function ShareButton({ sale, title }: { sale: AuctionSale; title: string 
   );
 }
 
-export function CompactFavoriteButton({ saleId, locked }: { saleId: string; locked: boolean }) {
+export function CompactFavoriteButton({
+  saleId,
+  locked,
+  favoriteScope,
+  initialFavorite = false,
+}: {
+  saleId: string;
+  locked: boolean;
+  favoriteScope?: string | null;
+  initialFavorite?: boolean;
+}) {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [isFavorite, setIsFavorite] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(initialFavorite);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!user || locked) {
-      setIsFavorite(false);
-      return;
-    }
-
-    supabase
-      .from("user_favorites")
-      .select("sale_id")
-      .eq("user_id", user.id)
-      .eq("sale_id", saleId)
-      .maybeSingle()
-      .then(({ data }) => setIsFavorite(Boolean(data)));
-  }, [locked, saleId, user]);
+    setIsFavorite(initialFavorite);
+  }, [favoriteScope, initialFavorite, saleId]);
 
   async function toggle(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
 
     if (loading) return;
-    if (locked) {
-      navigate({ to: "/accompagnement" });
-      return;
-    }
     if (!user) {
       const redirect =
         typeof window !== "undefined"
@@ -563,9 +491,12 @@ export function CompactFavoriteButton({ saleId, locked }: { saleId: string; lock
       navigate({ to: "/login", search: { redirect } });
       return;
     }
+    if (locked) return;
 
     setBusy(true);
+    const searchFavoriteQueryKey = ["search-favorite-status", user.id] as const;
     try {
+      await queryClient.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFavorite) {
         await removeFavoriteSaleRequest({ saleId });
         setIsFavorite(false);
@@ -573,8 +504,19 @@ export function CompactFavoriteButton({ saleId, locked }: { saleId: string; lock
         await addFavoriteSaleRequest({ data: { saleId } });
         setIsFavorite(true);
       }
+      queryClient.setQueriesData<string[] | undefined>(
+        { queryKey: ["search-favorite-status", user.id] },
+        (favoriteSaleIds) => {
+          const nextFavoriteSaleIds = new Set(favoriteSaleIds ?? []);
+          if (isFavorite) nextFavoriteSaleIds.delete(saleId);
+          else nextFavoriteSaleIds.add(saleId);
+          return [...nextFavoriteSaleIds];
+        },
+      );
       queryClient.invalidateQueries({ queryKey: ["favorites", user.id] });
+      await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (error) {
+      void queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
       toast.error(error instanceof Error ? error.message : "Erreur");
     } finally {
       setBusy(false);
@@ -589,7 +531,7 @@ export function CompactFavoriteButton({ saleId, locked }: { saleId: string; lock
       aria-pressed={locked ? undefined : isFavorite}
       aria-label={
         locked
-          ? "Favoris réservés au plan Analyse"
+          ? "Connectez-vous pour enregistrer jusqu'à trois favoris gratuits"
           : isFavorite
             ? "Ne plus suivre cette vente"
             : "Suivre cette vente"

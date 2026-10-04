@@ -26,15 +26,26 @@ describe("information agent email content template", () => {
       values,
     });
 
-    expect(rendered.subject).toContain("Appartement T3 à Bordeaux");
+    expect(rendered.subject).toBe("Appartement T3 à Bordeaux — précisions pour ImmoJudis");
     expect(rendered.bodyText).toContain("Bonjour Maître Dupont");
+    expect(rendered.bodyText).toContain(
+      "ImmoJudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires.",
+    );
+    expect(rendered.bodyText).toContain(
+      "Une réponse même partielle nous aide à présenter un dossier plus clair et à limiter les demandes répétées.",
+    );
     expect(rendered.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(rendered.bodyText).toContain("cahier des conditions de vente");
-    expect(rendered.bodyText).toContain("photos récentes");
-    expect(rendered.bodyText).toContain("JPG ou PNG");
-    expect(rendered.bodyText).toContain("moins de 10 Mo");
-    expect(rendered.bodyText).toContain("plusieurs emails de 20 Mo maximum");
-    expect(rendered.bodyText).toContain("vidéo");
+    expect(rendered.bodyText).toContain("Aucun compte n’est nécessaire.");
+    expect(rendered.bodyText).toContain("Bien cordialement");
+    expect(rendered.bodyText).toContain("documents ou photos");
+    expect(rendered.bodyText).toContain(
+      "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager.",
+    );
+    expect(rendered.bodyText).toContain("Aucun compte n’est nécessaire.");
+    expect(rendered.bodyText).not.toContain("JPG ou PNG");
+    expect(rendered.bodyText).not.toContain("plusieurs emails");
+    expect(rendered.bodyText).not.toContain("vidéo");
     expect(rendered.bodyText).not.toContain("utilisateur intéressé");
     expect(rendered.bodyText).not.toContain("{{");
   });

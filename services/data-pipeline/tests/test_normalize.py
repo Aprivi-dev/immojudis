@@ -332,6 +332,28 @@ def test_normalize_sale_rejects_petites_affiches_price_as_postal_code() -> None:
     }
 
 
+def test_normalize_sale_rejects_legal_reference_as_postal_code_without_address_context() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_immobilieres",
+            "source_url": "https://example.test/frejus/01251",
+            "title": "UNE VILLA T4 à Fréjus",
+            "address": "Fréjus",
+            "city": "Fréjus",
+            "postal_code": "01251",
+            "starting_price_eur": "180000",
+            "raw_text": "Mise à Prix :180000€ UNE VILLA T4 à Fréjus Ref. :26/01251 Adresse :Fréjus",
+        }
+    )
+
+    assert sale.postal_code is None
+    assert "postal_code_unverified" in sale.quality_flags
+    assert sale.raw_payload["invalid_postal_evidence"] == {
+        "value": "01251",
+        "reason": "legal_reference_token_without_location_context",
+    }
+
+
 def test_normalize_sale_prefers_petites_affiches_postal_from_detail_address() -> None:
     sale = normalize_sale(
         {

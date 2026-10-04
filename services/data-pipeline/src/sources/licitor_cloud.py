@@ -59,13 +59,14 @@ class SourceHttp:
 
     def fetch(self, url: str, kind: str) -> tuple[str, dict]:
         current = url
+        allowed_history_paths = {urlsplit(zone).path for zone in LICITOR_HISTORY_ZONE_URLS}
         for _ in range(6):
             self.checkpoint()
             path = urlsplit(current).path
             if not is_allowed_origin_url(current, ALLOWED_ORIGINS) or not (
                 path == "/robots.txt"
                 or path.startswith("/annonce/")
-                or path in {urlsplit(zone).path for zone in LICITOR_HISTORY_ZONE_URLS}
+                or path in allowed_history_paths
             ):
                 raise RunPaused("source_origin_or_path_denied")
             if kind != "robots" and not self.rules.can_fetch(current):

@@ -12,7 +12,16 @@ from bs4 import BeautifulSoup
 from src.catalogue_proof import public_page_proof
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.enrichment.surface_reasoning import extract_surface_facts_from_text
-from src.normalize import clean_text, has_rented_occupancy_signal, no_lease_occupancy_status, strip_accents
+from src.normalize import (
+    clean_text,
+    has_rented_occupancy_signal,
+    no_lease_occupancy_status,
+    normalize_lawyer_contact,
+    normalize_lawyer_name,
+    normalize_listing_address,
+    normalize_visit_text,
+    strip_accents,
+)
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
@@ -167,12 +176,12 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
     compact_text = clean_text(page_text) or ""
     title = _detail_title(soup, lines) or _title_from_url(source_url)
     description = _without_template_placeholder(_detail_description(lines))
-    address = _detail_asset_address(lines, compact_text)
+    address = normalize_listing_address(_detail_asset_address(lines, compact_text))
     city, department = _city_department_from_text(" ".join(filter(None, (title, address))))
     if not department:
         city, department = _city_department_from_text(compact_text)
     postal_code = _extract_postal(address)
-    visit_dates = _detail_visit_dates(lines, compact_text)
+    visit_dates = [visit for value in _detail_visit_dates(lines, compact_text) if (visit := normalize_visit_text(value))]
     lawyer_name, lawyer_contact = _detail_lawyer(lines, compact_text)
     tribunal = _extract_tribunal(compact_text)
     surface = _extract_surface(title, description, compact_text)
@@ -534,31 +543,38 @@ def _detail_description(lines: list[str]) -> str | None:
 
 
 def _detail_asset_address(lines: list[str], compact_text: str) -> str | None:
-    address = _line_after_label(lines, "Adresse du bien")
+    address_parts = _detail_section_lines(
+        lines,
+        "Adresse du bien",
+        stop_labels=("mise a prix", "date de mise en vente", "visite(s) du bien", "avocat poursuivant"),
+    )
+    address = normalize_listing_address(" | ".join(address_parts))
     if address:
         return address
     for line in lines:
         match = re.search(r"^(?:À|A)\s+[A-ZÀ-Ÿ' -]+\s+\(\d{2,3}\),\s*(.+)$", line)
         if match:
-            return clean_text(match.group(1))
+            return normalize_listing_address(match.group(1))
     match = re.search(r"\b(?:À|A)\s+[A-ZÀ-Ÿ' -]+\s+\(\d{2,3}\),\s*([^.\n]+)", compact_text)
     if match:
-        return clean_text(match.group(1))
+        return normalize_listing_address(match.group(1))
     match = re.search(r"\b([^.\n,]+,\s*\d{5}\s+[A-ZÀ-Ÿ' -]+)\b", compact_text)
-    return clean_text(match.group(1)) if match else None
+    return normalize_listing_address(match.group(1)) if match else None
 
 
 def _detail_visit_dates(lines: list[str], compact_text: str) -> list[str]:
     visits: list[str] = []
     visit = _line_after_label(lines, "Visite(s) du bien") or _line_after_label(lines, "Dates des visites")
     if visit:
-        visits.append(visit)
+        normalized = normalize_visit_text(visit)
+        if normalized:
+            visits.append(normalized)
     for match in re.finditer(
         r"\b(?:le\s+)?((?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4}\s+de\s+\d{1,2}\s*H?\s*(?:\d{2})?\s*[àa]\s+\d{1,2}\s*H?\s*(?:\d{2})?)",
         compact_text,
         re.I,
     ):
-        candidate = clean_text(match.group(1))
+        candidate = normalize_visit_text(match.group(1))
         if candidate and candidate not in visits:
             visits.append(candidate)
     return visits
@@ -570,9 +586,11 @@ def _detail_lawyer(lines: list[str], compact_text: str) -> tuple[str | None, str
     if index is not None:
         for line in lines[index + 1 : index + 5]:
             if line and not re.search(r"^(?:\d|T[ée]l|Email|Fax|Informations sommaires)", line, re.I):
-                return clean_text(line), contact
+                candidate = normalize_lawyer_name(line)
+                if candidate:
+                    return candidate, contact
     match = re.search(r"\b((?:SCP|SELARL|SELAS|Ma[îi]tre|Me)\b[^.\n]{3,120})", compact_text, re.I)
-    return (clean_text(match.group(1)) if match else None), contact
+    return (normalize_lawyer_name(match.group(1)) if match else None), contact
 
 
 def _line_after_label(lines: list[str], label: str) -> str | None:
@@ -583,6 +601,21 @@ def _line_after_label(lines: list[str], label: str) -> str | None:
         if clean_text(line) and _normalize_text(line) != _normalize_text(label):
             return clean_text(line)
     return None
+
+
+def _detail_section_lines(lines: list[str], label: str, *, stop_labels: tuple[str, ...]) -> list[str]:
+    index = _line_index(lines, label)
+    if index is None:
+        return []
+    normalized_stops = tuple(_normalize_text(stop) for stop in stop_labels)
+    parts: list[str] = []
+    for line in lines[index + 1 : index + 9]:
+        normalized = _normalize_text(line)
+        if any(normalized.startswith(stop) for stop in normalized_stops):
+            break
+        if clean_text(line) and normalized != _normalize_text(label):
+            parts.append(clean_text(line) or "")
+    return parts
 
 
 def _line_index(lines: list[str], label: str) -> int | None:
@@ -634,6 +667,15 @@ def _extract_sale_date(text: str | None) -> str | None:
         r"\bAdjudication\s+le\s+(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4}\s+[àa]\s+\d{1,2}h\d{0,2})",
     )
     for pattern in patterns:
+        match = re.search(pattern, text or "", re.I)
+        if match:
+            return clean_text(match.group(1))
+    date_only_patterns = (
+        r"\bDate\s+de\s+la\s+vente\s*:?\s*((?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)?\s*\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})(?!\s+[àa]\s+\d{1,2}\s*h)",
+        r"\bDate\s+de\s+mise\s+en\s+vente\s*:?\s*((?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)?\s*\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})(?!\s+[àa]\s+\d{1,2}\s*h)",
+        r"\bAdjudication\s+le\s+((?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)?\s*\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})(?!\s+[àa]\s+\d{1,2}\s*h)",
+    )
+    for pattern in date_only_patterns:
         match = re.search(pattern, text or "", re.I)
         if match:
             return clean_text(match.group(1))
@@ -803,10 +845,10 @@ def _raw_sale(item: dict[str, Any]) -> dict[str, Any] | None:
     )
     lawyer = item.get("avocat") if isinstance(item.get("avocat"), dict) else {}
     title = clean_text(item.get("titre"))
-    address = _join_address(item.get("adresse"), item.get("codePostal"), item.get("ville"))
-    visit_dates = [clean_text(item.get("complementVisite"))] if clean_text(item.get("complementVisite")) else []
-    lawyer_name = clean_text(lawyer.get("nom") or item.get("entete"))
-    lawyer_contact = clean_text(lawyer.get("tel") or lawyer.get("email"))
+    address = normalize_listing_address(_join_address(item.get("adresse"), item.get("codePostal"), item.get("ville")))
+    visit_dates = [visit] if (visit := normalize_visit_text(item.get("complementVisite"))) else []
+    lawyer_name = normalize_lawyer_name(lawyer.get("nom") or item.get("entete"))
+    lawyer_contact = normalize_lawyer_contact(lawyer.get("tel") or lawyer.get("email"))
     surface = _extract_surface(title, description)
     land_surface = _extract_land_surface(title, description, clean_text(item.get("complement")), clean_text(item.get("ccv")))
     rooms_count = _extract_rooms(title)

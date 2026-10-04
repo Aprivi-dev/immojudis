@@ -52,6 +52,24 @@ describe("autonomous GitHub dispatch retries", () => {
     );
   });
 
+  it("dispatches an enrichment queue claim with the workflow's automatic mode", async () => {
+    const enrichmentRun = { ...run, source: "enrichment-queue", mode: "enrichment" as const };
+    mocks.rpc
+      .mockResolvedValueOnce({ data: enrichmentRun, error: null })
+      .mockResolvedValueOnce({ data: { updated: true, state: "accepted" }, error: null });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await expect(dispatchDuePipeline()).resolves.toMatchObject({
+      dispatched: true,
+      runId: enrichmentRun.id,
+      mode: "enrichment",
+    });
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).toMatchObject({
+      inputs: { run_id: enrichmentRun.id, source: "all", automatic: "true" },
+    });
+  });
+
   it("stores Retry-After while retaining the 15-minute minimum", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-13T09:00:00.000Z"));
@@ -155,6 +173,28 @@ describe("autonomous GitHub dispatch retries", () => {
     await expect(dispatchDuePipeline()).rejects.toThrow("Pipeline dispatch token missing");
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("uses non-empty fallback credentials and dispatch settings", async () => {
+    vi.stubEnv("GITHUB_SCROLL_TOKEN", "   ");
+    vi.stubEnv("IMMOJUDIS_GITHUB_ACTIONS_TOKEN", "legacy-dispatch-token");
+    vi.stubEnv("GITHUB_SCROLL_REPOSITORY", "   ");
+    vi.stubEnv("GITHUB_SCROLL_WORKFLOW", "custom-pipeline.yml");
+    vi.stubEnv("GITHUB_SCROLL_REF", "  release-worker  ");
+    mocks.rpc
+      .mockResolvedValueOnce({ data: run, error: null })
+      .mockResolvedValueOnce({ data: { updated: true, state: "accepted" }, error: null });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await expect(dispatchDuePipeline()).resolves.toMatchObject({ dispatched: true });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://api.github.com/repos/Aprivi-dev/immojudis/actions/workflows/custom-pipeline.yml/dispatches",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer legacy-dispatch-token" }),
+        body: expect.stringContaining('"ref":"release-worker"'),
+      }),
+    );
   });
 });
 

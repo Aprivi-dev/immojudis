@@ -1,26 +1,87 @@
-name: Production smoke
-
+name: Mail agent isolated verification
 on:
-  schedule:
-    - cron: "*/30 * * * *"
   workflow_dispatch:
-
-concurrency:
-  group: production-smoke
-  cancel-in-progress: true
-
 permissions:
   contents: read
-
+concurrency:
+  group: mail-agent-local-integration-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  smoke:
-    name: Public journey and API
+  database:
+    name: Mail agent local Supabase integration
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
+    env:
+      INFORMATION_AGENT_EVIDENCE_PYTHON: python3
+      IMMOJUDIS_EVIDENCE_WORKER_INTEGRATION: "true"
+      INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED: "false"
+      INFORMATION_AGENT_EVIDENCE_VISION_ENABLED: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-      - name: Check production availability and request correlation
-        run: node scripts/check-production-smoke.mjs --origin https://immojudis.com
+          cache: npm
+      - name: Pin npm
+        run: npm install --global npm@11.18.0
+      - run: npm ci
+      - name: Validate migration versions
+        run: npm run check:migrations
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - name: Install attachment analysis dependencies
+        run: |
+          python -m pip install -r services/data-pipeline/requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
+      - name: Start local Supabase
+        run: npx --yes supabase@2.119.0 start
+      - name: Replay migrations from zero
+        run: npx --yes supabase@2.119.0 db reset --local --no-seed --log-level error
+      - name: Export local Supabase integration environment
+        run: |
+          status_path="$(mktemp)"
+          trap 'rm -f "$status_path"' EXIT
+          npx --yes supabase@2.119.0 status --output json > "$status_path"
+          api_url="$(jq -r '.API_URL // empty' "$status_path")"
+          database_url="$(jq -r '.DB_URL // empty' "$status_path")"
+          service_role_key="$(jq -r '.SERVICE_ROLE_KEY // .SECRET_KEY // empty' "$status_path")"
+          publishable_key="$(jq -r '.PUBLISHABLE_KEY // .ANON_KEY // empty' "$status_path")"
+          test -n "$api_url"
+          test -n "$database_url"
+          test -n "$service_role_key"
+          test -n "$publishable_key"
+          {
+            echo "SUPABASE_URL=$api_url"
+            echo "SUPABASE_DB_URL=$database_url"
+            echo "NEXT_PUBLIC_SUPABASE_URL=$api_url"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$service_role_key"
+            echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$publishable_key"
+            echo "IMMOJUDIS_LOCAL_INTEGRATION=true"
+          } >> "$GITHUB_ENV"
+      - name: Run information-agent local integration
+        run: npx vitest run src/lib/information-agent-local.integration.test.ts --reporter=verbose
+      - name: Stop local Supabase
+        if: always()
+        run: npx --yes supabase@2.119.0 stop --no-backup
+
+  vision:
+    name: Synthetic photo interpretation canary
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      REPLICATE_MODEL: qwen/qwen3-7-plus
+      REPLICATE_MAX_RETRIES: 0
+      REPLICATE_MAX_CALLS_PER_HOUR: 2
+      LLM_ENABLED: "true"
+      LLM_PROVIDER: replicate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -r services/data-pipeline/requirements.txt
+      - name: Interpret one locally generated image
+        run: python services/data-pipeline/scripts/canary_information_agent_vision.py --live

@@ -77,6 +77,7 @@ describe("supervised information agent", () => {
   it.each([
     ["outbound disabled", "false", "false", "désactivé"],
     ["canary recipient restriction", "true", "true", "adresse de test"],
+    ["missing delivery configuration", "true", "false", "Configuration d'envoi"],
   ])(
     "blocks the admin send action before any mutation or network call: %s",
     async (_case, enabled, canaryOnly, expectedError) => {
@@ -99,6 +100,12 @@ describe("supervised information agent", () => {
       const fetchImpl = vi.fn();
       vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", enabled);
       vi.stubEnv("INFORMATION_AGENT_OUTBOUND_CANARY_ONLY", canaryOnly);
+      vi.stubEnv("RESEND_API_KEY", "");
+      vi.stubEnv("INFORMATION_AGENT_EMAIL_FROM", "");
+      vi.stubEnv("ALERT_EMAIL_FROM", "");
+      vi.stubEnv("INFORMATION_AGENT_INBOUND_DOMAIN", "");
+      vi.mocked(supabaseAdmin.rpc).mockReset();
+      emailMocks.sendResendEmail.mockReset();
       try {
         await expect(
           runAdminInformationAgentAction({
@@ -116,6 +123,8 @@ describe("supervised information agent", () => {
         ).rejects.toThrow(expectedError);
         expect(fetchImpl).not.toHaveBeenCalled();
         expect(supabaseAdmin.from).toHaveBeenCalledTimes(2);
+        expect(supabaseAdmin.rpc).not.toHaveBeenCalled();
+        expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
       } finally {
         vi.unstubAllEnvs();
         vi.mocked(supabaseAdmin.from).mockReset();
@@ -135,6 +144,7 @@ describe("supervised information agent", () => {
       status: "draft",
       created_at: new Date(Date.now() - 60_000).toISOString(),
       contribution_token_version: 1,
+      recipient_kind: "source_contact",
       recipient_email: "cabinet@example.test",
       recipient_name: "Me Dupont",
       reply_to_email: null,
@@ -243,7 +253,7 @@ describe("supervised information agent", () => {
             action: "approve_and_send",
             missionId,
             approvalConfirmed: true,
-            recipientEmail: "cabinet@example.test",
+            recipientEmail: "new-contact@example.test",
             recipientName: "Me Dupont",
             subject: "Demande de pièces",
             bodyText: "Bonjour, pourriez-vous transmettre les pièces du dossier ?",
@@ -253,6 +263,7 @@ describe("supervised information agent", () => {
       expect(contactReads).toBe(6);
       expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
       expect(mission.status).toBe("failed");
+      expect(mission.recipient_kind).toBe("manual_professional");
     } finally {
       vi.unstubAllEnvs();
       vi.mocked(supabaseAdmin.from).mockReset();
@@ -396,9 +407,9 @@ describe("supervised information agent", () => {
       questionKeys: ["documents", "photos", "visit"],
     });
 
-    expect(draft.subject).toBe("Appartement T3 à Bordeaux — précisions sur la vente");
-    expect(draft.bodyText).toContain("service indépendant d’information");
-    expect(draft.bodyText).toContain("Une réponse partielle nous aidera déjà");
+    expect(draft.subject).toBe("Appartement T3 à Bordeaux — précisions pour ImmoJudis");
+    expect(draft.bodyText).toContain("service indépendant");
+    expect(draft.bodyText).toContain("réponse même partielle");
     expect(draft.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(draft.bodyText).toContain("cahier des conditions de vente");
     expect(draft.bodyText).not.toContain("utilisateur intéressé");
@@ -457,7 +468,7 @@ describe("supervised information agent", () => {
     });
 
     expect(draft.subject.length).toBeLessThanOrEqual(100);
-    expect(draft.subject).toContain("… — précisions sur la vente");
+    expect(draft.subject).toContain("… — précisions pour ImmoJudis");
     expect(draft.bodyText).toContain("plusieurs lots à Bordeaux");
   });
 

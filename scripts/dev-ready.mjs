@@ -6,7 +6,7 @@ import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const viteBin = join(root, "node_modules", ".bin", "vite");
+const nextBin = join(root, "node_modules", "next", "dist", "bin", "next");
 
 const args = new Map();
 const repeatedArgs = new Map();
@@ -28,20 +28,32 @@ const port = Number(args.get("port") ?? process.env.PORT ?? 5173);
 const timeoutMs = Number(args.get("timeout") ?? 120_000);
 const requestTimeoutMs = Number(args.get("request-timeout") ?? 8_000);
 const baseUrl = `http://${host}:${port}`;
-const probes = ["/@vite/client", "/", ...normalizeWarmPaths(repeatedArgs.get("warm-path") ?? [])];
+const probes = [...new Set(["/", ...normalizeWarmPaths(repeatedArgs.get("warm-path") ?? [])])];
 
-if (!existsSync(viteBin)) {
-  console.error("[dev-ready] node_modules is missing. Install dependencies before starting Vite.");
+if (!existsSync(nextBin)) {
+  console.error(
+    "[dev-ready] node_modules is missing. Install dependencies before starting Next.js.",
+  );
   process.exit(1);
 }
 
-const child = spawn(viteBin, ["--host", host, "--port", String(port), "--strictPort"], {
-  cwd: root,
-  env: process.env,
-  stdio: ["inherit", "pipe", "pipe"],
-});
+const child = spawn(
+  process.execPath,
+  [nextBin, "dev", "--hostname", host, "--port", String(port)],
+  {
+    cwd: root,
+    env: process.env,
+    stdio: ["inherit", "pipe", "pipe"],
+  },
+);
 
-child.stdout.on("data", (chunk) => process.stdout.write(chunk));
+let childStarted = false;
+let startupOutput = "";
+child.stdout.on("data", (chunk) => {
+  process.stdout.write(chunk);
+  startupOutput = `${startupOutput}${chunk}`.slice(-4096);
+  childStarted ||= startupOutput.includes("Ready in");
+});
 child.stderr.on("data", (chunk) => process.stderr.write(chunk));
 
 let childExited = false;
@@ -50,7 +62,7 @@ child.on("exit", (code, signal) => {
   childExited = true;
   childExitCode = code ?? (signal === "SIGINT" ? 130 : signal === "SIGTERM" ? 143 : 1);
   if (code && code !== 0) {
-    console.error(`[dev-ready] Vite exited with code ${code}${signal ? ` (${signal})` : ""}.`);
+    console.error(`[dev-ready] Next.js exited with code ${code}${signal ? ` (${signal})` : ""}.`);
   }
   process.exitCode = childExitCode;
 });
@@ -80,8 +92,7 @@ function sleep(ms) {
 function normalizeWarmPaths(paths) {
   return paths
     .map((path) => normalize(path).replaceAll("\\", "/"))
-    .map((path) => (path.startsWith("/") ? path : `/${path}`))
-    .filter((path, index, values) => values.indexOf(path) === index);
+    .map((path) => (path.startsWith("/") ? path : `/${path}`));
 }
 
 async function waitForServer() {
@@ -89,8 +100,12 @@ async function waitForServer() {
   while (Date.now() < deadline) {
     if (childExited) {
       throw new Error(
-        `[dev-ready] Vite stopped before the server became ready (exit ${childExitCode}).`,
+        `[dev-ready] Next.js stopped before the server became ready (exit ${childExitCode}).`,
       );
+    }
+    if (!childStarted) {
+      await sleep(750);
+      continue;
     }
     try {
       for (const path of probes) {
@@ -116,7 +131,7 @@ async function probe(path) {
     const response = await fetch(`${baseUrl}${path}`, {
       method: "GET",
       signal: controller.signal,
-      headers: { accept: path === "/@vite/client" ? "text/javascript" : "text/html" },
+      headers: { accept: "text/html" },
     });
     if (response.status >= 400) {
       throw new Error(`${path} returned ${response.status}`);
