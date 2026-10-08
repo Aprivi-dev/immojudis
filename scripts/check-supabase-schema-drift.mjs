@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { normalizeDiff, verifyConcurrentIndexes } from "./lib/schema-drift.mjs";
+
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvironmentFiles(root);
 
@@ -24,6 +26,18 @@ if (!configuredTarget) {
 }
 
 const target = remote ? withMaintenanceSessionSettings(configuredTarget) : configuredTarget;
+
+// The reviewed concurrent indexes are intentionally outside the migration
+// transaction. Verify their physical catalog definitions separately so a
+// missing or altered index cannot be hidden by the diff filter below.
+if (remote) {
+  try {
+    await verifyConcurrentIndexes(target);
+  } catch (error) {
+    console.error(`[schema-drift] ${String(error?.message || error)}`);
+    process.exit(1);
+  }
+}
 
 const temporaryDirectory = mkdtempSync(join(tmpdir(), "immojudis-schema-drift-"));
 const outputPath = join(temporaryDirectory, "drift.sql");
@@ -120,32 +134,6 @@ function withMaintenanceSessionSettings(databaseUrl) {
     );
   }
   return url.toString();
-}
-
-function normalizeDiff(value) {
-  return value
-    .split(/\r?\n/)
-    .filter((line) => {
-      const normalized = line.trim();
-      if (!normalized) return false;
-
-      // Supabase installs pg_net in a non-relocatable platform-selected schema.
-      // Its presence and behavior are covered by pgTAP, so schema placement is
-      // intentionally outside the application-owned drift boundary.
-      if (/^CREATE EXTENSION pg_net WITH SCHEMA public;$/i.test(normalized)) return false;
-
-      // This read-only connector role is managed outside migrations. Ignore its
-      // grants without masking changes to application roles or objects.
-      if (/\blovable_readonly\b/i.test(normalized)) return false;
-
-      return !(
-        /^-- Migration unit \d+:/i.test(normalized) ||
-        /^-- (Transaction mode|Boundary reason):/i.test(normalized) ||
-        /^SET check_function_bodies = false;$/i.test(normalized)
-      );
-    })
-    .join("\n")
-    .trim();
 }
 
 function isMissing(value) {
