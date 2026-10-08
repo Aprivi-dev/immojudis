@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
@@ -287,15 +288,42 @@ commit;
     expect(stripOuterTransactionWrappers(source)).toContain("string_only");
   });
 
+  it("bounds repeated SQL comments before and after the trailing notification", () => {
+    const moduleUrl = new URL("./apply-supabase-migrations.mjs", import.meta.url).href;
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+        import { stripOuterTransactionWrappers } from ${JSON.stringify(moduleUrl)};
+        for (const prefix of ["", "notify\\tpgrst, 'reload schema';"]) {
+          const suffix = prefix + "/*" + "*//*".repeat(40) + "*/select 2;";
+          let rejected = false;
+          try { stripOuterTransactionWrappers("begin;select 1;commit;" + suffix); }
+          catch (error) { rejected = error.message.includes("executable statements follow COMMIT"); }
+          if (!rejected) process.exit(1);
+        }
+      `,
+      ],
+      { encoding: "utf8", timeout: 10000 },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+  }, 15000);
+
+  it("keeps quoted COMMIT text and commented notification payloads intact", () => {
+    const body = "\nselect 'commit;';\ndo $$begin perform 1; end$$;";
+    const suffix = "\n/* outer /* nested */ comment */ notify pgrst, 'reload; schema'; -- done\n";
+    expect(stripOuterTransactionWrappers(`begin;${body}\ncommit;${suffix}`)).toBe(body + suffix);
+  });
+
   it("accepts the migration whose allowlisted concurrent-index SQL is stored as data", () => {
-    // The migration timestamp is generated when the reviewed SQL is created;
-    // identify it by its executable content so a production reconciliation can
-    // rename the pending file without weakening this parser guard.
-    const migration = collectMigrations().find(({ path }) =>
-      /create\s+index\s+concurrently/i.test(readFileSync(path, "utf8")),
+    const migration = collectMigrations().find(
+      ({ file }) => file === "20261008121940_hot_identity_and_collection_lookup_indexes.sql",
     );
 
-    if (!migration) return;
+    expect(migration).toBeDefined();
     expect(() => stripOuterTransactionWrappers(readFileSync(migration.path, "utf8"))).not.toThrow();
   });
 

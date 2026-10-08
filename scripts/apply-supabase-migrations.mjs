@@ -370,29 +370,29 @@ commit;
 
 function stripOuterTransactionWrappers(source) {
   const value = String(source);
-  if (
-    /\b(?:create\s+(?:unique\s+)?index|drop\s+index)\s+concurrently\b/i.test(maskSqlNonCode(value))
-  ) {
+  const masked = maskSqlNonCode(value);
+  if (/\b(?:create\s+(?:unique\s+)?index|drop\s+index)\s+concurrently\b/i.test(masked)) {
     throw new Error(
       "Cannot wrap a migration containing an index CONCURRENTLY operation in the atomic apply-and-record transaction.",
     );
   }
-  const match = /^\s*begin\s*;([\s\S]*?)\s*commit\s*;([\s\S]*)$/i.exec(value);
-  if (!match) return value;
+  const opening = /^\s*begin\s*;/i.exec(masked);
+  if (!opening) return value;
+  const closing = /\bcommit\s*;/i.exec(masked.slice(opening[0].length));
+  if (!closing) return value;
 
-  const suffix = match[2];
-  if (
-    suffix.trim() &&
-    !/^\s*(?:--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/\s*)*notify\s+pgrst\s*,[\s\S]*?;\s*(?:--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/\s*)*$/i.test(
-      suffix,
-    )
-  ) {
+  const commitStart = opening[0].length + closing.index;
+  const suffixStart = commitStart + closing[0].length;
+  // The existing SQL lexer consumes comments and quoted payloads once. Avoid
+  // ambiguous repeated comment regexes, and inspect only executable tokens.
+  const suffixCode = masked.slice(suffixStart).trim();
+  if (suffixCode && !/^notify\s+pgrst\s*,\s*;$/i.test(suffixCode)) {
     throw new Error(
       "Cannot safely remove the migration transaction wrapper because executable statements follow COMMIT.",
     );
   }
 
-  const body = `${match[1]}${suffix}`;
+  const body = value.slice(opening[0].length, commitStart).trimEnd() + value.slice(suffixStart);
   return body;
 }
 
