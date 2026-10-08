@@ -95,20 +95,34 @@ def scrape_encheres_immobilieres_aquitaine_result(
         user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
+        # This source has produced repeated connection timeouts in the audit.
+        # Keep one retry for a transient edge failure, but do not spend the
+        # full four-attempt budget before the collector can report an outage.
+        max_attempts=2,
     )
     max_pages = max_pages or int(settings["encheres_immobilieres_max_pages"])
 
     errors: list[str] = []
+    list_fetch_failures: list[dict[str, str]] = []
     detail_failures: list[dict[str, Any]] = []
     raw_sales: list[dict[str, Any]] = CheckpointSales()
     pagination = PaginationCoverage()
+    consecutive_fetch_failures = 0
     for page_url in _list_urls(max_pages):
         try:
             html = client.get(page_url)
         except Exception as exc:
             LOGGER.error("EncheresImmobilieres list fetch failed for %s: %s", page_url, exc)
             errors.append(f"{page_url}: {exc}")
-            break
+            list_fetch_failures.append({"url": page_url, "error": str(exc)})
+            consecutive_fetch_failures += 1
+            # A single failed page must not discard later pages that are still
+            # reachable.  Stop after two consecutive failures to avoid a
+            # repeated timeout turning a bounded source run into a scan loop.
+            if consecutive_fetch_failures >= 2:
+                break
+            continue
+        consecutive_fetch_failures = 0
         page_sales = parse_encheres_immobilieres_html(html)
         page_proof = public_page_proof("encheres_immobilieres", html, page_url)
         advertised_totals = page_proof.get("advertised_totals") or []
@@ -139,6 +153,7 @@ def scrape_encheres_immobilieres_aquitaine_result(
             break
 
     coverage = pagination.metrics()
+    coverage["list_fetch_failures"] = list_fetch_failures
     coverage["detail_failures"] = detail_failures
     coverage["detail_identity_mismatches"] = sum(
         failure.get("kind") == "identity_mismatch" for failure in detail_failures

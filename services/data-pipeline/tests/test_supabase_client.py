@@ -253,6 +253,8 @@ def test_known_sale_projection_keeps_source_contract_and_compact_presence() -> N
         "source_evidence",
         "source_evidence_provenance",
         "source_energy_diagnostics",
+        "geocode",
+        "tribunal_assignment",
     }
 
     assert required.issubset(set(supabase_client.KNOWN_SALE_RAW_PAYLOAD_KEYS))
@@ -260,6 +262,130 @@ def test_known_sale_projection_keeps_source_contract_and_compact_presence() -> N
     assert "app_private.auction_sale_source_presence_json(id)" in compact_select
     for key in required:
         assert f"raw_payload->'{key}'" in compact_select
+
+
+def test_known_sale_index_projection_omits_enrichment_payload() -> None:
+    index_select = supabase_client._known_sale_postgres_select(
+        compact_presence=True,
+        include_enrichment_payload=False,
+    )
+
+    assert "raw_payload->'source_checks'" in index_select
+    assert "raw_payload->'source_evidence'" not in index_select
+    assert "raw_payload->'llm_display_description'" not in index_select
+    assert "auction_sale_source_presence_json(id)" in index_select
+
+
+def test_fetch_known_sale_details_filters_direct_rows_for_payload_hydration(monkeypatch) -> None:
+    source_url = "https://example.test/observed"
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://test",
+        },
+    )
+    calls: list[tuple[str, object]] = []
+
+    class FakeDb:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params=None):
+            calls.append((query, params))
+            if query == "set transaction isolation level repeatable read":
+                return SimpleNamespace(fetchall=lambda: [])
+            if "to_regclass" in query and "to_regprocedure" in query:
+                return SimpleNamespace(fetchone=lambda: (None, None))
+            if "list_reviewed_publication_aliases" in query:
+                return SimpleNamespace(fetchall=lambda: [])
+            assert "source_url = any(%s::text[])" in query
+            assert "source_urls ?| %s" in query
+            assert "raw_payload->'source_evidence'" in query
+            assert params == ([source_url], [source_url], supabase_client.KNOWN_SALE_DETAIL_PAGE_SIZE)
+            return SimpleNamespace(fetchall=lambda: [(
+                {
+                    "id": "00000000-0000-0000-0000-000000000099",
+                    "source_url": source_url,
+                    "source_urls": [],
+                    "raw_payload": {"source_evidence": {"url": source_url}},
+                },
+            )])
+
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: FakeDb())
+
+    details = supabase_client.fetch_known_sale_details(
+        source_urls=[source_url],
+        include_enrichment_payload=True,
+    )
+
+    assert details[source_url]["raw_payload"] == {"source_evidence": {"url": source_url}}
+    assert len(calls) == 4
+
+
+def test_fetch_known_sale_details_hydrates_reviewed_alias_canonical_row(monkeypatch) -> None:
+    alias_id = "00000000-0000-0000-0000-000000000101"
+    canonical_id = "00000000-0000-0000-0000-000000000102"
+    alias_url = "https://example.test/alias"
+    canonical_url = "https://example.test/canonical"
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://test",
+        },
+    )
+
+    class FakeDb:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params=None):
+            if query == "set transaction isolation level repeatable read":
+                return SimpleNamespace(fetchall=lambda: [])
+            if "to_regclass" in query and "to_regprocedure" in query:
+                return SimpleNamespace(fetchone=lambda: (None, None))
+            if "list_reviewed_publication_aliases" in query:
+                return SimpleNamespace(fetchall=lambda: [(
+                    alias_id,
+                    canonical_id,
+                    alias_url,
+                    canonical_url,
+                    "reviewed-alias",
+                    {},
+                    "2026-10-08T00:00:00Z",
+                    "test",
+                )])
+            assert "id = any(%s::uuid[])" in query
+            assert params == ([alias_url], [alias_url], [canonical_id], supabase_client.KNOWN_SALE_DETAIL_PAGE_SIZE)
+            return SimpleNamespace(fetchall=lambda: [(
+                {
+                    "id": canonical_id,
+                    "source_url": canonical_url,
+                    "source_urls": [],
+                    "raw_payload": {"llm_display_description": "preserved"},
+                },
+            )])
+
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: FakeDb())
+
+    details = supabase_client.fetch_known_sale_details(
+        source_urls=[alias_url],
+        include_enrichment_payload=True,
+    )
+
+    assert details[alias_url]["id"] == canonical_id
+    assert details[alias_url]["raw_payload"] == {"llm_display_description": "preserved"}
 
 
 def test_known_sale_projection_executes_in_disposable_postgres() -> None:
@@ -723,6 +849,58 @@ def test_enriched_hashes_require_current_llm_description_when_requested(monkeypa
         require_llm_description=True,
         prompt_version="auction_llm_v5",
     ) == {"hash-current"}
+
+
+def test_enriched_hashes_use_compact_postgres_projection(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://test",
+        },
+    )
+    captured: dict[str, object] = {}
+
+    class Cursor:
+        def fetchall(self):
+            return [
+                (
+                    "hash-current",
+                    {"coverage_status": "source_only"},
+                    "Synthèse IA prête et suffisamment longue pour être publiée sur la fiche. " * 2,
+                    DISPLAY_QUALITY_VERSION,
+                    "accepted",
+                    "auction_llm_v5",
+                    "display-v1",
+                    "provider/model",
+                ),
+                ("hash-missing", None, None, None, None, None, None, None),
+            ]
+
+    class Database:
+        def execute(self, query, params):
+            captured["query"] = query
+            captured["params"] = params
+            return Cursor()
+
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgres_connect",
+        lambda *_args, **_kwargs: nullcontext(Database()),
+    )
+
+    assert supabase_client.fetch_enriched_content_hashes(
+        ["hash-current", "hash-missing"],
+        require_llm_description=True,
+        require_document_analysis=True,
+        prompt_version="auction_llm_v5",
+    ) == {"hash-current"}
+    query = str(captured["query"])
+    assert "raw_payload->'document_analysis'" in query
+    assert "raw_payload,\n" not in query
+    assert set(captured["params"][0]) == {"hash-current", "hash-missing"}
 
 
 def test_enriched_hashes_keep_legacy_score_only_mode(monkeypatch) -> None:
