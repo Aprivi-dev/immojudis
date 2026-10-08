@@ -30,6 +30,17 @@ def test_three_spaced_retries_then_success(monkeypatch):
     assert sleeps == [1, 2, 9]
 
 
+def test_source_specific_retry_budget_stops_repeated_timeouts(monkeypatch):
+    monkeypatch.setattr('src.sources.common.time.sleep', lambda _: None)
+    client = client_with([httpx.ReadTimeout('first'), httpx.ReadTimeout('second')])
+    client.max_attempts = 2
+
+    with pytest.raises(httpx.ReadTimeout, match='second'):
+        client._request_with_retries('GET', 'https://example.test')
+
+    assert client._client.request.call_count == 2
+
+
 def test_http_date_is_respected():
     assert retry_after_seconds('Sat, 12 Sep 2026 12:00:30 GMT', now=datetime(2026, 9, 12, 12, tzinfo=UTC)) == 30
     for invalid in ('nan', 'inf', 'invalid', '-10'):

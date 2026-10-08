@@ -4,6 +4,7 @@ import sys
 import types
 from datetime import UTC, datetime
 from decimal import Decimal
+from threading import Lock
 
 import pytest
 
@@ -63,6 +64,82 @@ def test_needs_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
     sale.raw_payload["llm_display_status"] = "accepted"
     sale.raw_payload["llm_prompt_version"] = "auction_llm_v5"
     assert main._needs_heavy_enrichment(sale, use_llm=True) is False
+
+
+def test_known_source_urls_from_raw_sales_includes_primary_and_aliases() -> None:
+    assert main._known_source_urls_from_raw_sales([
+        {
+            "source_url": "https://example.test/primary",
+            "source_urls": ["https://example.test/alias"],
+        },
+        {
+            "source_url": "https://example.test/primary",
+            "source_urls": {"secondary": "https://example.test/other"},
+        },
+    ]) == [
+        "https://example.test/alias",
+        "https://example.test/other",
+        "https://example.test/primary",
+    ]
+
+
+def test_known_payload_hydration_fails_closed_without_rich_row() -> None:
+    source_url = "https://example.test/known"
+    known = {source_url: {"raw_payload": {"source_checks": {source_url: {}}}}}
+    loaded: set[str] = set()
+
+    def missing_fetch(**_kwargs):
+        return {}
+
+    with pytest.raises(RuntimeError, match="no complete rows"):
+        main._hydrate_known_payloads_for_rows(
+            [{"source_url": source_url}],
+            known,
+            loaded,
+            fetch_details=missing_fetch,
+            lock=Lock(),
+        )
+
+    assert loaded == set()
+    assert known[source_url]["raw_payload"] == {"source_checks": {source_url: {}}}
+
+
+def test_known_payload_hydration_marks_aliases_returned_by_fetch_as_loaded() -> None:
+    alias_url = "https://example.test/alias"
+    canonical_url = "https://example.test/canonical"
+    known = {
+        alias_url: {"raw_payload": {"source_presence": {}}},
+        canonical_url: {"raw_payload": {"source_presence": {}}},
+    }
+    hydrated = {
+        alias_url: {"raw_payload": {"source_sale_schedule": {"alias": True}}},
+        canonical_url: {"raw_payload": {"source_sale_schedule": {"canonical": True}}},
+    }
+    loaded: set[str] = set()
+    calls: list[dict[str, object]] = []
+
+    def fetch_details(**kwargs):
+        calls.append(kwargs)
+        return hydrated
+
+    main._hydrate_known_payloads_for_rows(
+        [{"source_url": alias_url}],
+        known,
+        loaded,
+        fetch_details=fetch_details,
+        lock=Lock(),
+    )
+    main._hydrate_known_payloads_for_rows(
+        [{"source_url": canonical_url}],
+        known,
+        loaded,
+        fetch_details=fetch_details,
+        lock=Lock(),
+    )
+
+    assert len(calls) == 1
+    assert loaded == {alias_url, canonical_url}
+    assert known[canonical_url] == hydrated[canonical_url]
 
 
 def test_run_scraper_uses_killable_source_worker_when_enabled(monkeypatch) -> None:
@@ -1278,6 +1355,148 @@ def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
     assert raw["visit_dates"] == ["2027-01-05 10:00"]
     assert raw["lawyer_name"] == "Me Test"
     assert raw["source_blocks"] == {"visites": "Sur rendez-vous"}
+
+
+def test_sparse_known_hydration_preserves_unchanged_coordinates_and_investment() -> None:
+    source_url = "https://example.test/sparse-known"
+    raw = {
+        "_known_unchanged": True,
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+    known = {
+        source_url: {
+            "latitude": 44.84,
+            "longitude": -0.57,
+            "risk_notes": "Adresse à confirmer",
+            "investment_score": 7.4,
+            "investment_summary": "Bonne liquidité",
+            "raw_payload": {},
+        }
+    }
+
+    assert main._hydrate_known_unchanged_sales([raw], known) == 1
+
+    assert raw["latitude"] == 44.84
+    assert raw["longitude"] == -0.57
+    assert raw["risk_notes"] == "Adresse à confirmer"
+    assert raw["investment_score"] == 7.4
+    assert raw["investment_summary"] == "Bonne liquidité"
+
+
+def test_sparse_known_hydration_preserves_geocode_and_tribunal_evidence() -> None:
+    source_url = "https://example.test/sparse-evidence"
+    geocode = {
+        "provider": "ban_geoplateforme",
+        "accepted": True,
+        "citycode": "33063",
+    }
+    tribunal_assignment = {
+        "status": "verified",
+        "insee_code": "33063",
+        "court_name": "Tribunal judiciaire de Bordeaux",
+    }
+    raw = {
+        "_known_unchanged": True,
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+    known = {
+        source_url: {
+            "raw_payload": {
+                "geocode": geocode,
+                "tribunal_assignment": tribunal_assignment,
+            },
+        }
+    }
+
+    assert main._hydrate_known_unchanged_sales([raw], known) == 1
+
+    assert raw["geocode"] == geocode
+    assert raw["tribunal_assignment"] == tribunal_assignment
+
+
+def test_sparse_known_hydration_preserves_sale_schedule_and_date_precision() -> None:
+    source_url = "https://example.test/sparse-retention"
+    retention_metadata = {
+        "source_sale_schedule": {
+            "opens_at": "2027-03-15T10:00:00Z",
+            "closes_at": "2027-03-15T14:00:00Z",
+        },
+        "date_precision": "day",
+        "sale_date_precision": "source_day",
+    }
+    known = {source_url: {"raw_payload": retention_metadata}}
+
+    unchanged = {
+        "_known_unchanged": True,
+        "source_detail_status": "complete",
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+    failed = {
+        "_detail_fetch_failed": True,
+        "source_detail_status": "failed",
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+    sparse = {
+        "source_detail_status": "restricted",
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+
+    assert main._hydrate_known_unchanged_sales([unchanged, failed], known) == 1
+    main._preserve_known_enrichment_payloads([sparse], known)
+
+    for sale in (unchanged, failed, sparse):
+        for key, value in retention_metadata.items():
+            assert sale[key] == value
+
+
+def test_fresh_complete_source_does_not_restore_stale_source_metadata() -> None:
+    source_url = "https://example.test/fresh-land-source"
+    known = {
+        source_url: {
+            "raw_payload": {
+                "source_sale_schedule": {"closes_at": "2027-03-15T14:00:00Z"},
+                "date_precision": "day",
+                "sale_date_precision": "source_day",
+                "operator_land_surface_conflict": True,
+                "operator_land_surface_scope": "copropriété",
+                "source_display_constraints": ["Surface terrain à vérifier"],
+            }
+        }
+    }
+    fresh = {
+        "source_detail_status": "complete",
+        "source_name": "agrasc",
+        "source_url": source_url,
+        "sale_date": "2027-04-20T12:00:00Z",
+        "description": "La nouvelle source décrit le bien sans conflit de surface.",
+    }
+    sparse = {
+        "source_detail_status": "restricted",
+        "source_name": "agrasc",
+        "source_url": source_url,
+    }
+
+    main._preserve_known_enrichment_payloads([fresh], known)
+    main._preserve_known_enrichment_payloads([sparse], known)
+
+    assert "source_sale_schedule" not in fresh
+    assert "date_precision" not in fresh
+    assert "sale_date_precision" not in fresh
+    assert "operator_land_surface_conflict" not in fresh
+    assert "operator_land_surface_scope" not in fresh
+    assert "source_display_constraints" not in fresh
+    assert sparse["operator_land_surface_conflict"] is True
+    assert sparse["operator_land_surface_scope"] == "copropriété"
+    assert sparse["source_display_constraints"] == ["Surface terrain à vérifier"]
+
+    assert sparse["source_sale_schedule"] == {"closes_at": "2027-03-15T14:00:00Z"}
+    assert sparse["date_precision"] == "day"
+    assert sparse["sale_date_precision"] == "source_day"
 
 
 def test_known_pdf_surface_is_preserved_before_incremental_publication() -> None:
