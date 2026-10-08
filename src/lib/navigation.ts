@@ -1,4 +1,4 @@
-export const RESOURCES_PATH = "/ventes-immobilieres-judiciaires";
+export const RESOURCES_PATH = "/ressources";
 
 export type LoginPageMode = "login" | "investor" | "professional";
 

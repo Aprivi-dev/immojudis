@@ -10,7 +10,14 @@ export type AuctionSale = {
   analysis_status?: string | null;
   source_presence?: Record<
     string,
-    { state?: string; availability?: string; checked_at?: string }
+    {
+      state?: string;
+      availability?: string;
+      checked_at?: string;
+      attempted_at?: string;
+      run_id?: string;
+      [key: string]: unknown;
+    }
   > | null;
   id: string;
   title: string | null;
@@ -76,6 +83,12 @@ export type AuctionSale = {
   source_url: string | null;
   primary_source: string | null;
   source_urls: unknown;
+  /**
+   * Source evidence retained for detail views. The completeness calculator
+   * only trusts typed facts under `source_property_features` or
+   * `source_field_observations` when their evidence contract is valid.
+   */
+  raw_payload?: unknown | null;
   source_blocks: Record<string, unknown> | null;
   source_blocks_by_source: Record<string, Record<string, unknown>> | null;
   dedupe_confidence: string | null;

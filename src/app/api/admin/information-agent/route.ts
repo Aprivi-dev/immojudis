@@ -6,6 +6,7 @@ import {
   listAdminInformationAgentReview,
   reviewAdminInformationAgentFact,
 } from "@/lib/admin-information-agent";
+import { adminErrorResponse } from "@/lib/api-route-errors";
 
 export async function GET(request: Request) {
   try {
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminError(error);
+    return adminErrorResponse(error);
   }
 }
 
@@ -36,16 +37,6 @@ export async function PATCH(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminError(error);
+    return adminErrorResponse(error);
   }
-}
-
-function adminError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Erreur admin";
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden")
-      ? 403
-      : 400;
-  return NextResponse.json({ error: message }, { status });
 }

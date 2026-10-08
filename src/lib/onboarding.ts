@@ -14,7 +14,7 @@ export function postAuthDestination({
   // Preserve a listing, checkout or filtered search that prompted registration.
   if (redirect && redirect !== "/sales") return redirect;
   if (mode === "investor" && !professional) return "/bienvenue";
-  return redirect ?? (professional ? "/publish" : "/sales");
+  return redirect ?? (professional || mode === "professional" ? "/espace-pro" : "/sales");
 }
 
 export type FirstSearch = {

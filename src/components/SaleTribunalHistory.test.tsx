@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildTribunalJudicialActivity,
@@ -77,6 +77,35 @@ describe("SaleTribunalHistory", () => {
     openActivity();
     expect(mocks.fetchActivity).toHaveBeenCalledTimes(1);
     expect(mocks.fetchDirectory).toHaveBeenCalledTimes(1);
+  });
+
+  it("defers premium statistics while disabled and reuses its cache when re-enabled", async () => {
+    const sale = { ...tribunalSaleWithoutPublishedCode(), property_type: "apartment" };
+    const statistics = adjudicationStatistics();
+    mocks.fetchAdjudicationStatistics.mockResolvedValue({
+      ...statistics,
+      national: { ...statistics.national, propertyTypes: [typeDistribution(100, 50_000)] },
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 5 * 60_000 } },
+    });
+    const renderView = (enabled: boolean) => (
+      <QueryClientProvider client={queryClient}>
+        <SaleTribunalHistory sale={sale} premium enabled={enabled} />
+      </QueryClientProvider>
+    );
+    const view = render(renderView(false));
+
+    expect(mocks.fetchAdjudicationStatistics).not.toHaveBeenCalled();
+
+    view.rerender(renderView(true));
+    expect(await screen.findByText("Repères par type de bien")).toBeTruthy();
+    expect(mocks.fetchAdjudicationStatistics).toHaveBeenCalledTimes(1);
+
+    view.rerender(renderView(false));
+    view.rerender(renderView(true));
+    await waitFor(() => expect(screen.getByText("Repères par type de bien")).toBeTruthy());
+    expect(mocks.fetchAdjudicationStatistics).toHaveBeenCalledTimes(1);
   });
 
   it("retries failed adjudication statistics without refetching the other sections", async () => {

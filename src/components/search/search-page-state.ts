@@ -1,97 +1,14 @@
 import { validSaleDate } from "@/lib/search/sale-date-range";
-import dynamic from "next/dynamic";
-import type * as React from "react";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
-import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
-import BedDouble from "lucide-react/dist/esm/icons/bed-double.js";
-import Bell from "lucide-react/dist/esm/icons/bell.js";
-import Building2 from "lucide-react/dist/esm/icons/building-2.js";
-import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import Download from "lucide-react/dist/esm/icons/download.js";
-import Heart from "lucide-react/dist/esm/icons/heart.js";
-import Landmark from "lucide-react/dist/esm/icons/landmark.js";
-import LayoutPanelLeft from "lucide-react/dist/esm/icons/layout-panel-left.js";
-import ListFilter from "lucide-react/dist/esm/icons/list-filter.js";
-import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
-import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
-import Map from "lucide-react/dist/esm/icons/map.js";
-import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
-import Ruler from "lucide-react/dist/esm/icons/ruler.js";
-import SearchIcon from "lucide-react/dist/esm/icons/search.js";
-import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
-import X from "lucide-react/dist/esm/icons/x.js";
-import { toast } from "sonner";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/hooks/use-auth";
-import { useViewedSales } from "@/hooks/use-viewed-sales";
-import { supabase } from "@/integrations/supabase/client";
-import { Link, useLocation, useNavigate } from "@/lib/router-compat";
-import {
-  createWatchedZone as createWatchedZoneRequest,
-  addFavoriteSale as addFavoriteSaleRequest,
-  fetchDpeExplorer,
-  exportSalesCsv,
-  fetchFeatureEntitlements,
-  fetchSalesStatistics,
-  removeFavoriteSale as removeFavoriteSaleRequest,
-} from "@/lib/client-api";
-import { createAlert } from "@/lib/queries";
-import { DPE_CLASSES, dpeColor, extractDpe, type DpeClass } from "@/lib/dpe";
-import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
-import {
-  formatDate,
-  formatPrice,
-  formatPricePerM2,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
+import { useEffect, useState } from "react";
+import { DPE_CLASSES, extractDpe, type DpeClass } from "@/lib/dpe";
+import { propertyTypeLabel } from "@/lib/format";
 import { geocodeAddress, pricePerM2, type GeoPoint } from "@/lib/geo";
-import { mapboxStaticImageUrl } from "@/lib/mapbox";
-import { firstPropertyImage, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
-import { cleanSaleTitle, saleDisplayTitle } from "@/lib/sale-title";
-import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
-import { isNew } from "@/lib/dates";
+import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import type { WatchedZoneInput } from "@/lib/watched-zones";
 import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
-import {
-  DEFAULT_SEARCH_LIMIT,
-  HOME_TYPE_OPTIONS,
-  SORT_OPTIONS,
-  STATUS_OPTIONS,
-  applyClientSearchFilters,
-  compactPrice,
-  countActiveSearchFilters,
-  hasClientOnlyFilters,
-  hasCoordinates,
-  sortClientSearchResults,
-} from "@/lib/search/search-filters";
-import {
-  areMapViewportsClose,
-  shouldMapListFollowViewport,
-  visibleSalesForMapViewport,
-} from "@/lib/search/map-viewport-results";
-import {
-  mergeSalesSearch,
-  salesSearchToUrlRecord,
-  type SalesSearchParams,
-  type SalesSearchUrlRecord,
-  type SearchSortKey,
-} from "@/lib/search/search-url-state";
-import {
-  fetchSearchCount,
-  fetchSearchMapResults,
-  fetchSearchResults,
-} from "@/lib/search/search-service";
-import type { MapViewportChange } from "./MapPanel";
-import { SearchPagination } from "./SearchPagination";
+import { compactPrice } from "@/lib/search/search-filters";
+import { type SalesSearchParams, type SalesSearchUrlRecord } from "@/lib/search/search-url-state";
 import { parseSaleType, saleTypeFilterLabel, type SaleTypeFilter } from "@/lib/sale-types";
 
 export type SearchDraft = {

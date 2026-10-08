@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { PrivacyPage } from "@/routes/privacy";
 
 export const metadata: Metadata = {
-  title: "Confidentialite",
-  description: "Politique de confidentialite Immojudis.",
+  alternates: { canonical: "/privacy" },
+  title: "Confidentialité",
+  description: "Politique de confidentialité Immojudis.",
 };
 
 export default function Page() {

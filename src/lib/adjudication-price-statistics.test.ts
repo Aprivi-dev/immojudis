@@ -3,9 +3,51 @@ import {
   ADJUDICATION_PRICE_STATISTICS_WARNING,
   adjudicationPriceStatisticsReliability,
   adjudicationPriceStatisticsResponseSchema,
+  adjudicationPriceStatisticsDirectoryResponseSchema,
 } from "@/lib/adjudication-price-statistics";
 
 describe("adjudication price statistics contract", () => {
+  it("refuse de comparer des périodes différentes ou de compter deux fois le même corpus", () => {
+    const { national, meta } = responseFixture();
+    const tribunal = scopeFixture({ scopeType: "tribunal", courtCode: "paris", sampleSize: 40 });
+    expect(
+      adjudicationPriceStatisticsDirectoryResponseSchema.safeParse({
+        national,
+        meta,
+        tribunals: [tribunal],
+      }).success,
+    ).toBe(true);
+    expect(
+      adjudicationPriceStatisticsDirectoryResponseSchema.safeParse({
+        national,
+        meta,
+        tribunals: [{ ...tribunal, periodEnd: "2026-08-01" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      adjudicationPriceStatisticsDirectoryResponseSchema.safeParse({
+        national,
+        meta,
+        tribunals: [{ ...tribunal, sampleSize: 4000 }],
+      }).success,
+    ).toBe(false);
+  });
+  it("refuse des dates inexistantes et une part du double supérieure au dépassement simple", () => {
+    expect(
+      adjudicationPriceStatisticsResponseSchema.safeParse(
+        responseFixture({ national: scopeFixture({ periodStart: "2026-02-30" }) }),
+      ).success,
+    ).toBe(false);
+    expect(
+      adjudicationPriceStatisticsResponseSchema.safeParse(
+        responseFixture({
+          national: scopeFixture({
+            metrics: { ...scopeFixture().metrics, aboveStartingRate: 0.2, atLeastDoubleRate: 0.5 },
+          }),
+        }),
+      ).success,
+    ).toBe(false);
+  });
   it("classe explicitement la fiabilité selon la taille de l’échantillon", () => {
     expect(adjudicationPriceStatisticsReliability(10)).toBe("limited");
     expect(adjudicationPriceStatisticsReliability(29)).toBe("limited");

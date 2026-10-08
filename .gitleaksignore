@@ -1,0 +1,55 @@
+# Exact historical public browser credentials/configuration. These entries are
+# commit-scoped so new findings in later history remain visible.
+08c0019d388b8ab40c7c310b01a0da047b09748a:src/lib/google-maps.ts:gcp-api-key:11
+ee2b1eec9553c62815ac5b676c5b00ebe10a7c25:src/integrations/supabase/client.ts:jwt:8
+
+# Exact third-party HTML capture fingerprints from the reviewed fixture commit.
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/primary/licitor-109932.html:gcp-api-key:228
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/primary/licitor-list.html:gcp-api-key:434
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/primary/licitor-110031.html:gcp-api-key:234
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/info-6051-response.html:generic-api-key:41
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/info-6053-response.html:generic-api-key:41
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/info-list-response.html:generic-api-key:41
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/petites-165934-response.html:generic-api-key:71
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/petites-165875-response.html:generic-api-key:71
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/petites-list-response.html:generic-api-key:71
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/agrasc-evry-2075541-response.html:generic-api-key:420
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html:generic-api-key:515
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html:generic-api-key:516
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-response.html:generic-api-key:492
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-response.html:generic-api-key:494
+d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-dom.html:generic-api-key:517
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/primary/licitor-109932.html:gcp-api-key:228
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/primary/licitor-list.html:gcp-api-key:434
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/primary/licitor-110031.html:gcp-api-key:234
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/info-6051-response.html:generic-api-key:41
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/info-6053-response.html:generic-api-key:41
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/info-list-response.html:generic-api-key:41
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/petites-165934-response.html:generic-api-key:71
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/petites-165875-response.html:generic-api-key:71
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/petites-list-response.html:generic-api-key:71
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/agrasc-evry-2075541-response.html:generic-api-key:420
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html:generic-api-key:515
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html:generic-api-key:516
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-response.html:generic-api-key:492
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-response.html:generic-api-key:494
+f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-dom.html:generic-api-key:517
+
+# The same reviewed captures in the current directory scan have path-scoped
+# fingerprints. check-secrets.mjs verifies their exact SHA-256 bytes before
+# scanning; any content change fails the guard before this list can apply.
+/repo/docs/audits/sources-2026-10-02/primary/licitor-109932.html:gcp-api-key:228
+/repo/docs/audits/sources-2026-10-02/primary/licitor-list.html:gcp-api-key:434
+/repo/docs/audits/sources-2026-10-02/secondary/responses/info-6053-response.html:generic-api-key:41
+/repo/docs/audits/sources-2026-10-02/primary/licitor-110031.html:gcp-api-key:234
+/repo/docs/audits/sources-2026-10-02/secondary/responses/info-6051-response.html:generic-api-key:41
+/repo/docs/audits/sources-2026-10-02/secondary/responses/info-list-response.html:generic-api-key:41
+/repo/docs/audits/sources-2026-10-02/secondary/responses/petites-165934-response.html:generic-api-key:71
+/repo/docs/audits/sources-2026-10-02/secondary/responses/petites-list-response.html:generic-api-key:71
+/repo/docs/audits/sources-2026-10-02/secondary/responses/petites-165875-response.html:generic-api-key:71
+/repo/docs/audits/sources-2026-10-02/secondary/responses/agrasc-evry-2075541-response.html:generic-api-key:420
+/repo/docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-response.html:generic-api-key:494
+/repo/docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-response.html:generic-api-key:492
+/repo/docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html:generic-api-key:515
+/repo/docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html:generic-api-key:516
+/repo/docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-dom.html:generic-api-key:517

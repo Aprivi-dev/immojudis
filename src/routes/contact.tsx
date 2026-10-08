@@ -4,7 +4,7 @@ import { createFileRoute, Link } from "@/lib/router-compat";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import { legalValue, publicLegalPublisher } from "@/lib/legal-documents";
+import { publicLegalPublisher } from "@/lib/legal-documents";
 
 export const Route = createFileRoute("/contact")({
   head: () => ({
@@ -74,12 +74,36 @@ export function ContactPage() {
 
           <div className="liquid-panel-soft mt-4 rounded-lg p-5">
             <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
-              Contact et exercice des droits
+              Contacter le support
             </h2>
+            {publisher.contactEmail ? (
+              <a
+                className="mt-3 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-4 py-2 text-sm font-semibold text-white"
+                href={`mailto:${publisher.contactEmail}?subject=${encodeURIComponent("Question sur Immojudis")}`}
+              >
+                Écrire au support — {publisher.contactEmail}
+              </a>
+            ) : (
+              <p role="status" className="mt-2 text-sm leading-relaxed text-brand-navy">
+                Le contact support n’est pas encore disponible. Les coordonnées seront publiées ici
+                avant l’ouverture des achats Analyse.
+              </p>
+            )}
+            {publisher.contactPhone ? (
+              <p className="mt-3 text-sm">
+                Téléphone :{" "}
+                <a
+                  className="underline"
+                  href={`tel:${publisher.contactPhone.replace(/[^+\d]/g, "")}`}
+                >
+                  {publisher.contactPhone}
+                </a>
+              </p>
+            ) : null}
+            <h3 className="mt-5 text-sm font-semibold text-foreground">Exercice des droits</h3>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Email : {legalValue(publisher.contactEmail)} · Téléphone :{" "}
-              {legalValue(publisher.contactPhone)}. Pour une demande RGPD ou une rétractation,
-              utilisez l’espace authentifié afin d’obtenir un numéro de suivi et une échéance.
+              Pour une demande RGPD ou une rétractation, utilisez l’espace authentifié afin
+              d’obtenir un numéro de suivi et une échéance.
             </p>
             <Link
               to="/mes-droits"

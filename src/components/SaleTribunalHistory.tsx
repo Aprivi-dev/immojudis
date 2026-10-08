@@ -35,31 +35,33 @@ export function SaleTribunalHistory({
   sale,
   premium = false,
   propertyTypeVerified = true,
+  enabled = true,
 }: {
   sale: AuctionSale;
   premium?: boolean;
   propertyTypeVerified?: boolean;
+  enabled?: boolean;
 }) {
   const [activityRequested, setActivityRequested] = useState(false);
   const courtLabel = sale.tribunal_name?.trim() || sale.tribunal?.trim() || null;
   const directoryQuery = useQuery({
     queryKey: ["tribunal-judicial-activity-directory", 36],
     queryFn: () => fetchTribunalJudicialActivityDirectory(36),
-    enabled: activityRequested,
+    enabled: enabled && activityRequested,
     retry: false,
     staleTime: 5 * 60_000,
   });
   const tribunalQuery = useQuery({
     queryKey: ["tribunal-judicial-activity", sale.id, 36],
     queryFn: () => fetchTribunalJudicialActivity({ saleId: sale.id, historyMonths: 36 }),
-    enabled: activityRequested && Boolean(sale.id),
+    enabled: enabled && activityRequested && Boolean(sale.id),
     retry: false,
     staleTime: 5 * 60_000,
   });
   const adjudicationStatisticsQuery = useQuery({
     queryKey: ["adjudication-price-statistics", sale.id],
     queryFn: () => fetchAdjudicationPriceStatistics(sale.id),
-    enabled: premium && Boolean(sale.id),
+    enabled: enabled && premium && Boolean(sale.id),
     retry: false,
     staleTime: 5 * 60_000,
   });

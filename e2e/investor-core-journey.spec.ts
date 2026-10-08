@@ -87,7 +87,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
     }
     await route.fulfill({ status: 200, json: { reports: [], plan: null } });
   });
-  await page.route("**/api/feature-entitlements", (route) =>
+  await page.route(/\/api\/feature-entitlements(?:\?.*)?$/, (route) =>
     route.fulfill({
       status: 200,
       json: {

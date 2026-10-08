@@ -5,10 +5,26 @@ import {
   listAdminLawyerReferralRequests,
   updateAdminLawyerReferralRequest,
 } from "@/lib/admin-lawyer-referrals";
+import { adminErrorResponse } from "@/lib/api-route-errors";
 
 export async function GET(request: Request) {
   try {
-    const response = await listAdminLawyerReferralRequests(bearerTokenFromRequest(request));
+    const url = new URL(request.url);
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const limit = Number(url.searchParams.get("limit") ?? 50);
+    if (
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    ) {
+      throw new Error("Pagination des mises en relation invalide.");
+    }
+    const response = await listAdminLawyerReferralRequests(bearerTokenFromRequest(request), {
+      offset,
+      limit,
+    });
     return NextResponse.json(response, {
       headers: { "cache-control": "private, no-store" },
     });
@@ -28,14 +44,4 @@ export async function PATCH(request: Request) {
   } catch (error) {
     return adminErrorResponse(error);
   }
-}
-
-function adminErrorResponse(error: unknown) {
-  const message = error instanceof Error ? error.message : "Erreur admin";
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden")
-      ? 403
-      : 400;
-  return NextResponse.json({ error: message }, { status });
 }

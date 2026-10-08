@@ -7,7 +7,7 @@ import Trash2 from "lucide-react/dist/esm/icons/trash-2.js";
 import { toast } from "sonner";
 import { Link } from "@/lib/router-compat";
 import {
-  fetchFeatureEntitlements,
+  fetchAccessPlan,
   fetchNotificationPreferences,
   updateAlertNotification,
   updateNotificationPreferences,
@@ -38,8 +38,8 @@ export default function AlertNotificationPanel({
   const queryClient = useQueryClient();
   const unreadCount = notifications.filter((notification) => !notification.readAt).length;
   const entitlements = useQuery({
-    queryKey: ["feature-entitlements", userId],
-    queryFn: fetchFeatureEntitlements,
+    queryKey: ["feature-entitlements", userId, "plan"],
+    queryFn: fetchAccessPlan,
   });
   const emailAvailable = entitlements.data?.plan.hasAnalysisAccess === true;
   const preferencesQuery = useQuery({

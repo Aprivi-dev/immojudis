@@ -8,6 +8,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { getPublishedInformationAgentEmailTemplate } from "@/lib/admin-information-agent-email-template";
+import { loadAdminInformationAgentSale } from "@/lib/admin-information-agent-sale";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { parseDocs } from "@/lib/documents";
 import { sendResendEmail } from "@/lib/email-alerts";
@@ -31,7 +32,6 @@ import {
 } from "@/lib/information-agent-email-template";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { publishedDay } from "@/lib/listing-evidence";
-import { getSale } from "@/lib/property-report/repository";
 import { propertyImages } from "@/lib/sale-media";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
@@ -63,7 +63,7 @@ export const INFORMATION_AGENT_QUESTIONS = {
   photos: {
     label: "Photos complémentaires",
     question:
-      "Pouvez-vous préciser la date approximative des photos et nous signaler, pour chaque série, les pièces ou annexes qu’elles montrent ?",
+      "Pourriez-vous transmettre des photos complémentaires que vous êtes autorisé à partager, en précisant leur date approximative et les pièces ou annexes qu’elles montrent ?",
   },
   visit: {
     label: "Visites",
@@ -288,8 +288,19 @@ export function detectInformationGaps(
     typeof sale.starting_price_eur === "number" && sale.starting_price_eur > 0,
   );
 
-  if (!documents.length)
-    addGap(gaps, "documents", "Aucune pièce consultable n'est rattachée à l'annonce.");
+  const hasSaleConditions = documents.some((document) =>
+    /(?:cahier|\bccv\b|conditions[\s_-]*(?:de[\s_-]*)?vente|sale[\s_-]*conditions)/i.test(
+      `${document.name ?? ""} ${document.type ?? ""} ${"document_type" in document ? (document.document_type ?? "") : ""} ${document.url}`,
+    ),
+  );
+  if (!hasSaleConditions)
+    addGap(
+      gaps,
+      "documents",
+      documents.length
+        ? "Le cahier des conditions de vente n'est pas identifié parmi les pièces consultables."
+        : "Aucune pièce consultable n'est rattachée à l'annonce.",
+    );
   if (images < 4)
     addGap(
       gaps,
@@ -343,10 +354,11 @@ export function buildInformationRequestDraft({
   const hearing = formatDate(sale.sale_date);
   const hearingStatus = facts?.sale_date.status;
   const priceStatus = facts?.starting_price_eur.status;
-  const reference = [title, location, sale.tribunal].filter(Boolean).join(" — ");
+  const reference = [title, sale.address, location, sale.tribunal].filter(Boolean).join(" — ");
   const trimmedRecipientName = recipientName?.replace(/\s+/g, " ").trim();
   return renderInformationAgentEmailContent({
     template,
+    appUrl: informationAgentAppOrigin(),
     values: {
       recipient_name: trimmedRecipientName || "Madame, Monsieur",
       salutation: trimmedRecipientName ? `Bonjour ${trimmedRecipientName},` : "Madame, Monsieur,",
@@ -401,7 +413,7 @@ export async function createAdminInformationAgentDraft({
   requireInformationAgentAdmin(auth);
 
   const [sale, emailTemplate] = await Promise.all([
-    getSale(auth.supabase, input.saleId),
+    loadAdminInformationAgentSale({ auth, saleId: input.saleId }),
     getPublishedInformationAgentEmailTemplate(),
   ]);
   const claimRead = await readSaleFactClaims(sale.id);
@@ -431,7 +443,9 @@ export async function createAdminInformationAgentDraft({
   }
   await assertInformationAgentContactAllowed({ saleId: sale.id, email: recipientEmail });
   const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);
-  const recipientName = input.recipientName ?? selectedByEmail?.name ?? sale.lawyer_name;
+  // A manual address or another source contact must not inherit the lawyer's
+  // name: it can belong to a different professional entirely.
+  const recipientName = input.recipientName ?? selectedByEmail?.name ?? null;
   const draft = buildInformationRequestDraft({
     sale,
     recipientName,
@@ -568,11 +582,23 @@ async function approveAndSendMission({
   });
   assertInformationAgentOutboundEnabled();
   assertInformationAgentCanaryRecipient(input.recipientEmail);
+  // Validate delivery prerequisites before approval reserves the case for sending.
+  // Otherwise a configuration error can leave an approved case with no delivery attempt.
+  const config = resolveInformationAgentEmailConfig();
+
+  // An admin may replace a source-derived address while approving the draft.
+  // Preserve the provenance only when the normalized address is unchanged;
+  // otherwise the canonical case must record an explicit manual recipient.
+  const recipientKind =
+    normalizedEmail(input.recipientEmail) === normalizedEmail(mission.recipient_email)
+      ? mission.recipient_kind
+      : "manual_professional";
 
   const { data: edited, error: editError } = await supabaseAdmin
     .from("information_agent_missions")
     .update({
       recipient_email: input.recipientEmail,
+      recipient_kind: recipientKind,
       recipient_name: input.recipientName || null,
       reply_to_email: null,
       share_requester_email: false,
@@ -599,7 +625,6 @@ async function approveAndSendMission({
   if (!approval) throw new Error("Approbation de l'enquête impossible.");
   if (!approval.should_send) return;
 
-  const config = resolveInformationAgentEmailConfig();
   const replyTo = `enquete+${approval.inbound_token}@${config.inboundDomain}`;
   const sendingAt = new Date().toISOString();
 
@@ -659,6 +684,7 @@ async function approveAndSendMission({
     if (messageError) throw messageError;
     await updateMissionOrThrow(mission.id, mission.user_id, {
       status: "sent",
+      reply_to_email: replyTo,
       sent_at: sentAt,
       provider_message_id: delivery.id,
       failure_reason: null,

@@ -2233,6 +2233,12 @@
   white-space: nowrap;
 }
 
+/* Secondary pages share a longer navigation; keep it clear of the logo and account actions. */
+.ij-site-header:not(.ij-cinematic-header) .ij-home-nav {
+  gap: clamp(0.35rem, 0.7vw, 1.2rem);
+  font-size: clamp(0.78rem, 0.95vw, 0.98rem);
+}
+
 .ij-home-nav a:hover,
 .ij-home-nav a:focus-visible,
 .ij-mobile-nav a:hover,
@@ -5048,41 +5054,130 @@
 }
 
 
-.ij-cinematic-page { background: #faf9f6; }
-.ij-cinematic-header { position: fixed; padding: 24px 32px 0; color: white; pointer-events: none; }
-.ij-cinematic-header > * { pointer-events: auto; }
-.ij-cinematic-header .ij-site-header-inner { width: min(100%, 1236px); min-height: 80px; padding: 12px 28px; border: 1px solid rgb(226 234 247 / 40%); border-radius: 26px; background: rgb(24 31 48 / 76%); box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%), inset 0 -1px 0 rgb(255 255 255 / 6%), 0 10px 32px rgb(10 17 30 / 18%); backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); overflow: visible; }
-.ij-cinematic-header .ij-site-header-inner > .ij-home-logo { align-items: center; }
-.ij-cinematic-header .ij-site-header-inner .ij-home-logo small { display: none; }
-.ij-cinematic-header .ij-site-header-inner::before { content: none; }
-.ij-cinematic-header .ij-home-logo,.ij-cinematic-header .ij-home-logo-mark { color: white; }
-.ij-cinematic-header .ij-home-logo-mark img { filter: brightness(0) invert(1); }
-.ij-cinematic-header .ij-home-logo strong { font-size: 38px; font-weight: 500; }
-.ij-cinematic-header .ij-home-logo small { color: #d0d4db; font-family: var(--font-display); font-size: 16px; }
-.ij-cinematic-header .ij-home-logo strong span { color: #deb477; }
-.ij-cinematic-header .ij-home-nav { justify-content: flex-end; gap: 32px; color: #eee; font-family: var(--font-display); font-size: 19px; }
-.ij-cinematic-header .ij-home-actions { margin-left: 18px; }
-.ij-cinematic-header .ij-home-actions .ij-signup-button { display: none; }
-.ij-cinematic-header .ij-login-button { border: 1px solid #cbb476; border-radius: 13px; color: #ead69d; background: rgb(203 180 118 / 15%); box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%); font-family: var(--font-display); font-size: 18px; }
-.ij-cinematic-header .ij-home-menu-button { color: white; background: rgb(255 255 255 / 12%); }
-.ij-cinematic-header .ij-mobile-panel .ij-home-logo,.ij-cinematic-header .ij-mobile-panel .ij-home-logo-mark { color: #132238; }
-.ij-cinematic-header .ij-mobile-panel .ij-home-logo-mark img { filter: none; }
-.ij-cinematic-header .ij-mobile-panel .ij-home-logo small { color: #657080; }
-.ij-cinematic-header .ij-mobile-panel .ij-login-button { color: #132238; border-color: #b2a18a; }
-.ij-cinematic-header .ij-home-nav a:hover { color: #ead69d; }
-.ij-cinematic-header .ij-site-header-inner a:focus-visible,
-.ij-cinematic-header .ij-home-menu-button:focus-visible { outline: 2px solid #ead69d; outline-offset: 5px; }
-.ij-cinematic-header .ij-site-header-inner .ij-login-button:hover { background: rgb(203 180 118 / 28%); color: #fff2c8; }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .ij-cinematic-header .ij-site-header-inner { background: #202839; }
+.ij-cinematic-page {
+  background: #faf9f6;
 }
-@media (prefers-reduced-transparency: reduce) {
-  .ij-cinematic-header .ij-site-header-inner { background: #202839; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.ij-cinematic-header {
+  position: absolute;
+  padding: 20px 64px 0;
+  color: white;
+  pointer-events: none;
+}
+.ij-cinematic-header > * {
+  pointer-events: auto;
+}
+.ij-cinematic-header .ij-site-header-inner {
+  width: min(100%, 1320px);
+  min-height: 68px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: visible;
+}
+.ij-cinematic-header .ij-site-header-inner > .ij-home-logo {
+  align-items: center;
+}
+.ij-cinematic-header .ij-site-header-inner .ij-home-logo small,
+.ij-cinematic-header .ij-site-header-inner .ij-home-logo-mark {
+  display: none;
+}
+.ij-cinematic-header .ij-site-header-inner::before {
+  content: none;
+}
+.ij-cinematic-header .ij-home-logo {
+  color: white;
+}
+.ij-cinematic-header .ij-home-logo strong {
+  font-size: 46px;
+  font-weight: 500;
+}
+.ij-cinematic-header .ij-home-logo strong span {
+  color: #deb477;
+}
+.ij-cinematic-header .ij-home-nav {
+  justify-content: flex-end;
+  gap: 36px;
+  color: #f7f4ee;
+  font-family: var(--font-display);
+  font-size: 21px;
+}
+.ij-cinematic-header .ij-home-actions {
+  margin-left: 12px;
+}
+.ij-cinematic-header .ij-home-actions .ij-signup-button {
+  display: none;
+}
+.ij-cinematic-header .ij-site-header-inner .ij-login-button {
+  border: 1px solid #d6b271;
+  border-radius: 7px;
+  color: #edc98a;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  padding: 12px 22px;
+}
+.ij-cinematic-header .ij-home-menu-button {
+  color: white;
+  border-color: rgb(255 255 255 / 30%);
+  background: rgb(14 31 50 / 45%);
+}
+.ij-cinematic-header .ij-mobile-panel .ij-home-logo,
+.ij-cinematic-header .ij-mobile-panel .ij-home-logo-mark {
+  color: #132238;
+}
+.ij-cinematic-header .ij-mobile-panel .ij-home-logo small {
+  color: #657080;
+}
+.ij-cinematic-header .ij-home-nav a:hover {
+  color: #ead69d;
+}
+.ij-cinematic-header .ij-site-header-inner a:focus-visible,
+.ij-cinematic-header .ij-home-menu-button:focus-visible {
+  outline: 2px solid #ead69d;
+  outline-offset: 5px;
+}
+.ij-cinematic-header .ij-site-header-inner .ij-login-button:hover {
+  background: rgb(203 180 118 / 16%);
+  color: #fff2c8;
+}
+@media (min-width: 1001px) and (max-width: 1180px) {
+  .ij-cinematic-header .ij-home-nav,
+  .ij-cinematic-header .ij-home-actions {
+    display: flex;
+  }
+  .ij-cinematic-header .ij-home-menu-button {
+    display: none;
+  }
+  .ij-cinematic-header .ij-home-nav {
+    gap: 24px;
+    font-size: 19px;
+  }
+}
+@media (max-width: 1180px) {
+  .ij-cinematic-header {
+    padding-inline: 40px;
+  }
+}
+@media (max-width: 900px) {
+  .ij-cinematic-header {
+    padding-inline: 28px;
+  }
 }
 @media (max-width: 760px) {
-  .ij-cinematic-header { padding: 12px 24px 0; }
-  .ij-cinematic-header .ij-site-header-inner { min-height: 64px; padding: 10px 14px; border-radius: 20px; gap: 12px; }
-  .ij-cinematic-header .ij-home-logo { gap: 6px; }
-  .ij-cinematic-header .ij-home-logo strong { font-size: 30px; }
-  .ij-cinematic-header .ij-home-logo small { font-size: 12px; max-width: 220px; }
+  .ij-cinematic-header {
+    padding: 18px 24px 0;
+  }
+  .ij-cinematic-header .ij-site-header-inner {
+    min-height: 52px;
+    gap: 12px;
+  }
+  .ij-cinematic-header .ij-home-logo strong {
+    font-size: 36px;
+  }
 }

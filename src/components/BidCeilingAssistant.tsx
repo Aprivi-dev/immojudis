@@ -28,6 +28,7 @@ import {
 import { fetchPrecomputedMarketEstimate } from "@/lib/client-api";
 import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.functions";
 import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
+import { collectSaleDocuments } from "@/lib/sale-documents";
 import {
   documentTypeLabel,
   formatDate,
@@ -142,10 +143,12 @@ export function BidCeilingAssistant({
   sale,
   marketEstimateOverride = null,
   onSimulationChange,
+  initialSimulation,
 }: {
   sale: AuctionSale;
   marketEstimateOverride?: DvfMarketEstimate | null;
   onSimulationChange?: (snapshot: BidSimulationSnapshot) => void;
+  initialSimulation?: ReportSimulation;
 }) {
   const { user, loading } = useAuth();
   if (loading)
@@ -162,6 +165,7 @@ export function BidCeilingAssistant({
       marketEstimateOverride={marketEstimateOverride}
       ownerId={ownerId}
       onSimulationChange={onSimulationChange}
+      initialSimulation={initialSimulation}
     />
   );
 }
@@ -171,11 +175,13 @@ function BidCeilingWorkspace({
   marketEstimateOverride,
   ownerId,
   onSimulationChange,
+  initialSimulation,
 }: {
   sale: AuctionSale;
   marketEstimateOverride: DvfMarketEstimate | null;
   ownerId: string;
   onSimulationChange?: (snapshot: BidSimulationSnapshot) => void;
+  initialSimulation?: ReportSimulation;
 }) {
   const draftKey = bidStorageKey("draft", ownerId, sale.id);
   const surfaceInfo = getSaleSurface(sale);
@@ -187,14 +193,43 @@ function BidCeilingWorkspace({
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [state, setState] = useState<AssistantState>(() =>
-    createAssistantState(startingPrice, surface, loadState(draftKey)),
+    createAssistantState(
+      startingPrice,
+      surface,
+      initialSimulation
+        ? {
+            ...loadState(draftKey),
+            ...initialSimulation,
+            worksScenario: null,
+            manualMarketPricePerM2: initialSimulation.manualMarketPricePerM2 ?? 0,
+            marketEdited: initialSimulation.manualMarketPricePerM2 != null,
+          }
+        : loadState(draftKey),
+    ),
   );
   const [stateSaleId, setStateSaleId] = useState(sale.id);
 
   useEffect(() => {
     const stored = loadState(draftKey);
-    setState(createAssistantState(startingPrice, surface, stored));
+    setState(
+      createAssistantState(
+        startingPrice,
+        surface,
+        initialSimulation
+          ? {
+              ...stored,
+              ...initialSimulation,
+              worksScenario: null,
+              manualMarketPricePerM2: initialSimulation.manualMarketPricePerM2 ?? 0,
+              marketEdited: initialSimulation.manualMarketPricePerM2 != null,
+            }
+          : stored,
+      ),
+    );
     setStateSaleId(sale.id);
+    // Page-level hypotheses are restored on mount. Subsequent edits belong to
+    // this workspace and must not reset its inputs when it emits a snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey, sale.id, startingPrice, surface]);
 
   useEffect(() => {
@@ -315,7 +350,7 @@ function BidCeilingWorkspace({
   const selectedMargin = selected.result.available
     ? selected.result.targetTotalCost - selected.result.simulated.totalCost
     : null;
-  const reliability = reliabilityLabel(effectiveEstimate, sale, useManualMarket);
+  const reliability = reliabilityLabel(effectiveEstimate, useManualMarket);
 
   const reset = () => {
     setState(createAssistantState(startingPrice, surface));
@@ -394,7 +429,7 @@ function BidCeilingWorkspace({
                 ))}
               </div>
               <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-                Fiabilité {reliability} · Surface{" "}
+                Référence marché {reliability} · Surface{" "}
                 {marketSurfaces.builtSurfaceEstimated
                   ? `${formatSurface(surface)} estimés`
                   : surfaceInfo.estimated
@@ -924,7 +959,7 @@ function buildNextAction(sale: AuctionSale, verdictAvailable: boolean): string {
   if (worksRisk) {
     return "Chiffrez les travaux et reportez-les dans les hypothèses pour affiner le plafond.";
   }
-  if ((sale.documents_rich?.length ?? 0) > 0) {
+  if (collectSaleDocuments(sale).length > 0) {
     return "Relisez le cahier des conditions de vente avec ce plafond en tête.";
   }
   return "Visitez le bien si possible, puis validez votre plafond avant l'audience.";
@@ -1592,18 +1627,13 @@ function Row({
   );
 }
 
-function reliabilityLabel(
-  estimate: DvfMarketEstimate | null,
-  sale: AuctionSale,
-  useManualMarket: boolean,
-): string {
-  if (useManualMarket) return "provisoire";
+function reliabilityLabel(estimate: DvfMarketEstimate | null, useManualMarket: boolean): string {
+  if (useManualMarket) return "personnelle, à confirmer";
   if (!estimate) return "à compléter";
-  const docs = sale.documents_rich?.length ?? 0;
   const confidence = marketReferenceConfidence(estimate).confidence;
-  if (confidence === "high" && docs > 0) return "forte";
+  if (confidence === "high") return "solide";
   if (confidence === "low") return "fragile";
-  return "correcte";
+  return "indicative";
 }
 
 function buildSuccessConditions(
@@ -1612,7 +1642,7 @@ function buildSuccessConditions(
   estimate: DvfMarketEstimate | null,
   useManualMarket: boolean,
 ): Array<{ icon: ReactNode; title: string; text: string }> {
-  const docs = sale.documents_rich ?? [];
+  const docs = collectSaleDocuments(sale);
   const risks = [...(sale.risks ?? [])].sort((a, b) => (b.severity ?? 0) - (a.severity ?? 0));
   const conditions: Array<{ icon: ReactNode; title: string; text: string }> = [
     {
@@ -1628,7 +1658,7 @@ function buildSuccessConditions(
       text:
         docs.length > 0
           ? `${docs.length} pièce${docs.length > 1 ? "s" : ""} disponible${docs.length > 1 ? "s" : ""}. Les points importants doivent rester reliés à leur source.`
-          : "Aucune pièce riche n'est encore disponible : le plafond doit rester une hypothèse prudente.",
+          : "Aucune pièce consultable n'est disponible : le plafond doit rester une hypothèse prudente.",
     },
     {
       icon: <Home className="h-4 w-4" />,

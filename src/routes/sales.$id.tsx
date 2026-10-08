@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useSearch } from "@/lib/router-compat";
 import { useQuery } from "@tanstack/react-query";
-import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailView";
+import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailFallbacks";
 
 import { SalePublicPreview } from "@/components/SalePublicPreview";
 import { useAuth } from "@/hooks/use-auth";

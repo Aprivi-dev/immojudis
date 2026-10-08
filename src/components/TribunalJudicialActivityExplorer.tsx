@@ -11,7 +11,10 @@ import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { PremiumAdjudicationExplorer } from "@/components/PremiumAdjudicationExplorer";
+import { useAuth } from "@/hooks/use-auth";
+import { fetchAccessPlan } from "@/lib/client-api";
 import { fetchTribunalJudicialActivityDirectory } from "@/lib/tribunal-judicial-activity-directory-client";
 import type {
   TribunalJudicialActivityHistoryMonths,
@@ -22,14 +25,24 @@ import type {
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 
 export function TribunalJudicialActivityExplorer() {
+  const { session, loading: authLoading } = useAuth();
   const [historyMonths, setHistoryMonths] = useState<TribunalJudicialActivityHistoryMonths>(36);
   const [search, setSearch] = useState("");
   const [selectedRegion, setSelectedRegion] = useState("");
   const [selectedCourtCode, setSelectedCourtCode] = useState("");
   const [selectedPropertyType, setSelectedPropertyType] = useState("");
+  const planQuery = useQuery({
+    queryKey: ["tribunal-judicial-activity-plan", session?.user.id],
+    queryFn: fetchAccessPlan,
+    enabled: Boolean(session) && !authLoading,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const hasAccess = planQuery.data?.plan.hasAnalysisAccess === true;
   const query = useQuery({
     queryKey: ["tribunal-judicial-activity-directory", historyMonths],
     queryFn: () => fetchTribunalJudicialActivityDirectory(historyMonths),
+    enabled: Boolean(session) && hasAccess,
     retry: false,
     staleTime: 5 * 60_000,
   });
@@ -56,119 +69,133 @@ export function TribunalJudicialActivityExplorer() {
   return (
     <main className="min-h-screen bg-[#eef7ff] text-brand-navy">
       <header className="border-b border-brand-navy/10 bg-white/80">
-        <div className="mx-auto max-w-[1260px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+        <div className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
             <Landmark className="h-4 w-4" aria-hidden />
             Observatoire des ventes judiciaires
           </p>
-          <h1 className="mt-3 max-w-5xl font-display text-4xl font-medium leading-tight sm:text-5xl lg:text-6xl">
-            Les adjudications, tribunal par tribunal
+          <h1 className="mt-3 max-w-5xl font-display text-4xl font-medium leading-tight sm:text-5xl">
+            Statistiques Tribunaux
           </h1>
           <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
-            Explorez séparément les annonces suivies par Immojudis et les prix d’adjudication
-            historiques publiés par Licitor. Les membres Analyse peuvent comparer les résultats
-            nationaux et les tribunaux dont l’échantillon a été contrôlé.
+            À quel prix les biens sont-ils adjugés ? Comparez les résultats des ventes passées, les
+            mises à prix et les types de biens, en France et tribunal par tribunal. Un baromètre
+            réservé aux membres Analyse, fondé sur les résultats publiés et contrôlés.
           </p>
-
-          {query.data ? (
-            <dl className="mt-8 grid max-w-5xl border-y border-brand-navy/12 sm:grid-cols-2 lg:grid-cols-4">
-              <SummaryValue label="Tribunaux suivis" value={query.data.totals.trackedCourts} />
-              <SummaryValue
-                label="Annonces passées suivies"
-                value={query.data.totals.observedPastSales}
-              />
-              <SummaryValue label="Ventes à venir" value={query.data.totals.upcomingSales} />
-              <SummaryValue
-                label="Dans les 90 jours"
-                value={query.data.totals.upcomingSales90Days}
-              />
-            </dl>
-          ) : null}
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-        <PremiumAdjudicationExplorer selectedCourtCode={selected?.court.code ?? null} />
+      <div className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <PremiumAdjudicationExplorer />
 
-        <div className="mt-10">
-          {query.data ? <NationalOverview data={query.data} /> : null}
-          {query.data?.regions.length ? (
-            <RegionalCoverage
-              data={query.data}
-              selectedRegion={selectedRegion}
-              onRegionChange={(region) => {
-                setSelectedRegion(region);
-                setSelectedCourtCode("");
-                setSelectedPropertyType("");
-              }}
-            />
-          ) : null}
-
-          <section aria-label="Choisir un tribunal" className="grid gap-4 lg:grid-cols-[1fr_auto]">
-            <label>
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
-                Rechercher un tribunal
-              </span>
-              <span className="relative mt-2 block">
-                <Search
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/45"
-                  aria-hidden
-                />
-                <Input
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Marseille, Paris, Lyon…"
-                  className="h-11 border-brand-navy/15 bg-white pl-10"
-                />
-              </span>
-            </label>
-            <fieldset>
-              <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
-                Historique observé
-              </legend>
-              <div className="mt-2 inline-flex rounded-md border border-brand-navy/15 bg-white p-1">
-                {WINDOWS.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={historyMonths === value}
-                    onClick={() => setHistoryMonths(value)}
-                    className={`min-h-9 rounded px-3 text-sm font-semibold ${
-                      historyMonths === value
-                        ? "bg-brand-navy text-white"
-                        : "text-brand-navy/65 hover:bg-brand-navy/5"
-                    }`}
-                  >
-                    {value} mois
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-          </section>
-
-          {query.isLoading ? <ExplorerSkeleton /> : null}
-          {query.isError ? <ExplorerError onRetry={() => void query.refetch()} /> : null}
-          {!query.isLoading && !query.isError && !filteredTribunals.length ? (
-            <p className="mt-8 border-y border-brand-navy/12 bg-white px-4 py-8 text-sm">
-              Aucun tribunal suivi ne correspond aux filtres sélectionnés
-              {search ? ` pour « ${search} »` : ""}.
+        {authLoading || (session && planQuery.isLoading) ? (
+          <p className="mt-10 text-sm text-brand-navy/65" role="status">
+            Vérification de votre accès Analyse…
+          </p>
+        ) : planQuery.isError ? (
+          <PremiumFeaturePreview
+            title="Activité des annonces et prochaines audiences"
+            description="La couverture, les délais de détection et les audiences suivies sont disponibles dans l’espace Analyse."
+            labels={["Couverture suivie", "Délais observés", "Audiences à venir"]}
+          />
+        ) : !hasAccess ? (
+          <PremiumFeaturePreview
+            title="Activité des annonces et prochaines audiences"
+            description="Comparez la couverture du catalogue, les délais observés et les audiences à venir, tribunal par tribunal."
+            labels={["Couverture suivie", "Délais observés", "Audiences à venir"]}
+          />
+        ) : (
+          <details className="mt-10 rounded-xl border border-brand-navy/15 bg-white p-5 sm:p-7">
+            <summary className="cursor-pointer font-display text-2xl font-semibold">
+              Activité des annonces et prochaines audiences
+            </summary>
+            <p className="my-5 max-w-3xl text-sm leading-relaxed text-brand-navy/70">
+              Ce complément décrit le catalogue suivi par Immojudis. Sa période filtre uniquement
+              les annonces ; elle ne modifie pas la période des prix d’adjudication du baromètre.
+              Une audience passée ne prouve pas qu’un bien a été vendu.
             </p>
-          ) : null}
+            {query.data ? <NationalOverview data={query.data} /> : null}
+            {query.data?.regions.length ? (
+              <RegionalCoverage
+                data={query.data}
+                selectedRegion={selectedRegion}
+                onRegionChange={(region) => {
+                  setSelectedRegion(region);
+                  setSelectedCourtCode("");
+                  setSelectedPropertyType("");
+                }}
+              />
+            ) : null}
 
-          {selected ? (
-            <TribunalProfile
-              tribunal={selected}
-              tribunals={filteredTribunals}
-              selectedPropertyType={selectedType?.propertyType ?? ""}
-              onCourtChange={(courtCode) => {
-                setSelectedCourtCode(courtCode);
-                setSelectedPropertyType("");
-              }}
-              onPropertyTypeChange={setSelectedPropertyType}
-            />
-          ) : null}
-        </div>
+            <section
+              aria-label="Choisir un tribunal"
+              className="grid gap-4 lg:grid-cols-[1fr_auto]"
+            >
+              <label>
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+                  Rechercher un tribunal
+                </span>
+                <span className="relative mt-2 block">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/45"
+                    aria-hidden
+                  />
+                  <Input
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Marseille, Paris, Lyon…"
+                    className="h-11 border-brand-navy/15 bg-white pl-10"
+                  />
+                </span>
+              </label>
+              <fieldset>
+                <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+                  Historique observé
+                </legend>
+                <div className="mt-2 inline-flex rounded-md border border-brand-navy/15 bg-white p-1">
+                  {WINDOWS.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={historyMonths === value}
+                      onClick={() => setHistoryMonths(value)}
+                      className={`min-h-9 rounded px-3 text-sm font-semibold ${
+                        historyMonths === value
+                          ? "bg-brand-navy text-white"
+                          : "text-brand-navy/65 hover:bg-brand-navy/5"
+                      }`}
+                    >
+                      {value} mois
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            </section>
+
+            {query.isLoading ? <ExplorerSkeleton /> : null}
+            {query.isError ? <ExplorerError onRetry={() => void query.refetch()} /> : null}
+            {!query.isLoading && !query.isError && !filteredTribunals.length ? (
+              <p className="mt-8 border-y border-brand-navy/12 bg-white px-4 py-8 text-sm">
+                Aucun tribunal suivi ne correspond aux filtres sélectionnés
+                {search ? ` pour « ${search} »` : ""}.
+              </p>
+            ) : null}
+
+            {selected ? (
+              <TribunalProfile
+                tribunal={selected}
+                tribunals={filteredTribunals}
+                selectedPropertyType={selectedType?.propertyType ?? ""}
+                onCourtChange={(courtCode) => {
+                  setSelectedCourtCode(courtCode);
+                  setSelectedPropertyType("");
+                }}
+                onPropertyTypeChange={setSelectedPropertyType}
+              />
+            ) : null}
+          </details>
+        )}
       </div>
     </main>
   );
@@ -595,15 +622,6 @@ function ProfileMetric({
   );
 }
 
-function SummaryValue({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border-b border-brand-navy/10 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:px-5 sm:first:pl-0 sm:last:border-r-0">
-      <dt className="text-xs text-brand-navy/55">{label}</dt>
-      <dd className="mt-1 font-display text-3xl font-semibold tabular-nums">{value}</dd>
-    </div>
-  );
-}
-
 function ExplorerSkeleton() {
   return (
     <div className="mt-8 space-y-5" aria-label="Chargement des statistiques par tribunal">
@@ -647,20 +665,6 @@ function formatDaysRange(metric: TribunalJudicialActivityRangeMetric): string {
   return metric.status === "published"
     ? `Fourchette centrale ${formatNumber(metric.p25)} – ${formatNumber(metric.p75)} jours`
     : `${metric.sampleSize} délais · minimum requis : 5`;
-}
-
-function formatCadence(
-  metric: TribunalJudicialActivityResponse["activity"]["medianDaysBetweenHearingDays"],
-): string {
-  return metric.status === "published"
-    ? `Tous les ${formatNumber(metric.value)} jours`
-    : "Non publié";
-}
-
-function formatMetricNumber(
-  metric: TribunalJudicialActivityResponse["activity"]["medianLotsPerHearingDay"],
-): string {
-  return metric.status === "published" ? formatNumber(metric.value) : "Non publié";
 }
 
 function formatPercentMetric(

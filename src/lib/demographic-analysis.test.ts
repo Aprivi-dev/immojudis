@@ -13,7 +13,7 @@ const EMPTY_NEARBY: NearbyServicesAnalysis = {
   categories: [],
   mentionedCategories: [],
   summary: "Localisation insuffisante pour qualifier les services de proximité.",
-  source: "à connecter à BAN/POI",
+  source: "Localisation nécessaire pour vérifier les services",
   nextActions: [],
   limitations: [],
 };
@@ -76,7 +76,9 @@ describe("demographic analysis", () => {
       nearbyServices: { ...EMPTY_NEARBY, mentionedCategories: ["Commerces"] },
     });
     expect(analysis.status).toBe("source_signals");
-    expect(analysis.demandLabel).toBe("Demande locative à tester par proxys");
+    expect(analysis.demandLabel).toBe(
+      "Demande locative à tester avec les loyers et la vacance observés",
+    );
     expect(analysis.summary).not.toContain("Mobilité et demande locative");
   });
 
@@ -161,7 +163,7 @@ describe("demographic analysis", () => {
     expect(analysis).toMatchObject({
       available: true,
       status: "market_proxy",
-      confidenceLabel: "Lecture par proxys marché et services",
+      confidenceLabel: "Lecture indicative fondée sur le marché et les services",
     });
     expect(analysis.signals).toEqual(
       expect.arrayContaining([
@@ -170,7 +172,7 @@ describe("demographic analysis", () => {
         expect.objectContaining({ kind: "market_depth", status: "proxy" }),
       ]),
     );
-    expect(analysis.decisionImpact).toContain("proxys");
+    expect(analysis.decisionImpact).toContain("indices de marché et de services");
   });
 
   it("keeps missing demographic data explicit", () => {
@@ -203,11 +205,33 @@ describe("demographic analysis", () => {
     });
     expect(analysis.missingData).toEqual(
       expect.arrayContaining([
-        "Population, évolution et densité INSEE/commune",
+        "Population, évolution et densité de la commune",
         "Revenus médians et pouvoir d'achat local",
         "Part locataires/propriétaires, vacance et tension locative",
       ]),
     );
-    expect(analysis.nextActions[0]).toContain("INSEE");
+    expect(analysis.nextActions[0]).toContain("indicateurs publics");
+  });
+
+  it("présente une action d'acheteur au lieu d'une consigne technique", () => {
+    const analysis = buildDemographicAnalysis({
+      sale: {
+        ...EXAMPLE_SALE,
+        city: "Bordeaux",
+        description: null,
+        source_description: null,
+        source_blocks: null,
+        source_blocks_by_source: null,
+        llm_display_description: null,
+        score_factors: [],
+      },
+      marketEstimate: null,
+      nearbyServices: EMPTY_NEARBY,
+    });
+
+    expect(JSON.stringify(analysis)).not.toMatch(/INSEE|IRIS|brancher|connecter/i);
+    expect(analysis.nextActions[0]).toBe(
+      "Consulter les indicateurs publics de la commune et du quartier sur la population, les revenus et les ménages.",
+    );
   });
 });

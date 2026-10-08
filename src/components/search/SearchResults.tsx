@@ -1,87 +1,36 @@
-import { SaleProcedureBadge } from "@/components/SaleProcedurePanel";
-import { getSaleProcedure, saleEventLabel } from "@/lib/sale-procedure";
+import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { SaleCountdown } from "@/components/SaleCountdown";
 import type * as React from "react";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import entryMotion from "@/components/ui/entry-motion.module.css";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { getDisplaySurface } from "@/lib/surface";
+import { SaleVisual } from "@/components/SaleVisual";
+import { ListingPhoto } from "@/components/ListingPhoto";
+import { saleDisplayTitle } from "@/lib/sale-title";
+import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
-import BedDouble from "lucide-react/dist/esm/icons/bed-double.js";
-import Bell from "lucide-react/dist/esm/icons/bell.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import Download from "lucide-react/dist/esm/icons/download.js";
+import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left.js";
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
-import Landmark from "lucide-react/dist/esm/icons/landmark.js";
-import LayoutPanelLeft from "lucide-react/dist/esm/icons/layout-panel-left.js";
-import ListFilter from "lucide-react/dist/esm/icons/list-filter.js";
-import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
-import Map from "lucide-react/dist/esm/icons/map.js";
-import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
-import SearchIcon from "lucide-react/dist/esm/icons/search.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
-import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "sonner";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { supabase } from "@/integrations/supabase/client";
-import { Link, useLocation, useNavigate } from "@/lib/router-compat";
+import { Link, useNavigate } from "@/lib/router-compat";
 import {
-  createWatchedZone as createWatchedZoneRequest,
   addFavoriteSale as addFavoriteSaleRequest,
-  exportSalesCsv,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { createAlert } from "@/lib/queries";
-import { DPE_CLASSES, dpeColor, extractDpe, type DpeClass } from "@/lib/dpe";
 import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
-import { geocodeAddress, pricePerM2, type GeoPoint } from "@/lib/geo";
-import { SaleVisual } from "@/components/SaleVisual";
-import { cleanSaleTitle, saleDisplayTitle } from "@/lib/sale-title";
-import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
-import { isNew } from "@/lib/dates";
 import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
-import type { WatchedZoneInput } from "@/lib/watched-zones";
-import {
-  DEFAULT_SEARCH_LIMIT,
-  HOME_TYPE_OPTIONS,
-  SORT_OPTIONS,
-  STATUS_OPTIONS,
-  applyClientSearchFilters,
-  compactPrice,
-  countActiveSearchFilters,
-  hasClientOnlyFilters,
-  hasCoordinates,
-  sortClientSearchResults,
-} from "@/lib/search/search-filters";
-import {
-  areMapViewportsClose,
-  shouldMapListFollowViewport,
-  visibleSalesForMapViewport,
-} from "@/lib/search/map-viewport-results";
-import {
-  mergeSalesSearch,
-  salesSearchToUrlRecord,
-  type SalesSearchParams,
-  type SalesSearchUrlRecord,
-  type SearchSortKey,
-} from "@/lib/search/search-url-state";
-import {
-  fetchSearchCount,
-  fetchSearchMapResults,
-  fetchSearchResults,
-} from "@/lib/search/search-service";
-import type { MapViewportChange } from "./MapPanel";
-import { SearchPagination } from "./SearchPagination";
-import { ErrorState, ListingCardSkeleton, NoResultsState } from "./SearchFilters";
+import { ErrorState, NoResultsState } from "./SearchFilters";
+import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
+import styles from "./SearchResults.module.css";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
 import {
-  AI_REVIEW_ENERGY_FIELD_KEYS,
   AI_REVIEW_SURFACE_FIELD_KEYS,
   firstBlockedAiReviewField,
   getAiReviewFieldResult,
@@ -90,6 +39,7 @@ import {
 } from "@/lib/ai-review-guard";
 export function SearchResultsList({
   sales,
+  sponsoredPlacement,
   returnTo,
   locked,
   analysisLocked,
@@ -106,6 +56,7 @@ export function SearchResultsList({
   aiReviewStatus = "disabled",
 }: {
   sales: AuctionSale[];
+  sponsoredPlacement?: React.ReactNode;
   returnTo: string;
   locked: boolean;
   analysisLocked: boolean;
@@ -121,48 +72,78 @@ export function SearchResultsList({
   aiReviewBySaleId?: Readonly<Record<string, readonly AiReviewProjectionReadModel[]>>;
   aiReviewStatus?: AiReviewRequestStatus;
 }) {
+  const { user, loading: authLoading } = useAuth();
+  const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
+  const favoriteQueryIds = useMemo(() => [...saleIds].sort(), [saleIds]);
+  const favoriteQuery = useQuery({
+    queryKey: ["search-favorite-status", user?.id ?? null, favoriteQueryIds],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("user_favorites")
+        .select("sale_id")
+        .eq("user_id", user!.id)
+        .in("sale_id", saleIds);
+      if (error) throw error;
+      return data.map(({ sale_id }) => sale_id);
+    },
+    enabled: Boolean(user && !authLoading && !isLoading && !locked && saleIds.length),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const favoriteIds = useMemo(() => new Set(favoriteQuery.data ?? []), [favoriteQuery.data]);
+  const favoriteScope = user?.id ?? null;
+
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
       {error ? <ErrorState error={error} /> : null}
 
       {!isLoading && sales.length === 0 && !error ? <NoResultsState /> : null}
 
-      <div className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 gap-4 min-[600px]:grid-cols-2">
         {isLoading
-          ? Array.from({ length: 8 }).map((_, index) => <ListingCardSkeleton key={index} />)
+          ? Array.from({ length: 8 }).map((_, index) => <SearchResultsSkeleton key={index} />)
           : sales.map((sale, index) => (
-              <ListingCard
-                key={sale.id}
-                sale={sale}
-                returnTo={returnTo}
-                locked={locked}
-                analysisLocked={analysisLocked}
-                active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
-                index={index}
-                onHover={onHover}
-                onSelect={onSelect}
-                comparisonSelected={comparedSaleIds.includes(sale.id)}
-                comparisonDisabled={
-                  comparisonDisabled ||
-                  (comparedSaleIds.length >= MAX_COMPARED_SALES &&
-                    !comparedSaleIds.includes(sale.id))
-                }
-                onToggleComparison={onToggleComparison}
-                aiReviewProjections={aiReviewBySaleId?.[sale.id]}
-                aiReviewStatus={aiReviewStatus}
-              />
+              <Fragment key={sale.id}>
+                {index === 4 && sponsoredPlacement ? (
+                  <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
+                ) : null}
+                <ListingCard
+                  sale={sale}
+                  returnTo={returnTo}
+                  eagerImage={index < 2}
+                  locked={locked}
+                  analysisLocked={analysisLocked}
+                  active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
+                  onHover={onHover}
+                  onSelect={onSelect}
+                  comparisonSelected={comparedSaleIds.includes(sale.id)}
+                  comparisonDisabled={
+                    comparisonDisabled ||
+                    (comparedSaleIds.length >= MAX_COMPARED_SALES &&
+                      !comparedSaleIds.includes(sale.id))
+                  }
+                  onToggleComparison={onToggleComparison}
+                  aiReviewProjections={aiReviewBySaleId?.[sale.id]}
+                  aiReviewStatus={aiReviewStatus}
+                  favoriteScope={favoriteScope}
+                  initialFavorite={favoriteIds.has(sale.id)}
+                />
+              </Fragment>
             ))}
+        {sales.length === 4 && sponsoredPlacement ? (
+          <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
+        ) : null}
       </div>
     </div>
   );
 }
-export function ListingCard({
+export const ListingCard = memo(function ListingCard({
   sale,
   returnTo,
+  eagerImage = false,
   locked,
   analysisLocked,
   active,
-  index,
   onHover,
   onSelect,
   comparisonSelected = false,
@@ -170,13 +151,15 @@ export function ListingCard({
   onToggleComparison,
   aiReviewProjections,
   aiReviewStatus = "ready",
+  favoriteScope = null,
+  initialFavorite = false,
 }: {
   sale: AuctionSale;
   returnTo: string;
+  eagerImage?: boolean;
   locked: boolean;
   analysisLocked: boolean;
   active: boolean;
-  index: number;
   onHover: (saleId: string | null) => void;
   onSelect: (saleId: string | null) => void;
   comparisonSelected?: boolean;
@@ -184,13 +167,13 @@ export function ListingCard({
   onToggleComparison?: (sale: AuctionSale) => void;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus?: AiReviewRequestStatus;
+  favoriteScope?: string | null;
+  initialFavorite?: boolean;
 }) {
   const displaySurface = getDisplaySurface(sale);
-  const surface = getSaleSurface(sale).value;
   const { isViewed } = useViewedSales();
   const premiumLocked = locked || analysisLocked;
   const viewed = !locked && isViewed(sale.id);
-  const fresh = !locked && isNew(sale.created_at);
   const propertyTypeReview = getAiReviewFieldResult(
     aiReviewProjections,
     "property.property_type",
@@ -207,11 +190,6 @@ export function ListingCard({
     AI_REVIEW_SURFACE_FIELD_KEYS,
     aiReviewStatus,
   );
-  const energyReviewField = firstBlockedAiReviewField(
-    aiReviewProjections,
-    AI_REVIEW_ENERGY_FIELD_KEYS,
-    aiReviewStatus,
-  );
   const guardedPropertyType = propertyTypeReview.blocked
     ? "À confirmer"
     : propertyTypeLabel(sale.property_type);
@@ -221,43 +199,13 @@ export function ListingCard({
     : propertyTypeReview.blocked || cityReview.blocked
       ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
       : saleDisplayTitle(sale);
-  const location = locked
-    ? [sale.city, sale.department].filter(Boolean).join(" · ")
-    : [sale.address, sale.city, sale.department ? `(${sale.department})` : null]
-        .filter(Boolean)
-        .join(", ");
-  const beds = roomsReview.blocked ? null : (sale.bedrooms_count ?? sale.rooms_count);
-  const baths = sale.bathrooms_count;
-  const riskCount = premiumLocked ? 0 : (sale.risks?.length ?? 0);
-  const ppm =
-    premiumLocked || surfaceReviewField ? null : pricePerM2(sale.starting_price_eur, surface);
-  const dpe = premiumLocked || energyReviewField ? null : extractDpe(sale);
-  const dpeTheme = dpeColor(dpe?.class);
-  const procedure = getSaleProcedure(sale);
-  const organizerLabel = locked
-    ? "Fiche complète avec un compte gratuit"
-    : procedure.venueType === "tribunal" && sale.tribunal_city
-      ? `TJ ${sale.tribunal_city}`
-      : (procedure.venueName ?? procedure.organizerName ?? "Organisateur à confirmer");
-  const score = premiumLocked ? null : sale.investment_score;
-  const scoreLabel = premiumLocked
-    ? "Analyse"
-    : score == null
-      ? "À auditer"
-      : `${Math.round(score)}`;
-  const riskLabel = premiumLocked
-    ? "Analyse"
-    : riskCount > 1
-      ? `${riskCount} alertes`
-      : riskCount === 1
-        ? "1 alerte"
-        : "Faible";
-  const riskTone =
-    premiumLocked || riskCount > 1
-      ? "text-[#8a5b00]"
-      : riskCount === 1
-        ? "text-[#9c642b]"
-        : "text-[#0f766e]";
+  const roomSummary = roomsReview.blocked
+    ? null
+    : sale.rooms_count != null
+      ? `${sale.rooms_count} pièce${sale.rooms_count === 1 ? "" : "s"}`
+      : sale.bedrooms_count != null
+        ? `${sale.bedrooms_count} ch.`
+        : null;
 
   return (
     <article
@@ -265,27 +213,37 @@ export function ListingCard({
       onMouseLeave={() => onHover(null)}
       onFocusCapture={() => onHover(sale.id)}
       onBlurCapture={() => onHover(null)}
-      className={`group relative grid grid-cols-[100px_minmax(0,1fr)] gap-3 rounded-lg border bg-white p-3 transition-colors sm:grid-cols-[minmax(150px,30%)_minmax(0,1fr)] sm:gap-5 ${active ? "border-[#c98d45] ring-1 ring-[#c98d45]" : "border-[#dce3eb] hover:border-[#c98d45]"}`}
+      className={`group relative overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)] transition-[border-color,box-shadow] ${active ? "border-[#c98d45] ring-1 ring-[#c98d45]" : "border-[#dce3eb] hover:border-[#c98d45] hover:shadow-[0_8px_24px_rgba(19,34,56,0.09)]"}`}
     >
       <Link
         id={`sale-card-${sale.id}`}
         to="/sales/$id"
         params={{ id: sale.id }}
         search={{ from: returnTo }}
+        prefetch={false}
         onClick={() => onSelect(sale.id)}
         aria-label={`Voir ${title}`}
         className="absolute inset-0 z-10 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9c642b]"
       />
-      <div className="relative min-h-32 overflow-hidden rounded-md bg-[#edf2f5] sm:min-h-40">
-        <ListingImage sale={sale} locked={false} title={title} />
+      <div className="relative aspect-[4/3] overflow-hidden bg-[#edf2f5]">
+        <ListingImage
+          sale={sale}
+          locked={false}
+          eager={eagerImage}
+          title={title}
+          returnTo={returnTo}
+          onSelect={onSelect}
+        />
         {viewed && (
-          <span className="absolute left-2 top-2 rounded bg-white px-2 py-1 text-xs">Vu</span>
+          <span className="absolute left-3 top-3 z-20 rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-[#132238] shadow-sm">
+            Vu
+          </span>
         )}
       </div>
-      <div className="min-w-0">
+      <div className="relative min-w-0 p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="font-display text-xl font-semibold leading-tight sm:text-2xl">
+            <h3 className="font-display text-lg font-semibold leading-tight sm:text-xl">
               <AiReviewField
                 fieldKey="property.city"
                 projections={aiReviewProjections}
@@ -299,7 +257,7 @@ export function ListingCard({
                   "Localisation à préciser"}
               </AiReviewField>
             </h3>
-            <p className="mt-1 text-sm text-[#526170]">
+            <p className="mt-1 text-sm leading-5 text-[#526170]">
               <AiReviewField
                 fieldKey="property.property_type"
                 projections={aiReviewProjections}
@@ -328,12 +286,20 @@ export function ListingCard({
               ) : (
                 "Surface n.c."
               )}
-              {beds != null ? ` · ${beds} ch.` : ""}
+              {roomSummary ? ` · ${roomSummary}` : ""}
             </p>
           </div>
-          <CompactFavoriteButton saleId={sale.id} locked={premiumLocked} />
+          <CompactFavoriteButton
+            key={`${sale.id}:${favoriteScope ?? "anonymous"}`}
+            saleId={sale.id}
+            // Discovery can save up to three favourites. Keep the favourite
+            // control available while the rest of the card stays analysis-gated.
+            locked={locked}
+            favoriteScope={favoriteScope}
+            initialFavorite={initialFavorite}
+          />
         </div>
-        <p className="mt-2 text-xl font-bold leading-tight text-[#9c642b] sm:text-2xl">
+        <p className="mt-3 text-2xl font-bold leading-none text-[#9c642b] sm:text-[1.7rem]">
           <AiReviewField
             fieldKey="sale.starting_price_eur"
             projections={aiReviewProjections}
@@ -346,7 +312,7 @@ export function ListingCard({
           </AiReviewField>
         </p>
         <p className="text-xs text-[#526170]">Mise à prix</p>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#526170]">
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-[#526170]">
           <span className="inline-flex items-center gap-1">
             <CalendarDays className="h-3.5 w-3.5" />
             <AiReviewField
@@ -360,6 +326,7 @@ export function ListingCard({
               {formatDate(sale.sale_date)}
             </AiReviewField>
           </span>
+          <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
           <SaleProcedureBadge sale={sale} />
           {!premiumLocked && sale.occupancy_status && (
             <span className="rounded bg-[#f0f5f3] px-2 py-1">
@@ -376,7 +343,7 @@ export function ListingCard({
             </span>
           )}
         </div>
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-1">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-[#edf0f2] pt-3">
           <span className="text-xs text-[#526170]">
             {locked
               ? "Fiche complète avec un compte gratuit"
@@ -407,26 +374,249 @@ export function ListingCard({
       </div>
     </article>
   );
-}
+});
 
 export function ListingImage({
   sale,
   locked,
+  eager = false,
   title,
+  returnTo,
+  onSelect,
 }: {
   sale: AuctionSale;
   locked: boolean;
+  eager?: boolean;
   title: string;
+  returnTo?: string;
+  onSelect?: (saleId: string) => void;
 }) {
   return (
-    <SaleVisual
+    <ListingMediaCarousel
       sale={sale}
-      title={title}
       locked={locked}
-      preferPhoto
-      mapWidth={512}
-      mapHeight={384}
+      eager={eager}
+      title={title}
+      returnTo={returnTo}
+      onSelect={onSelect}
     />
+  );
+}
+
+type PointerGesture = {
+  id: number;
+  x: number;
+  y: number;
+};
+
+/**
+ * Keeps the card's primary navigation on the image while making the image
+ * rail itself safe to operate. Arrow buttons and a horizontal swipe never
+ * bubble to the full-card link, so changing the photo cannot open the detail.
+ */
+export function ListingMediaCarousel({
+  sale,
+  locked,
+  eager = false,
+  title,
+  returnTo,
+  onSelect,
+}: {
+  sale: AuctionSale;
+  locked: boolean;
+  eager?: boolean;
+  title: string;
+  returnTo?: string;
+  onSelect?: (saleId: string) => void;
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [failedPhotoUrls, setFailedPhotoUrls] = useState<Set<string>>(() => new Set());
+  const gestureRef = useRef<PointerGesture | null>(null);
+  const suppressLinkClickRef = useRef(false);
+  const photos = useMemo(
+    () => propertyImages(sale.media).filter(({ url }) => !failedPhotoUrls.has(url)),
+    [failedPhotoUrls, sale.media],
+  );
+  const photo = photos[Math.min(activeIndex, Math.max(photos.length - 1, 0))];
+
+  useEffect(() => {
+    setActiveIndex(0);
+    setFailedPhotoUrls(new Set());
+  }, [sale.id]);
+
+  useEffect(() => {
+    if (photos.length > 0 && activeIndex >= photos.length) {
+      setActiveIndex(photos.length - 1);
+    }
+  }, [activeIndex, photos.length]);
+
+  const selectPhoto = (nextIndex: number) => {
+    if (photos.length < 2) return;
+    setActiveIndex((current) => {
+      const safeCurrent = Math.min(current, photos.length - 1);
+      return (safeCurrent + nextIndex + photos.length) % photos.length;
+    });
+  };
+
+  const markPhotoFailed = (url: string) => {
+    setFailedPhotoUrls((current) => {
+      if (current.has(url)) return current;
+      const next = new Set(current);
+      next.add(url);
+      return next;
+    });
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    gestureRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current;
+    gestureRef.current = null;
+    if (!gesture || gesture.id !== event.pointerId || photos.length < 2) return;
+
+    const deltaX = event.clientX - gesture.x;
+    const deltaY = event.clientY - gesture.y;
+    if (Math.abs(deltaX) < 32 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    suppressLinkClickRef.current = true;
+    selectPhoto(deltaX < 0 ? 1 : -1);
+  };
+
+  const handleLinkClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!suppressLinkClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressLinkClickRef.current = false;
+    return;
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    if (photos.length < 2) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectPhoto(event.key === "ArrowRight" ? 1 : -1);
+  };
+
+  const handleControlPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  if (!photo) {
+    return (
+      <div className={styles.fallbackVisual} data-testid={`sale-media-fallback-${sale.id}`}>
+        <SaleVisual
+          sale={sale}
+          title={title}
+          locked={locked}
+          eager={eager}
+          preferPhoto
+          mapWidth={512}
+          mapHeight={384}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`${styles.carousel} relative z-20`}
+      data-testid={`sale-media-carousel-${sale.id}`}
+      aria-label={`Photos de ${title}`}
+      aria-roledescription="carrousel"
+      role="region"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={() => {
+        gestureRef.current = null;
+      }}
+    >
+      <Link
+        to="/sales/$id"
+        params={{ id: sale.id }}
+        search={returnTo ? { from: returnTo } : undefined}
+        prefetch={false}
+        aria-label={`Voir ${title}`}
+        onClick={(event) => {
+          const wasSuppressed = suppressLinkClickRef.current;
+          handleLinkClick(event);
+          if (!wasSuppressed) onSelect?.(sale.id);
+        }}
+        className={styles.photoLink}
+      >
+        <ListingPhoto
+          key={photo.url}
+          src={photo.url}
+          alt={title}
+          className={styles.photo}
+          loading={eager ? "eager" : "lazy"}
+          fetchPriority={eager ? "high" : "auto"}
+          sizes="(max-width: 599px) calc(100vw - 24px), (max-width: 1023px) calc(50vw - 28px), 28vw"
+          decoding="async"
+          referrerPolicy="strict-origin-when-cross-origin"
+          onOriginalError={() => markPhotoFailed(photo.url)}
+          onLoad={(event) => {
+            const renderedSource = event.currentTarget.currentSrc || event.currentTarget.src;
+            if (
+              !renderedSource.includes("/_next/image?") &&
+              shouldRejectRenderedPropertyImage(event.currentTarget)
+            ) {
+              markPhotoFailed(photo.url);
+            }
+          }}
+        />
+      </Link>
+
+      {photos.length > 1 ? (
+        <>
+          <button
+            type="button"
+            aria-label="Photo précédente"
+            className={`${styles.carouselButton} ${styles.carouselButtonPrevious}`}
+            onPointerDown={handleControlPointerDown}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              selectPhoto(-1);
+            }}
+          >
+            <ChevronLeft aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label="Photo suivante"
+            className={`${styles.carouselButton} ${styles.carouselButtonNext}`}
+            onPointerDown={handleControlPointerDown}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              selectPhoto(1);
+            }}
+          >
+            <ChevronRight aria-hidden="true" />
+          </button>
+          <span className={styles.photoCount} aria-live="polite">
+            {Math.min(activeIndex + 1, photos.length)} / {photos.length}
+          </span>
+          <div className={styles.photoDots} aria-hidden="true">
+            {photos.map((item, index) => (
+              <span
+                key={item.url}
+                className={`${styles.photoDot} ${index === activeIndex ? styles.photoDotActive : ""}`}
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -524,37 +714,32 @@ export function ShareButton({ sale, title }: { sale: AuctionSale; title: string 
   );
 }
 
-export function CompactFavoriteButton({ saleId, locked }: { saleId: string; locked: boolean }) {
+export function CompactFavoriteButton({
+  saleId,
+  locked,
+  favoriteScope,
+  initialFavorite = false,
+}: {
+  saleId: string;
+  locked: boolean;
+  favoriteScope?: string | null;
+  initialFavorite?: boolean;
+}) {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [isFavorite, setIsFavorite] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(initialFavorite);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!user || locked) {
-      setIsFavorite(false);
-      return;
-    }
-
-    supabase
-      .from("user_favorites")
-      .select("sale_id")
-      .eq("user_id", user.id)
-      .eq("sale_id", saleId)
-      .maybeSingle()
-      .then(({ data }) => setIsFavorite(Boolean(data)));
-  }, [locked, saleId, user]);
+    setIsFavorite(initialFavorite);
+  }, [favoriteScope, initialFavorite, saleId]);
 
   async function toggle(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
 
     if (loading) return;
-    if (locked) {
-      navigate({ to: "/accompagnement" });
-      return;
-    }
     if (!user) {
       const redirect =
         typeof window !== "undefined"
@@ -563,9 +748,12 @@ export function CompactFavoriteButton({ saleId, locked }: { saleId: string; lock
       navigate({ to: "/login", search: { redirect } });
       return;
     }
+    if (locked) return;
 
     setBusy(true);
+    const searchFavoriteQueryKey = ["search-favorite-status", user.id] as const;
     try {
+      await queryClient.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFavorite) {
         await removeFavoriteSaleRequest({ saleId });
         setIsFavorite(false);
@@ -573,8 +761,19 @@ export function CompactFavoriteButton({ saleId, locked }: { saleId: string; lock
         await addFavoriteSaleRequest({ data: { saleId } });
         setIsFavorite(true);
       }
+      queryClient.setQueriesData<string[] | undefined>(
+        { queryKey: ["search-favorite-status", user.id] },
+        (favoriteSaleIds) => {
+          const nextFavoriteSaleIds = new Set(favoriteSaleIds ?? []);
+          if (isFavorite) nextFavoriteSaleIds.delete(saleId);
+          else nextFavoriteSaleIds.add(saleId);
+          return [...nextFavoriteSaleIds];
+        },
+      );
       queryClient.invalidateQueries({ queryKey: ["favorites", user.id] });
+      await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (error) {
+      void queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
       toast.error(error instanceof Error ? error.message : "Erreur");
     } finally {
       setBusy(false);
@@ -589,7 +788,7 @@ export function CompactFavoriteButton({ saleId, locked }: { saleId: string; lock
       aria-pressed={locked ? undefined : isFavorite}
       aria-label={
         locked
-          ? "Favoris réservés au plan Analyse"
+          ? "Connectez-vous pour enregistrer jusqu'à trois favoris gratuits"
           : isFavorite
             ? "Ne plus suivre cette vente"
             : "Suivre cette vente"

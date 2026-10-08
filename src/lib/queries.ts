@@ -1,14 +1,17 @@
 import { saleDateBoundary } from "./search/sale-date-range";
-import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
+import { supabase } from "@/integrations/supabase/client";
 import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
-import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
+import type { AuctionSale, SaleFilters, SortKey } from "./types";
+import { assertCloudConfigured } from "./query-configuration";
+import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
+export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
+export type { CreateAlertPayload } from "./alert-queries";
 
 export const DETAIL_VIEW = "v_auction_sales_app";
 const DISCOVERY_VIEW = "v_auction_sales_discovery" as typeof DETAIL_VIEW;
+const SEARCH_VIEW = "v_auction_sales_app_search" as typeof DETAIL_VIEW;
+const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAIL_VIEW;
 const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
-const CONFIGURATION_ERROR =
-  "La configuration Supabase est absente. Ajoutez les variables d'environnement Supabase pour afficher les données.";
 
 type SupabaseQueryError = {
   code?: string;
@@ -130,8 +133,9 @@ const SALE_PREVIEW_COLUMNS = [
   "sale_verification_status",
 ].join(",");
 
+// Pins use only scalar catalogue fields. The selected popup fetches its
+// photos, risk and DPE evidence separately, through the same access-controlled view.
 const SALE_MAP_COLUMNS = [
-  "sale_procedure",
   "sale_venue_type",
   "sale_legal_framework",
   "sale_verification_status",
@@ -158,7 +162,6 @@ const SALE_MAP_COLUMNS = [
   "surface_scope",
   "surface_source",
   "surface_confidence",
-  "surface_evidence",
   "rooms_count",
   "bedrooms_count",
   "bathrooms_count",
@@ -167,23 +170,8 @@ const SALE_MAP_COLUMNS = [
   "has_garage",
   "status",
   "investment_score",
-  "risks",
-  "media",
-  "source_name",
-  "primary_source",
-  "source_blocks",
-  "documents_rich",
   "created_at",
 ].join(",");
-
-function assertCloudConfigured() {
-  if (isSupabaseConfigured) return true;
-  // On the SSR worker the env may not be hydrated yet — return false so
-  // callers can short-circuit with empty results and let the browser
-  // refetch once the user session and env are available.
-  if (typeof window === "undefined") return false;
-  throw new Error(CONFIGURATION_ERROR);
-}
 
 function isMissingPreviewViewError(error: SupabaseQueryError | null): boolean {
   if (!error) return false;
@@ -368,6 +356,79 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
   return q as unknown as TQuery;
 }
 
+const SALE_ID_BATCH_SIZE = 100;
+const SALE_ID_BATCH_CONCURRENCY = 4;
+
+function uniqueSaleIds(data: unknown): string[] {
+  if (!Array.isArray(data)) return [];
+  return Array.from(
+    new Set(
+      data
+        .map((row) => (row as { id?: unknown })?.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
+}
+
+function orderSalesByIds(rows: AuctionSale[], ids: string[]): AuctionSale[] {
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  return ids.flatMap((id) => {
+    const row = rowsById.get(id);
+    return row ? [row] : [];
+  });
+}
+
+async function fetchSaleRowsByIds(
+  db: SupabaseReader,
+  catalogView: typeof DETAIL_VIEW,
+  columns: string,
+  filters: SaleFilters,
+  ids: string[],
+): Promise<AuctionSale[]> {
+  const batches: string[][] = [];
+  for (let index = 0; index < ids.length; index += SALE_ID_BATCH_SIZE) {
+    batches.push(ids.slice(index, index + SALE_ID_BATCH_SIZE));
+  }
+
+  const rows: AuctionSale[] = [];
+  for (let index = 0; index < batches.length; index += SALE_ID_BATCH_CONCURRENCY) {
+    const batchRows = await Promise.all(
+      batches.slice(index, index + SALE_ID_BATCH_CONCURRENCY).map(async (batch) => {
+        let q = db.from(catalogView).select(columns);
+        q = applyAuthenticatedSaleFilters(q, filters);
+        const { data, error } = await q.in("id", batch);
+        if (error) throw error;
+        return (data ?? []) as unknown as AuctionSale[];
+      }),
+    );
+    rows.push(...batchRows.flat());
+  }
+
+  return rows;
+}
+
+async function fetchSearchResultIds(
+  db: SupabaseReader,
+  catalogView: typeof DETAIL_VIEW,
+  filters: SaleFilters,
+  limit: number,
+  sort: SortKey,
+  offset: number,
+): Promise<string[]> {
+  const s = SORT_MAP[sort];
+  let q = db
+    .from(catalogView)
+    .select("id")
+    .order("coordinates_rank", { ascending: true })
+    .order(s.column, { ascending: s.ascending, nullsFirst: false })
+    .range(offset, offset + limit - 1);
+  q = applyAuthenticatedSaleFilters(q, filters);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return uniqueSaleIds(data);
+}
+
 export async function getSales(
   filters: SaleFilters = {},
   limit = 100,
@@ -398,10 +459,11 @@ export async function getSales(
   }
 
   const s = SORT_MAP[sort];
-  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
   let q = db
     .from(catalogView)
     .select(SALE_LIST_COLUMNS)
+    .order("coordinates_rank", { ascending: true })
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
@@ -417,15 +479,30 @@ export async function getSalesForSearch(
   limit = 100,
   sort: SortKey = "date_asc",
   offset = 0,
-  options: { discovery?: boolean } = {},
+  options: { discovery?: boolean; client?: SupabaseReader } = {},
 ): Promise<AuctionSale[]> {
-  if (!assertCloudConfigured()) return [];
+  if (!options.client && !assertCloudConfigured()) return [];
 
   const s = SORT_MAP[sort];
-  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
-  let q = supabase
+  const db = options.client ?? supabase;
+  const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
+
+  // The discovery view is a security barrier. EXPLAIN shows that selecting
+  // IDs and then re-reading the barrier doubles its materialization cost, so
+  // keep its existing single request. The app search view is invoker-safe and
+  // can prune the heavy lateral projections when the first request selects
+  // only IDs.
+  if (!options.discovery) {
+    const ids = await fetchSearchResultIds(db, catalogView, filters, limit, sort, offset);
+    if (ids.length === 0) return [];
+    const rows = await fetchSaleRowsByIds(db, catalogView, SALE_CARD_COLUMNS, filters, ids);
+    return orderSalesByIds(rows, ids);
+  }
+
+  let q = db
     .from(catalogView)
     .select(SALE_CARD_COLUMNS)
+    .order("coordinates_rank", { ascending: true })
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
@@ -480,7 +557,7 @@ export async function getSaleById(
   const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
   const { data, error } = await supabase.from(catalogView).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
-  return data as AuctionSale | null;
+  return data ? sanitizeAuctionSaleForDisplay(data as AuctionSale) : null;
 }
 
 export async function getSalePreviewById(id: string): Promise<AuctionSale | null> {
@@ -499,12 +576,14 @@ export async function getSalesWithCoords(
   filters: SaleFilters = {},
   limit = 500,
   sort: SortKey = "date_asc",
-  options: { discovery?: boolean } = {},
+  options: { discovery?: boolean; client?: SupabaseReader } = {},
 ): Promise<AuctionSale[]> {
-  if (!assertCloudConfigured()) return [];
+  if (!options.client && !assertCloudConfigured()) return [];
   const s = SORT_MAP[sort];
+  const db = options.client ?? supabase;
   const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
-  let q = supabase
+
+  let q = db
     .from(catalogView)
     .select(SALE_MAP_COLUMNS)
     .not("latitude", "is", null)
@@ -642,60 +721,5 @@ export async function removeFavorite(userId: string, saleId: string) {
     .delete()
     .eq("user_id", userId)
     .eq("sale_id", saleId);
-  if (error) throw error;
-}
-
-// Alerts
-type UserAlertInsert = Database["public"]["Tables"]["user_alerts"]["Insert"];
-export type CreateAlertPayload = Omit<
-  UserAlertInsert,
-  "id" | "user_id" | "created_at" | "updated_at" | "last_evaluated_at" | "last_match_count"
-> & {
-  is_active?: boolean;
-};
-
-export async function getAlerts(userId: string): Promise<UserAlert[]> {
-  if (!assertCloudConfigured()) return [];
-  const { data, error } = await supabase
-    .from("user_alerts")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as UserAlert[];
-}
-
-export async function createAlert(userId: string, payload: CreateAlertPayload) {
-  assertCloudConfigured();
-  const insertPayload: UserAlertInsert = {
-    user_id: userId,
-    ...payload,
-    is_active: payload.is_active ?? true,
-    dpe_classes: payload.dpe_classes ?? [],
-    require_house_with_land: payload.require_house_with_land ?? false,
-    alert_frequency: payload.alert_frequency ?? "daily",
-    advanced_criteria: payload.advanced_criteria ?? {},
-  };
-  const { error } = await supabase.from("user_alerts").insert(insertPayload);
-  if (error) throw error;
-}
-
-export async function updateAlert(userId: string, alertId: string, patch: Partial<UserAlert>) {
-  assertCloudConfigured();
-  const { error } = await supabase
-    .from("user_alerts")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", alertId)
-    .eq("user_id", userId);
-  if (error) throw error;
-}
-
-export async function deleteAlert(userId: string, alertId: string) {
-  assertCloudConfigured();
-  const { error } = await supabase
-    .from("user_alerts")
-    .delete()
-    .eq("id", alertId)
-    .eq("user_id", userId);
   if (error) throw error;
 }

@@ -1,113 +1,14 @@
-import { useEffect, useState } from "react";
-import type * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useRouter } from "@/lib/router-compat";
-import { toast } from "sonner";
-import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
-import Camera from "lucide-react/dist/esm/icons/camera.js";
-import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
-import CircleHelp from "lucide-react/dist/esm/icons/circle-help.js";
-import ClipboardCheck from "lucide-react/dist/esm/icons/clipboard-check.js";
-import Clock3 from "lucide-react/dist/esm/icons/clock-3.js";
-import Download from "lucide-react/dist/esm/icons/download.js";
-import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
-import FileCheck2 from "lucide-react/dist/esm/icons/file-check-2.js";
-import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import MessageSquare from "lucide-react/dist/esm/icons/message-square.js";
-import Scale from "lucide-react/dist/esm/icons/scale.js";
-import Send from "lucide-react/dist/esm/icons/send.js";
-import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
-import Target from "lucide-react/dist/esm/icons/target.js";
 import TriangleAlert from "lucide-react/dist/esm/icons/triangle-alert.js";
-import Users from "lucide-react/dist/esm/icons/users.js";
-import Wrench from "lucide-react/dist/esm/icons/wrench.js";
-import {
-  formatPrice,
-  formatDate,
-  formatDateTime,
-  formatNumber,
-  documentTypeLabel,
-  formatPricePerM2,
-  occupancyLabel,
-  propertyTypeLabel,
-  saleStatusLabel,
-} from "@/lib/format";
-import { getDisplaySurface, getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
-import { isEmbeddableDocumentUrl, parseDocs } from "@/lib/documents";
-import { safeExternalHttpUrl } from "@/lib/external-url";
-import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
-import { FavoriteButton } from "@/components/FavoriteButton";
-import { FeaturedLawyerPlacement } from "@/components/FeaturedLawyerPlacement";
-import { PropertyReportActions } from "@/components/PropertyReportActions";
-import { SaleCountdown } from "@/components/SaleCountdown";
-import { SaleLocationHero } from "@/components/SaleLocationHero";
-import { MapThumbnail } from "@/components/MapThumbnail";
-import { BrandMark } from "@/components/BrandLogo";
-import { EvidenceTrail } from "@/components/EvidenceTrail";
-import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
-import { PhotoCarouselDialog, type CarouselImage } from "@/components/PhotoCarouselDialog";
-import { RotatingCamera360 } from "@/components/RotatingCamera360";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/hooks/use-auth";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  createSaleAnalysisSet,
-  createSaleWorkspaceAnnotationClient,
-  fetchEnvironmentalContext,
-  fetchPrecomputedMarketEstimate,
-  fetchMarketAnalytics,
-  fetchSaleHistory,
-  fetchSaleWorkspace,
-  fetchSaleWorkspaceCollaboration,
-  fetchValuationBacktest,
-  inviteSaleWorkspaceCollaboratorClient,
-  saveSaleWorkspace,
-  updateSaleWorkspaceAnnotationClient,
-} from "@/lib/client-api";
+import { fetchEnvironmentalContext, fetchPrecomputedMarketEstimate } from "@/lib/client-api";
 import type { EnvironmentalContext } from "@/lib/environment.functions";
 import type { MarketEstimate } from "@/lib/market.functions";
-import {
-  DEFAULT_DOCUMENT_REVIEW,
-  DEFAULT_SALE_CHECKLIST,
-  DOCUMENT_REVIEW_STATUS_LABELS,
-  SALE_WORKSPACE_STATUS_LABELS,
-  isUuid,
-  type SaleWorkspaceDocumentReview,
-  type SaleWorkspaceDocumentReviewStatus,
-  type SaleWorkspaceDocumentReviews,
-  type SaleWorkspaceStatus,
-} from "@/lib/sale-workspace-shared";
-import { cn } from "@/lib/utils";
-import { propertyImages } from "@/lib/sale-media";
-import { saleSourceLinks } from "@/lib/sale-source-links";
-import {
-  computeAcquisitionCosts,
-  computeRecommendedCeilings,
-  DEFAULT_MARKET_CEILING_SCENARIO,
-  DEFAULTS,
-  REFRESH_WORKS_PRICE_PER_M2,
-  type MarketCeilingResult,
-} from "@/lib/profitability";
-import {
-  buildSaleProductSources,
-  type ProductFact,
-  type ProductGroup,
-  type ProductHistoryRow,
-  type ProductRisk,
-  type ProductWeatherMonth,
-  type SaleProductSources,
-} from "@/lib/sale-detail-sources";
-import { getSaleDisplayDescription, hasSaleAiDescription } from "@/lib/sale-description";
+import { computeAcquisitionCosts, DEFAULTS } from "@/lib/profitability";
+import { buildSaleProductSources } from "@/lib/sale-detail-sources";
 import { saleDisplayTitle } from "@/lib/sale-title";
-import type { AuctionSale, SaleDocumentRich, SaleMedia, SaleRiskOccurrence } from "@/lib/types";
+import type { AuctionSale } from "@/lib/types";
 import {
   AiPropertyDescriptionCard,
   BeforeAuctionSection,
@@ -125,6 +26,8 @@ import {
 } from "./sale-detail/decision-view";
 import { buildDecisionSummary, countDocuments, saleLocation } from "./sale-detail/detail-helpers";
 import { ListingActionBar, saleImages } from "./sale-detail/detail-primitives";
+
+export { SaleDetailSkeleton, SaleNotFoundComponent } from "./SaleDetailFallbacks";
 /**
  * Presentational detail view. Split out from the route so it can be rendered
  * with any AuctionSale (route data, previews, tests). Organised around the maximum
@@ -155,7 +58,7 @@ export function SaleDetailView({
   const marketError =
     marketEstimateOverride == null &&
     Boolean(marketQuery.isError || marketQuery.data?.ok === false);
-  const [environmentRequested, setEnvironmentRequested] = useState(
+  const [environmentRequested] = useState(
     () => typeof window !== "undefined" && window.location.hash === "#context",
   );
   const environmentalQuery = useQuery({
@@ -210,7 +113,6 @@ export function SaleDetailView({
       <ListingActionBar
         sale={sale}
         title={referenceLabel}
-        decision={decision}
         location={location}
         returnTo={returnTo}
       />
@@ -221,7 +123,6 @@ export function SaleDetailView({
         location={location}
         media={media}
         decision={decision}
-        acquisitionCost={acquisitionCost}
       />
 
       {marketEstimateOverride == null &&
@@ -298,7 +199,7 @@ export function SaleDetailView({
             marketError={marketError}
           />
 
-          <ProofsSection sale={sale} decision={decision} product={product} />
+          <ProofsSection sale={sale} product={product} />
 
           <BeforeAuctionSection sale={sale} decision={decision} acquisitionCost={acquisitionCost} />
 
@@ -316,52 +217,6 @@ export function SaleDetailView({
       </div>
 
       <MobileActionBar sale={sale} decision={decision} />
-    </main>
-  );
-}
-
-export function SaleDetailSkeleton() {
-  return (
-    <main className="min-h-screen bg-white px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-7xl">
-        <Skeleton className="h-4 w-20 bg-muted" />
-        <Skeleton className="mt-4 h-8 w-2/3 bg-muted" />
-        <Skeleton className="mt-2 h-4 w-1/2 bg-muted" />
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="space-y-6 lg:col-span-2">
-            <Skeleton className="h-96 w-full rounded-lg bg-muted" />
-            <Skeleton className="h-40 w-full rounded-lg bg-muted" />
-            <Skeleton className="h-32 w-full rounded-lg bg-muted" />
-          </div>
-          <aside className="space-y-4">
-            <Skeleton className="h-48 w-full rounded-lg bg-muted" />
-            <Skeleton className="h-32 w-full rounded-lg bg-muted" />
-          </aside>
-        </div>
-      </div>
-    </main>
-  );
-}
-
-export function SaleNotFoundComponent() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center">
-      <div className="max-w-2xl rounded-lg border border-border bg-white p-8 shadow-xl shadow-slate-900/10">
-        <BrandMark className="mx-auto h-14 w-14" />
-        <h1 className="mt-5 font-sans text-2xl font-semibold text-foreground">
-          Annonce introuvable
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Cette vente n'existe plus ou a été retirée. Elle peut avoir été adjugée ou supprimée par
-          la source.
-        </p>
-        <Link
-          to="/sales"
-          className="mt-6 inline-flex items-center rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90"
-        >
-          ← Retour aux annonces
-        </Link>
-      </div>
     </main>
   );
 }

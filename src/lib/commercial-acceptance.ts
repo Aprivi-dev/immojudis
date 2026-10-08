@@ -4,6 +4,16 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { resolveEmailAlertDeliveryConfig, sendResendEmail } from "@/lib/email-alerts";
+import {
+  ANALYSIS_BILLING_MODEL,
+  ANALYSIS_OFFER_CODE,
+  ANALYSIS_RECURRING_LABEL,
+  ANALYSIS_SUBSCRIPTION_OFFER_CODE,
+  ANALYSIS_SUBSCRIPTION_ONLY_LABEL,
+  ANALYSIS_TRIAL_DAYS,
+  ANALYSIS_TRIAL_LABEL,
+  resolveAnalysisOfferLabel,
+} from "@/lib/analysis-offer";
 
 export const checkoutConsentSchema = z.object({
   termsAccepted: z.literal(true),
@@ -22,6 +32,17 @@ export type CommercialConfirmationRetrySummary = {
   sentCount: number;
   failedCount: number;
   skippedCount: number;
+};
+
+export type CommercialAcceptanceOffer = {
+  priceId: string;
+  offerCode?: string;
+  billingModel?: string;
+  trialDays?: number;
+  amountCents?: number | null;
+  currency?: string;
+  recurringInterval?: string | null;
+  recurringIntervalCount?: number | null;
 };
 
 export function assertCommercialConfirmationReadiness(
@@ -43,6 +64,7 @@ export async function recordCommercialAcceptance({
   checkoutCreatedAt,
   requestId,
   userAgent,
+  offer,
 }: {
   acceptanceId: string;
   auth: SupabaseAuthContext;
@@ -51,9 +73,15 @@ export async function recordCommercialAcceptance({
   checkoutCreatedAt: string;
   requestId: string | null;
   userAgent: string | null;
+  offer: CommercialAcceptanceOffer;
 }): Promise<void> {
   const email =
     typeof auth.claims.email === "string" ? auth.claims.email.trim().toLowerCase() : null;
+  const currency = offer.currency ?? "eur";
+  const offerCode = offer.offerCode ?? ANALYSIS_OFFER_CODE;
+  const billingModel = offer.billingModel ?? ANALYSIS_BILLING_MODEL;
+  const trialDays = offer.trialDays ?? ANALYSIS_TRIAL_DAYS;
+  const offerLabel = resolveAnalysisOfferLabel();
   const { error } = await supabaseAdmin.from("commercial_acceptances").insert({
     id: acceptanceId,
     user_id: auth.userId,
@@ -62,9 +90,9 @@ export async function recordCommercialAcceptance({
     terms_sha256: LEGAL_DOCUMENTS.terms.sha256,
     privacy_version: consent.privacyVersion,
     privacy_sha256: LEGAL_DOCUMENTS.privacy.sha256,
-    offer_code: "analyse_30_days",
-    amount_cents: 2_900,
-    currency: "eur",
+    offer_code: offerCode,
+    amount_cents: offer.amountCents ?? null,
+    currency,
     terms_accepted: consent.termsAccepted,
     payment_obligation_acknowledged: consent.paymentObligationAcknowledged,
     immediate_performance_requested: consent.immediatePerformanceRequested,
@@ -76,10 +104,17 @@ export async function recordCommercialAcceptance({
     checkout_created_at: checkoutCreatedAt,
     evidence: {
       source: "checkout_confirmation_dialog",
-      offer_label: "ImmoJudis Analyse — 30 jours",
-      amount_cents: 2900,
-      currency: "eur",
-      no_automatic_renewal: true,
+      offer_label: offerLabel,
+      amount_cents: offer.amountCents ?? null,
+      currency,
+      price_id: offer.priceId,
+      billing_model: billingModel,
+      trial_days: trialDays,
+      trial_label: trialDays > 0 ? ANALYSIS_TRIAL_LABEL : null,
+      recurring_label: trialDays > 0 ? ANALYSIS_RECURRING_LABEL : ANALYSIS_SUBSCRIPTION_ONLY_LABEL,
+      payment_method_required: true,
+      recurring_interval: offer.recurringInterval ?? null,
+      recurring_interval_count: offer.recurringIntervalCount ?? null,
     },
   });
   if (error) throw error;
@@ -108,6 +143,58 @@ export async function sendCommercialConfirmation({
   if (previous?.status === "sent") return "sent";
   const attemptCount = (previous?.attempt_count ?? 0) + 1;
 
+  const { data: acceptance, error: acceptanceError } = await supabaseAdmin
+    .from("commercial_acceptances")
+    .select("offer_code,amount_cents,currency,evidence")
+    .eq("id", acceptanceId)
+    .maybeSingle();
+  if (acceptanceError) throw acceptanceError;
+  const { data: subscription, error: subscriptionError } = await supabaseAdmin
+    .from("user_subscriptions")
+    .select("metadata")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (subscriptionError) throw subscriptionError;
+
+  const isRecurringOffer =
+    acceptance?.offer_code === ANALYSIS_OFFER_CODE ||
+    acceptance?.offer_code === ANALYSIS_SUBSCRIPTION_OFFER_CODE;
+  const evidence = jsonRecord(acceptance?.evidence);
+  const trialDays = numberValue(evidence.trial_days) ?? 0;
+  const offerLabel =
+    typeof evidence.offer_label === "string"
+      ? evidence.offer_label
+      : isRecurringOffer
+        ? resolveAnalysisOfferLabel()
+        : "ImmoJudis Analyse — 30 jours";
+  const subscriptionEvidence = jsonRecord(subscription?.metadata);
+  const amountCents =
+    acceptance?.amount_cents ?? numberValue(subscriptionEvidence.stripe_price_amount_cents);
+  const currency =
+    acceptance?.currency ?? stringValue(subscriptionEvidence.stripe_price_currency) ?? "eur";
+  const interval = stringValue(subscriptionEvidence.stripe_price_interval);
+  const intervalCount = numberValue(subscriptionEvidence.stripe_price_interval_count);
+  const recurringPrice =
+    amountCents != null
+      ? `Tarif : ${formatMoney(amountCents, currency)}${formatInterval(interval, intervalCount)}`
+      : "Tarif : montant affiché dans Stripe Checkout";
+  const trialEnd = stringValue(subscriptionEvidence.stripe_trial_end);
+  const firstInvoiceAt = stringValue(subscriptionEvidence.stripe_first_invoice_at);
+  const offerDescription = isRecurringOffer
+    ? [
+        trialDays > 0
+          ? `${ANALYSIS_TRIAL_LABEL}, puis ${ANALYSIS_RECURRING_LABEL.toLocaleLowerCase("fr-FR")}.`
+          : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL}.`,
+        recurringPrice,
+        trialEnd ? `Fin de l’essai prévue le : ${formatOfferDate(trialEnd)}` : null,
+        firstInvoiceAt ? `Premier prélèvement prévu le : ${formatOfferDate(firstInvoiceAt)}` : null,
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n")
+    : acceptance?.amount_cents != null
+      ? `${formatMoney(acceptance.amount_cents, acceptance.currency)}, paiement unique sans renouvellement automatique.`
+      : "Accès Analyse selon les conditions indiquées au paiement.";
+
   if (!recipient || !config.configured || !config.apiKey || !config.from || !config.appUrl) {
     await recordConfirmationDelivery({
       acceptanceId,
@@ -127,10 +214,12 @@ export async function sendCommercialConfirmation({
   const privacyUrl = `${config.appUrl}${LEGAL_DOCUMENTS.privacy.path}`;
   const rightsUrl = `${config.appUrl}/mes-droits`;
   const text = [
-    "Confirmation de votre commande ImmoJudis Analyse",
+    isRecurringOffer
+      ? "Confirmation de votre abonnement ImmoJudis Analyse"
+      : "Confirmation de votre commande ImmoJudis Analyse",
     "",
-    "Offre : ImmoJudis Analyse — 30 jours",
-    "Prix : 29 € TTC, paiement unique sans renouvellement automatique",
+    `Offre : ${offerLabel}`,
+    offerDescription,
     `Commande confirmée le : ${paidAt}`,
     `Référence : ${checkoutSessionId}`,
     `Conditions acceptées : version ${LEGAL_DOCUMENTS.terms.version}`,
@@ -150,9 +239,11 @@ export async function sendCommercialConfirmation({
       message: {
         from: config.from,
         to: recipient,
-        subject: "Confirmation de votre commande ImmoJudis Analyse",
+        subject: isRecurringOffer
+          ? "Confirmation de votre abonnement ImmoJudis Analyse"
+          : "Confirmation de votre commande ImmoJudis Analyse",
         text,
-        html: `<h1>Commande ImmoJudis Analyse confirmée</h1><p><strong>29 € TTC</strong> pour 30 jours, paiement unique sans renouvellement automatique.</p><p>Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${escapeHtml(checkoutSessionId)}</p><p>Conditions version ${LEGAL_DOCUMENTS.terms.version} · Confidentialité version ${LEGAL_DOCUMENTS.privacy.version}</p><p><a href="${termsUrl}">Conditions générales</a> · <a href="${privacyUrl}">Confidentialité</a> · <a href="${rightsUrl}">Mes droits et rétractation</a></p>`,
+        html: `<h1>${isRecurringOffer ? "Abonnement" : "Commande"} ImmoJudis Analyse confirmé${isRecurringOffer ? "" : "e"}</h1><p><strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription)}</p><p>Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${escapeHtml(checkoutSessionId)}</p><p>Conditions version ${LEGAL_DOCUMENTS.terms.version} · Confidentialité version ${LEGAL_DOCUMENTS.privacy.version}</p><p><a href="${termsUrl}">Conditions générales</a> · <a href="${privacyUrl}">Confidentialité</a> · <a href="${rightsUrl}">Mes droits et rétractation</a></p>`,
       },
     });
     await recordConfirmationDelivery({
@@ -283,6 +374,44 @@ async function recordConfirmationDelivery({
 
 function digest(value: string | null): string | null {
   return value ? createHash("sha256").update(value).digest("hex") : null;
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatMoney(amountCents: number, currency: string): string {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+  }).format(amountCents / 100);
+}
+
+function formatInterval(interval: string | null, count: number | null): string {
+  if (!interval) return "";
+  const normalizedCount = count && count > 1 ? ` tous les ${count}` : " chaque";
+  const label = interval === "month" ? "mois" : interval === "year" ? "an" : interval;
+  return `${normalizedCount} ${label}`;
+}
+
+function formatOfferDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "long",
+    timeStyle: "short",
+    timeZone: "Europe/Paris",
+  }).format(date);
 }
 
 function escapeHtml(value: string): string {

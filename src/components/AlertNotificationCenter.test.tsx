@@ -14,7 +14,7 @@ vi.mock("@/hooks/use-auth", () => ({
 }));
 vi.mock("@/lib/client-api", () => ({
   fetchAlertNotifications: state.list,
-  fetchFeatureEntitlements: state.entitlements,
+  fetchAccessPlan: state.entitlements,
   fetchNotificationPreferences: state.preferences,
   updateAlertNotification: vi.fn(),
   updateNotificationPreferences: vi.fn(),

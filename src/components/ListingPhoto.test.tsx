@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { ImageConfigContext } from "next/dist/shared/lib/image-config-context.shared-runtime";
 import { imageConfigDefault } from "next/dist/shared/lib/image-config";
 import { listingPhotoRemotePatterns } from "@/lib/listing-photo-source";
@@ -22,11 +22,17 @@ it("replaces a failed external photo with an accessible placeholder and retries 
 
 it("serves responsive variants and falls back to the source if optimization fails", async () => {
   const source = "https://avoventes.fr/public/uploads/cabinet/286/images/property.png";
+  const onOriginalError = vi.fn();
   render(
     <ImageConfigContext.Provider
       value={{ ...imageConfigDefault, remotePatterns: listingPhotoRemotePatterns }}
     >
-      <ListingPhoto src={source} alt="Salon optimisé" fetchPriority="high" />
+      <ListingPhoto
+        src={source}
+        alt="Salon optimisé"
+        fetchPriority="high"
+        onOriginalError={onOriginalError}
+      />
     </ImageConfigContext.Provider>,
   );
   const optimized = await screen.findByRole("img", { name: "Salon optimisé" });
@@ -35,6 +41,8 @@ it("serves responsive variants and falls back to the source if optimization fail
   expect(optimized.getAttribute("loading")).toBe("eager");
   fireEvent.error(optimized);
   expect(screen.getByRole("img", { name: "Salon optimisé" }).getAttribute("src")).toBe(source);
+  expect(onOriginalError).not.toHaveBeenCalled();
   fireEvent.error(screen.getByRole("img", { name: "Salon optimisé" }));
+  expect(onOriginalError).toHaveBeenCalledOnce();
   expect(screen.getByRole("img", { name: "Salon optimisé : indisponible" })).toBeTruthy();
 });
