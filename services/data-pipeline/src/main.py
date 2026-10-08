@@ -11,6 +11,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from threading import Lock
 from typing import Any
 
 from src.admission import has_price_or_surface, is_expired
@@ -210,6 +211,8 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "land_surface_extraction",
     "investment_analysis",
     "llm_due_diligence",
+    "geocode",
+    "tribunal_assignment",
 )
 
 KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS = (
@@ -281,6 +284,21 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         for source_url, row in known_details.items()
         if row.get("_signature") and detail_is_fresh(row, source_url)
     }
+    known_payload_urls: set[str] = (
+        set(known_details)
+        if not settings.get("supabase_db_url")
+        else set()
+    )
+    known_payload_lock = Lock()
+
+    def hydrate_known_payloads(rows: list[dict[str, object]]) -> None:
+        _hydrate_known_payloads_for_rows(
+            rows,
+            known_details,
+            known_payload_urls,
+            fetch_details=fetch_known_sale_details,
+            lock=known_payload_lock,
+        )
 
     # ── Scraping des sources en parallèle ────────────────────────────────────
     # Chaque source est indépendante (domaine + client HTTP + délai propres), donc
@@ -295,11 +313,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         fetch_detail_heavy=True,
     )
     from src.source_checkpoint import configure_publisher, flush_publications
-    progressive_publisher = (
-        (lambda rows: publish_factual_batch(run_id, rows, known_details, errors))
-        if os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") and options.upsert
-        else None
-    )
+    progressive_publisher = None
+    if os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") and options.upsert:
+        def publish_progressive(rows: list[dict[str, object]]) -> None:
+            hydrate_known_payloads(rows)
+            publish_factual_batch(run_id, rows, known_details, errors)
+
+        progressive_publisher = publish_progressive
     configure_publisher(progressive_publisher)
     scrape_overall_started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, len(scrapers))) as executor:
@@ -339,6 +359,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                 _report_collection_progress(run_id, "scraping", raw_by_source, scrape_coverage, timings, errors)
     flush_publications()
     configure_publisher()
+    try:
+        hydrate_known_payloads(raw_sales)
+    except Exception as exc:
+        LOGGER.exception("Known enrichment payload lookup failed; publication aborted: %s", exc)
+        errors.setdefault("supabase", []).append(str(exc))
+        finish_run_in_supabase(run_id, "failed", {"stage": "known_payload_lookup"}, errors)
+        return 1
     collection_failed = any(errors.get(name) for name in scrapers)
     coverage_incomplete = any(item.get("coverage_complete") is False for item in scrape_coverage.values())
     scoped_collection_complete = bool(
@@ -1099,6 +1126,58 @@ def _unique_sales_by_source_url(sales: list[AuctionSale]) -> list[AuctionSale]:
         seen.add(sale.source_url)
         unique.append(sale)
     return unique
+
+
+def _known_source_urls_from_raw_sales(raw_sales: list[dict[str, object]]) -> list[str]:
+    urls: set[str] = set()
+    for sale in raw_sales:
+        source_url = sale.get("source_url")
+        if source_url:
+            urls.add(str(source_url))
+        source_urls = sale.get("source_urls")
+        if isinstance(source_urls, dict):
+            urls.update(str(url) for url in source_urls.values() if url)
+        elif isinstance(source_urls, (list, tuple, set, frozenset)):
+            urls.update(str(url) for url in source_urls if url)
+    return sorted(urls)
+
+
+def _hydrate_known_payloads_for_rows(
+    raw_sales: list[dict[str, object]],
+    known_details: dict[str, dict[str, object]],
+    loaded_urls: set[str],
+    *,
+    fetch_details: Callable[..., dict[str, dict[str, object]]],
+    lock: Any,
+) -> None:
+    """Hydrate known rows before publication; never fall back to the index."""
+    if not known_details:
+        return
+    source_urls = _known_source_urls_from_raw_sales(raw_sales)
+    with lock:
+        pending = [
+            url
+            for url in source_urls
+            if url in known_details and url not in loaded_urls
+        ]
+        if not pending:
+            return
+        hydrated = fetch_details(
+            source_urls=pending,
+            include_enrichment_payload=True,
+        )
+        missing = [
+            url
+            for url in pending
+            if url not in hydrated or "raw_payload" not in hydrated[url]
+        ]
+        if missing:
+            raise RuntimeError(
+                "Known enrichment payload lookup returned no complete rows for "
+                f"{len(missing)} known source URL(s)"
+            )
+        known_details.update(hydrated)
+        loaded_urls.update(pending)
 
 
 def _hydrate_known_unchanged_sales(

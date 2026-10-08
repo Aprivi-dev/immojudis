@@ -53,6 +53,7 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
 ) -> None:
     run_id = "00000000-0000-0000-0000-000000000002"
     updates = []
+    subprocess_calls = []
 
     class FakeDb:
         def execute(self, statement, params):
@@ -79,7 +80,7 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     monkeypatch.setattr(
         autonomous_runner.subprocess,
         "run",
-        lambda _command, **_kwargs: SimpleNamespace(returncode=0),
+        lambda command, **kwargs: subprocess_calls.append((command, kwargs)) or SimpleNamespace(returncode=0),
     )
 
     assert autonomous_runner.execute(run_id) == 0
@@ -87,6 +88,8 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert updates[0][2].obj["enrichment_jobs_exhausted"] == exhausted
     assert updates[0][2].obj["enrichment_jobs_completed"] == 31
     assert updates[0][2].obj["completion_status"] == "partial_success"
+    assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_BUDGET_SECONDS"] == "1200"
+    assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_MAX_JOBS"] == "180"
     if exhausted:
         assert updates[0][1].obj["enrichment_jobs"] == [
             "1 enrichment job(s) exhausted their retry budget"

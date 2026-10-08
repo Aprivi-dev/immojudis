@@ -3505,12 +3505,69 @@ def fetch_enriched_content_hashes(
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
+    db_url = settings.get("supabase_db_url")
     unique = [h for h in {h for h in content_hashes if h}]
-    if not url or not key or not unique:
+    if not unique or (not db_url and (not url or not key)):
         return set()
 
-    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
+    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales" if url else ""
     found: set[str] = set()
+    if db_url:
+        try:
+            with _postgres_connect(str(db_url)) as db:
+                for index in range(0, len(unique), 150):
+                    batch = unique[index : index + 150]
+                    rows = db.execute(
+                        """
+                        select content_hash,
+                               raw_payload->'document_analysis' as document_analysis,
+                               raw_payload->>'llm_display_description' as llm_display_description,
+                               raw_payload->>'llm_display_quality_version' as llm_display_quality_version,
+                               raw_payload->>'llm_display_status' as llm_display_status,
+                               raw_payload->>'llm_prompt_version' as llm_prompt_version,
+                               raw_payload->>'llm_display_prompt_version' as llm_display_prompt_version,
+                               raw_payload->>'llm_display_model' as llm_display_model
+                        from public.auction_sales
+                        where content_hash = any(%s::text[])
+                          and score_version is not null
+                        """,
+                        (batch,),
+                    ).fetchall()
+                    for row in rows:
+                        if not isinstance(row, (list, tuple)) or len(row) != 8:
+                            raise RuntimeError("Malformed compact enriched-hash PostgreSQL row")
+                        value = row[0]
+                        compact_payload = {
+                            key: payload
+                            for key, payload in zip(
+                                (
+                                    "document_analysis",
+                                    "llm_display_description",
+                                    "llm_display_quality_version",
+                                    "llm_display_status",
+                                    "llm_prompt_version",
+                                    "llm_display_prompt_version",
+                                    "llm_display_model",
+                                ),
+                                row[1:],
+                                strict=True,
+                            )
+                            if payload is not None
+                        }
+                        if value and (
+                            (not require_llm_description or _has_current_llm_description(compact_payload, prompt_version))
+                            and (not require_document_analysis or _has_current_document_analysis(compact_payload))
+                        ):
+                            found.add(str(value))
+            return found
+        except Exception as exc:
+            # PostgreSQL is the preferred low-egress path, but this lookup is
+            # advisory. Preserve the existing Data API fallback if a worker
+            # has a stale/misconfigured direct connection.
+            LOGGER.warning("Compact enriched-hash PostgreSQL lookup failed; falling back to PostgREST: %s", exc)
+            if not url or not key:
+                return set()
+
     for index in range(0, len(unique), 150):
         batch = unique[index : index + 150]
         try:
@@ -3878,6 +3935,11 @@ KNOWN_SALE_DETAIL_SELECT = ",".join(
         "score_confidence",
         "score_factors",
         "quality_flags",
+        "latitude",
+        "longitude",
+        "risk_notes",
+        "investment_score",
+        "investment_summary",
         "tribunal",
         "tribunal_code",
         "department",
@@ -3986,6 +4048,15 @@ KNOWN_SALE_RAW_PAYLOAD_KEYS = (
     "pdf_occupancy_candidates",
     "pdf_multi_lot_guard",
     "rooms_bedrooms_conflict_evidence",
+    "geocode",
+    "tribunal_assignment",
+)
+# The collection index only needs the source freshness proof.  Enrichment
+# payloads are hydrated later for URLs observed during the current run.
+KNOWN_SALE_RAW_PAYLOAD_INDEX_KEYS = (
+    "source_checks",
+    "source_identity_mismatch",
+    "source_presence",
 )
 # PostgreSQL caps a function call at 100 arguments.  A single
 # ``jsonb_build_object`` needs two arguments per key, so keep each chunk below
@@ -4011,6 +4082,9 @@ def _build_known_sale_raw_payload_projection(keys: tuple[str, ...]) -> str:
 KNOWN_SALE_RAW_PAYLOAD_PROJECTION = _build_known_sale_raw_payload_projection(
     KNOWN_SALE_RAW_PAYLOAD_KEYS
 )
+KNOWN_SALE_RAW_PAYLOAD_INDEX_PROJECTION = _build_known_sale_raw_payload_projection(
+    KNOWN_SALE_RAW_PAYLOAD_INDEX_KEYS
+)
 KNOWN_SALE_POSTGRES_SELECT = ",".join(
     (
         KNOWN_SALE_DETAIL_SELECT.rsplit(",raw_payload", 1)[0],
@@ -4019,7 +4093,11 @@ KNOWN_SALE_POSTGRES_SELECT = ",".join(
 )
 
 
-def _known_sale_postgres_select(*, compact_presence: bool) -> str:
+def _known_sale_postgres_select(
+    *,
+    compact_presence: bool,
+    include_enrichment_payload: bool = True,
+) -> str:
     """Build the bounded snapshot projection for the active DB schema.
 
     The compact source-presence migration replaces the catalogue-view JSON
@@ -4027,21 +4105,22 @@ def _known_sale_postgres_select(*, compact_presence: bool) -> str:
     ``auction_sales`` rather than those views, so hydrate the same projection
     here only after the helper's presence has been confirmed.
     """
+    scalar_projection = KNOWN_SALE_DETAIL_SELECT.rsplit(",raw_payload", 1)[0]
+    payload_projection = (
+        KNOWN_SALE_RAW_PAYLOAD_PROJECTION
+        if include_enrichment_payload
+        else KNOWN_SALE_RAW_PAYLOAD_INDEX_PROJECTION
+    )
     if not compact_presence:
-        return KNOWN_SALE_POSTGRES_SELECT
+        return ",".join((scalar_projection, payload_projection))
     compact_payload = (
         "jsonb_set("
-        f"{KNOWN_SALE_RAW_PAYLOAD_PROJECTION.removesuffix(' as raw_payload')},"
+        f"{payload_projection.removesuffix(' as raw_payload')},"
         "'{source_presence}',"
         "coalesce(app_private.auction_sale_source_presence_json(id),'{}'::jsonb),"
         "true) as raw_payload"
     )
-    return ",".join(
-        (
-            KNOWN_SALE_DETAIL_SELECT.rsplit(",raw_payload", 1)[0],
-            compact_payload,
-        )
-    )
+    return ",".join((scalar_projection, compact_payload))
 # Enrichment writes the full record back: a partial SELECT would erase price,
 # procedure, dates and other facts that the worker did not actually re-extract.
 DATA_REFRESH_SALE_SELECT = ",".join(dict.fromkeys((
@@ -4084,12 +4163,27 @@ def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
     return AuctionSale(**row)
 
 
-def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
-    """Map every known source URL to DB fields available for fallback."""
+def fetch_known_sale_details(
+    *,
+    source_urls: list[str] | None = None,
+    include_enrichment_payload: bool = False,
+) -> dict[str, dict[str, Any]]:
+    """Map known source URLs to fallback fields, hydrating payloads on demand.
+
+    The default collection index keeps scalar source facts and freshness proof
+    but omits the wide enrichment JSONB.  Pass ``source_urls`` and
+    ``include_enrichment_payload=True`` after source discovery to hydrate only
+    rows that will be reconciled in this run.  The REST fallback intentionally
+    keeps its historical full projection because PostgREST cannot express the
+    same reviewed-alias/source_urls predicate safely.
+    """
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
     db_url = settings.get("supabase_db_url")
+    requested_urls = _unique_source_urls(source_urls) if source_urls is not None else []
+    if source_urls is not None and not requested_urls:
+        return {}
     if db_url:
         # The publication runner already requires PostgreSQL. Read its
         # preflight snapshot there too, so a Data API outage cannot stop a
@@ -4114,25 +4208,41 @@ def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
             )
             postgres_select = _known_sale_postgres_select(
                 compact_presence=use_compact_presence,
+                include_enrichment_payload=include_enrichment_payload,
             )
             reviewed_aliases = load_reviewed_aliases(db)
+            relevant_aliases = (
+                reviewed_aliases.aliases_for_urls(requested_urls)
+                if source_urls is not None
+                else tuple(reviewed_aliases.by_alias_url.values())
+            )
+            canonical_ids = sorted({alias.canonical_sale_id for alias in relevant_aliases})
+            filter_params: list[object] = []
+            where = "id is not null"
+            if source_urls is not None:
+                source_filters = ["source_url = any(%s::text[])", "source_urls ?| %s"]
+                filter_params.extend((requested_urls, requested_urls))
+                if canonical_ids:
+                    source_filters.append("id = any(%s::uuid[])")
+                    filter_params.append(canonical_ids)
+                where += " and (" + " or ".join(source_filters) + ")"
             all_rows = []
             last_id: str | None = None
             while True:
                 if last_id is None:
                     query = (
                         f"select to_jsonb(sale) from (select {postgres_select} "
-                        "from public.auction_sales where id is not null "
+                        f"from public.auction_sales where {where} "
                         "order by id limit %s) sale"
                     )
-                    params = (KNOWN_SALE_DETAIL_PAGE_SIZE,)
+                    params = (*filter_params, KNOWN_SALE_DETAIL_PAGE_SIZE)
                 else:
                     query = (
                         f"select to_jsonb(sale) from (select {postgres_select} "
-                        "from public.auction_sales where id is not null and id > %s::uuid "
+                        f"from public.auction_sales where {where} and id > %s::uuid "
                         "order by id limit %s) sale"
                     )
-                    params = (last_id, KNOWN_SALE_DETAIL_PAGE_SIZE)
+                    params = (*filter_params, last_id, KNOWN_SALE_DETAIL_PAGE_SIZE)
                 rows = db.execute(query, params).fetchall()
                 if not rows:
                     break
@@ -4153,6 +4263,11 @@ def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
         if not url or not key:
             return {}
         reviewed_aliases = _fetch_reviewed_alias_registry(str(url), str(key))
+        relevant_aliases = (
+            reviewed_aliases.aliases_for_urls(requested_urls)
+            if source_urls is not None
+            else tuple(reviewed_aliases.by_alias_url.values())
+        )
         endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
         all_rows = []
         offset = 0
@@ -4198,7 +4313,7 @@ def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
     for row in all_rows:
         for source_url in _known_source_urls(row):
             details.setdefault(source_url, row)
-    for alias in reviewed_aliases.by_alias_url.values():
+    for alias in relevant_aliases:
         canonical = rows_by_id.get(alias.canonical_sale_id)
         if canonical is None or canonical.get("source_url") != alias.canonical_source_url:
             raise ReviewedAliasRegistryError(

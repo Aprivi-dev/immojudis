@@ -981,6 +981,14 @@ def test_enrichment_queue_does_not_complete_mixed_claim_job_when_replay_fails(mo
 
 def test_enrichment_worker_uses_three_to_one_lane_cycle(monkeypatch) -> None:
     calls: list[tuple[int, str]] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {
+            queued_runner.SOURCE_DETAIL_FAMILY: 10,
+            queued_runner.ENRICHMENT_FAMILY: 1,
+        },
+    )
 
     def fake_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
         calls.append((limit, family))
@@ -996,6 +1004,25 @@ def test_enrichment_worker_uses_three_to_one_lane_cycle(monkeypatch) -> None:
         (1, queued_runner.ENRICHMENT_FAMILY),
         (2, queued_runner.SOURCE_DETAIL_FAMILY),
         (1, queued_runner.SOURCE_DETAIL_FAMILY),
+    ]
+
+
+def test_enrichment_worker_uses_neutral_cycle_when_lane_counts_are_unavailable(monkeypatch) -> None:
+    calls: list[tuple[int, str]] = []
+    monkeypatch.setattr(queued_runner, "_read_due_enrichment_family_counts", lambda: {})
+
+    def fake_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
+        calls.append((limit, family))
+        return 1
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
+
+    assert queued_runner.run_enrichment_queue_worker(max_jobs=4, budget_seconds=1200) == 4
+    assert calls == [
+        (1, queued_runner.SOURCE_DETAIL_FAMILY),
+        (1, queued_runner.ENRICHMENT_FAMILY),
+        (1, queued_runner.SOURCE_DETAIL_FAMILY),
+        (1, queued_runner.ENRICHMENT_FAMILY),
     ]
 
 
@@ -1022,7 +1049,7 @@ def test_due_lane_count_timeout_falls_back_without_stalling_worker(monkeypatch) 
         "set local statement_timeout = '3000ms'",
     ]
     assert commands[3].startswith("select case when job_type")
-    assert queued_runner._enrichment_family_cycle({}) == queued_runner.ENRICHMENT_FAMILY_CYCLE
+    assert queued_runner._enrichment_family_cycle({}) == queued_runner.GENERAL_BACKLOG_RELIEF_CYCLE
 
 
 def test_worker_claim_status_snapshot_reads_unique_ids_without_retries(monkeypatch) -> None:
@@ -1155,6 +1182,14 @@ def test_worker_reports_handled_jobs_and_isolates_claim_snapshot_context(monkeyp
 
 def test_enrichment_worker_groups_detail_claims_without_exceeding_job_budget(monkeypatch) -> None:
     calls: list[tuple[int, str]] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {
+            queued_runner.SOURCE_DETAIL_FAMILY: 10,
+            queued_runner.ENRICHMENT_FAMILY: 1,
+        },
+    )
 
     def fake_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
         calls.append((limit, family))
@@ -1276,6 +1311,37 @@ def test_worker_stops_general_claims_after_llm_budget_exhaustion_and_keeps_caps(
     assert all(family == queued_runner.SOURCE_DETAIL_FAMILY for _, family in calls[2:])
     assert all(limit == 1 for limit, _ in calls)
     assert queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.get() is None
+
+
+def test_worker_reaches_bounded_180_job_cap_without_concurrent_claims(monkeypatch) -> None:
+    active_claims = 0
+    max_active_claims = 0
+    calls: list[tuple[int, str]] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {
+            queued_runner.SOURCE_DETAIL_FAMILY: 1_000,
+            queued_runner.ENRICHMENT_FAMILY: 1_000,
+        },
+    )
+
+    def fast_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
+        nonlocal active_claims, max_active_claims
+        assert active_claims == 0
+        active_claims += 1
+        max_active_claims = max(max_active_claims, active_claims)
+        calls.append((limit, family))
+        active_claims -= 1
+        return 1
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fast_batch)
+
+    assert queued_runner.run_enrichment_queue_worker(max_jobs=999, budget_seconds=1200) == 180
+    assert queued_runner.ENRICHMENT_MAX_JOBS == 180
+    assert len(calls) == 180
+    assert max_active_claims == 1
+    assert active_claims == 0
 
 
 def test_worker_budget_breaker_uses_real_batch_and_keeps_detail_claims(monkeypatch, caplog) -> None:
@@ -1530,6 +1596,45 @@ def test_worker_does_not_claim_inside_pdf_finalization_margin(monkeypatch) -> No
 
     assert queued_runner._run_enrichment_queue_worker(max_jobs=1, budget_seconds=60) == 0
     assert calls == []
+
+
+def test_worker_stops_slow_tasks_before_claiming_past_budget(monkeypatch, caplog) -> None:
+    clock = [0.0]
+    claim_start_times: list[float] = []
+    active_claims = 0
+    max_active_claims = 0
+    monkeypatch.setattr(queued_runner.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {
+            queued_runner.SOURCE_DETAIL_FAMILY: 1_000,
+            queued_runner.ENRICHMENT_FAMILY: 0,
+        },
+    )
+
+    def slow_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
+        nonlocal active_claims, max_active_claims
+        assert active_claims == 0
+        claim_start_times.append(clock[0])
+        active_claims += 1
+        max_active_claims = max(max_active_claims, active_claims)
+        clock[0] += 30.0
+        active_claims -= 1
+        return 1
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", slow_batch)
+
+    with caplog.at_level("INFO", logger=queued_runner.LOGGER.name):
+        handled = queued_runner._run_enrichment_queue_worker(max_jobs=180, budget_seconds=60)
+
+    assert handled == 2
+    assert claim_start_times == [0.0, 30.0]
+    assert all(start < 60.0 - queued_runner._pdf_finalization_margin_seconds(60) for start in claim_start_times)
+    assert max_active_claims == 1
+    assert active_claims == 0
+    summary = next(record.getMessage() for record in caplog.records if "Enrichment worker summary" in record.getMessage())
+    assert "stop=budget" in summary
 
 
 def test_worker_short_budget_keeps_a_scaled_pdf_margin_and_processes_job(monkeypatch) -> None:

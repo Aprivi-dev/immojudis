@@ -342,8 +342,10 @@ class PoliteHttpClient:
     accept: str = "text/html,application/xhtml+xml"
     extra_headers: dict[str, str] | None = None
     tls_context: ssl.SSLContext | None = None
+    max_attempts: int = 4
 
     def __post_init__(self) -> None:
+        self.max_attempts = max(1, int(self.max_attempts))
         self._last_request_at = 0.0
         self._requests_attempted = 0
         self._requests_succeeded = 0
@@ -620,7 +622,8 @@ class PoliteHttpClient:
     def _request_with_retries(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         # Retry only transient reads. Access refusals and invalid TLS chains
         # need an operator/source fix, not repeated traffic.
-        for attempt in range(4):
+        attempts = max(1, int(getattr(self, "max_attempts", 4)))
+        for attempt in range(attempts):
             self._http_attempts = getattr(self, '_http_attempts', 0) + 1
             ensure_source_task_deadline(f"admitting source HTTP attempt {attempt + 1}")
             request_kwargs = dict(kwargs)
@@ -636,7 +639,7 @@ class PoliteHttpClient:
                 raise
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
                 ensure_source_task_deadline(f"handling failed source HTTP attempt {attempt + 1}")
-                if attempt == 3 or "CERTIFICATE_VERIFY_FAILED" in str(exc):
+                if attempt == attempts - 1 or "CERTIFICATE_VERIFY_FAILED" in str(exc):
                     raise
             else:
                 ensure_source_task_deadline(f"parsing source HTTP attempt {attempt + 1}")
@@ -646,13 +649,13 @@ class PoliteHttpClient:
                     return response
                 requested_delay = retry_after_seconds(response.headers.get("retry-after"))
                 ensure_source_task_deadline("recording source retry delay")
-                if requested_delay > 60 or (attempt == 3 and requested_delay):
+                if requested_delay > 60 or (attempt == attempts - 1 and requested_delay):
                     try:
                         self._retry_not_before = (datetime.now(UTC) + timedelta(seconds=requested_delay)).isoformat()
                     except OverflowError:
                         self._retry_not_before = datetime.max.replace(tzinfo=UTC).isoformat()
                     return response
-                if attempt == 3:
+                if attempt == attempts - 1:
                     return response
                 response.close()
                 _source_task_sleep(
