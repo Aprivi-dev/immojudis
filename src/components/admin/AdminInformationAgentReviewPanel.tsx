@@ -275,6 +275,11 @@ export function AdminInformationAgentReviewPanel() {
                         Pièce jointe : {asset.original_filename}
                       </p>
                     ) : null}
+                    {typeof fact.source_page === "number" && fact.source_page > 0 ? (
+                      <p className="mt-1 text-xs text-[#132238]/55">
+                        Page source : {fact.source_page}
+                      </p>
+                    ) : null}
                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#132238]/60">
                       <Link
                         to="/sales/$id"
@@ -314,6 +319,20 @@ export function AdminInformationAgentReviewPanel() {
                             Analyse : {extraction?.status ?? "en attente"}
                           </span>
                         </div>
+                        {extraction?.summary ? (
+                          <p className="mt-2 break-words text-xs text-[#132238]/75">
+                            <span className="font-medium">Résumé de l’analyse — à vérifier :</span>{" "}
+                            {extraction.summary}
+                          </p>
+                        ) : null}
+                        {extraction &&
+                        (extraction.status === "unsupported" || extraction.status === "failed") ? (
+                          <p role="alert" className="mt-2 break-words text-xs text-red-700">
+                            <span className="font-medium">Erreur d’analyse :</span>{" "}
+                            {extraction.error_message ||
+                              "L’analyse de cette pièce n’a pas abouti. Vérifiez la pièce avant toute publication."}
+                          </p>
+                        ) : null}
                         {asset ? (
                           <>
                             <div className="mt-3 flex flex-wrap gap-2">

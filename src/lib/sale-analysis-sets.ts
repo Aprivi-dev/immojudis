@@ -756,7 +756,7 @@ async function buildCanonicalComparisonSnapshot(
       "id,city,department,property_type,sale_venue_type,sale_date,starting_price_eur,app_surface_m2,app_surface_kind,rooms_count,bedrooms_count,bathrooms_count,status,raw_payload",
     )
     .in("id", saleIds)
-    .in("status", ["upcoming", "unknown"]);
+    .in("status", ["upcoming", "postponed", "unknown"]);
   if (error) throw error;
 
   const byId = new Map(publicationVisibleRows(data ?? []).map((sale) => [sale.id, sale]));

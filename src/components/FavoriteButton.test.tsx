@@ -38,7 +38,7 @@ function setup() {
     </QueryClientProvider>
   );
   const rendered = render(view());
-  return { rerender: () => rendered.rerender(view()) };
+  return { client, rerender: () => rendered.rerender(view()) };
 }
 
 describe("favorite account isolation", () => {
@@ -76,6 +76,7 @@ describe("favorite account isolation", () => {
       expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(false),
     );
     fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(mocks.add).toHaveBeenCalledOnce());
     mocks.auth.user = { id: "bob" };
     view.rerender();
     await act(async () => resolveAdd());
@@ -86,5 +87,23 @@ describe("favorite account isolation", () => {
     mocks.auth.user = null;
     view.rerender();
     expect(screen.getByRole("button").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("updates any cached catalogue favorite status after a detail toggle", async () => {
+    mocks.read.mockResolvedValue({ data: null, error: null });
+    mocks.add.mockResolvedValue({ favorite: { saleId: "sale" } });
+    const view = setup();
+    view.client.setQueryData(["search-favorite-status", "alice", ["sale"]], []);
+
+    await waitFor(() =>
+      expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(mocks.add).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(view.client.getQueryData(["search-favorite-status", "alice", ["sale"]])).toEqual([
+        "sale",
+      ]),
+    );
   });
 });

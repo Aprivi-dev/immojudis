@@ -11,9 +11,24 @@ const securityHeaders = buildSecurityHeaders({
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  distDir: process.env.IMMOJUDIS_NEXT_DIST_DIR?.trim() || ".next",
+  experimental: {
+    // Synced workspaces can restore conflicting *.sst cache files ("… 2.sst"),
+    // which Turbopack cannot parse. Enable persistence only on a reliable cache.
+    turbopackFileSystemCacheForBuild: process.env.IMMOJUDIS_BUILD_CACHE === "true",
+  },
+  serverExternalPackages: ["pdfjs-dist"],
+  outputFileTracingIncludes: {
+    "/api/v1/sales/*/land-report": [
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "./node_modules/@napi-rs/canvas/**/*",
+      "./node_modules/@napi-rs/canvas-*/**/*",
+    ],
+  },
   images: {
     remotePatterns: listingPhotoRemotePatterns,
     formats: ["image/avif", "image/webp"],
+    qualities: [75, 85],
   },
   turbopack: {
     root: process.cwd(),

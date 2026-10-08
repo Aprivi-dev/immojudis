@@ -2,7 +2,7 @@
 
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import { useState } from "react";
-import { ProfessionalPilotWorkspace } from "@/components/ProfessionalPilotWorkspace";
+import dynamic from "next/dynamic";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +28,20 @@ const pilotAction = {
     description: "Vérifiez les conditions, chiffrez votre projet et notez les points à clarifier.",
   },
 } as const;
+
+const ProfessionalPilotWorkspace = dynamic(
+  () =>
+    import("@/components/ProfessionalPilotWorkspace").then(
+      (module) => module.ProfessionalPilotWorkspace,
+    ),
+  {
+    loading: () => (
+      <p className="p-6 text-sm text-muted-foreground" role="status">
+        Chargement du dossier…
+      </p>
+    ),
+  },
+);
 
 export function ProfessionalPilotLauncher({
   sale,

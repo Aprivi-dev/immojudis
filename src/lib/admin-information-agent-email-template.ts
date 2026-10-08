@@ -3,8 +3,10 @@ import { renderInformationRequestEmail } from "../../emails/information-request"
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { resolveSiteOrigin } from "@/lib/site-url";
 import {
   DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+  INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION,
   INFORMATION_AGENT_EMAIL_VARIABLES,
   INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS,
   informationAgentEmailTemplateContentSchema,
@@ -102,7 +104,7 @@ export async function getPublishedInformationAgentEmailTemplate(): Promise<{
     );
     return {
       id: null,
-      revision: 1,
+      revision: INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION,
       content: structuredClone(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE),
     };
   }
@@ -177,8 +179,11 @@ async function publishDraft({ adminId, draftId }: { adminId: string; draftId: st
 }
 
 async function previewTemplate(template: InformationAgentEmailTemplateContent) {
+  const previewAppUrl =
+    resolveSiteOrigin(process.env, "https://immojudis.com") ?? "https://immojudis.com";
   const renderedContent = renderInformationAgentEmailContent({
     template,
+    appUrl: previewAppUrl,
     values: Object.fromEntries(
       INFORMATION_AGENT_EMAIL_VARIABLES.map((variable) => [variable.key, variable.example]),
     ) as Record<(typeof INFORMATION_AGENT_EMAIL_VARIABLES)[number]["key"], string>,
@@ -188,7 +193,7 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
     bodyText: renderedContent.bodyText,
     replyTo: "enquete+exemple@reponses.immojudis.com",
     caseReference: "IJ-EXEMPLE",
-    appUrl: "https://immojudis.com",
+    appUrl: previewAppUrl,
   });
   return {
     preview: {

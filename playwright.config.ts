@@ -30,6 +30,18 @@ export default defineConfig({
       ...process.env,
       NEXT_PUBLIC_SUPABASE_URL: "https://ci.supabase.co",
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "ci-publishable-key",
+      // Keep the paid-flow E2E build legally complete without importing
+      // production publisher data into CI or the test bundle.
+      NEXT_PUBLIC_LEGAL_ENTITY_NAME: "ImmoJudis E2E",
+      NEXT_PUBLIC_LEGAL_ENTITY_FORM: "SAS E2E",
+      NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS: "1 rue du Test, 75000 Paris",
+      NEXT_PUBLIC_LEGAL_REGISTRATION: "RCS E2E",
+      NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR: "Direction E2E",
+      NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "e2e@example.test",
+      NEXT_PUBLIC_LEGAL_CONTACT_PHONE: "+33 1 00 00 00 00",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_NAME: "Médiateur E2E",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_ADDRESS: "1 rue du Test, 75000 Paris",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_WEBSITE: "https://example.test/mediator",
     },
   },
 });

@@ -27,14 +27,18 @@ import {
 } from "@/lib/urban-planning-analysis";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { CadastralPlanDisclosure } from "./CadastralPlanDisclosure";
+import { LandPotentialPanel } from "./LandPotentialPanel";
 import styles from "./UrbanismeCadastrePanel.module.css";
 
 export type UrbanismeCadastrePanelProps = {
   sale: AuctionSale;
+  /** Address point used for indicative mapping, including an unconfirmed location. */
+  mapLocation?: Pick<AuctionSale, "address" | "postal_code" | "city" | "latitude" | "longitude">;
   /** Optional API Carto parcel matches supplied by the server or report loader. */
   cadastralParcels?: StructuredCadastralParcel[];
   /** Optional structured PLU / permit / servitude signals supplied by the report loader. */
   urbanPlanningSignals?: StructuredUrbanPlanningSignal[];
+  officialLandEnabled?: boolean;
   className?: string;
   heading?: string;
 };
@@ -64,8 +68,10 @@ type UrbanPlanningAnalysis = ReturnType<typeof buildUrbanPlanningAnalysis>;
 
 export function UrbanismeCadastrePanel({
   sale,
+  mapLocation = sale,
   cadastralParcels = [],
   urbanPlanningSignals = [],
+  officialLandEnabled = false,
   className,
   heading = "Urbanisme & cadastre",
 }: UrbanismeCadastrePanelProps) {
@@ -85,8 +91,8 @@ export function UrbanismeCadastrePanel({
   );
   const relevantRisks = useMemo(() => selectUrbanRisks(sale.risks ?? []), [sale.risks]);
   const coordinates = useMemo(
-    () => resolveCoordinates(sale, cadastral.structuredParcels),
-    [cadastral.structuredParcels, sale],
+    () => resolveCoordinates(mapLocation, cadastral.structuredParcels),
+    [cadastral.structuredParcels, mapLocation],
   );
 
   const rootClassName = [styles.panel, className].filter(Boolean).join(" ");
@@ -126,12 +132,14 @@ export function UrbanismeCadastrePanel({
         </p>
       </div>
 
+      <LandPotentialPanel key={sale.id} saleId={sale.id} enabled={officialLandEnabled} />
+
       <CadastralPlanDisclosure
         point={coordinates}
-        streetAddress={displayText(sale.address)}
-        displayAddress={addressSummary}
-        postalCode={displayText(sale.postal_code)}
-        city={displayText(sale.city)}
+        streetAddress={displayText(mapLocation.address)}
+        displayAddress={locationSummary(mapLocation)}
+        postalCode={displayText(mapLocation.postal_code)}
+        city={displayText(mapLocation.city)}
       />
 
       <details className={styles.details}>
@@ -368,7 +376,9 @@ function compactStatusLabel(sale: AuctionSale, analysis: CadastralAnalysis): str
   return "Adresse fournie · parcelle à rattacher";
 }
 
-function locationSummary(sale: AuctionSale): string | null {
+function locationSummary(
+  sale: Pick<AuctionSale, "address" | "postal_code" | "city">,
+): string | null {
   const address = displayText(sale.address);
   const locality = [displayText(sale.postal_code), displayText(sale.city)]
     .filter(Boolean)
@@ -574,7 +584,7 @@ function StatusBadge({
 }
 
 function resolveCoordinates(
-  sale: AuctionSale,
+  sale: Pick<AuctionSale, "latitude" | "longitude">,
   parcels: StructuredCadastralParcel[],
 ): Coordinates | null {
   const saleLat = sale.latitude;

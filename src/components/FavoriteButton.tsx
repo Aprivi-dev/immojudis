@@ -56,7 +56,9 @@ export function FavoriteButton({
       return;
     }
     setBusy(true);
+    const searchFavoriteQueryKey = ["search-favorite-status", user.id] as const;
     try {
+      await qc.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFav) {
         await removeFavoriteSaleRequest({ saleId });
         qc.setQueryData(favoriteKey, false);
@@ -64,8 +66,19 @@ export function FavoriteButton({
         await addFavoriteSaleRequest({ data: { saleId } });
         qc.setQueryData(favoriteKey, true);
       }
+      qc.setQueriesData<string[] | undefined>(
+        { queryKey: searchFavoriteQueryKey },
+        (favoriteSaleIds) => {
+          const nextFavoriteSaleIds = new Set(favoriteSaleIds ?? []);
+          if (isFav) nextFavoriteSaleIds.delete(saleId);
+          else nextFavoriteSaleIds.add(saleId);
+          return [...nextFavoriteSaleIds];
+        },
+      );
       qc.invalidateQueries({ queryKey: ["favorites", user.id] });
+      await qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (e: unknown) {
+      void qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
       toast.error(e instanceof Error ? e.message : "Erreur");
     } finally {
       setBusy(false);

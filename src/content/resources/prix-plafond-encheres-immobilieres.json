@@ -1,0 +1,126 @@
+{
+  "slug": "prix-plafond-encheres-immobilieres",
+  "publishedAt": "2026-10-05",
+  "title": "Fixer son prix plafond aux enchères immobilières : raisonner par le coût complet",
+  "category": "Budget",
+  "description": "Une méthode simple pour passer de la mise à prix à un plafond d’enchère défendable, en intégrant marché local, frais, travaux et marge de sécurité.",
+  "intro": [
+    "Une mise à prix basse attire l’attention, mais elle ne dit pas jusqu’où il est raisonnable d’aller. Le chiffre utile se construit à l’envers : partir d’une valeur comparable, retirer une marge de sécurité, puis déduire tout ce qui sera engagé autour de l’enchère.",
+    "Cette méthode ne promet ni décote ni résultat. Elle rend votre décision lisible avant l’audience. Immojudis reprend cette logique dans son assistant, à partir des références et des hypothèses que vous pouvez corriger."
+  ],
+  "takeaways": [
+    "La mise à prix est le départ de l’audience ; le plafond est votre enchère maximale après déduction des autres coûts.",
+    "Une référence DVF doit ressembler au bien par sa surface, son type, son secteur et sa période.",
+    "Frais, travaux, financement, occupation et marge de sécurité se déduisent avant de retenir une enchère maximale.",
+    "Le plafond est une hypothèse documentée, pas une promesse de gain ni un avis personnalisé."
+  ],
+  "sections": [
+    {
+      "id": "mise-a-prix-et-plafond",
+      "title": "La mise à prix est un repère, pas votre budget",
+      "paragraphs": [
+        "La mise à prix indique où l’audience commence. Elle ne mesure ni la valeur du logement ni son coût total. Le prix final dépend du dossier et des enchérisseurs présents.",
+        "Le prix plafond répond à une autre question : quelle enchère laisse encore la place aux frais, aux travaux et aux incertitudes que vous acceptez ? Fixez-le avant l’audience, avant la pression des enchères, et gardez-le distinct de la mise à prix."
+      ],
+      "bullets": [
+        "Notez la mise à prix comme point de départ, jamais comme estimation.",
+        "Si votre plafond est inférieur à la mise à prix, le dossier sort de votre scénario."
+      ]
+    },
+    {
+      "id": "reference-marche",
+      "title": "Construire une référence de marché défendable",
+      "paragraphs": [
+        "Commencez par les ventes réalisées. La base Demande de valeurs foncières (DVF), issue d’actes notariés et d’informations cadastrales, permet d’examiner des transactions récentes. Elle offre un repère, mais ne remplace ni la visite, ni le dossier, ni l’avis d’un professionnel.",
+        "Rapprochez la typologie, la surface, l’état, le secteur et la période. Une médiane locale peut être plus lisible qu’un prix isolé, mais un petit échantillon ou un bien atypique doit réduire votre confiance. Immojudis affiche le nombre de références et les avertissements disponibles."
+      ],
+      "bullets": [
+        "Séparez logements, stationnements, terrains et lots qui ne se comparent pas.",
+        "Signalez toute surface provisoire ; un prix rénové ne vaut pas automatiquement pour un bien à rénover."
+      ]
+    },
+    {
+      "id": "cout-complet",
+      "title": "Passer de la valeur au coût complet",
+      "paragraphs": [
+        "Posez un seuil de coût complet : valeur de marché retenue moins une marge de sécurité explicite. Cette marge n’est pas un rendement attendu ; elle absorbe une partie des écarts d’état, de délai ou de revente.",
+        "Déduisez les postes qui ne sont pas l’enchère. Utilisez les montants du cahier des conditions de vente lorsque vous les avez ; sinon, marquez-les comme hypothèses. Les frais liés au prix d’adjudication doivent être recalculés au plafond testé. Les travaux doivent être reliés autant que possible à une visite, un diagnostic ou un devis."
+      ],
+      "bullets": [
+        "Frais de procédure, avocat, publication, droits et taxes applicables à l’acquisition, financement et autres débours du dossier.",
+        "Travaux, remise en état, diagnostics complémentaires et réserve pour les aléas.",
+        "Occupation, portage ou calendrier si le bien n’est pas utilisable immédiatement."
+      ],
+      "callout": {
+        "title": "La règle de lecture",
+        "text": "Un plafond doit rester compréhensible : référence, déductions, date de vérification et éléments encore inconnus."
+      }
+    },
+    {
+      "id": "exemple-fictif",
+      "title": "Exemple fictif : calculer le plafond",
+      "paragraphs": [
+        "Prenons un appartement fictif de 62 m². Vous retenez 210 000 € comme valeur de marché de travail et choisissez une marge de sécurité de 10 %, soit 21 000 €. Le seuil de coût complet devient 189 000 €. La mise à prix de 95 000 € reste un repère d’audience et n’entre pas directement dans la formule.",
+        "Les montants sont inventés : les 9 500 € ne sont ni un tarif ni une moyenne, et les frais pouvant varier avec le prix d’adjudication doivent être recalculés au plafond testé. Le calcul est : 189 000 € − 9 500 € − 18 000 € − 3 500 € = 158 000 €. À 160 000 €, le coût complet atteint 191 000 € ; à 150 000 €, il reste 8 000 € sous le seuil."
+      ],
+      "table": {
+        "headers": ["Poste", "Hypothèse fictive", "Impact"],
+        "rows": [
+          ["Valeur de marché", "210 000 €", "Base"],
+          ["Marge de sécurité", "10 % = 21 000 €", "Seuil : 189 000 €"],
+          ["Frais, droits et débours à confirmer", "9 500 € fictifs", "− 9 500 €"],
+          ["Travaux", "18 000 €", "− 18 000 €"],
+          ["Financement et provision", "3 500 €", "− 3 500 €"],
+          ["Enchère maximale", "189 000 − 31 000", "158 000 €"]
+        ]
+      }
+    },
+    {
+      "id": "assistant-immojudis",
+      "title": "Confronter les hypothèses dans Immojudis",
+      "paragraphs": [
+        "Sur une fiche, l’assistant rapproche la surface et les références disponibles, puis affiche une mise plafond selon un profil de sécurité. Vous pouvez comparer une variante sans travaux, choisir un rafraîchissement, saisir un prix au m² si les comparables manquent et ajuster les frais ou travaux.",
+        "Le rapport détaille marché, marge de sécurité, frais estimés, travaux et, lorsque le dossier le prévoit, portage. Si la surface ou le marché sont fragiles, le produit le signale et laisse le plafond à compléter."
+      ],
+      "bullets": [
+        "Comparez deux profils et modifiez une hypothèse à la fois.",
+        "Notez la source de chaque montant avant de sauvegarder une simulation."
+      ]
+    },
+    {
+      "id": "avant-audience",
+      "title": "Verrouiller le budget avant l’audience",
+      "paragraphs": [
+        "Relisez le cahier des conditions de vente et demandez à l’avocat de confirmer pièces, garantie et coûts applicables. En saisie immobilière, les enchères sont portées par un avocat inscrit au barreau du tribunal concerné ; le Code prévoit une caution ou un chèque de banque selon le cahier. Les frais de poursuite justifiés sont taxés et annoncés avant l’ouverture.",
+        "Écrivez ensuite le plafond, le scénario et ses hypothèses. Si l’état, l’occupation ou le financement restent trop incertains, conserver son budget et renoncer à cette audience peut être la décision cohérente."
+      ],
+      "bullets": [
+        "Séparez plafond d’enchère et coût complet.",
+        "Conservez comparables, surface, travaux, frais et inconnues.",
+        "Transmettez une consigne claire à l’avocat et un plan d’arrêt."
+      ],
+      "callout": {
+        "title": "À garder en tête",
+        "text": "Immojudis aide à décider avec les données disponibles. Il ne remplace ni la lecture des actes, ni une consultation juridique, ni une validation de financement."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "label": "Bercy — Estimer la valeur d’un bien avec le service DVF",
+      "url": "https://www.economie.gouv.fr/particuliers/gerer-mon-argent/investir-dans-limmobilier/estimez-la-valeur-dun-bien-immobilier-avec-le-service-demande-de-valeurs-foncieres?language=fr"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-40",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343491"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-41",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939157"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-42",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939159"
+    }
+  ]
+}

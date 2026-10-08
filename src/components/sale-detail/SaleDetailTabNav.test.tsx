@@ -7,12 +7,32 @@ import { SaleDetailTabNav, type SaleDetailTab } from "./SaleDetailTabNav";
 
 afterEach(cleanup);
 
-function Harness() {
+function Harness({ showStatistics = false }: { showStatistics?: boolean }) {
   const [activeTab, setActiveTab] = useState<SaleDetailTab>("apercu");
-  return <SaleDetailTabNav activeTab={activeTab} onTabChange={setActiveTab} />;
+  return (
+    <SaleDetailTabNav
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+      showStatistics={showStatistics}
+    />
+  );
 }
 
 describe("SaleDetailTabNav", () => {
+  it("adds the tribunal statistics section to both keyboard and mobile navigation", () => {
+    render(<Harness showStatistics />);
+    expect(screen.getAllByRole("tab")).toHaveLength(6);
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Estimation" }), { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "Statistiques" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Statistiques" }));
+    fireEvent.click(screen.getByRole("button", { name: "Explorer : Statistiques" }));
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(6);
+    expect(
+      screen.getByRole("menuitemradio", { name: "Statistiques" }).getAttribute("aria-checked"),
+    ).toBe("true");
+  });
   it("exposes a single selected tab with the five primary sections", () => {
     render(<Harness />);
 

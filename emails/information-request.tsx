@@ -12,6 +12,13 @@ import {
   Text,
   render,
 } from "react-email";
+import {
+  buildInformationAgentAccountUrl,
+  INFORMATION_AGENT_ACCOUNT_INVITATION_CTA,
+  INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION,
+  INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW,
+  INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING,
+} from "../src/lib/information-agent-email-template";
 
 export type InformationRequestEmailProps = {
   subject: string;
@@ -19,15 +26,17 @@ export type InformationRequestEmailProps = {
   replyTo: string;
   caseReference: string;
   appUrl?: string;
+  accountUrl?: string;
   contributionUrl?: string;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v3";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v4";
 
 type BodyBlock =
   | { kind: "paragraph"; lines: string[] }
   | { kind: "questions"; lines: string[] }
-  | { kind: "sale"; lines: string[] };
+  | { kind: "sale"; lines: string[] }
+  | { kind: "account"; lines: string[] };
 
 const BRAND = {
   ink: "#172036",
@@ -45,10 +54,19 @@ export function InformationRequestEmail({
   replyTo,
   caseReference,
   appUrl = "https://immojudis.com",
+  accountUrl,
   contributionUrl,
 }: InformationRequestEmailProps) {
   const blocks = parseBodyBlocks(bodyText);
   const replyHref = `mailto:${replyTo}`;
+  const professionalSignupUrl = buildInformationAgentAccountUrl({ appUrl, accountUrl });
+  const hasAccountInvitation = blocks.some(
+    (block) =>
+      block.kind === "account" &&
+      block.lines.includes(
+        `${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} : ${professionalSignupUrl}`,
+      ),
+  );
 
   return (
     <Html lang="fr">
@@ -72,7 +90,11 @@ export function InformationRequestEmail({
             <Hr style={styles.hr} />
 
             {blocks.map((block, blockIndex) => (
-              <BodyBlockView key={`${block.kind}-${blockIndex}`} block={block} />
+              <BodyBlockView
+                key={`${block.kind}-${blockIndex}`}
+                block={block}
+                accountUrl={professionalSignupUrl}
+              />
             ))}
             {contributionUrl ? (
               <Section style={styles.salePanel}>
@@ -87,6 +109,9 @@ export function InformationRequestEmail({
                   Le dépôt reste soumis à une vérification avant toute publication.
                 </Text>
               </Section>
+            ) : null}
+            {!hasAccountInvitation ? (
+              <AccountInvitationPanel accountUrl={professionalSignupUrl} />
             ) : null}
           </Section>
 
@@ -107,6 +132,11 @@ export function InformationRequestEmail({
             <Text style={styles.footerLegal}>
               ImmoJudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses
               ; notre équipe vérifie les informations avant toute mise à jour de la fiche.
+              <br />
+              Merci de ne transmettre que des pièces que vous êtes autorisé à partager.
+              <br />
+              Si vous ne souhaitez plus être contacté par ImmoJudis, indiquez-le simplement en
+              réponse.
             </Text>
           </Section>
         </Container>
@@ -125,20 +155,21 @@ export async function renderInformationRequestEmail(
   ]);
   return {
     html,
-    text: props.contributionUrl
-      ? `${renderedText}\n\nDéposer des pièces sans compte : ${props.contributionUrl}\n`
-      : renderedText,
+    text: renderedText,
   };
 }
 
-function BodyBlockView({ block }: { block: BodyBlock }) {
+function BodyBlockView({ block, accountUrl }: { block: BodyBlock; accountUrl: string }) {
+  if (block.kind === "account") {
+    return <AccountInvitationPanel accountUrl={accountUrl} />;
+  }
+
   if (block.kind === "questions") {
     return (
       <Section style={styles.questionsPanel}>
         {block.lines.map((line, index) => (
           <Text key={`${line}-${index}`} style={styles.questionItem}>
-            <span style={styles.questionNumber}>{String(index + 1).padStart(2, "0")}</span>
-            {line.replace(/^[-•]\s*/, "")}
+            {`• ${line.replace(/^[-•]\s*/, "")}`}
           </Text>
         ))}
       </Section>
@@ -188,6 +219,14 @@ function parseBodyBlocks(bodyText: string): BodyBlock[] {
     )
     .filter((lines) => lines.length > 0)
     .map((lines) => {
+      if (
+        lines[0] === INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW &&
+        lines[1] === INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING &&
+        lines[2] === INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION &&
+        lines[3]?.startsWith(`${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} : `)
+      ) {
+        return { kind: "account" as const, lines };
+      }
       if (lines.every((line) => /^[-•]\s+/.test(line))) {
         return { kind: "questions" as const, lines };
       }
@@ -200,6 +239,21 @@ function parseBodyBlocks(bodyText: string): BodyBlock[] {
       }
       return { kind: "paragraph" as const, lines };
     });
+}
+
+function AccountInvitationPanel({ accountUrl }: { accountUrl: string }) {
+  return (
+    <Section style={styles.professionalPanel}>
+      <Text style={styles.professionalEyebrow}>{INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW}</Text>
+      <Text style={styles.professionalHeading}>{INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING}</Text>
+      <Text style={styles.paragraph}>{INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION}</Text>
+      <Text style={styles.professionalCta}>
+        <Link href={accountUrl} style={styles.professionalLink}>
+          {INFORMATION_AGENT_ACCOUNT_INVITATION_CTA}
+        </Link>
+      </Text>
+    </Section>
+  );
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -220,64 +274,87 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   topBar: { height: "6px", backgroundColor: BRAND.gold },
-  header: { padding: "24px 34px 20px", borderBottom: `1px solid ${BRAND.line}` },
+  header: { padding: "18px 28px 14px", borderBottom: `1px solid ${BRAND.line}` },
   wordmark: {
     margin: 0,
     color: BRAND.ink,
     fontFamily: "Georgia, 'Times New Roman', serif",
-    fontSize: "25px",
+    fontSize: "23px",
     fontWeight: 700,
     letterSpacing: "0.08em",
   },
-  tagline: { margin: "4px 0 14px", color: BRAND.muted, fontSize: "12px", lineHeight: "18px" },
-  content: { padding: "30px 34px 34px" },
+  tagline: { margin: "3px 0 8px", color: BRAND.muted, fontSize: "12px", lineHeight: "17px" },
+  content: { padding: "22px 28px 24px" },
   eyebrow: {
-    margin: "0 0 9px",
+    margin: "0 0 6px",
     color: BRAND.gold,
     fontSize: "11px",
     fontWeight: 700,
     letterSpacing: "0.1em",
   },
   heading: {
-    margin: "0 0 12px",
+    margin: "0 0 8px",
     color: BRAND.ink,
     fontFamily: "Georgia, 'Times New Roman', serif",
-    fontSize: "28px",
-    lineHeight: "35px",
+    fontSize: "25px",
+    lineHeight: "31px",
     fontWeight: 600,
   },
   reference: {
     display: "inline-block",
     margin: 0,
-    padding: "7px 10px",
+    padding: "5px 8px",
     color: BRAND.ink,
     backgroundColor: BRAND.goldSoft,
     borderRadius: "6px",
     fontSize: "12px",
     fontWeight: 700,
   },
-  hr: { margin: "26px 0", borderColor: BRAND.line },
-  paragraph: { margin: "0 0 18px", color: "#303A50", fontSize: "15px", lineHeight: "24px" },
+  hr: { margin: "18px 0", borderColor: BRAND.line },
+  paragraph: { margin: "0 0 14px", color: "#303A50", fontSize: "15px", lineHeight: "21px" },
   salePanel: {
-    margin: "4px 0 22px",
-    padding: "16px 18px 2px",
+    margin: "2px 0 16px",
+    padding: "12px 14px 1px",
     backgroundColor: "#F9F8F5",
     border: `1px solid ${BRAND.line}`,
     borderRadius: "10px",
   },
-  saleRow: { margin: "0 0 14px", color: BRAND.ink, fontSize: "14px", lineHeight: "20px" },
+  saleRow: { margin: "0 0 11px", color: BRAND.ink, fontSize: "14px", lineHeight: "20px" },
   saleLabel: { color: BRAND.muted, fontSize: "11px", fontWeight: 700, textTransform: "uppercase" },
   saleValue: { color: BRAND.ink, fontSize: "14px", fontWeight: 700 },
   questionsPanel: {
-    margin: "0 0 22px",
-    padding: "6px 18px",
+    margin: "0 0 16px",
+    padding: "4px 14px",
     borderLeft: `3px solid ${BRAND.gold}`,
     backgroundColor: "#FCFBF8",
   },
-  questionItem: { margin: "10px 0", color: "#303A50", fontSize: "14px", lineHeight: "22px" },
-  questionNumber: { marginRight: "10px", color: BRAND.gold, fontSize: "11px", fontWeight: 700 },
+  professionalPanel: {
+    margin: "6px 0 4px",
+    padding: "14px 14px 4px",
+    backgroundColor: BRAND.goldSoft,
+    border: "1px solid #D9C08D",
+    borderRadius: "10px",
+  },
+  professionalEyebrow: {
+    margin: "0 0 5px",
+    color: BRAND.gold,
+    fontSize: "10px",
+    fontWeight: 700,
+    letterSpacing: "0.1em",
+  },
+  professionalHeading: {
+    margin: "0 0 6px",
+    color: BRAND.ink,
+    fontFamily: "Georgia, 'Times New Roman', serif",
+    fontSize: "18px",
+    lineHeight: "23px",
+    fontWeight: 600,
+  },
+  professionalCta: { margin: "0 0 10px", fontSize: "14px", lineHeight: "20px" },
+  professionalLink: { color: BRAND.ink, fontWeight: 700, textDecoration: "underline" },
+  questionItem: { margin: "7px 0", color: "#303A50", fontSize: "14px", lineHeight: "20px" },
   footer: {
-    padding: "24px 34px 28px",
+    padding: "18px 28px 22px",
     backgroundColor: "#F9F8F5",
     borderTop: `1px solid ${BRAND.line}`,
     textAlign: "center",

@@ -1,16 +1,46 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
-import { ListingCard, SearchResultsList } from "./SearchResults";
+import { ListingCard, ListingMediaCarousel, SearchResultsList } from "./SearchResults";
 import { SearchStatisticsPanel } from "./SearchStatisticsPanel";
 import { buildSearchStatistics } from "./search-page-state";
 
-vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: null, loading: false }) }));
+const testState = vi.hoisted(() => {
+  const favoriteQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    in: vi.fn(),
+  };
+  favoriteQuery.select.mockReturnValue(favoriteQuery);
+  favoriteQuery.eq.mockReturnValue(favoriteQuery);
+
+  return {
+    auth: {
+      current: {
+        user: null as { id: string } | null,
+        loading: false,
+      },
+    },
+    favoriteQuery,
+    supabase: {
+      from: vi.fn(() => favoriteQuery),
+    },
+    addFavoriteSale: vi.fn(),
+    removeFavoriteSale: vi.fn(),
+  };
+});
+
+vi.mock("@/hooks/use-auth", () => ({ useAuth: () => testState.auth.current }));
 vi.mock("@/hooks/use-viewed-sales", () => ({ useViewedSales: () => ({ isViewed: () => false }) }));
+vi.mock("@/integrations/supabase/client", () => ({ supabase: testState.supabase }));
+vi.mock("@/lib/client-api", () => ({
+  addFavoriteSale: testState.addFavoriteSale,
+  removeFavoriteSale: testState.removeFavoriteSale,
+}));
 vi.mock("@/lib/router-compat", () => ({
   useNavigate: () => vi.fn(),
   Link: ({
@@ -33,7 +63,60 @@ vi.mock("@/components/SaleVisual", () => ({
     <div>{locked ? "Visuel réservé" : `Visuel : ${title}`}</div>
   ),
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  testState.auth.current = { user: null, loading: false };
+  testState.supabase.from.mockClear();
+  testState.favoriteQuery.select.mockClear().mockReturnValue(testState.favoriteQuery);
+  testState.favoriteQuery.eq.mockClear().mockReturnValue(testState.favoriteQuery);
+  testState.favoriteQuery.in.mockReset();
+  testState.addFavoriteSale.mockReset().mockResolvedValue({});
+  testState.removeFavoriteSale.mockReset().mockResolvedValue({});
+});
+
+function setAuthenticatedUser(id: string | null) {
+  testState.auth.current = {
+    user: id ? { id } : null,
+    loading: false,
+  };
+}
+
+function sale(id: string): AuctionSale {
+  return {
+    id,
+    city: id,
+    property_type: "apartment",
+    media: [],
+  } as unknown as AuctionSale;
+}
+
+function renderResults(
+  sales: AuctionSale[],
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <SearchResultsList
+          sales={sales}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          isLoading={false}
+          error={null}
+          selectedSaleId={null}
+          hoveredSaleId={null}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          comparedSaleIds={[]}
+          comparisonDisabled={false}
+          onToggleComparison={vi.fn()}
+        />
+      </QueryClientProvider>,
+    ),
+  };
+}
 
 describe("useful public discovery", () => {
   it("selects directly from the card without navigating and only disables unselected cards at the limit", () => {
@@ -78,6 +161,41 @@ describe("useful public discovery", () => {
     ).toBe(true);
   });
 
+  it("keeps the active card synchronized with hover after memoization", () => {
+    function HoverableResults() {
+      const [hoveredSaleId, setHoveredSaleId] = useState<string | null>(null);
+      return (
+        <QueryClientProvider client={new QueryClient()}>
+          <SearchResultsList
+            sales={[sale("hover-a"), sale("hover-b")]}
+            returnTo="/sales"
+            locked
+            analysisLocked
+            isLoading={false}
+            error={null}
+            selectedSaleId={null}
+            hoveredSaleId={hoveredSaleId}
+            onHover={setHoveredSaleId}
+            onSelect={vi.fn()}
+            comparedSaleIds={[]}
+            comparisonDisabled={false}
+            onToggleComparison={vi.fn()}
+          />
+        </QueryClientProvider>
+      );
+    }
+
+    render(<HoverableResults />);
+    const cards = screen.getAllByRole("article");
+    fireEvent.mouseEnter(cards[0]!);
+    expect(cards[0]!.className).toContain("ring-1");
+    expect(cards[1]!.className).not.toContain("ring-1");
+
+    fireEvent.mouseEnter(cards[1]!);
+    expect(cards[0]!.className).not.toContain("ring-1");
+    expect(cards[1]!.className).toContain("ring-1");
+  });
+
   it("shows listing facts and honest upgrade labels without fake scores", () => {
     const sale = {
       id: "sale-public",
@@ -101,7 +219,6 @@ describe("useful public discovery", () => {
           locked
           analysisLocked={false}
           active={false}
-          index={0}
           onHover={vi.fn()}
           onSelect={vi.fn()}
         />
@@ -200,7 +317,6 @@ describe("useful public discovery", () => {
           locked={false}
           analysisLocked={false}
           active={false}
-          index={0}
           onHover={vi.fn()}
           onSelect={vi.fn()}
         />
@@ -247,7 +363,6 @@ describe("useful public discovery", () => {
           locked={false}
           analysisLocked={false}
           active={false}
-          index={0}
           onHover={vi.fn()}
           onSelect={vi.fn()}
         />
@@ -257,5 +372,272 @@ describe("useful public discovery", () => {
     fireEvent.click(screen.getByRole("button", { name: "Partager cette vente" }));
     expect(share).toHaveBeenCalledWith(expect.objectContaining({ title: "Appartement" }));
     expect(share.mock.calls[0]?.[0]?.title).not.toContain("Bordeaux");
+  });
+});
+
+describe("listing media gallery", () => {
+  const mediaSale = {
+    id: "sale-gallery",
+    city: "Bordeaux",
+    property_type: "apartment",
+    media: [
+      { type: "image", url: "https://cdn.example.com/property-living-room.jpg" },
+      { type: "image", url: "https://cdn.example.com/property-bedroom.jpg" },
+    ],
+  } as unknown as AuctionSale;
+
+  it("changes supplied photos with arrows and keyboard without selecting the card", () => {
+    const onSelect = vi.fn();
+    render(
+      <ListingMediaCarousel
+        sale={mediaSale}
+        locked={false}
+        title="Appartement à Bordeaux"
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Appartement à Bordeaux" }).getAttribute("src")).toBe(
+      "https://cdn.example.com/property-living-room.jpg",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Photo suivante" }));
+    expect(screen.getByText("2 / 2")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Appartement à Bordeaux" }).getAttribute("src")).toBe(
+      "https://cdn.example.com/property-bedroom.jpg",
+    );
+    expect(onSelect).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(screen.getByTestId("sale-media-carousel-sale-gallery"), {
+      key: "ArrowLeft",
+    });
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("recognizes a horizontal touch swipe and suppresses the following card link click", () => {
+    const onSelect = vi.fn();
+    render(
+      <ListingMediaCarousel
+        sale={mediaSale}
+        locked={false}
+        title="Appartement à Bordeaux"
+        onSelect={onSelect}
+      />,
+    );
+    const carousel = screen.getByTestId("sale-media-carousel-sale-gallery");
+    const image = screen.getByRole("img", { name: "Appartement à Bordeaux" });
+
+    fireEvent.pointerDown(carousel, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 140,
+      clientY: 100,
+      button: 0,
+    });
+    fireEvent.pointerUp(carousel, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 60,
+      clientY: 104,
+    });
+    expect(screen.getByText("2 / 2")).toBeTruthy();
+
+    fireEvent.click(image);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("keeps SaleVisual as the fallback when no usable property photo exists", () => {
+    render(
+      <ListingMediaCarousel
+        sale={{ ...mediaSale, id: "sale-no-photo", media: [] } as unknown as AuctionSale}
+        locked={false}
+        title="Appartement à Bordeaux"
+      />,
+    );
+
+    expect(screen.getByTestId("sale-media-fallback-sale-no-photo")).toBeTruthy();
+    expect(screen.getByText("Visuel : Appartement à Bordeaux")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Photo suivante" })).toBeNull();
+  });
+});
+
+describe("optional catalogue placement", () => {
+  it("renders a sponsored placement after four listings without adding a listing card", () => {
+    const sales = ["a", "b", "c", "d"].map(
+      (id) =>
+        ({
+          id,
+          city: id,
+          property_type: "apartment",
+          media: [],
+        }) as unknown as AuctionSale,
+    );
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SearchResultsList
+          sales={sales}
+          sponsoredPlacement={<div data-testid="sponsored-placement">Partenaire</div>}
+          returnTo="/sales"
+          locked
+          analysisLocked
+          isLoading={false}
+          error={null}
+          selectedSaleId={null}
+          hoveredSaleId={null}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          comparedSaleIds={[]}
+          comparisonDisabled={false}
+          onToggleComparison={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByTestId("sponsored-placement")).toBeTruthy();
+    expect(screen.getAllByRole("article")).toHaveLength(4);
+  });
+});
+
+describe("catalogue favorite status", () => {
+  it("loads favorite status for all visible cards with one batched read", async () => {
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in.mockResolvedValue({
+      data: [{ sale_id: "sale-a" }],
+      error: null,
+    });
+
+    const { client } = renderResults([sale("sale-a"), sale("sale-b"), sale("sale-c")]);
+
+    await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(
+        client.getQueryData(["search-favorite-status", "user-a", ["sale-a", "sale-b", "sale-c"]]),
+      ).toEqual(["sale-a"]),
+    );
+    expect(testState.favoriteQuery.in).toHaveBeenCalledWith("sale_id", [
+      "sale-a",
+      "sale-b",
+      "sale-c",
+    ]);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Ne plus suivre cette vente" })).toBeTruthy(),
+    );
+    expect(screen.getAllByRole("button", { name: "Suivre cette vente" })).toHaveLength(2);
+  });
+
+  it("updates the batched cache after a toggle and reuses it on remount", async () => {
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [{ sale_id: "sale-a" }], error: null });
+
+    const sales = [sale("sale-a")];
+    const { client } = renderResults(sales);
+    await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: "Suivre cette vente" }));
+    await waitFor(() =>
+      expect(testState.addFavoriteSale).toHaveBeenCalledWith({ data: { saleId: "sale-a" } }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Ne plus suivre cette vente" })).toBeTruthy(),
+    );
+    expect(client.getQueryData(["search-favorite-status", "user-a", ["sale-a"]])).toEqual([
+      "sale-a",
+    ]);
+
+    cleanup();
+    renderResults(sales, client);
+    expect(screen.getByRole("button", { name: "Ne plus suivre cette vente" })).toBeTruthy();
+    expect(testState.favoriteQuery.in).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores a late favorite response from the previous account", async () => {
+    setAuthenticatedUser("user-a");
+    let resolveUserA!: (result: { data: { sale_id: string }[]; error: null }) => void;
+    const userARead = new Promise<{ data: { sale_id: string }[]; error: null }>((resolve) => {
+      resolveUserA = resolve;
+    });
+    testState.favoriteQuery.in
+      .mockImplementationOnce(() => userARead)
+      .mockResolvedValueOnce({ data: [], error: null });
+
+    const sales = [sale("sale-a")];
+    const view = renderResults(sales);
+    await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledOnce());
+
+    setAuthenticatedUser("user-b");
+    view.rerender(
+      <QueryClientProvider client={view.client}>
+        <SearchResultsList
+          sales={sales}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked={false}
+          isLoading={false}
+          error={null}
+          selectedSaleId={null}
+          hoveredSaleId={null}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          comparedSaleIds={[]}
+          comparisonDisabled={false}
+          onToggleComparison={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledTimes(2));
+
+    resolveUserA({ data: [{ sale_id: "sale-a" }], error: null });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Suivre cette vente" })).toBeTruthy(),
+    );
+    expect(screen.queryByRole("button", { name: "Ne plus suivre cette vente" })).toBeNull();
+  });
+
+  it("cancels the first read before a toggle so its stale response cannot undo the new state", async () => {
+    setAuthenticatedUser("user-a");
+    let resolveAdd!: () => void;
+    let resolveInitial!: (result: { data: { sale_id: string }[]; error: null }) => void;
+    let resolveRefresh!: (result: { data: { sale_id: string }[]; error: null }) => void;
+    const initialRead = new Promise<{ data: { sale_id: string }[]; error: null }>((resolve) => {
+      resolveInitial = resolve;
+    });
+    const refreshedRead = new Promise<{ data: { sale_id: string }[]; error: null }>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    testState.favoriteQuery.in
+      .mockImplementationOnce(() => initialRead)
+      .mockImplementationOnce(() => refreshedRead);
+    testState.addFavoriteSale.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveAdd = resolve;
+        }),
+    );
+
+    const sales = [sale("sale-a")];
+    const { client } = renderResults(sales);
+    await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: "Suivre cette vente" }));
+    await waitFor(() => expect(testState.addFavoriteSale).toHaveBeenCalledOnce());
+
+    resolveInitial({ data: [], error: null });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(client.getQueryData(["search-favorite-status", "user-a", ["sale-a"]])).toBeUndefined();
+
+    resolveAdd();
+    await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledTimes(2));
+
+    resolveRefresh({ data: [{ sale_id: "sale-a" }], error: null });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Ne plus suivre cette vente" })).toBeTruthy(),
+    );
+
+    resolveInitial({ data: [], error: null });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole("button", { name: "Ne plus suivre cette vente" })).toBeTruthy();
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { createFileRoute, Link } from "@/lib/router-compat";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type * as React from "react";
 import { useMemo, useState } from "react";
 import BadgeCheck from "lucide-react/dist/esm/icons/badge-check.js";
@@ -16,9 +16,12 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/integrations/supabase/client";
-import type { Json, Tables } from "@/integrations/supabase/types";
 import { getProfessionalStatus, isProfessionalAccount } from "@/lib/account";
+import {
+  fetchPublicationRequestsClient,
+  submitPublicationRequestClient,
+  type PublicationRequestSummary,
+} from "@/lib/publication-requests-client";
 
 export const Route = createFileRoute("/publish")({
   head: () => ({
@@ -50,19 +53,6 @@ type PublishDraft = {
   fileCount: number;
 };
 
-type PublicationRequest = Tables<"listing_publication_requests">;
-
-type UploadedPublicationDocument = {
-  bucket: string;
-  path: string;
-  name: string;
-  size: number;
-  mime_type: string;
-  uploaded_at: string;
-};
-
-const PUBLICATION_DOCUMENT_BUCKET = "listing-request-documents";
-
 const INITIAL_DRAFT: PublishDraft = {
   title: "",
   location: "",
@@ -89,18 +79,18 @@ const DOCUMENT_TYPES = [
 const PROMOTION_OPTIONS = [
   {
     id: "featured",
-    label: "Mise en avant Immojudis",
-    desc: "Annonce priorisée dans les sélections éditoriales et les pages de recherche.",
+    label: "Demander une mise en avant éditoriale",
+    desc: "L'équipe étudie une mise en avant dans les sélections et pages de recherche.",
   },
   {
     id: "seo",
-    label: "Référencement renforcé",
-    desc: "Titre, description et données structurées préparés pour une meilleure visibilité.",
+    label: "Demander une préparation SEO",
+    desc: "L'équipe peut préparer les éléments de visibilité après validation du dossier.",
   },
   {
     id: "partners",
-    label: "Diffusion partenaires",
-    desc: "Préparation d'un dossier compatible avec des relais médias ou sites spécialisés.",
+    label: "Demander un relais partenaire",
+    desc: "Une diffusion externe éventuelle reste soumise à une validation séparée.",
   },
 ] as const;
 
@@ -109,27 +99,17 @@ export function PublishPage() {
   const [draft, setDraft] = useState<PublishDraft>(INITIAL_DRAFT);
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const queryClient = useQueryClient();
 
   const isProfessional = isProfessionalAccount(user, profile);
   const professionalStatus = getProfessionalStatus(profile);
 
-  const { data: recentRequests = [], isFetching: requestsLoading } = useQuery({
+  const { data: recentRequestsData, isFetching: requestsLoading } = useQuery({
     queryKey: ["publication-requests", user?.id],
     enabled: Boolean(user?.id && isProfessional),
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("listing_publication_requests")
-        .select(
-          "id,title,location,status,created_at,submitted_documents,starting_price_eur,hearing_date",
-        )
-        .eq("requester_id", user?.id ?? "")
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      if (error) throw error;
-      return (data ?? []) as PublicationRequest[];
-    },
+    queryFn: () => fetchPublicationRequestsClient(1),
   });
+  const recentRequests = recentRequestsData?.requests ?? [];
 
   const completion = useMemo(() => {
     const checks = [
@@ -182,6 +162,11 @@ export function PublishPage() {
       return;
     }
 
+    if (!user.email?.trim()) {
+      toast.error("Une adresse email est obligatoire avant tout dépôt.");
+      return;
+    }
+
     if (!draft.title.trim() || !draft.location.trim() || !draft.description.trim()) {
       toast.error("Ajoutez au minimum un titre, une localisation et une description.");
       return;
@@ -192,54 +177,25 @@ export function PublishPage() {
       return;
     }
 
-    const requestId = createRequestId();
     setSubmitting(true);
 
     try {
-      const uploadedDocuments: UploadedPublicationDocument[] = [];
-
-      for (const file of files) {
-        const path = `${user.id}/${requestId}/${safeStorageFileName(file.name)}`;
-        const { error } = await supabase.storage
-          .from(PUBLICATION_DOCUMENT_BUCKET)
-          .upload(path, file, {
-            cacheControl: "3600",
-            contentType: file.type || undefined,
-            upsert: false,
-          });
-
-        if (error) throw error;
-
-        uploadedDocuments.push({
-          bucket: PUBLICATION_DOCUMENT_BUCKET,
-          path,
-          name: file.name,
-          size: file.size,
-          mime_type: file.type || "application/octet-stream",
-          uploaded_at: new Date().toISOString(),
-        });
-      }
-
-      const { error } = await supabase.from("listing_publication_requests").insert({
-        id: requestId,
-        requester_id: user.id,
-        requester_email: user.email ?? null,
+      await submitPublicationRequestClient({
         title: draft.title.trim(),
         location: draft.location.trim(),
-        starting_price_eur: parseEuroAmount(draft.startingPrice),
-        hearing_date: draft.hearingDate || null,
-        court: draft.court.trim() || null,
+        startingPrice: draft.startingPrice,
+        hearingDate: draft.hearingDate,
+        court: draft.court.trim(),
         description: draft.description.trim(),
-        strengths: draft.strengths.trim() || null,
-        cautions: draft.cautions.trim() || null,
-        anonymize_documents: draft.anonymizeDocuments,
-        document_types: draft.selectedDocuments,
-        promotion_options: draft.selectedPromotions,
-        submitted_documents: uploadedDocuments as unknown as Json,
+        strengths: draft.strengths.trim(),
+        cautions: draft.cautions.trim(),
+        anonymizeDocuments: draft.anonymizeDocuments,
+        documentTypes: draft.selectedDocuments,
+        promotionOptions: draft.selectedPromotions,
+        files,
       });
 
-      if (error) throw error;
-
+      await queryClient.invalidateQueries({ queryKey: ["publication-requests"] });
       toast.success("Demande envoyée. Elle apparaît maintenant dans la file de validation admin.");
       setDraft(INITIAL_DRAFT);
       setFiles([]);
@@ -306,9 +262,9 @@ export function PublishPage() {
               Transmettre une annonce complète pour validation Immojudis.
             </h1>
             <p className="mt-5 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Les informations et pièces déposées sont enregistrées dans Supabase en statut "en
-              attente". L'équipe peut ensuite contrôler, compléter et valider la mise en ligne
-              depuis le panel admin.
+              Les informations et pièces déposées sont enregistrées en statut « en attente ».
+              L'équipe peut ensuite contrôler, compléter et valider la mise en ligne depuis le panel
+              admin.
             </p>
           </div>
 
@@ -336,6 +292,12 @@ export function PublishPage() {
         </header>
 
         <form onSubmit={submitRequest} className="grid gap-6 lg:grid-cols-[1fr_22rem]">
+          {!user?.email?.trim() ? (
+            <div className="liquid-panel border border-amber-300/20 bg-amber-400/10 p-4 text-sm leading-relaxed text-amber-50 lg:col-span-2">
+              Une adresse email confirmée est obligatoire avant tout dépôt. Ajoutez-la à votre
+              compte puis revenez ici pour envoyer la demande.
+            </div>
+          ) : null}
           <div className="grid gap-6">
             <section className="liquid-panel rounded-lg p-5 sm:p-6">
               <SectionTitle
@@ -484,11 +446,12 @@ export function PublishPage() {
                 <span>
                   <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
                     <EyeOff className="h-4 w-4 text-gold" />
-                    Anonymiser les documents avant diffusion
+                    Demander l'anonymisation avant diffusion
                   </span>
                   <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
-                    Les pièces restent privées. La diffusion publique ne doit conserver que les
-                    éléments utiles à l'investisseur et masquer les données personnelles.
+                    Les pièces restent privées. Cette demande sera traitée lors de la validation ;
+                    la diffusion publique ne doit conserver que les éléments utiles à
+                    l'investisseur.
                   </span>
                 </span>
               </label>
@@ -539,7 +502,7 @@ export function PublishPage() {
               </p>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || !user?.email?.trim()}
                 className="liquid-button mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {submitting ? (
@@ -551,6 +514,12 @@ export function PublishPage() {
                   "Envoyer pour validation"
                 )}
               </button>
+              <Link
+                to="/espace-pro"
+                className="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-white/10 px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold hover:border-gold"
+              >
+                Ouvrir mon espace pro
+              </Link>
             </section>
 
             <section className="liquid-panel rounded-lg p-5">
@@ -582,9 +551,7 @@ export function PublishPage() {
   );
 }
 
-function PublicationRequestLine({ request }: { request: PublicationRequest }) {
-  const documents = asUploadedDocuments(request.submitted_documents);
-
+function PublicationRequestLine({ request }: { request: PublicationRequestSummary }) {
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
       <div className="flex items-start justify-between gap-3">
@@ -597,10 +564,15 @@ function PublicationRequestLine({ request }: { request: PublicationRequest }) {
         <StatusPill status={request.status} />
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <span>{documents.length} fichier(s)</span>
+        <span>{request.documentCount} fichier(s)</span>
         <span>•</span>
-        <span>{formatDate(request.created_at)}</span>
+        <span>{formatDate(request.createdAt)}</span>
       </div>
+      {request.publishedUrl ? (
+        <Link to={request.publishedUrl} className="mt-3 inline-block text-xs text-gold underline">
+          Voir la vente publiée
+        </Link>
+      ) : null}
     </div>
   );
 }
@@ -640,7 +612,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function StatusPill({ status }: { status: PublicationRequest["status"] }) {
+function StatusPill({ status }: { status: PublicationRequestSummary["status"] }) {
   const label =
     status === "approved" ? "Validée" : status === "rejected" ? "Refusée" : "En attente";
   const tone =
@@ -657,47 +629,11 @@ function StatusPill({ status }: { status: PublicationRequest["status"] }) {
   );
 }
 
-function createRequestId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function safeStorageFileName(fileName: string): string {
-  const cleanName =
-    fileName
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-zA-Z0-9._-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(-140) || "document";
-
-  return `${Date.now()}-${cleanName}`;
-}
-
-function parseEuroAmount(value: string): number | null {
-  const normalized = value
-    .replace(/\s/g, "")
-    .replace(/[^\d.,-]/g, "")
-    .replace(",", ".");
-  const amount = Number.parseFloat(normalized);
-  return Number.isFinite(amount) ? amount : null;
-}
-
 function professionalStatusLabel(status: ReturnType<typeof getProfessionalStatus>) {
   if (status === "approved") return "validé";
   if (status === "rejected") return "refusé";
   if (status === "pending") return "en cours de revue";
   return "professionnel";
-}
-
-function asUploadedDocuments(value: Json | null): UploadedPublicationDocument[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (item): item is UploadedPublicationDocument =>
-      item !== null && typeof item === "object" && !Array.isArray(item) && "path" in item,
-  );
 }
 
 function formatFileSize(bytes: number): string {

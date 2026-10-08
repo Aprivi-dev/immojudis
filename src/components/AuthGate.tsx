@@ -43,6 +43,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const pathname = normalizePath(location.pathname);
   const isPublic =
     PUBLIC_PATHS.has(pathname) ||
+    pathname.startsWith("/ressources/") ||
     pathname.startsWith("/sales/") ||
     pathname.startsWith("/properties/") ||
     pathname.startsWith("/reports/shared/");

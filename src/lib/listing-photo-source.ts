@@ -8,22 +8,38 @@ export const listingPhotoRemotePatterns = [
     pathname: "/public/uploads/cabinet/*/images/**",
     search: "",
   },
+  {
+    protocol: "https" as const,
+    hostname: "media.immobilier.notaires.fr",
+    port: "",
+    pathname: "/inotr/media/**",
+    search: "",
+  },
 ];
 
 export function canOptimizeListingPhoto(source: string): boolean {
   try {
     const url = new URL(source);
-    return (
-      url.protocol === "https:" &&
-      url.hostname === "avoventes.fr" &&
-      !url.port &&
-      !url.username &&
-      !url.password &&
-      !url.search &&
-      !url.hash &&
-      /^\/public\/uploads\/cabinet\/\d+\/images\/[^/]+\.(?:png|jpe?g|webp|avif)$/i.test(
+    if (
+      url.protocol !== "https:" ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      return false;
+    }
+
+    if (url.hostname === "avoventes.fr") {
+      return /^\/public\/uploads\/cabinet\/\d+\/images\/[^/]+\.(?:png|jpe?g|webp|avif)$/i.test(
         url.pathname,
-      )
+      );
+    }
+
+    return (
+      url.hostname === "media.immobilier.notaires.fr" &&
+      /^\/inotr\/media\/.+\.(?:png|jpe?g|webp|avif)$/i.test(url.pathname)
     );
   } catch {
     return false;

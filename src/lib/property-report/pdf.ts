@@ -1,77 +1,8 @@
-import { randomBytes } from "node:crypto";
-import { z } from "zod";
-import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
-import { buildActiveComparablesAnalysis } from "@/lib/active-comparables-analysis";
-import { buildAudienceReadinessAnalysis } from "@/lib/audience-readiness-analysis";
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
-import { buildAuctionCostAnalysis } from "@/lib/auction-cost-analysis";
-import { buildCadastralAnalysis, type StructuredCadastralParcel } from "@/lib/cadastre-analysis";
-import { buildDemographicAnalysis } from "@/lib/demographic-analysis";
-import { buildDpeAnalysis } from "@/lib/dpe-analysis";
-import { normalizeDpeClass, type StructuredDpeDiagnostic } from "@/lib/dpe";
-import {
-  formatDate,
-  formatPrice,
-  formatPricePerM2,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
-import { getEnvironmentalContext, type EnvironmentalContext } from "@/lib/environment.functions";
-import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
-import { buildLegalAttentionAnalysis } from "@/lib/legal-attention-analysis";
-import type { MarketEstimate } from "@/lib/market.functions";
-import { buildMarketComparablesAnalysis } from "@/lib/market-comparables-analysis";
-import { buildNearbyServicesAnalysis } from "@/lib/nearby-services";
-import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
-import { buildOccupancyAnalysis } from "@/lib/occupation-analysis";
-import { buildRenovationAnalysis } from "@/lib/renovation-analysis";
+import { formatDate, formatPrice, formatPricePerM2 } from "@/lib/format";
 import { cleanSaleTitle } from "@/lib/sale-title";
-import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
-import {
-  featureAccess,
-  featureIncluded,
-  isPlanPeriodActive,
-  normalizePlanCode,
-  PLAN_LABELS,
-  PLAN_LIMITS,
-  type FeatureAccess,
-  type FeatureKey,
-  type PlanCode,
-} from "@/lib/plans";
-import {
-  computeAcquisitionCosts,
-  computeRecommendedCeilings,
-  computeRentabilityScore,
-  DEFAULT_MARKET_CEILING_SCENARIO,
-  DEFAULTS,
-} from "@/lib/profitability";
-import { createTextPdf } from "@/lib/simple-pdf";
-import {
-  buildReportTraceability,
-  REPORT_COMPLIANCE_NOTICE,
-  type SourceTraceEntry,
-} from "@/lib/source-traceability";
-import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
-import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
-import {
-  buildUrbanPlanningAnalysis,
-  type StructuredUrbanPlanningSignal,
-} from "@/lib/urban-planning-analysis";
-import { assertUsageLimitAvailable, recordFeatureUsageEvent } from "@/lib/usage";
-import { buildValuationAudit } from "@/lib/valuation-audit";
-import {
-  buildValuationBacktestForSale,
-  type ValuationBacktestResult,
-} from "@/lib/valuation-backtest";
-import type {
-  AuctionSale,
-  SaleDocumentRich,
-  SaleMedia,
-  SaleRisk,
-  SaleScoreFactor,
-} from "@/lib/types";
+import { REPORT_COMPLIANCE_NOTICE } from "@/lib/source-traceability";
+import { REPORT_RENTAL_EXPENSE_FIELD_LABELS } from "@/lib/report-simulation";
 import { featureUnlocked, sanitizeReportSnapshotForPlan } from "./entitlements";
 import { PlanEntitlements, SavedReportRow } from "../property-reports";
 import {
@@ -108,6 +39,8 @@ export const REPORT_PDF_HEADINGS = [
   "Actions audit estimation",
   "Actions backtest estimation",
   "Lecture opportunité",
+  "Scénario locatif personnel",
+  "Estimation locative indicative",
   "Plafond d'enchère",
   "Préparation audience",
   "Actions préparation audience",
@@ -166,6 +99,33 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
   const valuationRiskFlags = normalizeStringList(valuationAudit.riskFlags);
   const opportunity = asRecord(analysis.opportunity);
   const rentabilityScore = asRecord(opportunity.rentabilityScore);
+  const personalRentalScenario = asRecord(ceiling.personalRentalScenario);
+  const personalRentalInputs = asRecord(personalRentalScenario.inputs);
+  const personalRentalResult = asRecord(personalRentalScenario.result);
+  const hasPersonalRentalScenario =
+    Object.keys(personalRentalInputs).length > 0 && Object.keys(personalRentalResult).length > 0;
+  const personalRentalHasMissingExpenseMetadata = Object.prototype.hasOwnProperty.call(
+    personalRentalInputs,
+    "missingExpenseFields",
+  );
+  const personalRentalMissingExpenseLabels = Array.isArray(
+    personalRentalInputs.missingExpenseFields,
+  )
+    ? personalRentalInputs.missingExpenseFields
+        .map((field) =>
+          typeof field === "string"
+            ? REPORT_RENTAL_EXPENSE_FIELD_LABELS[
+                field as keyof typeof REPORT_RENTAL_EXPENSE_FIELD_LABELS
+              ]
+            : null,
+        )
+        .filter((field): field is NonNullable<typeof field> => Boolean(field))
+    : [];
+  const personalRentalExpenseStatus = personalRentalHasMissingExpenseMetadata
+    ? personalRentalMissingExpenseLabels.length
+      ? `Postes laissés vides, comptés à 0 €: ${personalRentalMissingExpenseLabels.join(", ")}`
+      : "Postes de charges à 0 €: valeurs saisies explicitement"
+    : "Origine des postes à 0 €: non conservée pour ce rapport antérieur";
   const acquisitionCosts = asRecord(opportunity.acquisitionCosts);
   const legalAttentionPoints = Array.isArray(analysis.legalAttentionPoints)
     ? analysis.legalAttentionPoints
@@ -352,16 +312,42 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
           numberValue(opportunity.estimatedMarketHigh),
         )}`
       : "Fourchette de valeur: à compléter",
-    `Rendement brut potentiel: ${formatPercent(opportunity.grossYieldPct)}`,
-    rentabilityScore.score != null
-      ? `Score de rentabilite: ${rentabilityScore.score}/100 - ${stringValue(rentabilityScore.label, "à qualifier")}`
-      : `Score de rentabilite: indisponible (${stringValue(rentabilityScore.reason, "données incomplètes")})`,
-    rentabilityScore.netYieldPct != null
-      ? `Rendement net estime: ${formatPercent(rentabilityScore.netYieldPct)}`
-      : "Rendement net estime: à compléter",
-    rentabilityScore.cashflowMonthly != null
-      ? `Cashflow mensuel estime: ${formatPrice(numberValue(rentabilityScore.cashflowMonthly))}`
-      : "Cashflow mensuel estime: à compléter",
+    ...(hasPersonalRentalScenario
+      ? []
+      : [`Rendement brut potentiel: ${formatPercent(opportunity.grossYieldPct)}`]),
+    ...(hasPersonalRentalScenario
+      ? [
+          "Scénario locatif personnel",
+          `Coût complet retenu: ${formatPrice(numberValue(personalRentalInputs.acquisitionCost))}`,
+          `Loyer hors charges: ${formatPrice(numberValue(personalRentalInputs.monthlyRent))} / mois`,
+          `Vacance locative: ${formatPercent(personalRentalInputs.vacancyRatePct)}`,
+          personalRentalExpenseStatus,
+          `Charges non récupérables: ${formatPrice(numberValue(personalRentalInputs.annualNonRecoverableCharges))} / an`,
+          `Taxe foncière: ${formatPrice(numberValue(personalRentalInputs.annualPropertyTax))} / an`,
+          `Assurance propriétaire: ${formatPrice(numberValue(personalRentalInputs.annualLandlordInsurance))} / an`,
+          personalRentalInputs.monthlyDebtService != null
+            ? `Mensualité de financement: ${formatPrice(numberValue(personalRentalInputs.monthlyDebtService))} / mois`
+            : "Financement: aucune mensualité saisie",
+          `Revenu net d'exploitation avant impôts: ${formatPrice(numberValue(personalRentalResult.annualOperatingIncome))} / an`,
+          `Rendement brut du scénario: ${formatPercent(personalRentalResult.grossYieldPct)}`,
+          `Rendement net d'exploitation du scénario: ${formatPercent(personalRentalResult.netOperatingYieldPct)}`,
+          personalRentalResult.monthlyCashFlow != null
+            ? `Cash-flow mensuel avant impôts: ${formatPrice(numberValue(personalRentalResult.monthlyCashFlow))}`
+            : "Cash-flow mensuel avant impôts: non calculable sans mensualité de financement",
+        ]
+      : [
+          "Estimation locative indicative",
+          "Hypothèses: loyer estimé par défaut et paramètres de vacance, charges, taxe foncière, assurance et financement du modèle.",
+          rentabilityScore.score != null
+            ? `Score de rentabilite: ${rentabilityScore.score}/100 - ${stringValue(rentabilityScore.label, "à qualifier")}`
+            : `Score de rentabilite: indisponible (${stringValue(rentabilityScore.reason, "données incomplètes")})`,
+          rentabilityScore.netYieldPct != null
+            ? `Rendement net estime: ${formatPercent(rentabilityScore.netYieldPct)}`
+            : "Rendement net estime: à compléter",
+          rentabilityScore.cashflowMonthly != null
+            ? `Cashflow mensuel estime: ${formatPrice(numberValue(rentabilityScore.cashflowMonthly))}`
+            : "Cashflow mensuel estime: à compléter",
+        ]),
     `Frais adjudication: ${stringValue(
       auctionCostAnalysis.summary,
       "frais et consignation à confirmer",

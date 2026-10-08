@@ -10,6 +10,11 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Target from "lucide-react/dist/esm/icons/target.js";
 import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
+import {
+  ANALYSIS_RECURRING_LABEL,
+  ANALYSIS_TRIAL_LABEL,
+  resolveAnalysisOfferLabel,
+} from "@/lib/analysis-offer";
 
 import { createFileRoute, Link } from "@/lib/router-compat";
 
@@ -20,7 +25,7 @@ export const Route = createFileRoute("/accompagnement")({
       {
         name: "description",
         content:
-          "Photos, enveloppe travaux et annuaire d'avocats gratuitement, puis mise plafond, marché et risques avec Analyse à 29 € pour 30 jours.",
+          "Explorez les ventes et conservez trois favoris gratuitement. Testez les outils Premium pendant sept jours avec carte, puis abonnement récurrent résiliable.",
       },
     ],
   }),
@@ -31,16 +36,20 @@ const discoveryFeatures = [
   "Photos du bien",
   "Mise à prix et date de vente",
   "Surface et localisation",
-  "Montant global estimé des travaux",
+  "Street View et ClimaScore de la commune, selon disponibilité",
+  "Sources publiques de la procédure et accès à Géorisques",
+  "Jusqu'à trois favoris",
   "Annuaire des avocats par barreau",
 ] as const;
 
 const analysisFeatures = [
-  "Mise plafond avec travaux incluse par défaut",
+  "Mise plafond simulée avec une enveloppe travaux ajustable",
   "Estimation du bien et ventes comparables",
+  "Statistiques des ventes et des tribunaux",
   "Détail des frais, travaux, risques et pièces",
-  "3 enquêtes IA supervisées par période de 30 jours",
-  "Contact avocat pour les ventes au tribunal",
+  "Simulation du financement et du scénario locatif",
+  "Historique météo mensuel du secteur avec Meteostat",
+  "Rapport PDF du scénario pour les ventes au tribunal",
 ] as const;
 
 export function AccompagnementPage() {
@@ -50,18 +59,18 @@ export function AccompagnementPage() {
         <div className="mx-auto grid max-w-[1460px] gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(500px,0.85fr)] lg:items-center lg:px-8 lg:py-8">
           <div>
             <h1 className="max-w-3xl font-display text-[clamp(3.2rem,4.5vw,4.75rem)] font-medium leading-[0.96] text-brand-navy">
-              La mise à prix lance l'enchère. Votre mise plafond protège votre argent.
+              La mise à prix est un départ. Préparez votre limite avant l’enchère.
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-relaxed text-brand-navy/72 sm:text-lg">
-              Immojudis croise le marché, les frais et les travaux pour vous aider à savoir jusqu'où
-              enchérir — sans sacrifier votre marge.
+              ImmoJudis réunit les comparables disponibles, les frais et les travaux pour vous aider
+              à fixer une limite selon votre projet et vos hypothèses.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link
-                href="/#exemples"
+                href="/annonce-exemple"
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-gold-soft px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gold"
               >
-                Voir les exemples sur l'accueil
+                Voir une analyse exemple
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
               <Link
@@ -78,11 +87,18 @@ export function AccompagnementPage() {
       </section>
 
       <section className="mx-auto max-w-[1220px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+        <p className="mb-7 max-w-3xl text-sm leading-relaxed text-brand-navy/75">
+          <strong>Sans compte</strong>, consultez les aperçus du catalogue, les guides et l’annonce
+          exemple. <strong>Avec un compte gratuit</strong>, retrouvez les informations pratiques,
+          les sources publiques de la procédure et les vues du quartier.{" "}
+          <strong>Avec Premium</strong>, accédez aux analyses, aux simulations et à l’historique
+          météo.
+        </p>
         <div className="grid gap-5 lg:grid-cols-2">
           <PlanPanel
             name="Découverte"
             price="0 €"
-            description="Pour repérer un bien et évaluer l'ampleur du chantier."
+            description="Pour repérer les ventes à venir et conserver vos trois favoris."
             features={discoveryFeatures}
           >
             <Link
@@ -96,20 +112,24 @@ export function AccompagnementPage() {
 
           <PlanPanel
             name="Analyse"
-            price="29 € / 30 jours"
+            price={resolveAnalysisOfferLabel()}
             description="Pour décider, chiffrer et préparer l'enchère."
             features={analysisFeatures}
             highlighted
           >
-            <p className="mb-3 text-center text-xs font-medium text-brand-navy/70">
-              Paiement unique · sans abonnement
+            <p className="mb-4 text-center text-sm font-medium leading-relaxed text-brand-navy/80">
+              {ANALYSIS_TRIAL_LABEL} · {ANALYSIS_RECURRING_LABEL}
+            </p>
+            <p className="mb-4 text-sm leading-relaxed text-brand-navy/75">
+              Les analyses dépendent des informations et des pièces disponibles pour chaque vente.
+              Vérifiez le contenu de la fiche avant de choisir votre accès.
             </p>
             <BillingActions hideHelper className="[&>button]:w-full" />
           </PlanPanel>
         </div>
 
         <p className="mx-auto mt-9 max-w-4xl text-center font-display text-2xl font-semibold leading-tight text-brand-navy sm:text-3xl">
-          Commencez gratuitement. Payez seulement quand un dossier mérite une vraie décision.
+          Explorez gratuitement. Testez les outils d'analyse avant de vous abonner.
         </p>
       </section>
 
@@ -121,15 +141,15 @@ export function AccompagnementPage() {
             </h2>
             <p className="mt-5 max-w-xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
               Une mise à prix peut sembler attractive, ou au contraire être déjà trop haute. La
-              décision utile consiste à partir du marché et à retrancher ce que le dossier vous
-              coûtera réellement.
+              préparation consiste à confronter une estimation de marché aux frais, aux travaux et
+              aux incertitudes du dossier.
             </p>
           </div>
           <div className="divide-y divide-brand-navy/12 border-y border-brand-navy/14">
             <OfferProof
               icon={<Target className="h-5 w-5" />}
-              title="Un chiffre à ne pas dépasser"
-              text="La mise plafond transforme une analyse longue en limite de décision claire avant la vente."
+              title="Une limite à préparer avant la vente"
+              text="La mise plafond simule une limite selon vos hypothèses de marché, de frais et de travaux."
             />
             <OfferProof
               icon={<Wrench className="h-5 w-5" />}
@@ -152,7 +172,7 @@ function DecisionEquation() {
   const items = [
     {
       icon: <Building2 className="h-7 w-7" />,
-      label: "Valeur de marché",
+      label: "Valeur estimée",
       sign: "−",
     },
     {
@@ -173,7 +193,7 @@ function DecisionEquation() {
     },
     {
       icon: <BadgeEuro className="h-8 w-8" />,
-      label: "Mise plafond",
+      label: "Plafond simulé",
       result: true,
     },
   ];
@@ -212,7 +232,8 @@ function DecisionEquation() {
       </div>
       <div className="mt-7 border-t border-gold pt-6 text-center">
         <p className="text-sm font-medium leading-relaxed text-brand-navy sm:text-base">
-          Parce qu'un bien vendu aux enchères est rarement en état neuf.
+          Schéma indicatif : ajustez les frais et les travaux selon les pièces disponibles et la
+          visite du bien.
         </p>
       </div>
     </div>

@@ -1,78 +1,60 @@
-import * as Popover from "@radix-ui/react-popover";
-import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
+import dynamic from "next/dynamic";
 import type * as React from "react";
 import { useEffect, useRef, useState } from "react";
-import {
-  ArrowUpDown,
-  Bell,
-  Building2,
-  ChevronDown,
-  Download,
-  LayoutPanelLeft,
-  LoaderCircle,
-  LockKeyhole,
-  MapPin,
-  Search as SearchIcon,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
-import { Input } from "@/components/ui/input";
+import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
+import Bell from "lucide-react/dist/esm/icons/bell.js";
+import Building2 from "lucide-react/dist/esm/icons/building-2.js";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
+import Download from "lucide-react/dist/esm/icons/download.js";
+import LayoutPanelLeft from "lucide-react/dist/esm/icons/layout-panel-left.js";
+import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
+import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
+import SearchIcon from "lucide-react/dist/esm/icons/search.js";
+import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
 import { Link } from "@/lib/router-compat";
 import { HOME_TYPE_OPTIONS, SORT_OPTIONS } from "@/lib/search/search-filters";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
-import type { MapViewportChange } from "./MapPanel";
 import type { SearchDraft } from "./search-page-state";
-import { SaleTypeFilter } from "./SaleTypeFilter";
+
+const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => module.DateFilter), {
+  loading: () => <span className="inline-flex h-10 w-28 rounded-md border border-[#cbd5df]" />,
+});
 export function SearchHeader({
-  search,
   draft,
   setDraft,
-  displayCount,
-  loadedCount,
-  filteredCount,
   activeFiltersCount,
-  mapListFollowsViewport,
   isLoading,
-  isCountLoading,
   isFetching,
-  geocoding,
   filtersOpen,
   savingAlert,
   alertsLocked,
   exportingCsv,
   csvExportLocked,
   wideMap,
+  isDesktop = false,
   onFiltersOpenChange,
   onReset,
   onSaveSearch,
   onExportCsv,
-  onSortChange,
   onToggleLayout,
 }: {
-  search: SalesSearchParams;
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
-  displayCount: number;
-  loadedCount: number;
-  filteredCount: number;
   activeFiltersCount: number;
-  mapListFollowsViewport: boolean;
   isLoading: boolean;
-  isCountLoading: boolean;
   isFetching: boolean;
-  geocoding: boolean;
   filtersOpen: boolean;
   savingAlert: boolean;
   alertsLocked: boolean;
   exportingCsv: boolean;
   csvExportLocked: boolean;
   wideMap: boolean;
+  isDesktop?: boolean;
   onFiltersOpenChange: (open: boolean) => void;
   onReset: () => void;
   onSaveSearch: () => void;
   onExportCsv: () => void;
-  onSortChange: (sort: SearchSortKey) => void;
   onToggleLayout: () => void;
 }) {
   const headerRef = useRef<HTMLElement>(null);
@@ -93,51 +75,62 @@ export function SearchHeader({
       ref={headerRef}
       className="sales-header sticky top-0 z-40 border-b border-[#132238]/10 bg-white"
     >
-      <div className="flex items-center justify-between gap-4 border-b border-[#132238]/10 px-4 py-3 lg:px-8">
-        <Link to="/" className="font-display text-3xl font-semibold text-[#132238]">
-          Immo<span className="text-[#9c642b]">judis</span>
+      <div className="flex min-h-16 items-center justify-between gap-4 border-b border-[#132238]/10 px-4 lg:px-5">
+        <Link
+          to="/"
+          aria-label="ImmoJudis — accueil"
+          className="shrink-0 font-display text-2xl font-semibold tracking-tight text-[#132238]"
+        >
+          Immo<span className="text-[#9c642b]">Judis</span>
         </Link>
+        {isDesktop ? (
+          <div className="flex min-w-0 max-w-md flex-1">
+            <GeographicSearch draft={draft} setDraft={setDraft} />
+          </div>
+        ) : null}
         <nav
           aria-label="Navigation du catalogue"
-          className="flex items-center gap-5 text-sm font-medium"
+          className="flex items-center gap-4 text-xs font-semibold sm:text-sm"
         >
           <Link
             to="/sales"
             aria-current="page"
-            className="hidden border-b-2 border-[#c98d45] py-2 sm:block"
+            className="hidden border-b-2 border-[#9c642b] py-5 xl:block"
           >
             Annonces
           </Link>
-          <Link to="/favoris" className="py-2">
+          <Link to="/favoris" className="py-4">
             Favoris
           </Link>
-          <Link to="/comparaisons" className="py-2">
+          <Link to="/comparaisons" className="py-4">
             Comparaisons
           </Link>
+          <Link to="/accompagnement" className="hidden py-4 sm:block">
+            Offres
+          </Link>
         </nav>
-        <div className="hidden lg:flex gap-2">
-          <CsvExportButton
-            exporting={exportingCsv}
-            locked={csvExportLocked}
-            onClick={onExportCsv}
-          />
+        <div className="hidden lg:flex">
           <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
         </div>
       </div>
-      <div className="px-4 py-3 lg:px-8">
-        <div className="flex flex-wrap items-center gap-3">
-          <GeographicSearch draft={draft} setDraft={setDraft} />
+      <div className="px-4 py-2.5 lg:px-5">
+        <div className="flex flex-wrap items-center gap-2">
+          {!isDesktop ? (
+            <div className="flex min-w-0 flex-1">
+              <GeographicSearch draft={draft} setDraft={setDraft} />
+            </div>
+          ) : null}
           <div className="hidden lg:flex flex-wrap items-center gap-2">
             <HomeTypeFilter draft={draft} setDraft={setDraft} />
             <PriceFilter draft={draft} setDraft={setDraft} />
-            <DateFilter draft={draft} setDraft={setDraft} />
+            <LazyDateFilter draft={draft} setDraft={setDraft} />
           </div>
           <button
             type="button"
             aria-label="Filtres avancés"
             aria-expanded={filtersOpen}
             onClick={() => onFiltersOpenChange(!filtersOpen)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#cbd5df] px-3 text-sm font-medium"
+            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#cbd5df] bg-white px-3 text-sm font-semibold hover:bg-[#f8f9fa]"
           >
             <SlidersHorizontal className="h-4 w-4" />
             <span className="hidden sm:inline">Tous les filtres</span>
@@ -148,55 +141,24 @@ export function SearchHeader({
               </span>
             )}
           </button>
-          <button
-            type="button"
-            aria-label="Créer une alerte"
-            title="Créer une alerte"
-            onClick={onSaveSearch}
-            disabled={savingAlert}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#132238] text-white xl:hidden"
-          >
-            <Bell className="h-4 w-4" />
-          </button>
-          <div className="hidden xl:block">
-            <SaveSearchButton saving={savingAlert} locked={alertsLocked} onClick={onSaveSearch} />
-          </div>
-        </div>
-        <div className="mt-3 hidden items-center justify-between gap-3 lg:flex">
-          <SaleTypeFilter
-            value={draft.saleType}
-            onChange={(saleType) =>
-              setDraft((current) => ({
-                ...current,
-                saleType,
-                tribunal: !saleType || saleType === "tribunal" ? current.tribunal : "",
-              }))
-            }
-          />
           {activeFiltersCount > 0 && (
             <button
               type="button"
               onClick={onReset}
-              className="min-h-11 shrink-0 text-sm underline underline-offset-4"
+              className="hidden min-h-11 px-2 text-xs font-semibold text-[#526170] underline underline-offset-4 lg:block"
             >
-              Réinitialiser
+              Effacer les filtres
             </button>
           )}
-        </div>
-        {(draft.city || draft.query || draft.department) && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-            <button
-              type="button"
-              aria-label="Retirer la localisation"
-              onClick={() => setDraft((c) => ({ ...c, city: "", query: "", department: "" }))}
-              className="inline-flex min-h-9 items-center gap-2 rounded-full bg-[#fff7eb] px-3 text-[#80501e]"
-            >
-              <MapPin className="h-3 w-3" />
-              {draft.city || draft.query || draft.department}
-              <X className="h-3 w-3" />
-            </button>
+          <div className="ml-auto hidden items-center gap-2 lg:flex">
+            <CsvExportButton
+              exporting={exportingCsv}
+              locked={csvExportLocked}
+              onClick={onExportCsv}
+            />
+            <SaveSearchButton saving={savingAlert} locked={alertsLocked} onClick={onSaveSearch} />
           </div>
-        )}
+        </div>
         {isFetching && !isLoading && (
           <p role="status" className="sr-only">
             Mise à jour des résultats
@@ -484,7 +446,7 @@ export function LayoutToggle({ wideMap, onToggle }: { wideMap: boolean; onToggle
       title={wideMap ? "Afficher plus de résultats" : "Afficher plus de carte"}
     >
       <LayoutPanelLeft className="h-4 w-4" />
-      Vue
+      {wideMap ? "Plus de résultats" : "Agrandir la carte"}
     </button>
   );
 }
@@ -498,18 +460,19 @@ export function ResultsSummary({
 }: {
   search: SalesSearchParams;
   displayCount: number;
-  loadedCount: number;
-  filteredCount: number;
   hasLocalFilters: boolean;
-  mapListFollowsViewport: boolean;
-  mapViewport: MapViewportChange | null;
   isLoading: boolean;
   geocoding: boolean;
 }) {
   const location = search.city || search.department || search.query || "France entière";
   return (
-    <div className="px-4 py-3 sm:px-5" aria-live="polite">
-      <h1 className="font-display text-2xl font-semibold">Ventes immobilières</h1>
+    <div className="min-w-0 px-4 py-4 sm:px-5" aria-live="polite">
+      <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-[#92724d]">
+        Le catalogue des enchères
+      </p>
+      <h1 className="font-display text-[1.65rem] font-semibold leading-tight">
+        {location === "France entière" ? "Les ventes immobilières" : `Les ventes à ${location}`}
+      </h1>
       <p className="mt-1 text-sm text-[#526170]">
         {isLoading
           ? "Recherche en cours…"
@@ -547,82 +510,5 @@ export function InlineTextFilter({
         className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none"
       />
     </label>
-  );
-}
-
-export function DateRangeFields({
-  draft,
-  setDraft,
-}: {
-  draft: SearchDraft;
-  setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
-}) {
-  return (
-    <div className="grid gap-3">
-      <label className="grid gap-1 text-sm">
-        À partir du
-        <input
-          type="date"
-          aria-label="Date de vente minimum"
-          value={draft.minSaleDate}
-          max={draft.maxSaleDate || undefined}
-          onChange={(e) =>
-            setDraft((c) => ({
-              ...c,
-              minSaleDate: e.target.value,
-              maxSaleDate: c.maxSaleDate && e.target.value > c.maxSaleDate ? "" : c.maxSaleDate,
-            }))
-          }
-          className="h-11 min-w-0 rounded border px-2"
-        />
-      </label>
-      <label className="grid gap-1 text-sm">
-        Jusqu’au
-        <input
-          type="date"
-          aria-label="Date de vente maximum"
-          value={draft.maxSaleDate}
-          min={draft.minSaleDate || undefined}
-          onChange={(e) =>
-            setDraft((c) => ({
-              ...c,
-              maxSaleDate: e.target.value,
-              minSaleDate: c.minSaleDate && e.target.value < c.minSaleDate ? "" : c.minSaleDate,
-            }))
-          }
-          className="h-11 min-w-0 rounded border px-2"
-        />
-      </label>
-      <button
-        type="button"
-        className="min-h-9 text-sm underline"
-        onClick={() => setDraft((c) => ({ ...c, minSaleDate: "", maxSaleDate: "" }))}
-      >
-        Effacer les dates
-      </button>
-    </div>
-  );
-}
-export function DateFilter(props: {
-  draft: SearchDraft;
-  setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
-}) {
-  return (
-    <Popover.Root>
-      <Popover.Trigger className="inline-flex h-10 items-center gap-2 rounded-md border border-[#cbd5df] px-3 text-sm font-medium">
-        <CalendarDays className="h-4 w-4" />
-        Date de vente{props.draft.minSaleDate || props.draft.maxSaleDate ? " · 1" : ""}
-        <ChevronDown className="h-4 w-4" />
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={8}
-          className="z-50 w-64 rounded-md border bg-white p-4 shadow-lg"
-        >
-          <DateRangeFields {...props} />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
   );
 }

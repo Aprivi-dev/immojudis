@@ -42,10 +42,12 @@ function fixture({
   concurrentAssetLookup = false,
   closeCaseBeforeFinalUpdate = false,
   moveCaseToReviewBeforeFinalUpdate = false,
+  bodyAssetCollisionSha256,
 }: {
   concurrentAssetLookup?: boolean;
   closeCaseBeforeFinalUpdate?: boolean;
   moveCaseToReviewBeforeFinalUpdate?: boolean;
+  bodyAssetCollisionSha256?: string;
 } = {}) {
   const cases: Row[] = [
     {
@@ -75,13 +77,19 @@ function fixture({
   ];
   const messages: Row[] = [];
   const assets: Row[] = [];
+  const bodyAssets: Row[] = [];
+  const evidenceAssets: Row[] = [];
   const facts: Row[] = [];
   const jobs: Row[] = [];
+  const contacts: Row[] = [];
   const uploads: Array<{ path: string; bytes: Uint8Array }> = [];
+  const bodyUploads: Array<{ path: string; bytes: Uint8Array }> = [];
+  const operations: string[] = [];
   let messageMetadataWrites = 0;
   let assetLookupCount = 0;
   let closeCaseBeforeNextUpdate = closeCaseBeforeFinalUpdate;
   let moveCaseToReviewBeforeNextUpdate = moveCaseToReviewBeforeFinalUpdate;
+  let bodyAssetCollisionConsumed = false;
   let releaseAssetLookups: () => void = () => {};
   const assetLookupsReady = new Promise<void>((resolve) => {
     releaseAssetLookups = resolve;
@@ -90,9 +98,10 @@ function fixture({
     information_agent_cases: cases,
     information_agent_missions: missions,
     information_agent_messages: messages,
-    information_agent_evidence_assets: assets,
+    information_agent_evidence_assets: evidenceAssets,
     information_agent_fact_candidates: facts,
     information_agent_inbound_jobs: jobs,
+    information_agent_contacts: contacts,
     auction_sales: [
       {
         id: SALE_A,
@@ -146,6 +155,7 @@ function fixture({
     upsert(values: Row | Row[]) {
       for (const row of Array.isArray(values) ? values : [values]) {
         if (this.table === "information_agent_fact_candidates") {
+          operations.push("fact_candidates");
           if (
             !facts.some(
               (fact) =>
@@ -162,6 +172,22 @@ function fixture({
           !jobs.some((job) => job.provider_email_id === row.provider_email_id)
         ) {
           jobs.push({ ...row, id: row.id ?? `job-${jobs.length + 1}` });
+        } else if (
+          this.table === "information_agent_contacts" &&
+          !contacts.some(
+            (contact) =>
+              contact.scope_sale_id === row.scope_sale_id &&
+              String(contact.email).toLowerCase() === String(row.email).toLowerCase(),
+          )
+        ) {
+          contacts.push({ ...row, id: row.id ?? `contact-${contacts.length + 1}` });
+        } else if (this.table === "information_agent_contacts") {
+          const existing = contacts.find(
+            (contact) =>
+              contact.scope_sale_id === row.scope_sale_id &&
+              String(contact.email).toLowerCase() === String(row.email).toLowerCase(),
+          );
+          if (existing) Object.assign(existing, row);
         }
       }
       return Promise.resolve({ data: null, error: null });
@@ -197,6 +223,27 @@ function fixture({
       if (this.operation === "insert") {
         const incoming = Array.isArray(this.values) ? this.values : [this.values as Row];
         for (const row of incoming) {
+          const metadata = row.metadata;
+          if (
+            this.table === "information_agent_evidence_assets" &&
+            bodyAssetCollisionSha256 &&
+            !bodyAssetCollisionConsumed &&
+            metadata &&
+            typeof metadata === "object" &&
+            !Array.isArray(metadata) &&
+            (metadata as Record<string, unknown>).evidence_kind === "email_body"
+          ) {
+            bodyAssetCollisionConsumed = true;
+            const collision: Row = {
+              ...row,
+              id: "concurrent-body-asset",
+              sha256: bodyAssetCollisionSha256,
+            };
+            rows.push(collision);
+            bodyAssets.push(collision);
+            operations.push("email_body_asset_collision");
+            return { data: [], error: { code: "23505" } as never };
+          }
           if (
             this.table === "information_agent_messages" &&
             messages.some((message) => message.provider_message_id === row.provider_message_id)
@@ -205,7 +252,7 @@ function fixture({
           }
           if (
             this.table === "information_agent_evidence_assets" &&
-            assets.some(
+            evidenceAssets.some(
               (asset) =>
                 asset.message_id === row.message_id &&
                 asset.provider_attachment_id === row.provider_attachment_id,
@@ -213,7 +260,22 @@ function fixture({
           ) {
             return { data: [], error: { code: "23505" } as never };
           }
-          rows.push({ ...row, id: row.id ?? `asset-${assets.length + 1}` });
+          const inserted: Row = { ...row, id: row.id ?? `asset-${evidenceAssets.length + 1}` };
+          rows.push(inserted);
+          if (this.table === "information_agent_evidence_assets") {
+            const metadata = inserted.metadata;
+            if (
+              metadata &&
+              typeof metadata === "object" &&
+              !Array.isArray(metadata) &&
+              (metadata as Record<string, unknown>).evidence_kind === "email_body"
+            ) {
+              operations.push("email_body_asset");
+              bodyAssets.push(inserted);
+            } else {
+              assets.push(inserted);
+            }
+          }
         }
         return {
           data: incoming.map((row) => rows.find((item) => item.id === row.id) ?? rows.at(-1)!),
@@ -250,7 +312,8 @@ function fixture({
   mocks.from.mockImplementation((table: string) => new Query(table));
   mocks.storageFrom.mockReturnValue({
     upload: vi.fn(async (path: string, bytes: Uint8Array) => {
-      uploads.push({ path, bytes });
+      if (path.includes("/body/")) bodyUploads.push({ path, bytes });
+      else uploads.push({ path, bytes });
       return { error: null };
     }),
   });
@@ -259,9 +322,13 @@ function fixture({
     missions,
     messages,
     assets,
+    bodyAssets,
     facts,
     jobs,
+    contacts,
     uploads,
+    bodyUploads,
+    operations,
     messageMetadataWrites: () => messageMetadataWrites,
   };
 }
@@ -431,6 +498,63 @@ describe("information-agent offline inbound scenarios", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("stores the cleaned email body as private evidence for the extraction worker", async () => {
+    const state = fixture();
+    receivedEmail({
+      text: [
+        "Bonjour,",
+        "La surface habitable est de 84 m².",
+        "",
+        "--",
+        "Le 20 septembre, ImmoJudis a écrit :",
+        "> La surface habitable est de 18 m².",
+      ].join("\n"),
+    });
+    const fetchImpl = vi.fn();
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      factCount: 1,
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(state.assets).toHaveLength(0);
+    expect(state.bodyAssets).toHaveLength(1);
+    expect(state.operations.indexOf("fact_candidates")).toBeLessThan(
+      state.operations.indexOf("email_body_asset"),
+    );
+    expect(state.bodyAssets[0]).toMatchObject({
+      case_id: CASE_A,
+      sale_id: SALE_A,
+      provider_attachment_id: expect.stringMatching(/^email-body:/),
+      storage_bucket: "information-agent-evidence",
+      original_filename: "email-body.txt",
+      mime_type: "text/plain",
+      metadata: {
+        evidence_kind: "email_body",
+        content_trust: "untrusted_external_evidence",
+      },
+    });
+    expect(new TextDecoder().decode(state.bodyUploads[0]?.bytes)).toBe(
+      "Bonjour,\nLa surface habitable est de 84 m².",
+    );
+    expect(
+      state.facts.every((fact) => !["document", "photo"].includes(String(fact.fact_key))),
+    ).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse a concurrent body asset with a different SHA", async () => {
+    const state = fixture({ bodyAssetCollisionSha256: "0".repeat(64) });
+    receivedEmail({ text: "Surface habitable : 84 m²." });
+
+    await expect(webhook()).rejects.toThrow("contenu différent");
+    expect(state.bodyAssets).toHaveLength(1);
+    expect(state.bodyAssets[0]?.sha256).toBe("0".repeat(64));
+    expect(state.messages[0]?.metadata).toMatchObject({
+      inbound_processing: { status: "failed" },
+    });
+  });
+
   it("persists a verified receipt before attachment processing when deferred", async () => {
     const state = fixture();
     receivedEmail();
@@ -490,12 +614,12 @@ describe("information-agent offline inbound scenarios", () => {
     const writesAfterFirstDelivery = state.messageMetadataWrites();
     const second = await webhook(fetchImpl);
 
-    expect(first).toMatchObject({ processingStatus: "completed" });
-    expect(second).toMatchObject({ processingStatus: "completed", duplicate: true });
+    expect(first).toMatchObject({ processingStatus: "review" });
+    expect(second).toMatchObject({ processingStatus: "review", duplicate: true });
     expect(state.messages[0]?.metadata).toMatchObject({
       inbound_processing: {
         version: "inbound-v2",
-        status: "completed",
+        status: "review",
         attempts: 1,
         provider_email_id: "provider-email-1",
       },
@@ -511,7 +635,7 @@ describe("information-agent offline inbound scenarios", () => {
     receivedEmail({ text: "Merci pour votre retour, nous vérifions le dossier." });
     mocks.list.mockResolvedValue({ data: { data: [] }, error: null });
 
-    expect(await webhook()).toMatchObject({ processingStatus: "completed", factCount: 0 });
+    expect(await webhook()).toMatchObject({ processingStatus: "review", factCount: 0 });
     expect(state.cases[0]?.status).toBe("review");
   });
 
@@ -519,7 +643,7 @@ describe("information-agent offline inbound scenarios", () => {
     const state = fixture({ moveCaseToReviewBeforeFinalUpdate: true });
     receivedEmail({ text: "Merci pour votre retour, nous vérifions le dossier." });
 
-    expect(await webhook()).toMatchObject({ processingStatus: "completed", factCount: 0 });
+    expect(await webhook()).toMatchObject({ processingStatus: "review", factCount: 0 });
     expect(state.cases[0]?.status).toBe("review");
     expect(state.missions[0]?.status).toBe("replied");
   });
@@ -541,10 +665,10 @@ describe("information-agent offline inbound scenarios", () => {
     });
 
     const retry = await webhook();
-    expect(retry).toMatchObject({ processingStatus: "completed" });
+    expect(retry).toMatchObject({ processingStatus: "review" });
     expect(state.messages).toHaveLength(1);
     expect(state.messages[0]?.metadata).toMatchObject({
-      inbound_processing: { status: "completed", attempts: 2 },
+      inbound_processing: { status: "review", attempts: 2 },
     });
   });
 
@@ -664,6 +788,65 @@ describe("information-agent offline inbound scenarios", () => {
       rejected_attachment_count: 1,
       rejected_attachments: [{ filename: "document.pdf", reason: "Taille hors limite" }],
     });
+  });
+
+  it("normalizes provider MIME aliases and rejects insecure attachment links", async () => {
+    const state = fixture();
+    receivedEmail({ text: "Pièces jointes." });
+    mocks.list.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: "pdf-alias",
+            filename: "pv.pdf",
+            content_type: "application/x-pdf; charset=binary",
+            size: 16,
+            download_url: "https://example.test/pv.pdf",
+          },
+          {
+            id: "photo-generic",
+            filename: "photo.JPG",
+            content_type: "application/octet-stream",
+            size: 16,
+            download_url: "https://example.test/photo.JPG",
+          },
+          {
+            id: "table-alias",
+            filename: "table.csv",
+            content_type: "text/csv",
+            size: 16,
+            download_url: "https://example.test/table.csv",
+          },
+          {
+            id: "insecure",
+            filename: "unsafe.pdf",
+            content_type: "application/pdf",
+            size: 16,
+            download_url: "http://example.test/unsafe.pdf",
+          },
+        ],
+      },
+      error: null,
+    });
+    const fetchImpl = vi.fn(async () => new Response("fixture-bytes", { status: 200 }));
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      attachmentCount: 3,
+      factCount: 3,
+      processingStatus: "review",
+    });
+    expect(state.assets.map((asset) => asset.mime_type)).toEqual([
+      "application/pdf",
+      "image/jpeg",
+      "text/plain",
+    ]);
+    expect(state.messages[0]?.metadata).toMatchObject({
+      rejected_attachment_count: 1,
+      rejected_attachments: [
+        { filename: "unsafe.pdf", reason: "Lien de téléchargement absent ou non sécurisé" },
+      ],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("asks Resend to retry a transient attachment failure so its link can be refreshed", async () => {
@@ -805,6 +988,55 @@ describe("information-agent offline inbound scenarios", () => {
     expect(state.messages[0]?.metadata).toMatchObject({ sender_matches_recipient: false });
     expect(mocks.list).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("records an authenticated explicit opt-out globally and skips extraction", async () => {
+    const state = fixture();
+    receivedEmail({
+      text: "Bonjour,\nMerci de ne plus me contacter et supprimez mon adresse.\n",
+    });
+    mocks.list.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: "must-not-be-downloaded",
+            filename: "document.pdf",
+            content_type: "application/pdf",
+            size: 16,
+            download_url: "https://example.test/document.pdf",
+          },
+        ],
+      },
+      error: null,
+    });
+    const fetchImpl = vi.fn();
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      caseId: CASE_A,
+      factCount: 0,
+      attachmentCount: 0,
+      processingStatus: "review",
+    });
+    expect(state.contacts).toHaveLength(1);
+    expect(state.contacts[0]).toMatchObject({
+      sale_id: null,
+      scope_sale_id: null,
+      email: "contact@example.test",
+      opposition_status: "opposed",
+    });
+    expect(state.cases[0]?.status).toBe("review");
+    expect(state.cases[0]?.metadata).toMatchObject({ last_inbound_contact_opposed: true });
+    expect(state.messages[0]?.metadata).toMatchObject({
+      inbound_processing: { status: "review", reason: "contact_opposed" },
+    });
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    expect(await webhook(fetchImpl)).toMatchObject({
+      duplicate: true,
+      processingStatus: "review",
+    });
+    expect(state.contacts).toHaveLength(1);
   });
 
   it("keeps an explicit Resend authentication failure in review even in relaxed mode", async () => {
@@ -988,6 +1220,7 @@ describe("information-agent offline inbound scenarios", () => {
     const upload = vi
       .fn()
       .mockResolvedValueOnce({ error: { message: "Storage unavailable" } })
+      .mockResolvedValueOnce({ error: null })
       .mockResolvedValueOnce({ error: null });
     mocks.storageFrom.mockReturnValue({ upload });
     const fetchImpl = vi.fn(async () => new Response("%PDF-1.7\nfixture", { status: 200 }));

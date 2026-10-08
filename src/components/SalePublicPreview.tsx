@@ -6,7 +6,7 @@ import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combi
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import { SaleProcedureBadge } from "@/components/SaleProcedurePanel";
+import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { formatPrice } from "@/lib/format";
 import { saleDetailPath } from "@/lib/navigation";
 import { Link } from "@/lib/router-compat";
@@ -196,7 +196,10 @@ export function SalePublicPreview({
                 <LockKeyholeOpen aria-hidden />
                 Découverte · gratuit
               </h3>
-              <p>Date, visites, contact, pièces disponibles et étapes pour participer.</p>
+              <p>
+                Informations pratiques, sources publiques de la procédure, Street View et ClimaScore
+                communal selon disponibilité.
+              </p>
             </div>
             <div className={`${styles.tier} ${styles.tierAnalysis}`}>
               <h3 className={styles.tierTitle}>
@@ -205,12 +208,24 @@ export function SalePublicPreview({
               </h3>
               <p>
                 {procedure.venueType === "tribunal"
-                  ? "Marché local, risques du dossier et estimation de votre mise plafond."
-                  : "Marché local et risques du dossier lorsque les données le permettent."}
+                  ? "Marché local, risques du dossier, historique météo et estimation de votre mise plafond."
+                  : "Marché local, risques du dossier et historique météo lorsque les données le permettent."}
               </p>
             </div>
           </div>
         </section>
+        <p className="mt-6 text-sm leading-relaxed text-slate-600">
+          Les sources officielles restent consultables librement :{" "}
+          <a
+            href="https://www.georisques.gouv.fr/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4"
+          >
+            consulter Géorisques
+          </a>
+          .
+        </p>
       </div>
     </main>
   );

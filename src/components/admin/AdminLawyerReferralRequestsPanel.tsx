@@ -30,16 +30,20 @@ const STATUS_OPTIONS: Array<[ReferralStatus, string]> = [
 
 export function AdminLawyerReferralRequestsPanel() {
   const queryClient = useQueryClient();
+  const [offset, setOffset] = useState(0);
   const requestsQuery = useQuery({
-    queryKey: QUERY_KEY,
-    queryFn: fetchAdminLawyerReferralRequests,
+    queryKey: [...QUERY_KEY, offset],
+    queryFn: () => fetchAdminLawyerReferralRequests({ offset }),
     staleTime: 30_000,
   });
   const requests = requestsQuery.data?.requests ?? [];
   const lawyers = requestsQuery.data?.lawyers ?? [];
-  const openCount = requests.filter((request) =>
-    ["new", "manual_review", "sent_to_lawyer"].includes(request.status),
-  ).length;
+  const openCount =
+    requestsQuery.data?.openCount ??
+    requests.filter((request) =>
+      ["new", "manual_review", "sent_to_lawyer"].includes(request.status),
+    ).length;
+  const totalCount = requestsQuery.data?.totalCount ?? requests.length;
 
   const updateMutation = useMutation({
     mutationFn: (data: AdminLawyerReferralUpdateInput) =>
@@ -91,6 +95,13 @@ export function AdminLawyerReferralRequestsPanel() {
             : "Chargement impossible"}
         </div>
       ) : null}
+      {requestsQuery.data ? (
+        <p className="mt-4 text-xs text-muted-foreground">
+          {requests.length} demande{requests.length > 1 ? "s" : ""} récente
+          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {totalCount}
+          . Le compteur des demandes ouvertes couvre toute la file.
+        </p>
+      ) : null}
 
       <div className="mt-5 grid gap-3">
         {requestsQuery.isLoading ? (
@@ -113,7 +124,64 @@ export function AdminLawyerReferralRequestsPanel() {
           </div>
         )}
       </div>
+      {requestsQuery.data && totalCount > 0 ? (
+        <AdminPagination
+          offset={offset}
+          count={requests.length}
+          totalCount={totalCount}
+          hasMore={requestsQuery.data.hasMore}
+          busy={requestsQuery.isFetching}
+          onPrevious={() =>
+            setOffset((current) => Math.max(0, current - requestsQuery.data!.limit))
+          }
+          onNext={() => setOffset((current) => current + requestsQuery.data!.limit)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function AdminPagination({
+  offset,
+  count,
+  totalCount,
+  hasMore,
+  busy,
+  onPrevious,
+  onNext,
+}: {
+  offset: number;
+  count: number;
+  totalCount: number;
+  hasMore: boolean;
+  busy: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+      <span>
+        {offset + 1}–{offset + count} sur {totalCount}
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy || offset === 0}
+          onClick={onPrevious}
+        >
+          Précédent
+        </button>
+        <button
+          type="button"
+          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy || !hasMore}
+          onClick={onNext}
+        >
+          Suivant
+        </button>
+      </div>
+    </div>
   );
 }
 

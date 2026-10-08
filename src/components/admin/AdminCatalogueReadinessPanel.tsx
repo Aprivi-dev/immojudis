@@ -262,7 +262,7 @@ function QueueLine({
               }
             >
               <MailPlus className="size-3.5" />
-              Préparer une demande
+              Ouvrir le message
             </button>
           ) : null}
           <Link

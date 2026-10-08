@@ -1,4 +1,9 @@
+import {
+  bearerTokenFromRequest,
+  requireSupabaseAuthContext,
+} from "@/integrations/supabase/auth-middleware";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { assertFeatureEntitlement } from "@/lib/property-reports";
 import {
   tribunalJudicialActivityDirectoryQuerySchema,
   tribunalJudicialActivityDirectoryResponseSchema,
@@ -8,6 +13,12 @@ import { getTribunalJudicialActivityDirectory } from "@/lib/tribunal-judicial-ac
 export async function GET(request: Request) {
   const context = createApiRequestContext(request, "tribunal.judicial_activity.directory");
   try {
+    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await assertFeatureEntitlement(
+      auth,
+      "sales.statistics",
+      "Répertoire des tribunaux réservé au plan Analyse.",
+    );
     const url = new URL(request.url);
     const input = tribunalJudicialActivityDirectoryQuerySchema.parse(
       Object.fromEntries(url.searchParams.entries()),
@@ -17,7 +28,8 @@ export async function GET(request: Request) {
     );
     return apiJson(directory, context, {
       headers: {
-        "cache-control": "public, s-maxage=300, stale-while-revalidate=600",
+        "cache-control": "private, no-store",
+        vary: "authorization",
       },
     });
   } catch (error) {
@@ -25,7 +37,8 @@ export async function GET(request: Request) {
       fallbackMessage: "Répertoire statistique des tribunaux temporairement indisponible.",
       fallbackStatus: 503,
     });
-    response.headers.set("cache-control", "public, max-age=0, no-cache");
+    response.headers.set("cache-control", "private, no-store");
+    response.headers.set("vary", "authorization");
     return response;
   }
 }

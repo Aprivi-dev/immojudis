@@ -5,11 +5,7 @@ import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "@/lib/router-compat";
-import {
-  fetchFeatureEntitlements,
-  fetchLawyerReferrals,
-  requestLawyerReferral,
-} from "@/lib/client-api";
+import { fetchAccessPlan, fetchLawyerReferrals, requestLawyerReferral } from "@/lib/client-api";
 import type { LawyerReferralSummary } from "@/lib/lawyer-referrals";
 
 export function LawyerReferralButton({
@@ -30,13 +26,13 @@ export function LawyerReferralButton({
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
-    queryKey: ["feature-entitlements", user?.id ?? "anonymous"],
-    queryFn: fetchFeatureEntitlements,
+    queryKey: ["feature-entitlements", user?.id ?? "anonymous", "plan"],
+    queryFn: fetchAccessPlan,
     enabled: Boolean(user) && !loading,
     staleTime: 5 * 60_000,
   });
   const { data: referralData, isLoading: referralsLoading } = useQuery({
-    queryKey: ["lawyer-referrals", saleId],
+    queryKey: ["lawyer-referrals", user?.id ?? "anonymous", saleId],
     queryFn: () => fetchLawyerReferrals({ saleId, limit: 1 }),
     enabled: Boolean(user) && !loading,
     staleTime: 60_000,
@@ -80,7 +76,9 @@ export function LawyerReferralButton({
       } else {
         toast.success("Demande créée. ImmoJudis recherchera un avocat référencé sur cette zone.");
       }
-      await queryClient.invalidateQueries({ queryKey: ["lawyer-referrals", saleId] });
+      await queryClient.invalidateQueries({
+        queryKey: ["lawyer-referrals", user.id, saleId],
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Demande impossible");
     } finally {

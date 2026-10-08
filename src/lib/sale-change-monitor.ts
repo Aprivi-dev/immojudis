@@ -284,8 +284,8 @@ export async function monitorUserSaleChanges({
     });
   }
 
-  await upsertWatchSnapshots(auth, snapshotRows);
-  const insertedRows = await insertChangeEvents(auth, eventRows);
+  await upsertWatchSnapshots(snapshotRows);
+  const insertedRows = await insertChangeEvents(eventRows);
 
   await recordFeatureUsageEvent({
     auth,
@@ -655,7 +655,7 @@ async function loadSalesByIds(
   return rows.filter((sale) => visibleSaleIds.has(sale.id));
 }
 
-async function upsertWatchSnapshots(auth: SupabaseAuthContext, rows: SaleWatchSnapshotInsert[]) {
+async function upsertWatchSnapshots(rows: SaleWatchSnapshotInsert[]) {
   if (!rows.length) return;
 
   const { error } = await supabaseAdmin
@@ -665,10 +665,7 @@ async function upsertWatchSnapshots(auth: SupabaseAuthContext, rows: SaleWatchSn
   if (error) throw error;
 }
 
-async function insertChangeEvents(
-  auth: SupabaseAuthContext,
-  rows: SaleChangeEventInsert[],
-): Promise<SaleChangeEventRow[]> {
+async function insertChangeEvents(rows: SaleChangeEventInsert[]): Promise<SaleChangeEventRow[]> {
   if (!rows.length) return [];
 
   const { data, error } = await supabaseAdmin

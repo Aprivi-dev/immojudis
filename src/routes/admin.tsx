@@ -3,7 +3,13 @@
 import dynamic from "next/dynamic";
 import { AdminSettingsPage } from "@/components/admin/AdminSettingsPage";
 import { createFileRoute, Link } from "@/lib/router-compat";
-import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useIsFetching,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import Bot from "lucide-react/dist/esm/icons/bot.js";
@@ -15,6 +21,7 @@ import Play from "lucide-react/dist/esm/icons/play.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import ScrollText from "lucide-react/dist/esm/icons/scroll-text.js";
 import { collectionSourceResults, collectionTransportNote } from "@/lib/admin-source-collection";
+import { adminRunRestartRequest, type AdminRunRequest } from "@/lib/admin-run-actions";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import type * as React from "react";
 import { useState } from "react";
@@ -32,8 +39,10 @@ import type { Json, Tables } from "@/integrations/supabase/types";
 import {
   fetchAdminDashboard,
   fetchAdminLawyerReferralRequests,
+  fetchAdminPublicationRequests,
   fetchAdminPrivacyRequests,
   fetchAdminSubscriptions,
+  reviewAdminPublicationRequest,
   startAdminScrollRequest,
 } from "@/lib/client-api";
 import {
@@ -46,11 +55,6 @@ type RunnerMode = AdminDashboardData["runner"]["mode"];
 export type AdminDashboardView = Exclude<AdminSection, "quality" | "settings">;
 type PublicationRequest = Tables<"listing_publication_requests">;
 type PublicationRequestStatus = PublicationRequest["status"];
-
-type AdminPublicationQueryResult = {
-  requests: PublicationRequest[];
-  hasMore: boolean;
-};
 
 type UploadedPublicationDocument = {
   bucket?: string;
@@ -215,10 +219,10 @@ function AdminDashboardContent({ initialView = "overview" }: { initialView?: Adm
   const [operationsTab, setOperationsTab] = useState<OperationsTab>("collections");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [publicationStatus, setPublicationStatus] = useState<PublicationFilter>("all");
-  const [publicationLimit, setPublicationLimit] = useState(PUBLICATION_PAGE_SIZE);
   const [lawyerTab, setLawyerTab] = useState<LawyerTab>("referrals");
   const dashboardEnabled = initialView === "overview" || initialView === "operations";
   const publicationEnabled = initialView === "overview" || initialView === "publications";
+  const publicationSearch = searchQuery.trim();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-dashboard"],
@@ -226,48 +230,47 @@ function AdminDashboardContent({ initialView = "overview" }: { initialView?: Adm
     staleTime: 30_000,
     enabled: dashboardEnabled,
     retry: 1,
+    refetchInterval: (query) =>
+      query.state.data?.stats.queuedRuns || query.state.data?.stats.runningRuns ? 10_000 : 60_000,
   });
 
-  const publicationRequestsQuery = useQuery<AdminPublicationQueryResult>({
-    queryKey: ["admin-publication-requests", publicationLimit],
-    queryFn: async (): Promise<AdminPublicationQueryResult> => {
-      const { data: requests, error: requestsError } = await supabase
-        .from("listing_publication_requests")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(publicationLimit + 1);
-
-      if (requestsError) throw requestsError;
-      const rows = (requests ?? []) as PublicationRequest[];
-      return {
-        requests: rows.slice(0, publicationLimit),
-        hasMore: rows.length > publicationLimit,
-      };
-    },
+  const publicationRequestsQuery = useInfiniteQuery({
+    queryKey: ["admin-publication-requests", publicationStatus, publicationSearch],
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      fetchAdminPublicationRequests({
+        status: publicationStatus,
+        search: publicationSearch,
+        offset: pageParam,
+        limit: PUBLICATION_PAGE_SIZE,
+      }),
+    getNextPageParam: (page) =>
+      page.hasMore && page.requests.length ? page.offset + page.requests.length : undefined,
     staleTime: 30_000,
     enabled: publicationEnabled,
-    placeholderData: (previous) => previous,
     retry: 1,
   });
-  const publicationRequests = publicationRequestsQuery.data?.requests ?? [];
+  const publicationPage = publicationRequestsQuery.data?.pages.at(-1);
+  const publicationRequests =
+    publicationRequestsQuery.data?.pages.flatMap((page) => page.requests) ?? [];
   const publicationRequestsLoading = publicationRequestsQuery.isLoading;
   const publicationRequestsError = publicationRequestsQuery.error;
 
   const subscriptionsOverviewQuery = useQuery({
     queryKey: ["admin-subscriptions"],
-    queryFn: fetchAdminSubscriptions,
+    queryFn: () => fetchAdminSubscriptions(),
     staleTime: 30_000,
     enabled: initialView === "overview",
   });
   const referralsOverviewQuery = useQuery({
     queryKey: ["admin-lawyer-referral-requests"],
-    queryFn: fetchAdminLawyerReferralRequests,
+    queryFn: () => fetchAdminLawyerReferralRequests(),
     staleTime: 30_000,
     enabled: initialView === "overview",
   });
   const privacyOverviewQuery = useQuery({
     queryKey: ["admin-privacy-requests"],
-    queryFn: fetchAdminPrivacyRequests,
+    queryFn: () => fetchAdminPrivacyRequests(),
     staleTime: 30_000,
     enabled: initialView === "overview",
   });
@@ -279,14 +282,15 @@ function AdminDashboardContent({ initialView = "overview" }: { initialView?: Adm
   });
 
   const startMutation = useMutation({
-    mutationFn: (requestedSource?: AdminScrollSource) =>
-      startAdminScrollRequest({ data: { source: requestedSource ?? source, mode: "collect" } }),
+    mutationFn: (request?: AdminRunRequest) =>
+      startAdminScrollRequest({ data: request ?? { source, mode: "collect" } }),
     onSuccess: async (result) => {
       toast.success(result.message);
       await queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
     },
-    onError: (err) => {
+    onError: async (err) => {
       toast.error(err instanceof Error ? err.message : "Impossible de lancer la collecte");
+      await queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
     },
   });
   const backfillMutation = useMutation({
@@ -302,8 +306,9 @@ function AdminDashboardContent({ initialView = "overview" }: { initialView?: Adm
       toast.success(result.message);
       await queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
     },
-    onError: (err) => {
+    onError: async (err) => {
       toast.error(err instanceof Error ? err.message : "Impossible de lancer le backfill IA");
+      await queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
     },
   });
 
@@ -314,20 +319,15 @@ function AdminDashboardContent({ initialView = "overview" }: { initialView?: Adm
     }: {
       id: string;
       status: Extract<PublicationRequestStatus, "approved" | "rejected">;
-    }) => {
-      const { error: reviewError } = await supabase
-        .from("listing_publication_requests")
-        .update({
-          status,
-          reviewed_at: new Date().toISOString(),
-          reviewed_by: user?.id ?? null,
-        })
-        .eq("id", id);
-
-      if (reviewError) throw reviewError;
-    },
-    onSuccess: async (_, variables) => {
-      toast.success(variables.status === "approved" ? "Demande validée." : "Demande refusée.");
+    }) => reviewAdminPublicationRequest({ id, status }),
+    onSuccess: async (result, variables) => {
+      toast.success(
+        variables.status === "approved"
+          ? result.publishedSaleId
+            ? "Demande validée : vente créée, enrichissement à terminer."
+            : "Demande validée."
+          : "Demande refusée.",
+      );
       await queryClient.invalidateQueries({ queryKey: ["admin-publication-requests"] });
     },
     onError: (err) => {
@@ -350,48 +350,16 @@ function AdminDashboardContent({ initialView = "overview" }: { initialView?: Adm
         )
       : true,
   );
-  const filteredPublicationRequests = publicationRequests.filter((request) => {
-    const matchesStatus = publicationStatus === "all" || request.status === publicationStatus;
-    const matchesSearch = normalizedSearch
-      ? [
-          request.title,
-          request.location,
-          request.court,
-          request.requester_email,
-          request.description,
-        ].some((value) =>
-          String(value ?? "")
-            .toLocaleLowerCase("fr-FR")
-            .includes(normalizedSearch),
-        )
-      : true;
-    return matchesStatus && matchesSearch;
-  });
-  const activeSubscriptions = subscriptionsOverviewQuery.data
-    ? subscriptionsOverviewQuery.data.subscriptions.filter((subscription) =>
-        ["active", "trialing"].includes(subscription.status),
-      ).length
-    : null;
-  const openReferrals = referralsOverviewQuery.data
-    ? referralsOverviewQuery.data.requests.filter((request) =>
-        ["new", "manual_review", "sent_to_lawyer"].includes(request.status),
-      ).length
-    : null;
-  const openPrivacyRequests = privacyOverviewQuery.data
-    ? privacyOverviewQuery.data.requests.filter(
-        (request) => !["completed", "rejected"].includes(request.status),
-      )
-    : null;
-  const overduePrivacyRequests = openPrivacyRequests
-    ? openPrivacyRequests.filter((request) => new Date(request.dueAt) < new Date()).length
-    : null;
-  const pendingPublications = publicationRequestsQuery.data
-    ? publicationRequests.filter((request) => request.status === "pending").length
-    : null;
+  const filteredPublicationRequests = publicationRequests;
+  const activeSubscriptions = subscriptionsOverviewQuery.data?.activeCount ?? null;
+  const openReferrals = referralsOverviewQuery.data?.openCount ?? null;
+  const openPrivacyRequests = privacyOverviewQuery.data?.openCount ?? null;
+  const overduePrivacyRequests = privacyOverviewQuery.data?.overdueCount ?? null;
+  const pendingPublications = publicationPage?.pendingCount ?? null;
   const overviewPriorities = buildOverviewPriorities({
     pendingPublications,
     openReferrals,
-    openPrivacyRequests: openPrivacyRequests?.length ?? null,
+    openPrivacyRequests,
     overduePrivacyRequests,
     aiBackfillRemaining,
     failedRuns: data?.stats.failedRuns ?? null,
@@ -487,7 +455,10 @@ function AdminDashboardContent({ initialView = "overview" }: { initialView?: Adm
             backfillLimit={backfillLimit}
             setBackfillLimit={setBackfillLimit}
             startMutationPending={startMutation.isPending}
-            onStart={(requestedSource) => startMutation.mutate(requestedSource)}
+            onStart={(requestedSource) =>
+              startMutation.mutate({ source: requestedSource ?? source, mode: "collect" })
+            }
+            onRestart={(request) => startMutation.mutate(request)}
             backfillPending={backfillMutation.isPending}
             onBackfill={() => backfillMutation.mutate()}
           />
@@ -499,17 +470,18 @@ function AdminDashboardContent({ initialView = "overview" }: { initialView?: Adm
       {initialView === "publications" ? (
         <AdminPublications
           requests={filteredPublicationRequests}
-          totalRequests={publicationRequestsQuery.data ? publicationRequests.length : null}
+          totalRequests={publicationPage?.totalCount ?? null}
           pendingCount={pendingPublications}
           loading={publicationRequestsLoading}
           error={publicationRequestsError}
           fetching={publicationRequestsQuery.isFetching}
-          hasMore={publicationRequestsQuery.data?.hasMore ?? false}
-          limit={publicationLimit}
-          onLoadMore={() => setPublicationLimit((limit) => limit + PUBLICATION_PAGE_SIZE)}
+          hasMore={publicationRequestsQuery.hasNextPage}
+          onLoadMore={() => void publicationRequestsQuery.fetchNextPage()}
           onRetry={() => void publicationRequestsQuery.refetch()}
           filter={publicationStatus}
-          onFilterChange={setPublicationStatus}
+          onFilterChange={(nextFilter) => {
+            setPublicationStatus(nextFilter);
+          }}
           reviewPending={reviewMutation.isPending}
           onReview={(id, status) => reviewMutation.mutate({ id, status })}
         />
@@ -931,6 +903,7 @@ function AdminOperations({
   setBackfillLimit,
   startMutationPending,
   onStart,
+  onRestart,
   backfillPending,
   onBackfill,
 }: {
@@ -947,6 +920,7 @@ function AdminOperations({
   setBackfillLimit: (value: number) => void;
   startMutationPending: boolean;
   onStart: (source?: AdminScrollSource) => void;
+  onRestart: (request: AdminRunRequest) => void;
   backfillPending: boolean;
   onBackfill: () => void;
 }) {
@@ -1004,11 +978,22 @@ function AdminOperations({
           </span>
           <div>
             <div className="flex flex-wrap items-center gap-2 font-semibold text-[#132238]">
-              {runnerModeLabel(data?.runner.mode ?? "queue_worker")}
-              <span className="text-emerald-700">· Actif</span>
+              {data ? runnerModeLabel(data.runner.mode) : "Vérification du runner"}
+              <span
+                className={runnerStatusClass(
+                  data?.runner.mode === "queue_worker" ? undefined : data?.runner.status,
+                )}
+              >
+                ·{" "}
+                {runnerStatusLabel(
+                  data?.runner.mode === "queue_worker" ? undefined : data?.runner.status,
+                )}
+              </span>
             </div>
             <p className="mt-1 text-sm text-[#132238]/58">
-              Vérifié {data?.checkedAt ? formatRelativeTime(data.checkedAt) : "à l’instant"}
+              {data?.checkedAt
+                ? `Vérifié ${formatRelativeTime(data.checkedAt)}`
+                : "Vérification du runner en attente"}
             </p>
           </div>
         </AdminPanel>
@@ -1054,8 +1039,8 @@ function AdminOperations({
             </AdminPanel>
             <RunDetails
               run={selectedRun}
-              onRestart={(runSource) => onStart(asAdminScrollSource(runSource))}
-              restartPending={startMutationPending}
+              onRestart={onRestart}
+              restartPending={startMutationPending || backfillPending}
             />
           </div>
           <AiBackfillPanel
@@ -1142,7 +1127,6 @@ function AdminPublications({
   fetching,
   error,
   hasMore,
-  limit,
   onLoadMore,
   onRetry,
   filter,
@@ -1157,7 +1141,6 @@ function AdminPublications({
   fetching: boolean;
   error: unknown;
   hasMore: boolean;
-  limit: number;
   onLoadMore: () => void;
   onRetry: () => void;
   filter: PublicationFilter;
@@ -1176,7 +1159,9 @@ function AdminPublications({
           description={
             pendingCount == null || totalRequests == null
               ? "Nombre de demandes indisponible"
-              : `${pendingCount} demande${pendingCount > 1 ? "s" : ""} en attente sur ${totalRequests}`
+              : filter === "all"
+                ? `${pendingCount} demande${pendingCount > 1 ? "s" : ""} en attente sur ${totalRequests}`
+                : `${totalRequests} demande${totalRequests > 1 ? "s" : ""} correspondant au filtre sélectionné`
           }
           action={
             <div className="flex flex-wrap gap-1 rounded-lg bg-[#132238]/[0.04] p-1">
@@ -1249,7 +1234,9 @@ function AdminPublications({
         {hasMore && !loading && !error ? (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#132238]/10 pt-4">
             <span className="text-xs text-[#132238]/58">
-              {requests.length} demandes affichées · limite actuelle {limit}
+              {requests.length} demande{requests.length > 1 ? "s" : ""} affichée
+              {requests.length > 1 ? "s" : ""}
+              {totalRequests != null ? " sur " + totalRequests : ""} · filtre et recherche serveur
             </span>
             <button
               type="button"
@@ -1549,7 +1536,7 @@ function RunDetails({
   restartPending,
 }: {
   run: AuctionRun | null;
-  onRestart: (source: string | null) => void;
+  onRestart: (request: AdminRunRequest) => void;
   restartPending: boolean;
 }) {
   const [showLogs, setShowLogs] = useState(false);
@@ -1565,6 +1552,7 @@ function RunDetails({
     ["Déduplication", summaryNumber(run, "deduplicated")],
     ["Écriture Supabase", summaryNumber(run, "upserted")],
   ] as const;
+  const restartRequest = adminRunRestartRequest(run);
   return (
     <AdminPanel className="p-5">
       <AdminSectionHeading title="Exécution sélectionnée" />
@@ -1642,11 +1630,21 @@ function RunDetails({
         >
           {showLogs ? "Masquer les détails" : "Afficher les détails"}
         </button>
-        <AdminPrimaryButton disabled={restartPending} onClick={() => onRestart(run.source)}>
+        <AdminPrimaryButton
+          disabled={restartPending || !restartRequest}
+          onClick={() => restartRequest && onRestart(restartRequest)}
+        >
           {restartPending ? <RefreshCw className="size-4 animate-spin" /> : null}
           Relancer
         </AdminPrimaryButton>
       </div>
+      {!restartRequest ? (
+        <p className="mt-3 text-sm text-[#132238]/65">
+          {run.status === "queued" || run.status === "running"
+            ? "Cette exécution est déjà en attente ou en cours."
+            : "Les paramètres d’origine ne permettent pas cette relance. Utilisez les commandes de collecte ou d’enrichissement de cette page."}
+        </p>
+      ) : null}
       {showLogs ? (
         <div className="mt-4 grid gap-4 rounded-lg border border-[#132238]/10 bg-[#132238]/[0.025] p-4 text-xs">
           <div>
@@ -1745,6 +1743,7 @@ function AiBackfillPanel({
   onBackfill: () => void;
   expanded?: boolean;
 }) {
+  const validLimit = Number.isInteger(backfillLimit) && backfillLimit >= 1 && backfillLimit <= 100;
   return (
     <AdminPanel className="p-5">
       <AdminSectionHeading
@@ -1780,16 +1779,18 @@ function AiBackfillPanel({
             type="number"
             min={1}
             max={100}
-            value={backfillLimit}
-            onChange={(event) =>
-              setBackfillLimit(Math.max(1, Math.min(100, Number(event.target.value) || 20)))
-            }
+            step={1}
+            required
+            value={Number.isNaN(backfillLimit) ? "" : backfillLimit}
+            aria-invalid={!validLimit}
+            onChange={(event) => setBackfillLimit(event.target.valueAsNumber)}
             className="h-11 w-32 rounded-lg border border-[#132238]/18 bg-white px-3 text-sm outline-none focus:border-[#c98d45]"
           />
+          {!validLimit ? <span role="alert">Saisissez un entier de 1 à 100.</span> : null}
         </label>
         <button
           type="button"
-          disabled={pending || remaining === 0}
+          disabled={pending || remaining === 0 || !validLimit}
           onClick={onBackfill}
           className="admin-button-secondary md:self-end"
         >
@@ -1804,13 +1805,19 @@ function AiBackfillPanel({
 function runnerModeLabel(mode: RunnerMode): string {
   if (mode === "github_actions") return "GitHub Actions";
   if (mode === "webhook") return "Webhook";
-  return "Worker planifié";
+  return "Runner non configuré";
 }
 
-function asAdminScrollSource(value: string | null): AdminScrollSource {
-  return SOURCE_OPTIONS.some((option) => option.value === value)
-    ? (value as AdminScrollSource)
-    : "all";
+function runnerStatusLabel(status: AdminDashboardData["runner"]["status"] | undefined): string {
+  if (status === "active") return "Actif";
+  if (status === "suspended") return "Suspendu";
+  return "Non vérifié";
+}
+
+function runnerStatusClass(status: AdminDashboardData["runner"]["status"] | undefined): string {
+  if (status === "active") return "text-emerald-700";
+  if (status === "suspended") return "text-red-700";
+  return "text-[#132238]/55";
 }
 
 function formatInteger(value: number): string {
@@ -1871,11 +1878,46 @@ function PublicationRequestCard({
                 Types de pièces à vérifier
               </span>
             )}
+            {request.document_types.length > 4 ? (
+              <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-muted-foreground">
+                +{request.document_types.length - 4} autre
+                {request.document_types.length - 4 > 1 ? "s" : ""}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full border border-white/10 px-2.5 py-1">
+              {request.anonymize_documents
+                ? "Anonymisation demandée"
+                : "Anonymisation non demandée"}
+            </span>
+            {request.promotion_options.map((option) => (
+              <span
+                key={option}
+                className="rounded-full border border-gold/20 px-2.5 py-1 text-gold"
+              >
+                {publicationPromotionLabel(option)}
+              </span>
+            ))}
           </div>
           <div className="mt-3 text-xs text-muted-foreground">
             Demandeur : {request.requester_email ?? "email inconnu"} · {documents.length} fichier
             {documents.length > 1 ? "s" : ""} privé{documents.length > 1 ? "s" : ""}
           </div>
+          {request.published_sale_id ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-emerald-100">
+              <a
+                href={`/sales/${encodeURIComponent(request.published_sale_id)}`}
+                className="font-semibold underline underline-offset-2"
+              >
+                Ouvrir la vente liée
+              </a>
+              {request.published_at ? (
+                <span>Créée le {formatDateTime(request.published_at)}</span>
+              ) : null}
+              <span>Enrichissement et vérification à terminer</span>
+            </div>
+          ) : null}
           {documents.length ? (
             <div className="mt-3 flex flex-wrap gap-2">
               {documents.slice(0, 4).map((document) => (
@@ -1888,6 +1930,11 @@ function PublicationRequestCard({
                   {document.name ?? "Ouvrir la pièce"}
                 </button>
               ))}
+              {documents.length > 4 ? (
+                <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-muted-foreground">
+                  +{documents.length - 4} autre{documents.length - 4 > 1 ? "s" : ""}
+                </span>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -1932,6 +1979,13 @@ function PublicationStatusPill({ status }: { status: PublicationRequestStatus })
       {label}
     </span>
   );
+}
+
+function publicationPromotionLabel(value: string): string {
+  if (value === "featured") return "Mise en avant éditoriale";
+  if (value === "seo") return "Préparation SEO";
+  if (value === "partners") return "Relais partenaire";
+  return value;
 }
 
 function LatestRun({ run }: { run: AuctionRun }) {

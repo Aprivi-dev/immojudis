@@ -117,9 +117,14 @@ select ok(
   and position('revision_rank = 1' in lower(pg_get_functiondef(
     'public.observe_autonomous_pipeline(timestamptz)'::regprocedure
   ))) > 0
-  and position('partition by source_url, job_type, detail_source_name, detail_source_url' in lower(pg_get_functiondef(
-    'public.observe_autonomous_pipeline(timestamptz)'::regprocedure
-  ))) > 0
+  and (
+    position('partition by source_url, job_type, detail_source_name, detail_source_url' in lower(pg_get_functiondef(
+      'public.observe_autonomous_pipeline(timestamptz)'::regprocedure
+    ))) > 0
+    or position('partition by j.source_url, j.job_type, j.detail_source_name, j.detail_source_url' in lower(pg_get_functiondef(
+      'public.observe_autonomous_pipeline(timestamptz)'::regprocedure
+    ))) > 0
+  )
   and position('older_than_24h' in lower(pg_get_functiondef(
     'public.observe_autonomous_pipeline(timestamptz)'::regprocedure
   ))) > 0,

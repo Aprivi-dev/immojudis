@@ -5,6 +5,7 @@ import { createFileRoute, Link } from "@/lib/router-compat";
 import {
   LEGAL_DOCUMENTS,
   legalValue,
+  legalPublisherConfigurationStatus,
   publicLegalPublisher,
   VERCEL_HOSTING_PROVIDER,
 } from "@/lib/legal-documents";
@@ -21,15 +22,7 @@ export const Route = createFileRoute("/legal")({
 
 export function LegalPage() {
   const publisher = publicLegalPublisher();
-  const identityComplete = Boolean(
-    publisher.entityName &&
-    publisher.legalForm &&
-    publisher.address &&
-    publisher.registration &&
-    publisher.publicationDirector &&
-    publisher.contactEmail &&
-    publisher.contactPhone,
-  );
+  const identityComplete = legalPublisherConfigurationStatus(publisher).ready;
 
   return (
     <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
@@ -48,10 +41,13 @@ export function LegalPage() {
         </header>
 
         {!identityComplete ? (
-          <div className="mt-6 rounded-lg border border-amber-300/30 bg-amber-400/10 p-5 text-sm leading-relaxed text-amber-100">
+          <div
+            role="status"
+            className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-5 text-sm leading-relaxed text-amber-950"
+          >
             Les informations d’identification de l’éditeur ne sont pas encore toutes publiées. Par
-            précaution, le checkout payant est suspendu tant que cette configuration n’est pas
-            complète et validée.
+            précaution, le paiement est suspendu tant que cette configuration n’est pas complète et
+            validée.
           </div>
         ) : null}
 

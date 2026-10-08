@@ -467,7 +467,7 @@ export function buildSaleProductSources({
         value: primarySourceLabel,
         detail: sourceLinks.length > 1 ? `${sourceLinks.length} sources rapprochées` : undefined,
       },
-      { label: "Marché", value: marketEstimate?.source ?? "DVF à connecter" },
+      { label: "Marché", value: marketEstimate?.source ?? "Référence DVF non disponible" },
       { label: "Documents", value: documentCount ? "Pièces indexées" : "Aucune pièce indexée" },
       {
         label: "Risques de dossier",

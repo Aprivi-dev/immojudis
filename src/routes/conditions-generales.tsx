@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { createFileRoute, Link } from "@/lib/router-compat";
 import { LEGAL_DOCUMENTS, legalValue, publicLegalPublisher } from "@/lib/legal-documents";
+import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 
 export const Route = createFileRoute("/conditions-generales")({
   head: () => ({
@@ -57,11 +58,13 @@ export function TermsPage() {
           <TermsSection title="2. Description des offres">
             <p>
               Découverte fournit gratuitement les informations essentielles accessibles après
-              création d’un compte. Analyse est un paiement unique de 29 € TTC donnant accès pendant
-              30 jours aux analyses, comparables, documents, risques et outils de décision indiqués
-              sur la page d’offre. Analyse n’est pas un abonnement et ne se renouvelle pas
-              automatiquement. Une nouvelle période ne peut commencer qu’après une nouvelle
-              commande.
+              création d’un compte, avec trois favoris au maximum. Analyse est un abonnement aux
+              outils Premium : statistiques des tribunaux, mise plafond, estimation des travaux,
+              valeur du bien et autres analyses présentées sur la page d’offre. Un essai gratuit de{" "}
+              {ANALYSIS_TRIAL_DAYS} jours nécessite l’enregistrement d’une carte bancaire auprès de
+              Stripe. À son terme, l’abonnement devient payant et se renouvelle automatiquement,
+              sauf résiliation avant la fin de l’essai. Les conditions d’éligibilité et le tarif
+              applicable sont présentés avant la confirmation de la souscription.
             </p>
           </TermsSection>
 
@@ -74,8 +77,14 @@ export function TermsPage() {
               <li>
                 Le client accepte expressément ces conditions et les informations de rétractation.
               </li>
-              <li>Le bouton « Commander avec obligation de paiement » ouvre le paiement Stripe.</li>
-              <li>La commande est conclue après confirmation du paiement par Stripe.</li>
+              <li>
+                Le client ouvre le récapitulatif Stripe et vérifie le montant récurrent, la
+                périodicité, la fin de l’essai et la date du premier prélèvement.
+              </li>
+              <li>
+                La souscription est conclue après sa confirmation dans Stripe. L’essai n’entraîne
+                pas de prélèvement du prix de l’abonnement avant son échéance.
+              </li>
             </ol>
             <p className="mt-3">
               Avant de confirmer, le client peut fermer le récapitulatif ou interrompre le paiement.
@@ -87,24 +96,37 @@ export function TermsPage() {
 
           <TermsSection title="4. Prix et paiement">
             <p>
-              Le prix affiché est de 29 € TTC pour 30 jours. Le paiement est encaissé par Stripe au
-              moyen des modes proposés dans son interface sécurisée. Immojudis ne reçoit ni ne
-              conserve le numéro complet de la carte. En cas de refus ou d’annulation du paiement,
-              aucun nouvel accès n’est accordé.
+              {resolveAnalysisOfferLabel()}. Le montant TTC et la périodicité sont précisés dans le
+              récapitulatif avant toute souscription. Après l’essai, Stripe prélève ce montant à
+              chaque échéance tant que l’abonnement n’est pas résilié. Immojudis ne reçoit ni ne
+              conserve le numéro complet de la carte. Un paiement refusé peut entraîner la
+              suspension de l’accès Premium ; le compte Découverte reste accessible.
             </p>
           </TermsSection>
 
           <TermsSection title="5. Exécution et disponibilité">
             <p>
-              À la demande expresse du client, l’accès Analyse commence après confirmation du
-              paiement, avant l’expiration du délai de rétractation. L’accès expire 30 jours après
-              son activation. Une maintenance, un incident fournisseur ou un cas de force majeure
-              peut interrompre temporairement certaines fonctions ; Immojudis met alors en œuvre les
-              moyens raisonnables de rétablissement.
+              À la demande expresse du client, l’accès Analyse commence après confirmation de la
+              souscription, pendant l’essai puis les périodes payées. Une maintenance, un incident
+              fournisseur ou un cas de force majeure peut interrompre temporairement certaines
+              fonctions ; Immojudis met alors en œuvre les moyens raisonnables de rétablissement.
+            </p>
+            <p className="mt-3">
+              Le client peut résilier depuis le bouton de gestion de son abonnement sur la page{" "}
+              <Link to="/accompagnement" className="text-gold underline">
+                Offres
+              </Link>
+              . Le portail Stripe indique la date de fin d’accès et confirme la résiliation. Une
+              résiliation pendant l’essai évite le premier prélèvement ; après l’essai, elle empêche
+              les prochains renouvellements. Les accès précédemment achetés par paiement unique
+              restent valables jusqu’à leur échéance initiale.
             </p>
           </TermsSection>
 
           <TermsSection title="6. Droit de rétractation">
+            <p className="mb-3">
+              L’essai commercial de sept jours ne remplace pas le droit légal de rétractation.
+            </p>
             <p>
               Le consommateur dispose en principe de 14 jours à compter de la conclusion du contrat
               pour se rétracter sans motif. Lorsqu’il demande l’exécution immédiate du service, il

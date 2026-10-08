@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { ResourcesPage } from "@/routes/ventes-immobilieres-judiciaires";
 
 export const metadata: Metadata = {
-  title: "Ventes immobilieres judiciaires",
+  alternates: { canonical: "/ventes-immobilieres-judiciaires" },
+  title: "Ventes immobilières judiciaires",
   description:
-    "Guide des ventes immobilieres judiciaires : procedure, risques, financement et methode d'analyse.",
+    "Guide des ventes immobilières judiciaires : procédure, risques, financement et méthode d'analyse.",
 };
 
 export default function Page() {

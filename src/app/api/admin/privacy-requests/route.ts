@@ -13,7 +13,19 @@ export async function GET(request: Request) {
   const context = createApiRequestContext(request, "api.admin.privacy_requests.list");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    return apiJson(await listPrivacyRequestsForAdmin(auth), context);
+    const url = new URL(request.url);
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const limit = Number(url.searchParams.get("limit") ?? 100);
+    if (
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    ) {
+      throw new Error("Pagination des demandes de conformité invalide.");
+    }
+    return apiJson(await listPrivacyRequestsForAdmin(auth, { offset, limit }), context);
   } catch (error) {
     return apiError(error, context, {
       fallbackMessage: "Demandes indisponibles.",

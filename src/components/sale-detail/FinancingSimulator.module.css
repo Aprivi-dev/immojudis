@@ -63,7 +63,8 @@
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+  align-items: start;
   gap: 18px;
   padding: 0 22px 22px;
 }
@@ -139,6 +140,11 @@
   border-color: rgb(19 34 56 / 28%);
 }
 
+.input:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .input:focus-visible,
 .range:focus-visible,
 .checkboxLabel input:focus-visible {
@@ -156,6 +162,11 @@
   margin: 0;
   max-width: 48ch;
   font-size: 12px;
+}
+
+.modeBadge {
+  color: var(--gold-soft, #9c642b);
+  font-weight: 750;
 }
 
 .privateNote {
@@ -312,35 +323,10 @@
   line-height: 1.45;
 }
 
-.details {
+.detailContent {
   margin-top: 16px;
   border-top: 1px solid rgb(19 34 56 / 10%);
   padding-top: 12px;
-}
-
-.details summary {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  color: var(--brand-navy, #132238);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
-  list-style-position: inside;
-}
-
-.details summary::marker {
-  color: var(--gold-soft, #9c642b);
-}
-
-.details summary:focus-visible {
-  border-radius: 6px;
-  outline: 2px solid var(--gold-soft, #9c642b);
-  outline-offset: 3px;
-}
-
-.detailContent {
-  padding-top: 4px;
 }
 
 .detailIntro {
@@ -390,6 +376,22 @@
 .resultRows .totalRow dt,
 .resultRows .totalRow dd {
   color: #fff;
+}
+
+.resultRows .costTotalRow {
+  margin-top: 8px;
+  border: 1px solid rgb(156 100 43 / 18%);
+  border-radius: 10px;
+  background: rgb(201 141 69 / 10%);
+  padding: 12px;
+}
+
+.resultRows .costTotalRow dt,
+.resultRows .costTotalRow dd,
+.resultRows .financedRow dt,
+.resultRows .financedRow dd {
+  color: var(--brand-navy, #132238);
+  font-weight: 750;
 }
 
 .emptyResult {

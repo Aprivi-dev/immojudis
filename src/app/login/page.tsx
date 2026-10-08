@@ -3,7 +3,7 @@ import { LoginPage } from "@/routes/login";
 
 export const metadata: Metadata = {
   title: "Connexion",
-  description: "Connexion a votre compte Immojudis.",
+  description: "Connexion à votre compte Immojudis.",
   robots: { index: false, follow: false },
 };
 

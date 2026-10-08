@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  detectInformationAgentContactOptOut,
   extractInformationAgentFacts,
   findInboundToken,
   htmlToPlainText,
@@ -59,6 +60,81 @@ describe("information agent inbound parsing", () => {
         "Bonjour, je vérifie.\n\nLe 20 septembre, ImmoJudis a écrit :\n> Surface 84 m² et 4 pièces",
       ),
     ).toBe("Bonjour, je vérifie.");
+  });
+
+  it("extracts structured reply fields without confusing living area and land area", () => {
+    const facts = extractInformationAgentFacts(
+      [
+        "Type de bien : maison.",
+        "Adresse : 12 rue des Lilas, 75001 Paris.",
+        "Surface habitable : 96 m².",
+        "Terrain : 500 m².",
+        "Le bien est occupé par le propriétaire.",
+        "Visite : sur rendez-vous mardi après-midi.",
+        "DPE : C, GES : A.",
+      ].join("\n"),
+    );
+
+    expect(facts.map((fact) => fact.factKey)).toEqual([
+      "surface_m2",
+      "land_surface_m2",
+      "occupancy_status",
+      "visit_information",
+      "energy_diagnostics",
+      "property_type",
+      "address",
+    ]);
+    expect(facts.find((fact) => fact.factKey === "surface_m2")?.proposedValue).toEqual({
+      value: 96,
+      unit: "m2",
+    });
+    expect(facts.find((fact) => fact.factKey === "land_surface_m2")?.proposedValue).toEqual({
+      value: 500,
+      unit: "m2",
+    });
+    expect(facts.find((fact) => fact.factKey === "occupancy_status")?.proposedValue).toEqual({
+      value: "owner_occupied",
+    });
+    expect(facts.find((fact) => fact.factKey === "energy_diagnostics")?.proposedValue).toEqual({
+      value: "DPE C · GES A",
+    });
+    expect(
+      extractInformationAgentFacts("Surface du terrain : 500 m².").map((fact) => fact.factKey),
+    ).toEqual(["land_surface_m2"]);
+  });
+
+  it("fails closed on uncertain visits, surfaces, diagnostics and addresses", () => {
+    expect(extractInformationAgentFacts("Aucune visite possible.")).toEqual([]);
+    expect(extractInformationAgentFacts("Visite impossible.")).toEqual([]);
+    expect(extractInformationAgentFacts("Visite pas possible.")).toEqual([]);
+    expect(extractInformationAgentFacts("Surface habitable à confirmer : 84 m².")).toEqual([]);
+    expect(extractInformationAgentFacts("Surface habitable : 84 m² à confirmer.")).toEqual([]);
+    expect(extractInformationAgentFacts("Surface habitable pas communiquée : 84 m².")).toEqual([]);
+    expect(extractInformationAgentFacts("DPE non disponible.")).toEqual([]);
+    expect(extractInformationAgentFacts("Adresse : à confirmer.")).toEqual([]);
+    expect(extractInformationAgentFacts("Adresse : inconnue.")).toEqual([]);
+    expect(extractInformationAgentFacts("Adresse incertaine : 12 rue des Lilas.")).toEqual([]);
+  });
+
+  it("requires an explicit opt-out phrase and ignores quoted history", () => {
+    expect(detectInformationAgentContactOptOut("Bonjour.\nSTOP\n")).toBe(true);
+    expect(detectInformationAgentContactOptOut("STOP merci")).toBe(true);
+    expect(detectInformationAgentContactOptOut("Merci de ne plus me contacter.")).toBe(true);
+    expect(
+      detectInformationAgentContactOptOut("Merci de supprimer mon adresse de vos listes."),
+    ).toBe(true);
+    expect(detectInformationAgentContactOptOut("Désinscrivez-nous, s'il vous plaît.")).toBe(true);
+    expect(detectInformationAgentContactOptOut("Je ne souhaite plus recevoir vos emails.")).toBe(
+      true,
+    );
+    expect(detectInformationAgentContactOptOut("Je ne veux plus recevoir vos emails.")).toBe(true);
+    expect(detectInformationAgentContactOptOut("Ne supprimez pas le document joint.")).toBe(false);
+    expect(
+      detectInformationAgentContactOptOut(
+        "Bonjour.\nLe 20 septembre, ImmoJudis a écrit :\n> STOP\nMerci.",
+      ),
+    ).toBe(false);
+    expect(detectInformationAgentContactOptOut("Je vous réponds après la visite.")).toBe(false);
   });
 
   it("keeps the fresh Gmail reply separate from its quoted history and mobile signature", () => {
@@ -283,15 +359,25 @@ describe("information agent inbound parsing", () => {
     expect(extractInformationAgentFacts("Date de la vente : 14/09/2026 reportée.")).toEqual([]);
   });
 
-  it("does not borrow a visit date or another amount after an omitted field", () => {
+  it("keeps an omitted sale field separate from explicit visit information", () => {
     expect(
       extractInformationAgentFacts(
         "Date de la vente : prochainement. Visite le 14/09/2026. Mise à prix : à préciser. Frais : 500 €.",
       ),
-    ).toEqual([]);
+    ).toMatchObject([
+      {
+        factKey: "visit_information",
+        proposedValue: { value: "Visite le 14/09/2026" },
+      },
+    ]);
     expect(
       extractInformationAgentFacts("Date de la vente : 14/09/2026, visite le 15/09/2026."),
-    ).toEqual([]);
+    ).toMatchObject([
+      {
+        factKey: "visit_information",
+        proposedValue: { value: "Visite le 15/09/2026" },
+      },
+    ]);
   });
 
   it("rejects an invalid value when a repeated label later has a valid value", () => {
@@ -301,11 +387,15 @@ describe("information agent inbound parsing", () => {
     expect(extractInformationAgentFacts("Mise à prix : 0 €. Mise à prix : 120 000 €.")).toEqual([]);
   });
 
-  it("does not promote unlabelled, quoted, visit or DPE values", () => {
+  it("does not promote quoted numeric values while preserving explicit visit and DPE values", () => {
     const facts = extractInformationAgentFacts(
       "Bonjour.\n> Mise à prix : 120 000 €\nVisite le 14 septembre 2026. DPE C. 130 000 €.",
     );
 
-    expect(facts).toEqual([]);
+    expect(facts.map((fact) => fact.factKey)).toEqual(["visit_information", "energy_diagnostics"]);
+    expect(facts[0]?.proposedValue).toEqual({
+      value: "Visite le 14 septembre 2026",
+    });
+    expect(facts[1]?.proposedValue).toEqual({ value: "DPE C" });
   });
 });

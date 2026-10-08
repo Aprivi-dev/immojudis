@@ -112,6 +112,28 @@ export type InformationAgentEmailTemplatePreview = {
   text: string;
 };
 
+/**
+ * This invitation is appended while rendering an email, rather than stored in
+ * the editable seven-block template. That keeps the account CTA present for
+ * legacy templates already published in the database and prevents an admin
+ * from accidentally removing it while editing the copy.
+ */
+export const INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW = "POUR LES PROFESSIONNELS";
+export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
+  "Vous avez d’autres ventes à partager ?";
+export const INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION =
+  "Vous pouvez créer un compte professionnel ImmoJudis pour transmettre vos propres annonces à notre équipe, faire connaître les ventes retenues dans notre catalogue et suivre leur examen. Chaque publication reste soumise à validation. C’est facultatif : répondre à cet email suffit pour ce dossier.";
+export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
+
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 4;
+
+export type InformationAgentEmailRenderOptions = {
+  /** Environment origin used to build the professional account URL. */
+  appUrl?: string;
+  /** Fully-qualified account URL, useful when the caller already built it. */
+  accountUrl?: string;
+};
+
 const variableKeySchema = z.enum(
   INFORMATION_AGENT_EMAIL_VARIABLES.map((variable) => variable.key) as [
     InformationAgentEmailVariable,
@@ -203,8 +225,8 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 3",
-  subjectTemplate: "{{sale_subject_title}} — précisions sur la vente",
+  name: "Demande de précisions sur une vente — version 4",
+  subjectTemplate: "{{sale_subject_title}} — précisions pour ImmoJudis",
   blocks: [
     {
       id: "greeting",
@@ -217,7 +239,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Présentation ImmoJudis",
       content:
-        "Je vous contacte pour ImmoJudis, service indépendant d’information sur les ventes immobilières judiciaires. Nous vérifions la fiche de cette vente :",
+        "ImmoJudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous complétons la fiche ci-dessous et votre connaissance du dossier nous serait précieuse.",
     },
     {
       id: "sale_details",
@@ -230,7 +252,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Introduction de la demande",
       content:
-        "Pourriez-vous nous confirmer les points suivants ou nous transmettre les pièces disponibles ?\n\nPourriez-vous aussi nous envoyer des photos récentes du bien et de ses annexes, même si l’annonce contient déjà des photos ? Privilégiez les fichiers JPG ou PNG de moins de 10 Mo chacun. Pour un lot important, répondez en plusieurs emails de 20 Mo maximum chacun. Si vous disposez d’une vidéo, signalez-le sans la joindre ; nous vous indiquerons comment la transmettre.",
+        "Pourriez-vous nous préciser les points suivants ou nous transmettre les pièces utiles ? Une réponse même partielle nous aide à présenter un dossier plus clair et à limiter les demandes répétées.",
     },
     {
       id: "questions",
@@ -243,13 +265,14 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Consignes de réponse",
       content:
-        "Une réponse partielle nous aidera déjà. Vous pouvez simplement répondre à cet email et joindre les pièces que vous êtes autorisé à transmettre. Si vous n’êtes pas le bon interlocuteur, pourriez-vous nous orienter ?",
+        "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire. Si ce dossier relève d’un autre interlocuteur, son contact nous serait utile.",
     },
     {
       id: "closing",
       kind: "fixed",
       label: "Conclusion et signature",
-      content: "Merci pour votre aide.\n\nBien cordialement,\nL’équipe ImmoJudis",
+      content:
+        "Merci pour votre aide : votre réponse contribuera à rendre cette fiche plus utile aux personnes qui étudient la vente.\n\nBien cordialement,\nL’équipe ImmoJudis",
     },
   ],
 };
@@ -270,6 +293,11 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
     description:
       "Le message rappelle que seules les pièces autorisées peuvent être transmises et que la réponse doit suivre l’adresse liée au dossier.",
   },
+  {
+    title: "Invitation au compte professionnel",
+    description:
+      "Une invitation facultative à créer un compte professionnel ImmoJudis est ajoutée automatiquement avant la conclusion, y compris pour les anciens modèles publiés.",
+  },
 ] as const;
 
 export function parseInformationAgentEmailTemplateContent(input: {
@@ -283,13 +311,33 @@ export function parseInformationAgentEmailTemplateContent(input: {
 export function renderInformationAgentEmailContent({
   template,
   values,
+  appUrl,
+  accountUrl,
 }: {
   template: InformationAgentEmailTemplateContent;
   values: Record<InformationAgentEmailVariable, string>;
-}): { subject: string; bodyText: string } {
+} & InformationAgentEmailRenderOptions): { subject: string; bodyText: string } {
   const parsed = informationAgentEmailTemplateContentSchema.parse(template);
-  const bodyText = parsed.blocks
-    .map((block) => renderTemplateText(block.content, values).trim())
+  const resolvedAccountUrl = buildInformationAgentAccountUrl({ appUrl, accountUrl });
+  const renderedBlocks: Array<{
+    id: InformationAgentEmailBlockId | "account_invitation";
+    content: string;
+  }> = parsed.blocks.map((block) => ({
+    id: block.id,
+    content: renderTemplateText(block.content, values).trim(),
+  }));
+  const invitation = renderInformationAgentAccountInvitation(resolvedAccountUrl);
+
+  if (!renderedBlocks.some((block) => block.content.includes(invitation))) {
+    const closingIndex = renderedBlocks.findIndex((block) => block.id === "closing");
+    renderedBlocks.splice(closingIndex < 0 ? renderedBlocks.length : closingIndex, 0, {
+      id: "account_invitation",
+      content: invitation,
+    });
+  }
+
+  const bodyText = renderedBlocks
+    .map((block) => block.content)
     .filter(Boolean)
     .join("\n\n");
   if (bodyText.length > 8000) {
@@ -299,6 +347,34 @@ export function renderInformationAgentEmailContent({
     subject: renderTemplateText(parsed.subjectTemplate, values).slice(0, 200),
     bodyText,
   };
+}
+
+export function buildInformationAgentAccountUrl({
+  appUrl = "https://immojudis.com",
+  accountUrl,
+}: InformationAgentEmailRenderOptions = {}): string {
+  if (accountUrl) return validateInformationAgentUrl(accountUrl);
+  const url = new URL("/login", validateInformationAgentUrl(appUrl));
+  url.searchParams.set("mode", "professional");
+  url.searchParams.set("redirect", "/espace-pro");
+  return url.toString();
+}
+
+export function renderInformationAgentAccountInvitation(accountUrl: string): string {
+  return [
+    INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW,
+    INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING,
+    INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION,
+    `${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} : ${accountUrl}`,
+  ].join("\n");
+}
+
+function validateInformationAgentUrl(value: string): string {
+  const parsed = new URL(value);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("L’URL de compte professionnel doit utiliser HTTP ou HTTPS.");
+  }
+  return parsed.toString();
 }
 
 export function templateVariableToken(key: InformationAgentEmailVariable): string {

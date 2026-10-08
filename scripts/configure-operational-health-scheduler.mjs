@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
+import { resolvePostgresSslOptions } from "./apply-supabase-migrations.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvironmentFiles(root);
@@ -42,7 +43,7 @@ if (origin.protocol !== "https:" || origin.username || origin.password || origin
 const sql = postgres(withMaintenanceSessionSettings(databaseUrl), {
   max: 1,
   connect_timeout: databaseConnectTimeoutSeconds,
-  ssl: process.env.POSTGRES_SSL === "disable" ? false : "require",
+  ssl: resolvePostgresSslOptions(databaseUrl),
 });
 
 try {
