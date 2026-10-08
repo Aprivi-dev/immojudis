@@ -1662,7 +1662,7 @@ def test_upsert_documents_deduplicates_document_urls(monkeypatch) -> None:
 
     assert supabase_client.upsert_documents_to_supabase([sale]) == 2
     assert calls[0][0] == "auction_documents"
-    assert calls[0][2] == "document_url"
+    assert calls[0][2] == "source_url,document_url"
     assert [row["document_url"] for row in calls[0][1]] == [
         "https://example.test/pv.pdf",
         "https://example.test/ccv.pdf",
