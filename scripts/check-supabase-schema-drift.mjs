@@ -110,6 +110,7 @@ function firstFilledEnv(...values) {
 function withMaintenanceSessionSettings(databaseUrl) {
   const url = new URL(databaseUrl);
   if (url.hostname.endsWith(".pooler.supabase.com")) url.port = "5432";
+  url.searchParams.set("sslmode", "verify-full");
   url.searchParams.set("connect_timeout", process.env.PGCONNECT_TIMEOUT || "600");
   const existingOptions = url.searchParams.get("options")?.trim();
   if (!existingOptions?.includes("statement_timeout")) {
