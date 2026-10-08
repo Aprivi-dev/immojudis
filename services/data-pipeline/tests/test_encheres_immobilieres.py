@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import httpx
+
 from src.admission import quarantine_reason
 from src.normalize import normalize_sale
 from src.sources import encheres_immobilieres as source
@@ -166,3 +168,73 @@ def test_empty_page_never_becomes_terminal_proof(monkeypatch) -> None:
     assert len(result.sales) == 1
     assert result.coverage["coverage_complete"] is False
     assert result.coverage["stop_reason"] == "empty_page_unverified"
+
+
+def test_list_timeout_does_not_discard_later_reachable_page(monkeypatch) -> None:
+    first_page = _listing_html(external_id=9486, total=2)
+    later_page = _listing_html(external_id=9487, total=2, last_page=3)
+
+    class Client:
+        def __init__(self, **kwargs) -> None:
+            self.calls: list[str] = []
+
+        def get(self, url: str) -> str:
+            self.calls.append(url)
+            if url == source.LIST_URL:
+                return first_page
+            if "page=2" in url:
+                raise httpx.ReadTimeout("list page timed out")
+            return later_page
+
+        def coverage_metrics(self) -> dict[str, object]:
+            return {}
+
+    monkeypatch.setattr(source, "PoliteHttpClient", Client)
+    monkeypatch.setattr(source, "load_settings", _settings)
+    monkeypatch.setattr(source, "TARGET_DEPARTMENTS", ("33",))
+    monkeypatch.setattr(source, "_enrich_sale_from_detail", lambda *args, **kwargs: None)
+
+    result = source.scrape_encheres_immobilieres_aquitaine_result(max_pages=3)
+
+    assert {sale["external_id"] for sale in result.sales} == {"9486", "9487"}
+    assert result.coverage["coverage_complete"] is False
+    assert result.coverage["stop_reason"] == "source_errors"
+    assert result.coverage["list_fetch_failures"] == [
+        {"url": f"{source.LIST_URL}?page=2", "error": "list page timed out"}
+    ]
+
+
+def test_non_transient_list_errors_stop_without_scanning_next_page(monkeypatch) -> None:
+    error_factories = (
+        lambda request: httpx.HTTPStatusError("403 Forbidden", request=request, response=httpx.Response(403, request=request)),
+        lambda request: httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed", request=request),
+    )
+
+    monkeypatch.setattr(source, "load_settings", _settings)
+    monkeypatch.setattr(source, "TARGET_DEPARTMENTS", ("33",))
+    monkeypatch.setattr(source, "_enrich_sale_from_detail", lambda *args, **kwargs: None)
+
+    def run_case(make_error):
+        calls: list[str] = []
+
+        class Client:
+            def __init__(self, **kwargs) -> None:
+                pass
+
+            def get(self, url: str) -> str:
+                calls.append(url)
+                request = httpx.Request("GET", url)
+                raise make_error(request)
+
+            def coverage_metrics(self) -> dict[str, object]:
+                return {}
+
+        monkeypatch.setattr(source, "PoliteHttpClient", Client)
+        result = source.scrape_encheres_immobilieres_aquitaine_result(max_pages=100)
+
+        assert calls == [source.LIST_URL]
+        assert result.coverage["coverage_complete"] is False
+        assert len(result.coverage["list_fetch_failures"]) == 1
+
+    for make_error in error_factories:
+        run_case(make_error)
