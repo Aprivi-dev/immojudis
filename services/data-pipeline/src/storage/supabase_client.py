@@ -26,7 +26,7 @@ except ModuleNotFoundError:  # pragma: no cover - GitHub Actions installs psycop
     sql = None
     Jsonb = None
 
-from src.admission import has_price_or_surface, is_expired, quarantine_reason
+from src.admission import has_price_or_surface, is_catalogue_expired, is_expired, quarantine_reason
 from src.asset_normalization import (
     build_auction_features_row,
     build_auction_risk_rows_from_occurrences,
@@ -343,7 +343,9 @@ def _transaction_write(table: str, payload: list[dict[str, object]], on_conflict
         sql.Identifier("public", table), names, names, sql.Identifier("public", table)
     )
     if on_conflict:
-        keys = on_conflict.split(",")
+        keys = tuple(key.strip() for key in on_conflict.split(",") if key.strip())
+        if not keys:
+            raise ValueError("Transaction upsert requires at least one conflict column")
         updates = [] if ignore_conflicts else [column for column in columns if column not in keys]
         statement += sql.SQL(" on conflict ({}) ").format(sql.SQL(", ").join(sql.Identifier(key) for key in keys))
         statement += (sql.SQL("do update set ") + sql.SQL(", ").join(
@@ -696,7 +698,13 @@ def upsert_sales_to_supabase(
     *,
     refresh_last_seen: bool = True,
 ) -> int:
-    sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
+    sales = [
+        sale
+        for sale in sales
+        if has_price_or_surface(sale)
+        and not is_expired(sale)
+        and not is_catalogue_expired(sale)
+    ]
     for sale in sales:
         apply_catalogue_readiness(sale)
     if not sales:
@@ -3278,6 +3286,7 @@ def upsert_documents_to_supabase(
     sales: list[AuctionSale],
     *,
     persisted_pdf_texts: dict[str, list[dict[str, object]]] | None = None,
+    prune_stale: bool = False,
 ) -> int:
     sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
     if not sales:
@@ -3297,10 +3306,17 @@ def upsert_documents_to_supabase(
             pdf_texts=persisted_pdf_texts.get(sale.source_url),
         )
     ]
-    if not rows:
-        return 0
-    rows = _unique_rows_by_key(rows, "document_url")
-    _postgrest_upsert(str(url), str(key), "auction_documents", rows, on_conflict="document_url")
+    if rows:
+        rows = _unique_rows_by_keys(rows, ("source_url", "document_url"))
+        _postgrest_upsert(
+            str(url),
+            str(key),
+            "auction_documents",
+            rows,
+            on_conflict="source_url,document_url",
+        )
+    if prune_stale:
+        _prune_stale_document_rows(str(url), str(key), sales)
     return len(rows)
 
 
@@ -4566,6 +4582,9 @@ def _postgres_upsert(
         return 0
     if table == "auction_observations":
         return _postgres_upsert_observations_with_parent_guard(db_url, payload, on_conflict)
+    conflict_columns = tuple(column.strip() for column in on_conflict.split(",") if column.strip())
+    if not conflict_columns:
+        raise ValueError("Postgres upsert requires at least one conflict column")
     columns = list(payload[0].keys())
     insert_statement = sql.SQL(
         "insert into {} ({}) values ({}) on conflict ({}) do update set {}"
@@ -4573,11 +4592,11 @@ def _postgres_upsert(
         sql.Identifier("public", table),
         sql.SQL(", ").join(sql.Identifier(column) for column in columns),
         sql.SQL(", ").join(sql.Placeholder() for _ in columns),
-        sql.Identifier(on_conflict),
+        sql.SQL(", ").join(sql.Identifier(column) for column in conflict_columns),
         sql.SQL(", ").join(
             sql.SQL("{} = excluded.{}").format(sql.Identifier(column), sql.Identifier(column))
             for column in columns
-            if column != on_conflict
+            if column not in conflict_columns
         ),
     )
     rows = [tuple(_postgres_value(column, row.get(column)) for column in columns) for row in payload]
@@ -4823,7 +4842,11 @@ def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[
     # the post-extraction cache writer must consume this exact map so a cold
     # worker cannot perform two reads or materialize a partial sibling.
     persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales, supabase_url, api_key)
-    upsert_documents_to_supabase(sales, persisted_pdf_texts=persisted_pdf_texts)
+    upsert_documents_to_supabase(
+        sales,
+        persisted_pdf_texts=persisted_pdf_texts,
+        prune_stale=True,
+    )
     upsert_extractions_to_supabase(sales)
     _restore_persisted_pdf_text_caches(sales, persisted_pdf_texts)
 
@@ -4954,6 +4977,72 @@ def _postgrest_delete_by_source_urls(supabase_url: str, api_key: str, table: str
             {"source_url": _postgrest_in_filter(batch)},
         )
     return len(unique)
+
+
+def _prune_stale_document_rows(
+    supabase_url: str,
+    api_key: str,
+    sales: list[AuctionSale],
+) -> None:
+    """Remove old attachment rows after a complete source revision.
+
+    ``auction_documents`` is a child projection.  Upserting the current
+    attachments alone leaves removed URLs visible forever because the view
+    joins every child row by ``source_url``.  Delete only rows owned by a
+    source revision explicitly marked ``complete``; restricted/partial,
+    failed, malformed, and unmarked manifests remain upsert-only.
+    The source-url predicate also prevents a stale revision from deleting a
+    row belonging to another sale.
+    """
+    expected_by_source: dict[str, set[str]] = {}
+    invalid_sources: set[str] = set()
+    for sale in sales:
+        source_url = clean_text(sale.source_url)
+        if not source_url:
+            continue
+        documents = sale.documents
+        if not isinstance(documents, list) or any(
+            not isinstance(document, dict) or not clean_text(document.get("url"))
+            for document in documents
+        ):
+            invalid_sources.add(source_url)
+            continue
+        raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+        detail_status = (clean_text(raw_payload.get("source_detail_status")) or "").casefold()
+        if detail_status != "complete":
+            invalid_sources.add(source_url)
+            continue
+        expected_by_source.setdefault(source_url, set()).update(
+            clean_text(document.get("url"))
+            for document in documents
+            if isinstance(document, dict) and clean_text(document.get("url"))
+        )
+    for source_url in invalid_sources:
+        expected_by_source.pop(source_url, None)
+    if not expected_by_source:
+        return
+
+    connection = _PUBLICATION_CONNECTION.get()
+    if connection is not None:
+        for source_url, current_urls in expected_by_source.items():
+            if current_urls:
+                connection.execute(
+                    "delete from public.auction_documents "
+                    "where source_url = %s and not (document_url = any(%s))",
+                    (source_url, list(current_urls)),
+                )
+            else:
+                connection.execute(
+                    "delete from public.auction_documents where source_url = %s",
+                    (source_url,),
+                )
+        return
+
+    for source_url, current_urls in expected_by_source.items():
+        params = {"source_url": f"eq.{source_url}"}
+        if current_urls:
+            params["document_url"] = f"not.{_postgrest_in_filter(sorted(current_urls))}"
+        _postgrest_delete(supabase_url, api_key, "auction_documents", params)
 
 
 def _unique_source_urls(source_urls: list[str]) -> list[str]:
@@ -5424,14 +5513,21 @@ def _document_extraction_status(extracted: dict[str, object]) -> str:
     return "pending"
 
 
-def _unique_rows_by_key(rows: list[dict[str, object]], key: str) -> list[dict[str, object]]:
-    unique: dict[str, dict[str, object]] = {}
+def _unique_rows_by_keys(
+    rows: list[dict[str, object]],
+    keys: tuple[str, ...],
+) -> list[dict[str, object]]:
+    unique: dict[tuple[object, ...], dict[str, object]] = {}
     for row in rows:
-        value = row.get(key)
-        if value is None:
+        values = tuple(row.get(key) for key in keys)
+        if any(value is None for value in values):
             continue
-        unique[str(value)] = row
+        unique[values] = row
     return list(unique.values())
+
+
+def _unique_rows_by_key(rows: list[dict[str, object]], key: str) -> list[dict[str, object]]:
+    return _unique_rows_by_keys(rows, (key,))
 
 
 def _extraction_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:

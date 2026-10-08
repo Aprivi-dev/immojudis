@@ -49,7 +49,9 @@ jobs:
     timeout-minutes: 45
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_SSL_CA: ${{ secrets.SUPABASE_DB_SSL_CA }}
       SUPABASE_MIGRATION_RUNNER: postgres-js
+      POSTGRES_SSL: verify-full
       PGCONNECT_TIMEOUT: "60"
       SUPABASE_MIGRATION_CONNECT_RETRIES: "10"
       SUPABASE_MIGRATION_RETRY_DELAY: "30"
